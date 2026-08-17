@@ -155,9 +155,10 @@ namespace TitanOrbit.Game
             if (!turretControl && (minePressedThisFrame || ShipPendingInput.PlaceMineLatched))
                 placeMine.Set();
 
-            // [TITAN-ORBIT] OVERDRIVE intent = Shift alone (not AND thrust).
-            // Latch re-engages at ≥25% energy while Shift stays held; burst applies when thrusting.
-            // Clear while stowed so prediction does not fight turret possession.
+            // [TITAN-ORBIT] Shift alone (not AND thrust). Regular ships: OVERDRIVE
+            // latch + burst while thrusting. MEGAs: same bit is heading-lock / unoccupied
+            // auto-gun mouse-aim (no speed burst). Clear while stowed so prediction
+            // does not fight turret possession.
             bool overdrive = !turretControl && _input.OverdriveHeld;
 
             return new ShipInput

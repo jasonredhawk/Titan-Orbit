@@ -254,10 +254,11 @@ namespace TitanOrbit.Input
             if (WasCtrlPressedThisFrame())
                 spaceBrakesEnabled = !spaceBrakesEnabled;
 
-            // --- OVERDRIVE modifier (Left/Right Shift) ---
-            // [TITAN-ORBIT] ShipInput.Overdrive = Shift alone. Motor latch re-engages at ≥25% energy
-            // while Shift stays held; burst speed applies when RMB thrust is also held.
-            // Desktop only; mobile leaves this false until a dedicated control exists.
+            // --- Shift modifier (Left/Right Shift) ---
+            // [TITAN-ORBIT] ShipInput.Overdrive = Shift alone. Regular ships: motor latch
+            // re-engages at ≥25% energy while Shift stays held; burst speed applies when
+            // RMB thrust is also held. MEGAs: no overdrive — same bit locks heading and
+            // aims unoccupied auto-guns at the mouse. Desktop only; mobile leaves this false.
             overdriveHeld = false;
             if (!Application.isMobilePlatform && Keyboard.current != null)
             {

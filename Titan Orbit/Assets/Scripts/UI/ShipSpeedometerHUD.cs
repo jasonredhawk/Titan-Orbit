@@ -47,6 +47,7 @@ namespace TitanOrbit.UI
     /// [TITAN-ORBIT] The speed bar always spans to OVERDRIVE top speed (motor baked capacity),
     /// even when Shift is not held. The right-hand band uses the fill colour at alpha 0.1 so
     /// players see unused overdrive headroom; the solid fill only enters that band while OD is active.
+    /// MEGA hulls have no overdrive — the bar stays at cruise and Shift does not open a zone.
     /// </para>
     /// <para>
     /// [TITAN-ORBIT] Pre–mass-tax baselines for SPD / ACC / turn are always chassis
@@ -1275,6 +1276,11 @@ namespace TitanOrbit.UI
             else
                 return 1f;
 
+            // MEGAs have no overdrive — Shift is heading-lock / mouse-aim only.
+            if (em.HasComponent<MegaShipState>(shipEntity)
+                && em.GetComponentData<MegaShipState>(shipEntity).IsMega)
+                return 1f;
+
             if (!ShipOverdriveTuning.IsBurstActive(
                     shiftHeld,
                     thrustHeld,
@@ -1553,9 +1559,13 @@ namespace TitanOrbit.UI
             // --- OVERDRIVE capacity (always) vs live burst (only while engaged) ---
             // [TITAN-ORBIT] Bar scale = cruise × baked OD mul so the faint OD zone is always visible.
             // Live cruise / "at max" / thrust use active overdrive only.
-            float overdriveCapacityMult = ResolveOverdriveCapacityMult(motor);
-            float overdriveActiveMult = 1f;
+            // MEGAs have no overdrive — keep the bar at cruise so Shift does not paint a fake OD zone.
             var vizWorld = EcsGameBridge.GetVisualizationWorld();
+            bool localMega = vizWorld != null && vizWorld.IsCreated
+                && vizWorld.EntityManager.HasComponent<MegaShipState>(shipEntity)
+                && vizWorld.EntityManager.GetComponentData<MegaShipState>(shipEntity).IsMega;
+            float overdriveCapacityMult = localMega ? 1f : ResolveOverdriveCapacityMult(motor);
+            float overdriveActiveMult = 1f;
             if (vizWorld != null && vizWorld.IsCreated)
                 overdriveActiveMult = ResolveOverdriveMovementMult(vizWorld.EntityManager, shipEntity, ship);
             bool overdriveActive = overdriveActiveMult > 1.001f;

@@ -66,6 +66,11 @@ namespace TitanOrbit.ECS
     /// Server-only sticky auto-aim, one slot per weapon mount. A single hull-center
     /// search fills empty slots when Fire is pressed. Locks clear when Fire is released
     /// so the next press re-acquires the closest targets.
+    /// <para>
+    /// [TITAN-ORBIT] <see cref="AimPoint"/> is the lead intercept (target motion +
+    /// this hull's velocity), not the target's current pivot. Phase B still fires
+    /// along the barrel; this point is what the barrel looks at.
+    /// </para>
     /// </summary>
     [InternalBufferCapacity(32)]
     public struct MegaShipAutoAimSlotElement : IBufferElementData
@@ -73,8 +78,17 @@ namespace TitanOrbit.ECS
         /// <summary>Current lock (ship, planet, or asteroid). Null when none.</summary>
         public Entity Target;
 
-        /// <summary>Last toroidal aim point written when the lock was validated.</summary>
+        /// <summary>
+        /// Lead intercept the barrel should look at (toroidal, unwrapped near the muzzle).
+        /// </summary>
         public float3 AimPoint;
+
+        /// <summary>
+        /// Planar flight budget to that intercept (0 = no lead / hull-forward park).
+        /// Phase B grows <c>BulletElement.MaxDistance</c> with this so fleeing shots
+        /// are not culled before they arrive.
+        /// </summary>
+        public float InterceptDistance;
     }
 
     /// <summary>

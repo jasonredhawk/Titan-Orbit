@@ -7,6 +7,7 @@ using Unity.Collections;
 using Unity.Entities;
 using Unity.Mathematics;
 using Unity.NetCode;
+using Unity.Physics;
 using Unity.Transforms;
 
 namespace TitanOrbit.ECS
@@ -14,7 +15,9 @@ namespace TitanOrbit.ECS
     /// <summary>
     /// Server: unoccupied MEGA mounts auto-aim like planetary turrets, but only fire when
     /// the MEGA owner's <see cref="ShipInput.Fire"/> is held. Occupied mounts are skipped
-    /// (the gunner's Fire drives those in <see cref="BulletSimulationSystem"/> Phase B).
+    /// (the gunner's Fire drives those in <see cref="BulletSimulationSystem"/> Phase B)
+    /// unless the owner holds Shift — then unoccupied auto-guns aim at the mouse
+    /// (occupied gunner mounts keep their own aim).
     /// Damage mode aims at the nearest enemy ship, planetary turret, or enemy moon.
     /// Heal mode aims at the nearest friendly ship. Asteroids are targeted only when
     /// <see cref="TitanOrbitDebugFlags.MegaShipsAutoFireAsteroids"/> is on (Editor / MPPM host).
@@ -23,10 +26,18 @@ namespace TitanOrbit.ECS
     /// when Fire is pressed. Locks stay until that target dies, leaves that gun's range,
     /// or the owner releases Fire (release clears locks so the next press re-acquires).
     /// If a gun finds nothing, it fires along hull forward until Fire is released.
-    /// Unoccupied turrets slew toward that lock (or hull forward) before Phase B so shots
-    /// leave along the barrel — the same ray regular ships use.
+    /// Aim points are lead intercepts from <see cref="MegaShipLeadAim"/> — target velocity
+    /// minus this hull's velocity — so inherited <c>shipVel</c> on the bullet does not
+    /// undershoot. Unoccupied turrets slew toward that lock (or hull forward) before
+    /// Phase B so shots leave along the barrel — the same ray regular ships use.
     /// <see cref="BulletSimulationSystem"/> Phase B fires ready mounts along
     /// <see cref="ShipWeaponPose"/> barrel forward.
+    /// </para>
+    /// <para>
+    /// [TITAN-ORBIT] MEGAs have no overdrive. <see cref="ShipInput.Overdrive"/> (Shift)
+    /// locks hull heading and points unoccupied auto-guns at
+    /// <see cref="ShipInput.AimPlanarDir"/>. Occupied mounts stay with their gunner.
+    /// Fire is still required to spend energy.
     /// </para>
     /// Map size comes from <see cref="MapStateSingleton"/>. Distances use
     /// <see cref="ToroidalMapEcs.ToroidalDistance"/>.
@@ -88,29 +99,26 @@ namespace TitanOrbit.ECS
             if (!anyLive)
                 return;
 
-            bool anyFiring = false;
+            bool anyActive = false;
             for (int i = 0; i < megas.Length; i++)
             {
                 if (!EntityManager.GetComponentData<MegaShipState>(megas[i]).IsMega)
                     continue;
 
-                bool wantsFire = EntityManager.HasComponent<ShipInput>(megas[i])
-                    && EntityManager.GetComponentData<ShipInput>(megas[i]).Fire.IsSet;
-                if (wantsFire
-                    && EntityManager.HasComponent<ShipOrbitState>(megas[i])
-                    && EntityManager.GetComponentData<ShipOrbitState>(megas[i]).InOrbitRing)
-                    wantsFire = false;
-
-                if (!wantsFire)
+                // Shift = heading lock + mouse-aim unoccupied auto-guns (no overdrive on MEGAs).
+                // Keep barrels tracking the cursor even before Fire is held.
+                bool ownerShift = IsOwnerShiftHeld(megas[i]);
+                bool wantsFire = OwnerWantsFire(megas[i]);
+                if (!wantsFire && !ownerShift)
                 {
                     ClearAimSlots(megas[i]);
                     continue;
                 }
 
-                anyFiring = true;
+                anyActive = true;
             }
 
-            if (!anyFiring)
+            if (!anyActive)
                 return;
 
             float dt = SystemAPI.Time.DeltaTime;
@@ -161,12 +169,29 @@ namespace TitanOrbit.ECS
                     ? EntityManager.GetComponentData<ShipWeaponConfig>(mega)
                     : default;
 
-                bool ownerWantsFire = EntityManager.HasComponent<ShipInput>(mega)
-                    && EntityManager.GetComponentData<ShipInput>(mega).Fire.IsSet;
-                if (ownerWantsFire
-                    && EntityManager.HasComponent<ShipOrbitState>(mega)
-                    && EntityManager.GetComponentData<ShipOrbitState>(mega).InOrbitRing)
-                    ownerWantsFire = false;
+                int bankIndex = 0;
+                if (EntityManager.HasComponent<ShipLoadoutState>(mega))
+                {
+                    bankIndex = BulletBankFireResolve.ResolveFireBankIndex(
+                        EntityManager.GetComponentData<ShipLoadoutState>(mega));
+                }
+
+                float3 shooterVel = ReadPlanarVelocity(mega);
+                float leadBulletSpeed = ResolveLeadBulletSpeed(in weapon, bankIndex);
+
+                bool ownerShift = IsOwnerShiftHeld(mega);
+                bool ownerWantsFire = OwnerWantsFire(mega);
+
+                // --- Shift: unoccupied auto-guns look at the mouse ---
+                // [TITAN-ORBIT] Owner Shift is the MEGA "strafe / lock heading" mode.
+                // Occupied mounts are left for MegaShipPlayerCombatSystem + the gunner.
+                // Auto-locks stay cleared so releasing Shift re-acquires from scratch.
+                if (ownerShift)
+                {
+                    ClearAimSlots(mega);
+                    AimUnoccupiedMountsAtMouse(mega, xf, mounts, gunners, dt);
+                    continue;
+                }
 
                 if (!ownerWantsFire)
                     continue;
@@ -194,7 +219,8 @@ namespace TitanOrbit.ECS
                     float3 muzzle = ResolveMuzzle(xf, mounts[m]);
                     float mountRange = ResolveMountRange(mounts[m], in weapon) + 8f;
                     if (TryKeepStickyTarget(
-                        mega, ship.Team, heal, muzzle, mountRange, mapW, mapH, moonElapsed, ref slot))
+                        mega, ship.Team, heal, muzzle, shooterVel, leadBulletSpeed, mountRange,
+                        mapW, mapH, moonElapsed, ref slot))
                     {
                         aims[m] = slot;
                         continue;
@@ -238,15 +264,17 @@ namespace TitanOrbit.ECS
                         float3 muzzle = ResolveMuzzle(xf, mounts[m]);
                         float mountRange = ResolveMountRange(mounts[m], in weapon) + 8f;
                         if (TryAcquireClosestTarget(
-                            mega, ship.Team, heal, muzzle, mountRange, mapW, mapH, moonElapsed,
+                            mega, ship.Team, heal, muzzle, shooterVel, leadBulletSpeed, mountRange,
+                            mapW, mapH, moonElapsed,
                             ships, shipStates, shipXfs, planets,
                             debugAsteroids, asteroidEntities, asteroidStates, asteroidXfs,
-                            out Entity target, out float3 aimPoint))
+                            out Entity target, out float3 aimPoint, out float interceptDistance))
                         {
                             aims[m] = new MegaShipAutoAimSlotElement
                             {
                                 Target = target,
                                 AimPoint = aimPoint,
+                                InterceptDistance = interceptDistance,
                             };
                         }
                         else
@@ -374,12 +402,16 @@ namespace TitanOrbit.ECS
         /// <summary>
         /// Keep the last lock if it still exists, is a valid team, and is inside range
         /// from this gun's muzzle. mapW/mapH from <see cref="MapStateSingleton"/>.
+        /// Range uses the target's current position; <see cref="MegaShipAutoAimSlotElement.AimPoint"/>
+        /// is rewritten to the lead intercept each tick.
         /// </summary>
         bool TryKeepStickyTarget(
             Entity self,
             TeamId ownerTeam,
             bool heal,
             float3 from,
+            float3 shooterVel,
+            float bulletSpeed,
             float range,
             float mapW,
             float mapH,
@@ -389,8 +421,7 @@ namespace TitanOrbit.ECS
             Entity target = aim.Target;
             if (target == Entity.Null || target == self || !EntityManager.Exists(target))
             {
-                aim.Target = Entity.Null;
-                aim.AimPoint = default;
+                aim = default;
                 return false;
             }
 
@@ -401,20 +432,20 @@ namespace TitanOrbit.ECS
                 if (other.IsDead || other.Team == TeamId.None
                     || (heal ? other.Team != ownerTeam : other.Team == ownerTeam))
                 {
-                    aim.Target = Entity.Null;
-                    aim.AimPoint = default;
+                    aim = default;
                     return false;
                 }
 
-                float3 pos = EntityManager.GetComponentData<LocalTransform>(target).Position;
+                var xf = EntityManager.GetComponentData<LocalTransform>(target);
+                float3 pos = MegaShipCombatAim.GetAimPoint(EntityManager, target, xf);
                 if (ToroidalMapEcs.ToroidalDistance(from, pos, mapW, mapH) > range)
                 {
-                    aim.Target = Entity.Null;
-                    aim.AimPoint = default;
+                    aim = default;
                     return false;
                 }
 
-                aim.AimPoint = pos;
+                WriteLeadAim(from, shooterVel, pos, ReadPlanarVelocity(target), bulletSpeed,
+                    range, mapW, mapH, ref aim);
                 return true;
             }
 
@@ -422,14 +453,16 @@ namespace TitanOrbit.ECS
                 && EntityManager.HasComponent<PlanetState>(target)
                 && EntityManager.HasComponent<LocalTransform>(target))
             {
-                if (!TryResolvePlanetAim(target, ownerTeam, from, range, mapW, mapH, moonElapsed, out float3 planetAim))
+                if (!TryResolvePlanetAim(
+                        target, ownerTeam, from, range, mapW, mapH, moonElapsed,
+                        out float3 planetAim, out float3 planetVel))
                 {
-                    aim.Target = Entity.Null;
-                    aim.AimPoint = default;
+                    aim = default;
                     return false;
                 }
 
-                aim.AimPoint = planetAim;
+                WriteLeadAim(from, shooterVel, planetAim, planetVel, bulletSpeed,
+                    range, mapW, mapH, ref aim);
                 return true;
             }
 
@@ -440,25 +473,23 @@ namespace TitanOrbit.ECS
                 var rock = EntityManager.GetComponentData<AsteroidState>(target);
                 if (rock.IsDestroyed || rock.Health <= 0.01f)
                 {
-                    aim.Target = Entity.Null;
-                    aim.AimPoint = default;
+                    aim = default;
                     return false;
                 }
 
                 float3 pos = EntityManager.GetComponentData<LocalTransform>(target).Position;
                 if (ToroidalMapEcs.ToroidalDistance(from, pos, mapW, mapH) > range)
                 {
-                    aim.Target = Entity.Null;
-                    aim.AimPoint = default;
+                    aim = default;
                     return false;
                 }
 
-                aim.AimPoint = pos;
+                WriteLeadAim(from, shooterVel, pos, ReadPlanarVelocity(target), bulletSpeed,
+                    range, mapW, mapH, ref aim);
                 return true;
             }
 
-            aim.Target = Entity.Null;
-            aim.AimPoint = default;
+            aim = default;
             return false;
         }
 
@@ -472,6 +503,8 @@ namespace TitanOrbit.ECS
             TeamId ownerTeam,
             bool heal,
             float3 from,
+            float3 shooterVel,
+            float bulletSpeed,
             float range,
             float mapW,
             float mapH,
@@ -485,11 +518,15 @@ namespace TitanOrbit.ECS
             NativeArray<AsteroidState> asteroidStates,
             NativeArray<LocalTransform> asteroidXfs,
             out Entity target,
-            out float3 aimPoint)
+            out float3 aimPoint,
+            out float interceptDistance)
         {
             target = Entity.Null;
             aimPoint = default;
+            interceptDistance = 0f;
             float best = range;
+            float3 nowPos = default;
+            float3 nowVel = float3.zero;
 
             int shipCount = math.min(ships.Length, math.min(shipStates.Length, shipXfs.Length));
             for (int i = 0; i < shipCount; i++)
@@ -507,17 +544,25 @@ namespace TitanOrbit.ECS
                 else if (other.Team == ownerTeam)
                     continue;
 
-                float3 pos = shipXfs[i].Position;
+                // Acquire on current position (who is closest now). Lead is applied after.
+                float3 pos = MegaShipCombatAim.GetAimPoint(EntityManager, ships[i], shipXfs[i]);
                 float d = ToroidalMapEcs.ToroidalDistance(from, pos, mapW, mapH);
                 if (d >= best)
                     continue;
                 best = d;
                 target = ships[i];
-                aimPoint = pos;
+                nowPos = pos;
+                nowVel = ReadPlanarVelocity(ships[i]);
             }
 
             if (heal)
-                return target != Entity.Null;
+            {
+                if (target == Entity.Null)
+                    return false;
+                WriteLeadAimValues(from, shooterVel, nowPos, nowVel, bulletSpeed, range,
+                    mapW, mapH, out aimPoint, out interceptDistance);
+                return true;
+            }
 
             if (planets.IsCreated)
             {
@@ -525,7 +570,8 @@ namespace TitanOrbit.ECS
                 {
                     Entity planet = planets[p];
                     if (!TryResolvePlanetAim(
-                            planet, ownerTeam, from, best, mapW, mapH, moonElapsed, out float3 planetAim))
+                            planet, ownerTeam, from, best, mapW, mapH, moonElapsed,
+                            out float3 planetAim, out float3 planetVel))
                         continue;
 
                     float d = ToroidalMapEcs.ToroidalDistance(from, planetAim, mapW, mapH);
@@ -533,7 +579,8 @@ namespace TitanOrbit.ECS
                         continue;
                     best = d;
                     target = planet;
-                    aimPoint = planetAim;
+                    nowPos = planetAim;
+                    nowVel = planetVel;
                 }
             }
 
@@ -553,11 +600,17 @@ namespace TitanOrbit.ECS
                         continue;
                     best = d;
                     target = asteroidEntities[a];
-                    aimPoint = rockPos;
+                    nowPos = rockPos;
+                    nowVel = ReadPlanarVelocity(asteroidEntities[a]);
                 }
             }
 
-            return target != Entity.Null;
+            if (target == Entity.Null)
+                return false;
+
+            WriteLeadAimValues(from, shooterVel, nowPos, nowVel, bulletSpeed, range,
+                mapW, mapH, out aimPoint, out interceptDistance);
+            return true;
         }
 
         /// <summary>
@@ -572,9 +625,11 @@ namespace TitanOrbit.ECS
             float mapW,
             float mapH,
             double moonElapsed,
-            out float3 aim)
+            out float3 aim,
+            out float3 aimVel)
         {
             aim = default;
+            aimVel = float3.zero;
             if (!EntityManager.HasComponent<PlanetState>(planet)
                 || !EntityManager.HasComponent<LocalTransform>(planet))
                 return false;
@@ -607,6 +662,7 @@ namespace TitanOrbit.ECS
                         continue;
                     best = d;
                     aim = pad;
+                    aimVel = float3.zero;
                     found = true;
                 }
             }
@@ -625,11 +681,164 @@ namespace TitanOrbit.ECS
                 if (moonDist < best)
                 {
                     aim = moonPos;
+                    // Moons ride the orbit ring — lead with the same orbital velocity
+                    // the dock motor uses so shots intercept a moving moon.
+                    aimVel = PlanetOrbitMath.GetMoonOrbitalVelocity(
+                        math.max(0.25f, planetXf.Scale),
+                        planetState.PlanetLevel,
+                        planetState.PlanetId,
+                        moonElapsed);
                     found = true;
                 }
             }
 
             return found;
+        }
+
+        /// <summary>
+        /// Owner Fire, ignoring the press while the hull is in a planet orbit ring
+        /// (weapons stay locked there — same gate as Phase B).
+        /// </summary>
+        bool OwnerWantsFire(Entity mega)
+        {
+            if (!EntityManager.HasComponent<ShipInput>(mega)
+                || !EntityManager.GetComponentData<ShipInput>(mega).Fire.IsSet)
+                return false;
+            if (EntityManager.HasComponent<ShipOrbitState>(mega)
+                && EntityManager.GetComponentData<ShipOrbitState>(mega).InOrbitRing)
+                return false;
+            return true;
+        }
+
+        /// <summary>
+        /// True while the MEGA owner holds Shift. Reuses <see cref="ShipInput.Overdrive"/>
+        /// as the heading-lock / mouse-aim flag — MEGAs never apply overdrive burst.
+        /// </summary>
+        bool IsOwnerShiftHeld(Entity mega)
+        {
+            return EntityManager.HasComponent<ShipInput>(mega)
+                && EntityManager.GetComponentData<ShipInput>(mega).Overdrive;
+        }
+
+        /// <summary>
+        /// Snap unoccupied auto-guns to the owner's mouse aim. Occupied gunner
+        /// mounts are skipped — those keep the gunner's planar aim.
+        /// Called while Shift is held so free barrels track the cursor before Fire.
+        /// </summary>
+        void AimUnoccupiedMountsAtMouse(
+            Entity mega,
+            in LocalTransform xf,
+            DynamicBuffer<ShipWeaponMountElement> mounts,
+            DynamicBuffer<MegaShipGunnerSlotElement> gunners,
+            float dt)
+        {
+            float3 desired = math.rotate(xf.Rotation, new float3(0f, 0f, 1f));
+            if (EntityManager.HasComponent<ShipInput>(mega))
+            {
+                float2 aim2 = EntityManager.GetComponentData<ShipInput>(mega).AimPlanarDir;
+                float3 mouseAim = new float3(aim2.x, 0f, aim2.y);
+                if (math.lengthsq(mouseAim) >= 0.01f)
+                    desired = mouseAim;
+            }
+
+            desired.y = 0f;
+            desired = math.normalizesafe(desired, new float3(0f, 0f, 1f));
+
+            int mountCount = mounts.Length;
+            for (int m = 0; m < mountCount; m++)
+            {
+                if (gunners.IsCreated && m < gunners.Length && gunners[m].OccupiedByNetworkId != 0)
+                    continue;
+
+                var mount = mounts[m];
+                MegaShipWeaponAim.RotateMountTowardWorldDir(in xf, ref mount, desired, dt);
+                mounts[m] = mount;
+                MegaShipWeaponAim.WriteGhostedYaw(gunners, m, in mount);
+            }
+        }
+
+        /// <summary>
+        /// Planar world velocity from <see cref="ShipKinematics"/>, or Physics when that
+        /// ghost is missing (asteroids). Y is forced to 0.
+        /// </summary>
+        float3 ReadPlanarVelocity(Entity entity)
+        {
+            if (EntityManager.HasComponent<ShipKinematics>(entity))
+            {
+                float3 vel = EntityManager.GetComponentData<ShipKinematics>(entity).Velocity;
+                vel.y = 0f;
+                return vel;
+            }
+
+            if (EntityManager.HasComponent<PhysicsVelocity>(entity))
+            {
+                float3 vel = EntityManager.GetComponentData<PhysicsVelocity>(entity).Linear;
+                vel.y = 0f;
+                return vel;
+            }
+
+            return float3.zero;
+        }
+
+        /// <summary>
+        /// Muzzle-relative bullet speed after the same bank modifiers Phase B applies.
+        /// Lead must use this value or the intercept systematically under- or over-leads.
+        /// </summary>
+        static float ResolveLeadBulletSpeed(in ShipWeaponConfig weapon, int bankIndex)
+        {
+            float speed = math.max(PlanetaryDefenseAimMath.MinBulletSpeed, weapon.BulletSpeed);
+            float damage = 1f;
+            float maxDistance = 1f;
+            float lifetime = 0f;
+            float fireRate = 1f;
+            BulletBankCombatLogic.ApplyFireModifiers(
+                bankIndex, ref damage, ref speed, ref maxDistance, ref lifetime, ref fireRate);
+            return math.max(PlanetaryDefenseAimMath.MinBulletSpeed, speed);
+        }
+
+        /// <summary>Writes lead intercept onto a sticky slot (keeps <see cref="MegaShipAutoAimSlotElement.Target"/>).</summary>
+        static void WriteLeadAim(
+            float3 muzzle,
+            float3 shooterVel,
+            float3 targetPos,
+            float3 targetVel,
+            float bulletSpeed,
+            float engageRange,
+            float mapW,
+            float mapH,
+            ref MegaShipAutoAimSlotElement aim)
+        {
+            WriteLeadAimValues(
+                muzzle, shooterVel, targetPos, targetVel, bulletSpeed, engageRange,
+                mapW, mapH, out float3 aimPoint, out float interceptDistance);
+            aim.AimPoint = aimPoint;
+            aim.InterceptDistance = interceptDistance;
+        }
+
+        /// <summary>
+        /// Lead intercept for a known current position / velocity. Falls back to the
+        /// current point when the quadratic has no solution (coincident muzzle).
+        /// </summary>
+        static void WriteLeadAimValues(
+            float3 muzzle,
+            float3 shooterVel,
+            float3 targetPos,
+            float3 targetVel,
+            float bulletSpeed,
+            float engageRange,
+            float mapW,
+            float mapH,
+            out float3 aimPoint,
+            out float interceptDistance)
+        {
+            if (MegaShipLeadAim.TryComputeFireSolution(
+                    muzzle, shooterVel, targetPos, targetVel, bulletSpeed,
+                    mapW, mapH, engageRange,
+                    out _, out _, out interceptDistance, out aimPoint))
+                return;
+
+            aimPoint = targetPos;
+            interceptDistance = 0f;
         }
     }
 }

@@ -27,6 +27,8 @@ namespace TitanOrbit.ECS
     /// speed hard-caps to the new max so speedometer / bloom stay in sync.
     /// Drain rate = <see cref="ShipMotorConfig.ThrustEnergyDrainPerSecond"/>
     /// (ExtraSpeedEnergyDrain summed across engines).
+    /// MEGA hulls never engage overdrive. Shift instead locks yaw (heading stays put
+    /// while the mouse moves) so unoccupied auto-guns can fire at the cursor.
     /// Live subtractive mass tax (<see cref="ShipMobilityResolution"/>) converts untaxed motor
     /// baselines into MaxSpeed / accel / turn from current gems/people + ComponentSize.
     /// While <see cref="ShipAsteroidContactState"/> reports contact from the previous physics
@@ -79,6 +81,10 @@ namespace TitanOrbit.ECS
         /// <param name="minAccel">Floor after subtractive accel tax.</param>
         /// <param name="minTurn">Floor after subtractive turn tax.</param>
         /// <param name="skipMassTax">True for MEGA hulls — keep chassis speed / accel / turn.</param>
+        /// <param name="isMegaShip">
+        /// True while <see cref="MegaShipState.IsMega"/>. Disables overdrive and treats
+        /// Shift as a heading lock instead of a speed burst.
+        /// </param>
         public static void Step(
             in ShipInput input,
             in ShipMotorConfig motor,
@@ -106,7 +112,8 @@ namespace TitanOrbit.ECS
             float minSpeed,
             float minAccel,
             float minTurn,
-            bool skipMassTax = false)
+            bool skipMassTax = false,
+            bool isMegaShip = false)
         {
             // --- Guard: fixed-step dt only ---
             if (dt <= 0f)
@@ -203,8 +210,13 @@ namespace TitanOrbit.ECS
             float rotationSpeed = taxed.RotationSpeed;
 
             // --- Yaw: dt-capped slerp toward aim (never snap to mouse in one frame) ---
-            AimWorldPoint(in transform.Position, in transform.Rotation, in input.AimPlanarDir, out float2 aimWorldXz);
-            TryRotateTowardAim(ref transform, in aimWorldXz, rotationSpeed, dt);
+            // [TITAN-ORBIT] MEGA + Shift: lock heading. Mouse still aims unoccupied
+            // auto-guns (MegaShipAutoFireSystem); the hull keeps flying the last facing.
+            if (!(isMegaShip && input.Overdrive))
+            {
+                AimWorldPoint(in transform.Position, in transform.Rotation, in input.AimPlanarDir, out float2 aimWorldXz);
+                TryRotateTowardAim(ref transform, in aimWorldXz, rotationSpeed, dt);
+            }
 
             // --- Orbit ring detection (toroidal) ---
             // [TITAN-ORBIT] PeopleTransportDispatchSystem dwells on InOrbitRing; without this write,
@@ -238,38 +250,47 @@ namespace TitanOrbit.ECS
 
             // --- OVERDRIVE lockout + burst (shared predicted + server) ---
             // [TITAN-ORBIT] Ghosted OverdriveLockout — see ShipOverdriveTuning.StepLockout.
-            ShipOverdriveTuning.StepLockout(
-                input.Overdrive,
-                shipState.CurrentEnergy,
-                shipState.MaxEnergy,
-                ref shipState.OverdriveLockout);
-
-            bool overdriveActive = ShipOverdriveTuning.IsBurstActive(
-                input.Overdrive,
-                input.Thrust,
-                useOrbit,
-                shipState.CurrentEnergy,
-                shipState.OverdriveLockout);
-
-            if (overdriveActive)
+            // MEGAs have no overdrive at all: Shift is heading-lock / mouse-aim, not a speed burst.
+            bool overdriveActive = false;
+            if (isMegaShip)
             {
-                thrust *= ShipOverdriveTuning.ResolveThrustMultiplier(motor);
-                maxSpeed *= ShipOverdriveTuning.ResolveSpeedMultiplier(motor);
+                shipState.OverdriveLockout = false;
+            }
+            else
+            {
+                ShipOverdriveTuning.StepLockout(
+                    input.Overdrive,
+                    shipState.CurrentEnergy,
+                    shipState.MaxEnergy,
+                    ref shipState.OverdriveLockout);
 
-                // Energy cost is OVERDRIVE-only (normal flight regenerates / stays full).
-                if (motor.ThrustEnergyDrainPerSecond > 0f)
+                overdriveActive = ShipOverdriveTuning.IsBurstActive(
+                    input.Overdrive,
+                    input.Thrust,
+                    useOrbit,
+                    shipState.CurrentEnergy,
+                    shipState.OverdriveLockout);
+
+                if (overdriveActive)
                 {
-                    float drainMult = ShipOverdriveTuning.ResolveEnergyDrainMultiplier(motor);
-                    float spend = motor.ThrustEnergyDrainPerSecond * drainMult * dt;
-                    shipState.CurrentEnergy = math.max(0f, shipState.CurrentEnergy - spend);
-                    // Empty this tick → lockout so bloom/speed drop immediately.
-                    if (shipState.CurrentEnergy <= 0f)
+                    thrust *= ShipOverdriveTuning.ResolveThrustMultiplier(motor);
+                    maxSpeed *= ShipOverdriveTuning.ResolveSpeedMultiplier(motor);
+
+                    // Energy cost is OVERDRIVE-only (normal flight regenerates / stays full).
+                    if (motor.ThrustEnergyDrainPerSecond > 0f)
                     {
-                        shipState.OverdriveLockout = true;
-                        overdriveActive = false;
-                        // Restore cruise caps — drain ended the burst mid-tick.
-                        thrust = taxed.EngineThrust * territoryMult;
-                        maxSpeed = taxed.MaxSpeed * territoryMult;
+                        float drainMult = ShipOverdriveTuning.ResolveEnergyDrainMultiplier(motor);
+                        float spend = motor.ThrustEnergyDrainPerSecond * drainMult * dt;
+                        shipState.CurrentEnergy = math.max(0f, shipState.CurrentEnergy - spend);
+                        // Empty this tick → lockout so bloom/speed drop immediately.
+                        if (shipState.CurrentEnergy <= 0f)
+                        {
+                            shipState.OverdriveLockout = true;
+                            overdriveActive = false;
+                            // Restore cruise caps — drain ended the burst mid-tick.
+                            thrust = taxed.EngineThrust * territoryMult;
+                            maxSpeed = taxed.MaxSpeed * territoryMult;
+                        }
                     }
                 }
             }

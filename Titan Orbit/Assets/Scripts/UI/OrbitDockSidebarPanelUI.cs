@@ -232,8 +232,8 @@ namespace TitanOrbit.UI
             loadoutSectionLe.preferredHeight = -1f;
             loadoutSectionLe.flexibleHeight = 0f;
             var loadoutSectionVlg = loadoutSection.gameObject.AddComponent<VerticalLayoutGroup>();
-            loadoutSectionVlg.spacing = 1f;
-            loadoutSectionVlg.padding = new RectOffset(0, 0, 8, 0);
+            loadoutSectionVlg.spacing = 4f;
+            loadoutSectionVlg.padding = new RectOffset(0, 0, 0, 0);
             loadoutSectionVlg.childAlignment = TextAnchor.UpperCenter;
             loadoutSectionVlg.childControlWidth = true;
             loadoutSectionVlg.childControlHeight = true;
@@ -244,7 +244,7 @@ namespace TitanOrbit.UI
             loadoutSectionFitter.horizontalFit = ContentSizeFitter.FitMode.Unconstrained;
 
             CreateAccentSectionHeader(loadoutSection, SectionTitleLoadout,
-                "Cards and gear share these slots — tap × to remove.", EquipmentAccent, 34f, true, packToContent: true);
+                "Cards and gear share these slots — tap × to remove.", EquipmentAccent, 50f, true, packToContent: true);
             _loadoutHost = CreateStretchHost(loadoutSection, "LoadoutHost", 8f);
             var loadoutLe = _loadoutHost.GetComponent<LayoutElement>();
             loadoutLe.minHeight = 0f;
@@ -585,20 +585,16 @@ namespace TitanOrbit.UI
         {
             var blockGo = new GameObject("Header_" + title.Replace(" ", ""));
             blockGo.transform.SetParent(parent, false);
+            float titleH = 20f;
+            float subtitleH = string.IsNullOrEmpty(subtitle) ? 0f : (packToContent ? 28f : 16f);
+            float titleSubGap = subtitleH > 0f ? 2f : 0f;
+            float packedH = titleH + titleSubGap + subtitleH;
+            float headerH = packToContent ? packedH : blockHeight;
+
             var blockLe = blockGo.AddComponent<LayoutElement>();
             blockLe.flexibleHeight = 0f;
-            if (packToContent)
-            {
-                blockLe.minHeight = 0f;
-                blockLe.preferredHeight = -1f;
-                var headerFitter = blockGo.AddComponent<ContentSizeFitter>();
-                headerFitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
-            }
-            else
-            {
-                blockLe.preferredHeight = blockHeight;
-                blockLe.minHeight = blockHeight - 6f;
-            }
+            blockLe.preferredHeight = headerH;
+            blockLe.minHeight = packToContent ? packedH : Mathf.Max(18f, blockHeight - 6f);
 
             var row = blockGo.AddComponent<HorizontalLayoutGroup>();
             row.spacing = 8f;
@@ -607,7 +603,7 @@ namespace TitanOrbit.UI
             row.childControlWidth = true;
             row.childControlHeight = true;
             row.childForceExpandWidth = false;
-            row.childForceExpandHeight = !packToContent;
+            row.childForceExpandHeight = false;
 
             if (showAccent)
             {
@@ -616,8 +612,9 @@ namespace TitanOrbit.UI
                 var accentLe = accentGo.AddComponent<LayoutElement>();
                 accentLe.preferredWidth = 4f;
                 accentLe.minWidth = 4f;
-                accentLe.minHeight = packToContent ? 28f : 0f;
-                accentLe.flexibleHeight = 1f;
+                accentLe.preferredHeight = headerH;
+                accentLe.minHeight = headerH;
+                accentLe.flexibleHeight = 0f;
                 var accentImg = accentGo.AddComponent<Image>();
                 accentImg.color = accent;
                 accentImg.raycastTarget = false;
@@ -628,8 +625,12 @@ namespace TitanOrbit.UI
             var textColLe = textColGo.AddComponent<LayoutElement>();
             textColLe.flexibleWidth = 1f;
             textColLe.minWidth = 80f;
+            textColLe.preferredHeight = headerH;
+            textColLe.minHeight = headerH;
+            textColLe.flexibleHeight = 0f;
             var textVlg = textColGo.AddComponent<VerticalLayoutGroup>();
-            textVlg.spacing = packToContent ? 0f : 2f;
+            textVlg.spacing = titleSubGap;
+            textVlg.padding = new RectOffset(0, 0, 0, 0);
             textVlg.childAlignment = TextAnchor.UpperLeft;
             textVlg.childControlWidth = true;
             textVlg.childControlHeight = true;
@@ -639,14 +640,17 @@ namespace TitanOrbit.UI
             var titleGo = new GameObject("Title");
             titleGo.transform.SetParent(textColGo.transform, false);
             var titleLe = titleGo.AddComponent<LayoutElement>();
-            titleLe.preferredHeight = packToContent ? 18f : 20f;
-            titleLe.minHeight = packToContent ? 16f : 18f;
+            titleLe.preferredHeight = titleH;
+            titleLe.minHeight = titleH;
+            titleLe.flexibleHeight = 0f;
             var titleTmp = titleGo.AddComponent<TextMeshProUGUI>();
             titleTmp.text = title;
             titleTmp.fontSize = 15f;
             titleTmp.fontStyle = FontStyles.Bold;
-            titleTmp.alignment = TextAlignmentOptions.Left;
+            titleTmp.alignment = TextAlignmentOptions.TopLeft;
             titleTmp.color = new Color(0.92f, 0.95f, 1f, 1f);
+            titleTmp.enableWordWrapping = false;
+            titleTmp.overflowMode = TextOverflowModes.Ellipsis;
             titleTmp.raycastTarget = false;
             ApplyFont(titleTmp);
 
@@ -655,13 +659,17 @@ namespace TitanOrbit.UI
                 var subGo = new GameObject("Subtitle");
                 subGo.transform.SetParent(textColGo.transform, false);
                 var subLe = subGo.AddComponent<LayoutElement>();
-                subLe.preferredHeight = packToContent ? 14f : 16f;
-                subLe.minHeight = packToContent ? 12f : 14f;
+                subLe.preferredHeight = subtitleH;
+                subLe.minHeight = subtitleH;
+                subLe.flexibleHeight = 0f;
                 var subTmp = subGo.AddComponent<TextMeshProUGUI>();
                 subTmp.text = subtitle;
                 subTmp.fontSize = 11f;
-                subTmp.alignment = TextAlignmentOptions.Left;
+                subTmp.alignment = TextAlignmentOptions.TopLeft;
                 subTmp.color = new Color(0.68f, 0.74f, 0.86f, 0.95f);
+                subTmp.enableWordWrapping = true;
+                subTmp.overflowMode = TextOverflowModes.Ellipsis;
+                subTmp.maxVisibleLines = packToContent ? 2 : 1;
                 subTmp.raycastTarget = false;
                 ApplyFont(subTmp);
             }

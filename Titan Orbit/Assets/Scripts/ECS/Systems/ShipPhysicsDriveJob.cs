@@ -73,7 +73,8 @@ namespace TitanOrbit.ECS
             RefRW<ShipOrbitState> orbitState,
             RefRW<ShipTerritoryBoostLatch> territoryLatch,
             RefRO<ShipAsteroidContactState> asteroidContact,
-            RefRO<ShipElectricShockState> electricShock)
+            RefRO<ShipElectricShockState> electricShock,
+            RefRO<MegaShipState> megaState)
         {
             // --- Stowed in planetary defense turret: freeze hull (server + predicted client) ---
             // [TITAN-ORBIT] Aim/Fire still flow through ShipInput for the pad; thrust = exit on server.
@@ -119,7 +120,8 @@ namespace TitanOrbit.ECS
                 MinSpeed,
                 MinAccel,
                 MinTurn,
-                skipMassTax: motor.ValueRO.SkipMassTax != 0);
+                skipMassTax: motor.ValueRO.SkipMassTax != 0,
+                isMegaShip: megaState.ValueRO.IsMega);
         }
     }
 }

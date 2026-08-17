@@ -132,8 +132,10 @@ namespace TitanOrbit.ECS
                 motor.ChassisReferenceHealth = Mathf.Max(1f, effective.healthCap);
                 motor.RammingPower = Mathf.Max(0f, effective.rammingPower);
                 motor.ThrustEnergyDrainPerSecond = 2f;
-                motor.OverdriveSpeedMultiplier = 1.25f;
-                motor.OverdriveThrustMultiplier = 1.25f;
+                // [TITAN-ORBIT] MEGAs have no overdrive. Shift locks heading and aims
+                // unoccupied auto-guns at the mouse — keep OD multipliers at 1 so HUD / motor stay flat.
+                motor.OverdriveSpeedMultiplier = 1f;
+                motor.OverdriveThrustMultiplier = 1f;
                 motor.OverdriveEnergyDrainMultiplier = 1f;
                 motor.SkipMassTax = 1;
                 em.SetComponentData(shipEntity, motor);

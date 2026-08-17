@@ -27,8 +27,12 @@ namespace TitanOrbit.ECS
         public bool Thrust;
 
         /// <summary>
-        /// [TITAN-ORBIT] OVERDRIVE intent — Shift held (does <b>not</b> require thrust).
-        /// Motor engage latch keys off this + energy; burst speed/drain only while Thrust is also held.
+        /// [TITAN-ORBIT] Shift held (does <b>not</b> require thrust).
+        /// Regular ships: OVERDRIVE intent. Motor latch keys off this + energy; burst
+        /// speed/drain only while Thrust is also held.
+        /// MEGA hulls: no overdrive. This bit locks heading and aims unoccupied
+        /// auto-guns at <see cref="AimPlanarDir"/> (mouse). Occupied mounts stay
+        /// with their gunner. Fire is still required to shoot.
         /// </summary>
         [GhostField]
         public bool Overdrive;

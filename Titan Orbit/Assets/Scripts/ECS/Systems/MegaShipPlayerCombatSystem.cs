@@ -7,6 +7,8 @@ namespace TitanOrbit.ECS
     /// <summary>
     /// Server: slews occupied MEGA mounts toward the gunner's aim. Fire itself is
     /// <see cref="BulletSimulationSystem"/> Phase B (same spawn + collide as every ship).
+    /// Owner Shift only steers unoccupied auto-guns — this system still aims
+    /// occupied mounts at the gunner's mouse.
     /// </summary>
     [UpdateInGroup(typeof(SimulationSystemGroup))]
     [UpdateAfter(typeof(MegaShipAutoFireSystem))]

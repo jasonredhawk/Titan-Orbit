@@ -467,7 +467,10 @@ namespace TitanOrbit.ECS
         /// <summary>
         /// MEGA Phase B: same <see cref="ResolveFirePose"/> + <see cref="SpawnAndCollideShipBullet"/>
         /// as regular hulls (barrel origin + barrel forward). Owner Fire skips occupied mounts;
-        /// occupied mounts fire when that gunner holds Fire. Per-mount FirePower / energy stay.
+        /// occupied mounts fire when that gunner holds Fire. Owner Shift only changes where
+        /// unoccupied auto-guns point (mouse), not who may fire them. Per-mount FirePower / energy stay.
+        /// Lead intercept distance from <see cref="MegaShipAutoAimSlotElement"/> grows
+        /// <c>MaxDistance</c> so fleeing shots are not culled early.
         /// </summary>
         void FireMegaReadyMountsAlongBarrel(
             ref SystemState state,
@@ -498,6 +501,10 @@ namespace TitanOrbit.ECS
             int megaOwnerNet = ghostOwner.NetworkId;
             float energy = shipState.CurrentEnergy;
 
+            var aims = state.EntityManager.HasBuffer<MegaShipAutoAimSlotElement>(mega)
+                ? state.EntityManager.GetBuffer<MegaShipAutoAimSlotElement>(mega)
+                : default;
+
             for (int m = 0; m < mounts.Length; m++)
             {
                 var mount = mounts[m];
@@ -520,6 +527,10 @@ namespace TitanOrbit.ECS
                 if (energy < mount.FirePower)
                     continue;
 
+                float interceptDistance = 0f;
+                if (aims.IsCreated && m < aims.Length)
+                    interceptDistance = aims[m].InterceptDistance;
+
                 ResolveFirePose(transform, in mount, out float3 fireOrigin, out float3 fireForward);
                 float fireRateMul = SpawnAndCollideShipBullet(
                     ref state, ref ecb, bulletEntity, m,
@@ -528,7 +539,8 @@ namespace TitanOrbit.ECS
                     categoryUpgradeScale, shipVel,
                     shotOwnerNet, (byte)shipState.Team,
                     dt, gemPrefab, gemSpawnServerTime, mapW, mapH,
-                    moonElapsed, serverElapsed);
+                    moonElapsed, serverElapsed,
+                    interceptDistance);
 
                 float fireRate = math.max(0.15f, mount.FireRate > 0.01f ? mount.FireRate : weaponCfg.FireRate);
                 mount.FireCooldown = (1f / fireRate) / math.max(0.05f, fireRateMul);
@@ -635,7 +647,8 @@ namespace TitanOrbit.ECS
             float mapW,
             float mapH,
             double moonElapsed,
-            double serverElapsed)
+            double serverElapsed,
+            float interceptDistance = 0f)
         {
             float fallbackRefDamage = weaponCfg.ReferenceBulletDamage > 0f
                 ? weaponCfg.ReferenceBulletDamage
@@ -663,6 +676,24 @@ namespace TitanOrbit.ECS
                 bankIndex,
                 firePowerExtras,
                 categoryUpgradeScale);
+
+            // --- Lead flight budget (MEGA auto-aim) ---
+            // [TITAN-ORBIT] Same bug planetary turrets had: intercept for a fleeing /
+            // crossing target sits past current range. Without this, the sim culls the
+            // round before it arrives and it looks like undershoot.
+            if (interceptDistance > 0.5f)
+            {
+                float engage = plan.MaxDistance;
+                plan.MaxDistance = PlanetaryDefenseAimMath.ComputeBulletMaxDistance(
+                    engage, interceptDistance);
+                if (plan.MaxDistance > engage + 0.01f)
+                {
+                    float muzzleSpeed = math.length(plan.Velocity - shipVel);
+                    if (muzzleSpeed < 1f)
+                        muzzleSpeed = 1f;
+                    plan.Lifetime = math.max(plan.Lifetime, plan.MaxDistance / muzzleSpeed);
+                }
+            }
 
             uint sequence = BulletVfxBridge.NextSequence();
             var spawn = new BulletElement

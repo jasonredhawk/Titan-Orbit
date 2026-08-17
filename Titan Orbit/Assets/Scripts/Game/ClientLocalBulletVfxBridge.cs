@@ -294,7 +294,8 @@ namespace TitanOrbit.Game
 
         /// <summary>
         /// MEGA owner anticipation: every ready unoccupied mount (same independent cadence
-        /// as server Phase B). Occupied mounts belong to the gunner.
+        /// as server Phase B). Occupied mounts belong to the gunner, including while
+        /// the owner holds Shift (only free auto-guns follow the mouse).
         /// </summary>
         bool TryPlanMegaOwnerFire(
             EntityManager em,
