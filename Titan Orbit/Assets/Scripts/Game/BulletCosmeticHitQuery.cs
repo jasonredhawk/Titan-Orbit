@@ -254,13 +254,17 @@ namespace TitanOrbit.Game
                     if (em.HasComponent<AsteroidClientCulledTag>(entity))
                         continue;
 
+                    float asteroidRadius = visualizer.TryGetProxy(entity, out GameObject asteroidGo) &&
+                                           asteroidGo != null
+                        ? BulletImpactAttach.GetAsteroidVisualRadiusWorld(asteroidGo.transform)
+                        : BodyCollisionMath.GetAsteroidBodyRadiusWorld(lt.Scale)
+                          + BodyCollisionMath.AsteroidVisualDisplacementLocal * math.max(0.1f, lt.Scale);
                     Obstacles.Add(new Obstacle
                     {
                         Kind = ObstacleKind.Asteroid,
                         SourceEntity = entity,
                         LogicalCenter = lt.Position,
-                        Radius = BulletCollision.AsteroidHitRadiusForSweep(lt.Scale)
-                                 + BodyCollisionMath.AsteroidVisualDisplacementLocal * math.max(0.1f, lt.Scale),
+                        Radius = asteroidRadius,
                         Scale = lt.Scale,
                     });
                     continue;
@@ -490,15 +494,6 @@ namespace TitanOrbit.Game
                     {
                         radius += math.clamp(scaleMultiplier * 0.18f, 0f, 0.85f);
                     }
-                    else if (o.Kind == ObstacleKind.Asteroid)
-                    {
-                        float pad = math.clamp(
-                            BulletCollision.AsteroidSweepPad + scaleMultiplier * 0.05f,
-                            BulletCollision.AsteroidSweepPad,
-                            0.45f);
-                        radius = math.max(radius, BulletCollision.AsteroidHitRadius(o.Scale) + pad
-                            + BodyCollisionMath.AsteroidVisualDisplacementLocal * math.max(0.1f, o.Scale));
-                    }
 
                     hit = BulletCollision.SegmentHitsSphereToroidal(
                         from, to, o.LogicalCenter, radius, s_MapW, s_MapH, out hp);
@@ -558,6 +553,52 @@ namespace TitanOrbit.Game
             hitEntity = bestEntity;
             hitPlanetId = bestPlanetId;
             hitSlotIndex = bestSlotIndex;
+            return true;
+        }
+
+        /// <summary>
+        /// Nearest cached obstacle to a logical point (surface-fit). Used to parent
+        /// Sequence-0 burn / ram flashes to the body this observer sees.
+        /// </summary>
+        public static bool TryFindNearestObstacle(float3 logicalHit, out Obstacle obstacle)
+        {
+            obstacle = default;
+            if (Obstacles.Count == 0)
+                return false;
+
+            float3 hit = logicalHit;
+            hit.y = 0f;
+            float best = float.MaxValue;
+            int bestIndex = -1;
+            for (int i = 0; i < Obstacles.Count; i++)
+            {
+                var o = Obstacles[i];
+                float3 center = o.LogicalCenter;
+                center.y = 0f;
+                float dist = ToroidalMapEcs.IsValidMapSize(s_MapW, s_MapH)
+                    ? ToroidalMapEcs.ToroidalDistance(hit, center, s_MapW, s_MapH)
+                    : math.distance(hit, center);
+                float radius = math.max(0.05f, o.Radius);
+                if (o.Kind == ObstacleKind.Moon)
+                {
+                    radius = math.max(
+                        radius,
+                        PlanetGemMoonMath.GetMoonBulletHitRadiusWorld(
+                            o.Scale, o.IsHomePlanet, o.CurrentShield));
+                }
+                float score = math.abs(dist - radius);
+                if (dist > radius + math.max(2f, radius * 0.35f))
+                    continue;
+                if (score < best)
+                {
+                    best = score;
+                    bestIndex = i;
+                }
+            }
+
+            if (bestIndex < 0)
+                return false;
+            obstacle = Obstacles[bestIndex];
             return true;
         }
 

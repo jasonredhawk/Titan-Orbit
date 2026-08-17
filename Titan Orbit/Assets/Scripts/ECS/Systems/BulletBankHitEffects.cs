@@ -189,10 +189,10 @@ namespace TitanOrbit.ECS
             for (int i = 0; i < s_PendingBurns.Count; i++)
             {
                 PendingBurn pending = s_PendingBurns[i];
-                if (pending.Entity == Entity.Null ||
-                    !em.Exists(pending.Entity) ||
-                    !em.HasBuffer<BurnOverTimeElement>(pending.Entity))
+                if (pending.Entity == Entity.Null || !em.Exists(pending.Entity))
                     continue;
+                if (!em.HasBuffer<BurnOverTimeElement>(pending.Entity))
+                    em.AddBuffer<BurnOverTimeElement>(pending.Entity);
 
                 var instances = em.GetBuffer<BurnOverTimeElement>(pending.Entity);
                 AddBurnInstance(instances, pending.Instance);

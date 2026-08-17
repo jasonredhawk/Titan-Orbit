@@ -92,6 +92,18 @@ namespace TitanOrbit.Entities
             ApplyLengthFactor(lengthFactor);
         }
 
+        /// <summary>
+        /// Pulls the stretched slug back onto the tracer origin so the tip does not
+        /// sit past an impact spawned at the GO position.
+        /// </summary>
+        public void Collapse()
+        {
+            if (visualRoot == null)
+                return;
+            visualRoot.localScale = authoredUniformScale;
+            visualRoot.localPosition = Vector3.zero;
+        }
+
         private void ApplyLengthFactor(float lengthFactor)
         {
             // --- Scale along Z and anchor rear at tracer origin ---

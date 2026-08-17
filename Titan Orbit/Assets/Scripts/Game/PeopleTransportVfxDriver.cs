@@ -128,6 +128,36 @@ namespace TitanOrbit.Game
             }
         }
 
+        /// <summary>
+        /// Nearest live transport VFX transform to a logical point (join-safe list walk).
+        /// </summary>
+        public static bool TryGetNearestFlightTransform(
+            float3 logicalPos,
+            float maxDistance,
+            out Transform root)
+        {
+            root = null;
+            if (s_Instance == null)
+                return false;
+
+            float best = maxDistance * maxDistance;
+            var flights = s_Instance._flights;
+            for (int i = 0; i < flights.Count; i++)
+            {
+                var f = flights[i];
+                if (f.Go == null || f.Amount <= 0.01f)
+                    continue;
+                float distSq = math.distancesq(f.LogicalPos, logicalPos);
+                if (distSq < best)
+                {
+                    best = distSq;
+                    root = f.Go.transform;
+                }
+            }
+
+            return root != null;
+        }
+
         /// <summary>[UNITY] Attach to session manager when the scene loads.</summary>
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         static void EnsureInstalled()

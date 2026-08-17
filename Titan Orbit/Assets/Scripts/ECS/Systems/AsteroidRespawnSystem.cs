@@ -201,6 +201,9 @@ namespace TitanOrbit.ECS
             if (!em.HasComponent<AsteroidTag>(e))
                 em.AddComponent<AsteroidTag>(e);
 
+            // Server-only DoT buffer — first burn hit must not wait on a deferred ECB AddBuffer.
+            BulletBankHitEffects.EnsureBurnBuffer(em, e);
+
             // --- Not a replicated ghost ---
             // [NETCODE] The prefab is a ghost asset (GhostCollection / bake), but asteroids are
             // not in DefaultRelevancyQuery. Leaving GhostInstance on the server instance made

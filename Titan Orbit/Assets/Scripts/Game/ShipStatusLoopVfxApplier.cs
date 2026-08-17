@@ -79,14 +79,22 @@ namespace TitanOrbit.Game
                 shockTeam = shock.VfxTeam;
             }
 
-            bool burnActive = em.HasComponent<ShipBurnOverTimeState>(_shipEntity) &&
-                              em.GetComponentData<ShipBurnOverTimeState>(_shipEntity).IsActive(elapsed);
+            bool burnActive = false;
+            int burnBank = 0;
+            byte burnTeam = 0;
+            if (em.HasComponent<ShipBurnOverTimeState>(_shipEntity))
+            {
+                var burn = em.GetComponentData<ShipBurnOverTimeState>(_shipEntity);
+                burnActive = burn.IsActive(elapsed);
+                burnBank = burn.VfxBankIndex;
+                burnTeam = burn.VfxTeam;
+            }
 
             // Shock has no damage ticks — keep the impact looping for the stun window.
-            // Burn replays via Sequence-0 HitRpc on each server tick (asteroids are not ghosts).
+            // Burn also loops on the hull so a moving ship keeps the fire; Sequence-0 HitRpc
+            // still plays per-tick flashes parented to the same proxy.
             SyncSlot(_shock, shockActive, shockBank, shockTeam, ShockLocalY);
-            if (!burnActive)
-                ReleaseSlot(_burn);
+            SyncSlot(_burn, burnActive, burnBank, burnTeam, BurnLocalY);
         }
 
         void SyncSlot(Slot slot, bool active, int bankIndex, byte team, float localY)

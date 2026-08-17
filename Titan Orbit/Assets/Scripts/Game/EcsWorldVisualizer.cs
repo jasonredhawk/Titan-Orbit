@@ -2677,11 +2677,8 @@ namespace TitanOrbit.Game
                 int bankIndex = hit.BankIndex >= 0 ? hit.BankIndex : defaultBulletBankIndex;
                 float scaleMul = hit.ScaleMultiplier > 0f ? hit.ScaleMultiplier : defaultBulletScaleMultiplier;
                 // --- Impact VFX on nearest tile to local ship (classic display) ---
-                Vector3 hitPos = hit.HitPosition;
-                if (ToroidalDisplay.TryGetReferencePosition(out var reference))
-                    hitPos = ToroidalDisplay.ToDisplayPosition(hitPos, reference);
-                BulletVisualFactory.SpawnBulletImpactVfx(
-                    hitPos,
+                BulletImpactAttach.PlayAtLogicalPoint(
+                    hit.HitPosition,
                     bulletVfxBank,
                     bankIndex,
                     team,

@@ -722,8 +722,8 @@ namespace TitanOrbit.Game
                     var ramTeam = (TeamId)hit.OwnerTeam;
                     int ramBank = math.max(0, hit.BankIndex);
                     float ramScale = hit.ScaleMultiplier > 0f ? hit.ScaleMultiplier : 1f;
-                    BulletVisualFactory.SpawnBulletImpactVfx(
-                        hitPos, _bank, ramBank, ramTeam, hit.Damage, ramScale);
+                    BulletImpactAttach.PlayAtLogicalPoint(
+                        hit.HitPosition, _bank, ramBank, ramTeam, hit.Damage, ramScale);
 
                     var ramSynth = new Tracer { OwnerNetworkId = 0, IsAnticipation = false };
                     TryShowAsteroidFloatForHitRpc(
@@ -765,8 +765,8 @@ namespace TitanOrbit.Game
                     var team = (TeamId)hit.OwnerTeam;
                     int bankIndex = math.max(0, hit.BankIndex);
                     float scaleMul = hit.ScaleMultiplier > 0f ? hit.ScaleMultiplier : 1f;
-                    BulletVisualFactory.SpawnBulletImpactVfx(
-                        hitPos, _bank, bankIndex, team, hit.Damage, scaleMul);
+                    BulletImpactAttach.PlayAtLogicalPoint(
+                        hit.HitPosition, _bank, bankIndex, team, hit.Damage, scaleMul);
                 }
 
                 // --- Preferred: exact Sequence from server ---
@@ -1300,17 +1300,33 @@ namespace TitanOrbit.Game
         {
             EnsureBank();
 
-            // --- Display-space impact position for the VFX prefab ---
-            Vector3 hitDisplay = hitPoint;
-            if (!t.IsDisplaySpace && ToroidalDisplay.TryGetReferencePosition(out var reference))
-                hitDisplay = ToroidalDisplay.ToDisplayPosition(hitPoint, reference);
-            hitDisplay.y = 0f;
-
             var team = (TeamId)t.OwnerTeam;
             int bankIndex = math.max(0, t.BankIndex);
             float scaleMul = t.ScaleMultiplier > 0f ? t.ScaleMultiplier : 1f;
+
+            // --- Surface + follow parent (same tile as the drawn body) ---
+            Transform attachParent = null;
+            Vector3 hitDisplay;
+            if (BulletCosmeticHitQuery.TryFindNearestObstacle(hitPoint, out var obstacle) &&
+                BulletImpactAttach.TryResolve(in obstacle, hitPoint, out attachParent, out hitDisplay))
+            {
+                // resolved
+            }
+            else
+            {
+                hitDisplay = hitPoint;
+                if (!t.IsDisplaySpace && ToroidalDisplay.TryGetReferencePosition(out var reference))
+                    hitDisplay = ToroidalDisplay.ToDisplayPosition(hitPoint, reference);
+            }
+
+            // Collapse stretch and snap the slug onto the flash so the tip cannot overshoot.
+            if (t.Stretch != null)
+                t.Stretch.Collapse();
+            if (t.Go != null)
+                t.Go.transform.position = hitDisplay;
+
             BulletVisualFactory.SpawnBulletImpactVfx(
-                hitDisplay, _bank, bankIndex, team, t.Damage, scaleMul);
+                hitDisplay, _bank, bankIndex, team, t.Damage, scaleMul, attachParent);
 
             // --- Remember for HitRpc / SpawnRpc reconcile ---
             // Mining floats and turret HP wait for HitRpc (authoritative remaining Health).
