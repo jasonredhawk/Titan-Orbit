@@ -471,6 +471,21 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
+        /// Ghosted MEGA identity for the local ship. False when the hull is a normal family chassis.
+        /// Uses the cached local-player entity — no extra ship gather.
+        /// </summary>
+        public static bool TryGetLocalMegaShipState(out MegaShipState mega)
+        {
+            mega = default;
+            if (!TryGetCachedLocalPlayerShipEntity(out var em, out var shipEntity))
+                return false;
+            if (!em.HasComponent<MegaShipState>(shipEntity))
+                return false;
+            mega = em.GetComponentData<MegaShipState>(shipEntity);
+            return mega.IsMega;
+        }
+
+        /// <summary>
         /// Bottom-bar attribute upgrade levels for the local ship (zeros when component missing).
         /// Prefers a tiny <see cref="LocalPlayerShipTag"/> lookup so combat gem Instantiates
         /// (<see cref="ClientJoinSettleCache.GhostSpawnBacklog"/>) do not blank the upgrade HUD.

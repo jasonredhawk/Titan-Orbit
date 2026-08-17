@@ -74,6 +74,8 @@ namespace TitanOrbit.ECS
                     continue;
 
                 MineShotMath.Resolve(itemLevel, out var stats, out float damage, out float visualScale);
+                damage *= CardEffectQuery.GetMul(state.EntityManager, entity, CardEffectKind.MineDamageMul);
+                float blastMul = CardEffectQuery.GetMul(state.EntityManager, entity, CardEffectKind.MineBlastRadiusMul);
 
                 if (loadout.ValueRO.NextMinePlaceTime > serverElapsed + 0.0001)
                     continue;
@@ -103,7 +105,7 @@ namespace TitanOrbit.ECS
                     PlaceTime = serverElapsed,
                     Damage = math.max(0.1f, damage),
                     HitRadius = math.max(0.1f, stats.hitRadius),
-                    BlastRadius = math.max(0.1f, stats.blastRadius),
+                    BlastRadius = math.max(0.1f, stats.blastRadius * blastMul),
                     BlastForce = math.max(0.1f, stats.blastForce),
                     VisualScale = math.max(0.05f, visualScale),
                     ExplosionVfxScale = math.max(0.05f, stats.explosionVfxScale),

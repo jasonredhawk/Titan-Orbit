@@ -363,6 +363,12 @@ namespace TitanOrbit.ECS
                     return false;
                 }
 
+                if (!UpgradeTree.IsValidUpgradeStep(ship.ShipLevel, ship.BranchIndex, targetLevel, targetBranchIndex))
+                {
+                    message = "Invalid upgrade path.";
+                    return false;
+                }
+
                 // Planets cap at 6; L7 MEGAs use the moon-full gate below, not planet level 7.
                 if (targetLevel < 7 && targetLevel > storePlanet.PlanetLevel)
                 {
@@ -771,13 +777,9 @@ namespace TitanOrbit.ECS
                 return false;
             }
 
-            int maxCardSlots = math.max(1, ship.ShipLevel);
-            int equippedCards = em.HasBuffer<EquippedCardElement>(shipEntity)
-                ? em.GetBuffer<EquippedCardElement>(shipEntity).Length
-                : 0;
-            if (equippedCards >= maxCardSlots)
+            if (!HasEmptyLoadoutSlot(em, shipEntity, ship.ShipLevel))
             {
-                message = "No empty card slot.";
+                message = "No empty loadout slot.";
                 return false;
             }
 
@@ -1082,6 +1084,20 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
+        /// Cards and gear share one LOADOUT pool: used = card buffer + equipment buffer, cap = ship level.
+        /// </summary>
+        static bool HasEmptyLoadoutSlot(EntityManager em, Entity shipEntity, int shipLevel)
+        {
+            int cap = math.max(1, shipLevel);
+            int used = 0;
+            if (em.HasBuffer<EquippedCardElement>(shipEntity))
+                used += em.GetBuffer<EquippedCardElement>(shipEntity).Length;
+            if (em.HasBuffer<EquippedEquipmentElement>(shipEntity))
+                used += em.GetBuffer<EquippedEquipmentElement>(shipEntity).Length;
+            return used < cap;
+        }
+
+        /// <summary>
         /// Level the docked moon store may sell: <c>min(ship, that planet)</c>.
         /// Prefers the moon the ship is actually docked at (authoritative, not client-sent).
         /// Falls back to <paramref name="storePlanetIdHint"/> then the team's home planet.
@@ -1137,11 +1153,10 @@ namespace TitanOrbit.ECS
                 em.AddBuffer<EquippedEquipmentElement>(shipEntity);
 
             var buffer = em.GetBuffer<EquippedEquipmentElement>(shipEntity);
-            // Slot count follows the ship (a level-6 hull still has 6 slots on a level-3 moon).
-            int maxSlots = math.max(1, shipLevel);
-            if (buffer.Length >= maxSlots)
+            // [TITAN-ORBIT] Cards and gear share one LOADOUT pool capped at ship level.
+            if (!HasEmptyLoadoutSlot(em, shipEntity, shipLevel))
             {
-                message = "No empty equipment slot.";
+                message = "No empty loadout slot.";
                 return false;
             }
 
@@ -1149,6 +1164,15 @@ namespace TitanOrbit.ECS
             int charges = StoreItemData.IsDrone(itemType)
                 ? StoreItemData.GetDroneMaxHp(itemType, lockedLevel)
                 : StoreItemData.GetPackSize(itemType);
+            if (StoreItemData.IsDrone(itemType))
+            {
+                float hpMul = CardEffectQuery.GetMul(em, shipEntity, CardEffectKind.DroneHitPointsMul);
+                charges = math.max(1, (int)math.round(charges * hpMul));
+            }
+            else if (itemType == StoreItemType.SmallRockets || itemType == StoreItemType.LargeRockets)
+                charges += (int)math.round(CardEffectQuery.GetValue(em, shipEntity, CardEffectKind.RocketPackSizeAdd));
+            else if (itemType == StoreItemType.SmallMines || itemType == StoreItemType.LargeMines)
+                charges += (int)math.round(CardEffectQuery.GetValue(em, shipEntity, CardEffectKind.MinePackSizeAdd));
             // [TITAN-ORBIT] Drones, rockets, and mines lock ItemLevel to the store purchase
             // level (min of ship and planet). Damage/HP/cost already used this level; store
             // it so stats stay fixed after buy.
@@ -1185,10 +1209,9 @@ namespace TitanOrbit.ECS
                 em.AddBuffer<EquippedEquipmentElement>(shipEntity);
 
             var buffer = em.GetBuffer<EquippedEquipmentElement>(shipEntity);
-            int maxSlots = math.max(1, shipLevel);
-            if (buffer.Length >= maxSlots)
+            if (!HasEmptyLoadoutSlot(em, shipEntity, shipLevel))
             {
-                message = "No empty equipment slot.";
+                message = "No empty loadout slot.";
                 return false;
             }
 
@@ -1216,10 +1239,9 @@ namespace TitanOrbit.ECS
                 em.AddBuffer<EquippedCardElement>(shipEntity);
 
             var buffer = em.GetBuffer<EquippedCardElement>(shipEntity);
-            int maxSlots = math.max(1, shipLevel);
-            if (buffer.Length >= maxSlots)
+            if (!HasEmptyLoadoutSlot(em, shipEntity, shipLevel))
             {
-                message = "No empty card slot.";
+                message = "No empty loadout slot.";
                 return false;
             }
 

@@ -14,11 +14,7 @@ namespace TitanOrbit.Editor
         {
             if (!interactiveDialogs)
                 return;
-            EditorUtility.DisplayDialog(
-                "Generate Card Pool",
-                "Prefab-derived card pool generation is not restored yet.\n\n" +
-                "Runtime uses CardDeckRuntimeDefaults.CreateProceduralDeck(familyId).",
-                "OK");
+            UniqueCardDeckGenerator.RebuildFamilyDeck(def, interactiveDialogs);
         }
     }
 }

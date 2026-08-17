@@ -552,7 +552,8 @@ namespace TitanOrbit.ECS
                     ? TeamId.None
                     : (TeamId)ownerTeam;
                 var result = ShipDamageLogic.ApplyHullAndGemDamage(
-                    ref health, ref gems, ref isDead, splash,
+                    ref health, ref gems, ref isDead,
+                    CardEffectQuery.ScaleIncomingDamage(em, shipEntity, splash),
                     ship.Team, damageTeam, gemExpulsionPerHullDamage, isImmune: moonImmune);
                 ship.Health = health;
                 ship.CurrentGems = gems;

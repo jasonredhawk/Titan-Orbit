@@ -204,7 +204,9 @@ namespace TitanOrbit.ECS
                         continue;
 
                     var a = asteroidState.ValueRO;
-                    float mined = GemEconomyConstants.MiningRate * dt;
+                    float mineMul = CardEffectQuery.GetMul(state.EntityManager, shipEntity, CardEffectKind.MiningRateMul);
+                    float yieldMul = CardEffectQuery.GetMul(state.EntityManager, shipEntity, CardEffectKind.AsteroidGemYieldMul);
+                    float mined = GemEconomyConstants.MiningRate * dt * mineMul;
                     mined = math.min(mined, a.RemainingGems);
                     if (mined < GemEconomyConstants.MinGemSpawnValue)
                         continue;
@@ -238,7 +240,7 @@ namespace TitanOrbit.ECS
                         ecb,
                         prefabs.Gem,
                         asteroidTransform.ValueRO.Position,
-                        mined,
+                        mined * yieldMul,
                         (uint)asteroidEntity.Index,
                         burst: false,
                         spawnServerTime,
@@ -687,7 +689,8 @@ namespace TitanOrbit.ECS
                 var wings = em.GetBuffer<ShipWingTractorBeamElement>(shipEntity);
                 // [TITAN-ORBIT] Floor at the visible crystal so overlapping the mesh consumes.
                 float collectRadius = GemCollectMath.ResolveWingCollectRadius(
-                    pickupSettings, gemState.Value, gemState.Size);
+                    pickupSettings, gemState.Value, gemState.Size)
+                    + CardEffectQuery.GetValue(em, shipEntity, CardEffectKind.GemPickupRadiusAdd);
                 for (int wi = 0; wi < wings.Length; wi++)
                 {
                     float3 wingPos = ShipWingTractorBeamPose.GetWorldPosition(shipTransform, wings[wi]);
@@ -700,13 +703,13 @@ namespace TitanOrbit.ECS
                 // for a wing tip / tractor lock. When OFF, only tip zones collect (tight old feel).
                 if (pickupSettings.AlsoUseHullPickupWithWings)
                     return IsWithinHullPickupRange(
-                        shipTransform, gemPos, gemState, pickupSettings, mapW, mapH);
+                        em, shipEntity, shipTransform, gemPos, gemState, pickupSettings, mapW, mapH);
 
                 return false;
             }
 
             // --- No wings: hull-center only ---
-            return IsWithinHullPickupRange(shipTransform, gemPos, gemState, pickupSettings, mapW, mapH);
+            return IsWithinHullPickupRange(em, shipEntity, shipTransform, gemPos, gemState, pickupSettings, mapW, mapH);
         }
 
         /// <summary>
@@ -714,6 +717,8 @@ namespace TitanOrbit.ECS
         /// radius (see <see cref="GemCollectMath"/>) — overlapping the mesh the player sees counts.
         /// </summary>
         static bool IsWithinHullPickupRange(
+            EntityManager em,
+            Entity shipEntity,
             in LocalTransform shipTransform,
             float3 gemPos,
             in GemState gemState,
@@ -722,7 +727,8 @@ namespace TitanOrbit.ECS
             float mapH)
         {
             float hullRange = GemCollectMath.ResolveHullCollectRadius(
-                pickupSettings, gemState.Value, gemState.Size, shipTransform.Scale);
+                pickupSettings, gemState.Value, gemState.Size, shipTransform.Scale)
+                + CardEffectQuery.GetValue(em, shipEntity, CardEffectKind.GemPickupRadiusAdd);
             return GemTractorBeamMath.ToroidalDistance(gemPos, shipTransform.Position, mapW, mapH) <=
                    hullRange;
         }
@@ -784,7 +790,7 @@ namespace TitanOrbit.ECS
             // --- Fixed timestep ---
             // [UNITY] Same dt as other sim systems — we accumulate it into ShipDepositBeatTimer.
             float dt = SystemAPI.Time.DeltaTime;
-            float beatInterval = GemEconomyConstants.GemDepositBeatIntervalSeconds;
+            float baseBeatInterval = GemEconomyConstants.GemDepositBeatIntervalSeconds;
 
             foreach (var (shipState, shipInput, moonDock, shipEntity) in SystemAPI
                          .Query<RefRW<ShipState>, RefRO<ShipInput>, RefRO<ShipMoonDockState>>()
@@ -831,6 +837,11 @@ namespace TitanOrbit.ECS
                     // --- Metronome accumulator (first eligible tick deposits immediately) ---
                     // [TITAN-ORBIT] Priming Accum to beatInterval matches the client metronome, which
                     // fires on the first frame WantDepositGems is true (no half-second silence).
+                    float beatInterval = baseBeatInterval;
+                    float depositMul = CardEffectQuery.GetMul(state.EntityManager, shipEntity, CardEffectKind.GemDepositSpeedMul);
+                    if (depositMul > 0.0001f && math.abs(depositMul - 1f) > 0.0001f)
+                        beatInterval = math.max(0.08f, baseBeatInterval / depositMul);
+
                     if (timer.Accum <= 0f)
                         timer.Accum = beatInterval;
 

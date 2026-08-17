@@ -352,7 +352,7 @@ namespace TitanOrbit.Game
 
                 if (layoutFp != group.LayoutFingerprint)
                 {
-                    RebuildGroupVisuals(group, buf, netId);
+                    RebuildGroupVisuals(group, buf, netId, shipState.Team);
                     group.LayoutFingerprint = layoutFp;
                 }
 
@@ -537,7 +537,11 @@ namespace TitanOrbit.Game
             };
         }
 
-        void RebuildGroupVisuals(ShipDroneGroup group, DynamicBuffer<EquippedEquipmentElement> buf, int networkId)
+        void RebuildGroupVisuals(
+            ShipDroneGroup group,
+            DynamicBuffer<EquippedEquipmentElement> buf,
+            int networkId,
+            TeamId team)
         {
             ClearGroupVisuals(group);
             for (int i = 0; i < buf.Length; i++)
@@ -546,11 +550,17 @@ namespace TitanOrbit.Game
                 var type = (StoreItemType)e.ItemType;
                 if (!StoreItemData.IsDrone(type) || e.RemainingCharges <= 0)
                     continue;
-                SpawnVisual(group, i, type, networkId, e.ItemLevel);
+                SpawnVisual(group, i, type, networkId, e.ItemLevel, team);
             }
         }
 
-        void SpawnVisual(ShipDroneGroup group, int slotIndex, StoreItemType itemType, int networkId, int itemLevel)
+        void SpawnVisual(
+            ShipDroneGroup group,
+            int slotIndex,
+            StoreItemType itemType,
+            int networkId,
+            int itemLevel,
+            TeamId team)
         {
             GameObject prefab = GetPrefab(itemType);
             if (prefab == null || group.Hub == null)
@@ -573,6 +583,7 @@ namespace TitanOrbit.Game
             Vector3 prefabScale = instance.transform.localScale;
             float levelMul = StoreItemData.GetDroneVisualScale(level);
             instance.transform.localScale = prefabScale * levelMul;
+            DroneTeamVisualApplier.Apply(instance, team);
 
             group.Visuals.Add(new SlotVisual
             {

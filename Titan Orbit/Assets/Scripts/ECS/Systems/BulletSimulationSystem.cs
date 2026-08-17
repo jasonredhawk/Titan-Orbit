@@ -1143,7 +1143,7 @@ namespace TitanOrbit.ECS
                         ref health,
                         ref gems,
                         ref isDead,
-                        hitDamage,
+                        CardEffectQuery.ScaleIncomingDamage(state.EntityManager, bestEntity, hitDamage),
                         ship.Team,
                         damageTeam,
                         gemExpulsionPerHullDamage: ShipDamageLogic.ExcessDamageGemExpulsionPerHullDamage,

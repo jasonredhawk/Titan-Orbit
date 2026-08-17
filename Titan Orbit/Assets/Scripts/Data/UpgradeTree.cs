@@ -36,7 +36,7 @@ namespace TitanOrbit.Data
 
         /// <summary>
         /// Valid branch indices at <paramref name="fromLevel"/> + 1 from (<paramref name="fromLevel"/>, <paramref name="fromBranch"/>).
-        /// Levels 1–5: p → p and p+1. Level 6 → 7: 6.1&amp;6.2→7.1; 6.2–6.5→7.2; 6.5&amp;6.6→7.3 (0-based: 0,1→0; 1–4→1; 4,5→2).
+        /// Levels 1–5: p → p and p+1. Level 6 → 7: clean pairs — 1&amp;2→mega 1, 3&amp;4→mega 2, 5&amp;6→mega 3.
         /// </summary>
         public static void GetNextLevelBranchTargets(int fromLevel, int fromBranch, List<int> outBranches)
         {
@@ -48,15 +48,10 @@ namespace TitanOrbit.Data
 
             if (fromLevel == 6 && nextLevel == 7)
             {
-                switch (fromBranch)
-                {
-                    case 0: outBranches.Add(0); break;
-                    case 1: outBranches.Add(0); outBranches.Add(1); break;
-                    case 2: outBranches.Add(1); break;
-                    case 3: outBranches.Add(1); break;
-                    case 4: outBranches.Add(1); outBranches.Add(2); break;
-                    case 5: outBranches.Add(2); break;
-                }
+                // [TITAN-ORBIT] Players do not choose between two megas from one L6 hull.
+                int mega = fromBranch / 2;
+                if (mega >= 0 && mega < 3)
+                    outBranches.Add(mega);
                 return;
             }
 
@@ -76,18 +71,7 @@ namespace TitanOrbit.Data
             if (toBranch < 0 || toBranch >= GetShipCountForLevel(toLevel)) return false;
 
             if (fromLevel == 6 && toLevel == 7)
-            {
-                switch (fromBranch)
-                {
-                    case 0: return toBranch == 0;
-                    case 1: return toBranch == 0 || toBranch == 1;
-                    case 2: return toBranch == 1;
-                    case 3: return toBranch == 1;
-                    case 4: return toBranch == 1 || toBranch == 2;
-                    case 5: return toBranch == 2;
-                    default: return false;
-                }
-            }
+                return fromBranch >= 0 && fromBranch <= 5 && toBranch == fromBranch / 2;
 
             if (fromBranch < 0 || fromBranch >= GetShipCountForLevel(fromLevel)) return false;
             return toBranch == fromBranch || toBranch == fromBranch + 1;

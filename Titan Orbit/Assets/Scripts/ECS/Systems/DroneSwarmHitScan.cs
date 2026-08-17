@@ -252,6 +252,13 @@ namespace TitanOrbit.ECS
             if (!StoreItemData.IsDrone((StoreItemType)e.ItemType) || e.RemainingCharges <= 0)
                 return;
 
+            if ((StoreItemType)e.ItemType == StoreItemType.ShieldDrone)
+            {
+                float absorb = CardEffectQuery.GetMul(em, ship, CardEffectKind.ShieldDroneAbsorbMul);
+                if (absorb > 1.0001f)
+                    damage /= absorb;
+            }
+
             int dmg = math.max(1, (int)math.ceil(damage));
             e.RemainingCharges = math.max(0, e.RemainingCharges - dmg);
             // Keep ItemType — visuals / combat skip slots with RemainingCharges <= 0.

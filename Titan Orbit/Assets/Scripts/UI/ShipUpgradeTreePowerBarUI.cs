@@ -22,8 +22,12 @@ namespace TitanOrbit.UI
         /// </summary>
         public const float MoonTreeCapacityStatBarScale = 0.5f;
 
-        const float DimRgbScale = 0.22f;
-        const float DimAlpha = 0.9f;
+        /// <summary>Live empty-track tint: keep the stat hue, but lift it so the lane stays readable.</summary>
+        const float DimRgbScale = 0.62f;
+        const float DimWhiteMix = 0.22f;
+        const float DimAlpha = 0.88f;
+        static readonly Color DisabledSlotFill = new Color(0.13f, 0.15f, 0.19f, 0.7f);
+        static readonly Color DisabledSlotTrack = new Color(0.1f, 0.12f, 0.16f, 0.55f);
         /// <summary>
         /// Pixels between the two abilities in a pair (Fire Power | Bullet Speed).
         /// Smaller than <see cref="MoonTreePairGapPx"/> so ODEMC groups still read as pairs.
@@ -79,11 +83,12 @@ namespace TitanOrbit.UI
             float pairGap,
             float trackWidth,
             Color? trackBackground,
-            float trackVerticalPadding)
+            float trackPadding)
         {
             Transform barParent = parent;
             if (trackBackground.HasValue)
             {
+                int pad = Mathf.Max(1, Mathf.RoundToInt(trackPadding));
                 var trackGo = new GameObject("PowerBarTrack");
                 trackGo.transform.SetParent(parent, false);
                 var trackLe = trackGo.AddComponent<LayoutElement>();
@@ -91,13 +96,13 @@ namespace TitanOrbit.UI
                 trackLe.flexibleWidth = 1f;
                 trackLe.minWidth = trackWidth;
                 trackLe.preferredWidth = trackWidth;
-                trackLe.preferredHeight = barHeight + trackVerticalPadding * 2f;
+                trackLe.preferredHeight = barHeight + pad * 2f;
                 trackLe.minHeight = trackLe.preferredHeight;
                 var trackBg = trackGo.AddComponent<Image>();
                 trackBg.color = trackBackground.Value;
                 trackBg.raycastTarget = false;
                 var trackVlg = trackGo.AddComponent<VerticalLayoutGroup>();
-                trackVlg.padding = new RectOffset(0, 0, (int)trackVerticalPadding, (int)trackVerticalPadding);
+                trackVlg.padding = new RectOffset(pad, pad, pad, pad);
                 trackVlg.spacing = 0f;
                 trackVlg.childAlignment = TextAnchor.MiddleCenter;
                 trackVlg.childControlWidth = true;
@@ -222,11 +227,12 @@ namespace TitanOrbit.UI
             return s_fillSprite;
         }
 
-        /// <summary>Same hue as the solid fill, darkened so the empty part of the 10% slot still reads as that ability.</summary>
+        /// <summary>Same hue as the solid fill, lightened so the empty part of a live slot still reads as that ability.</summary>
         public static Color GetDimmedStatColor(int statIndex)
         {
             Color c = ShipAbilityCategoryColors.GetPowerBreakdownStatColor(statIndex);
-            return new Color(c.r * DimRgbScale, c.g * DimRgbScale, c.b * DimRgbScale, DimAlpha);
+            Color mixed = Color.Lerp(c, Color.white, DimWhiteMix);
+            return new Color(mixed.r * DimRgbScale, mixed.g * DimRgbScale, mixed.b * DimRgbScale, DimAlpha);
         }
 
         public static float GetMoonTreeBarStatValue(ShipFamilyPowerScoreBreakdown breakdown, int statIndex)
@@ -300,10 +306,11 @@ namespace TitanOrbit.UI
             {
                 float val = breakdown.GetDisplayStatValue(i);
                 float max = globalMaxes.Get(i);
-                float ratio = hasData && max > ShipPowerBarStatMaxes.MinDenominator
+                bool slotLive = hasData && val > 0.0001f;
+                float ratio = slotLive && max > ShipPowerBarStatMaxes.MinDenominator
                     ? Mathf.Clamp01(val / max)
                     : 0f;
-                ApplyMoonSlotFill(i, ratio, hasData, scaledBarHeight);
+                ApplyMoonSlotFill(i, ratio, slotLive, scaledBarHeight);
             }
 
             ApplyBarRowSize(nodeW, scaledBarHeight);
@@ -357,7 +364,7 @@ namespace TitanOrbit.UI
             fill.enabled = true;
             fill.color = hasData
                 ? ShipAbilityCategoryColors.GetPowerBreakdownStatColor(statIndex)
-                : new Color(0.22f, 0.25f, 0.3f, 0.55f);
+                : DisabledSlotFill;
             fill.raycastTarget = false;
 
             var fillLe = fill.GetComponent<LayoutElement>();
@@ -374,7 +381,7 @@ namespace TitanOrbit.UI
                 dim.enabled = true;
                 dim.color = hasData
                     ? GetDimmedStatColor(statIndex)
-                    : new Color(0.22f, 0.25f, 0.3f, 0.35f);
+                    : DisabledSlotTrack;
                 dim.raycastTarget = false;
                 var dimLe = dim.GetComponent<LayoutElement>();
                 if (dimLe != null)
@@ -485,7 +492,7 @@ namespace TitanOrbit.UI
             fill.enabled = segW > 0.01f;
             fill.color = hasData
                 ? ShipAbilityCategoryColors.GetPowerBreakdownStatColor(statIndex)
-                : new Color(0.22f, 0.25f, 0.3f, 0.55f);
+                : DisabledSlotFill;
 
             var fillLe = fill.GetComponent<LayoutElement>();
             if (fillLe != null)

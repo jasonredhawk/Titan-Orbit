@@ -1,4 +1,5 @@
 using TMPro;
+using TitanOrbit.Core;
 using TitanOrbit.Data;
 using UnityEngine;
 using UnityEngine.UI;
@@ -392,7 +393,7 @@ namespace TitanOrbit.UI
 
             _contentRowVlg = vlg;
             _layoutCached = false;
-            vlg.spacing = 4f;
+            vlg.spacing = 1f;
             vlg.padding = new RectOffset(0, 0, 0, 0);
             vlg.childAlignment = TextAnchor.UpperCenter;
             vlg.childControlWidth = true;
@@ -481,9 +482,9 @@ namespace TitanOrbit.UI
             // [TITAN-ORBIT] Sidebar hero ("Your Ship"): pack preview + labels tightly, then place the
             // power bar immediately underneath. Inflating ContentRow past its children left a dark empty
             // strip above the colourful stats (card background showing through).
-            float heroPadTop = 6f;
-            float heroPadBottom = 6f;
-            float heroRootSpacing = 8f; // Breathing room between ship art and the colour stats bar.
+            float heroPadTop = 2f;
+            float heroPadBottom = 4f;
+            float heroRootSpacing = 4f; // Tight gap between ship art and the colour stats bar.
             float heroBarH = 12f;
             float heroPreviewH = 0f;
             float heroContentH = 0f;
@@ -491,12 +492,12 @@ namespace TitanOrbit.UI
             if (_sidebarHeroLayout)
             {
                 float chrome = heroPadTop + heroPadBottom + heroRootSpacing + heroBarH;
-                float available = Mathf.Max(96f, height - chrome);
+                float available = Mathf.Max(72f, height - chrome);
                 // Name only above the art ("You"/level and price are hidden) — rest goes to the preview.
-                float heroLabelScale = 1.35f;
-                heroNameH = ScalePx(RefLayout.NameHeight, heroLabelScale) + 2f;
-                float heroLabelsH = heroNameH + 4f; // ContentRow spacing between name and preview
-                heroPreviewH = Mathf.Max(80f, available - heroLabelsH);
+                float heroLabelScale = 1.05f;
+                heroNameH = ScalePx(RefLayout.NameHeight, heroLabelScale);
+                float heroLabelsH = heroNameH + 1f; // Tight gap between name and preview
+                heroPreviewH = Mathf.Max(96f, available - heroLabelsH);
                 heroContentH = heroPreviewH + heroLabelsH;
             }
 
@@ -539,9 +540,13 @@ namespace TitanOrbit.UI
             }
 
             if (_sidebarHeroLayout && _contentRowVlg != null)
-                _contentRowVlg.spacing = 4f;
+                _contentRowVlg.spacing = 1f;
             else if (_contentRowHlg != null)
+            {
                 _contentRowHlg.spacing = RefLayout.ContentHSpacing * wScale;
+                _contentRowHlg.childAlignment = TextAnchor.MiddleRight;
+                _contentRowHlg.childForceExpandWidth = true;
+            }
 
             // Hero labels stay readable without eating the power-bar row (cap scale ~1.35×).
             float heroFontScale = _sidebarHeroLayout ? Mathf.Min(fontScale, 1.35f) : fontScale;
@@ -569,6 +574,7 @@ namespace TitanOrbit.UI
                 else
                 {
                     _leftLe.minWidth = ScalePx(RefLayout.LeftMinWidth, wScale);
+                    _leftLe.flexibleWidth = 1f;
                 }
             }
 
@@ -630,17 +636,29 @@ namespace TitanOrbit.UI
                     _previewImgLe.flexibleHeight = 0f;
             }
 
-            // Hero art: stretch the Image rect to the preview column (preserveAspect keeps silhouette readable).
-            if (_sidebarHeroLayout && previewImage != null)
+            if (previewImage != null)
             {
                 previewImage.preserveAspect = true;
                 var previewRt = previewImage.transform as RectTransform;
                 if (previewRt != null)
                 {
-                    previewRt.anchorMin = Vector2.zero;
-                    previewRt.anchorMax = Vector2.one;
-                    previewRt.offsetMin = Vector2.zero;
-                    previewRt.offsetMax = Vector2.zero;
+                    if (_sidebarHeroLayout)
+                    {
+                        previewRt.anchorMin = Vector2.zero;
+                        previewRt.anchorMax = Vector2.one;
+                        previewRt.pivot = new Vector2(0.5f, 0.5f);
+                        previewRt.offsetMin = Vector2.zero;
+                        previewRt.offsetMax = Vector2.zero;
+                    }
+                    else
+                    {
+                        // Pin the silhouette to the right so it shares the power-bar's right edge.
+                        previewRt.anchorMin = new Vector2(1f, 0.5f);
+                        previewRt.anchorMax = new Vector2(1f, 0.5f);
+                        previewRt.pivot = new Vector2(1f, 0.5f);
+                        previewRt.sizeDelta = new Vector2(previewW, previewH);
+                        previewRt.anchoredPosition = Vector2.zero;
+                    }
                 }
             }
 
@@ -998,7 +1016,7 @@ namespace TitanOrbit.UI
         {
             // --- SetShipName ---
             if (shipNameText != null)
-                shipNameText.text = text;
+                shipNameText.text = DisplayNameFormatting.SplitCamelCase(text);
             if (_sidebarHeroLayout)
                 ApplySidebarHeroChrome();
         }

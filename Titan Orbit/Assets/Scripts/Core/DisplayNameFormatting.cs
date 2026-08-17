@@ -10,8 +10,9 @@ namespace TitanOrbit.Core
     public static class DisplayNameFormatting
     {
         /// <summary>
-        /// Splits CamelCase into spaced words (e.g. ProtonLegacy → Proton Legacy). Inserts a space
-        /// before uppercase letters that start a new word within the identifier.
+        /// Splits CamelCase and digit runs into spaced words (ProtonLegacy → Proton Legacy,
+        /// DoubleBarrel → Double Barrel, GalacticOkamoto15 → Galactic Okamoto 15).
+        /// Idempotent when the string is already spaced.
         /// </summary>
         /// <param name="value">Raw id from data assets; null/empty returned unchanged.</param>
         /// <returns>Display-friendly label for UI text.</returns>
@@ -26,12 +27,16 @@ namespace TitanOrbit.Core
             for (int i = 0; i < value.Length; i++)
             {
                 char c = value[i];
-                // [STANDARD] Insert space before capitals that follow lowercase or precede lowercase.
-                if (i > 0 && char.IsUpper(c)
-                    && (char.IsLower(value[i - 1])
-                        || (i + 1 < value.Length && char.IsLower(value[i + 1]))))
+                if (i > 0 && !char.IsWhiteSpace(value[i - 1]) && !char.IsWhiteSpace(c))
                 {
-                    sb.Append(' ');
+                    char prev = value[i - 1];
+                    bool camelBreak = char.IsUpper(c)
+                        && (char.IsLower(prev)
+                            || (i + 1 < value.Length && char.IsLower(value[i + 1])));
+                    bool letterToDigit = char.IsDigit(c) && char.IsLetter(prev);
+                    bool digitToLetter = char.IsLetter(c) && char.IsDigit(prev);
+                    if (camelBreak || letterToDigit || digitToLetter)
+                        sb.Append(' ');
                 }
 
                 sb.Append(c);

@@ -1,4 +1,5 @@
 using TitanOrbit.Core;
+using TitanOrbit.Data;
 using TitanOrbit.Generation;
 using TitanOrbit.Simulation;
 using Unity.Burst;
@@ -177,8 +178,11 @@ namespace TitanOrbit.ECS
                 int planetLevel = math.max(1, planetState.PlanetLevel);
                 float loadChunk = math.max(1f, math.min(shipLevel, planetLevel));
                 float unloadChunk = math.max(1f, shipLevel);
-                float loadStep = loadChunk * dt * PeopleTransportConstants.TransferSpeedMultiplier;
-                float unloadStep = unloadChunk * dt * PeopleTransportConstants.TransferSpeedMultiplier;
+                float transferMul = CardEffectQuery.GetMul(state.EntityManager, shipEntity, CardEffectKind.PeopleTransferSpeedMul);
+                float unloadAdd = CardEffectQuery.GetValue(state.EntityManager, shipEntity, CardEffectKind.PeopleUnloadChunkAdd);
+                unloadChunk = math.max(1f, unloadChunk + unloadAdd);
+                float loadStep = loadChunk * dt * PeopleTransportConstants.TransferSpeedMultiplier * transferMul;
+                float unloadStep = unloadChunk * dt * PeopleTransportConstants.TransferSpeedMultiplier * transferMul;
                 int shipNetworkId = GetShipNetworkId(ref state, shipEntity);
                 if (shipNetworkId == 0)
                     continue;

@@ -1,3 +1,4 @@
+using TitanOrbit.Data;
 using TitanOrbit.Simulation;
 using Unity.Entities;
 using Unity.NetCode;
@@ -27,9 +28,10 @@ namespace TitanOrbit.ECS
 
             double now = SystemAPI.Time.ElapsedTime;
 
-            foreach (var (ship, vitals, vitalsState) in SystemAPI
+            foreach (var (ship, vitals, vitalsState, entity) in SystemAPI
                          .Query<RefRW<ShipState>, RefRO<ShipVitalsConfig>, RefRW<ShipVitalsState>>()
-                         .WithAll<ShipTag>())
+                         .WithAll<ShipTag>()
+                         .WithEntityAccess())
             {
                 if (ship.ValueRO.IsDead || ship.ValueRO.AwaitingTeamSelection)
                     continue;
@@ -61,15 +63,22 @@ namespace TitanOrbit.ECS
 
                 // --- Health regen (delayed after last hull damage) ---
                 // Allowed while cargo remains even if hull is briefly 0 — ship can recover hull
-                // before gems are fully stripped.
-                if (s.Health < s.MaxHealth && cfg.HealthRegenPerSecond > 0f)
+                // before gems are fully stripped. Docked-hull card add bypasses the delay.
+                float dockRegen = 0f;
+                if (ShipMoonDockState.IsFullyLandedOnMoon(state.EntityManager, entity))
+                    dockRegen = CardEffectQuery.GetValue(state.EntityManager, entity, CardEffectKind.DockedHullRegenAdd);
+                if (s.Health < s.MaxHealth && (cfg.HealthRegenPerSecond > 0f || dockRegen > 0f))
                 {
                     float delay = UnityEngine.Mathf.Max(0f, cfg.HealthRegenDelayAfterDamage);
-                    if (now >= vitalsState.ValueRO.LastHullDamageTime + delay)
+                    float regen = 0f;
+                    if (cfg.HealthRegenPerSecond > 0f && now >= vitalsState.ValueRO.LastHullDamageTime + delay)
+                        regen += cfg.HealthRegenPerSecond;
+                    regen += dockRegen;
+                    if (regen > 0f)
                     {
                         s.Health = UnityEngine.Mathf.Min(
                             s.MaxHealth,
-                            s.Health + cfg.HealthRegenPerSecond * dt);
+                            s.Health + regen * dt);
                     }
                 }
             }

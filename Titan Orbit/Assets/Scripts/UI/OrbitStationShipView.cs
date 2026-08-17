@@ -31,8 +31,13 @@ namespace TitanOrbit.Entities
 
         public int SlotCount => Mathf.Max(1, ShipLevel);
         public int EquipmentSlotCount => SlotCount;
-        public bool HasEmptySlot => EquippedCards == null || EquippedCards.Count < SlotCount;
-        public bool HasEmptyEquipmentSlot => EquippedEquipment == null || EquippedEquipment.Count < EquipmentSlotCount;
+        /// <summary>Cards + gear share one LOADOUT pool capped at ship level.</summary>
+        public int LoadoutUsedCount =>
+            (EquippedCards != null ? EquippedCards.Count : 0)
+            + (EquippedEquipment != null ? EquippedEquipment.Count : 0);
+        public bool HasEmptyLoadoutSlot => LoadoutUsedCount < SlotCount;
+        public bool HasEmptySlot => HasEmptyLoadoutSlot;
+        public bool HasEmptyEquipmentSlot => HasEmptyLoadoutSlot;
 
         public List<CardData> EquippedCards { get; } = new List<CardData>();
         public List<EquippedEquipmentEntry> EquippedEquipment { get; } = new List<EquippedEquipmentEntry>();
@@ -93,6 +98,14 @@ namespace TitanOrbit.Entities
         {
             // --- Resolve value ---
             CurrentChassisId = null;
+
+            // MEGA hulls are not family ladder chassis — use the ghosted catalog index.
+            if (EcsGameBridge.TryGetLocalMegaShipState(out MegaShipState mega) && mega.IsMega)
+            {
+                CurrentChassisId = MegaShipCatalog.FormatChassisId(mega.CatalogIndex);
+                return;
+            }
+
             var config = Resources.Load<PlanetShipFamilyConfig>("PlanetShipFamilyConfig");
             if (config == null)
                 return;

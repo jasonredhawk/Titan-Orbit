@@ -8,16 +8,20 @@ using UnityEngine.UI;
 namespace TitanOrbit.UI
 {
     /// <summary>
-    /// Narrow left Orbit Menu dock: Upgrades/Store nav, current ship, bank, and compact purchased loadout.
-    /// Upgrade Cards and Equipment hosts hold glance-sized cards (title + icon + power bar) so many
-    /// owned items fit on one scroll pass. Full ability text lives on the right-hand store purchase cards.
+    /// Narrow left Orbit Menu dock: SHIPS / GEAR / CARDS nav, current ship, family name,
+    /// bank, and one LOADOUT list (cards + components + drones + rockets + mines share slots).
+    /// Glance cards stay compact; full ability text lives on the right-hand purchase tiles.
     /// </summary>
     public class OrbitDockSidebarPanelUI : MonoBehaviour
     {
+        /// <summary>Center panel the sidebar nav opens. Legacy aliases keep older hosts compiling.</summary>
         public enum NavTarget
         {
-            Upgrades,
-            Store
+            Ships = 0,
+            Gear = 1,
+            Cards = 2,
+            Upgrades = Ships,
+            Store = Gear
         }
 
         /// <summary>
@@ -25,8 +29,9 @@ namespace TitanOrbit.UI
         /// Slightly wider than the old 252 so compact inventory cards can use a readable title row.
         /// </summary>
         public const float PanelWidth = 286f;
-        public const string SectionTitleUpgradeCards = "Upgrade Cards";
-        public const string SectionTitleEquipment = "Equipment";
+        public const string SectionTitleUpgradeCards = "LOADOUT";
+        public const string SectionTitleEquipment = "LOADOUT";
+        public const string SectionTitleLoadout = "LOADOUT";
 
         /// <summary>Accent stripe for upgrade-card sections (matches store tab card shop block).</summary>
         public static readonly Color UpgradeCardsAccent = new Color(0.35f, 0.55f, 0.95f, 1f);
@@ -38,9 +43,9 @@ namespace TitanOrbit.UI
         private const float NavStripHeight = 44f;
         /// <summary>
         /// Height of the "Your Ship" hero card (preview + labels + power bar).
-        /// Tall enough that the scaled power bar fits inside the card instead of spilling into Bank below.
+        /// Kept compact so more LOADOUT slots stay on-screen at once.
         /// </summary>
-        private const float CurrentShipNodeHeight = 256f;
+        private const float CurrentShipNodeHeight = 220f;
         private const float BankBalanceBannerHeight = 96f;
         private const float AutoDepositToggleHeight = 38f;
         public const string AutoDepositGemsPrefsKey = "TitanOrbit_AutoDepositGems";
@@ -72,13 +77,25 @@ namespace TitanOrbit.UI
         private Action<bool> _onHealingChanged;
         private bool _healingEnabled;
         private ShipUpgradeTreeNodeUI _currentShipNode;
+        private Button _navShipsBtn;
+        private Button _navGearBtn;
+        private Button _navCardsBtn;
+        private Image _navShipsBg;
+        private Image _navGearBg;
+        private Image _navCardsBg;
+        private TextMeshProUGUI _familyNameText;
+        private TextMeshProUGUI _familyStatsText;
+        private GameObject _familyStatsBlock;
+        private GameObject _ordnanceBlock;
+        private TextMeshProUGUI _ordnanceText;
+        private MoonDockHoverTip _ordnanceTip;
         private Button _navUpgradesBtn;
         private Button _navStoreBtn;
         private Image _navUpgradesBg;
         private Image _navStoreBg;
         private IOrbitStationHost _station;
         private Action<NavTarget> _onNavSelected;
-        private NavTarget _activeNav = NavTarget.Upgrades;
+        private NavTarget _activeNav = NavTarget.Ships;
         private bool _built;
 
         public RectTransform LoadoutHost => _loadoutHost;
@@ -133,7 +150,7 @@ namespace TitanOrbit.UI
             var rootBg = gameObject.GetComponent<Image>();
             if (rootBg == null)
                 rootBg = gameObject.AddComponent<Image>();
-            rootBg.color = new Color(0.07f, 0.08f, 0.13f, 0.98f);
+            rootBg.color = new Color(0.012f, 0.016f, 0.028f, 1f);
             if (panelBackgroundSprite != null)
             {
                 rootBg.sprite = panelBackgroundSprite;
@@ -175,7 +192,7 @@ namespace TitanOrbit.UI
             _contentRoot.anchoredPosition = Vector2.zero;
             _contentRoot.sizeDelta = new Vector2(0f, 900f);
             var contentVlg = _contentRoot.gameObject.AddComponent<VerticalLayoutGroup>();
-            contentVlg.spacing = 10f;
+            contentVlg.spacing = 6f;
             contentVlg.padding = new RectOffset(8, 8, 8, 16);
             contentVlg.childAlignment = TextAnchor.UpperCenter;
             contentVlg.childControlWidth = true;
@@ -187,28 +204,60 @@ namespace TitanOrbit.UI
             contentFitter.horizontalFit = ContentSizeFitter.FitMode.Unconstrained;
             scroll.content = _contentRoot;
 
-            CreateSectionHeader(_contentRoot, "Your Ship", 28f);
+            CreateSectionHeader(_contentRoot, "YOUR SHIP", 28f);
+            _familyNameText = CreateBodyLabel(_contentRoot, "FamilyName", "FAMILY", 18f);
+            _familyNameText.fontSize = 12f;
+            _familyNameText.fontStyle = FontStyles.Bold;
+            _familyNameText.characterSpacing = 1.5f;
+            _familyNameText.color = new Color(0.62f, 0.78f, 0.95f, 0.95f);
             _currentShipHost = CreateStretchHost(_contentRoot, "CurrentShipHost", CurrentShipNodeHeight);
+            ApplyTopJustifiedHostLayout(_currentShipHost);
+            ApplyYourShipHeroChrome(_currentShipHost);
+            CreateFamilyStatsBlock(_contentRoot);
+            CreateOrdnanceBlock(_contentRoot);
 
             CreateBankBalanceBanner(_contentRoot);
             CreateAutoDepositToggle(_contentRoot);
             CreateHealingBulletsToggle(_contentRoot);
 
-            CreateAccentSectionHeader(_contentRoot, SectionTitleUpgradeCards,
-                "Equipped cards ΓÇö tap Γ£ò to remove.", UpgradeCardsAccent);
-            _loadoutHost = CreateStretchHost(_contentRoot, "LoadoutHost", 80f);
-            var loadoutLe = _loadoutHost.GetComponent<LayoutElement>();
-            loadoutLe.minHeight = 64f;
-            loadoutLe.preferredHeight = 80f;
-            loadoutLe.flexibleHeight = 0f;
+            var loadoutGap = CreateStretchHost(_contentRoot, "LoadoutTopGap", 16f);
+            var loadoutGapLe = loadoutGap.GetComponent<LayoutElement>();
+            loadoutGapLe.minHeight = 16f;
+            loadoutGapLe.preferredHeight = 16f;
+            loadoutGapLe.flexibleHeight = 0f;
 
-            CreateAccentSectionHeader(_contentRoot, SectionTitleEquipment,
-                "Equipped store items ΓÇö tap Γ£ò to remove.", EquipmentAccent);
-            _equipmentHost = CreateStretchHost(_contentRoot, "EquipmentHost", 80f);
+            var loadoutSection = CreateStretchHost(_contentRoot, "LoadoutSection", 8f);
+            var loadoutSectionLe = loadoutSection.GetComponent<LayoutElement>();
+            loadoutSectionLe.minHeight = 0f;
+            loadoutSectionLe.preferredHeight = -1f;
+            loadoutSectionLe.flexibleHeight = 0f;
+            var loadoutSectionVlg = loadoutSection.gameObject.AddComponent<VerticalLayoutGroup>();
+            loadoutSectionVlg.spacing = 1f;
+            loadoutSectionVlg.padding = new RectOffset(0, 0, 8, 0);
+            loadoutSectionVlg.childAlignment = TextAnchor.UpperCenter;
+            loadoutSectionVlg.childControlWidth = true;
+            loadoutSectionVlg.childControlHeight = true;
+            loadoutSectionVlg.childForceExpandWidth = true;
+            loadoutSectionVlg.childForceExpandHeight = false;
+            var loadoutSectionFitter = loadoutSection.gameObject.AddComponent<ContentSizeFitter>();
+            loadoutSectionFitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+            loadoutSectionFitter.horizontalFit = ContentSizeFitter.FitMode.Unconstrained;
+
+            CreateAccentSectionHeader(loadoutSection, SectionTitleLoadout,
+                "Cards and gear share these slots — tap × to remove.", EquipmentAccent, 34f, true, packToContent: true);
+            _loadoutHost = CreateStretchHost(loadoutSection, "LoadoutHost", 8f);
+            var loadoutLe = _loadoutHost.GetComponent<LayoutElement>();
+            loadoutLe.minHeight = 0f;
+            loadoutLe.preferredHeight = 8f;
+            loadoutLe.flexibleHeight = 0f;
+            ApplyTopJustifiedHostLayout(_loadoutHost);
+
+            _equipmentHost = CreateStretchHost(loadoutSection, "EquipmentHost", 8f);
             var equipmentLe = _equipmentHost.GetComponent<LayoutElement>();
-            equipmentLe.minHeight = 64f;
-            equipmentLe.preferredHeight = 80f;
+            equipmentLe.minHeight = 0f;
+            equipmentLe.preferredHeight = 8f;
             equipmentLe.flexibleHeight = 0f;
+            ApplyTopJustifiedHostLayout(_equipmentHost);
 
             ApplyNavVisuals();
         }
@@ -233,8 +282,13 @@ namespace TitanOrbit.UI
             navHlg.childForceExpandWidth = true;
             navHlg.childForceExpandHeight = true;
 
-            _navUpgradesBtn = CreateNavButton(navGo.transform, "Upgrades", NavTarget.Upgrades, out _navUpgradesBg);
-            _navStoreBtn = CreateNavButton(navGo.transform, "Store", NavTarget.Store, out _navStoreBg);
+            _navShipsBtn = CreateNavButton(navGo.transform, "SHIPS", NavTarget.Ships, out _navShipsBg);
+            _navGearBtn = CreateNavButton(navGo.transform, "GEAR", NavTarget.Gear, out _navGearBg);
+            _navCardsBtn = CreateNavButton(navGo.transform, "CARDS", NavTarget.Cards, out _navCardsBg);
+            _navUpgradesBtn = _navShipsBtn;
+            _navStoreBtn = _navGearBtn;
+            _navUpgradesBg = _navShipsBg;
+            _navStoreBg = _navGearBg;
         }
 
         private Button CreateNavButton(Transform parent, string label, NavTarget target, out Image bg)
@@ -267,7 +321,7 @@ namespace TitanOrbit.UI
             tr.offsetMax = new Vector2(-4f, -2f);
             var tmp = textGo.AddComponent<TextMeshProUGUI>();
             tmp.text = label;
-            tmp.fontSize = 12f;
+            tmp.fontSize = 11f;
             tmp.fontStyle = FontStyles.Bold;
             tmp.alignment = TextAlignmentOptions.Center;
             tmp.color = Color.white;
@@ -279,16 +333,134 @@ namespace TitanOrbit.UI
         private void ApplyNavVisuals()
         {
             // --- Apply changes ---
-            if (_navUpgradesBg == null || _navStoreBg == null)
-                return;
+            ApplyNavButtonVisual(_navShipsBg, _activeNav == NavTarget.Ships);
+            ApplyNavButtonVisual(_navGearBg, _activeNav == NavTarget.Gear);
+            ApplyNavButtonVisual(_navCardsBg, _activeNav == NavTarget.Cards);
+        }
 
-            bool upgrades = _activeNav == NavTarget.Upgrades;
-            _navUpgradesBg.color = upgrades
+        static void ApplyNavButtonVisual(Image bg, bool selected)
+        {
+            if (bg == null)
+                return;
+            bg.color = selected
                 ? new Color(0.22f, 0.42f, 0.72f, 0.98f)
-                : new Color(0.14f, 0.18f, 0.28f, 0.95f);
-            _navStoreBg.color = !upgrades
-                ? new Color(0.22f, 0.42f, 0.72f, 0.98f)
-                : new Color(0.14f, 0.18f, 0.28f, 0.95f);
+                : new Color(0.10f, 0.14f, 0.22f, 0.95f);
+        }
+
+        /// <summary>
+        /// Writes the uppercase family caption and optional FAMILY STATS rail.
+        /// Hides the rail when every special bonus is 1× (Astro Eagle today).
+        /// </summary>
+        public void RefreshFamilyIdentity(ShipFamilyDefinition family, int shipLevel = 1)
+        {
+            EnsureBuilt();
+            if (_familyNameText != null)
+                _familyNameText.text = FamilyStatHudCopy.FormatFamilyCaption(family);
+
+            bool showStats = FamilyStatHudCopy.HasVisibleFamilyStats(family);
+            if (_familyStatsBlock != null)
+                _familyStatsBlock.SetActive(showStats);
+            if (showStats && _familyStatsText != null)
+                _familyStatsText.text = FamilyStatHudCopy.FormatNonIdentityBonuses(family.specialBonuses);
+
+            string bankName = BulletBankHudCopy.FormatFamilyTypeName(family);
+            bool showWeapon = !string.IsNullOrEmpty(bankName);
+            if (_ordnanceBlock != null)
+                _ordnanceBlock.SetActive(showWeapon);
+            if (showWeapon && _ordnanceText != null)
+                _ordnanceText.text = BulletBankHudCopy.FormatFamilyWeaponGlance(family, shipLevel);
+            if (_ordnanceTip != null)
+            {
+                _ordnanceTip.Caption = BulletBankHudCopy.WeaponTypeCaption;
+                _ordnanceTip.Body = showWeapon
+                    ? BulletBankHudCopy.BuildFamilyOrdnanceTooltip(family, shipLevel)
+                    : string.Empty;
+            }
+        }
+
+        void CreateFamilyStatsBlock(Transform parent)
+        {
+            _familyStatsBlock = new GameObject("FamilyStats");
+            _familyStatsBlock.transform.SetParent(parent, false);
+            var le = _familyStatsBlock.AddComponent<LayoutElement>();
+            le.preferredHeight = 36f;
+            le.minHeight = 28f;
+            le.flexibleHeight = 0f;
+            var bg = _familyStatsBlock.AddComponent<Image>();
+            bg.color = new Color(0.018f, 0.028f, 0.045f, 1f);
+            bg.raycastTarget = false;
+            var vlg = _familyStatsBlock.AddComponent<VerticalLayoutGroup>();
+            vlg.padding = new RectOffset(8, 8, 4, 4);
+            vlg.spacing = 1f;
+            vlg.childControlWidth = true;
+            vlg.childControlHeight = true;
+            vlg.childForceExpandWidth = true;
+            vlg.childForceExpandHeight = false;
+
+            var capGo = new GameObject("Caption");
+            capGo.transform.SetParent(_familyStatsBlock.transform, false);
+            var cap = capGo.AddComponent<TextMeshProUGUI>();
+            cap.text = "FAMILY STATS";
+            cap.fontSize = 9f;
+            cap.fontStyle = FontStyles.Bold;
+            cap.characterSpacing = 1.2f;
+            cap.color = new Color(0.62f, 0.78f, 0.95f, 0.92f);
+            cap.raycastTarget = false;
+            ApplyFont(cap);
+
+            var bodyGo = new GameObject("Body");
+            bodyGo.transform.SetParent(_familyStatsBlock.transform, false);
+            _familyStatsText = bodyGo.AddComponent<TextMeshProUGUI>();
+            _familyStatsText.fontSize = 10f;
+            _familyStatsText.color = new Color(0.88f, 0.92f, 0.98f, 1f);
+            _familyStatsText.raycastTarget = false;
+            ApplyFont(_familyStatsText);
+            _familyStatsBlock.SetActive(false);
+        }
+
+        void CreateOrdnanceBlock(Transform parent)
+        {
+            _ordnanceBlock = new GameObject("Ordnance");
+            _ordnanceBlock.transform.SetParent(parent, false);
+            var le = _ordnanceBlock.AddComponent<LayoutElement>();
+            le.preferredHeight = 52f;
+            le.minHeight = 40f;
+            le.flexibleHeight = 0f;
+            var bg = _ordnanceBlock.AddComponent<Image>();
+            bg.color = new Color(0.018f, 0.028f, 0.045f, 1f);
+            var vlg = _ordnanceBlock.AddComponent<VerticalLayoutGroup>();
+            vlg.padding = new RectOffset(8, 8, 4, 4);
+            vlg.spacing = 1f;
+            vlg.childControlWidth = true;
+            vlg.childControlHeight = true;
+            vlg.childForceExpandWidth = true;
+            vlg.childForceExpandHeight = false;
+
+            var capGo = new GameObject("Caption");
+            capGo.transform.SetParent(_ordnanceBlock.transform, false);
+            var cap = capGo.AddComponent<TextMeshProUGUI>();
+            cap.text = BulletBankHudCopy.WeaponTypeCaption;
+            cap.fontSize = 9f;
+            cap.fontStyle = FontStyles.Bold;
+            cap.characterSpacing = 1.2f;
+            cap.color = new Color(1f, 0.67f, 0.4f, 0.95f);
+            cap.raycastTarget = false;
+            ApplyFont(cap);
+
+            var bodyGo = new GameObject("Body");
+            bodyGo.transform.SetParent(_ordnanceBlock.transform, false);
+            _ordnanceText = bodyGo.AddComponent<TextMeshProUGUI>();
+            _ordnanceText.fontSize = 10f;
+            _ordnanceText.color = new Color(0.88f, 0.92f, 0.98f, 1f);
+            _ordnanceText.enableWordWrapping = true;
+            _ordnanceText.overflowMode = TextOverflowModes.Ellipsis;
+            _ordnanceText.maxVisibleLines = 3;
+            _ordnanceText.raycastTarget = false;
+            ApplyFont(_ordnanceText);
+
+            _ordnanceTip = _ordnanceBlock.AddComponent<MoonDockHoverTip>();
+            _ordnanceTip.Caption = BulletBankHudCopy.WeaponTypeCaption;
+            _ordnanceBlock.SetActive(false);
         }
 
         public void EnsureCurrentShipNode(ShipUpgradeTreeNodeUI nodePrefab, Sprite nodeBackgroundSprite)
@@ -409,23 +581,33 @@ namespace TitanOrbit.UI
         }
 
         private void CreateAccentSectionHeader(Transform parent, string title, string subtitle, Color accent,
-            float blockHeight = 42f, bool showAccent = true)
+            float blockHeight = 42f, bool showAccent = true, bool packToContent = false)
         {
             var blockGo = new GameObject("Header_" + title.Replace(" ", ""));
             blockGo.transform.SetParent(parent, false);
             var blockLe = blockGo.AddComponent<LayoutElement>();
-            blockLe.preferredHeight = blockHeight;
-            blockLe.minHeight = blockHeight - 6f;
             blockLe.flexibleHeight = 0f;
+            if (packToContent)
+            {
+                blockLe.minHeight = 0f;
+                blockLe.preferredHeight = -1f;
+                var headerFitter = blockGo.AddComponent<ContentSizeFitter>();
+                headerFitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+            }
+            else
+            {
+                blockLe.preferredHeight = blockHeight;
+                blockLe.minHeight = blockHeight - 6f;
+            }
 
             var row = blockGo.AddComponent<HorizontalLayoutGroup>();
             row.spacing = 8f;
             row.padding = new RectOffset(0, 0, 0, 0);
-            row.childAlignment = TextAnchor.MiddleLeft;
+            row.childAlignment = TextAnchor.UpperLeft;
             row.childControlWidth = true;
             row.childControlHeight = true;
             row.childForceExpandWidth = false;
-            row.childForceExpandHeight = true;
+            row.childForceExpandHeight = !packToContent;
 
             if (showAccent)
             {
@@ -434,6 +616,7 @@ namespace TitanOrbit.UI
                 var accentLe = accentGo.AddComponent<LayoutElement>();
                 accentLe.preferredWidth = 4f;
                 accentLe.minWidth = 4f;
+                accentLe.minHeight = packToContent ? 28f : 0f;
                 accentLe.flexibleHeight = 1f;
                 var accentImg = accentGo.AddComponent<Image>();
                 accentImg.color = accent;
@@ -446,7 +629,7 @@ namespace TitanOrbit.UI
             textColLe.flexibleWidth = 1f;
             textColLe.minWidth = 80f;
             var textVlg = textColGo.AddComponent<VerticalLayoutGroup>();
-            textVlg.spacing = 2f;
+            textVlg.spacing = packToContent ? 0f : 2f;
             textVlg.childAlignment = TextAnchor.UpperLeft;
             textVlg.childControlWidth = true;
             textVlg.childControlHeight = true;
@@ -456,8 +639,8 @@ namespace TitanOrbit.UI
             var titleGo = new GameObject("Title");
             titleGo.transform.SetParent(textColGo.transform, false);
             var titleLe = titleGo.AddComponent<LayoutElement>();
-            titleLe.preferredHeight = 20f;
-            titleLe.minHeight = 18f;
+            titleLe.preferredHeight = packToContent ? 18f : 20f;
+            titleLe.minHeight = packToContent ? 16f : 18f;
             var titleTmp = titleGo.AddComponent<TextMeshProUGUI>();
             titleTmp.text = title;
             titleTmp.fontSize = 15f;
@@ -472,8 +655,8 @@ namespace TitanOrbit.UI
                 var subGo = new GameObject("Subtitle");
                 subGo.transform.SetParent(textColGo.transform, false);
                 var subLe = subGo.AddComponent<LayoutElement>();
-                subLe.preferredHeight = 16f;
-                subLe.minHeight = 14f;
+                subLe.preferredHeight = packToContent ? 14f : 16f;
+                subLe.minHeight = packToContent ? 12f : 14f;
                 var subTmp = subGo.AddComponent<TextMeshProUGUI>();
                 subTmp.text = subtitle;
                 subTmp.fontSize = 11f;
@@ -919,6 +1102,24 @@ namespace TitanOrbit.UI
             return tmp;
         }
 
+        /// <summary>Packs loadout / equipment cards from the top of the host instead of centering them.</summary>
+        private static void ApplyTopJustifiedHostLayout(RectTransform host)
+        {
+            if (host == null)
+                return;
+
+            var vlg = host.GetComponent<VerticalLayoutGroup>();
+            if (vlg == null)
+                vlg = host.gameObject.AddComponent<VerticalLayoutGroup>();
+            vlg.spacing = 0f;
+            vlg.padding = new RectOffset(0, 0, 0, 0);
+            vlg.childAlignment = TextAnchor.UpperCenter;
+            vlg.childControlWidth = true;
+            vlg.childControlHeight = true;
+            vlg.childForceExpandWidth = true;
+            vlg.childForceExpandHeight = false;
+        }
+
         private static RectTransform CreateStretchHost(Transform parent, string name, float preferredHeight)
         {
             // --- Create instance ---
@@ -931,6 +1132,27 @@ namespace TitanOrbit.UI
             le.flexibleHeight = 0f;
             le.flexibleWidth = 1f;
             return rt;
+        }
+
+        /// <summary>Quiet dark plate behind the Your Ship hero — no neon rail or outline.</summary>
+        private static void ApplyYourShipHeroChrome(RectTransform host)
+        {
+            if (host == null)
+                return;
+
+            var outline = host.gameObject.GetComponent<Outline>();
+            if (outline != null)
+                outline.enabled = false;
+
+            Transform existingRail = host.Find("CyanRail");
+            if (existingRail != null)
+                existingRail.gameObject.SetActive(false);
+
+            var glass = host.gameObject.GetComponent<Image>();
+            if (glass == null)
+                glass = host.gameObject.AddComponent<Image>();
+            glass.color = new Color(0.02f, 0.03f, 0.05f, 0.55f);
+            glass.raycastTarget = false;
         }
 
         private void ApplyFont(TextMeshProUGUI tmp)

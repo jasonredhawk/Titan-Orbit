@@ -1,5 +1,6 @@
 using TitanOrbit;
 using TitanOrbit.Core;
+using TitanOrbit.Data;
 using TitanOrbit.Generation;
 using TitanOrbit.Simulation;
 using Unity.Collections;
@@ -259,7 +260,8 @@ namespace TitanOrbit.ECS
                 // 1:1 leftover damage → cargo so hull 0 + remaining gems stays alive.
                 var damageTeam = selfHarm && ship.Team == attackerTeam ? TeamId.None : attackerTeam;
                 var result = ShipDamageLogic.ApplyHullAndGemDamage(
-                    ref health, ref gems, ref isDead, mine.Damage,
+                    ref health, ref gems, ref isDead,
+                    CardEffectQuery.ScaleIncomingDamage(em, contactShip, mine.Damage),
                     ship.Team, damageTeam,
                     gemExpulsionPerHullDamage: ShipDamageLogic.ExcessDamageGemExpulsionPerHullDamage,
                     isImmune: moonImmune);

@@ -1,4 +1,5 @@
 using TitanOrbit.Core;
+using TitanOrbit.Data;
 using TitanOrbit.Generation;
 using TitanOrbit.Simulation;
 using Unity.Collections;
@@ -92,7 +93,7 @@ namespace TitanOrbit.ECS
                         ref health,
                         ref gems,
                         ref isDead,
-                        damage,
+                        CardEffectQuery.ScaleIncomingDamage(state.EntityManager, entity, damage),
                         ship.Team,
                         (TeamId)inst.SourceTeam,
                         gemExpulsionPerHullDamage: ShipDamageLogic.ExcessDamageGemExpulsionPerHullDamage,

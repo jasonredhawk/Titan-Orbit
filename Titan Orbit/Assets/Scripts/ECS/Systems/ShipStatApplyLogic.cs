@@ -440,7 +440,8 @@ namespace TitanOrbit.ECS
                 weapon.FireRate = fireRate;
                 weapon.BulletSpeed = bulletSpeed;
                 weapon.BulletDamage = firePower;
-                weapon.EnergyCostPerShot = firePower;
+                weapon.EnergyCostPerShot = firePower
+                    * CardEffectQuery.GetMul(em, shipEntity, CardEffectKind.WeaponEnergyCostMul);
                 // [TITAN-ORBIT] Bullet travel range from family stats (ship-level scaled).
                 // Fallback to DefaultBulletMaxDistance when authored range is zero/missing.
                 // Lifetime is derived so MaxDistance wins before the timer for normal bullet speeds.
@@ -741,6 +742,8 @@ namespace TitanOrbit.ECS
 
                 CardData card = FindCardInFamily(family, cardId);
                 if (card == null)
+                    card = FindCardAnywhere(cardId);
+                if (card == null)
                     continue;
 
                 // [TITAN-ORBIT] CardData flat adds + combat multipliers (pre-ECS card cache parity).
@@ -759,7 +762,20 @@ namespace TitanOrbit.ECS
                     baseline.fireRate *= card.fireRateMultiplier;
                 if (card.bulletSpeedMultiplier > 0.01f && !Mathf.Approximately(card.bulletSpeedMultiplier, 1f))
                     baseline.bulletSpeed *= card.bulletSpeedMultiplier;
+
+                // Family-style overlay (only ≠1 fields change the hull). Stacks after family specialBonuses.
+                if (!card.familyBonusOverlay.IsIdentity)
+                    baseline = card.familyBonusOverlay.Apply(baseline);
             }
+
+            // Named CardEffect rows that map onto chassis stats (range, ram, tractor, overdrive).
+            baseline.bulletRange *= CardEffectQuery.GetMul(em, shipEntity, CardEffectKind.BulletRangeMul);
+            baseline.fireRate *= CardEffectQuery.GetMul(em, shipEntity, CardEffectKind.FireRateMul);
+            baseline.rammingPower *= CardEffectQuery.GetMul(em, shipEntity, CardEffectKind.RammingMul);
+            baseline.tractorBeamDistance *= CardEffectQuery.GetMul(em, shipEntity, CardEffectKind.TractorRangeMul);
+            baseline.tractorBeamPower *= CardEffectQuery.GetMul(em, shipEntity, CardEffectKind.TractorPowerMul);
+            baseline.extraSpeedPercent *= CardEffectQuery.GetMul(em, shipEntity, CardEffectKind.OverdriveSpeedMul);
+            baseline.extraSpeedEnergyDrain *= CardEffectQuery.GetMul(em, shipEntity, CardEffectKind.OverdriveDrainMul);
         }
 
         /// <summary>Looks up a CardData by stable id inside one ship family's upgrade deck.</summary>

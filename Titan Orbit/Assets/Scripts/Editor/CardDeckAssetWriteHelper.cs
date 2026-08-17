@@ -66,6 +66,11 @@ namespace TitanOrbit.Editor
             c.bulletSpeedMultiplier = 1f;
             c.gemDepositSpeedMultiplier = 1f;
             c.peopleTransferSpeedMultiplier = 1f;
+            c.familyBonusOverlay = ShipFamilySpecialBonuses.Identity;
+            if (c.effects == null)
+                c.effects = new System.Collections.Generic.List<CardEffect>();
+            else
+                c.effects.Clear();
         }
 
         public static Sprite LoadSprite(string assetPath)

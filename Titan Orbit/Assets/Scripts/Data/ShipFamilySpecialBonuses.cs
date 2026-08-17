@@ -172,10 +172,50 @@ namespace TitanOrbit.Data
         }
 
         /// <summary>
+        /// Pushes each ≠1 multiplier farther from 1. <paramref name="scaleToward"/> is the
+        /// card magnitude (1.03 = +3% farther from identity). Identity fields stay 1.
+        /// Used when a Family Crest card levels up.
+        /// </summary>
+        public ShipFamilySpecialBonuses ScaleNonIdentity(float scaleToward)
+        {
+            float extra = Mathf.Max(0f, scaleToward - 1f);
+            return new ShipFamilySpecialBonuses
+            {
+                moveSpeedMul = ScaleMul(moveSpeedMul, extra),
+                accelerationMul = ScaleMul(accelerationMul, extra),
+                turnSpeedMul = ScaleMul(turnSpeedMul, extra),
+                firePowerMul = ScaleMul(firePowerMul, extra),
+                fireRateMul = ScaleMul(fireRateMul, extra),
+                bulletSpeedMul = ScaleMul(bulletSpeedMul, extra),
+                bulletRangeMul = ScaleMul(bulletRangeMul, extra),
+                rammingMul = ScaleMul(rammingMul, extra),
+                healthCapMul = ScaleMul(healthCapMul, extra),
+                healthRegenMul = ScaleMul(healthRegenMul, extra),
+                energyCapMul = ScaleMul(energyCapMul, extra),
+                energyRegenMul = ScaleMul(energyRegenMul, extra),
+                extraSpeedPercentMul = ScaleMul(extraSpeedPercentMul, extra),
+                extraSpeedEnergyDrainMul = ScaleMul(extraSpeedEnergyDrainMul, extra),
+                maxGemsMul = ScaleMul(maxGemsMul, extra),
+                maxPeopleMul = ScaleMul(maxPeopleMul, extra),
+                tractorDistanceMul = ScaleMul(tractorDistanceMul, extra),
+                tractorPowerMul = ScaleMul(tractorPowerMul, extra),
+                cameraHeightMul = cameraHeightMul,
+            };
+        }
+
+        /// <summary>
         /// Camera height multiplier for CameraFollowEcs. Zero / unset authored values
         /// become 1 so a fresh asset does not pin the camera to the ship.
         /// </summary>
         public float ResolveCameraHeightMul() => Mul(cameraHeightMul);
+
+        static float ScaleMul(float authored, float extra)
+        {
+            float m = Mul(authored);
+            if (Mathf.Abs(m - 1f) < 0.0001f)
+                return 1f;
+            return m + (m - 1f) * extra;
+        }
 
         static float Mul(float value) => value > 0.0001f ? value : 1f;
 

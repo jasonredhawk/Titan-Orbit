@@ -15,12 +15,7 @@ namespace TitanOrbit.Editor
         {
             if (!interactiveDialogs)
                 return;
-            EditorUtility.DisplayDialog(
-                "Create New Card Deck",
-                "Scaled card-deck generation is not restored yet.\n\n" +
-                "Use \"Create empty Card Deck Definition & assign\" below, " +
-                "or generate a procedural deck at runtime via GetUpgradeCards().",
-                "OK");
+            UniqueCardDeckGenerator.RebuildFamilyDeck(def, interactiveDialogs);
         }
     }
 }

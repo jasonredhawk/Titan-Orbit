@@ -275,7 +275,8 @@ namespace TitanOrbit.ECS
                         : StoreItemData.DroneReferenceMaxLevel;
                     // One-sixth ship fire-power curve (L1 ≈ 0.67, L6 = 1.5). Bank multipliers
                     // (e.g. 1.25 fire power) then apply unchanged — never the hull's live guns.
-                    float damage = math.max(0.05f, StoreItemData.GetCombatDroneDamage(droneLevel));
+                    float damage = math.max(0.05f, StoreItemData.GetCombatDroneDamage(droneLevel)
+                        * CardEffectQuery.GetMul(EntityManager, entity, CardEffectKind.DroneDamageMul));
                     // Authored primary abilities only; StrengthScale (1/6) shrinks force/radius/DPS.
                     // Durations and tick intervals stay at the bullet type's authored times.
                     const int firePowerExtras = 0;

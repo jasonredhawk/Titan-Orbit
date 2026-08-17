@@ -102,6 +102,7 @@ namespace TitanOrbit.ECS
                     out float visualScale,
                     out int resolvedBank,
                     out int extras);
+                damage *= CardEffectQuery.GetMul(state.EntityManager, entity, CardEffectKind.RocketDamageMul);
                 if (resolvedBank >= 0)
                     _rocketBankIndex = resolvedBank;
 

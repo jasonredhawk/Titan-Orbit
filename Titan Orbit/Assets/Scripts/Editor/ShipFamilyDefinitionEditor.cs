@@ -232,15 +232,15 @@ namespace TitanOrbit.Editor
 
             EditorGUILayout.Space(2);
             EditorGUILayout.BeginVertical(EditorStyles.helpBox);
-            EditorGUILayout.LabelField("Create New Card Deck", EditorStyles.boldLabel);
+            EditorGUILayout.LabelField("Create Unique Card Deck", EditorStyles.boldLabel); // unique overlay cards
             EditorGUILayout.LabelField(
-                "Same as Titan Orbit ΓåÆ Cards ΓåÆ Build Scaled Astro Eagle Deck: writes CardData assets, builds the scaled deck for this Family Id, and assigns Upgrade Card Deck.",
+                "Writes this family's unique 3-archetype overlay cards (levels 1–7) and assigns Upgrade Card Deck. Same as Redo in Titan Orbit → Card Decks.",
                 new GUIStyle(EditorStyles.miniLabel) { wordWrap = true });
             using (new EditorGUI.DisabledScope(def == null || string.IsNullOrWhiteSpace(def.familyId)))
             {
                 var prev = GUI.backgroundColor;
                 GUI.backgroundColor = new Color(0.55f, 0.82f, 1f, 1f);
-                if (GUILayout.Button("Create New Card Deck", GUILayout.Height(34)))
+                if (GUILayout.Button("Create Unique Card Deck", GUILayout.Height(34)))
                 {
                     if (def != null)
                         CardDeckScaledAssetGenerator.BuildScaledDeckForFamily(def, interactiveDialogs: true);
@@ -400,18 +400,37 @@ namespace TitanOrbit.Editor
             EditorGUILayout.BeginVertical(EditorStyles.helpBox);
             EditorGUILayout.LabelField("Upgrade Card Deck", EditorStyles.boldLabel);
             EditorGUILayout.LabelField(
-                "Optional: empty deck asset next to this file for hand-authored cards, or prefab-scanned pool (different folder than Create New Card Deck above).",
+                "Unique overlay cards (not extra hull parts). Redo rebuilds from the family archetype table + special bonuses.",
                 new GUIStyle(EditorStyles.miniLabel) { wordWrap = true });
 
-            if (GUILayout.Button("Create empty Card Deck Definition & assign", GUILayout.MinHeight(26)))
-                CreateEmptyCardDeckAndAssign(def);
+            IReadOnlyList<CardData> cards = def.GetUpgradeCards();
+            int shown = cards != null ? Mathf.Min(8, cards.Count) : 0;
+            EditorGUILayout.LabelField(cards != null && cards.Count > 0
+                ? $"{cards.Count} cards  (showing {shown})"
+                : "Procedural fallback — press Redo to author a deck.");
+            for (int i = 0; i < shown; i++)
+            {
+                if (cards[i] == null)
+                    continue;
+                EditorGUILayout.LabelField($"  {cards[i].GetDisplayNameOrDefault()}  Lv{cards[i].cardLevel}  {cards[i].rarity}");
+            }
+
+            if (GUILayout.Button("Open Card Decks window", GUILayout.MinHeight(24)))
+                ShipFamilyCardDeckEditorWindow.OpenFocused(def);
 
             using (new EditorGUI.DisabledScope(string.IsNullOrWhiteSpace(def.familyId)))
             {
                 var prevBg = GUI.backgroundColor;
                 GUI.backgroundColor = new Color(0.78f, 0.98f, 0.82f, 1f);
-                if (GUILayout.Button("Generate card pool ΓÇö from upgrade tree prefabs", GUILayout.MinHeight(26)))
-                    CardDeckFromPrefabStatsGenerator.BuildPrefabDerivedDeckForFamily(def, interactiveDialogs: true);
+                if (GUILayout.Button("Redo this family's unique card deck", GUILayout.MinHeight(26)))
+                {
+                    if (EditorUtility.DisplayDialog(
+                        "Redo card deck",
+                        $"Replace {def.familyId} cards from the unique-archetype table?",
+                        "Redo",
+                        "Cancel"))
+                        UniqueCardDeckGenerator.RebuildFamilyDeck(def, interactiveDialogs: true);
+                }
                 GUI.backgroundColor = prevBg;
             }
 
@@ -1990,6 +2009,24 @@ namespace TitanOrbit.Editor
                     ? $"Updated {totalUpdated} cockpit entries across {families} ShipFamilyDefinition asset(s)."
                     : "All ship families already use current ramming suggestions (no changes).",
                 "OK");
+        }
+
+        [MenuItem("Titan Orbit/Card Decks")]
+        private static void OpenCardDecksWindow()
+        {
+            ShipFamilyCardDeckEditorWindow.Open();
+        }
+
+        [MenuItem("Titan Orbit/Card Decks/Redo All Families")]
+        private static void RedoAllFamilyCardDecks()
+        {
+            UniqueCardDeckGenerator.RedoAllFromMenu();
+        }
+
+        [MenuItem("Titan Orbit/Store Items/Generate Theatrical Menu Previews")]
+        private static void GenerateStoreItemPreviews()
+        {
+            StoreItemMenuPreviewGenerator.GenerateFromMenu();
         }
 
         private readonly struct TeamMaterialSpec

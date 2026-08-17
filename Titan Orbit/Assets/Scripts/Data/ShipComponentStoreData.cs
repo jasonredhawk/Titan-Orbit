@@ -100,8 +100,11 @@ namespace TitanOrbit.Data
             if (entry == null)
                 return default;
             // [TITAN-ORBIT] Solo store-card preview: Extra Level with count 1 + weapon divide when needed.
+            // Family special bonuses are baked into the number (not shown as a per-tile increment).
             ShipComponentAbilityStats effective = GetEffectiveStatsAtShipLevel(
                 entry.stats, shipLevel, entry.componentId);
+            if (family != null)
+                effective = family.ApplySpecialBonuses(effective);
             return BulletBankProfileUtility.ApplyProfileToComponentStats(effective, entry, family);
         }
 
@@ -156,8 +159,14 @@ namespace TitanOrbit.Data
 
         public static Sprite GetMenuPreviewSprite(ShipFamilyDefinition family, ShipFamilyComponentEntry entry, TeamManager.Team team = TeamManager.Team.None)
         {
-            if (entry != null && entry.GetMenuPreviewSprite(team) != null)
-                return entry.GetMenuPreviewSprite(team);
+            if (entry != null)
+            {
+                Sprite theatrical = entry.GetTheatricalMenuPreviewSprite(team);
+                if (theatrical != null)
+                    return theatrical;
+                if (entry.GetMenuPreviewSprite(team) != null)
+                    return entry.GetMenuPreviewSprite(team);
+            }
             if (family != null && entry != null && !string.IsNullOrWhiteSpace(entry.componentId))
                 return family.GetMenuPreviewSpriteForComponent(entry.componentId, team);
             return null;
@@ -554,6 +563,69 @@ namespace TitanOrbit.Data
             if (Mathf.Abs(value - Mathf.Round(value)) < 0.05f)
                 return Mathf.RoundToInt(value).ToString();
             return value.ToString("0.#");
+        }
+
+        /// <summary>
+        /// Full Extra Level hover copy for compact GEAR tiles. Numbers already include family muls.
+        /// One short formula line — not the full hull essay.
+        /// </summary>
+        public static string BuildExtraLevelTooltipRichText(
+            ShipFamilyComponentEntry entry,
+            int shipLevel,
+            ShipFamilyDefinition family)
+        {
+            if (entry == null)
+                return string.Empty;
+
+            var sb = new StringBuilder(320);
+            sb.Append("<b>EXTRA LEVEL</b>\n");
+            bool weapon = ShipComponentAbilityStats.IsWeaponComponent(entry.componentId);
+            bool propulsion = ShipComponentAbilityStats.IsPropulsionComponent(entry.componentId);
+            ShipComponentAbilityStats s = GetEffectiveStatsForDisplay(entry, shipLevel, family);
+            int lv = Mathf.Max(1, shipLevel);
+
+            void Line(string label, float value, bool abilityOnly)
+            {
+                if (Mathf.Abs(value) < 0.05f)
+                    return;
+                sb.Append('+').Append(FormatStatValue(value)).Append(' ').Append(label);
+                sb.Append("  <color=#7EC8FF>·  Extra Lv ");
+                if (abilityOnly)
+                    sb.Append("(ability only)</color>\n");
+                else if (weapon && (label == "Fire Power" || label == "Fire Rate" || label == "Bullet Range"))
+                    sb.Append("(Base + PerExtra × (shipLv − 1))</color>\n");
+                else
+                    sb.Append("(Base + PerExtra × (shipLv − 1))</color>\n");
+            }
+
+            Line("Fire Power", s.firePower, false);
+            Line("Fire Rate", s.fireRate, false);
+            Line("Bullet Range", s.bulletRange, false);
+            Line("Bullet Speed", s.bulletSpeed, weapon);
+            Line("Health", s.healthCap, false);
+            Line("Energy", s.energyCap, false);
+            Line("Move", s.moveSpeed, false);
+            Line("Accel", s.accelerationCap, false);
+            Line("Turn", s.turnSpeed, false);
+            Line("Ramming", s.rammingPower, false);
+            Line("Gem Cap", s.maxGems, false);
+            Line("People Cap", s.maxPeople, false);
+
+            if (propulsion)
+            {
+                TryGetPropulsionCumulativeGain(family, entry, lv, out float cumMove, out float cumAccel);
+                if (Mathf.Abs(cumMove) > 0.01f || Mathf.Abs(cumAccel) > 0.01f)
+                {
+                    sb.Append("<color=#AAEEDD>Hull gain  Move +")
+                        .Append(FormatStatValue(cumMove))
+                        .Append("  Accel +")
+                        .Append(FormatStatValue(cumAccel))
+                        .Append("</color>\n");
+                }
+            }
+
+            sb.Append("<color=#5B7A94>Lv ").Append(lv).Append(" purchase preview.</color>");
+            return sb.ToString().TrimEnd();
         }
     }
 

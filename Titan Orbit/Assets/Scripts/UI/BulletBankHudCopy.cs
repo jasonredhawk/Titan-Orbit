@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text;
+using TitanOrbit.Core;
 using TitanOrbit.Data;
 using TitanOrbit.ECS;
 using TitanOrbit.Game;
@@ -18,6 +19,7 @@ namespace TitanOrbit.UI
         const string HexMute = "5B7A94";
         const string HexResult = "AAEEDD";
         const string HexAccent = "FFAA66";
+        public const string WeaponTypeCaption = "WEAPON TYPE";
 
         /// <summary>B-key / heal bank currently fired by the local ship (0 when unknown).</summary>
         public static int ResolveLiveFireBankIndex()
@@ -76,7 +78,7 @@ namespace TitanOrbit.UI
             if (bank == null || !bank.TryGetProfile(live.FireBankIndex, out BulletBankProfile profile) ||
                 profile == null)
             {
-                ShipStatTooltipChrome.AppendSectionBanner(sb, "ORDNANCE", HexAccent);
+                ShipStatTooltipChrome.AppendSectionBanner(sb, WeaponTypeCaption, HexAccent);
                 sb.Append("<color=#").Append(HexMute).Append(">No bullet bank loaded.</color>").AppendLine();
                 return;
             }
@@ -85,7 +87,7 @@ namespace TitanOrbit.UI
             if (string.IsNullOrEmpty(typeName))
                 typeName = "Bank " + live.FireBankIndex.ToString(CultureInfo.InvariantCulture);
 
-            ShipStatTooltipChrome.AppendSectionBanner(sb, "ORDNANCE", HexAccent);
+            ShipStatTooltipChrome.AppendSectionBanner(sb, WeaponTypeCaption, HexAccent);
             sb.Append("<b><color=#E8F4FF>").Append(typeName).Append("</color></b>");
             if (live.HealingBulletsActive)
                 sb.Append("  <color=#7DFFB2>HEAL</color>");
@@ -338,6 +340,103 @@ namespace TitanOrbit.UI
         static void AppendTint(StringBuilder sb, string hex, string text)
         {
             sb.Append("<color=#").Append(hex).Append('>').Append(text).Append("</color>");
+        }
+
+        /// <summary>Family default bank type name (Fireballs, Rift, …) for Orbit Menu rails.</summary>
+        public static string FormatFamilyTypeName(ShipFamilyDefinition family)
+        {
+            if (family == null)
+                return string.Empty;
+            int idx = BulletBankProfileUtility.ResolveBankIndexForFamily(family);
+            var bank = BulletBankCombatLogic.Bank;
+            if (bank == null)
+                return string.Empty;
+            return bank.GetCategoryName(idx);
+        }
+
+        /// <summary>
+        /// Glance line for the left dock: type name plus the specials that type actually does
+        /// (stun, burn, pull, …) at this ship level.
+        /// </summary>
+        public static string FormatFamilyWeaponGlance(ShipFamilyDefinition family, int shipLevel)
+        {
+            string typeName = FormatFamilyTypeName(family);
+            if (string.IsNullOrEmpty(typeName))
+                return string.Empty;
+
+            string specials = FormatFamilyWeaponSpecials(family, shipLevel);
+            return string.IsNullOrEmpty(specials) ? typeName : typeName + "\n" + specials;
+        }
+
+        static string FormatFamilyWeaponSpecials(ShipFamilyDefinition family, int shipLevel)
+        {
+            if (family == null)
+                return string.Empty;
+
+            int idx = BulletBankProfileUtility.ResolveBankIndexForFamily(family);
+            var bank = BulletBankCombatLogic.Bank;
+            if (bank == null || !bank.TryGetProfile(idx, out BulletBankProfile profile) || profile == null
+                || profile.abilities == null || profile.abilities.Count == 0)
+                return string.Empty;
+
+            int extras = BulletBankCombatLogic.CountFirePowerExtraLevels(Mathf.Max(1, shipLevel), 0);
+            var parts = new System.Collections.Generic.List<string>(profile.abilities.Count);
+            for (int i = 0; i < profile.abilities.Count; i++)
+            {
+                BulletBankAbility authored = profile.abilities[i];
+                if (authored == null)
+                    continue;
+                string glance = FormatShortAbilityGlance(authored, extras);
+                if (!string.IsNullOrEmpty(glance))
+                    parts.Add(glance);
+            }
+
+            return parts.Count == 0 ? string.Empty : string.Join(" · ", parts);
+        }
+
+        static string FormatShortAbilityGlance(BulletBankAbility authored, int extras)
+        {
+            BulletBankAbility now = authored.Resolved(extras);
+            switch (authored.type)
+            {
+                case BulletBankAbilityType.ElectricShockDisable:
+                    return "Stun " + F(now.duration) + "s";
+                case BulletBankAbilityType.BurnOverTime:
+                    return "Burn " + F(now.magnitude) + "/s";
+                case BulletBankAbilityType.HealFriendly:
+                    return "Heals allies";
+                case BulletBankAbilityType.ConcussivePush:
+                    return "Blast push";
+                case BulletBankAbilityType.GravityPull:
+                    return "Pull field";
+                case BulletBankAbilityType.DamageMultiplier:
+                case BulletBankAbilityType.DamageMultiplierVsAsteroid:
+                case BulletBankAbilityType.DamageMultiplierVsShip:
+                case BulletBankAbilityType.DamageMultiplierVsGemMoon:
+                case BulletBankAbilityType.DamageMultiplierVsGem:
+                    return "Bonus dmg vs " + DamageTargetLabel(authored);
+                case BulletBankAbilityType.StretchLengthInFlight:
+                    return "Stretch shot";
+                default:
+                    return DisplayNameFormatting.SplitCamelCase(authored.type.ToString());
+            }
+        }
+
+        /// <summary>
+        /// Full ORDNANCE tooltip for the family's default bank at this ship level
+        /// (no Fire Power purchases — store preview).
+        /// </summary>
+        public static string BuildFamilyOrdnanceTooltip(ShipFamilyDefinition family, int shipLevel)
+        {
+            var sb = new StringBuilder(384);
+            var live = new ShipSpeedometerStatTooltips.LiveContext
+            {
+                FireBankIndex = BulletBankProfileUtility.ResolveBankIndexForFamily(family),
+                Ship = new ShipState { ShipLevel = Mathf.Max(1, shipLevel) },
+                FirePowerAbilityLevel = 0,
+            };
+            AppendFullSection(sb, in live, default);
+            return sb.ToString();
         }
     }
 }

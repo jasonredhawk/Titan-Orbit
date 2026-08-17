@@ -88,6 +88,13 @@ namespace TitanOrbit.Data
         [Tooltip("Multiplies people load and unload speed while in orbit.")]
         public float peopleTransferSpeedMultiplier = 1f;
 
+        [Header("Unique Effects")]
+        [Tooltip("Named overlay rows (deposit speed, mining yield, drone HP, …). Applied by CardEffectQuery.")]
+        public System.Collections.Generic.List<CardEffect> effects = new System.Collections.Generic.List<CardEffect>();
+
+        [Tooltip("Optional family-style multipliers stacked after the hull's ShipFamilySpecialBonuses. Only ≠1 fields apply.")]
+        public ShipFamilySpecialBonuses familyBonusOverlay = ShipFamilySpecialBonuses.Identity;
+
         [Header("Mass & Visual")]
         [Tooltip("Additional mass contributed by this part.")]
         public float massContribution;

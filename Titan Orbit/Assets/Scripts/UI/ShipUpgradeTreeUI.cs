@@ -17,21 +17,24 @@ namespace TitanOrbit.UI
     public class ShipUpgradeTreeUI : MonoBehaviour
     {
         public const string PanelTitleText = "Ship Upgrade Tree";
-        public const string PanelDefaultSubtitle = "Green: tree slot. Blue: affordable upgrades. Cyan: free hull swap. Your ship is in the left panel.";
+        public const string PanelDefaultSubtitle = "Green: your path. Cyan: available next hulls. Dim: other routes. Your ship is in the left panel.";
 
         private const float CanvasInnerMargin = 8f;
         private const float MoonNodeHeight = 100f;
         private const float MoonMinNodeWidth = 74f;
-        private const float MoonLevelColGap = 12f;
+        private const float MoonMegaScale = 1.5f;
+        private const float MoonLevelColGap = 20f;
         private const float MoonBranchGapY = 8f;
         private const float LayoutWidthBucketPixels = 32f;
         private const float MoonChromeHeightHint = 28f;
         private const float VerticalNodeHeight = 188f;
         private const float VerticalLevelSpacing = VerticalNodeHeight + 44f;
         private const float VerticalColGap = 6f;
-        private static readonly Color ConnectorDim = new Color(0.45f, 0.62f, 0.85f, 0.55f);
-        private static readonly Color ConnectorPath = new Color(0.35f, 0.98f, 0.62f, 0.92f);
+        private static readonly Color ConnectorDim = new Color(0.28f, 0.42f, 0.62f, 0.40f);
+        private static readonly Color ConnectorAvailable = new Color(0.32f, 0.92f, 1f, 0.94f);
+        private static readonly Color ConnectorPath = new Color(0.35f, 0.98f, 0.62f, 0.95f);
         private static readonly Vector3[] ConnectorCornerBuffer = new Vector3[4];
+        private readonly List<int> _connectorTargets = new List<int>(2);
 
         [Header("Template references (edit on prefab)")]
         [SerializeField] private TextMeshProUGUI titleText;
@@ -230,6 +233,9 @@ namespace TitanOrbit.UI
             ComputeMoonHorizontalGeometry(out float nodeW, out float nodeH, out float canvasW, out float canvasH);
             ApplyHorizontalTreeCanvasLayout(canvasW, canvasH);
             float trackW = GetMoonPowerBarTrackWidth(nodeW);
+            float megaW = Mathf.Round(nodeW * MoonMegaScale);
+            float megaH = Mathf.Round(nodeH * MoonMegaScale);
+            float megaTrackW = GetMoonPowerBarTrackWidth(megaW);
 
             var byLevel = new Dictionary<int, List<ShipUpgradeTreeNodeUI>>();
             int tierIndex = 0;
@@ -237,6 +243,10 @@ namespace TitanOrbit.UI
             {
                 int count = UpgradeTree.GetShipCountForLevel(level);
                 var views = new List<ShipUpgradeTreeNodeUI>(count);
+                bool mega = level == 7;
+                float useW = mega ? megaW : nodeW;
+                float useH = mega ? megaH : nodeH;
+                float useTrack = mega ? megaTrackW : trackW;
                 float colX = 0f;
                 float nodeY = 0f;
                 for (int b = 0; b < count; b++)
@@ -248,14 +258,14 @@ namespace TitanOrbit.UI
                         tierIndex++;
 
                     var node = InstantiateNodeForPreview();
-                    node.BindSlot(level, b, null, nodeW, nodeH, trackW);
+                    node.BindSlot(level, b, null, useW, useH, useTrack);
                     node.ConfigureLayout(true);
                     node.SetLevelLabel(level == 1 ? "Lv 1" : $"Lv {level}");
                     string shipName = tier != null
                         ? (string.IsNullOrEmpty(tier.upgradeTreeShipName) ? tier.chassisId : tier.upgradeTreeShipName)
                         : $"Branch {b + 1}";
                     node.SetShipName(shipName);
-                    node.SetPrice(family != null ? "ΓÇö" : "Preview");
+                    node.SetPrice(family != null ? "—" : "Preview");
                     node.SetPreview(tier != null ? tier.menuPreviewSprite : null);
                     if (tier != null)
                     {
@@ -266,8 +276,16 @@ namespace TitanOrbit.UI
                     else
                         node.ApplyPowerBreakdown(default, maxes);
 
-                    GetMoonNodePosition(level, b, count, nodeW, nodeH, canvasW, canvasH, ComputeMaxColumnStackHeight(nodeH),
-                        out colX, out nodeY);
+                    GetMoonNodePosition(level, b, count, nodeW, nodeH, megaW, canvasW, canvasH,
+                        ComputeMaxColumnStackHeight(nodeH), out colX, out nodeY);
+                    if (mega)
+                    {
+                        GetMoonNodePosition(6, b * 2, 6, nodeW, nodeH, megaW, canvasW, canvasH,
+                            ComputeMaxColumnStackHeight(nodeH), out _, out float y0);
+                        GetMoonNodePosition(6, b * 2 + 1, 6, nodeW, nodeH, megaW, canvasW, canvasH,
+                            ComputeMaxColumnStackHeight(nodeH), out _, out float y1);
+                        nodeY = (y0 + y1) * 0.5f;
+                    }
                     node.Rect.anchoredPosition = new Vector2(colX, nodeY);
                     views.Add(node);
                     _nodes.Add(node);
@@ -278,7 +296,7 @@ namespace TitanOrbit.UI
             }
 
             ForceLayoutBeforeConnectors();
-            EnforceUniformNodeSizes(nodeW, nodeH, trackW);
+            EnforceUniformNodeSizesExceptMega(nodeW, nodeH, trackW, megaW, megaH, megaTrackW);
             DrawConnectors(byLevel, null, moonHorizontal: true);
 
             if (hintText != null)
@@ -323,19 +341,36 @@ namespace TitanOrbit.UI
             _station.TryGetPlayerUpgradePathEdges(out HashSet<(int fL, int fB, int tL, int tB)> pathEdges);
             var byLevel = new Dictionary<int, List<ShipUpgradeTreeNodeUI>>();
 
+            float megaW = Mathf.Round(nodeW * MoonMegaScale);
+            float megaH = Mathf.Round(nodeH * MoonMegaScale);
+            float megaTrackW = GetMoonPowerBarTrackWidth(megaW);
+
             for (int level = 1; level <= maxLevel; level++)
             {
                 int count = UpgradeTree.GetShipCountForLevel(level);
                 var views = new List<ShipUpgradeTreeNodeUI>(count);
+                bool mega = level == 7;
+                float useW = mega ? megaW : nodeW;
+                float useH = mega ? megaH : nodeH;
+                float useTrack = mega ? megaTrackW : trackW;
                 float colX = 0f;
                 float nodeY = 0f;
                 for (int b = 0; b < count; b++)
                 {
                     ShipUpgradeNode upgradeNode = level == 1 ? null : tree.GetNodeForBranch(level, b);
-                    var view = SpawnNode(level, b, upgradeNode, nodeW, nodeH, trackW);
+                    var view = SpawnNode(level, b, upgradeNode, useW, useH, useTrack);
                     view.ConfigureLayout(true);
-                    GetMoonNodePosition(level, b, count, nodeW, nodeH, canvasW, canvasH, ComputeMaxColumnStackHeight(nodeH),
-                        out colX, out nodeY);
+                    GetMoonNodePosition(level, b, count, nodeW, nodeH, megaW, canvasW, canvasH,
+                        ComputeMaxColumnStackHeight(nodeH), out colX, out nodeY);
+                    if (mega)
+                    {
+                        // Align each mega to the midpoint of its L6 pair (1&2, 3&4, 5&6).
+                        GetMoonNodePosition(6, b * 2, 6, nodeW, nodeH, megaW, canvasW, canvasH,
+                            ComputeMaxColumnStackHeight(nodeH), out _, out float y0);
+                        GetMoonNodePosition(6, b * 2 + 1, 6, nodeW, nodeH, megaW, canvasW, canvasH,
+                            ComputeMaxColumnStackHeight(nodeH), out _, out float y1);
+                        nodeY = (y0 + y1) * 0.5f;
+                    }
                     view.Rect.anchoredPosition = new Vector2(colX, nodeY);
                     views.Add(view);
                 }
@@ -344,7 +379,7 @@ namespace TitanOrbit.UI
             }
 
             ForceLayoutBeforeConnectors();
-            EnforceUniformNodeSizes(nodeW, nodeH, trackW);
+            EnforceUniformNodeSizesExceptMega(nodeW, nodeH, trackW, megaW, megaH, megaTrackW);
             DrawConnectors(byLevel, pathEdges, moonHorizontal: true);
         }
 
@@ -404,6 +439,7 @@ namespace TitanOrbit.UI
             int branchCount,
             float nodeW,
             float nodeH,
+            float megaW,
             float canvasW,
             float canvasH,
             float maxColStackH,
@@ -413,10 +449,15 @@ namespace TitanOrbit.UI
             float halfW = canvasW * 0.5f;
             float halfH = canvasH * 0.5f;
             float margin = CanvasInnerMargin;
-            float stackH = branchCount * nodeH + (branchCount - 1) * MoonBranchGapY;
+            float gapY = ComputeMoonBranchGapY(nodeH);
+            float stackH = branchCount * nodeH + (branchCount - 1) * gapY;
             float stackTop = halfH - margin - (maxColStackH - stackH) * 0.5f;
-            x = Mathf.Round(-halfW + margin + nodeW * 0.5f + (level - 1) * (nodeW + MoonLevelColGap));
-            y = Mathf.Round(stackTop - nodeH * 0.5f - (branchCount - 1 - branch) * (nodeH + MoonBranchGapY));
+            float stride = nodeW + MoonLevelColGap;
+            if (level >= 7)
+                x = Mathf.Round(-halfW + margin + 6f * stride + Mathf.Max(nodeW, megaW) * 0.5f);
+            else
+                x = Mathf.Round(-halfW + margin + nodeW * 0.5f + (level - 1) * stride);
+            y = Mathf.Round(stackTop - nodeH * 0.5f - (branchCount - 1 - branch) * (nodeH + gapY));
         }
 
         private void ForceLayoutBeforeConnectors()
@@ -434,13 +475,23 @@ namespace TitanOrbit.UI
 
         private void EnforceUniformNodeSizes(float nodeW, float nodeH, float trackW)
         {
-            // --- EnforceUniformNodeSizes ---
+            EnforceUniformNodeSizesExceptMega(nodeW, nodeH, trackW, nodeW, nodeH, trackW);
+        }
+
+        /// <summary>Keeps L1–L6 uniform; L7 MEGA nodes stay larger so the final hulls read as bosses.</summary>
+        private void EnforceUniformNodeSizesExceptMega(
+            float nodeW, float nodeH, float trackW,
+            float megaW, float megaH, float megaTrackW)
+        {
             for (int i = 0; i < _nodes.Count; i++)
             {
                 var node = _nodes[i];
                 if (node == null)
                     continue;
-                node.EnforceLayoutSize(nodeW, nodeH, trackW);
+                if (node.Level == 7)
+                    node.EnforceLayoutSize(megaW, megaH, megaTrackW);
+                else
+                    node.EnforceLayoutSize(nodeW, nodeH, trackW);
             }
         }
 
@@ -473,27 +524,59 @@ namespace TitanOrbit.UI
             HashSet<(int fL, int fB, int tL, int tB)> pathEdges,
             bool moonHorizontal)
         {
+            int shipLevel = _station != null ? _station.ShipLevel : 0;
+            int shipBranch = _station != null ? _station.BranchIndex : -1;
+
             for (int level = 2; level <= 7; level++)
             {
                 if (!byLevel.TryGetValue(level, out var levelViews)) continue;
                 if (!byLevel.TryGetValue(level - 1, out var prevViews)) continue;
                 foreach (var prev in prevViews)
                 {
-                    foreach (var next in levelViews)
+                    if (prev == null) continue;
+                    UpgradeTree.GetNextLevelBranchTargets(prev.Level, prev.BranchIndex, _connectorTargets);
+                    bool fromCurrent = prev.Level == shipLevel && prev.BranchIndex == shipBranch;
+                    for (int t = 0; t < _connectorTargets.Count; t++)
                     {
-                        if (!UpgradeTree.IsValidUpgradeStep(level - 1, prev.BranchIndex, level, next.BranchIndex))
-                            continue;
-                        bool onPath = pathEdges != null && pathEdges.Contains((level - 1, prev.BranchIndex, level, next.BranchIndex));
-                        Vector2 from = moonHorizontal
-                            ? GetRectEdgeMidpoint(prev.Rect, rightEdge: true)
-                            : GetRectEdgeMidpoint(prev.Rect, rightEdge: false, verticalOut: true);
-                        Vector2 to = moonHorizontal
-                            ? GetRectEdgeMidpoint(next.Rect, rightEdge: false)
-                            : GetRectEdgeMidpoint(next.Rect, rightEdge: true, verticalIn: true);
-                        DrawConnector(from, to, onPath ? ConnectorPath : ConnectorDim, onPath ? 3.5f : 2f);
+                        ShipUpgradeTreeNodeUI next = FindNodeByBranch(levelViews, _connectorTargets[t]);
+                        if (next == null) continue;
+
+                        bool onPath = pathEdges != null
+                            && pathEdges.Contains((prev.Level, prev.BranchIndex, next.Level, next.BranchIndex));
+                        Color color = onPath
+                            ? ConnectorPath
+                            : fromCurrent ? ConnectorAvailable : ConnectorDim;
+                        float thickness = onPath ? 3.6f : fromCurrent ? 2.8f : 2f;
+
+                        Vector2 from;
+                        Vector2 to;
+                        if (!moonHorizontal)
+                        {
+                            from = GetRectPointInCanvas(prev.Rect, 0.5f, 0f);
+                            to = GetRectPointInCanvas(next.Rect, 0.5f, 1f);
+                        }
+                        else
+                        {
+                            from = GetRectPointInCanvas(prev.Rect, 1f, 0.5f);
+                            to = GetRectPointInCanvas(next.Rect, 0f, 0.5f);
+                        }
+
+                        DrawConnector(from, to, color, thickness);
                     }
                 }
             }
+        }
+
+        private static ShipUpgradeTreeNodeUI FindNodeByBranch(List<ShipUpgradeTreeNodeUI> views, int branch)
+        {
+            if (views == null) return null;
+            for (int i = 0; i < views.Count; i++)
+            {
+                if (views[i] != null && views[i].BranchIndex == branch)
+                    return views[i];
+            }
+
+            return null;
         }
 
         private static float GetMoonPowerBarTrackWidth(float nodeW) =>
@@ -512,7 +595,7 @@ namespace TitanOrbit.UI
             else
             {
                 float refNodeW = nodePrefab != null ? nodePrefab.LayoutWidth : 120f;
-                width = refNodeW * 7f + MoonLevelColGap * 6f + CanvasInnerMargin * 2f + 24f;
+                width = refNodeW * (6f + MoonMegaScale) + MoonLevelColGap * 6f + CanvasInnerMargin * 2f + 24f;
             }
 
             height = GetMoonRowAvailableHeight();
@@ -568,13 +651,20 @@ namespace TitanOrbit.UI
             return Mathf.Max(160f, h - 12f);
         }
 
+        /// <summary>
+        /// Vertical gap so a 1.25× mega centered on an L6 pair does not overlap those cards.
+        /// </summary>
+        private static float ComputeMoonBranchGapY(float nodeH) =>
+            Mathf.Max(MoonBranchGapY, Mathf.Round(nodeH * (MoonMegaScale - 1f) + 12f));
+
         private static float ComputeMaxColumnStackHeight(float nodeH)
         {
             // --- Compute value ---
             int maxStack = 1;
             for (int level = 1; level <= 7; level++)
                 maxStack = Mathf.Max(maxStack, UpgradeTree.GetShipCountForLevel(level));
-            return maxStack * nodeH + (maxStack - 1) * MoonBranchGapY;
+            float gapY = ComputeMoonBranchGapY(nodeH);
+            return maxStack * nodeH + (maxStack - 1) * gapY;
         }
 
         /// <summary>
@@ -583,7 +673,6 @@ namespace TitanOrbit.UI
         private void ComputeMoonHorizontalGeometry(out float nodeW, out float nodeH, out float canvasW, out float canvasH)
         {
             // --- Compute value ---
-            const int maxLevel = 7;
             float margin = CanvasInnerMargin;
             GetMoonContainerSize(out float containerW, out float containerH);
 
@@ -597,7 +686,8 @@ namespace TitanOrbit.UI
 
             float availableW = Mathf.Max(200f, containerW - rowPad);
             float innerW = availableW - margin * 2f;
-            nodeW = (innerW - (maxLevel - 1) * MoonLevelColGap) / maxLevel;
+            // Six regular columns plus a wider mega column, with a gap after each of the first six.
+            nodeW = (innerW - 6f * MoonLevelColGap) / (6f + MoonMegaScale);
             nodeW = Mathf.Round(Mathf.Max(MoonMinNodeWidth, nodeW));
             canvasW = availableW;
 
@@ -666,18 +756,24 @@ namespace TitanOrbit.UI
             ApplyCenterRowHeight(maxRowH);
         }
 
-        /// <summary>Edge midpoint in <paramref name="rt"/> parent local space (nodes canvas).</summary>
-        private static Vector2 GetRectEdgeMidpoint(RectTransform rt, bool rightEdge, bool verticalOut = false, bool verticalIn = false)
+        /// <summary>
+        /// Point on a node in <see cref="nodesCanvas"/> local space.
+        /// <paramref name="nx"/> / <paramref name="ny"/> are 0–1 from bottom-left (1,1 = top-right).
+        /// </summary>
+        private Vector2 GetRectPointInCanvas(RectTransform rt, float nx, float ny)
         {
-            // --- Compute value ---
-            rt.GetLocalCorners(ConnectorCornerBuffer);
-            if (verticalOut)
-                return new Vector2((ConnectorCornerBuffer[0].x + ConnectorCornerBuffer[3].x) * 0.5f, ConnectorCornerBuffer[0].y);
-            if (verticalIn)
-                return new Vector2((ConnectorCornerBuffer[1].x + ConnectorCornerBuffer[2].x) * 0.5f, ConnectorCornerBuffer[1].y);
-            if (rightEdge)
-                return new Vector2(ConnectorCornerBuffer[2].x, (ConnectorCornerBuffer[2].y + ConnectorCornerBuffer[3].y) * 0.5f);
-            return new Vector2(ConnectorCornerBuffer[1].x, (ConnectorCornerBuffer[1].y + ConnectorCornerBuffer[0].y) * 0.5f);
+            if (rt == null || nodesCanvas == null)
+                return Vector2.zero;
+
+            rt.GetWorldCorners(ConnectorCornerBuffer);
+            Vector3 bl = ConnectorCornerBuffer[0];
+            Vector3 tl = ConnectorCornerBuffer[1];
+            Vector3 tr = ConnectorCornerBuffer[2];
+            Vector3 br = ConnectorCornerBuffer[3];
+            Vector3 bottom = Vector3.Lerp(bl, br, nx);
+            Vector3 top = Vector3.Lerp(tl, tr, nx);
+            Vector3 world = Vector3.Lerp(bottom, top, ny);
+            return nodesCanvas.InverseTransformPoint(world);
         }
 
         private void DrawConnector(Vector2 from, Vector2 to, Color color, float thickness)

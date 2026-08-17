@@ -315,7 +315,7 @@ namespace TitanOrbit.Data
         {
             if (upgradeCardDeck != null && upgradeCardDeck.cards != null && upgradeCardDeck.cards.Count > 0)
                 return upgradeCardDeck.cards;
-            return _runtimeProceduralCards ??= CardDeckRuntimeDefaults.CreateProceduralDeck(familyId);
+            return _runtimeProceduralCards ??= CardDeckRuntimeDefaults.CreateUniqueDeck(familyId, specialBonuses);
         }
 
         /// <summary>Clears the cached component-id → stats dictionary (editor OnValidate calls this).</summary>

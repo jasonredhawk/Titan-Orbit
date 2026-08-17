@@ -1,3 +1,4 @@
+using TitanOrbit.Core;
 using UnityEngine;
 
 namespace TitanOrbit.Data
@@ -383,6 +384,24 @@ namespace TitanOrbit.Data
                 }
                 default: return string.Empty;
             }
+        }
+
+        /// <summary>
+        /// Theatrical team thumb from <see cref="StoreItemPreviewCatalog"/>, or null for glyph fallback.
+        /// Large rockets/mines share the small-pack preview.
+        /// </summary>
+        public static Sprite GetMenuPreviewSprite(
+            StoreItemType item,
+            TeamManager.Team team,
+            ShipFamilyDefinition family = null)
+        {
+            StoreItemType key = item;
+            if (item == StoreItemType.LargeRockets)
+                key = StoreItemType.SmallRockets;
+            if (item == StoreItemType.LargeMines)
+                key = StoreItemType.SmallMines;
+            StoreItemPreviewCatalog catalog = StoreItemPreviewCatalog.LoadDefault();
+            return catalog != null ? catalog.GetSprite(key, team) : null;
         }
 
         /// <summary>Large glyph shown in the card icon area when no sprite is assigned.</summary>
