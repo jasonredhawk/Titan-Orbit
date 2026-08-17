@@ -389,6 +389,8 @@ namespace TitanOrbit.Game
                     ResetTrail(t.Go);
 
                 displayPos.y = ResolveTracerFlightDisplayY(t.SpawnPos.y, t.Traveled);
+                if (BulletCosmeticHitQuery.TryGetMegaFlightLiftY(displayLogical, out float megaY, out float lift))
+                    displayPos.y = math.lerp(displayPos.y, megaY, lift);
                 t.Go.transform.position = displayPos;
                 if (math.lengthsq(displayVel) > 0.0001f)
                     t.Go.transform.rotation = Quaternion.LookRotation(((Vector3)displayVel).normalized, Vector3.up);

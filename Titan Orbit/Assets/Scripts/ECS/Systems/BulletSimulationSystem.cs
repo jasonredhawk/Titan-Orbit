@@ -936,17 +936,18 @@ namespace TitanOrbit.ECS
                     continue;
 
                 // --- Hit shape from attribute-grown PhysicsCollider ---
-                // [TITAN-ORBIT] MEGA hulls are long compounds — a covering sphere parks
-                // planetary-defense / ship tracers in empty space while damage still applies.
+                // [TITAN-ORBIT] MEGA hulls test each baked part collider so shots pass
+                // through gaps and stop on the real hull — not one covering rectangle.
                 // Regular ships keep the XZ sphere (GetShipHullRadiusWorld only sees tier scale).
                 float bulletPad = math.clamp(b.ScaleMultiplier * 0.18f, 0f, 0.85f);
                 float3 shipHit;
-                if (MegaShipCombatAim.TryGetHitBoxWorld(
-                        state.EntityManager, shipEntity, shipTransform.ValueRO,
-                        out float3 boxCenter, out float2 boxHe, out float boxYaw))
+                bool isMega = state.EntityManager.HasComponent<MegaShipState>(shipEntity)
+                              && state.EntityManager.GetComponentData<MegaShipState>(shipEntity).IsMega;
+                if (isMega)
                 {
-                    if (!BulletCollision.SegmentHitsOrientedBoxToroidal(
-                            from, to, boxCenter, boxHe + bulletPad, boxYaw, mapW, mapH, out shipHit))
+                    if (!MegaShipCombatAim.TryHitBulletSegment(
+                            state.EntityManager, shipEntity, shipTransform.ValueRO,
+                            from, to, bulletPad, mapW, mapH, out shipHit, out _))
                         continue;
                 }
                 else

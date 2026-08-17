@@ -93,6 +93,12 @@ namespace TitanOrbit.Game
             /// <summary>MEGA hull yaw around Y when <see cref="HasOrientedBox"/> is true.</summary>
             public float BoxYawRadians;
 
+            /// <summary>
+            /// MEGA 3D AABB center height. Tracers/impacts lift to this so they do not
+            /// slide through the tall mesh on the Y=0 play plane.
+            /// </summary>
+            public float HullMidY;
+
             /// <summary>True when this ship should use a yaw-aligned box instead of a covering sphere.</summary>
             public bool HasOrientedBox => BoxHalfExtents.x > 0.01f && BoxHalfExtents.y > 0.01f;
         }
@@ -298,9 +304,10 @@ namespace TitanOrbit.Game
                     float shipRadius;
                     float2 boxHe = float2.zero;
                     float boxYaw = 0f;
+                    float hullMidY = lt.Position.y;
                     float3 shipCenter = MegaShipCombatAim.GetAimPoint(em, entity, lt);
                     if (MegaShipCombatAim.TryGetHitBoxWorld(
-                            em, entity, lt, out shipCenter, out boxHe, out boxYaw))
+                            em, entity, lt, out shipCenter, out boxHe, out boxYaw, out hullMidY))
                     {
                         shipRadius = math.length(boxHe);
                     }
@@ -326,6 +333,7 @@ namespace TitanOrbit.Game
                         OwnerNetworkId = networkId,
                         BoxHalfExtents = boxHe,
                         BoxYawRadians = boxYaw,
+                        HullMidY = hullMidY,
                     });
                     ShipProxyScratch.Add(entity);
                 }
@@ -519,9 +527,21 @@ namespace TitanOrbit.Game
                     if (o.Kind == ObstacleKind.Ship && o.HasOrientedBox)
                     {
                         float pad = math.clamp(scaleMultiplier * 0.18f, 0f, 0.85f);
-                        hit = BulletCollision.SegmentHitsOrientedBoxToroidal(
-                            from, to, o.LogicalCenter, o.BoxHalfExtents + pad, o.BoxYawRadians,
-                            s_MapW, s_MapH, out hp);
+                        hit = false;
+                        hp = to;
+                        var world = EcsGameBridge.ClientWorld ?? EcsGameBridge.ServerWorld;
+                        if (world != null && world.IsCreated)
+                        {
+                            var hitEm = world.EntityManager;
+                            if (hitEm.Exists(o.SourceEntity) &&
+                                hitEm.HasComponent<LocalTransform>(o.SourceEntity))
+                            {
+                                var shipXf = hitEm.GetComponentData<LocalTransform>(o.SourceEntity);
+                                hit = MegaShipCombatAim.TryHitBulletSegment(
+                                    hitEm, o.SourceEntity, shipXf,
+                                    from, to, pad, s_MapW, s_MapH, out hp, out _);
+                            }
+                        }
                     }
                     else
                     {
@@ -648,6 +668,38 @@ namespace TitanOrbit.Game
                 return false;
             obstacle = Obstacles[bestIndex];
             return true;
+        }
+
+        /// <summary>
+        /// Lifts a play-plane tracer toward a nearby MEGA hull midline so the slug
+        /// meets the 3D mesh instead of sliding through it at Y=0.
+        /// </summary>
+        public static bool TryGetMegaFlightLiftY(float3 logicalPos, out float hullMidY, out float blend)
+        {
+            hullMidY = 0f;
+            blend = 0f;
+            float best = float.MaxValue;
+            for (int i = 0; i < Obstacles.Count; i++)
+            {
+                var o = Obstacles[i];
+                if (o.Kind != ObstacleKind.Ship || !o.HasOrientedBox)
+                    continue;
+
+                float3 boxCenter = o.LogicalCenter;
+                if (ToroidalMapEcs.IsValidMapSize(s_MapW, s_MapH))
+                    boxCenter = BulletCollision.UnwrapCenterNear(logicalPos, o.LogicalCenter, s_MapW, s_MapH);
+                float dist = BulletCollision.DistanceToOrientedBoxXZ(
+                    logicalPos, boxCenter, o.BoxHalfExtents, o.BoxYawRadians);
+                if (dist >= best)
+                    continue;
+
+                best = dist;
+                hullMidY = o.HullMidY;
+                float fade = math.max(3f, math.cmax(o.BoxHalfExtents) * 0.45f);
+                blend = 1f - math.saturate(dist / fade);
+            }
+
+            return blend > 0.01f;
         }
 
         /// <summary>

@@ -249,7 +249,7 @@ namespace TitanOrbit.Game
             }
 
             worldPos = ProjectLogicalOntoDisplayCenter(parent.position, logicalHit, logicalPivot);
-            worldPos.y = parent.position.y;
+            worldPos.y = parent.position.y + (logicalHit.y - logicalPivot.y);
             return true;
         }
 
