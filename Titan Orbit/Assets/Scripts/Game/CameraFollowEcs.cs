@@ -19,8 +19,10 @@ namespace TitanOrbit.Game
     /// the local ship's ghosted <c>ShipFamilyConfigIndex</c> and calls <see cref="SetSettings"/> when
     /// the family changes (team spawn or moon-dock purchase). The camera hard-locks to the ship,
     /// then adds a gently smoothed look-ahead on XZ and a smoothly eased height zoom from ship level.
-    /// <see cref="CurrentHeightZoomFactor"/> exposes that zoom proportion for the collapsed minimap
-    /// (<see cref="TitanOrbit.UI.MinimapController"/>) so both views stay in sync.
+    /// Family <see cref="ShipFamilySpecialBonuses.cameraHeightMul"/> scales that height (zoom out / in)
+    /// without needing a unique CameraFollowSettings asset. MEGA hulls skip the family mul — the
+    /// MEGA catalog owns framing. <see cref="CurrentHeightZoomFactor"/> exposes that zoom proportion
+    /// for the collapsed minimap (<see cref="TitanOrbit.UI.MinimapController"/>) so both views stay in sync.
     /// During gem Instantiates (<see cref="ClientJoinSettleCache.ShouldSkipShipEntityQueries"/>) look-ahead
     /// freezes and ship level holds last-good — avoids false zoom when asteroids break or hits spike speed.
     /// Ship flight smoothing stays owned by NetCode — we only SmoothDamp camera composition.
@@ -73,7 +75,8 @@ namespace TitanOrbit.Game
             {
                 if (_initialized && _currentHeight > 0.01f)
                     return _currentHeight;
-                return Settings.ComputeTargetHeight(Mathf.Max(1, _lastKnownShipLevel));
+                return ApplyFamilyCameraHeightMul(
+                    Settings.ComputeTargetHeight(Mathf.Max(1, _lastKnownShipLevel)));
             }
         }
 
@@ -112,6 +115,13 @@ namespace TitanOrbit.Game
 
         /// <summary>Last profile instance applied for <see cref="_syncedFamilyConfigIndex"/> (identity compare).</summary>
         CameraFollowSettings _syncedProfile;
+
+        /// <summary>
+        /// Cached <see cref="ShipFamilySpecialBonuses.cameraHeightMul"/> for the local family.
+        /// 1 when unset, MEGA, or the family has not synced yet. Applied on top of
+        /// <see cref="CameraFollowSettings.ComputeTargetHeight"/>.
+        /// </summary>
+        float _familyCameraHeightMul = 1f;
 
         /// <summary>[UNITY] Cached Camera on this GameObject (may be null if misconfigured).</summary>
         UnityEngine.Camera cam;
@@ -274,7 +284,7 @@ namespace TitanOrbit.Game
             if (!_initialized)
             {
                 int level = ResolveShipLevel();
-                _currentHeight = profile.ComputeTargetHeight(level);
+                _currentHeight = ApplyFamilyCameraHeightMul(profile.ComputeTargetHeight(level));
                 _lookAheadCurrent = Vector3.zero;
                 _lookAheadSmoothVelocity = Vector3.zero;
                 _heightSmoothVelocity = 0f;
@@ -288,7 +298,7 @@ namespace TitanOrbit.Game
             // Turret possession: raise height so the pad's engage/bullet radius fits the viewport
             // (never zoom in closer than the normal ship framing).
             // MEGA: raise just enough to fit the collider box, then cap so tracers stay readable.
-            float targetHeight = profile.ComputeTargetHeight(ResolveShipLevel());
+            float targetHeight = ApplyFamilyCameraHeightMul(profile.ComputeTargetHeight(ResolveShipLevel()));
             if (Shared.PlanetaryDefenseTurretClientState.IsControlling &&
                 Shared.PlanetaryDefenseTurretClientState.DesiredViewRadiusWorld > 0.01f)
             {
@@ -359,6 +369,8 @@ namespace TitanOrbit.Game
         /// <summary>
         /// Resolves the local ship's family from ghosted <c>ShipFamilyConfigIndex</c> and applies that
         /// family's <see cref="ShipFamilyDefinition.cameraFollowSettings"/> (or the scene fallback).
+        /// Also caches <see cref="ShipFamilySpecialBonuses.cameraHeightMul"/> so height zoom can
+        /// differ per family without a unique CameraFollowSettings asset.
         /// </summary>
         void SyncProfileFromLocalShipFamily()
         {
@@ -368,36 +380,59 @@ namespace TitanOrbit.Game
 
             int familyIndex = state.ShipFamilyConfigIndex;
 
-            // --- Resolve desired profile for this family index ---
+            // --- Resolve desired profile + family camera-height mul ---
             // Prefer the family's authored asset; fall back to the Main Camera defaultSettings slot.
             CameraFollowSettings desired = defaultSettings;
+            float heightMul = 1f;
             PlanetShipFamilyConfig config = ShipStatApplyLogic.Config;
             if (config != null)
             {
                 PlanetShipFamilyConfig.ShipFamilyEntry entry = config.GetFamilyByConfigIndex(familyIndex);
                 ShipFamilyDefinition family = entry != null ? entry.shipFamilyDefinition : null;
-                if (family != null && family.cameraFollowSettings != null)
-                    desired = family.cameraFollowSettings;
+                if (family != null)
+                {
+                    if (family.cameraFollowSettings != null)
+                        desired = family.cameraFollowSettings;
+                    // [TITAN-ORBIT] Family identity zoom — same shared profile, different height.
+                    heightMul = family.specialBonuses.ResolveCameraHeightMul();
+                }
             }
 
             var world = EcsGameBridge.ClientWorld;
-            if (world != null && world.IsCreated
+            bool isMega = world != null && world.IsCreated
                 && EcsGameBridge.TryGetLocalShipEntityOnWorld(world, out var shipEntity)
                 && world.EntityManager.HasComponent<MegaShipState>(shipEntity)
-                && world.EntityManager.GetComponentData<MegaShipState>(shipEntity).IsMega)
+                && world.EntityManager.GetComponentData<MegaShipState>(shipEntity).IsMega;
+            if (isMega)
             {
                 var megaCatalog = MegaShipCatalog.Load();
                 if (megaCatalog != null && megaCatalog.cameraFollowSettings != null)
                     desired = megaCatalog.cameraFollowSettings;
+                // MEGA catalog owns framing — do not stack family zoom on the capital-ship camera.
+                heightMul = 1f;
             }
 
-            // --- Skip if we already applied this family index + same profile instance ---
+            _familyCameraHeightMul = heightMul;
+
+            // --- Skip SetSettings if we already applied this family index + same profile instance ---
             if (familyIndex == _syncedFamilyConfigIndex && ReferenceEquals(desired, _syncedProfile))
                 return;
 
             _syncedFamilyConfigIndex = familyIndex;
             _syncedProfile = desired;
             SetSettings(desired);
+        }
+
+        /// <summary>
+        /// Scales a profile height by the cached family camera-height mul.
+        /// Unset / zero muls stay at 1 so a missing family never pins the camera to the hull.
+        /// </summary>
+        /// <param name="profileHeight">World-Y from <see cref="CameraFollowSettings.ComputeTargetHeight"/>.</param>
+        /// <returns>Height after the family zoom identity multiplier.</returns>
+        float ApplyFamilyCameraHeightMul(float profileHeight)
+        {
+            float mul = _familyCameraHeightMul > 0.0001f ? _familyCameraHeightMul : 1f;
+            return profileHeight * mul;
         }
 
         /// <summary>

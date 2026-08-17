@@ -55,13 +55,13 @@ MonoBehaviour:
   specialBonuses:
     moveSpeedMul: 1
     accelerationMul: 1
-    turnSpeedMul: 1
+    turnSpeedMul: 0.9
     firePowerMul: 1
     fireRateMul: 1
     bulletSpeedMul: 1
     bulletRangeMul: 1
     rammingMul: 1
-    healthCapMul: 1
+    healthCapMul: 1.18
     healthRegenMul: 1
     energyCapMul: 1
     energyRegenMul: 1
@@ -69,8 +69,9 @@ MonoBehaviour:
     extraSpeedEnergyDrainMul: 1
     maxGemsMul: 1
     maxPeopleMul: 1
-    tractorDistanceMul: 1
-    tractorPowerMul: 1
+    tractorDistanceMul: 1.15
+    tractorPowerMul: 1.2
+    cameraHeightMul: 1
   bulletPrefabIndex: 11
   weaponFireMode: 0
   planetaryDefense: {fileID: 0}

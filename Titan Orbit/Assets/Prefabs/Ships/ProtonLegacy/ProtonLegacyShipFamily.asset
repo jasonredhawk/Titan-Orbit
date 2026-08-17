@@ -56,7 +56,7 @@ MonoBehaviour:
     moveSpeedMul: 1
     accelerationMul: 1
     turnSpeedMul: 1
-    firePowerMul: 1
+    firePowerMul: 0.9
     fireRateMul: 1
     bulletSpeedMul: 1
     bulletRangeMul: 1
@@ -64,13 +64,14 @@ MonoBehaviour:
     healthCapMul: 1
     healthRegenMul: 1
     energyCapMul: 1
-    energyRegenMul: 1
+    energyRegenMul: 1.15
     extraSpeedPercentMul: 1
     extraSpeedEnergyDrainMul: 1
-    maxGemsMul: 1
+    maxGemsMul: 1.25
     maxPeopleMul: 1
-    tractorDistanceMul: 1
+    tractorDistanceMul: 1.2
     tractorPowerMul: 1
+    cameraHeightMul: 1
   bulletPrefabIndex: 1
   weaponFireMode: 0
   planetaryDefense: {fileID: 0}

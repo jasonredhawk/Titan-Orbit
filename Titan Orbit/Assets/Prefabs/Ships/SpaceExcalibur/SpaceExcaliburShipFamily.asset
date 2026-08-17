@@ -53,15 +53,15 @@ MonoBehaviour:
     maxPeople: 2
     maxPeoplePerExtraLevel: 0
   specialBonuses:
-    moveSpeedMul: 1
+    moveSpeedMul: 0.85
     accelerationMul: 1
     turnSpeedMul: 1
-    firePowerMul: 1
+    firePowerMul: 1.12
     fireRateMul: 1
-    bulletSpeedMul: 1
+    bulletSpeedMul: 0.88
     bulletRangeMul: 1
     rammingMul: 1
-    healthCapMul: 1
+    healthCapMul: 1.2
     healthRegenMul: 1
     energyCapMul: 1
     energyRegenMul: 1
@@ -71,6 +71,7 @@ MonoBehaviour:
     maxPeopleMul: 1
     tractorDistanceMul: 1
     tractorPowerMul: 1
+    cameraHeightMul: 1.22
   bulletPrefabIndex: 10
   weaponFireMode: 0
   planetaryDefense: {fileID: 0}

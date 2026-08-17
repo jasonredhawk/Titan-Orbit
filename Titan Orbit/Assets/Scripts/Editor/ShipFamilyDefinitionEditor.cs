@@ -109,9 +109,9 @@ namespace TitanOrbit.Editor
             EditorGUILayout.LabelField("Family Special Bonuses", EditorStyles.boldLabel);
             EditorGUILayout.HelpBox(
                 "Multipliers applied after component sum (shared profiles stay project-wide). " +
-                "OVERDRIVE: extraSpeedPercentMul / extraSpeedEnergyDrainMul scale engine " +
-                "ExtraSpeedPercent and ExtraSpeedEnergyDrain. OD drain/sec = ExtraSpeedEnergyDrain " +
-                "as authored (normal thrust is free).",
+                "Values can be below 1 (trade-offs). OVERDRIVE: extraSpeedPercentMul / " +
+                "extraSpeedEnergyDrainMul scale engine ExtraSpeedPercent and ExtraSpeedEnergyDrain. " +
+                "cameraHeightMul is presentation-only (CameraFollowEcs): >1 zooms out, <1 zooms in.",
                 MessageType.None);
 
             if (GUILayout.Button("Reset Family Bonuses To 1×"))

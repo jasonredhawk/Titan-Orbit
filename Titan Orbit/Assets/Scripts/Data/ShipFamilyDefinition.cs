@@ -103,7 +103,10 @@ namespace TitanOrbit.Data
         public ShipComponentAbilityStats defaultFallbackStats;
 
         [Header("Family Special Bonuses")]
-        [Tooltip("Multipliers applied after component sum. Identity = all 1s. This is how families differ from shared part profiles.")]
+        [Tooltip(
+            "Multipliers applied after component sum. Identity = all 1s. Values may be below 1 (trade-offs). " +
+            "cameraHeightMul is presentation-only (CameraFollowEcs zoom). " +
+            "This is how families differ from shared part profiles.")]
         public ShipFamilySpecialBonuses specialBonuses = ShipFamilySpecialBonuses.Identity;
 
         [Header("Bullets")]
