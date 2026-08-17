@@ -9,6 +9,7 @@ using TitanOrbit.Generation;
 using TitanOrbit.NetCode;
 using TitanOrbit.Shared;
 using TitanOrbit.Simulation;
+using Unity.Collections;
 using Unity.Entities;
 using Unity.Mathematics;
 using UnityEngine;
@@ -110,6 +111,8 @@ namespace TitanOrbit.Game
             public float TickCarry;
             public bool HasPrevTick;
             public ClientBulletStretchVisual Stretch;
+            /// <summary>Cached so a seam snap does not GetComponentsInChildren every frame.</summary>
+            public TrailRenderer Trail;
         }
 
         /// <summary>
@@ -298,6 +301,8 @@ namespace TitanOrbit.Game
             // --- Cosmetic hit prediction (hybrid-proxy spheres; no map ToEntityArray) ---
             // Skip while join Instantiates are incomplete — HitRpc still destroys tracers.
             bool canPredictHits = !blockInstantiates && BulletCosmeticHitQuery.TryRefresh();
+            bool usedGunBurst = TryAdvanceStraightTracersBurst(
+                dt, canPredictHits, hasRef, reference);
 
             for (int i = _tracers.Count - 1; i >= 0; i--)
             {
@@ -327,6 +332,12 @@ namespace TitanOrbit.Game
                         }
                         continue;
                     }
+                }
+                else if (usedGunBurst)
+                {
+                    // Straight tracers were advanced + collided in Burst this frame.
+                    displayLogical = t.LogicalPos;
+                    displayVel = t.Velocity;
                 }
                 else
                 {
@@ -386,7 +397,7 @@ namespace TitanOrbit.Game
                     t.HasPrevTick ? math.saturate(t.TickCarry / RocketPresentationTickDt) : 1f);
                 Vector3 prevDisplay = t.Go.transform.position;
                 if ((displayPos - prevDisplay).sqrMagnitude > 40f * 40f)
-                    ResetTrail(t.Go);
+                    ResetTrail(in t);
 
                 displayPos.y = ResolveTracerFlightDisplayY(t.SpawnPos.y, t.Traveled);
                 if (BulletCosmeticHitQuery.TryGetMegaFlightLiftY(displayLogical, out float megaY, out float lift))
@@ -1165,6 +1176,7 @@ namespace TitanOrbit.Game
                 TurnSpeedDeg = req.TurnSpeedDeg,
                 AcquireRange = req.AcquireRange,
                 Stretch = stretch,
+                Trail = go.GetComponentInChildren<TrailRenderer>(true),
             };
 
             // Seed observer-hull samples so the first frame can already ride the camera
@@ -1271,6 +1283,105 @@ namespace TitanOrbit.Game
                     BulletOneShotVfxPool.EnqueuePrewarm(bank.GetMuzzlePrefab(i, team), 3);
                     BulletOneShotVfxPool.EnqueuePrewarm(bank.GetImpactPrefab(i, team), 4);
                 }
+            }
+        }
+
+        /// <summary>
+        /// Burst-advances every straight tracer (mega volleys). Homing stays in LateUpdate.
+        /// High-to-low apply so <see cref="RemoveAtSwap"/> keeps remaining indices stable.
+        /// </summary>
+        bool TryAdvanceStraightTracersBurst(float dt, bool canPredictHits, bool hasRef, Vector3 reference)
+        {
+            _ = hasRef;
+            _ = reference;
+            if (!canPredictHits)
+                return false;
+
+            int gunN = 0;
+            for (int i = 0; i < _tracers.Count; i++)
+            {
+                var t = _tracers[i];
+                if (t.Go != null && t.Homing == 0)
+                    gunN++;
+            }
+
+            if (gunN <= 0)
+                return false;
+
+            var requests = new NativeArray<CosmeticSweepRequest>(gunN, Allocator.TempJob);
+            var results = new NativeArray<CosmeticSweepResult>(gunN, Allocator.TempJob);
+            var tracerIndex = new NativeArray<int>(gunN, Allocator.TempJob);
+            try
+            {
+                int w = 0;
+                for (int i = 0; i < _tracers.Count; i++)
+                {
+                    var t = _tracers[i];
+                    if (t.Go == null || t.Homing != 0)
+                        continue;
+                    tracerIndex[w] = i;
+                    requests[w] = new CosmeticSweepRequest
+                    {
+                        Position = t.LogicalPos,
+                        Velocity = t.Velocity,
+                        Dt = dt,
+                        Traveled = t.Traveled,
+                        RemainingLifetime = t.RemainingLifetime,
+                        MaxDistance = t.MaxDistance,
+                        ScaleMultiplier = t.ScaleMultiplier > 0f ? t.ScaleMultiplier : 1f,
+                        OwnerNetworkId = t.OwnerNetworkId,
+                        OwnerTeam = t.OwnerTeam,
+                        DamageFilter = t.DamageFilter,
+                        HealFriendly = BulletBankCombatLogic.HasHealFriendly(t.BankIndex) ? (byte)1 : (byte)0,
+                    };
+                    w++;
+                }
+
+                if (!BulletCosmeticHitQuery.TryAdvanceStraightTracers(requests, results))
+                    return false;
+
+                for (int r = gunN - 1; r >= 0; r--)
+                {
+                    int i = tracerIndex[r];
+                    if (i < 0 || i >= _tracers.Count)
+                        continue;
+                    var t = _tracers[i];
+                    if (t.Go == null)
+                    {
+                        RemoveAtSwap(i);
+                        continue;
+                    }
+
+                    var outcome = results[r];
+                    if (outcome.Outcome == CosmeticSweepResult.Hit)
+                    {
+                        ApplyPredictedHit(i, in t, outcome.HitPoint);
+                        continue;
+                    }
+
+                    if (outcome.Outcome == CosmeticSweepResult.Expire)
+                    {
+                        DestroyTracerGo(t);
+                        RemoveAtSwap(i);
+                        continue;
+                    }
+
+                    t.LogicalPos = outcome.NewPos;
+                    t.Traveled = outcome.NewTraveled;
+                    t.RemainingLifetime = outcome.NewLifetime;
+                    _tracers[i] = t;
+                }
+
+                return true;
+            }
+            finally
+            {
+                if (requests.IsCreated)
+                    requests.Dispose();
+                if (results.IsCreated)
+                    results.Dispose();
+                if (tracerIndex.IsCreated)
+                    tracerIndex.Dispose();
             }
         }
 
@@ -1484,15 +1595,10 @@ namespace TitanOrbit.Game
             }
         }
 
-        static void ResetTrail(GameObject go)
+        static void ResetTrail(in Tracer t)
         {
-            if (go == null) return;
-            var trails = go.GetComponentsInChildren<TrailRenderer>(true);
-            for (int i = 0; i < trails.Length; i++)
-            {
-                if (trails[i] != null)
-                    trails[i].Clear();
-            }
+            if (t.Trail != null)
+                t.Trail.Clear();
         }
 
         /// <summary>

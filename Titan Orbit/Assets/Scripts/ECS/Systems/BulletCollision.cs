@@ -1,5 +1,6 @@
 using TitanOrbit.Generation;
 using TitanOrbit.Simulation;
+using Unity.Burst;
 using Unity.Mathematics;
 
 namespace TitanOrbit.ECS
@@ -9,6 +10,7 @@ namespace TitanOrbit.ECS
     /// authoritative <see cref="BulletSimulationSystem"/> and cosmetic tracer update systems.
     /// [BurstCompile] target — no EntityManager access.
     /// </summary>
+    [BurstCompile]
     public static class BulletCollision
     {
         /// <summary>

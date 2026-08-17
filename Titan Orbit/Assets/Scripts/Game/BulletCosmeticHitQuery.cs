@@ -134,6 +134,27 @@ namespace TitanOrbit.Game
         static readonly Dictionary<int, float3> DroneEnemyPos = new Dictionary<int, float3>(16);
         static readonly Dictionary<int, DroneSwarmPositioning.ShieldAssignment> DroneShieldAssign =
             new Dictionary<int, DroneSwarmPositioning.ShieldAssignment>(8);
+
+        /// <summary>
+        /// Toroidal XZ grid of asteroids / ships / transports / drones / PD pads.
+        /// Planets and moons stay on a linear scan (few, and moons orbit).
+        /// </summary>
+        const float GridCellSize = 16f;
+        static readonly Dictionary<int, List<int>> s_Grid = new Dictionary<int, List<int>>(256);
+        static readonly List<int> s_GridScratch = new List<int>(64);
+        static readonly HashSet<int> s_GridSeen = new HashSet<int>();
+        static readonly List<int> s_TestIndices = new List<int>(128);
+        static NativeList<CosmeticSweepBody> s_SweepBodies;
+        static NativeList<int> s_SweepAlways;
+        static NativeParallelMultiHashMap<int, int> s_SweepCells;
+        static NativeList<int> s_SweepNearby;
+        static NativeHashSet<int> s_SweepSeen;
+        static int s_SweepCellsX = 1;
+        static int s_SweepCellsZ = 1;
+        static bool s_GridHasEntries;
+        static int s_GridCellsX = 1;
+        static int s_GridCellsZ = 1;
+
         static int s_LastRefreshFrame = -1;
         // [TITAN-ORBIT] 0 = unset — never invent 1000×1000 for cosmetic hit tests.
         static float s_MapW;
@@ -341,6 +362,8 @@ namespace TitanOrbit.Game
 
             PeopleTransportVfxDriver.AppendBulletObstacles(Obstacles);
             AppendDroneObstacles(em);
+            RebuildObstacleGrid();
+            RebuildSweepBodies();
 
             return Obstacles.Count > 0;
         }
@@ -392,6 +415,286 @@ namespace TitanOrbit.Game
                     OwnerNetworkId = d.OwnerNetworkId,
                 });
             }
+        }
+
+        /// <summary>
+        /// Inserts non-orbiting obstacles into a toroidal XZ grid.
+        /// Map size from the last <see cref="TryRefresh"/> (<c>s_MapW</c> / <c>s_MapH</c>).
+        /// </summary>
+        static void RebuildObstacleGrid()
+        {
+            foreach (var kv in s_Grid)
+                kv.Value.Clear();
+            s_GridHasEntries = false;
+            s_GridCellsX = 1;
+            s_GridCellsZ = 1;
+            if (!ToroidalMapEcs.IsValidMapSize(s_MapW, s_MapH))
+                return;
+
+            s_GridCellsX = math.max(1, (int)math.ceil(s_MapW / GridCellSize));
+            s_GridCellsZ = math.max(1, (int)math.ceil(s_MapH / GridCellSize));
+
+            for (int i = 0; i < Obstacles.Count; i++)
+            {
+                var o = Obstacles[i];
+                if (o.Kind == ObstacleKind.Planet || o.Kind == ObstacleKind.Moon)
+                    continue;
+
+                AddCoveringCells(i, o.LogicalCenter, o.Radius);
+                s_GridHasEntries = true;
+            }
+        }
+
+        /// <summary>
+        /// Copies hybrid spheres into a Burst-friendly list for mega volleys.
+        /// </summary>
+        static void EnsureSweepScratch()
+        {
+            if (!s_SweepBodies.IsCreated)
+                s_SweepBodies = new NativeList<CosmeticSweepBody>(512, Allocator.Persistent);
+            if (!s_SweepAlways.IsCreated)
+                s_SweepAlways = new NativeList<int>(16, Allocator.Persistent);
+            if (!s_SweepCells.IsCreated)
+                s_SweepCells = new NativeParallelMultiHashMap<int, int>(512, Allocator.Persistent);
+            if (!s_SweepNearby.IsCreated)
+                s_SweepNearby = new NativeList<int>(64, Allocator.Persistent);
+            if (!s_SweepSeen.IsCreated)
+                s_SweepSeen = new NativeHashSet<int>(64, Allocator.Persistent);
+        }
+
+        static void DisposeSweepScratch()
+        {
+            if (s_SweepBodies.IsCreated)
+                s_SweepBodies.Dispose();
+            if (s_SweepAlways.IsCreated)
+                s_SweepAlways.Dispose();
+            if (s_SweepCells.IsCreated)
+                s_SweepCells.Dispose();
+            if (s_SweepNearby.IsCreated)
+                s_SweepNearby.Dispose();
+            if (s_SweepSeen.IsCreated)
+                s_SweepSeen.Dispose();
+            s_SweepBodies = default;
+            s_SweepAlways = default;
+            s_SweepCells = default;
+            s_SweepNearby = default;
+            s_SweepSeen = default;
+        }
+
+        static void RebuildSweepBodies()
+        {
+            EnsureSweepScratch();
+            s_SweepBodies.Clear();
+            s_SweepAlways.Clear();
+            s_SweepCells.Clear();
+            s_SweepCellsX = 1;
+            s_SweepCellsZ = 1;
+            if (ToroidalMapEcs.IsValidMapSize(s_MapW, s_MapH))
+            {
+                s_SweepCellsX = math.max(1, (int)math.ceil(s_MapW / BulletCosmeticSweepJob.CellSize));
+                s_SweepCellsZ = math.max(1, (int)math.ceil(s_MapH / BulletCosmeticSweepJob.CellSize));
+            }
+
+            for (int i = 0; i < Obstacles.Count; i++)
+            {
+                var o = Obstacles[i];
+                bool home = o.IsHomePlanet;
+                s_SweepBodies.Add(new CosmeticSweepBody
+                {
+                    Position = o.LogicalCenter,
+                    Radius = o.Radius,
+                    Scale = o.Scale,
+                    MoonBodyRadius = PlanetGemMoonMath.GetMoonBodyRadiusWorld(o.Scale, home),
+                    MoonShieldRadius = PlanetGemMoonMath.GetMoonBulletHitRadiusWorld(
+                        o.Scale, home, o.CurrentShield, attackerFriendlyToMoon: false),
+                    CurrentShield = o.CurrentShield,
+                    PlanetLevel = o.PlanetLevel,
+                    PlanetId = o.PlanetId,
+                    OwnerNetworkId = o.OwnerNetworkId,
+                    SlotIndex = o.SlotIndex,
+                    Kind = (byte)o.Kind,
+                    Team = o.TeamOrOwnership,
+                    IsHome = home ? (byte)1 : (byte)0,
+                });
+
+                if (o.Kind == ObstacleKind.Planet || o.Kind == ObstacleKind.Moon)
+                {
+                    s_SweepAlways.Add(i);
+                    continue;
+                }
+
+                AddSweepCoveringCells(i, o.LogicalCenter, o.Radius);
+            }
+        }
+
+        static void AddSweepCoveringCells(int index, float3 pos, float radius)
+        {
+            int cellR = (int)math.ceil((radius + 0.85f) / BulletCosmeticSweepJob.CellSize);
+            float3 wrapped = ToroidalMapEcs.Wrap(pos, s_MapW, s_MapH);
+            float u = wrapped.x + s_MapW * 0.5f;
+            float v = wrapped.z + s_MapH * 0.5f;
+            int baseX = math.clamp((int)math.floor(u / BulletCosmeticSweepJob.CellSize), 0, s_SweepCellsX - 1);
+            int baseZ = math.clamp((int)math.floor(v / BulletCosmeticSweepJob.CellSize), 0, s_SweepCellsZ - 1);
+            if (cellR <= 0)
+            {
+                s_SweepCells.Add(baseX + baseZ * s_SweepCellsX, index);
+                return;
+            }
+
+            for (int dz = -cellR; dz <= cellR; dz++)
+            {
+                int cz = WrapGridCell(baseZ + dz, s_SweepCellsZ);
+                for (int dx = -cellR; dx <= cellR; dx++)
+                    s_SweepCells.Add(WrapGridCell(baseX + dx, s_SweepCellsX) + cz * s_SweepCellsX, index);
+            }
+        }
+
+        /// <summary>
+        /// Burst-advances every straight tracer in one job. Homing rockets stay managed.
+        /// </summary>
+        public static bool TryAdvanceStraightTracers(
+            NativeArray<CosmeticSweepRequest> requests,
+            NativeArray<CosmeticSweepResult> results)
+        {
+            if (!s_SweepBodies.IsCreated || s_SweepBodies.Length == 0 || requests.Length == 0)
+                return false;
+            if (!ToroidalMapEcs.IsValidMapSize(s_MapW, s_MapH))
+                return false;
+            if (requests.Length != results.Length)
+                return false;
+
+            double moonElapsed = PlanetGemMoonOrbitClock.TryGetElapsedSeconds(
+                out double elapsed, includeTickFraction: true)
+                ? elapsed
+                : Time.timeAsDouble;
+            int n = requests.Length;
+            int maxSubsteps = n >= 80 ? 2 : n >= 32 ? 4 : 8;
+            BulletCosmeticSweepJob.Run(
+                requests,
+                results,
+                s_SweepBodies.AsArray(),
+                s_SweepAlways.AsArray(),
+                s_SweepCells,
+                s_SweepNearby,
+                s_SweepSeen,
+                s_MapW,
+                s_MapH,
+                moonElapsed,
+                maxSubsteps,
+                s_SweepCellsX,
+                s_SweepCellsZ);
+            return true;
+        }
+
+        /// <summary>
+        /// Stamp a body into every cell its radius overlaps so queries stay
+        /// step-sized (a MEGA covering sphere must not inflate every tracer).
+        /// </summary>
+        static void AddCoveringCells(int index, float3 pos, float radius)
+        {
+            int cellR = (int)math.ceil((radius + 0.85f) / GridCellSize);
+            int baseX = GridCellX(pos.x);
+            int baseZ = GridCellZ(pos.z);
+            if (cellR <= 0)
+            {
+                AddGridIndex(baseX + baseZ * s_GridCellsX, index);
+                return;
+            }
+
+            for (int dz = -cellR; dz <= cellR; dz++)
+            {
+                int cz = WrapGridCell(baseZ + dz, s_GridCellsZ);
+                for (int dx = -cellR; dx <= cellR; dx++)
+                    AddGridIndex(WrapGridCell(baseX + dx, s_GridCellsX) + cz * s_GridCellsX, index);
+            }
+        }
+
+        static void AddGridIndex(int key, int index)
+        {
+            if (!s_Grid.TryGetValue(key, out var list))
+            {
+                list = new List<int>(8);
+                s_Grid[key] = list;
+            }
+
+            list.Add(index);
+        }
+
+        /// <summary>
+        /// Planets + moons always, plus nearby hashed bodies for this segment.
+        /// Falls back to a full scan when the grid is empty.
+        /// </summary>
+        static void CollectHitCandidates(float3 from, float3 to)
+        {
+            s_TestIndices.Clear();
+            bool haveGrid = s_GridHasEntries &&
+                            ToroidalMapEcs.IsValidMapSize(s_MapW, s_MapH);
+
+            for (int i = 0; i < Obstacles.Count; i++)
+            {
+                var k = Obstacles[i].Kind;
+                if (k == ObstacleKind.Planet || k == ObstacleKind.Moon)
+                    s_TestIndices.Add(i);
+                else if (!haveGrid)
+                    s_TestIndices.Add(i);
+            }
+
+            if (!haveGrid)
+                return;
+
+            s_GridScratch.Clear();
+            s_GridSeen.Clear();
+            float radius = math.distance(from, to) + 1.85f;
+            int cellRadius = (int)math.ceil(radius / GridCellSize) + 1;
+            int baseX = GridCellX(from.x);
+            int baseZ = GridCellZ(from.z);
+
+            for (int dz = -cellRadius; dz <= cellRadius; dz++)
+            {
+                int cz = WrapGridCell(baseZ + dz, s_GridCellsZ);
+                for (int dx = -cellRadius; dx <= cellRadius; dx++)
+                {
+                    int cx = WrapGridCell(baseX + dx, s_GridCellsX);
+                    int key = cx + cz * s_GridCellsX;
+                    if (!s_Grid.TryGetValue(key, out var list))
+                        continue;
+
+                    for (int i = 0; i < list.Count; i++)
+                    {
+                        int idx = list[i];
+                        if (!s_GridSeen.Add(idx))
+                            continue;
+                        s_GridScratch.Add(idx);
+                    }
+                }
+            }
+
+            for (int i = 0; i < s_GridScratch.Count; i++)
+                s_TestIndices.Add(s_GridScratch[i]);
+        }
+
+        static int GridCellX(float x)
+        {
+            float3 wrapped = ToroidalMapEcs.Wrap(new float3(x, 0f, 0f), s_MapW, s_MapH);
+            float u = wrapped.x + s_MapW * 0.5f;
+            int c = (int)math.floor(u / GridCellSize);
+            return math.clamp(c, 0, s_GridCellsX - 1);
+        }
+
+        static int GridCellZ(float z)
+        {
+            float3 wrapped = ToroidalMapEcs.Wrap(new float3(0f, 0f, z), s_MapW, s_MapH);
+            float v = wrapped.z + s_MapH * 0.5f;
+            int c = (int)math.floor(v / GridCellSize);
+            return math.clamp(c, 0, s_GridCellsZ - 1);
+        }
+
+        static int WrapGridCell(int c, int count)
+        {
+            if (count <= 0)
+                return 0;
+            int m = c % count;
+            return m < 0 ? m + count : m;
         }
 
         /// <summary>
@@ -475,8 +778,10 @@ namespace TitanOrbit.Game
             int bestDefenseSlotIndex = -1;
             bool anyDefense = false;
 
-            for (int i = 0; i < Obstacles.Count; i++)
+            CollectHitCandidates(from, to);
+            for (int n = 0; n < s_TestIndices.Count; n++)
             {
+                int i = s_TestIndices[n];
                 var o = Obstacles[i];
                 if (!PassesTeamFilter(in o, ownerTeam, ownerNetworkId, healFriendly))
                     continue;
@@ -935,7 +1240,14 @@ namespace TitanOrbit.Game
             ProxyScratch.Clear();
             ShipProxyScratch.Clear();
             DroneScratch.Clear();
+            foreach (var kv in s_Grid)
+                kv.Value.Clear();
+            s_GridScratch.Clear();
+            s_GridSeen.Clear();
+            s_TestIndices.Clear();
+            s_GridHasEntries = false;
             s_LastRefreshFrame = -1;
+            DisposeSweepScratch();
         }
 
         /// <summary>

@@ -82,11 +82,13 @@ namespace TitanOrbit.ECS
                 weapon.BulletSpeed = bulletSpeed;
                 weapon.BulletDamage = firePower;
                 weapon.EnergyCostPerShot = firePower;
-                weapon.BulletMaxDistance = Mathf.Max(
-                    1f,
-                    effective.bulletRange > 0.01f
-                        ? effective.bulletRange
-                        : MegaShipCatalog.DefaultBulletAcquireRange);
+                weapon.BulletMaxDistance = Mathf.Min(
+                    MegaShipCatalog.MaxBulletTravelDistance,
+                    Mathf.Max(
+                        1f,
+                        effective.bulletRange > 0.01f
+                            ? effective.bulletRange
+                            : MegaShipCatalog.DefaultBulletAcquireRange));
                 weapon.BulletLifetime = Mathf.Max(0.25f, weapon.BulletMaxDistance / Mathf.Max(1f, bulletSpeed));
                 weapon.ReferenceBulletDamage = firePower;
                 weapon.ReferenceBulletSpeed = bulletSpeed;
@@ -219,7 +221,9 @@ namespace TitanOrbit.ECS
                 var mount = mounts[w];
                 mount.FirePower = math.max(0f, row.stats.firePower);
                 mount.FireRate = math.max(0.15f, resolved.fireRate > 0.01f ? resolved.fireRate : row.stats.fireRate);
-                mount.BulletRange = math.max(4f, resolved.bulletRange > 0.5f ? resolved.bulletRange : row.stats.bulletRange);
+                mount.BulletRange = math.min(
+                    MegaShipCatalog.MaxBulletTravelDistance,
+                    math.max(4f, resolved.bulletRange > 0.5f ? resolved.bulletRange : row.stats.bulletRange));
                 mount.ReferenceFirePower = math.max(0f, row.stats.firePower);
                 mount.WeaponRotationSpeed = 0f;
                 mounts[w] = mount;
@@ -236,7 +240,9 @@ namespace TitanOrbit.ECS
                 var mount = mounts[m];
                 if (mount.BulletRange > 0.5f)
                     continue;
-                mount.BulletRange = MegaShipCatalog.DefaultBulletAcquireRange;
+                mount.BulletRange = math.min(
+                    MegaShipCatalog.MaxBulletTravelDistance,
+                    MegaShipCatalog.DefaultBulletAcquireRange);
                 mounts[m] = mount;
             }
         }

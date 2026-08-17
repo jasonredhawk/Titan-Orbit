@@ -94,17 +94,23 @@ namespace TitanOrbit.Data
         /// <summary>Contributed-gem cost to buy any MEGA (gem cap is 0 so 2×cap cannot price them).</summary>
         public const float DefaultPurchaseGemCost = 1200f;
 
+        /// <summary>
+        /// Hard cap on MEGA bullet travel (and intercept-lead extension).
+        /// Shorter live rounds cut BulletSimulationSystem + tracer cost on volleys.
+        /// </summary>
+        public const float MaxBulletTravelDistance = 28f;
+
         /// <summary>Default acquire + travel range for rapid MEGA guns (world units). Written by Apply Default Type-Table Stats.</summary>
-        public const float DefaultBulletAcquireRange = 32f;
+        public const float DefaultBulletAcquireRange = 20f;
 
         /// <summary>Default acquire + travel range for MEGA cannons (world units).</summary>
-        public const float DefaultCannonAcquireRange = 40f;
+        public const float DefaultCannonAcquireRange = 24f;
 
         /// <summary>Default acquire + travel range for MEGA missile launchers (world units).</summary>
-        public const float DefaultMissileAcquireRange = 36f;
+        public const float DefaultMissileAcquireRange = 22f;
 
         /// <summary>Default acquire + travel range for MEGA snipers (world units).</summary>
-        public const float DefaultSniperAcquireRange = 48f;
+        public const float DefaultSniperAcquireRange = 28f;
 
         /// <summary>Minimum cruise speed after summing a hull (thruster-only prefabs).</summary>
         public const float MinHullMoveSpeed = 12f;

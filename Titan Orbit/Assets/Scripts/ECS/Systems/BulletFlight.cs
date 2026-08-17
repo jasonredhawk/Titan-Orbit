@@ -1,3 +1,4 @@
+using Unity.Burst;
 using Unity.Mathematics;
 
 namespace TitanOrbit.ECS
@@ -7,6 +8,7 @@ namespace TitanOrbit.ECS
     /// Substep count comes from <see cref="BulletCollision"/> so a long
     /// <c>|vel|*dt</c> cannot skip a small body between samples.
     /// </summary>
+    [BurstCompile]
     public static class BulletFlight
     {
         /// <summary>
