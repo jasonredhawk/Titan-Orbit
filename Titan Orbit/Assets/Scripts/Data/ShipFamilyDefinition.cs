@@ -163,8 +163,8 @@ namespace TitanOrbit.Data
         [Min(1f)]
         public float menuPreviewBoundsPadding = 1.15f;
 
-        [Tooltip("Solid clear color behind menu preview renders (alpha usually 0 for transparent PNGs).")]
-        public Color menuPreviewBackgroundColor = new Color(0f, 0f, 0f, 0f);
+        [Tooltip("Clear color behind top-down menu preview PNGs. Theatrical renders always use opaque black (same as MEGA hull thumbs).")]
+        public Color menuPreviewBackgroundColor = Color.black;
 
         [Header("Components")]
         public List<ShipFamilyComponentEntry> components = new List<ShipFamilyComponentEntry>();

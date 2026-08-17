@@ -79,7 +79,7 @@ MonoBehaviour:
   bankVisualSettings: {fileID: 11400000, guid: d5f9b2c8e0a35f7b9d4e6a2f1b8c3579, type: 2}
   menuPreviewTheatricalFieldOfView: 36
   menuPreviewBoundsPadding: 1.22
-  menuPreviewBackgroundColor: {r: 0.06, g: 0.09, b: 0.14, a: 1}
+  menuPreviewBackgroundColor: {r: 0, g: 0, b: 0, a: 1}
   components:
   - componentId: Cockpit
     displayName: Cockpit 1
@@ -123,9 +123,24 @@ MonoBehaviour:
       maxPeoplePerExtraLevel: 5
     bulletPrefabIndex: -1
     menuPreviewSprite: {fileID: 0}
-    theatricalMenuPreviewSprite: {fileID: 0}
+    theatricalMenuPreviewSprite: {fileID: 21300000, guid: cd7b456e48084a444b0c5869ca781107, type: 3}
     teamMenuPreviewSprites: []
-    teamTheatricalMenuPreviewSprites: []
+    teamTheatricalMenuPreviewSprites:
+    - variantName: TeamA
+      team: 1
+      sprite: {fileID: 21300000, guid: cd7b456e48084a444b0c5869ca781107, type: 3}
+    - variantName: TeamB
+      team: 2
+      sprite: {fileID: 21300000, guid: 27944825fb0bb8044bac8c91cb426254, type: 3}
+    - variantName: TeamC
+      team: 3
+      sprite: {fileID: 21300000, guid: b31537728002c4242ad66151a91d2fe1, type: 3}
+    - variantName: TeamD
+      team: 4
+      sprite: {fileID: 21300000, guid: 6742723dc4a01c9419031af4d2bd7e72, type: 3}
+    - variantName: TeamE
+      team: 5
+      sprite: {fileID: 21300000, guid: a6b294945d26a4748bb76692487e5ea2, type: 3}
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
   - componentId: Cockpit_Base_1
@@ -170,9 +185,24 @@ MonoBehaviour:
       maxPeoplePerExtraLevel: 5
     bulletPrefabIndex: -1
     menuPreviewSprite: {fileID: 0}
-    theatricalMenuPreviewSprite: {fileID: 0}
+    theatricalMenuPreviewSprite: {fileID: 21300000, guid: cc4275dfd02b11142b40e76c65f09c6d, type: 3}
     teamMenuPreviewSprites: []
-    teamTheatricalMenuPreviewSprites: []
+    teamTheatricalMenuPreviewSprites:
+    - variantName: TeamA
+      team: 1
+      sprite: {fileID: 21300000, guid: cc4275dfd02b11142b40e76c65f09c6d, type: 3}
+    - variantName: TeamB
+      team: 2
+      sprite: {fileID: 21300000, guid: 70446577654a8044eb7242799367a30d, type: 3}
+    - variantName: TeamC
+      team: 3
+      sprite: {fileID: 21300000, guid: 4c15e8aeaa2ca6e41b2663d9198bff7d, type: 3}
+    - variantName: TeamD
+      team: 4
+      sprite: {fileID: 21300000, guid: 1c4cb1354346b6e44b31be3b73357c4d, type: 3}
+    - variantName: TeamE
+      team: 5
+      sprite: {fileID: 21300000, guid: f35ac39a7be16e741bc7af8e76542017, type: 3}
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
   - componentId: Cockpit_Base_2
@@ -217,9 +247,24 @@ MonoBehaviour:
       maxPeoplePerExtraLevel: 7
     bulletPrefabIndex: -1
     menuPreviewSprite: {fileID: 0}
-    theatricalMenuPreviewSprite: {fileID: 0}
+    theatricalMenuPreviewSprite: {fileID: 21300000, guid: 13a71218e8201ca46af2b395b42837e1, type: 3}
     teamMenuPreviewSprites: []
-    teamTheatricalMenuPreviewSprites: []
+    teamTheatricalMenuPreviewSprites:
+    - variantName: TeamA
+      team: 1
+      sprite: {fileID: 21300000, guid: 13a71218e8201ca46af2b395b42837e1, type: 3}
+    - variantName: TeamB
+      team: 2
+      sprite: {fileID: 21300000, guid: 71b915a672c65c54abf798289170d029, type: 3}
+    - variantName: TeamC
+      team: 3
+      sprite: {fileID: 21300000, guid: f8aca361480f4c1439d24bce9dea4bfa, type: 3}
+    - variantName: TeamD
+      team: 4
+      sprite: {fileID: 21300000, guid: ebf5791ede5981744a949a0d91e72d7a, type: 3}
+    - variantName: TeamE
+      team: 5
+      sprite: {fileID: 21300000, guid: de183fa8412c4af44bedf16433ee3b7e, type: 3}
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
   - componentId: Engine_1
@@ -264,9 +309,24 @@ MonoBehaviour:
       maxPeoplePerExtraLevel: 0
     bulletPrefabIndex: -1
     menuPreviewSprite: {fileID: 0}
-    theatricalMenuPreviewSprite: {fileID: 0}
+    theatricalMenuPreviewSprite: {fileID: 21300000, guid: bd84fb5dd437dc140b624c89d666b686, type: 3}
     teamMenuPreviewSprites: []
-    teamTheatricalMenuPreviewSprites: []
+    teamTheatricalMenuPreviewSprites:
+    - variantName: TeamA
+      team: 1
+      sprite: {fileID: 21300000, guid: bd84fb5dd437dc140b624c89d666b686, type: 3}
+    - variantName: TeamB
+      team: 2
+      sprite: {fileID: 21300000, guid: 7858cb153afcc39428d6c343593d025a, type: 3}
+    - variantName: TeamC
+      team: 3
+      sprite: {fileID: 21300000, guid: c3880d75a2bc7ab4fb8d5ac254cab939, type: 3}
+    - variantName: TeamD
+      team: 4
+      sprite: {fileID: 21300000, guid: 4d8a05a41630efb4693d9d2e7bd24693, type: 3}
+    - variantName: TeamE
+      team: 5
+      sprite: {fileID: 21300000, guid: 4cb91348b055e8348afbfede00e114b0, type: 3}
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
   - componentId: Engine_2
@@ -311,9 +371,24 @@ MonoBehaviour:
       maxPeoplePerExtraLevel: 0
     bulletPrefabIndex: -1
     menuPreviewSprite: {fileID: 0}
-    theatricalMenuPreviewSprite: {fileID: 0}
+    theatricalMenuPreviewSprite: {fileID: 21300000, guid: 8c69850db4c38f149b1e6ba5d97b6173, type: 3}
     teamMenuPreviewSprites: []
-    teamTheatricalMenuPreviewSprites: []
+    teamTheatricalMenuPreviewSprites:
+    - variantName: TeamA
+      team: 1
+      sprite: {fileID: 21300000, guid: 8c69850db4c38f149b1e6ba5d97b6173, type: 3}
+    - variantName: TeamB
+      team: 2
+      sprite: {fileID: 21300000, guid: 2228183183fe44740954d34d00cd2dba, type: 3}
+    - variantName: TeamC
+      team: 3
+      sprite: {fileID: 21300000, guid: f7d5029d6065e1b49b6ea6e0f0d9e947, type: 3}
+    - variantName: TeamD
+      team: 4
+      sprite: {fileID: 21300000, guid: c15430be831577649b10fa7e11145a3f, type: 3}
+    - variantName: TeamE
+      team: 5
+      sprite: {fileID: 21300000, guid: 824997546dd6c2c4c9b1e339351aa656, type: 3}
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
   - componentId: Fin
@@ -358,9 +433,24 @@ MonoBehaviour:
       maxPeoplePerExtraLevel: 0
     bulletPrefabIndex: -1
     menuPreviewSprite: {fileID: 0}
-    theatricalMenuPreviewSprite: {fileID: 0}
+    theatricalMenuPreviewSprite: {fileID: 21300000, guid: cbe789725f09e034eaac48c58ca2d236, type: 3}
     teamMenuPreviewSprites: []
-    teamTheatricalMenuPreviewSprites: []
+    teamTheatricalMenuPreviewSprites:
+    - variantName: TeamA
+      team: 1
+      sprite: {fileID: 21300000, guid: cbe789725f09e034eaac48c58ca2d236, type: 3}
+    - variantName: TeamB
+      team: 2
+      sprite: {fileID: 21300000, guid: 1956a621074bd4143b949e37cc337f21, type: 3}
+    - variantName: TeamC
+      team: 3
+      sprite: {fileID: 21300000, guid: 573a66da9ad08404797623629d3006f7, type: 3}
+    - variantName: TeamD
+      team: 4
+      sprite: {fileID: 21300000, guid: 4933233c91172044e9e854387987f23f, type: 3}
+    - variantName: TeamE
+      team: 5
+      sprite: {fileID: 21300000, guid: 74c06797e1e46394a95f71798bca06ac, type: 3}
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
   - componentId: Part_1
@@ -405,9 +495,24 @@ MonoBehaviour:
       maxPeoplePerExtraLevel: 0
     bulletPrefabIndex: -1
     menuPreviewSprite: {fileID: 0}
-    theatricalMenuPreviewSprite: {fileID: 0}
+    theatricalMenuPreviewSprite: {fileID: 21300000, guid: 97f53dadd461cbe4e82b8c1db336a5bd, type: 3}
     teamMenuPreviewSprites: []
-    teamTheatricalMenuPreviewSprites: []
+    teamTheatricalMenuPreviewSprites:
+    - variantName: TeamA
+      team: 1
+      sprite: {fileID: 21300000, guid: 97f53dadd461cbe4e82b8c1db336a5bd, type: 3}
+    - variantName: TeamB
+      team: 2
+      sprite: {fileID: 21300000, guid: 5076c32c914744b4a9f169f7510e97ea, type: 3}
+    - variantName: TeamC
+      team: 3
+      sprite: {fileID: 21300000, guid: a8b7392bee839b94abad0c0d9438eb06, type: 3}
+    - variantName: TeamD
+      team: 4
+      sprite: {fileID: 21300000, guid: 9a2df741a527e3348a5f85c3eb14420e, type: 3}
+    - variantName: TeamE
+      team: 5
+      sprite: {fileID: 21300000, guid: ad7228d7b46854d458b1f5d3d15c453e, type: 3}
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
   - componentId: Part_2
@@ -452,9 +557,24 @@ MonoBehaviour:
       maxPeoplePerExtraLevel: 0
     bulletPrefabIndex: -1
     menuPreviewSprite: {fileID: 0}
-    theatricalMenuPreviewSprite: {fileID: 0}
+    theatricalMenuPreviewSprite: {fileID: 21300000, guid: 558a464699a9f6145b30273717b731f9, type: 3}
     teamMenuPreviewSprites: []
-    teamTheatricalMenuPreviewSprites: []
+    teamTheatricalMenuPreviewSprites:
+    - variantName: TeamA
+      team: 1
+      sprite: {fileID: 21300000, guid: 558a464699a9f6145b30273717b731f9, type: 3}
+    - variantName: TeamB
+      team: 2
+      sprite: {fileID: 21300000, guid: 676f4f67bc313104eafcf735b2aa94bb, type: 3}
+    - variantName: TeamC
+      team: 3
+      sprite: {fileID: 21300000, guid: 15f45498a7160724eba28ce812e96d37, type: 3}
+    - variantName: TeamD
+      team: 4
+      sprite: {fileID: 21300000, guid: f119bfac4901611469ba2ae116b4f34b, type: 3}
+    - variantName: TeamE
+      team: 5
+      sprite: {fileID: 21300000, guid: d23d3910bddf63a4d8ba376ad23ed503, type: 3}
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
   - componentId: Tail
@@ -499,9 +619,24 @@ MonoBehaviour:
       maxPeoplePerExtraLevel: 0
     bulletPrefabIndex: -1
     menuPreviewSprite: {fileID: 0}
-    theatricalMenuPreviewSprite: {fileID: 0}
+    theatricalMenuPreviewSprite: {fileID: 21300000, guid: ff8427dfaf12f114098042181fb75dc5, type: 3}
     teamMenuPreviewSprites: []
-    teamTheatricalMenuPreviewSprites: []
+    teamTheatricalMenuPreviewSprites:
+    - variantName: TeamA
+      team: 1
+      sprite: {fileID: 21300000, guid: ff8427dfaf12f114098042181fb75dc5, type: 3}
+    - variantName: TeamB
+      team: 2
+      sprite: {fileID: 21300000, guid: 159dc205e3a972a4583abb0730a92a55, type: 3}
+    - variantName: TeamC
+      team: 3
+      sprite: {fileID: 21300000, guid: 76a048f274da7a140a1a75eb64773391, type: 3}
+    - variantName: TeamD
+      team: 4
+      sprite: {fileID: 21300000, guid: f019e631c924cfa44befb73735ca3aa0, type: 3}
+    - variantName: TeamE
+      team: 5
+      sprite: {fileID: 21300000, guid: bd61a448d40d8424e8d4b302d68d7e25, type: 3}
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
   - componentId: Thruster
@@ -546,9 +681,24 @@ MonoBehaviour:
       maxPeoplePerExtraLevel: 0
     bulletPrefabIndex: -1
     menuPreviewSprite: {fileID: 0}
-    theatricalMenuPreviewSprite: {fileID: 0}
+    theatricalMenuPreviewSprite: {fileID: 21300000, guid: b832d0927e5692345b05dc390a15acd7, type: 3}
     teamMenuPreviewSprites: []
-    teamTheatricalMenuPreviewSprites: []
+    teamTheatricalMenuPreviewSprites:
+    - variantName: TeamA
+      team: 1
+      sprite: {fileID: 21300000, guid: b832d0927e5692345b05dc390a15acd7, type: 3}
+    - variantName: TeamB
+      team: 2
+      sprite: {fileID: 21300000, guid: 3345a0f8f066feb4e8d7f4841c94cd43, type: 3}
+    - variantName: TeamC
+      team: 3
+      sprite: {fileID: 21300000, guid: f84fd940ef3893048ac8fb8749a23a73, type: 3}
+    - variantName: TeamD
+      team: 4
+      sprite: {fileID: 21300000, guid: ac89bd02982c25044b8fa85bd4c9112d, type: 3}
+    - variantName: TeamE
+      team: 5
+      sprite: {fileID: 21300000, guid: 6e9ff45da2a2b4242ae58a9183be9075, type: 3}
     enablePropulsionVfx: 1
     propulsionVfxScale: 1
   - componentId: Weapon
@@ -593,9 +743,24 @@ MonoBehaviour:
       maxPeoplePerExtraLevel: 0
     bulletPrefabIndex: -1
     menuPreviewSprite: {fileID: 0}
-    theatricalMenuPreviewSprite: {fileID: 0}
+    theatricalMenuPreviewSprite: {fileID: 21300000, guid: 96e8d8bb8f302cb4d8dc40b06abf8cbf, type: 3}
     teamMenuPreviewSprites: []
-    teamTheatricalMenuPreviewSprites: []
+    teamTheatricalMenuPreviewSprites:
+    - variantName: TeamA
+      team: 1
+      sprite: {fileID: 21300000, guid: 96e8d8bb8f302cb4d8dc40b06abf8cbf, type: 3}
+    - variantName: TeamB
+      team: 2
+      sprite: {fileID: 21300000, guid: 1a20dff7d806cc840a6ec63a7cdc8cb4, type: 3}
+    - variantName: TeamC
+      team: 3
+      sprite: {fileID: 21300000, guid: d5d706679d02642429903084327853f9, type: 3}
+    - variantName: TeamD
+      team: 4
+      sprite: {fileID: 21300000, guid: 1acce62a5339f754b80bb0c46234cd4c, type: 3}
+    - variantName: TeamE
+      team: 5
+      sprite: {fileID: 21300000, guid: 5c7c5a849f55c1f4daf56246b159ae54, type: 3}
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
   - componentId: Wing_1
@@ -640,9 +805,24 @@ MonoBehaviour:
       maxPeoplePerExtraLevel: 3
     bulletPrefabIndex: -1
     menuPreviewSprite: {fileID: 0}
-    theatricalMenuPreviewSprite: {fileID: 0}
+    theatricalMenuPreviewSprite: {fileID: 21300000, guid: bfdc1c73a3cf76841b846bcdc2bb7be8, type: 3}
     teamMenuPreviewSprites: []
-    teamTheatricalMenuPreviewSprites: []
+    teamTheatricalMenuPreviewSprites:
+    - variantName: TeamA
+      team: 1
+      sprite: {fileID: 21300000, guid: bfdc1c73a3cf76841b846bcdc2bb7be8, type: 3}
+    - variantName: TeamB
+      team: 2
+      sprite: {fileID: 21300000, guid: 4ec946940fe46a848aa9040efb80fe8a, type: 3}
+    - variantName: TeamC
+      team: 3
+      sprite: {fileID: 21300000, guid: 097bb75f7ff94204f838ccbf04d89e95, type: 3}
+    - variantName: TeamD
+      team: 4
+      sprite: {fileID: 21300000, guid: f42502a189139e1419bd5c231b3aa068, type: 3}
+    - variantName: TeamE
+      team: 5
+      sprite: {fileID: 21300000, guid: 95b0689f0dcedfb4bb7f42e6033c533e, type: 3}
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
   - componentId: Wing_2
@@ -687,9 +867,24 @@ MonoBehaviour:
       maxPeoplePerExtraLevel: 5
     bulletPrefabIndex: -1
     menuPreviewSprite: {fileID: 0}
-    theatricalMenuPreviewSprite: {fileID: 0}
+    theatricalMenuPreviewSprite: {fileID: 21300000, guid: 312e4b4eaed063741b0fb13d99d94d86, type: 3}
     teamMenuPreviewSprites: []
-    teamTheatricalMenuPreviewSprites: []
+    teamTheatricalMenuPreviewSprites:
+    - variantName: TeamA
+      team: 1
+      sprite: {fileID: 21300000, guid: 312e4b4eaed063741b0fb13d99d94d86, type: 3}
+    - variantName: TeamB
+      team: 2
+      sprite: {fileID: 21300000, guid: 59e0fde23ba2c5647bf78109e8c78f95, type: 3}
+    - variantName: TeamC
+      team: 3
+      sprite: {fileID: 21300000, guid: ac9f29ef9f94a714a8c23952ce91800d, type: 3}
+    - variantName: TeamD
+      team: 4
+      sprite: {fileID: 21300000, guid: f1205bb3b716954458b758e1f0ef3df2, type: 3}
+    - variantName: TeamE
+      team: 5
+      sprite: {fileID: 21300000, guid: cd6c74af31bbd7341a50c14bb627274c, type: 3}
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
   - componentId: Wing_3
@@ -734,9 +929,24 @@ MonoBehaviour:
       maxPeoplePerExtraLevel: 7
     bulletPrefabIndex: -1
     menuPreviewSprite: {fileID: 0}
-    theatricalMenuPreviewSprite: {fileID: 0}
+    theatricalMenuPreviewSprite: {fileID: 21300000, guid: b65b968f6d3ef0b4faf20f4f86c6e58b, type: 3}
     teamMenuPreviewSprites: []
-    teamTheatricalMenuPreviewSprites: []
+    teamTheatricalMenuPreviewSprites:
+    - variantName: TeamA
+      team: 1
+      sprite: {fileID: 21300000, guid: b65b968f6d3ef0b4faf20f4f86c6e58b, type: 3}
+    - variantName: TeamB
+      team: 2
+      sprite: {fileID: 21300000, guid: 9ca6fd4217445b84c917646d1801a55c, type: 3}
+    - variantName: TeamC
+      team: 3
+      sprite: {fileID: 21300000, guid: bebfe1bc304f39840a2f81086c4981c3, type: 3}
+    - variantName: TeamD
+      team: 4
+      sprite: {fileID: 21300000, guid: 7e69ea37b703a2945bf53b0b73e43f23, type: 3}
+    - variantName: TeamE
+      team: 5
+      sprite: {fileID: 21300000, guid: 3c1745c36613d914a949ff78bbac5eff, type: 3}
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
   - componentId: Wing_4
@@ -781,9 +991,24 @@ MonoBehaviour:
       maxPeoplePerExtraLevel: 9
     bulletPrefabIndex: -1
     menuPreviewSprite: {fileID: 0}
-    theatricalMenuPreviewSprite: {fileID: 0}
+    theatricalMenuPreviewSprite: {fileID: 21300000, guid: f8a1899f76644574e88bfea8a1acedbd, type: 3}
     teamMenuPreviewSprites: []
-    teamTheatricalMenuPreviewSprites: []
+    teamTheatricalMenuPreviewSprites:
+    - variantName: TeamA
+      team: 1
+      sprite: {fileID: 21300000, guid: f8a1899f76644574e88bfea8a1acedbd, type: 3}
+    - variantName: TeamB
+      team: 2
+      sprite: {fileID: 21300000, guid: 27f1d728df83f774b86a51bb0f159222, type: 3}
+    - variantName: TeamC
+      team: 3
+      sprite: {fileID: 21300000, guid: 373d5cabde7e77b4f89b18318381a060, type: 3}
+    - variantName: TeamD
+      team: 4
+      sprite: {fileID: 21300000, guid: 30a2042692998c54e9d1aa157384da54, type: 3}
+    - variantName: TeamE
+      team: 5
+      sprite: {fileID: 21300000, guid: 105498d11e5187047a5f70dffc9c420b, type: 3}
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
   - componentId: Wing_5
@@ -828,9 +1053,24 @@ MonoBehaviour:
       maxPeoplePerExtraLevel: 11
     bulletPrefabIndex: -1
     menuPreviewSprite: {fileID: 0}
-    theatricalMenuPreviewSprite: {fileID: 0}
+    theatricalMenuPreviewSprite: {fileID: 21300000, guid: 0254719097875634ab3f302cab4a48c4, type: 3}
     teamMenuPreviewSprites: []
-    teamTheatricalMenuPreviewSprites: []
+    teamTheatricalMenuPreviewSprites:
+    - variantName: TeamA
+      team: 1
+      sprite: {fileID: 21300000, guid: 0254719097875634ab3f302cab4a48c4, type: 3}
+    - variantName: TeamB
+      team: 2
+      sprite: {fileID: 21300000, guid: 6a635d7201d69d64a8a7a2daa788928a, type: 3}
+    - variantName: TeamC
+      team: 3
+      sprite: {fileID: 21300000, guid: 0b82ca6a6a784584dbf46900817bc79c, type: 3}
+    - variantName: TeamD
+      team: 4
+      sprite: {fileID: 21300000, guid: baa6e7d7c1ec62e46b38ba9fa2ea4216, type: 3}
+    - variantName: TeamE
+      team: 5
+      sprite: {fileID: 21300000, guid: 2ba675d2632e06b49b4fed74914f1c1c, type: 3}
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
   upgradeTree:

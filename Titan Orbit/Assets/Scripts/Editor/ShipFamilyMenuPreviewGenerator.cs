@@ -164,7 +164,11 @@ namespace TitanOrbit.Editor
             camGo.transform.SetParent(root.transform, false);
             var cam = camGo.AddComponent<UnityEngine.Camera>();
             cam.clearFlags = CameraClearFlags.SolidColor;
-            cam.backgroundColor = def.menuPreviewBackgroundColor;
+            // Theatrical matches MegaShipMenuPreviewGenerator: opaque black even if
+            // an existing family asset still has the old navy-grey or alpha 0.
+            cam.backgroundColor = style == PreviewCameraStyle.Theatrical
+                ? Color.black
+                : def.menuPreviewBackgroundColor;
             cam.cullingMask = 1 << PreviewLayer;
             cam.nearClipPlane = 0.05f;
             cam.farClipPlane = 200f;
@@ -277,6 +281,16 @@ namespace TitanOrbit.Editor
             EditorUtility.DisplayDialog("Ship Family", "Select a ShipFamilyDefinition asset in the Project window.", "OK");
         }
 
+        public struct MenuPreviewGenerateResult
+        {
+            public bool success;
+            public string error;
+            public int done;
+            public int skipped;
+            public int variantCount;
+            public string outFolder;
+        }
+
         /// <summary>Generates PNGs + Sprite refs for every tier with a prefab. Safe to re-run; overwrites PNGs.</summary>
         public static void GenerateForFamily(ShipFamilyDefinition def)
         {
@@ -289,24 +303,49 @@ namespace TitanOrbit.Editor
             GenerateMenuPreviewsForFamily(def, PreviewCameraStyle.Theatrical);
         }
 
-        private static void GenerateMenuPreviewsForFamily(ShipFamilyDefinition def, PreviewCameraStyle style)
+        /// <summary>Theatrical hull thumbs. Catalog batch uses <paramref name="showDialog"/> / <paramref name="saveAssets"/> false.</summary>
+        public static MenuPreviewGenerateResult GenerateTheatricalForFamily(
+            ShipFamilyDefinition def,
+            bool showDialog,
+            bool saveAssets)
         {
+            return GenerateMenuPreviewsForFamily(def, PreviewCameraStyle.Theatrical, showDialog, saveAssets);
+        }
+
+        private static MenuPreviewGenerateResult GenerateMenuPreviewsForFamily(
+            ShipFamilyDefinition def,
+            PreviewCameraStyle style,
+            bool showDialog = true,
+            bool saveAssets = true)
+        {
+            var result = new MenuPreviewGenerateResult();
+            string title = style == PreviewCameraStyle.Theatrical ? "Theatrical Menu Previews" : "Menu Previews";
+
             if (def == null || def.upgradeTree == null || def.upgradeTree.Count == 0)
             {
-                EditorUtility.DisplayDialog("Menu Previews", "Ship family has no upgrade tree entries.", "OK");
-                return;
+                result.error = "Ship family has no upgrade tree entries.";
+                if (showDialog)
+                    EditorUtility.DisplayDialog(title, result.error, "OK");
+                return result;
             }
 
             string defPath = AssetDatabase.GetAssetPath(def);
             if (string.IsNullOrEmpty(defPath))
             {
-                EditorUtility.DisplayDialog("Menu Previews", "Could not resolve asset path.", "OK");
-                return;
+                result.error = "Could not resolve asset path.";
+                if (showDialog)
+                    EditorUtility.DisplayDialog(title, result.error, "OK");
+                return result;
             }
 
             string defDir = Path.GetDirectoryName(defPath)?.Replace('\\', '/');
             if (string.IsNullOrEmpty(defDir))
-                return;
+            {
+                result.error = "Could not resolve family asset folder.";
+                if (showDialog)
+                    EditorUtility.DisplayDialog(title, result.error, "OK");
+                return result;
+            }
 
             string outFolder = $"{defDir}/MenuPreviews";
             EnsureAssetFolder(outFolder);
@@ -404,11 +443,23 @@ namespace TitanOrbit.Editor
             }
 
             EditorUtility.SetDirty(def);
-            AssetDatabase.SaveAssets();
-            EditorUtility.DisplayDialog(
-                style == PreviewCameraStyle.Theatrical ? "Theatrical Menu Previews" : "Menu Previews",
-                $"Generated {done} image(s) across {variants.Length} variant(s). Skipped {skipped} (no prefab or no mesh). Output: {outFolder}",
-                "OK");
+            if (saveAssets)
+                AssetDatabase.SaveAssets();
+
+            result.success = true;
+            result.done = done;
+            result.skipped = skipped;
+            result.variantCount = variants.Length;
+            result.outFolder = outFolder;
+            if (showDialog)
+            {
+                EditorUtility.DisplayDialog(
+                    title,
+                    $"Generated {done} image(s) across {variants.Length} variant(s). Skipped {skipped} (no prefab or no mesh). Output: {outFolder}",
+                    "OK");
+            }
+
+            return result;
         }
 
         [MenuItem("Titan Orbit/Generate Component Menu Previews For Selected Ship Family")]
@@ -458,30 +509,59 @@ namespace TitanOrbit.Editor
             GenerateComponentPreviewsForFamily(def, PreviewCameraStyle.Theatrical);
         }
 
-        private static void GenerateComponentPreviewsForFamily(ShipFamilyDefinition def, PreviewCameraStyle style)
+        /// <summary>Theatrical component thumbs. Catalog batch uses <paramref name="showDialog"/> / <paramref name="saveAssets"/> false.</summary>
+        public static MenuPreviewGenerateResult GenerateTheatricalComponentPreviewsForFamily(
+            ShipFamilyDefinition def,
+            bool showDialog,
+            bool saveAssets)
         {
+            return GenerateComponentPreviewsForFamily(def, PreviewCameraStyle.Theatrical, showDialog, saveAssets);
+        }
+
+        private static MenuPreviewGenerateResult GenerateComponentPreviewsForFamily(
+            ShipFamilyDefinition def,
+            PreviewCameraStyle style,
+            bool showDialog = true,
+            bool saveAssets = true)
+        {
+            var result = new MenuPreviewGenerateResult();
+            string title = style == PreviewCameraStyle.Theatrical
+                ? "Theatrical Component Menu Previews"
+                : "Component Menu Previews";
+
             if (def == null || def.components == null || def.components.Count == 0)
             {
-                EditorUtility.DisplayDialog("Component Menu Previews", "Ship family has no component entries.", "OK");
-                return;
+                result.error = "Ship family has no component entries.";
+                if (showDialog)
+                    EditorUtility.DisplayDialog(title, result.error, "OK");
+                return result;
             }
 
             if (def.upgradeTree == null || def.upgradeTree.Count == 0)
             {
-                EditorUtility.DisplayDialog("Component Menu Previews", "No upgrade-tree prefab found to render components from.", "OK");
-                return;
+                result.error = "No upgrade-tree prefab found to render components from.";
+                if (showDialog)
+                    EditorUtility.DisplayDialog(title, result.error, "OK");
+                return result;
             }
 
             string defPath = AssetDatabase.GetAssetPath(def);
             if (string.IsNullOrEmpty(defPath))
             {
-                EditorUtility.DisplayDialog("Component Menu Previews", "Could not resolve asset path.", "OK");
-                return;
+                result.error = "Could not resolve asset path.";
+                if (showDialog)
+                    EditorUtility.DisplayDialog(title, result.error, "OK");
+                return result;
             }
 
             string defDir = Path.GetDirectoryName(defPath)?.Replace('\\', '/');
             if (string.IsNullOrEmpty(defDir))
-                return;
+            {
+                result.error = "Could not resolve family asset folder.";
+                if (showDialog)
+                    EditorUtility.DisplayDialog(title, result.error, "OK");
+                return result;
+            }
 
             string familyId = string.IsNullOrWhiteSpace(def.familyId) ? "ShipFamily" : def.familyId.Trim();
             Dictionary<string, GameObject> componentSourcePrefabs = BuildComponentSourcePrefabMap(def, familyId);
@@ -592,13 +672,25 @@ namespace TitanOrbit.Editor
             }
 
             EditorUtility.SetDirty(def);
-            AssetDatabase.SaveAssets();
+            if (saveAssets)
+                AssetDatabase.SaveAssets();
+
             int skippedTotal = skippedMissingId + skippedNoPrefab + skippedNoMesh;
-            EditorUtility.DisplayDialog(
-                style == PreviewCameraStyle.Theatrical ? "Theatrical Component Menu Previews" : "Component Menu Previews",
-                $"Generated {done} image(s) across {variants.Length} variant(s). Skipped {skippedTotal} " +
-                $"(missing id: {skippedMissingId}, no prefab: {skippedNoPrefab}, no mesh: {skippedNoMesh}). Output: {outFolder}",
-                "OK");
+            result.success = true;
+            result.done = done;
+            result.skipped = skippedTotal;
+            result.variantCount = variants.Length;
+            result.outFolder = outFolder;
+            if (showDialog)
+            {
+                EditorUtility.DisplayDialog(
+                    title,
+                    $"Generated {done} image(s) across {variants.Length} variant(s). Skipped {skippedTotal} " +
+                    $"(missing id: {skippedMissingId}, no prefab: {skippedNoPrefab}, no mesh: {skippedNoMesh}). Output: {outFolder}",
+                    "OK");
+            }
+
+            return result;
         }
 
         /// <summary>

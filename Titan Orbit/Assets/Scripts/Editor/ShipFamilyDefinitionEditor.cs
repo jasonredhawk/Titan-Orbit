@@ -387,7 +387,7 @@ namespace TitanOrbit.Editor
                 "Menu Preview Images: writes PNGs to MenuPreviews/<variant>/ next to this asset, imports them as Sprites, and assigns each tier's teamMenuPreviewSprites (plus legacy menuPreviewSprite). Variants come from ShipFamilyDefinition Team Materials. Re-run anytime after prefab/material changes.",
                 MessageType.None);
             EditorGUILayout.HelpBox(
-                "Theatrical Menu Preview Images: same assignment as top-down but uses a 3/4 hero camera. Overwrites PNGs in MenuPreviews/<variant>/ and replaces menuPreviewSprite / teamMenuPreviewSprites on each tier.",
+                "Theatrical Menu Preview Images: same assignment as top-down but uses a 3/4 hero camera and an opaque black clear (same as MEGA hull thumbs). Overwrites PNGs in MenuPreviews/<variant>/ and replaces menuPreviewSprite / teamMenuPreviewSprites on each tier.",
                 MessageType.None);
             EditorGUILayout.HelpBox(
                 "Component Menu Preview Images: renders each component entry from the strongest upgrade-tree prefab into ComponentMenuPreviews/<variant>/ and assigns menuPreviewSprite on each ShipFamilyComponentEntry (used by the moon dock equipment store).",

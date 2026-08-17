@@ -79,7 +79,7 @@ MonoBehaviour:
   bankVisualSettings: {fileID: 11400000, guid: d5f9b2c8e0a35f7b9d4e6a2f1b8c3579, type: 2}
   menuPreviewTheatricalFieldOfView: 36
   menuPreviewBoundsPadding: 1.22
-  menuPreviewBackgroundColor: {r: 0.06, g: 0.09, b: 0.14, a: 1}
+  menuPreviewBackgroundColor: {r: 0, g: 0, b: 0, a: 1}
   components:
   - componentId: Body1
     displayName: Hull 1
@@ -123,7 +123,7 @@ MonoBehaviour:
       maxPeoplePerExtraLevel: 0
     bulletPrefabIndex: -1
     menuPreviewSprite: {fileID: 21300000, guid: 86a581f8173f2f543b6140f7ca7cf48b, type: 3}
-    theatricalMenuPreviewSprite: {fileID: 0}
+    theatricalMenuPreviewSprite: {fileID: 21300000, guid: 86a581f8173f2f543b6140f7ca7cf48b, type: 3}
     teamMenuPreviewSprites:
     - variantName: Red
       team: 1
@@ -140,7 +140,22 @@ MonoBehaviour:
     - variantName: Purple
       team: 5
       sprite: {fileID: 21300000, guid: 6b47392ff5708764294cebab6beaa016, type: 3}
-    teamTheatricalMenuPreviewSprites: []
+    teamTheatricalMenuPreviewSprites:
+    - variantName: Red
+      team: 1
+      sprite: {fileID: 21300000, guid: 86a581f8173f2f543b6140f7ca7cf48b, type: 3}
+    - variantName: Blue
+      team: 2
+      sprite: {fileID: 21300000, guid: 9a9dc74d8daa645448ad892b6f5e46db, type: 3}
+    - variantName: Green
+      team: 3
+      sprite: {fileID: 21300000, guid: e7dce43b87f58c04aaf138ff771bc0e4, type: 3}
+    - variantName: Orange
+      team: 4
+      sprite: {fileID: 21300000, guid: 369d5d7e8d806b940876dcfbc7060819, type: 3}
+    - variantName: Purple
+      team: 5
+      sprite: {fileID: 21300000, guid: 6b47392ff5708764294cebab6beaa016, type: 3}
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
   - componentId: Body2
@@ -185,7 +200,7 @@ MonoBehaviour:
       maxPeoplePerExtraLevel: 0
     bulletPrefabIndex: -1
     menuPreviewSprite: {fileID: 21300000, guid: b2aae97178055d048a2e5307ac0ccd93, type: 3}
-    theatricalMenuPreviewSprite: {fileID: 0}
+    theatricalMenuPreviewSprite: {fileID: 21300000, guid: b2aae97178055d048a2e5307ac0ccd93, type: 3}
     teamMenuPreviewSprites:
     - variantName: Red
       team: 1
@@ -202,7 +217,22 @@ MonoBehaviour:
     - variantName: Purple
       team: 5
       sprite: {fileID: 21300000, guid: 40b2b5ae10ea3294cb8e07c9573cb70e, type: 3}
-    teamTheatricalMenuPreviewSprites: []
+    teamTheatricalMenuPreviewSprites:
+    - variantName: Red
+      team: 1
+      sprite: {fileID: 21300000, guid: b2aae97178055d048a2e5307ac0ccd93, type: 3}
+    - variantName: Blue
+      team: 2
+      sprite: {fileID: 21300000, guid: ce496781851001947844a324f3981508, type: 3}
+    - variantName: Green
+      team: 3
+      sprite: {fileID: 21300000, guid: 04e8b5a0c09c0474fa7f673eeec62ae8, type: 3}
+    - variantName: Orange
+      team: 4
+      sprite: {fileID: 21300000, guid: 8a7761f1da6870a4e949c0fdc07f0d6b, type: 3}
+    - variantName: Purple
+      team: 5
+      sprite: {fileID: 21300000, guid: 40b2b5ae10ea3294cb8e07c9573cb70e, type: 3}
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
   - componentId: Cockpit
@@ -247,7 +277,7 @@ MonoBehaviour:
       maxPeoplePerExtraLevel: 5
     bulletPrefabIndex: -1
     menuPreviewSprite: {fileID: 21300000, guid: e67e17f09ac92d34fa1fb569647cca8b, type: 3}
-    theatricalMenuPreviewSprite: {fileID: 0}
+    theatricalMenuPreviewSprite: {fileID: 21300000, guid: e67e17f09ac92d34fa1fb569647cca8b, type: 3}
     teamMenuPreviewSprites:
     - variantName: Red
       team: 1
@@ -264,7 +294,22 @@ MonoBehaviour:
     - variantName: Purple
       team: 5
       sprite: {fileID: 21300000, guid: 7d46528ae709d434198f49662951aee8, type: 3}
-    teamTheatricalMenuPreviewSprites: []
+    teamTheatricalMenuPreviewSprites:
+    - variantName: Red
+      team: 1
+      sprite: {fileID: 21300000, guid: e67e17f09ac92d34fa1fb569647cca8b, type: 3}
+    - variantName: Blue
+      team: 2
+      sprite: {fileID: 21300000, guid: ed8c4d37ad8fce149bec46ae534e80d3, type: 3}
+    - variantName: Green
+      team: 3
+      sprite: {fileID: 21300000, guid: 0af28d7e8112956448b711096fb79e09, type: 3}
+    - variantName: Orange
+      team: 4
+      sprite: {fileID: 21300000, guid: d0905df0be68c3944a4dde56304da290, type: 3}
+    - variantName: Purple
+      team: 5
+      sprite: {fileID: 21300000, guid: 7d46528ae709d434198f49662951aee8, type: 3}
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
   - componentId: Engine
@@ -309,7 +354,7 @@ MonoBehaviour:
       maxPeoplePerExtraLevel: 0
     bulletPrefabIndex: -1
     menuPreviewSprite: {fileID: 21300000, guid: a7de64af0d86e7841aedc4f154b21d32, type: 3}
-    theatricalMenuPreviewSprite: {fileID: 0}
+    theatricalMenuPreviewSprite: {fileID: 21300000, guid: a7de64af0d86e7841aedc4f154b21d32, type: 3}
     teamMenuPreviewSprites:
     - variantName: Red
       team: 1
@@ -326,7 +371,22 @@ MonoBehaviour:
     - variantName: Purple
       team: 5
       sprite: {fileID: 21300000, guid: d0db1608a9ed12a479686b4005ff8d0f, type: 3}
-    teamTheatricalMenuPreviewSprites: []
+    teamTheatricalMenuPreviewSprites:
+    - variantName: Red
+      team: 1
+      sprite: {fileID: 21300000, guid: a7de64af0d86e7841aedc4f154b21d32, type: 3}
+    - variantName: Blue
+      team: 2
+      sprite: {fileID: 21300000, guid: 442b70b266dca144c9e6ad82cca55b0d, type: 3}
+    - variantName: Green
+      team: 3
+      sprite: {fileID: 21300000, guid: 434c39a215e0fc642864ba692800ead9, type: 3}
+    - variantName: Orange
+      team: 4
+      sprite: {fileID: 21300000, guid: 22860c0454bb67f4eaea99284610579e, type: 3}
+    - variantName: Purple
+      team: 5
+      sprite: {fileID: 21300000, guid: d0db1608a9ed12a479686b4005ff8d0f, type: 3}
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
   - componentId: EngineComp1
@@ -371,7 +431,7 @@ MonoBehaviour:
       maxPeoplePerExtraLevel: 0
     bulletPrefabIndex: -1
     menuPreviewSprite: {fileID: 21300000, guid: bcf9c860d2bf5c6449a1ad75e3700c95, type: 3}
-    theatricalMenuPreviewSprite: {fileID: 0}
+    theatricalMenuPreviewSprite: {fileID: 21300000, guid: bcf9c860d2bf5c6449a1ad75e3700c95, type: 3}
     teamMenuPreviewSprites:
     - variantName: Red
       team: 1
@@ -388,7 +448,22 @@ MonoBehaviour:
     - variantName: Purple
       team: 5
       sprite: {fileID: 21300000, guid: dfbd970d821a9474ba059b85a92d52f9, type: 3}
-    teamTheatricalMenuPreviewSprites: []
+    teamTheatricalMenuPreviewSprites:
+    - variantName: Red
+      team: 1
+      sprite: {fileID: 21300000, guid: bcf9c860d2bf5c6449a1ad75e3700c95, type: 3}
+    - variantName: Blue
+      team: 2
+      sprite: {fileID: 21300000, guid: d01e85f8649b5e8439190dc172d884ff, type: 3}
+    - variantName: Green
+      team: 3
+      sprite: {fileID: 21300000, guid: 264e045c7a6053b4d83e78ba9f8c5894, type: 3}
+    - variantName: Orange
+      team: 4
+      sprite: {fileID: 21300000, guid: 61f18ff8867429046bf31eb2bfdaa07f, type: 3}
+    - variantName: Purple
+      team: 5
+      sprite: {fileID: 21300000, guid: dfbd970d821a9474ba059b85a92d52f9, type: 3}
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
   - componentId: EngineComp2
@@ -433,7 +508,7 @@ MonoBehaviour:
       maxPeoplePerExtraLevel: 0
     bulletPrefabIndex: -1
     menuPreviewSprite: {fileID: 21300000, guid: 755087dd8c5475b4782f76298aedab35, type: 3}
-    theatricalMenuPreviewSprite: {fileID: 0}
+    theatricalMenuPreviewSprite: {fileID: 21300000, guid: 755087dd8c5475b4782f76298aedab35, type: 3}
     teamMenuPreviewSprites:
     - variantName: Red
       team: 1
@@ -450,7 +525,22 @@ MonoBehaviour:
     - variantName: Purple
       team: 5
       sprite: {fileID: 21300000, guid: c355a77b8d73ab140bedd5efcf930946, type: 3}
-    teamTheatricalMenuPreviewSprites: []
+    teamTheatricalMenuPreviewSprites:
+    - variantName: Red
+      team: 1
+      sprite: {fileID: 21300000, guid: 755087dd8c5475b4782f76298aedab35, type: 3}
+    - variantName: Blue
+      team: 2
+      sprite: {fileID: 21300000, guid: fa6f9f275d557184e85554703f5c306b, type: 3}
+    - variantName: Green
+      team: 3
+      sprite: {fileID: 21300000, guid: f5b761517518b5742beefc0f3a5de541, type: 3}
+    - variantName: Orange
+      team: 4
+      sprite: {fileID: 21300000, guid: f9f0f2a6e924d4442a4596c9f954ddb0, type: 3}
+    - variantName: Purple
+      team: 5
+      sprite: {fileID: 21300000, guid: c355a77b8d73ab140bedd5efcf930946, type: 3}
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
   - componentId: Flap
@@ -557,7 +647,7 @@ MonoBehaviour:
       maxPeoplePerExtraLevel: 0
     bulletPrefabIndex: -1
     menuPreviewSprite: {fileID: 21300000, guid: 0ecc1babb0aef4745afde0604fdbc45d, type: 3}
-    theatricalMenuPreviewSprite: {fileID: 0}
+    theatricalMenuPreviewSprite: {fileID: 21300000, guid: 0ecc1babb0aef4745afde0604fdbc45d, type: 3}
     teamMenuPreviewSprites:
     - variantName: Red
       team: 1
@@ -574,7 +664,22 @@ MonoBehaviour:
     - variantName: Purple
       team: 5
       sprite: {fileID: 21300000, guid: 61bce0f6a866e0845a514eb58d4ab0fe, type: 3}
-    teamTheatricalMenuPreviewSprites: []
+    teamTheatricalMenuPreviewSprites:
+    - variantName: Red
+      team: 1
+      sprite: {fileID: 21300000, guid: 0ecc1babb0aef4745afde0604fdbc45d, type: 3}
+    - variantName: Blue
+      team: 2
+      sprite: {fileID: 21300000, guid: 442aef19eda96724c97d78abc3fc48a6, type: 3}
+    - variantName: Green
+      team: 3
+      sprite: {fileID: 21300000, guid: 4b68879c4fa865344a1a835dd6a4791e, type: 3}
+    - variantName: Orange
+      team: 4
+      sprite: {fileID: 21300000, guid: 5a6e825e8bc45d943aaf1c14d4a150c3, type: 3}
+    - variantName: Purple
+      team: 5
+      sprite: {fileID: 21300000, guid: 61bce0f6a866e0845a514eb58d4ab0fe, type: 3}
     enablePropulsionVfx: 1
     propulsionVfxScale: 1
   - componentId: Weapon
@@ -619,7 +724,7 @@ MonoBehaviour:
       maxPeoplePerExtraLevel: 0
     bulletPrefabIndex: -1
     menuPreviewSprite: {fileID: 21300000, guid: 1c984b9eed150904a9e62df84254e9de, type: 3}
-    theatricalMenuPreviewSprite: {fileID: 0}
+    theatricalMenuPreviewSprite: {fileID: 21300000, guid: 1c984b9eed150904a9e62df84254e9de, type: 3}
     teamMenuPreviewSprites:
     - variantName: Red
       team: 1
@@ -636,7 +741,22 @@ MonoBehaviour:
     - variantName: Purple
       team: 5
       sprite: {fileID: 21300000, guid: b0aaff3f300592345b69befe5952380e, type: 3}
-    teamTheatricalMenuPreviewSprites: []
+    teamTheatricalMenuPreviewSprites:
+    - variantName: Red
+      team: 1
+      sprite: {fileID: 21300000, guid: 1c984b9eed150904a9e62df84254e9de, type: 3}
+    - variantName: Blue
+      team: 2
+      sprite: {fileID: 21300000, guid: ce2ec18deb509fc499cf335c8a6a9daa, type: 3}
+    - variantName: Green
+      team: 3
+      sprite: {fileID: 21300000, guid: 126f5ec096e82ee4b80769ba5bfb4018, type: 3}
+    - variantName: Orange
+      team: 4
+      sprite: {fileID: 21300000, guid: 989d53fb3720cf1499c11f1e21fbbaa2, type: 3}
+    - variantName: Purple
+      team: 5
+      sprite: {fileID: 21300000, guid: b0aaff3f300592345b69befe5952380e, type: 3}
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
   - componentId: Wing
@@ -681,7 +801,7 @@ MonoBehaviour:
       maxPeoplePerExtraLevel: 3
     bulletPrefabIndex: -1
     menuPreviewSprite: {fileID: 21300000, guid: 119e93384bd84cb4fb751808a21f86f8, type: 3}
-    theatricalMenuPreviewSprite: {fileID: 0}
+    theatricalMenuPreviewSprite: {fileID: 21300000, guid: 119e93384bd84cb4fb751808a21f86f8, type: 3}
     teamMenuPreviewSprites:
     - variantName: Red
       team: 1
@@ -698,7 +818,22 @@ MonoBehaviour:
     - variantName: Purple
       team: 5
       sprite: {fileID: 21300000, guid: b060b81dc3dce854fb73b69b02204523, type: 3}
-    teamTheatricalMenuPreviewSprites: []
+    teamTheatricalMenuPreviewSprites:
+    - variantName: Red
+      team: 1
+      sprite: {fileID: 21300000, guid: 119e93384bd84cb4fb751808a21f86f8, type: 3}
+    - variantName: Blue
+      team: 2
+      sprite: {fileID: 21300000, guid: 777d44a403620e643987cf146a7c60fe, type: 3}
+    - variantName: Green
+      team: 3
+      sprite: {fileID: 21300000, guid: 1924752fafc09ec43b4ad32fe4dd1952, type: 3}
+    - variantName: Orange
+      team: 4
+      sprite: {fileID: 21300000, guid: 26ac7c094c6314249a6f50cfabcec4cf, type: 3}
+    - variantName: Purple
+      team: 5
+      sprite: {fileID: 21300000, guid: b060b81dc3dce854fb73b69b02204523, type: 3}
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
   upgradeTree:
@@ -722,8 +857,23 @@ MonoBehaviour:
     - variantName: Purple
       team: 5
       sprite: {fileID: 21300000, guid: 41ecaed0cb7f4d04c8263fb120d01b68, type: 3}
-    theatricalMenuPreviewSprite: {fileID: 0}
-    teamTheatricalMenuPreviewSprites: []
+    theatricalMenuPreviewSprite: {fileID: 21300000, guid: e79de1430a34f1a4fbf95449ee8bfd31, type: 3}
+    teamTheatricalMenuPreviewSprites:
+    - variantName: Red
+      team: 1
+      sprite: {fileID: 21300000, guid: e79de1430a34f1a4fbf95449ee8bfd31, type: 3}
+    - variantName: Blue
+      team: 2
+      sprite: {fileID: 21300000, guid: caa3a70c9a8ad8542b3c549eb2e1f122, type: 3}
+    - variantName: Green
+      team: 3
+      sprite: {fileID: 21300000, guid: 3d5d395ecd30f604a9ecfb0c608bc729, type: 3}
+    - variantName: Orange
+      team: 4
+      sprite: {fileID: 21300000, guid: 8877f2baf02821f439511e6f60082410, type: 3}
+    - variantName: Purple
+      team: 5
+      sprite: {fileID: 21300000, guid: 41ecaed0cb7f4d04c8263fb120d01b68, type: 3}
     minHomePlanetLevel: 1
     powerScore: 75.525
     powerScoreAtMaxLevel: 97.70625
@@ -785,8 +935,23 @@ MonoBehaviour:
     - variantName: Purple
       team: 5
       sprite: {fileID: 21300000, guid: 54b297408c1e94a4e8781b251f7cbcce, type: 3}
-    theatricalMenuPreviewSprite: {fileID: 0}
-    teamTheatricalMenuPreviewSprites: []
+    theatricalMenuPreviewSprite: {fileID: 21300000, guid: 65e201415a528af49bb74ffdb092a291, type: 3}
+    teamTheatricalMenuPreviewSprites:
+    - variantName: Red
+      team: 1
+      sprite: {fileID: 21300000, guid: 65e201415a528af49bb74ffdb092a291, type: 3}
+    - variantName: Blue
+      team: 2
+      sprite: {fileID: 21300000, guid: 690f8fa2f4647c84d9a4c0ff48ce9290, type: 3}
+    - variantName: Green
+      team: 3
+      sprite: {fileID: 21300000, guid: a27c102f36622b04fb9698b3fb03052b, type: 3}
+    - variantName: Orange
+      team: 4
+      sprite: {fileID: 21300000, guid: dc8d109eb60bc494485d6f72abddaebc, type: 3}
+    - variantName: Purple
+      team: 5
+      sprite: {fileID: 21300000, guid: 54b297408c1e94a4e8781b251f7cbcce, type: 3}
     minHomePlanetLevel: 2
     powerScore: 75.525
     powerScoreAtMaxLevel: 113.4875
@@ -848,8 +1013,23 @@ MonoBehaviour:
     - variantName: Purple
       team: 5
       sprite: {fileID: 21300000, guid: aba5010cb2454d544966cc65bf3611d0, type: 3}
-    theatricalMenuPreviewSprite: {fileID: 0}
-    teamTheatricalMenuPreviewSprites: []
+    theatricalMenuPreviewSprite: {fileID: 21300000, guid: 7ecf3c9f4ce39c24192cf2aab2190033, type: 3}
+    teamTheatricalMenuPreviewSprites:
+    - variantName: Red
+      team: 1
+      sprite: {fileID: 21300000, guid: 7ecf3c9f4ce39c24192cf2aab2190033, type: 3}
+    - variantName: Blue
+      team: 2
+      sprite: {fileID: 21300000, guid: 4acfbda03dfc0804dbd95791f76c8ffd, type: 3}
+    - variantName: Green
+      team: 3
+      sprite: {fileID: 21300000, guid: 94aafc53e1c9f2a42ab08bb2dc75ed8f, type: 3}
+    - variantName: Orange
+      team: 4
+      sprite: {fileID: 21300000, guid: c17372d0cc35df74983f9d3975a8627b, type: 3}
+    - variantName: Purple
+      team: 5
+      sprite: {fileID: 21300000, guid: aba5010cb2454d544966cc65bf3611d0, type: 3}
     minHomePlanetLevel: 2
     powerScore: 75.525
     powerScoreAtMaxLevel: 113.4875
@@ -911,8 +1091,23 @@ MonoBehaviour:
     - variantName: Purple
       team: 5
       sprite: {fileID: 21300000, guid: dbb84e5d500870a4f89d32fc82ede2b7, type: 3}
-    theatricalMenuPreviewSprite: {fileID: 0}
-    teamTheatricalMenuPreviewSprites: []
+    theatricalMenuPreviewSprite: {fileID: 21300000, guid: cdce9fc2e587f4249ae40021221cca73, type: 3}
+    teamTheatricalMenuPreviewSprites:
+    - variantName: Red
+      team: 1
+      sprite: {fileID: 21300000, guid: cdce9fc2e587f4249ae40021221cca73, type: 3}
+    - variantName: Blue
+      team: 2
+      sprite: {fileID: 21300000, guid: f49b65ffbb84dba489e5bcea8c0ac293, type: 3}
+    - variantName: Green
+      team: 3
+      sprite: {fileID: 21300000, guid: f7e08054f81c62341a18128ddf698c34, type: 3}
+    - variantName: Orange
+      team: 4
+      sprite: {fileID: 21300000, guid: 2ba9132d7b5f1e343997711d70760ff2, type: 3}
+    - variantName: Purple
+      team: 5
+      sprite: {fileID: 21300000, guid: dbb84e5d500870a4f89d32fc82ede2b7, type: 3}
     minHomePlanetLevel: 3
     powerScore: 75.525
     powerScoreAtMaxLevel: 129.26875
@@ -974,8 +1169,23 @@ MonoBehaviour:
     - variantName: Purple
       team: 5
       sprite: {fileID: 21300000, guid: c1315984b9cbd8541b9e51f03b87d81a, type: 3}
-    theatricalMenuPreviewSprite: {fileID: 0}
-    teamTheatricalMenuPreviewSprites: []
+    theatricalMenuPreviewSprite: {fileID: 21300000, guid: 56f8f8ea643b92e45bd79a18a7df4a7c, type: 3}
+    teamTheatricalMenuPreviewSprites:
+    - variantName: Red
+      team: 1
+      sprite: {fileID: 21300000, guid: 56f8f8ea643b92e45bd79a18a7df4a7c, type: 3}
+    - variantName: Blue
+      team: 2
+      sprite: {fileID: 21300000, guid: a5ad667c00950ab438a0e0b85b522d37, type: 3}
+    - variantName: Green
+      team: 3
+      sprite: {fileID: 21300000, guid: ab0afa9eed03c0f4b95eea907022a1d7, type: 3}
+    - variantName: Orange
+      team: 4
+      sprite: {fileID: 21300000, guid: bcad63a428e8b1c42b40cc54b7e67ece, type: 3}
+    - variantName: Purple
+      team: 5
+      sprite: {fileID: 21300000, guid: c1315984b9cbd8541b9e51f03b87d81a, type: 3}
     minHomePlanetLevel: 3
     powerScore: 75.525
     powerScoreAtMaxLevel: 129.26875
@@ -1037,8 +1247,23 @@ MonoBehaviour:
     - variantName: Purple
       team: 5
       sprite: {fileID: 21300000, guid: 267ecdc8006170c44a0287679041e410, type: 3}
-    theatricalMenuPreviewSprite: {fileID: 0}
-    teamTheatricalMenuPreviewSprites: []
+    theatricalMenuPreviewSprite: {fileID: 21300000, guid: e26fb8be5f70023438beead45f96b74b, type: 3}
+    teamTheatricalMenuPreviewSprites:
+    - variantName: Red
+      team: 1
+      sprite: {fileID: 21300000, guid: e26fb8be5f70023438beead45f96b74b, type: 3}
+    - variantName: Blue
+      team: 2
+      sprite: {fileID: 21300000, guid: 958395697211e654f95d0be857e1e3ce, type: 3}
+    - variantName: Green
+      team: 3
+      sprite: {fileID: 21300000, guid: 5ad256d96b40cfe41aa67514ee610144, type: 3}
+    - variantName: Orange
+      team: 4
+      sprite: {fileID: 21300000, guid: 8bb17f96391ad384fa067194e428cb2f, type: 3}
+    - variantName: Purple
+      team: 5
+      sprite: {fileID: 21300000, guid: 267ecdc8006170c44a0287679041e410, type: 3}
     minHomePlanetLevel: 3
     powerScore: 75.525
     powerScoreAtMaxLevel: 129.26875
@@ -1100,8 +1325,23 @@ MonoBehaviour:
     - variantName: Purple
       team: 5
       sprite: {fileID: 21300000, guid: 4e10b450f6abb8d47af4384a0e86a7fc, type: 3}
-    theatricalMenuPreviewSprite: {fileID: 0}
-    teamTheatricalMenuPreviewSprites: []
+    theatricalMenuPreviewSprite: {fileID: 21300000, guid: 54d36c3bb0f00cd479f1df1f8c3efcdd, type: 3}
+    teamTheatricalMenuPreviewSprites:
+    - variantName: Red
+      team: 1
+      sprite: {fileID: 21300000, guid: 54d36c3bb0f00cd479f1df1f8c3efcdd, type: 3}
+    - variantName: Blue
+      team: 2
+      sprite: {fileID: 21300000, guid: 469330fcdc3d6234ca17ef0f8a0a28ca, type: 3}
+    - variantName: Green
+      team: 3
+      sprite: {fileID: 21300000, guid: 28bb0f260a01ea34c9df919052032aa7, type: 3}
+    - variantName: Orange
+      team: 4
+      sprite: {fileID: 21300000, guid: 19b4e25ae9ccee34088ce7353fa20999, type: 3}
+    - variantName: Purple
+      team: 5
+      sprite: {fileID: 21300000, guid: 4e10b450f6abb8d47af4384a0e86a7fc, type: 3}
     minHomePlanetLevel: 4
     powerScore: 75.525
     powerScoreAtMaxLevel: 145.05
@@ -1163,8 +1403,23 @@ MonoBehaviour:
     - variantName: Purple
       team: 5
       sprite: {fileID: 21300000, guid: 855d5d0a2669dc741aa56882a778c450, type: 3}
-    theatricalMenuPreviewSprite: {fileID: 0}
-    teamTheatricalMenuPreviewSprites: []
+    theatricalMenuPreviewSprite: {fileID: 21300000, guid: ccd0ced02015a094c875d679d4cda6ce, type: 3}
+    teamTheatricalMenuPreviewSprites:
+    - variantName: Red
+      team: 1
+      sprite: {fileID: 21300000, guid: ccd0ced02015a094c875d679d4cda6ce, type: 3}
+    - variantName: Blue
+      team: 2
+      sprite: {fileID: 21300000, guid: 96a98e39178969c49949003ab035423b, type: 3}
+    - variantName: Green
+      team: 3
+      sprite: {fileID: 21300000, guid: 3dfd542789325f94ebf3ca64c9b3e0f3, type: 3}
+    - variantName: Orange
+      team: 4
+      sprite: {fileID: 21300000, guid: 522a6e669dfb5f14ebeb46a8d93abbad, type: 3}
+    - variantName: Purple
+      team: 5
+      sprite: {fileID: 21300000, guid: 855d5d0a2669dc741aa56882a778c450, type: 3}
     minHomePlanetLevel: 4
     powerScore: 75.525
     powerScoreAtMaxLevel: 145.05
@@ -1226,8 +1481,23 @@ MonoBehaviour:
     - variantName: Purple
       team: 5
       sprite: {fileID: 21300000, guid: b23cd4388510f034ea6cca28ad75f419, type: 3}
-    theatricalMenuPreviewSprite: {fileID: 0}
-    teamTheatricalMenuPreviewSprites: []
+    theatricalMenuPreviewSprite: {fileID: 21300000, guid: b762a83b7ded71a44b5f55cb611d4820, type: 3}
+    teamTheatricalMenuPreviewSprites:
+    - variantName: Red
+      team: 1
+      sprite: {fileID: 21300000, guid: b762a83b7ded71a44b5f55cb611d4820, type: 3}
+    - variantName: Blue
+      team: 2
+      sprite: {fileID: 21300000, guid: 6d4dba0bf1a5e62479fa1467683a3708, type: 3}
+    - variantName: Green
+      team: 3
+      sprite: {fileID: 21300000, guid: 52309632f7407944d9b182c5481d231a, type: 3}
+    - variantName: Orange
+      team: 4
+      sprite: {fileID: 21300000, guid: d0956ef3190fbc1408c8e24040ce2750, type: 3}
+    - variantName: Purple
+      team: 5
+      sprite: {fileID: 21300000, guid: b23cd4388510f034ea6cca28ad75f419, type: 3}
     minHomePlanetLevel: 4
     powerScore: 75.525
     powerScoreAtMaxLevel: 145.05
@@ -1289,8 +1559,23 @@ MonoBehaviour:
     - variantName: Purple
       team: 5
       sprite: {fileID: 21300000, guid: 8557b5dbff333e14f8cd5cb85c760ea7, type: 3}
-    theatricalMenuPreviewSprite: {fileID: 0}
-    teamTheatricalMenuPreviewSprites: []
+    theatricalMenuPreviewSprite: {fileID: 21300000, guid: eb473c7b3378656418d800e78a65422d, type: 3}
+    teamTheatricalMenuPreviewSprites:
+    - variantName: Red
+      team: 1
+      sprite: {fileID: 21300000, guid: eb473c7b3378656418d800e78a65422d, type: 3}
+    - variantName: Blue
+      team: 2
+      sprite: {fileID: 21300000, guid: 03b4ce9d82f2a644bb04d1a7ca2fc87e, type: 3}
+    - variantName: Green
+      team: 3
+      sprite: {fileID: 21300000, guid: 44e1708919f9dc043a36c0eabcbb99e2, type: 3}
+    - variantName: Orange
+      team: 4
+      sprite: {fileID: 21300000, guid: 03600c85cbffd5b48830038a55608a94, type: 3}
+    - variantName: Purple
+      team: 5
+      sprite: {fileID: 21300000, guid: 8557b5dbff333e14f8cd5cb85c760ea7, type: 3}
     minHomePlanetLevel: 4
     powerScore: 75.525
     powerScoreAtMaxLevel: 145.05
@@ -1352,8 +1637,23 @@ MonoBehaviour:
     - variantName: Purple
       team: 5
       sprite: {fileID: 21300000, guid: 3c1db1482ca0a8940b737a577ab014f7, type: 3}
-    theatricalMenuPreviewSprite: {fileID: 0}
-    teamTheatricalMenuPreviewSprites: []
+    theatricalMenuPreviewSprite: {fileID: 21300000, guid: 214d6704c09bfea41930cad15395b529, type: 3}
+    teamTheatricalMenuPreviewSprites:
+    - variantName: Red
+      team: 1
+      sprite: {fileID: 21300000, guid: 214d6704c09bfea41930cad15395b529, type: 3}
+    - variantName: Blue
+      team: 2
+      sprite: {fileID: 21300000, guid: 1438e3d5077f90041a5333043ef78c86, type: 3}
+    - variantName: Green
+      team: 3
+      sprite: {fileID: 21300000, guid: 0407cad1e9aba7c468b53811b2d791fd, type: 3}
+    - variantName: Orange
+      team: 4
+      sprite: {fileID: 21300000, guid: f70312d906ad97543bd446276abe725b, type: 3}
+    - variantName: Purple
+      team: 5
+      sprite: {fileID: 21300000, guid: 3c1db1482ca0a8940b737a577ab014f7, type: 3}
     minHomePlanetLevel: 5
     powerScore: 75.525
     powerScoreAtMaxLevel: 160.83125
@@ -1415,8 +1715,23 @@ MonoBehaviour:
     - variantName: Purple
       team: 5
       sprite: {fileID: 21300000, guid: 815f0823da0e42241b7d6b8eae728eea, type: 3}
-    theatricalMenuPreviewSprite: {fileID: 0}
-    teamTheatricalMenuPreviewSprites: []
+    theatricalMenuPreviewSprite: {fileID: 21300000, guid: f36c7d711702e074ab3fb224da8416ef, type: 3}
+    teamTheatricalMenuPreviewSprites:
+    - variantName: Red
+      team: 1
+      sprite: {fileID: 21300000, guid: f36c7d711702e074ab3fb224da8416ef, type: 3}
+    - variantName: Blue
+      team: 2
+      sprite: {fileID: 21300000, guid: 0192c39560a94784082e9e8ad556f61d, type: 3}
+    - variantName: Green
+      team: 3
+      sprite: {fileID: 21300000, guid: 7827c59047d958541a93d1d7c9e169c8, type: 3}
+    - variantName: Orange
+      team: 4
+      sprite: {fileID: 21300000, guid: 9e0f480804e4b934eb2052c1bcdfa4c3, type: 3}
+    - variantName: Purple
+      team: 5
+      sprite: {fileID: 21300000, guid: 815f0823da0e42241b7d6b8eae728eea, type: 3}
     minHomePlanetLevel: 5
     powerScore: 75.525
     powerScoreAtMaxLevel: 160.83125
@@ -1478,8 +1793,23 @@ MonoBehaviour:
     - variantName: Purple
       team: 5
       sprite: {fileID: 21300000, guid: a0677317087b6c842b5e57c90fb6a6bb, type: 3}
-    theatricalMenuPreviewSprite: {fileID: 0}
-    teamTheatricalMenuPreviewSprites: []
+    theatricalMenuPreviewSprite: {fileID: 21300000, guid: 2c063f46520a8dd499a0c2096cfabc12, type: 3}
+    teamTheatricalMenuPreviewSprites:
+    - variantName: Red
+      team: 1
+      sprite: {fileID: 21300000, guid: 2c063f46520a8dd499a0c2096cfabc12, type: 3}
+    - variantName: Blue
+      team: 2
+      sprite: {fileID: 21300000, guid: 496b9a46005e30e4297717d0ff7d27a7, type: 3}
+    - variantName: Green
+      team: 3
+      sprite: {fileID: 21300000, guid: dfa0d0b5e6deba24e8d15d42eb2fe8b0, type: 3}
+    - variantName: Orange
+      team: 4
+      sprite: {fileID: 21300000, guid: b1c86494b9337ce49969239b902f0088, type: 3}
+    - variantName: Purple
+      team: 5
+      sprite: {fileID: 21300000, guid: a0677317087b6c842b5e57c90fb6a6bb, type: 3}
     minHomePlanetLevel: 5
     powerScore: 75.525
     powerScoreAtMaxLevel: 160.83125
@@ -1541,8 +1871,23 @@ MonoBehaviour:
     - variantName: Purple
       team: 5
       sprite: {fileID: 21300000, guid: f195966cf60cebb47ab6f9534455f851, type: 3}
-    theatricalMenuPreviewSprite: {fileID: 0}
-    teamTheatricalMenuPreviewSprites: []
+    theatricalMenuPreviewSprite: {fileID: 21300000, guid: 6b0219e284078714e8b4b8385ebb145e, type: 3}
+    teamTheatricalMenuPreviewSprites:
+    - variantName: Red
+      team: 1
+      sprite: {fileID: 21300000, guid: 6b0219e284078714e8b4b8385ebb145e, type: 3}
+    - variantName: Blue
+      team: 2
+      sprite: {fileID: 21300000, guid: 1b09f21dd80b2ef41af3e8a85865c582, type: 3}
+    - variantName: Green
+      team: 3
+      sprite: {fileID: 21300000, guid: d2c97d15b2fc5654a826ccd8afbfdc27, type: 3}
+    - variantName: Orange
+      team: 4
+      sprite: {fileID: 21300000, guid: 6aa1e49b34964f84ab383dc8ca6100f9, type: 3}
+    - variantName: Purple
+      team: 5
+      sprite: {fileID: 21300000, guid: f195966cf60cebb47ab6f9534455f851, type: 3}
     minHomePlanetLevel: 5
     powerScore: 75.525
     powerScoreAtMaxLevel: 160.83125
@@ -1604,8 +1949,23 @@ MonoBehaviour:
     - variantName: Purple
       team: 5
       sprite: {fileID: 21300000, guid: 45c84d9b7da99d6459927df0166d45ad, type: 3}
-    theatricalMenuPreviewSprite: {fileID: 0}
-    teamTheatricalMenuPreviewSprites: []
+    theatricalMenuPreviewSprite: {fileID: 21300000, guid: fe4a603f5de43574fadba8eca725581a, type: 3}
+    teamTheatricalMenuPreviewSprites:
+    - variantName: Red
+      team: 1
+      sprite: {fileID: 21300000, guid: fe4a603f5de43574fadba8eca725581a, type: 3}
+    - variantName: Blue
+      team: 2
+      sprite: {fileID: 21300000, guid: f5894220aae1dae4b9ca49cc6171089b, type: 3}
+    - variantName: Green
+      team: 3
+      sprite: {fileID: 21300000, guid: 5302139ae6ea5af48ac06dede510912c, type: 3}
+    - variantName: Orange
+      team: 4
+      sprite: {fileID: 21300000, guid: 1ab4549a1c50f34438a82be3c122ab03, type: 3}
+    - variantName: Purple
+      team: 5
+      sprite: {fileID: 21300000, guid: 45c84d9b7da99d6459927df0166d45ad, type: 3}
     minHomePlanetLevel: 5
     powerScore: 75.525
     powerScoreAtMaxLevel: 160.83125
@@ -1667,8 +2027,23 @@ MonoBehaviour:
     - variantName: Purple
       team: 5
       sprite: {fileID: 21300000, guid: 512830cea482320448f6378d2d732d9f, type: 3}
-    theatricalMenuPreviewSprite: {fileID: 0}
-    teamTheatricalMenuPreviewSprites: []
+    theatricalMenuPreviewSprite: {fileID: 21300000, guid: 408b9a6e3e016b74bb406a56a1c81d01, type: 3}
+    teamTheatricalMenuPreviewSprites:
+    - variantName: Red
+      team: 1
+      sprite: {fileID: 21300000, guid: 408b9a6e3e016b74bb406a56a1c81d01, type: 3}
+    - variantName: Blue
+      team: 2
+      sprite: {fileID: 21300000, guid: 0190c1826704a984582de2b2c0e5571c, type: 3}
+    - variantName: Green
+      team: 3
+      sprite: {fileID: 21300000, guid: 9c862a0ae75f24442ac97a729412110c, type: 3}
+    - variantName: Orange
+      team: 4
+      sprite: {fileID: 21300000, guid: 5ed46eaf536155b429e8d1dd2365de8b, type: 3}
+    - variantName: Purple
+      team: 5
+      sprite: {fileID: 21300000, guid: 512830cea482320448f6378d2d732d9f, type: 3}
     minHomePlanetLevel: 6
     powerScore: 129.47285
     powerScoreAtMaxLevel: 441.1809
@@ -1730,8 +2105,23 @@ MonoBehaviour:
     - variantName: Purple
       team: 5
       sprite: {fileID: 21300000, guid: d34db99de7811e247ab34a4008b95d8a, type: 3}
-    theatricalMenuPreviewSprite: {fileID: 0}
-    teamTheatricalMenuPreviewSprites: []
+    theatricalMenuPreviewSprite: {fileID: 21300000, guid: c3c48824d6d453c4e86451420078c124, type: 3}
+    teamTheatricalMenuPreviewSprites:
+    - variantName: Red
+      team: 1
+      sprite: {fileID: 21300000, guid: c3c48824d6d453c4e86451420078c124, type: 3}
+    - variantName: Blue
+      team: 2
+      sprite: {fileID: 21300000, guid: 883e26c0a75c59c428fa123cf2f29227, type: 3}
+    - variantName: Green
+      team: 3
+      sprite: {fileID: 21300000, guid: ea56cad4dabf6024ca76a2e64cba16cd, type: 3}
+    - variantName: Orange
+      team: 4
+      sprite: {fileID: 21300000, guid: df21cd5de0bacfd4a8a867d66c6056d3, type: 3}
+    - variantName: Purple
+      team: 5
+      sprite: {fileID: 21300000, guid: d34db99de7811e247ab34a4008b95d8a, type: 3}
     minHomePlanetLevel: 6
     powerScore: 124.54687
     powerScoreAtMaxLevel: 508.7281
@@ -1793,8 +2183,23 @@ MonoBehaviour:
     - variantName: Purple
       team: 5
       sprite: {fileID: 21300000, guid: e3faa86b5ad8fc1469281f21a1b5bb5a, type: 3}
-    theatricalMenuPreviewSprite: {fileID: 0}
-    teamTheatricalMenuPreviewSprites: []
+    theatricalMenuPreviewSprite: {fileID: 21300000, guid: a1aa827364e8cc54b993b96a7bef753b, type: 3}
+    teamTheatricalMenuPreviewSprites:
+    - variantName: Red
+      team: 1
+      sprite: {fileID: 21300000, guid: a1aa827364e8cc54b993b96a7bef753b, type: 3}
+    - variantName: Blue
+      team: 2
+      sprite: {fileID: 21300000, guid: cd3e68ec3ebb254428c911326bc7c63a, type: 3}
+    - variantName: Green
+      team: 3
+      sprite: {fileID: 21300000, guid: 4e122ab4bbff9ef4d88a4f45f242498b, type: 3}
+    - variantName: Orange
+      team: 4
+      sprite: {fileID: 21300000, guid: c41f3ddda634ae9438d256877a745d32, type: 3}
+    - variantName: Purple
+      team: 5
+      sprite: {fileID: 21300000, guid: e3faa86b5ad8fc1469281f21a1b5bb5a, type: 3}
     minHomePlanetLevel: 6
     powerScore: 75.525
     powerScoreAtMaxLevel: 176.6125
@@ -1856,8 +2261,23 @@ MonoBehaviour:
     - variantName: Purple
       team: 5
       sprite: {fileID: 21300000, guid: 9447607cba7ed5041b53991dd1adf073, type: 3}
-    theatricalMenuPreviewSprite: {fileID: 0}
-    teamTheatricalMenuPreviewSprites: []
+    theatricalMenuPreviewSprite: {fileID: 21300000, guid: b2467179c42d2984285948ff4a8bbce7, type: 3}
+    teamTheatricalMenuPreviewSprites:
+    - variantName: Red
+      team: 1
+      sprite: {fileID: 21300000, guid: b2467179c42d2984285948ff4a8bbce7, type: 3}
+    - variantName: Blue
+      team: 2
+      sprite: {fileID: 21300000, guid: ac47fb01216fe94429ec709abb2df2a6, type: 3}
+    - variantName: Green
+      team: 3
+      sprite: {fileID: 21300000, guid: 4fd4531a835e8ab44b9dbfbb51fbaaa2, type: 3}
+    - variantName: Orange
+      team: 4
+      sprite: {fileID: 21300000, guid: 95e0abaacad1aa143bdef3b620ef4632, type: 3}
+    - variantName: Purple
+      team: 5
+      sprite: {fileID: 21300000, guid: 9447607cba7ed5041b53991dd1adf073, type: 3}
     minHomePlanetLevel: 6
     powerScore: 75.525
     powerScoreAtMaxLevel: 176.6125
@@ -1919,8 +2339,23 @@ MonoBehaviour:
     - variantName: Purple
       team: 5
       sprite: {fileID: 21300000, guid: 623588b7aa9539b4fbafa424d6a56817, type: 3}
-    theatricalMenuPreviewSprite: {fileID: 0}
-    teamTheatricalMenuPreviewSprites: []
+    theatricalMenuPreviewSprite: {fileID: 21300000, guid: 23488241bc4bcf645abf8cc325d9c414, type: 3}
+    teamTheatricalMenuPreviewSprites:
+    - variantName: Red
+      team: 1
+      sprite: {fileID: 21300000, guid: 23488241bc4bcf645abf8cc325d9c414, type: 3}
+    - variantName: Blue
+      team: 2
+      sprite: {fileID: 21300000, guid: eab6854215251cb4a8c3c38ff352d04b, type: 3}
+    - variantName: Green
+      team: 3
+      sprite: {fileID: 21300000, guid: 22f6bfb4e2bb06242a3e792dfb43976e, type: 3}
+    - variantName: Orange
+      team: 4
+      sprite: {fileID: 21300000, guid: e0e1c380ff1304042beaa01b97b69c38, type: 3}
+    - variantName: Purple
+      team: 5
+      sprite: {fileID: 21300000, guid: 623588b7aa9539b4fbafa424d6a56817, type: 3}
     minHomePlanetLevel: 6
     powerScore: 75.525
     powerScoreAtMaxLevel: 176.6125
@@ -1982,8 +2417,23 @@ MonoBehaviour:
     - variantName: Purple
       team: 5
       sprite: {fileID: 21300000, guid: 623588b7aa9539b4fbafa424d6a56817, type: 3}
-    theatricalMenuPreviewSprite: {fileID: 0}
-    teamTheatricalMenuPreviewSprites: []
+    theatricalMenuPreviewSprite: {fileID: 21300000, guid: b4b7e2c8cba20ce43b129a4945a17c2f, type: 3}
+    teamTheatricalMenuPreviewSprites:
+    - variantName: Red
+      team: 1
+      sprite: {fileID: 21300000, guid: b4b7e2c8cba20ce43b129a4945a17c2f, type: 3}
+    - variantName: Blue
+      team: 2
+      sprite: {fileID: 21300000, guid: 69a20032279353c41b25e4b1029e9925, type: 3}
+    - variantName: Green
+      team: 3
+      sprite: {fileID: 21300000, guid: 3f8e910687fe27e4495b541656c2536f, type: 3}
+    - variantName: Orange
+      team: 4
+      sprite: {fileID: 21300000, guid: 10c5078b9f9772f4a98742a7d7b15e8a, type: 3}
+    - variantName: Purple
+      team: 5
+      sprite: {fileID: 21300000, guid: 59c9601c66ed7e04fbe747250130646e, type: 3}
     minHomePlanetLevel: 6
     powerScore: 75.525
     powerScoreAtMaxLevel: 176.6125
