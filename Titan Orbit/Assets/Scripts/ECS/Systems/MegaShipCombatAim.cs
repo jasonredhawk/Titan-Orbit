@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using Unity.Entities;
 using Unity.Mathematics;
 using Unity.Physics;
@@ -183,6 +184,44 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
+        /// One baked MEGA part in world XZ for Burst cosmetic sweeps.
+        /// Sphere parts set <see cref="SphereRadius"/>; boxes set half-extents + yaw.
+        /// </summary>
+        public struct MegaPartSweepShape
+        {
+            public float3 WorldCenter;
+            public float2 BoxHalfExtents;
+            public float BoxYawRadians;
+            public float SphereRadius;
+        }
+
+        /// <summary>
+        /// Appends each compound child as a world box/sphere (no bullet pad).
+        /// Used by client Burst tracers so they stop on the same parts as
+        /// <see cref="TryHitBulletSegment"/> instead of the covering hull sphere.
+        /// </summary>
+        public static bool TryAppendPartSweepShapes(
+            EntityManager em,
+            Entity ship,
+            in LocalTransform xf,
+            List<MegaPartSweepShape> into)
+        {
+            if (into == null
+                || !em.HasComponent<MegaShipState>(ship)
+                || !em.GetComponentData<MegaShipState>(ship).IsMega
+                || !em.HasComponent<PhysicsCollider>(ship))
+                return false;
+
+            var physics = em.GetComponentData<PhysicsCollider>(ship);
+            if (!physics.Value.IsCreated)
+                return false;
+
+            int before = into.Count;
+            AppendColliderPartShapes(physics, xf, into);
+            return into.Count > before;
+        }
+
+        /// <summary>
         /// Swept bullet vs each baked MEGA part collider (compound children).
         /// The covering AABB is only a broadphase reject — a miss on every part
         /// means the shot passes through a gap in the hull.
@@ -297,6 +336,106 @@ namespace TitanOrbit.ECS
             }
 
             return walked;
+        }
+
+        static unsafe void AppendColliderPartShapes(
+            in PhysicsCollider physics,
+            in LocalTransform xf,
+            List<MegaPartSweepShape> into)
+        {
+            Collider* root = (Collider*)physics.Value.GetUnsafePtr();
+            if (root == null)
+                return;
+
+            if (root->Type == ColliderType.Compound)
+            {
+                var compound = (CompoundCollider*)root;
+                int n = compound->NumChildren;
+                for (int i = 0; i < n; i++)
+                {
+                    ref CompoundCollider.Child child = ref compound->Children[i];
+                    if (!TryGetPartWorldShape(
+                            child.Collider, child.CompoundFromChild, xf,
+                            out MegaPartSweepShape shape))
+                        continue;
+                    into.Add(shape);
+                }
+
+                return;
+            }
+
+            if (TryGetPartWorldShape(root, RigidTransform.identity, xf, out MegaPartSweepShape single))
+                into.Add(single);
+        }
+
+        static unsafe bool TryGetPartWorldShape(
+            Collider* part,
+            in RigidTransform compoundFromChild,
+            in LocalTransform xf,
+            out MegaPartSweepShape shape)
+        {
+            shape = default;
+            if (part == null)
+                return false;
+
+            float scale = math.max(0.01f, xf.Scale);
+            float3 localCenter;
+            quaternion localRot;
+            float2 halfXz;
+            float radius;
+
+            if (part->Type == ColliderType.Box)
+            {
+                var box = (Unity.Physics.BoxCollider*)part;
+                BoxGeometry g = box->Geometry;
+                localCenter = math.transform(compoundFromChild, g.Center);
+                localRot = math.mul(compoundFromChild.rot, g.Orientation);
+                float3 half = g.Size * 0.5f;
+                halfXz = new float2(half.x, half.z) * scale;
+                radius = 0f;
+            }
+            else if (part->Type == ColliderType.Sphere)
+            {
+                var sphere = (Unity.Physics.SphereCollider*)part;
+                SphereGeometry g = sphere->Geometry;
+                localCenter = math.transform(compoundFromChild, g.Center);
+                localRot = compoundFromChild.rot;
+                halfXz = float2.zero;
+                radius = g.Radius * scale;
+            }
+            else
+            {
+                Aabb aabb = part->CalculateAabb();
+                localCenter = math.transform(compoundFromChild, aabb.Center);
+                localRot = compoundFromChild.rot;
+                float3 half = aabb.Extents * 0.5f;
+                halfXz = new float2(half.x, half.z) * scale;
+                radius = 0f;
+            }
+
+            float3 worldCenter = xf.Position + math.rotate(xf.Rotation, localCenter * scale);
+            float partMidY = xf.Position.y + localCenter.y * scale;
+            worldCenter.y = partMidY;
+
+            if (halfXz.x < 0.01f && halfXz.y < 0.01f && radius < 0.001f)
+                return false;
+
+            float yaw = 0f;
+            if (radius <= 0.001f)
+            {
+                quaternion worldRot = math.mul(xf.Rotation, localRot);
+                float3 fwd = math.mul(worldRot, new float3(0f, 0f, 1f));
+                yaw = math.atan2(fwd.x, fwd.z);
+            }
+
+            shape = new MegaPartSweepShape
+            {
+                WorldCenter = worldCenter,
+                BoxHalfExtents = halfXz,
+                BoxYawRadians = yaw,
+                SphereRadius = radius,
+            };
+            return true;
         }
 
         static unsafe bool TryHitOnePart(

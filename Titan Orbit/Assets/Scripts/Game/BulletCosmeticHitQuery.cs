@@ -144,6 +144,8 @@ namespace TitanOrbit.Game
         static readonly List<int> s_GridScratch = new List<int>(64);
         static readonly HashSet<int> s_GridSeen = new HashSet<int>();
         static readonly List<int> s_TestIndices = new List<int>(128);
+        static readonly List<MegaShipCombatAim.MegaPartSweepShape> s_MegaPartScratch =
+            new List<MegaShipCombatAim.MegaPartSweepShape>(64);
         static NativeList<CosmeticSweepBody> s_SweepBodies;
         static NativeList<int> s_SweepAlways;
         static NativeParallelMultiHashMap<int, int> s_SweepCells;
@@ -363,7 +365,7 @@ namespace TitanOrbit.Game
             PeopleTransportVfxDriver.AppendBulletObstacles(Obstacles);
             AppendDroneObstacles(em);
             RebuildObstacleGrid();
-            RebuildSweepBodies();
+            RebuildSweepBodies(em);
 
             return Obstacles.Count > 0;
         }
@@ -481,7 +483,7 @@ namespace TitanOrbit.Game
             s_SweepSeen = default;
         }
 
-        static void RebuildSweepBodies()
+        static void RebuildSweepBodies(EntityManager em)
         {
             EnsureSweepScratch();
             s_SweepBodies.Clear();
@@ -498,11 +500,19 @@ namespace TitanOrbit.Game
             for (int i = 0; i < Obstacles.Count; i++)
             {
                 var o = Obstacles[i];
+                if (o.Kind == ObstacleKind.Ship &&
+                    o.HasOrientedBox &&
+                    TryAddMegaPartSweepBodies(em, in o))
+                    continue;
+
                 bool home = o.IsHomePlanet;
+                int bodyIndex = s_SweepBodies.Length;
                 s_SweepBodies.Add(new CosmeticSweepBody
                 {
                     Position = o.LogicalCenter,
                     Radius = o.Radius,
+                    BoxHalfExtents = o.Kind == ObstacleKind.Ship ? o.BoxHalfExtents : float2.zero,
+                    BoxYawRadians = o.Kind == ObstacleKind.Ship ? o.BoxYawRadians : 0f,
                     Scale = o.Scale,
                     MoonBodyRadius = PlanetGemMoonMath.GetMoonBodyRadiusWorld(o.Scale, home),
                     MoonShieldRadius = PlanetGemMoonMath.GetMoonBulletHitRadiusWorld(
@@ -519,12 +529,52 @@ namespace TitanOrbit.Game
 
                 if (o.Kind == ObstacleKind.Planet || o.Kind == ObstacleKind.Moon)
                 {
-                    s_SweepAlways.Add(i);
+                    s_SweepAlways.Add(bodyIndex);
                     continue;
                 }
 
-                AddSweepCoveringCells(i, o.LogicalCenter, o.Radius);
+                AddSweepCoveringCells(bodyIndex, o.LogicalCenter, o.Radius);
             }
+        }
+
+        /// <summary>
+        /// Burst cannot walk a PhysicsCollider, so each MEGA part is copied as its
+        /// own box/sphere. The covering hull sphere is what parked PD tracers in
+        /// empty space before they reached the mesh.
+        /// </summary>
+        static bool TryAddMegaPartSweepBodies(EntityManager em, in Obstacle o)
+        {
+            if (!em.Exists(o.SourceEntity) || !em.HasComponent<LocalTransform>(o.SourceEntity))
+                return false;
+
+            s_MegaPartScratch.Clear();
+            var xf = em.GetComponentData<LocalTransform>(o.SourceEntity);
+            if (!MegaShipCombatAim.TryAppendPartSweepShapes(em, o.SourceEntity, xf, s_MegaPartScratch))
+                return false;
+
+            for (int p = 0; p < s_MegaPartScratch.Count; p++)
+            {
+                var part = s_MegaPartScratch[p];
+                bool sphere = part.SphereRadius > 0.001f;
+                float cover = sphere
+                    ? part.SphereRadius
+                    : math.length(part.BoxHalfExtents);
+                int bodyIndex = s_SweepBodies.Length;
+                s_SweepBodies.Add(new CosmeticSweepBody
+                {
+                    Position = part.WorldCenter,
+                    Radius = cover,
+                    BoxHalfExtents = sphere ? float2.zero : part.BoxHalfExtents,
+                    BoxYawRadians = part.BoxYawRadians,
+                    Scale = o.Scale,
+                    OwnerNetworkId = o.OwnerNetworkId,
+                    Kind = (byte)ObstacleKind.Ship,
+                    Team = o.TeamOrOwnership,
+                });
+                AddSweepCoveringCells(bodyIndex, part.WorldCenter, cover);
+            }
+
+            return true;
         }
 
         static void AddSweepCoveringCells(int index, float3 pos, float radius)

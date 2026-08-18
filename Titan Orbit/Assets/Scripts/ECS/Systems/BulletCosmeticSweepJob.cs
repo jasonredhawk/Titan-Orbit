@@ -10,11 +10,15 @@ namespace TitanOrbit.ECS
     /// <summary>
     /// Blittable cosmetic obstacle for <see cref="BulletCosmeticSweepJob"/>.
     /// Copied from hybrid-proxy spheres on the client — no EntityManager in Burst.
+    /// MEGA hulls emit one body per baked part (box or sphere) so tracers stop
+    /// on the mesh instead of the covering AABB sphere.
     /// </summary>
     public struct CosmeticSweepBody
     {
         public float3 Position;
         public float Radius;
+        public float2 BoxHalfExtents;
+        public float BoxYawRadians;
         public float Scale;
         public float MoonBodyRadius;
         public float MoonShieldRadius;
@@ -59,8 +63,9 @@ namespace TitanOrbit.ECS
     }
 
     /// <summary>
-    /// Client presentation sweep — same sphere math as the server job, no RPCs.
-    /// Mega volleys stay on this path so LateUpdate is not O(tracers × bodies) in Mono.
+    /// Client presentation sweep — same sphere/box math as the server job, no RPCs.
+    /// MEGA ships are one oriented box or sphere per baked part (not a covering hull
+    /// sphere). Mega volleys stay on this path so LateUpdate is not O(tracers × bodies).
     /// </summary>
     [BurstCompile]
     public struct BulletCosmeticSweepJob : IJob
@@ -273,19 +278,31 @@ namespace TitanOrbit.ECS
             }
             else
             {
-                float radius = body.Radius;
-                if (body.Kind == KindDefense)
+                float pad = math.clamp(req.ScaleMultiplier * 0.18f, 0f, 0.85f);
+                if (body.Kind == KindShip &&
+                    body.BoxHalfExtents.x > 0.01f &&
+                    body.BoxHalfExtents.y > 0.01f)
                 {
-                    radius = PlanetaryDefenseHitScan.ExpandRadiusForBulletScale(
-                        body.Radius, req.ScaleMultiplier);
+                    hit = BulletCollision.SegmentHitsOrientedBoxToroidal(
+                        from, to, body.Position, body.BoxHalfExtents + pad,
+                        body.BoxYawRadians, MapW, MapH, out hp);
                 }
-                else if (body.Kind == KindShip)
+                else
                 {
-                    radius += math.clamp(req.ScaleMultiplier * 0.18f, 0f, 0.85f);
-                }
+                    float radius = body.Radius;
+                    if (body.Kind == KindDefense)
+                    {
+                        radius = PlanetaryDefenseHitScan.ExpandRadiusForBulletScale(
+                            body.Radius, req.ScaleMultiplier);
+                    }
+                    else if (body.Kind == KindShip)
+                    {
+                        radius += pad;
+                    }
 
-                hit = BulletCollision.SegmentHitsSphereToroidal(
-                    from, to, body.Position, radius, MapW, MapH, out hp);
+                    hit = BulletCollision.SegmentHitsSphereToroidal(
+                        from, to, body.Position, radius, MapW, MapH, out hp);
+                }
             }
 
             if (!hit)
