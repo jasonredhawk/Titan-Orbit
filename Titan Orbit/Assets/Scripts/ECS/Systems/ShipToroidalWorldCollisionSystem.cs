@@ -244,6 +244,8 @@ namespace TitanOrbit.ECS
             DynamicBuffer<PendingRamContactElement> ramQueue = default;
             bool enqueueRam = state.World.IsServer() &&
                               SystemAPI.TryGetSingletonBuffer(out ramQueue);
+            bool clientPlow = state.World.IsClient();
+            var clientPlowRocks = new NativeHashSet<Entity>(8, Allocator.Temp);
 
             // --- Resolve each ship vs world spheres / moons ---
             for (int s = 0; s < ships.Length; s++)
@@ -258,15 +260,45 @@ namespace TitanOrbit.ECS
                     WorldSphere body = obstacles[i];
                     float3 posBefore = shipPos;
                     float3 velBefore = shipVel;
+                    // MEGA plow: detect cross-seam overlap for ram damage, but do not bounce
+                    // or depenetrate — the rock is no match and must not slow the hull.
+                    if (MegaShipCatalog.PlowsAsteroids
+                        && ship.IsMega != 0
+                        && body.IsAsteroid != 0)
+                    {
+                        if (ShipToroidalWorldCollisionLogic.TryGetCrossSeamWorldSphereOverlap(
+                                shipPos, shipVel, ship.Radius,
+                                body.Position, body.Radius,
+                                mapW, mapH,
+                                out float3 plowNormal, out float plowClosing))
+                        {
+                            if (enqueueRam && body.Entity != Entity.Null)
+                            {
+                                ramQueue.Add(new PendingRamContactElement
+                                {
+                                    Ship = ship.Entity,
+                                    Other = body.Entity,
+                                    OtherIsShip = 0,
+                                    NormalShipFromOther = plowNormal,
+                                    ClosingSpeed = plowClosing,
+                                    EstimatedImpulse = plowClosing * 10f,
+                                });
+                            }
+
+                            if (clientPlow && body.Entity != Entity.Null)
+                                clientPlowRocks.Add(body.Entity);
+                        }
+
+                        continue;
+                    }
+
                     float bodyFriction = body.IsAsteroid != 0 ? asteroidFriction : 0f;
                     float bodyMass = body.IsAsteroid != 0
                         ? ShipCollisionImpulseLogic.ComputeAsteroidCollisionMass(
                             body.AsteroidSize, asteroidMassPerSize)
                         : 0f;
                     float restitution = body.IsAsteroid != 0
-                        ? (ship.IsMega != 0
-                            ? math.min(asteroidBounceRestitution, MegaShipCatalog.AsteroidBounceRestitution)
-                            : asteroidBounceRestitution)
+                        ? asteroidBounceRestitution
                         : ShipToroidalWorldCollisionLogic.WorldRestitution;
 
                     if (ShipToroidalWorldCollisionLogic.TryResolveShipVsWorldSphere(
@@ -380,6 +412,19 @@ namespace TitanOrbit.ECS
                 state.EntityManager.SetComponentData(ship.Entity, pv);
             }
 
+            if (clientPlow && clientPlowRocks.Count > 0)
+            {
+                var plowList = clientPlowRocks.ToNativeArray(Allocator.Temp);
+                for (int i = 0; i < plowList.Length; i++)
+                {
+                    ClientLocalAsteroidCombatSync.SoftDestroyLocalAsteroidEntity(
+                        state.EntityManager, plowList[i]);
+                }
+
+                plowList.Dispose();
+            }
+
+            clientPlowRocks.Dispose();
             obstacles.Dispose();
             moons.Dispose();
             ships.Dispose();

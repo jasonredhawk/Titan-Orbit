@@ -39,6 +39,7 @@ namespace TitanOrbit.ECS
     /// server always applies. Do <b>not</b> push ship position with AABB sphere radii — compound hulls
     /// over-estimate and violently shove (reverted 2026-08-07).
     /// </para>
+    /// MEGA hulls skip this pass (plow asteroids — no grip, no inward motor reject).
     /// Pipeline: Drive → Snapshot → PhysicsSimulation → Export → Bounce → Friction/Contact (this) →
     /// Toroidal → Planar → Kinematics.
     /// </summary>
@@ -94,6 +95,7 @@ namespace TitanOrbit.ECS
             var shipLookup = SystemAPI.GetComponentLookup<ShipTag>(true);
             var asteroidLookup = SystemAPI.GetComponentLookup<AsteroidTag>(true);
             var asteroidStateLookup = SystemAPI.GetComponentLookup<AsteroidState>(true);
+            var megaLookup = SystemAPI.GetComponentLookup<MegaShipState>(true);
             var culledLookup = SystemAPI.GetComponentLookup<AsteroidClientCulledTag>(true);
             var velocityLookup = SystemAPI.GetComponentLookup<PhysicsVelocity>(false);
             var contactLookup = SystemAPI.GetComponentLookup<ShipAsteroidContactState>(false);
@@ -103,6 +105,7 @@ namespace TitanOrbit.ECS
                 Ships = shipLookup,
                 Asteroids = asteroidLookup,
                 AsteroidStates = asteroidStateLookup,
+                Megas = megaLookup,
                 Culled = culledLookup,
                 Velocities = velocityLookup,
                 Contacts = contactLookup,
@@ -125,6 +128,7 @@ namespace TitanOrbit.ECS
             [ReadOnly] public ComponentLookup<ShipTag> Ships;
             [ReadOnly] public ComponentLookup<AsteroidTag> Asteroids;
             [ReadOnly] public ComponentLookup<AsteroidState> AsteroidStates;
+            [ReadOnly] public ComponentLookup<MegaShipState> Megas;
             [ReadOnly] public ComponentLookup<AsteroidClientCulledTag> Culled;
             public ComponentLookup<PhysicsVelocity> Velocities;
             public ComponentLookup<ShipAsteroidContactState> Contacts;
@@ -159,6 +163,10 @@ namespace TitanOrbit.ECS
                 }
 
                 if (other == Entity.Null)
+                    return;
+
+                // MEGAs plow asteroids — no grip and no motor inward-reject (would park the hull).
+                if (Megas.HasComponent(ship) && Megas[ship].IsMega)
                     return;
 
                 // Phantom hull: mesh already hid / Health=0 but PhysX still raised a contact.

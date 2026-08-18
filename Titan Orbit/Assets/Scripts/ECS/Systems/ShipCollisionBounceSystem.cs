@@ -7,6 +7,7 @@ using Unity.Mathematics;
 using Unity.NetCode;
 using Unity.Physics;
 using Unity.Physics.Systems;
+using Unity.Transforms;
 
 namespace TitanOrbit.ECS
 {
@@ -15,6 +16,8 @@ namespace TitanOrbit.ECS
     /// <see cref="ShipCollisionImpulseLogic"/> using pre-physics velocity snapshots.
     /// Owns ship↔asteroid (finite virtual rock mass), ship↔ship (energy transfer), and
     /// ship↔planet/moon (infinite-mass wall) so PhysX material restitution can stay 0.
+    /// MEGA hulls plow asteroids: restore pre-collision motion (no bounce) so a field does
+    /// not slow the ship. Server ram damage + client soft-destroy happen elsewhere.
     /// <para>
     /// Runs on ServerSimulation and ClientSimulation (predicted). Collision-event stream only —
     /// no asteroid/planet <c>ToEntityArray</c> (join-crash safe). Tangential grip stays in
@@ -63,6 +66,10 @@ namespace TitanOrbit.ECS
             if (state.World.IsClient() && ClientJoinSettleCache.ShouldSkipShipSimulation)
                 return;
 
+            float fixedDt = SystemAPI.Time.DeltaTime;
+            if (fixedDt <= 0f)
+                fixedDt = 1f / 60f;
+
             // --- Designer asteroid bounce tuning ---
             var settings = AsteroidSettingsCache.ResolveOrDefault();
             settings.ClampValues();
@@ -102,6 +109,10 @@ namespace TitanOrbit.ECS
             // in one tick accumulate correctly without reading PhysX's inelastic result.
             var working = new NativeHashMap<Entity, float3>(math.max(8, pairs.Length * 2), Allocator.Temp);
 
+            // MEGA asteroid plow: ships that only hit rocks this tick keep unconstrained motion.
+            // A planet / enemy-ship contact the same tick removes them so wall bounce still sticks.
+            var megaPlowShips = new NativeHashSet<Entity>(math.max(8, pairs.Length), Allocator.Temp);
+
             // --- Deduplicate ship↔ship pairs (A,B) and (B,A) ---
             var seenShipPairs = new NativeHashSet<long>(pairs.Length, Allocator.Temp);
 
@@ -115,16 +126,23 @@ namespace TitanOrbit.ECS
                     if (!seenShipPairs.Add(key))
                         continue;
                     ApplyShipVsShip(pair, ref working, snapshotLookup, motorLookup, shipStateLookup, megaLookup);
+                    megaPlowShips.Remove(pair.EntityA);
+                    megaPlowShips.Remove(pair.EntityB);
                 }
                 else if (pair.Kind == KindAsteroid)
                 {
-                    ApplyShipVsAsteroid(
+                    bool plowed = ApplyShipVsAsteroid(
                         pair, ref working, snapshotLookup, motorLookup, shipStateLookup,
                         megaLookup, asteroidStateLookup, culledLookup, asteroidMassPerSize, asteroidRestitution);
+                    if (plowed)
+                        megaPlowShips.Add(pair.EntityA);
+                    else
+                        megaPlowShips.Remove(pair.EntityA);
                 }
                 else if (pair.Kind == KindInfiniteWall)
                 {
                     ApplyShipVsInfiniteWall(pair, ref working, snapshotLookup);
+                    megaPlowShips.Remove(pair.EntityA);
                 }
             }
 
@@ -140,9 +158,54 @@ namespace TitanOrbit.ECS
                 velocityLookup[e] = pv;
             }
 
+            // --- MEGA plow: undo PhysX depenetration so a field does not shove the hull ---
+            // Reconstruct unconstrained pose from the pre-physics snapshot (drive already applied).
+            if (megaPlowShips.Count > 0)
+            {
+                var transformLookup = SystemAPI.GetComponentLookup<LocalTransform>(false);
+                var plowShips = megaPlowShips.ToNativeArray(Allocator.Temp);
+                for (int i = 0; i < plowShips.Length; i++)
+                {
+                    Entity ship = plowShips[i];
+                    if (!snapshotLookup.HasComponent(ship) || !transformLookup.HasComponent(ship))
+                        continue;
+
+                    var snap = snapshotLookup[ship];
+                    var lt = transformLookup[ship];
+                    float3 pos = snap.Position + snap.Linear * fixedDt;
+                    pos.y = 0f;
+                    lt.Position = pos;
+                    transformLookup[ship] = lt;
+                }
+
+                plowShips.Dispose();
+            }
+
+            // Client predicts the rock vanishing so the next physics step cannot pin the MEGA
+            // while HitRpc is still in flight. Server authority + self-damage stay in ramming.
+            if (state.World.IsClient())
+            {
+                var seenPlowRocks = new NativeHashSet<Entity>(math.max(8, pairs.Length), Allocator.Temp);
+                for (int i = 0; i < pairs.Length; i++)
+                {
+                    BouncePair pair = pairs[i];
+                    if (pair.Kind != KindAsteroid)
+                        continue;
+                    if (!megaLookup.HasComponent(pair.EntityA) || !megaLookup[pair.EntityA].IsMega)
+                        continue;
+                    if (!seenPlowRocks.Add(pair.EntityB))
+                        continue;
+                    ClientLocalAsteroidCombatSync.SoftDestroyLocalAsteroidEntity(
+                        state.EntityManager, pair.EntityB);
+                }
+
+                seenPlowRocks.Dispose();
+            }
+
             written.Dispose();
             working.Dispose();
             seenShipPairs.Dispose();
+            megaPlowShips.Dispose();
         }
 
         /// <summary>
@@ -240,8 +303,10 @@ namespace TitanOrbit.ECS
         /// <summary>
         /// Mass-aware bounce off one asteroid. Skips dead / client-culled rocks so a leftover
         /// PhysX contact after the mesh hid cannot keep shoving the hull.
+        /// MEGAs restore the pre-collision snapshot instead of bouncing (plow).
         /// </summary>
-        static void ApplyShipVsAsteroid(
+        /// <returns>True when this pair was a MEGA plow (caller may restore unconstrained pose).</returns>
+        static bool ApplyShipVsAsteroid(
             BouncePair pair,
             ref NativeHashMap<Entity, float3> working,
             ComponentLookup<ShipPreCollisionVelocity> snapshots,
@@ -257,30 +322,37 @@ namespace TitanOrbit.ECS
             Entity ship = pair.EntityA;
             Entity asteroid = pair.EntityB;
             if (!shipStates.HasComponent(ship) || shipStates[ship].IsDead)
-                return;
+                return false;
             if (!asteroidStates.HasComponent(asteroid))
-                return;
+                return false;
             var rock = asteroidStates[asteroid];
             // Dead / client-culled rocks must not bounce — PhysX can still emit events for a
             // stale static hull after the mesh hid (phantom grind).
             if (rock.IsDestroyed || !(rock.Health > 0.01f))
-                return;
+                return false;
             if (culled.HasComponent(asteroid))
-                return;
+                return false;
 
-            bool isMega = megas.HasComponent(ship) && megas[ship].IsMega;
+            bool isMega = MegaShipCatalog.PlowsAsteroids
+                          && megas.HasComponent(ship)
+                          && megas[ship].IsMega;
             float3 vShip = GetWorkingOrSnapshot(ship, ref working, snapshots);
+            if (isMega)
+            {
+                // Keep pre-collision velocity so PhysX's inelastic stop cannot park the hull.
+                working[ship] = vShip;
+                return true;
+            }
+
             float mShip = GetShipCollisionMass(ship, motors, shipStates, megas);
             float mRock = ShipCollisionImpulseLogic.ComputeAsteroidCollisionMass(rock.Size, massPerSize);
-            float e = isMega
-                ? math.min(restitution, MegaShipCatalog.AsteroidBounceRestitution)
-                : restitution;
 
             if (!ShipCollisionImpulseLogic.ApplyShipVsStaticMassiveImpulse(
-                    ref vShip, pair.NormalAFromB, mShip, mRock, e))
-                return;
+                    ref vShip, pair.NormalAFromB, mShip, mRock, restitution))
+                return false;
 
             working[ship] = vShip;
+            return false;
         }
 
         static void ApplyShipVsInfiniteWall(

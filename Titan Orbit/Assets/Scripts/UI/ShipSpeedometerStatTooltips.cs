@@ -515,6 +515,15 @@ namespace TitanOrbit.UI
                 : live.EffectiveStats.rammingPower;
             float fullCruise = live.CruiseMaxSpeed > 0.01f ? live.CruiseMaxSpeed : live.ChassisMaxSpeed;
             ShipStatTooltipChrome.AppendSectionBanner(sb, "MAX IMPACT", "FFCC66");
+            if (live.IsMega)
+            {
+                float plowMul = MegaShipCatalog.DefaultAsteroidPlowDamageMultiplier;
+                var catalog = MegaShipCatalog.Load();
+                if (catalog != null)
+                    plowMul = catalog.GetAsteroidPlowDamageMultiplier();
+                sb.AppendLine("<color=#FFAA66>MEGA PLOW — rocks die on contact. Hull takes rock HP × catalog slider. Field does not slow the hull.</color>");
+                sb.Append("Plow slider  ").Append(F1(plowMul)).Append("×  <color=#5B7A94>(1 = equal rock HP)</color>").AppendLine();
+            }
             sb.Append("Motor Ramming  ").Append(F1(familyRam)).AppendLine();
             sb.Append("Rating  ").Append(F1(live.RamRating)).AppendLine();
             sb.Append("totalMass  ").Append(F1(live.TotalMass)).AppendLine();

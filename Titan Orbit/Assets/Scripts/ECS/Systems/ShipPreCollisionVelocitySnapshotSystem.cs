@@ -3,12 +3,14 @@ using Unity.Mathematics;
 using Unity.NetCode;
 using Unity.Physics;
 using Unity.Physics.Systems;
+using Unity.Transforms;
 
 namespace TitanOrbit.ECS
 {
     /// <summary>
-    /// Copies each simulated ship's <see cref="PhysicsVelocity.Linear"/> into
-    /// <see cref="ShipPreCollisionVelocity"/> after thrust and before the physics solve.
+    /// Copies each simulated ship's <see cref="PhysicsVelocity.Linear"/> and
+    /// <see cref="LocalTransform.Position"/> into <see cref="ShipPreCollisionVelocity"/>
+    /// after thrust and before the physics solve.
     /// <para>
     /// [PHYSICS] Must run inside <see cref="PhysicsSystemGroup"/> before
     /// <see cref="PhysicsSimulationGroup"/> so the snapshot is the post-drive, pre-contact state.
@@ -40,8 +42,9 @@ namespace TitanOrbit.ECS
             if (state.World.IsClient() && ClientJoinSettleCache.ShouldSkipShipSimulation)
                 return;
 
-            foreach (var (velocity, snapshot, shipState) in SystemAPI
-                         .Query<RefRO<PhysicsVelocity>, RefRW<ShipPreCollisionVelocity>, RefRO<ShipState>>()
+            foreach (var (velocity, transform, snapshot, shipState) in SystemAPI
+                         .Query<RefRO<PhysicsVelocity>, RefRO<LocalTransform>, RefRW<ShipPreCollisionVelocity>,
+                             RefRO<ShipState>>()
                          .WithAll<ShipTag, Simulate>())
             {
                 if (shipState.ValueRO.IsDead || shipState.ValueRO.AwaitingTeamSelection)
@@ -50,6 +53,7 @@ namespace TitanOrbit.ECS
                 float3 lin = velocity.ValueRO.Linear;
                 lin.y = 0f;
                 snapshot.ValueRW.Linear = lin;
+                snapshot.ValueRW.Position = transform.ValueRO.Position;
             }
         }
     }

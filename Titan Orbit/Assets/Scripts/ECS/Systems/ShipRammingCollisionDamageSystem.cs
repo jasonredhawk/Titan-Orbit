@@ -24,6 +24,9 @@ namespace TitanOrbit.ECS
     /// </para>
     /// <para>
     /// Targets: asteroids (impact + grind) and enemy ships (impact reciprocal damage).
+    /// MEGA hulls plow asteroids: first contact instantly destroys the rock and applies
+    /// remaining rock Health × <see cref="MegaShipCatalog.asteroidPlowDamageMultiplier"/>
+    /// (default 1) — no grind, so a field does not stall the hull.
     /// Hull/gem rules use <see cref="ShipDamageLogic"/>. Clients never predict this.
     /// Dead / 0-HP asteroids are ignored even if PhysX still emits a contact (phantom grind).
     /// Each asteroid impact and grind pulse broadcasts <see cref="BulletHitRpc"/> (Sequence 0)
@@ -188,6 +191,56 @@ namespace TitanOrbit.ECS
                 }
 
                 var contact = contacts[contactIndex];
+
+                bool isMega = MegaShipCatalog.PlowsAsteroids
+                              && state.EntityManager.HasComponent<MegaShipState>(shipEntity)
+                              && state.EntityManager.GetComponentData<MegaShipState>(shipEntity).IsMega;
+
+                // --- MEGA plow: instant kill + rock-HP hull chip, no grind ---
+                // Asteroids are no match for a MEGA hull. Movement bounce/friction are skipped
+                // elsewhere. Self-damage is remaining rock Health × catalog plow slider (default 1).
+                if (isMega && !otherIsShip)
+                {
+                    if (isNewContact && !IsDeadAsteroid(ref state, other))
+                    {
+                        float remainingHp = 0f;
+                        if (state.EntityManager.HasComponent<AsteroidState>(other))
+                            remainingHp = math.max(
+                                0f,
+                                state.EntityManager.GetComponentData<AsteroidState>(other).Health);
+
+                        if (remainingHp > 0.01f)
+                            ApplyAsteroidDamage(ref state, other, remainingHp, ship.Team);
+                        if (IsDeadAsteroid(ref state, other))
+                            AsteroidDeathPhysics.QueueStripColliders(ecb, state.EntityManager, other);
+
+                        float asteroidVfx = math.max(remainingHp, 0.01f);
+                        NotifyRamAsteroidHit(
+                            ref state, ref ecb, shipEntity, other, normalShipFromOther,
+                            asteroidVfx, ship.Team);
+
+                        float plowMul = MegaShipCatalog.DefaultAsteroidPlowDamageMultiplier;
+                        var megaCatalog = MegaShipCatalog.Load();
+                        if (megaCatalog != null)
+                            plowMul = megaCatalog.GetAsteroidPlowDamageMultiplier();
+                        float selfDamage = MegaShipCatalog.ComputeAsteroidPlowSelfDamage(
+                            remainingHp, plowMul);
+                        float intensity = ShipComponentRammingSuggestions.ComputeRamImpactGemExpulsionIntensity(
+                            remainingHp, selfDamage);
+                        ApplyShipSelfDamage(
+                            ref state, ref ship, shipEntity, selfDamage, intensity,
+                            gemPrefab, shipPos, spawnServerTime, ecb, now,
+                            damagerNetworkId: 0,
+                            impulseXZ: new float2(normalShipFromOther.x, normalShipFromOther.z),
+                            impulsePower: selfDamage);
+                        state.EntityManager.SetComponentData(shipEntity, ship);
+                    }
+
+                    contact.WasColliding = 1;
+                    contact.MissedTicks = 0;
+                    contacts[contactIndex] = contact;
+                    continue;
+                }
 
                 // --- Impact on contact enter: rating × totalMass × closingSpeed ---
                 if (isNewContact && closing >= ImpactMinClosingSpeed)
@@ -505,7 +558,7 @@ namespace TitanOrbit.ECS
         /// </summary>
         /// <param name="ship">Current vitals (gems / people).</param>
         /// <param name="motor">Untaxed chassis baselines + HullMassReference (ComponentSize).</param>
-        /// <param name="totalMass">Gems×mG + people×mP + size×mCS.</param>
+        /// <param name="totalMass">Gems×mG + people×mP + size×mCS. MEGA skip-tax reports 0 (plow ignores this).</param>
         /// <param name="taxedAccel">After-tax acceleration used for grind damage and the push gate.</param>
         static void ResolveMobilityRamInputs(
             in ShipState ship,

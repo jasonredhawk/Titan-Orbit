@@ -145,7 +145,17 @@ namespace TitanOrbit.Data
         /// <summary>Authored motor.Mass for MEGAs (SkipMassTax still keeps cruise accel).</summary>
         public const float DefaultHullCollisionMass = 220f;
 
-        /// <summary>Asteroid bounce coefficient for MEGAs — grind, do not rebound.</summary>
+        /// <summary>
+        /// MEGAs plow asteroids: first contact destroys the rock and applies
+        /// rock HP × <see cref="asteroidPlowDamageMultiplier"/> to the hull.
+        /// Bounce / friction / motor-reject are skipped so a field does not slow the hull.
+        /// </summary>
+        public const bool PlowsAsteroids = true;
+
+        /// <summary>Default rock-HP → MEGA hull chip (1 = equal health).</summary>
+        public const float DefaultAsteroidPlowDamageMultiplier = 1f;
+
+        /// <summary>Legacy MEGA asteroid restitution. Unused while <see cref="PlowsAsteroids"/> is true.</summary>
         public const float AsteroidBounceRestitution = 0.06f;
 
         /// <summary>
@@ -196,6 +206,14 @@ namespace TitanOrbit.Data
         [Header("Economy")]
         [Tooltip("Contributed gems to purchase a level-7 MEGA. Server and UI must agree.")]
         public float purchaseGemCost = DefaultPurchaseGemCost;
+
+        [Header("Asteroid plow")]
+        [Tooltip(
+            "MEGA hull chip when a rock is plowed: asteroid Health × this. " +
+            "1 = equal health (a 40 HP rock deals 40 hull). 0.5 = half; 2 = double. " +
+            "Does not use ramming power, mass, or closing speed.")]
+        [Range(0f, 5f)]
+        public float asteroidPlowDamageMultiplier = DefaultAsteroidPlowDamageMultiplier;
 
         [Header("Presentation")]
         [Tooltip("Whole-hull scale for every MEGA. 1 = previous size, 0.2 ≈ 5× smaller. Applied to LocalTransform.Scale (visuals, colliders, gun pads).")]
@@ -425,6 +443,23 @@ namespace TitanOrbit.Data
         public float GetPurchaseGemCost()
         {
             return purchaseGemCost > 0.01f ? purchaseGemCost : DefaultPurchaseGemCost;
+        }
+
+        /// <summary>
+        /// Rock-HP → MEGA hull multiplier. Negative authored values fall back to 1.
+        /// 0 is legal (plow destroys the rock, no hull chip).
+        /// </summary>
+        public float GetAsteroidPlowDamageMultiplier()
+        {
+            return asteroidPlowDamageMultiplier >= 0f
+                ? asteroidPlowDamageMultiplier
+                : DefaultAsteroidPlowDamageMultiplier;
+        }
+
+        /// <summary>MEGA plow self-chip: remaining rock Health × <see cref="GetAsteroidPlowDamageMultiplier"/>.</summary>
+        public static float ComputeAsteroidPlowSelfDamage(float remainingAsteroidHealth, float multiplier)
+        {
+            return Mathf.Max(0f, remainingAsteroidHealth) * Mathf.Max(0f, multiplier);
         }
 
         /// <summary>

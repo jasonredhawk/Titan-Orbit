@@ -73,6 +73,49 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
+        /// Cross-seam overlap test with no depenetration or bounce. MEGA asteroid plow uses this
+        /// so the hull can queue ram damage without being shoved off its flight path.
+        /// Same-tile pairs stay false — PhysX + bounce own those contacts.
+        /// </summary>
+        /// <param name="shipPos">Ship sim position (may be unbounded).</param>
+        /// <param name="shipVel">Ship linear velocity (closing speed only).</param>
+        /// <param name="shipRadius">Ship hull sphere radius.</param>
+        /// <param name="bodyPos">Asteroid / world body logical center.</param>
+        /// <param name="bodyRadius">World body sphere radius.</param>
+        /// <param name="mapW">Map width.</param>
+        /// <param name="mapH">Map height.</param>
+        /// <param name="normalShipFromBody">Unit XZ normal from the body toward the ship.</param>
+        /// <param name="closingSpeed">Approach speed along that normal (0 if separating).</param>
+        /// <returns>True when the pair is on different tiles and overlapping.</returns>
+        public static bool TryGetCrossSeamWorldSphereOverlap(
+            float3 shipPos,
+            float3 shipVel,
+            float shipRadius,
+            float3 bodyPos,
+            float bodyRadius,
+            float mapW,
+            float mapH,
+            out float3 normalShipFromBody,
+            out float closingSpeed)
+        {
+            normalShipFromBody = new float3(0f, 0f, 1f);
+            closingSpeed = 0f;
+            if (!NeedsToroidalResolve(shipPos, bodyPos, mapW, mapH))
+                return false;
+
+            float3 offset = ToroidalMapEcs.ShortestOffsetXZ(shipPos, bodyPos, mapW, mapH);
+            float dist = math.length(offset);
+            float minDist = math.max(0.01f, shipRadius + bodyRadius);
+            if (dist >= minDist)
+                return false;
+
+            normalShipFromBody = ComputeSeparationNormal(offset, dist, shipVel);
+            float3 planarVel = new float3(shipVel.x, 0f, shipVel.z);
+            closingSpeed = math.max(0f, -math.dot(planarVel, normalShipFromBody));
+            return true;
+        }
+
+        /// <summary>
         /// If the ship overlaps the world sphere on the torus, push the ship out and bounce velocity.
         /// No-op when the pair is on the same tile (Unity Physics + bounce/friction + drive contact
         /// reject own that contact) or not overlapping.
