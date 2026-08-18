@@ -2087,6 +2087,7 @@ namespace TitanOrbit.Game
         /// </summary>
         void SyncShipProxyTransforms(EntityManager em, HashSet<Entity> alive)
         {
+            MegaShipWeaponVisualTargets.RebuildFromProxies(em, _proxies);
             TryResolveLocalPlayerShipEntityCached(em, out var localShipEntity);
             int localNetworkId = EcsGameBridge.GetLocalNetworkId();
             bool suppressOwnedVisuals = ClientTeamFlowState.ShouldSuppressLocalPlayerControl();

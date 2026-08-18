@@ -290,7 +290,8 @@ namespace TitanOrbit.ECS
                 }
 
                 // Aim the gun, then Phase B fires along the barrel (regular-ship ray).
-                RotateUnoccupiedMountsTowardAim(mega, xf, mounts, aims, gunners, mapW, mapH, dt);
+                RotateUnoccupiedMountsTowardAim(
+                    EntityManager, mega, xf, mounts, aims, gunners, mapW, mapH, moonElapsed, dt);
             }
 
             if (ships.IsCreated)
@@ -332,7 +333,8 @@ namespace TitanOrbit.ECS
         /// or hull forward when the slot is parked. Occupied mounts are slewed by
         /// <see cref="MegaShipPlayerCombatSystem"/>.
         /// </summary>
-        static void RotateUnoccupiedMountsTowardAim(
+        void RotateUnoccupiedMountsTowardAim(
+            EntityManager em,
             Entity mega,
             in LocalTransform xf,
             DynamicBuffer<ShipWeaponMountElement> mounts,
@@ -340,6 +342,7 @@ namespace TitanOrbit.ECS
             DynamicBuffer<MegaShipGunnerSlotElement> gunners,
             float mapW,
             float mapH,
+            double moonElapsed,
             float dt)
         {
             float3 hullForward = math.rotate(xf.Rotation, new float3(0f, 0f, 1f));
@@ -348,6 +351,15 @@ namespace TitanOrbit.ECS
                 hullForward = new float3(0f, 0f, 1f);
             else
                 hullForward = math.normalize(hullForward);
+
+            var ship = em.HasComponent<ShipState>(mega)
+                ? em.GetComponentData<ShipState>(mega)
+                : default;
+            bool heal = em.HasComponent<ShipLoadoutState>(mega)
+                && em.GetComponentData<ShipLoadoutState>(mega).HealingBulletsActive;
+            var weapon = em.HasComponent<ShipWeaponConfig>(mega)
+                ? em.GetComponentData<ShipWeaponConfig>(mega)
+                : default;
 
             int mountCount = mounts.Length;
             for (int m = 0; m < mountCount; m++)
@@ -360,6 +372,7 @@ namespace TitanOrbit.ECS
                 var mount = mounts[m];
                 float3 desired = hullForward;
                 float targetDist = 0f;
+                float3 ghostAim = xf.Position;
                 if (aims[m].Target != mega)
                 {
                     if (!ShipWeaponPose.TryResolve(xf, mount, out float3 muzzle, out _))
@@ -373,12 +386,71 @@ namespace TitanOrbit.ECS
                         desired = offset / dist;
                         targetDist = dist;
                     }
+
+                    // Mesh LookAt uses the target's current point, not the lead intercept.
+                    // Lead stays on AimPoint / LocalRotation so bullets do not change.
+                    float mountRange = ResolveMountRange(mount, in weapon) + 8f;
+                    if (!TryGetCurrentTargetPos(
+                            em, aims[m].Target, ship.Team, heal, muzzle, mountRange,
+                            mapW, mapH, moonElapsed, out ghostAim))
+                        ghostAim = aims[m].AimPoint;
                 }
 
                 MegaShipWeaponAim.RotateMountTowardWorldDir(in xf, ref mount, desired, dt);
                 mounts[m] = mount;
-                MegaShipWeaponAim.WriteGhostedYaw(gunners, m, in mount, targetDist);
+                int targetGhost = targetDist > 0.05f
+                    ? MegaShipWeaponAim.ReadGhostId(em, aims[m].Target)
+                    : 0;
+                MegaShipWeaponAim.WriteGhostedYaw(
+                    gunners, m, in mount, ghostAim, targetDist, desired, targetGhost);
             }
+        }
+
+        /// <summary>
+        /// Current (not lead) aim point for hybrid turret LookAt. Ships use combat aim,
+        /// planets use the locked pad/moon, asteroids use the rock center.
+        /// </summary>
+        bool TryGetCurrentTargetPos(
+            EntityManager em,
+            Entity target,
+            TeamId ownerTeam,
+            bool heal,
+            float3 from,
+            float range,
+            float mapW,
+            float mapH,
+            double moonElapsed,
+            out float3 pos)
+        {
+            pos = default;
+            if (target == Entity.Null || !em.Exists(target))
+                return false;
+
+            if (em.HasComponent<ShipState>(target) && em.HasComponent<LocalTransform>(target))
+            {
+                pos = MegaShipCombatAim.GetAimPoint(
+                    em, target, em.GetComponentData<LocalTransform>(target));
+                return true;
+            }
+
+            if (!heal
+                && em.HasComponent<PlanetState>(target)
+                && em.HasComponent<LocalTransform>(target))
+            {
+                return TryResolvePlanetAim(
+                    target, ownerTeam, from, range, mapW, mapH, moonElapsed,
+                    out pos, out _);
+            }
+
+            if (!heal
+                && em.HasComponent<AsteroidState>(target)
+                && em.HasComponent<LocalTransform>(target))
+            {
+                pos = em.GetComponentData<LocalTransform>(target).Position;
+                return true;
+            }
+
+            return false;
         }
 
         static void ResizeAimSlots(DynamicBuffer<MegaShipAutoAimSlotElement> aims, int mountCount)
@@ -389,15 +461,27 @@ namespace TitanOrbit.ECS
                 aims.RemoveAt(aims.Length - 1);
         }
 
-        /// <summary>Drop all sticky locks. Next Fire press runs a fresh per-muzzle search.</summary>
+        /// <summary>
+        /// Drop all sticky locks and clear unoccupied ghosted aim so clients park those
+        /// barrels on the hull. Next Fire press runs a fresh per-muzzle search.
+        /// </summary>
         void ClearAimSlots(Entity mega)
         {
-            if (!EntityManager.HasBuffer<MegaShipAutoAimSlotElement>(mega))
+            if (EntityManager.HasBuffer<MegaShipAutoAimSlotElement>(mega))
+            {
+                var aims = EntityManager.GetBuffer<MegaShipAutoAimSlotElement>(mega);
+                for (int i = 0; i < aims.Length; i++)
+                    aims[i] = default;
+            }
+
+            if (!EntityManager.HasBuffer<MegaShipGunnerSlotElement>(mega))
                 return;
 
-            var aims = EntityManager.GetBuffer<MegaShipAutoAimSlotElement>(mega);
-            for (int i = 0; i < aims.Length; i++)
-                aims[i] = default;
+            var gunners = EntityManager.GetBuffer<MegaShipGunnerSlotElement>(mega);
+            var mounts = EntityManager.HasBuffer<ShipWeaponMountElement>(mega)
+                ? EntityManager.GetBuffer<ShipWeaponMountElement>(mega)
+                : default;
+            MegaShipWeaponAim.ClearUnoccupiedTracking(gunners, mounts);
         }
 
         /// <summary>
@@ -792,7 +876,8 @@ namespace TitanOrbit.ECS
 
                 MegaShipWeaponAim.RotateMountTowardWorldDir(in xf, ref mount, desired, dt);
                 mounts[m] = mount;
-                MegaShipWeaponAim.WriteGhostedYaw(gunners, m, in mount, targetDist);
+                float3 ghostAim = haveMousePoint ? aimPoint : xf.Position;
+                MegaShipWeaponAim.WriteGhostedYaw(gunners, m, in mount, ghostAim, targetDist, desired);
             }
         }
 

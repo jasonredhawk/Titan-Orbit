@@ -109,19 +109,42 @@ namespace TitanOrbit.ECS
         [GhostField] public int OccupiedByNetworkId;
 
         /// <summary>
-        /// Hull-local planar yaw of this mount in degrees (ghosted so hybrid proxies can
-        /// rotate the classified weapon child). Server writes this from
-        /// <see cref="ShipWeaponMountElement.LocalRotation"/> each tick.
+        /// Planar yaw in degrees. While <see cref="TargetDistance"/> &gt; 0 this is the
+        /// <b>world</b> fire heading (same ray the server spawned). Idle / parked this is
+        /// hull-local yaw. Clients must not LookAt a lagged aim point from the live muzzle —
+        /// that over-rotates as the hull moves, then snaps back when the snapshot catches up.
         /// </summary>
         [GhostField(Quantization = 10, Smoothing = SmoothingAction.Clamp)]
         public float CurrentYawDeg;
 
         /// <summary>
-        /// Toroidal distance from this muzzle to its current auto-aim target (0 = none).
+        /// Toroidal distance from this muzzle to its current aim point (0 = not tracking).
         /// Client reticles sit at this range along the live barrel heading.
         /// </summary>
-        [GhostField(Quantization = 10, Smoothing = SmoothingAction.Interpolate)]
+        [GhostField(Quantization = 10, Smoothing = SmoothingAction.Clamp)]
         public float TargetDistance;
+
+        /// <summary>
+        /// World X of the lock's <b>current</b> point (ship / pad / moon — not the lead
+        /// intercept). Turret meshes LookAt this from the live muzzle; bullets still use
+        /// hull-local <c>LocalRotation</c> toward the lead.
+        /// </summary>
+        [GhostField(Quantization = 10, Smoothing = SmoothingAction.Clamp)]
+        public float AimWorldX;
+
+        /// <summary>
+        /// World Z of the lock's current point. Paired with <see cref="AimWorldX"/>.
+        /// </summary>
+        [GhostField(Quantization = 10, Smoothing = SmoothingAction.Clamp)]
+        public float AimWorldZ;
+
+        /// <summary>
+        /// <c>GhostInstance.ghostId</c> of the sticky lock (0 = none). Clients LookAt that
+        /// ghost's live display pose so the mesh stays on the target while the hull moves.
+        /// The lead intercept in <see cref="AimWorldX"/> is for bullets, not the mesh.
+        /// </summary>
+        [GhostField]
+        public int TargetGhostId;
     }
 
     /// <summary>

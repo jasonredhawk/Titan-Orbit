@@ -54,9 +54,12 @@ namespace TitanOrbit.ECS
 
                 if (EntityManager.HasBuffer<MegaShipGunnerSlotElement>(mega))
                 {
+                    float aimDist = math.max(input.ValueRO.AimDistance, 50f);
+                    float3 aimPoint = xf.Position + desiredAim * aimDist;
+                    aimPoint.y = xf.Position.y;
                     MegaShipWeaponAim.WriteGhostedYaw(
                         EntityManager.GetBuffer<MegaShipGunnerSlotElement>(mega),
-                        mountIndex, in mount);
+                        mountIndex, in mount, aimPoint, aimDist, desiredAim);
                 }
             }
         }

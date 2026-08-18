@@ -330,6 +330,10 @@ namespace TitanOrbit.ECS
                     MountIndex = (byte)i,
                     OccupiedByNetworkId = 0,
                     CurrentYawDeg = yaw,
+                    TargetDistance = 0f,
+                    AimWorldX = 0f,
+                    AimWorldZ = 0f,
+                    TargetGhostId = 0,
                 });
             }
         }

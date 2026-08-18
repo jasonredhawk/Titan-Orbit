@@ -6,19 +6,22 @@ namespace TitanOrbit.UI
 {
     /// <summary>
     /// Ten-segment power bar grouped into five ODEMC pairs (Offense … Capacity).
-    /// Moon upgrade-tree cards use equal slots: each pair is 20% of the track, each
-    /// ability 10%. That 10% slot is 100% of the global catalog max for that stat;
-    /// the ship's value is a solid fill and the rest is a dimmed matching color.
-    /// Equipment cards keep the older proportional widths (one or two stats, hide empty pairs).
-    /// Built at runtime by <see cref="Create"/> / <see cref="CreateInTrack"/>, or upgraded
-    /// in place from the serialized node prefab.
+    /// Moon / Orbit Menu cards keep the five groups in one horizontal row (each pair
+    /// is 20% of the track). Inside a pair the two abilities stack vertically — Fire
+    /// Power over Bullet Speed, Health Cap over Health Regen, and so on — so each
+    /// fill is twice as wide as the old side-by-side 10% lanes. Small catalog
+    /// increments stay visible on that wider fill. The ship's value is a solid fill
+    /// and the rest of the lane is a dimmed matching color.
+    /// Equipment cards keep the older proportional widths (one or two stats side by
+    /// side, hide empty pairs). Built at runtime by <see cref="Create"/> /
+    /// <see cref="CreateInTrack"/>, or upgraded in place from the serialized node prefab.
     /// </summary>
     public class ShipUpgradeTreePowerBarUI : MonoBehaviour
     {
         /// <summary>
         /// Gem Cap (8) and Troop Cap (9) bar widths use this fraction of raw stat power
         /// on equipment cards only, so high gem capacity does not dominate those bars.
-        /// Moon-tree equal slots no longer need this — each stat has its own 10% lane.
+        /// Moon-tree equal slots no longer need this — each stat has its own stacked lane.
         /// </summary>
         public const float MoonTreeCapacityStatBarScale = 0.5f;
 
@@ -29,10 +32,10 @@ namespace TitanOrbit.UI
         static readonly Color DisabledSlotFill = new Color(0.13f, 0.15f, 0.19f, 0.7f);
         static readonly Color DisabledSlotTrack = new Color(0.1f, 0.12f, 0.16f, 0.55f);
         /// <summary>
-        /// Pixels between the two abilities in a pair (Fire Power | Bullet Speed).
-        /// Smaller than <see cref="MoonTreePairGapPx"/> so ODEMC groups still read as pairs.
+        /// Pixels between the two stacked abilities in a pair (Fire Power over Bullet Speed).
+        /// Smaller than <see cref="MoonTreePairGapPx"/> so ODEMC groups still read as columns.
         /// </summary>
-        const float MoonTreeInnerGapPx = 2f;
+        const float MoonTreeStackGapPx = 2f;
         /// <summary>
         /// Pixels between the five ODEMC pairs (Offense | Defense | Energy | …).
         /// Not scaled with node width so the gutter stays visible on small cards.
@@ -138,8 +141,10 @@ namespace TitanOrbit.UI
             {
                 var pairGo = new GameObject("Pair_" + pair);
                 pairGo.transform.SetParent(barRow.transform, false);
+                // Equipment cards keep this pair side-by-side. Orbit Menu tree bars
+                // swap it for a VerticalLayoutGroup in ApplyMoonTreeFlexLayout.
                 var pairHlg = pairGo.AddComponent<HorizontalLayoutGroup>();
-                pairHlg.spacing = MoonTreeInnerGapPx;
+                pairHlg.spacing = 0f;
                 pairHlg.childAlignment = TextAnchor.MiddleLeft;
                 pairHlg.childControlWidth = true;
                 pairHlg.childControlHeight = true;
@@ -287,7 +292,9 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// Moon upgrade-tree layout: full track width, equal 10% slots, fill = value / global max.
+        /// Moon / Orbit Menu layout: full track width, five equal category columns,
+        /// two abilities stacked in each column. Fill amount = value / global max.
+        /// Called when a tree node or store tile paints its colourful stats bar.
         /// </summary>
         public void ApplyBreakdown(
             ShipFamilyPowerScoreBreakdown breakdown,
@@ -300,7 +307,9 @@ namespace TitanOrbit.UI
             float scaledBarHeight = barHeight * _heightScale;
             bool hasData = breakdown.HasDisplayStats;
 
+            // --- Stack each ODEMC pair, then paint fills ---
             ApplyMoonTreeFlexLayout(scaledBarHeight);
+            GetMoonTreeStackMetrics(scaledBarHeight, out float slotHeight, out _);
 
             for (int i = 0; i < ShipAbilityCategoryColors.PowerBreakdownStatCount; i++)
             {
@@ -310,7 +319,7 @@ namespace TitanOrbit.UI
                 float ratio = slotLive && max > ShipPowerBarStatMaxes.MinDenominator
                     ? Mathf.Clamp01(val / max)
                     : 0f;
-                ApplyMoonSlotFill(i, ratio, slotLive, scaledBarHeight);
+                ApplyMoonSlotFill(i, ratio, slotLive, slotHeight);
             }
 
             ApplyBarRowSize(nodeW, scaledBarHeight);
@@ -329,8 +338,14 @@ namespace TitanOrbit.UI
             ApplyBreakdownInternal(breakdown, strongestComponentTotalPower, trackWidth, equipmentLayout: true);
         }
 
+        /// <summary>
+        /// Gives every ODEMC category an equal share of the track and stacks its two
+        /// stats. Total bar height stays <paramref name="scaledBarHeight"/> — the same
+        /// reserved strip the node already budgeted — so the card does not grow.
+        /// </summary>
         void ApplyMoonTreeFlexLayout(float scaledBarHeight)
         {
+            // --- Five equal columns across the track ---
             var barHlg = GetComponent<HorizontalLayoutGroup>();
             if (barHlg != null)
             {
@@ -338,23 +353,30 @@ namespace TitanOrbit.UI
                 barHlg.spacing = MoonTreePairGapPx;
             }
 
+            GetMoonTreeStackMetrics(scaledBarHeight, out float slotHeight, out float stackGap);
             int pairCount = ShipAbilityCategoryColors.PowerBreakdownPairCount;
             for (int pair = 0; pair < pairCount; pair++)
             {
+                // One iteration = Offense, Defense, Energy, Movement, or Capacity.
                 int statA = pair * 2;
-                ApplyPairWidth(statA, 0f, scaledBarHeight, flexible: true);
-                ApplySlotFlex(statA, scaledBarHeight);
-                ApplySlotFlex(statA + 1, scaledBarHeight);
+                ApplyPairWidth(statA, 0f, scaledBarHeight, flexible: true, stackVertically: true, stackGap);
+                ApplySlotFlex(statA, slotHeight);
+                ApplySlotFlex(statA + 1, slotHeight);
                 SetPairActive(statA, true);
             }
-
         }
 
-        void ApplyMoonSlotFill(int statIndex, float ratio, bool hasData, float scaledBarHeight)
+        /// <summary>
+        /// Paints one stacked lane: bright fill from the left for the ship's share of the
+        /// catalog max, dim remainder behind it. <paramref name="slotHeight"/> is half the
+        /// reserved bar (minus the gutter), not the full track height.
+        /// </summary>
+        void ApplyMoonSlotFill(int statIndex, float ratio, bool hasData, float slotHeight)
         {
             if (segments == null || statIndex < 0 || statIndex >= segments.Length || segments[statIndex] == null)
                 return;
 
+            // --- Solid fill (value / global max) ---
             Image fill = segments[statIndex];
             fill.sprite = GetFillSprite();
             fill.type = Image.Type.Filled;
@@ -389,7 +411,7 @@ namespace TitanOrbit.UI
                 StretchRect(dim.rectTransform);
             }
 
-            ApplySlotFlex(statIndex, scaledBarHeight);
+            ApplySlotFlex(statIndex, slotHeight);
         }
 
         void ApplyBreakdownInternal(
@@ -470,7 +492,7 @@ namespace TitanOrbit.UI
 
                 ApplyEquipmentSegment(statA, segWA, hasData && pairActive, scaledBarHeight);
                 ApplyEquipmentSegment(statB, segWB, hasData && pairActive, scaledBarHeight);
-                ApplyPairWidth(statA, pairWidth, scaledBarHeight, flexible: false);
+                ApplyPairWidth(statA, pairWidth, scaledBarHeight, flexible: false, stackVertically: false, stackGap: 0f);
                 SetPairActive(statA, pairActive || !hasData);
             }
 
@@ -515,7 +537,17 @@ namespace TitanOrbit.UI
             slotLe.minHeight = scaledBarHeight;
         }
 
-        void ApplyPairWidth(int statIndex, float pairWidth, float scaledBarHeight, bool flexible)
+        /// <summary>
+        /// Sizes one ODEMC pair column and chooses side-by-side vs stacked children.
+        /// <paramref name="flexible"/> true = Orbit Menu equal columns; false = equipment pixel width.
+        /// </summary>
+        void ApplyPairWidth(
+            int statIndex,
+            float pairWidth,
+            float scaledBarHeight,
+            bool flexible,
+            bool stackVertically,
+            float stackGap)
         {
             if (segments == null || statIndex < 0 || statIndex >= segments.Length || segments[statIndex] == null)
                 return;
@@ -526,7 +558,7 @@ namespace TitanOrbit.UI
 
             var pairLe = pairTransform.GetComponent<LayoutElement>();
             if (pairLe == null)
-                return;
+                pairLe = pairTransform.gameObject.AddComponent<LayoutElement>();
 
             if (flexible)
             {
@@ -545,16 +577,15 @@ namespace TitanOrbit.UI
             pairLe.preferredHeight = scaledBarHeight;
             pairLe.minHeight = scaledBarHeight;
 
-            var pairHlg = pairTransform.GetComponent<HorizontalLayoutGroup>();
-            if (pairHlg != null)
-            {
-                pairHlg.childForceExpandWidth = flexible;
-                // Moon tree: gap between the two abilities in the pair. Equipment stays flush.
-                pairHlg.spacing = flexible ? MoonTreeInnerGapPx : 0f;
-            }
+            SetPairOrientation(pairTransform, stackVertically, stackGap, expandWidth: flexible);
         }
 
-        void ApplySlotFlex(int statIndex, float scaledBarHeight)
+        /// <summary>
+        /// Makes one ability lane fill the pair's width and use the stacked slot height.
+        /// Width is flexible so five columns share the track equally; height is fixed so
+        /// the two stacked fills plus the gutter equal the reserved bar height.
+        /// </summary>
+        void ApplySlotFlex(int statIndex, float slotHeight)
         {
             if (segments == null || statIndex < 0 || statIndex >= segments.Length || segments[statIndex] == null)
                 return;
@@ -570,8 +601,83 @@ namespace TitanOrbit.UI
             slotLe.preferredWidth = 0f;
             slotLe.flexibleWidth = 1f;
             slotLe.minWidth = 0f;
-            slotLe.preferredHeight = scaledBarHeight;
-            slotLe.minHeight = scaledBarHeight;
+            slotLe.preferredHeight = slotHeight;
+            slotLe.minHeight = slotHeight;
+            slotLe.flexibleHeight = 0f;
+        }
+
+        /// <summary>
+        /// Splits the reserved bar height into two stacked lanes plus a small gutter.
+        /// On a 10px tree bar that is 4 + 2 + 4. We never spend the whole height on
+        /// the gap — at least 1px stays for each fill so empty dim tracks still show.
+        /// </summary>
+        static void GetMoonTreeStackMetrics(float scaledBarHeight, out float slotHeight, out float stackGap)
+        {
+            stackGap = Mathf.Min(MoonTreeStackGapPx, Mathf.Max(0f, scaledBarHeight - 2f));
+            slotHeight = Mathf.Max(1f, (scaledBarHeight - stackGap) * 0.5f);
+        }
+
+        /// <summary>
+        /// Switches a category pair between side-by-side (equipment) and stacked (Orbit Menu).
+        /// [UNITY] <see cref="LayoutGroup"/> is <c>DisallowMultipleComponent</c>. A pair
+        /// GameObject can hold Horizontal <em>or</em> Vertical, never both — adding the
+        /// second type returns null. We remove the old group the same frame, then add
+        /// the one we need. After the first refresh the right group is already there.
+        /// </summary>
+        static void SetPairOrientation(Transform pairTransform, bool stackVertically, float stackGap, bool expandWidth)
+        {
+            if (pairTransform == null)
+                return;
+
+            GameObject go = pairTransform.gameObject;
+            if (stackVertically)
+            {
+                var vlg = ReplacePairLayout<VerticalLayoutGroup>(go);
+                if (vlg == null)
+                    return;
+                vlg.spacing = stackGap;
+                vlg.childAlignment = TextAnchor.MiddleCenter;
+                vlg.childControlWidth = true;
+                vlg.childControlHeight = true;
+                vlg.childForceExpandWidth = true;
+                vlg.childForceExpandHeight = false;
+                vlg.padding = new RectOffset(0, 0, 0, 0);
+            }
+            else
+            {
+                var hlg = ReplacePairLayout<HorizontalLayoutGroup>(go);
+                if (hlg == null)
+                    return;
+                hlg.spacing = 0f;
+                hlg.childAlignment = TextAnchor.MiddleLeft;
+                hlg.childControlWidth = true;
+                hlg.childControlHeight = true;
+                hlg.childForceExpandWidth = expandWidth;
+                hlg.childForceExpandHeight = true;
+                hlg.padding = new RectOffset(0, 0, 0, 0);
+            }
+        }
+
+        /// <summary>
+        /// Returns the pair's <typeparamref name="TLayout"/>, creating it after removing
+        /// any other <see cref="LayoutGroup"/>. Same-frame <c>Destroy</c> would still
+        /// block AddComponent, so this uses DestroyImmediate on the old group only.
+        /// </summary>
+        static TLayout ReplacePairLayout<TLayout>(GameObject go) where TLayout : LayoutGroup
+        {
+            if (go == null)
+                return null;
+
+            var existing = go.GetComponent<TLayout>();
+            if (existing != null)
+                return existing;
+
+            // Prefab pairs start with HorizontalLayoutGroup. Tear it down before stacking.
+            var other = go.GetComponent<LayoutGroup>();
+            if (other != null)
+                Object.DestroyImmediate(other);
+
+            return go.AddComponent<TLayout>();
         }
 
         void SetPairActive(int statIndex, bool active)

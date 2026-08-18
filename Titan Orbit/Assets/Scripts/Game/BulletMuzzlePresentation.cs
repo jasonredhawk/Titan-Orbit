@@ -18,10 +18,10 @@ namespace TitanOrbit.Game
     /// Prefers the live weapon component: <c>origin = weapon.position</c>, aim = <b>unbanked</b>
     /// planar <c>weapon.forward</c> (BankPivot roll stripped) + authored
     /// <see cref="ShipWeaponMountAuthoring.DirectionAngleDeg"/>. That keeps sequential fire aligned
-    /// with each barrel mesh. MEGA hulls skip the live GO and use ghosted turret yaw
-    /// (<see cref="MegaShipGunnerSlotElement.CurrentYawDeg"/>) so mixed Gun / Cannon /
-    /// Missile / Sniper prefabs cannot overwrite the server ray with a parent that still
-    /// faces hull-forward. Falls back to ECS <see cref="ShipWeaponPose"/> when no live GO.
+    /// with each barrel mesh. MEGA hulls skip the live GO and LookAt the ghosted world
+    /// aim point (or the owner's live Shift mouse) so mixed Gun / Cannon / Missile /
+    /// Sniper prefabs cannot overwrite the server ray with a parent that still faces
+    /// hull-forward. Falls back to ECS <see cref="ShipWeaponPose"/> when no live GO.
     /// Velocity is <c>aim * BulletSpeed + shipVel</c> (planar). Damage is server-side.
     /// </para>
     /// </summary>
@@ -92,7 +92,7 @@ namespace TitanOrbit.Game
             // forward. Anticipation + TryReprojectSpawn then overwrite the server ray
             // with that parent forward, so tracers look like they only fire ahead while
             // hits still land on the aimed target. Use the same yaw the server wrote
-            // onto MegaShipGunnerSlotElement.CurrentYawDeg.
+            // onto MegaShipGunnerSlotElement.CurrentYawDeg (world heading while tracking).
             if (IsMegaHull(em, shipEntity)
                 && TryResolveMegaMuzzle(
                     em, shipEntity, mountIndex,
@@ -348,10 +348,9 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// MEGA muzzle from hull pose + ghosted mount yaw — same ray Phase B uses.
-        /// <see cref="ShipWeaponMountElement.LocalRotation"/> is not ghosted; the client
-        /// rest pose is the bake facing. Overlay <see cref="MegaShipGunnerSlotElement.CurrentYawDeg"/>
-        /// before <see cref="ShipWeaponPose.TryResolve"/>.
+        /// MEGA muzzle from hull pose + ghosted world fire heading (same ray Phase B used).
+        /// Do not LookAt a lagged aim point from the predicted muzzle — that over-rotates
+        /// while the hull moves.
         /// </summary>
         static bool TryResolveMegaMuzzle(
             EntityManager em,
@@ -372,16 +371,7 @@ namespace TitanOrbit.Game
             if (!TryGetMountElementFromBuffer(em, shipEntity, mountIndex, out ShipWeaponMountElement mount))
                 return false;
 
-            // --- Overlay ghosted yaw (server wrote this when the turret slewed) ---
-            if (em.HasBuffer<MegaShipGunnerSlotElement>(shipEntity))
-            {
-                var gunners = em.GetBuffer<MegaShipGunnerSlotElement>(shipEntity);
-                if (mountIndex >= 0 && mountIndex < gunners.Length)
-                {
-                    mount.LocalRotation = quaternion.AxisAngle(
-                        math.up(), math.radians(gunners[mountIndex].CurrentYawDeg));
-                }
-            }
+            OverlayMegaMountAim(em, shipEntity, mountIndex, in shipTransform, ref mount);
 
             if (!ShipWeaponPose.TryResolve(shipTransform, mount, out fireOrigin, out fireForward))
                 return false;
@@ -400,6 +390,60 @@ namespace TitanOrbit.Game
             else
                 fireForward = math.normalize(fireForward);
             return true;
+        }
+
+        /// <summary>
+        /// Overlay the ghosted world fire heading (or live Shift mouse dir) as hull-local
+        /// yaw using the current hull — same world ray, no lagged-point LookAt.
+        /// </summary>
+        static void OverlayMegaMountAim(
+            EntityManager em,
+            Entity shipEntity,
+            int mountIndex,
+            in LocalTransform shipTransform,
+            ref ShipWeaponMountElement mount)
+        {
+            bool occupied = false;
+            MegaShipGunnerSlotElement slot = default;
+            bool haveSlot = false;
+            if (em.HasBuffer<MegaShipGunnerSlotElement>(shipEntity))
+            {
+                var gunners = em.GetBuffer<MegaShipGunnerSlotElement>(shipEntity);
+                if (mountIndex >= 0 && mountIndex < gunners.Length)
+                {
+                    slot = gunners[mountIndex];
+                    haveSlot = true;
+                    occupied = slot.OccupiedByNetworkId != 0;
+                }
+            }
+
+            if (!occupied
+                && em.HasComponent<LocalPlayerShipTag>(shipEntity)
+                && em.HasComponent<ShipInput>(shipEntity))
+            {
+                var input = em.GetComponentData<ShipInput>(shipEntity);
+                float3 mouseDir = new float3(input.AimPlanarDir.x, 0f, input.AimPlanarDir.y);
+                if (input.Overdrive && math.lengthsq(mouseDir) >= 0.01f)
+                {
+                    MegaShipWeaponAim.RotateMountTowardWorldDir(
+                        in shipTransform, ref mount, math.normalize(mouseDir), 0f);
+                    return;
+                }
+            }
+
+            if (!haveSlot)
+                return;
+
+            if (MegaShipWeaponAim.IsTrackingAim(in slot))
+            {
+                MegaShipWeaponAim.RotateMountTowardWorldDir(
+                    in shipTransform, ref mount,
+                    MegaShipWeaponAim.WorldDirFromYawDeg(slot.CurrentYawDeg), 0f);
+                return;
+            }
+
+            mount.LocalRotation = quaternion.AxisAngle(
+                math.up(), math.radians(slot.CurrentYawDeg));
         }
 
         /// <summary>
