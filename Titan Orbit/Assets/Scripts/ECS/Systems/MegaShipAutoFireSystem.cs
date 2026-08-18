@@ -13,31 +13,28 @@ using Unity.Transforms;
 namespace TitanOrbit.ECS
 {
     /// <summary>
-    /// Server: unoccupied MEGA mounts auto-aim like planetary turrets, but only fire when
-    /// the MEGA owner's <see cref="ShipInput.Fire"/> is held. Occupied mounts are skipped
-    /// (the gunner's Fire drives those in <see cref="BulletSimulationSystem"/> Phase B)
-    /// unless the owner holds Shift — then unoccupied auto-guns aim at the mouse
-    /// (occupied gunner mounts keep their own aim).
+    /// Server: MEGA mounts auto-aim like planetary turrets, but only fire when the MEGA
+    /// owner's <see cref="ShipInput.Fire"/> is held. Only the ship owner aims these guns —
+    /// there is no remote Take Control path.
     /// Damage mode aims at the nearest enemy ship, planetary turret, or enemy moon.
     /// Heal mode aims at the nearest friendly ship. Asteroids are targeted only when
     /// <see cref="TitanOrbitDebugFlags.MegaShipsAutoFireAsteroids"/> is on (Editor / MPPM host).
     /// <para>
-    /// Each unoccupied gun searches from its own muzzle for the closest in-range target
+    /// Each gun searches from its own muzzle for the closest in-range target
     /// when Fire is pressed. Locks stay until that target dies, leaves that gun's range,
     /// or the owner releases Fire (release clears locks so the next press re-acquires).
     /// If a gun finds nothing, it fires along hull forward until Fire is released.
     /// Aim points are lead intercepts from <see cref="MegaShipLeadAim"/> — target velocity
     /// minus this hull's velocity — so inherited <c>shipVel</c> on the bullet does not
-    /// undershoot. Unoccupied turrets slew toward that lock (or hull forward) before
+    /// undershoot. Turrets slew toward that lock (or hull forward) before
     /// Phase B so shots leave along the barrel — the same ray regular ships use.
     /// <see cref="BulletSimulationSystem"/> Phase B fires ready mounts along
     /// <see cref="ShipWeaponPose"/> barrel forward.
     /// </para>
     /// <para>
     /// [TITAN-ORBIT] MEGAs have no overdrive. <see cref="ShipInput.Overdrive"/> (Shift)
-    /// locks hull heading and points each unoccupied auto-gun at the mouse
+    /// locks hull heading and points each gun at the mouse
     /// world point (<see cref="ShipInput.AimPlanarDir"/> × <see cref="ShipInput.AimDistance"/>).
-    /// Occupied mounts stay with their gunner.
     /// Fire is still required to spend energy.
     /// </para>
     /// Map size comes from <see cref="MapStateSingleton"/>. Distances use
@@ -106,7 +103,7 @@ namespace TitanOrbit.ECS
                 if (!EntityManager.GetComponentData<MegaShipState>(megas[i]).IsMega)
                     continue;
 
-                // Shift = heading lock + mouse-aim unoccupied auto-guns (no overdrive on MEGAs).
+                // Shift = heading lock + mouse-aim all MEGA guns (no overdrive on MEGAs).
                 // Keep barrels tracking the cursor even before Fire is held.
                 bool ownerShift = IsOwnerShiftHeld(megas[i]);
                 bool wantsFire = OwnerWantsFire(megas[i]);
@@ -183,9 +180,8 @@ namespace TitanOrbit.ECS
                 bool ownerShift = IsOwnerShiftHeld(mega);
                 bool ownerWantsFire = OwnerWantsFire(mega);
 
-                // --- Shift: unoccupied auto-guns look at the mouse ---
+                // --- Shift: all MEGA guns look at the mouse ---
                 // [TITAN-ORBIT] Owner Shift is the MEGA "strafe / lock heading" mode.
-                // Occupied mounts are left for MegaShipPlayerCombatSystem + the gunner.
                 // Auto-locks stay cleared so releasing Shift re-acquires from scratch.
                 if (ownerShift)
                 {
@@ -207,12 +203,6 @@ namespace TitanOrbit.ECS
                 int emptySlots = 0;
                 for (int m = 0; m < mountCount; m++)
                 {
-                    if (gunners.IsCreated && m < gunners.Length && gunners[m].OccupiedByNetworkId != 0)
-                    {
-                        aims[m] = default;
-                        continue;
-                    }
-
                     var slot = aims[m];
                     if (slot.Target == mega)
                         continue;
@@ -257,8 +247,6 @@ namespace TitanOrbit.ECS
 
                     for (int m = 0; m < mountCount; m++)
                     {
-                        if (gunners.IsCreated && m < gunners.Length && gunners[m].OccupiedByNetworkId != 0)
-                            continue;
                         if (aims[m].Target != Entity.Null)
                             continue;
 
@@ -329,9 +317,8 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// Slews each unoccupied mount toward its sticky lock (toroidal muzzle→AimPoint)
-        /// or hull forward when the slot is parked. Occupied mounts are slewed by
-        /// <see cref="MegaShipPlayerCombatSystem"/>.
+        /// Slews each mount toward its sticky lock (toroidal muzzle→AimPoint)
+        /// or hull forward when the slot is parked.
         /// </summary>
         void RotateUnoccupiedMountsTowardAim(
             EntityManager em,
@@ -364,8 +351,6 @@ namespace TitanOrbit.ECS
             int mountCount = mounts.Length;
             for (int m = 0; m < mountCount; m++)
             {
-                if (gunners.IsCreated && m < gunners.Length && gunners[m].OccupiedByNetworkId != 0)
-                    continue;
                 if (m >= aims.Length || aims[m].Target == Entity.Null)
                     continue;
 
@@ -462,8 +447,8 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// Drop all sticky locks and clear unoccupied ghosted aim so clients park those
-        /// barrels on the hull. Next Fire press runs a fresh per-muzzle search.
+        /// Drop all sticky locks and clear ghosted aim so clients park barrels on the hull.
+        /// Next Fire press runs a fresh per-muzzle search.
         /// </summary>
         void ClearAimSlots(Entity mega)
         {
@@ -806,8 +791,8 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// Snap each unoccupied auto-gun toward the owner's mouse <b>point</b>, not a
-        /// shared world direction. Occupied gunner mounts are skipped.
+        /// Snap each MEGA gun toward the owner's mouse <b>point</b>, not a
+        /// shared world direction.
         /// <para>
         /// [TITAN-ORBIT] A single hull-center direction makes every barrel fire
         /// parallel — fine on a tiny fighter, wrong on a wide MEGA. Reconstruct the
@@ -855,9 +840,6 @@ namespace TitanOrbit.ECS
             int mountCount = mounts.Length;
             for (int m = 0; m < mountCount; m++)
             {
-                if (gunners.IsCreated && m < gunners.Length && gunners[m].OccupiedByNetworkId != 0)
-                    continue;
-
                 var mount = mounts[m];
                 float3 desired = hullForward;
                 float targetDist = 0f;

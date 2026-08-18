@@ -90,7 +90,7 @@ namespace TitanOrbit.Game
         [Header("Ship Propulsion VFX")]
         [SerializeField] ShipPropulsionVisualApplier.Settings propulsionVfxSettings;
 
-        // Ship banking knobs live on ShipBankVisualSettings (Resources default + family field).
+        // Ship banking knobs live on ShipBankVisualSettings (Resources default, family field, or MegaShipCatalog).
 
         // --- Runtime proxy registries (entity → GameObject) ---
 
@@ -441,7 +441,8 @@ namespace TitanOrbit.Game
 
             // --- Ship banking (cosmetic roll) ---
             // [TITAN-ORBIT] Shared profile on Resources/ShipBankVisualSettings; families may
-            // override via ShipFamilyDefinition.bankVisualSettings (same pattern as damage smoke).
+            // override via ShipFamilyDefinition.bankVisualSettings. MEGAs bind
+            // MegaShipCatalog.bankVisualSettings on the hybrid proxy instead of this cache.
             PublishShipBankVisualSettings();
         }
 
@@ -2276,11 +2277,12 @@ namespace TitanOrbit.Game
             propulsionVisual.Bind(entity, familyPrefix, propulsionVfxSettings, bindFamily);
 
             // --- Cosmetic bank (roll while turning) ---
-            // [HYBRID] Profile from ShipFamilyDefinition.bankVisualSettings (shared asset today).
+            // [HYBRID] MEGA hulls use MegaShipCatalog.bankVisualSettings; regular families
+            // use ShipFamilyDefinition.bankVisualSettings (shared Resources default today).
             var bankVisual = go.GetComponent<ShipBankVisualApplier>();
             if (bankVisual == null)
                 bankVisual = go.AddComponent<ShipBankVisualApplier>();
-            bankVisual.Bind(entity, ShipBankVisualSettings.ResolveForFamily(bindFamily));
+            bankVisual.Bind(entity, ShipBankVisualSettings.ResolveForChassis(chassisId, bindFamily));
 
             // --- Damage smoke (hull HP → trail density) ---
             // [HYBRID] Cosmetic only — profile from ShipFamilyDefinition.damageSmokeSettings.
@@ -2479,14 +2481,12 @@ namespace TitanOrbit.Game
         /// <param name="shipEntity">Ship ghost entity already in hand from the ship loop.</param>
         /// <returns>True when MoonPlanetId is set and landing progress is at the complete threshold.</returns>
         /// <summary>
-        /// True when the hull is hidden on a planetary turret pad or a MEGA gun pad.
+        /// True when the hull is hidden on a planetary turret pad.
         /// </summary>
         static bool IsShipHullStowed(EntityManager em, Entity shipEntity)
         {
-            if (em.HasComponent<ShipTurretControlState>(shipEntity)
-                && em.GetComponentData<ShipTurretControlState>(shipEntity).IsControlling)
-                return true;
-            return MegaShipGunnerLogic.IsControllingMegaGun(em, shipEntity);
+            return em.HasComponent<ShipTurretControlState>(shipEntity)
+                && em.GetComponentData<ShipTurretControlState>(shipEntity).IsControlling;
         }
 
         static bool IsShipFullyLandedOnMoon(EntityManager em, Entity shipEntity)

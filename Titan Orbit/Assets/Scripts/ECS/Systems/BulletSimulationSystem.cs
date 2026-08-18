@@ -37,8 +37,8 @@ namespace TitanOrbit.ECS
     /// wing muzzles inside side rocks must not count); (2) substep advance when travel is large
     /// vs <see cref="GemEconomyConstants.MinAsteroidHitRadius"/>; (3) collide before lifetime cull.
     /// MEGA hulls use this same Phase B spawn + collide along barrel forward after
-    /// <see cref="MegaShipAutoFireSystem"/> / <see cref="MegaShipPlayerCombatSystem"/> slew
-    /// the mount. Do not spawn MEGA rounds in another system.
+    /// <see cref="MegaShipAutoFireSystem"/> slews the mount. Do not spawn MEGA rounds
+    /// in another system.
     /// </para>
     /// Broadcasts <see cref="BulletSpawnRpc"/> / <see cref="BulletHitRpc"/> via
     /// <see cref="BulletNetNotify"/>. Damage is server-only. Not Burst-compiled — managed notify.
@@ -93,7 +93,6 @@ namespace TitanOrbit.ECS
         EntityQuery _asteroidHashQuery;
         EntityQuery _transportHashQuery;
         EntityQuery _defensePlanetQuery;
-        EntityQuery _megaGunnerQuery;
         EntityQuery _planetSweepQuery;
 
         /// <summary>Broadphase built once per tick — used by <see cref="TryResolveBulletHit"/>.</summary>
@@ -103,17 +102,6 @@ namespace TitanOrbit.ECS
 
         /// <summary>Resources.Load once — Phase B used to call LoadDefault every tick.</summary>
         static BulletVfxBank s_CachedVfxBank;
-
-        struct MegaGunnerFireCache
-        {
-            public int MegaOwnerNetworkId;
-            public byte MountIndex;
-            public int GunnerNetworkId;
-            public bool Fire;
-            public bool Shocked;
-        }
-
-        static readonly List<MegaGunnerFireCache> s_MegaGunnerFire = new List<MegaGunnerFireCache>(16);
 
         /// <summary>Require bullet singleton before ticking.</summary>
         public void OnCreate(ref SystemState state)
@@ -147,11 +135,6 @@ namespace TitanOrbit.ECS
                 ComponentType.ReadOnly<PlanetState>(),
                 ComponentType.ReadOnly<LocalTransform>(),
                 ComponentType.ReadOnly<PlanetaryDefenseSlotElement>());
-            _megaGunnerQuery = state.GetEntityQuery(
-                ComponentType.ReadOnly<ShipTag>(),
-                ComponentType.ReadOnly<ShipMegaGunControlState>(),
-                ComponentType.ReadOnly<ShipInput>(),
-                ComponentType.ReadOnly<GhostOwner>());
             _planetSweepQuery = state.GetEntityQuery(
                 ComponentType.ReadOnly<PlanetTag>(),
                 ComponentType.ReadOnly<PlanetState>(),
@@ -322,7 +305,6 @@ namespace TitanOrbit.ECS
             // --- Phase B: ship firing + same-frame spawn collide ---
             // [TITAN-ORBIT] Category Upgrade Visual Scale from the cached Resources bank.
             var vfxBankForScale = s_CachedVfxBank;
-            RebuildMegaGunnerFireCache(ref state, serverElapsed);
 
             foreach (var (input, weaponCfg, weaponState, shipState, kinematics, transform, ghostOwner, entity) in SystemAPI
                          .Query<RefRO<ShipInput>, RefRO<ShipWeaponConfig>, RefRW<ShipWeaponState>, RefRW<ShipState>, RefRO<ShipKinematics>, RefRO<LocalTransform>, RefRO<GhostOwner>>()
@@ -335,11 +317,6 @@ namespace TitanOrbit.ECS
                 // --- Turret possession: Fire drives the pad, not ship mounts ---
                 if (SystemAPI.HasComponent<ShipTurretControlState>(entity) &&
                     SystemAPI.GetComponentRO<ShipTurretControlState>(entity).ValueRO.IsControlling)
-                    continue;
-
-                // --- MEGA gunner: Fire drives the borrowed MEGA mount, not this hull's guns ---
-                if (SystemAPI.HasComponent<ShipMegaGunControlState>(entity) &&
-                    SystemAPI.GetComponentRO<ShipMegaGunControlState>(entity).ValueRO.IsControlling)
                     continue;
 
                 // [TITAN-ORBIT] Empty mounts = intentional unarmed — no fire, no default muzzle.
@@ -476,9 +453,8 @@ namespace TitanOrbit.ECS
 
         /// <summary>
         /// MEGA Phase B: same <see cref="ResolveFirePose"/> + <see cref="SpawnAndCollideShipBullet"/>
-        /// as regular hulls (barrel origin + barrel forward). Owner Fire skips occupied mounts;
-        /// occupied mounts fire when that gunner holds Fire. Owner Shift only changes where
-        /// unoccupied auto-guns point (mouse), not who may fire them. Per-mount FirePower / energy stay.
+        /// as regular hulls (barrel origin + barrel forward). Only the MEGA owner may fire.
+        /// Owner Shift changes where guns point (mouse). Per-mount FirePower / energy stay.
         /// Lead intercept distance from <see cref="MegaShipAutoAimSlotElement"/> grows
         /// <c>MaxDistance</c> so fleeing shots are not culled early.
         /// </summary>
@@ -504,10 +480,6 @@ namespace TitanOrbit.ECS
             Entity gemPrefab,
             float gemSpawnServerTime)
         {
-            var gunners = state.EntityManager.HasBuffer<MegaShipGunnerSlotElement>(mega)
-                ? state.EntityManager.GetBuffer<MegaShipGunnerSlotElement>(mega)
-                : default;
-
             int megaOwnerNet = ghostOwner.NetworkId;
             float energy = shipState.CurrentEnergy;
 
@@ -521,17 +493,7 @@ namespace TitanOrbit.ECS
                 if (mount.FireCooldown > 0.001f || mount.FirePower <= 0.01f)
                     continue;
 
-                bool occupied = gunners.IsCreated && m < gunners.Length &&
-                                gunners[m].OccupiedByNetworkId != 0;
-                int shotOwnerNet = megaOwnerNet;
-                if (occupied)
-                {
-                    if (!TryGetMegaGunnerFire(
-                            megaOwnerNet, (byte)m,
-                            out bool fire, out shotOwnerNet) || !fire)
-                        continue;
-                }
-                else if (!ownerMayFire)
+                if (!ownerMayFire)
                     continue;
 
                 if (energy < mount.FirePower)
@@ -547,7 +509,7 @@ namespace TitanOrbit.ECS
                     fireOrigin, fireForward, mount.FirePower,
                     weaponCfg, in mount, bankIndex, firePowerExtras: 0,
                     categoryUpgradeScale, shipVel,
-                    shotOwnerNet, (byte)shipState.Team,
+                    megaOwnerNet, (byte)shipState.Team,
                     dt, gemPrefab, gemSpawnServerTime, mapW, mapH,
                     moonElapsed, serverElapsed,
                     interceptDistance);
@@ -559,64 +521,6 @@ namespace TitanOrbit.ECS
             }
 
             shipState.CurrentEnergy = math.max(0f, energy);
-        }
-
-        /// <summary>
-        /// One NativeArray gather per tick — occupied MEGA mounts used to allocate
-        /// four arrays each time a ready barrel asked who was holding Fire.
-        /// </summary>
-        void RebuildMegaGunnerFireCache(ref SystemState state, double serverElapsed)
-        {
-            s_MegaGunnerFire.Clear();
-            using var entities = _megaGunnerQuery.ToEntityArray(Allocator.Temp);
-            using var controls = _megaGunnerQuery.ToComponentDataArray<ShipMegaGunControlState>(Allocator.Temp);
-            using var inputs = _megaGunnerQuery.ToComponentDataArray<ShipInput>(Allocator.Temp);
-            using var ghosts = _megaGunnerQuery.ToComponentDataArray<GhostOwner>(Allocator.Temp);
-            for (int i = 0; i < entities.Length; i++)
-            {
-                var control = controls[i];
-                if (!control.IsControlling)
-                    continue;
-
-                bool shocked = state.EntityManager.HasComponent<ShipElectricShockState>(entities[i]) &&
-                               state.EntityManager.GetComponentData<ShipElectricShockState>(entities[i])
-                                   .IsActive(serverElapsed);
-                s_MegaGunnerFire.Add(new MegaGunnerFireCache
-                {
-                    MegaOwnerNetworkId = control.MegaOwnerNetworkId,
-                    MountIndex = control.MountIndex,
-                    GunnerNetworkId = ghosts[i].NetworkId,
-                    Fire = inputs[i].Fire.IsSet,
-                    Shocked = shocked,
-                });
-            }
-        }
-
-        /// <summary>Whether the gunner on this occupied MEGA mount is holding Fire.</summary>
-        static bool TryGetMegaGunnerFire(
-            int megaOwnerNetworkId,
-            byte mountIndex,
-            out bool fire,
-            out int gunnerNetworkId)
-        {
-            fire = false;
-            gunnerNetworkId = 0;
-            for (int i = 0; i < s_MegaGunnerFire.Count; i++)
-            {
-                var row = s_MegaGunnerFire[i];
-                if (row.MegaOwnerNetworkId != megaOwnerNetworkId)
-                    continue;
-                if (row.MountIndex != mountIndex)
-                    continue;
-                if (row.Shocked)
-                    return false;
-
-                fire = row.Fire;
-                gunnerNetworkId = row.GunnerNetworkId;
-                return fire;
-            }
-
-            return false;
         }
 
         /// <summary>

@@ -130,9 +130,8 @@ namespace TitanOrbit.ECS.Authoring
                 AddComponent(entity, new ShipMoonDockState());
                 // [NETCODE] Turret possession mode — must bake so IsControlling / PlanetId replicate.
                 AddComponent(entity, new ShipTurretControlState());
-                // [NETCODE] MEGA identity + gunner possession — must bake so GhostFields replicate.
+                // [NETCODE] MEGA identity + per-mount aim slots — must bake so GhostFields replicate.
                 AddComponent(entity, new MegaShipState());
-                AddComponent(entity, new ShipMegaGunControlState());
                 AddBuffer<MegaShipGunnerSlotElement>(entity);
                 AddComponent(entity, new ShipDepositIntent());
                 // [NETCODE] Server bumps BeatSequence each deposit chunk; clients play SFX/UI from it.

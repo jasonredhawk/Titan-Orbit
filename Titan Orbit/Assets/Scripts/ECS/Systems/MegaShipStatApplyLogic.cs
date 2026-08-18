@@ -22,7 +22,7 @@ namespace TitanOrbit.ECS
         static readonly List<Transform> WeaponAssemblyScratch = new List<Transform>(16);
 
         /// <summary>
-        /// Applies frozen MEGA stats and resizes the gunner-pad buffer to match weapon mounts.
+        /// Applies frozen MEGA stats and resizes the ghosted aim-slot buffer to match weapon mounts.
         /// </summary>
         public static void ApplyToShip(
             EntityManager em,
@@ -135,7 +135,7 @@ namespace TitanOrbit.ECS
                 motor.RammingPower = Mathf.Max(0f, effective.rammingPower);
                 motor.ThrustEnergyDrainPerSecond = 2f;
                 // [TITAN-ORBIT] MEGAs have no overdrive. Shift locks heading and aims
-                // unoccupied auto-guns at the mouse — keep OD multipliers at 1 so HUD / motor stay flat.
+                // all MEGA guns at the mouse — keep OD multipliers at 1 so HUD / motor stay flat.
                 motor.OverdriveSpeedMultiplier = 1f;
                 motor.OverdriveThrustMultiplier = 1f;
                 motor.OverdriveEnergyDrainMultiplier = 1f;
@@ -248,7 +248,7 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// On MEGA death: free the planet slot and eject gunners, but keep
+        /// On MEGA death: free the planet slot, but keep
         /// <see cref="MegaShipState.IsMega"/> so clients still show the MEGA hull for the
         /// cosmetic breakup. Call <see cref="RestorePreviousHull"/> on respawn.
         /// </summary>
@@ -262,7 +262,6 @@ namespace TitanOrbit.ECS
                 return;
 
             MegaShipPlanetLogic.FreeSlot(em, mega.StorePlanetId, mega.MegaSlotIndex);
-            MegaShipGunnerLogic.EjectAllGunners(em, shipEntity);
             if (em.HasBuffer<MegaShipGunnerSlotElement>(shipEntity))
                 em.GetBuffer<MegaShipGunnerSlotElement>(shipEntity).Clear();
         }
@@ -288,7 +287,6 @@ namespace TitanOrbit.ECS
             byte prevFamily = mega.PreviousFamilyIndex;
 
             mega.IsMega = false;
-            mega.GunsLocked = false;
             mega.CatalogIndex = 0;
             mega.StorePlanetId = 0;
             em.SetComponentData(shipEntity, mega);
@@ -302,7 +300,7 @@ namespace TitanOrbit.ECS
             ShipStatApplyLogic.ApplyToShip(em, shipEntity, ship.Team, prevLevel, prevBranch);
         }
 
-        /// <summary>Keeps gunner slots 1:1 with weapon mounts (empty occupancy).</summary>
+        /// <summary>Keeps ghosted MEGA aim slots 1:1 with weapon mounts.</summary>
         public static void ResizeGunnerSlots(EntityManager em, Entity shipEntity)
         {
             if (!em.HasBuffer<MegaShipGunnerSlotElement>(shipEntity))
@@ -328,7 +326,6 @@ namespace TitanOrbit.ECS
                 gunners.Add(new MegaShipGunnerSlotElement
                 {
                     MountIndex = (byte)i,
-                    OccupiedByNetworkId = 0,
                     CurrentYawDeg = yaw,
                     TargetDistance = 0f,
                     AimWorldX = 0f,

@@ -13,9 +13,9 @@ namespace TitanOrbit.Game
     /// EcsWorldVisualizer does not overwrite it. Reads ShipKinematics for idle detection and yaw rate
     /// from proxy rotation. Suppressed during moon dock. Cosmetic only — no sim effect.
     /// <para>
-    /// Tune Max Bank / Sensitivity / Smoothing on <see cref="ShipBankVisualSettings"/>
-    /// (family field or Resources default). Bound assets are sampled each frame so
-    /// Inspector tweaks apply without respawning.
+    /// Tune Max Bank / Sensitivity / Smoothing / Reference Turn on <see cref="ShipBankVisualSettings"/>
+    /// (family field, <see cref="MegaShipCatalog.bankVisualSettings"/>, or Resources default).
+    /// Bound assets are sampled each frame so Inspector tweaks apply without respawning.
     /// </para>
     /// </summary>
     [DefaultExecutionOrder(85)]
@@ -199,6 +199,15 @@ namespace TitanOrbit.Game
                 ? _settings.ClampedBankSensitivity
                 : ShipBankVisualSettingsCache.BankSensitivity;
 
+        /// <summary>
+        /// Yaw rate (°/s) treated as full turn. MEGA assets author a low reference so
+        /// slow hulls still reach peak roll.
+        /// </summary>
+        float ResolveReferenceTurn() =>
+            _settings != null
+                ? _settings.ResolveReferenceTurnDegreesPerSecond()
+                : ShipBankVisualSettingsCache.ReferenceTurnDegreesPerSecond;
+
         /// <summary>Smooths yaw rate from proxy root rotation (presentation pose).</summary>
         void SampleBankAngularVelocity(float dt, float smoothing)
         {
@@ -249,12 +258,11 @@ namespace TitanOrbit.Game
                 && Mathf.Abs(signedAngularVelDegPerSec) < IdleBankAngularVelDeadbandDegPerSec)
                 signedAngularVelDegPerSec = 0f;
 
-            // --- Target bank from turn rate + family / shared asset sensitivity ---
-            float globalMaxTurnDegPerSec = ShipPropulsionAggregation.GetGlobalMaxTurnSpeedDegreesPerSecond();
+            // --- Target bank from turn rate + bound asset (MEGA catalog or family) ---
             float targetBankAngle = ShipPropulsionAggregation.ComputeVisualBankTargetAngle(
                 signedAngularVelDegPerSec,
                 ResolveMaxBankAngle(),
-                globalMaxTurnDegPerSec,
+                ResolveReferenceTurn(),
                 ResolveSensitivity());
 
             float bankT = 1f - Mathf.Exp(-smoothing * dt);

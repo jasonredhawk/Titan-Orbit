@@ -176,7 +176,7 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Rewrites a spawn onto the shooter's drawn barrel (local, remote, or MEGA gunner).
+        /// Rewrites a spawn onto the shooter's drawn barrel (local MEGA or remote hull).
         /// Returns false when the hull/mount cannot be resolved — caller keeps server pose.
         /// Flight origin is always logical; display unwrap is render-only.
         /// </summary>
@@ -240,8 +240,8 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Hull that actually fired: MEGA when the owner is a gunner, otherwise the owner's ship.
-        /// Walks hybrid proxies only — no ship <c>ToEntityArray</c>.
+        /// Hull that actually fired: the owner's ship. Walks hybrid proxies only —
+        /// no ship <c>ToEntityArray</c>.
         /// </summary>
         public static bool TryResolveShooterHull(
             EntityManager em,
@@ -254,18 +254,6 @@ namespace TitanOrbit.Game
             mountIndex = requestedMount;
             if (!TryFindShipProxyByNetworkId(em, ownerNetworkId, out Entity ownerShip))
                 return false;
-
-            if (em.HasComponent<ShipMegaGunControlState>(ownerShip))
-            {
-                var control = em.GetComponentData<ShipMegaGunControlState>(ownerShip);
-                if (control.IsControlling &&
-                    TryFindShipProxyByNetworkId(em, control.MegaOwnerNetworkId, out Entity mega))
-                {
-                    hullEntity = mega;
-                    mountIndex = control.MountIndex;
-                    return true;
-                }
-            }
 
             hullEntity = ownerShip;
             return true;
@@ -403,7 +391,6 @@ namespace TitanOrbit.Game
             in LocalTransform shipTransform,
             ref ShipWeaponMountElement mount)
         {
-            bool occupied = false;
             MegaShipGunnerSlotElement slot = default;
             bool haveSlot = false;
             if (em.HasBuffer<MegaShipGunnerSlotElement>(shipEntity))
@@ -413,12 +400,10 @@ namespace TitanOrbit.Game
                 {
                     slot = gunners[mountIndex];
                     haveSlot = true;
-                    occupied = slot.OccupiedByNetworkId != 0;
                 }
             }
 
-            if (!occupied
-                && em.HasComponent<LocalPlayerShipTag>(shipEntity)
+            if (em.HasComponent<LocalPlayerShipTag>(shipEntity)
                 && em.HasComponent<ShipInput>(shipEntity))
             {
                 var input = em.GetComponentData<ShipInput>(shipEntity);

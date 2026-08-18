@@ -128,14 +128,6 @@ namespace TitanOrbit.Game
 
             float dt = Time.deltaTime;
 
-            // --- MEGA gunner: Fire drives the borrowed MEGA mount, not this hull's guns ---
-            if (MegaShipGunnerLogic.IsControllingMegaGun(world.EntityManager, shipEntity))
-            {
-                TryEnqueueMegaGunnerFire(
-                    world.EntityManager, shipEntity, ownerNetworkId, fireHeld, dt);
-                return;
-            }
-
             // --- Need ECS mounts for per-barrel cooldown + damage (live GO count alone is not enough) ---
             if (!world.EntityManager.HasBuffer<ShipWeaponMountElement>(shipEntity))
                 return;
@@ -293,9 +285,8 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// MEGA owner anticipation: every ready unoccupied mount (same independent cadence
-        /// as server Phase B). Occupied mounts belong to the gunner, including while
-        /// the owner holds Shift (only free auto-guns follow the mouse).
+        /// MEGA owner anticipation: every ready mount (same independent cadence
+        /// as server Phase B). Only the MEGA owner fires these barrels.
         /// </summary>
         bool TryPlanMegaOwnerFire(
             EntityManager em,
@@ -308,16 +299,10 @@ namespace TitanOrbit.Game
             shotCount = 0;
             energySpend = 0f;
 
-            var gunners = em.HasBuffer<MegaShipGunnerSlotElement>(mega)
-                ? em.GetBuffer<MegaShipGunnerSlotElement>(mega)
-                : default;
             float energy = _predictedEnergy;
             int cap = math.min(mounts.Length, ShipWeaponFireLogic.MaxShotsPerTick);
             for (int m = 0; m < cap; m++)
             {
-                if (gunners.IsCreated && m < gunners.Length && gunners[m].OccupiedByNetworkId != 0)
-                    continue;
-
                 var mount = mounts[m];
                 if (mount.FireCooldown > 0.001f || mount.FirePower <= 0.01f)
                     continue;
@@ -337,128 +322,6 @@ namespace TitanOrbit.Game
             }
 
             return shotCount > 0;
-        }
-
-        /// <summary>
-        /// Anticipation for a gunner on an occupied MEGA mount. Fire leaves the borrowed barrel
-        /// and spends the MEGA energy pool (same as server Phase B).
-        /// </summary>
-        void TryEnqueueMegaGunnerFire(
-            EntityManager em,
-            Entity gunnerShip,
-            int gunnerNetworkId,
-            bool fireHeld,
-            float dt)
-        {
-            if (!em.HasComponent<ShipMegaGunControlState>(gunnerShip))
-                return;
-
-            var control = em.GetComponentData<ShipMegaGunControlState>(gunnerShip);
-            if (!control.IsControlling)
-                return;
-
-            if (!BulletMuzzlePresentation.TryFindShipProxyByNetworkId(
-                    em, control.MegaOwnerNetworkId, out Entity mega))
-                return;
-
-            if (!em.HasBuffer<ShipWeaponMountElement>(mega) || !em.HasComponent<ShipWeaponConfig>(mega)
-                || !em.HasComponent<ShipState>(mega))
-                return;
-
-            var mounts = em.GetBuffer<ShipWeaponMountElement>(mega);
-            ShipWeaponFireLogic.TickMountCooldowns(mounts, dt);
-            if (!fireHeld)
-                return;
-
-            if (em.HasComponent<ShipOrbitState>(mega) &&
-                em.GetComponentData<ShipOrbitState>(mega).InOrbitRing)
-                return;
-
-            if (em.HasComponent<ShipElectricShockState>(gunnerShip) &&
-                em.GetComponentData<ShipElectricShockState>(gunnerShip).IsActive(em.World.Time.ElapsedTime))
-                return;
-
-            int mountIdx = control.MountIndex;
-            if (mountIdx < 0 || mountIdx >= mounts.Length)
-                return;
-
-            var megaState = em.GetComponentData<ShipState>(mega);
-            if (megaState.IsDead)
-                return;
-
-            SyncPredictedEnergy(megaState.CurrentEnergy);
-
-            var mount = mounts[mountIdx];
-            if (mount.FireCooldown > 0.001f || mount.FirePower <= 0.01f)
-                return;
-            if (_predictedEnergy < mount.FirePower)
-                return;
-            if (!BulletVfxBridge.CanEnqueueAnticipation(1))
-                return;
-
-            var weaponCfg = em.GetComponentData<ShipWeaponConfig>(mega);
-            int bankIndex = 0;
-            if (em.HasComponent<ShipLoadoutState>(mega))
-                bankIndex = BulletBankFireResolve.ResolveFireBankIndex(em.GetComponentData<ShipLoadoutState>(mega));
-
-            if (!BulletMuzzlePresentation.TryResolveMuzzle(
-                    em, mega, mountIdx,
-                    out float3 fireOrigin, out float3 fireForward, out _, out float3 shipVel))
-                return;
-
-            float fallbackRefDamage = weaponCfg.ReferenceBulletDamage > 0f
-                ? weaponCfg.ReferenceBulletDamage
-                : BulletVisualScale.DefaultReferenceBulletDamage;
-            float refSpeed = weaponCfg.ReferenceBulletSpeed > 0f
-                ? weaponCfg.ReferenceBulletSpeed
-                : BulletVisualScale.DefaultReferenceBulletSpeed;
-            float refDamage = mount.ReferenceFirePower > 0.01f
-                ? mount.ReferenceFirePower
-                : fallbackRefDamage;
-            float categoryUpgradeScale = 1f;
-            var vfxBank = TitanOrbit.Data.BulletVfxBank.LoadDefault();
-            if (vfxBank != null)
-                categoryUpgradeScale = vfxBank.GetCategoryUpgradeVisualScaleMultiplier(bankIndex);
-
-            float fireRate = math.max(0.15f, mount.FireRate > 0.01f ? mount.FireRate : weaponCfg.FireRate);
-            var plan = BulletShotMath.Build(
-                fireOrigin,
-                fireForward,
-                shipVel,
-                mount.FirePower,
-                weaponCfg.BulletSpeed,
-                weaponCfg.BulletMaxDistance,
-                weaponCfg.BulletLifetime,
-                weaponCfg.FireRate,
-                mount.BulletRange,
-                weaponCfg.BulletScale,
-                refDamage,
-                refSpeed,
-                bankIndex,
-                firePowerExtras: 0,
-                categoryUpgradeScale);
-
-            if (!BulletVfxBridge.TryEnqueueSpawn(new BulletVfxBridge.SpawnRequest
-            {
-                Sequence = 0,
-                SpawnPosition = plan.Origin,
-                Velocity = plan.Velocity,
-                Lifetime = plan.Lifetime,
-                MaxDistance = plan.MaxDistance,
-                Damage = plan.Damage,
-                OwnerTeam = (byte)megaState.Team,
-                OwnerNetworkId = gunnerNetworkId,
-                BankIndex = bankIndex,
-                ScaleMultiplier = plan.VisualScale,
-                MountIndex = mountIdx,
-                IsAnticipation = true,
-                IsDisplaySpace = false,
-            }))
-                return;
-
-            mount.FireCooldown = (1f / fireRate) / math.max(0.05f, plan.FireRateMul);
-            mounts[mountIdx] = mount;
-            _predictedEnergy = math.max(0f, _predictedEnergy - mount.FirePower);
         }
 
         /// <summary>

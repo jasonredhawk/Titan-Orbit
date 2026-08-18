@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using TitanOrbit.Data;
 using TitanOrbit.ECS;
 using TitanOrbit.Generation;
 using Unity.Entities;
@@ -132,13 +133,11 @@ namespace TitanOrbit.Game
                 if (yawRoot == null)
                     continue;
 
-                bool occupied = hasGunners && i < gunners.Length
-                    && gunners[i].OccupiedByNetworkId != 0;
                 Quaternion desiredBarrelWorld;
                 float yawDeg = 0f;
                 bool tracking = hasGunners && i < gunners.Length
                     && MegaShipWeaponAim.IsTrackingAim(gunners[i]);
-                if (haveOwnerMouseDir && !occupied)
+                if (haveOwnerMouseDir)
                 {
                     desiredBarrelWorld = Quaternion.LookRotation(ownerMouseDir, Vector3.up);
                     binding.RememberWorldYaw(i, PlanarYaw(ownerMouseDir));

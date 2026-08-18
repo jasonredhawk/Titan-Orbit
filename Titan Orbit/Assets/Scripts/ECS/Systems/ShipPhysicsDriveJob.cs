@@ -65,7 +65,6 @@ namespace TitanOrbit.ECS
             RefRO<ShipMotorConfig> motor,
             RefRO<ShipMoonDockState> moonDock,
             RefRO<ShipTurretControlState> turretControl,
-            RefRO<ShipMegaGunControlState> megaGunControl,
             RefRW<ShipState> shipState,
             RefRW<PhysicsVelocity> physicsVelocity,
             RefRW<PhysicsDamping> physicsDamping,
@@ -78,7 +77,7 @@ namespace TitanOrbit.ECS
         {
             // --- Stowed in planetary defense turret: freeze hull (server + predicted client) ---
             // [TITAN-ORBIT] Aim/Fire still flow through ShipInput for the pad; thrust = exit on server.
-            if (turretControl.ValueRO.IsControlling || megaGunControl.ValueRO.IsControlling)
+            if (turretControl.ValueRO.IsControlling)
             {
                 physicsVelocity.ValueRW = PhysicsVelocity.Zero;
                 physicsDamping.ValueRW = default;

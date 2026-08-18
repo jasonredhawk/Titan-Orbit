@@ -57,9 +57,6 @@ namespace TitanOrbit.ECS
 
         /// <summary>Branch to restore on the previous level.</summary>
         [GhostField] public int PreviousBranch;
-
-        /// <summary>When true, friendlies cannot Take Control of any gun pad.</summary>
-        [GhostField] public bool GunsLocked;
     }
 
     /// <summary>
@@ -92,8 +89,8 @@ namespace TitanOrbit.ECS
     }
 
     /// <summary>
-    /// One gunner pad on a MEGA hull — one element per weapon mount.
-    /// OccupiedByNetworkId is the friendly piloting that mount (0 = auto-fire).
+    /// Ghosted aim state for one MEGA weapon mount. Only the MEGA owner aims and fires
+    /// these barrels (auto-aim, or Shift + mouse point). There is no remote gunner occupancy.
     /// <para>
     /// [NETCODE] Baked empty on StarshipGhost; length is resized when a MEGA chassis applies.
     /// Ghost buffers require every field to be a GhostField.
@@ -104,9 +101,6 @@ namespace TitanOrbit.ECS
     {
         /// <summary>Index into the ship's <see cref="ShipWeaponMountElement"/> buffer.</summary>
         [GhostField] public byte MountIndex;
-
-        /// <summary>GhostOwner.NetworkId of the gunner, or 0 when the mount auto-aims for the owner.</summary>
-        [GhostField] public int OccupiedByNetworkId;
 
         /// <summary>
         /// Planar yaw in degrees. While <see cref="TargetDistance"/> &gt; 0 this is the
@@ -145,22 +139,5 @@ namespace TitanOrbit.ECS
         /// </summary>
         [GhostField]
         public int TargetGhostId;
-    }
-
-    /// <summary>
-    /// Ghosted possession of a MEGA gun pad on a friendly MEGA. Mirrors
-    /// <see cref="ShipTurretControlState"/> but the pad lives on another ship, not a planet.
-    /// Must be baked on StarshipGhost.
-    /// </summary>
-    public struct ShipMegaGunControlState : IComponentData
-    {
-        /// <summary>True while this ship is stowed and aiming a MEGA mount.</summary>
-        [GhostField] public bool IsControlling;
-
-        /// <summary>GhostOwner.NetworkId of the MEGA owner (identifies the hull).</summary>
-        [GhostField] public int MegaOwnerNetworkId;
-
-        /// <summary>Mount / gunner-slot index on that MEGA.</summary>
-        [GhostField] public byte MountIndex;
     }
 }

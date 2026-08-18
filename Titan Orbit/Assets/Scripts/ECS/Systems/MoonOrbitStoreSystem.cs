@@ -508,7 +508,6 @@ namespace TitanOrbit.ECS
                         PreviousFamilyIndex = prevFamily,
                         PreviousLevel = prevLevel,
                         PreviousBranch = prevBranch,
-                        GunsLocked = false,
                     });
                 }
             }

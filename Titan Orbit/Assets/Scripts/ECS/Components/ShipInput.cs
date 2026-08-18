@@ -30,10 +30,9 @@ namespace TitanOrbit.ECS
         /// [TITAN-ORBIT] Shift held (does <b>not</b> require thrust).
         /// Regular ships: OVERDRIVE intent. Motor latch keys off this + energy; burst
         /// speed/drain only while Thrust is also held.
-        /// MEGA hulls: no overdrive. This bit locks heading and aims unoccupied
-        /// auto-guns at the mouse world point (<see cref="AimPlanarDir"/> ×
-        /// <see cref="AimDistance"/>). Occupied mounts stay with their gunner.
-        /// Fire is still required to shoot.
+        /// MEGA hulls: no overdrive. This bit locks heading and aims all MEGA
+        /// guns at the mouse world point (<see cref="AimPlanarDir"/> ×
+        /// <see cref="AimDistance"/>). Fire is still required to shoot.
         /// </summary>
         [GhostField]
         public bool Overdrive;

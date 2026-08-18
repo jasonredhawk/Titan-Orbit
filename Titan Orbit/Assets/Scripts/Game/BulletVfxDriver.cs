@@ -678,7 +678,7 @@ namespace TitanOrbit.Game
 
                 // --- Starblast: reproject onto the drawn barrel (local + every remote observer) ---
                 // [TITAN-ORBIT] Never drop a server spawn when reproject fails — fall back to
-                // server logical pose. MEGA gunner shots resolve the MEGA hull, not the stowed ship.
+                // server logical pose. MEGA shots resolve the MEGA hull and its live barrels.
                 BulletMuzzlePresentation.TryReprojectSpawn(ref req);
                 req.IsDisplaySpace = false;
 

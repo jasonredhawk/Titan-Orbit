@@ -18,7 +18,7 @@ namespace TitanOrbit.ECS
     /// (<see cref="TitanOrbit.Generation.ToroidalMapEcs.ShortestOffsetXZ"/>), never a raw
     /// world subtract across a seam. The ship hull transform is never wrapped.
     /// </para>
-    /// Paired with <see cref="MegaShipAutoFireSystem"/> and <see cref="MegaShipPlayerCombatSystem"/>.
+    /// Paired with <see cref="MegaShipAutoFireSystem"/>.
     /// Mounts snap to the aim heading — no traverse delay.
     /// </summary>
     public static class MegaShipWeaponAim
@@ -188,7 +188,7 @@ namespace TitanOrbit.ECS
         /// While tracking, <c>CurrentYawDeg</c> is the world fire heading (same as
         /// <paramref name="desiredWorldDir"/>). Idle writes hull-local park yaw.
         /// </summary>
-        /// <param name="gunners">1:1 gunner-pad buffer (may be uncreated).</param>
+        /// <param name="gunners">1:1 MEGA aim-slot buffer (may be uncreated).</param>
         /// <param name="mountIndex">Index into both mounts and gunners.</param>
         /// <param name="mount">Mount after this tick's rotate.</param>
         /// <param name="aimPoint">Current lock point (ship / pad / moon) for turret LookAt.</param>
@@ -228,8 +228,7 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// Drops tracking on unoccupied auto-guns so clients park those barrels on the hull.
-        /// Occupied gunner pads keep the yaw the gunner system wrote.
+        /// Drops tracking so clients park MEGA barrels on the hull when Fire is released.
         /// </summary>
         public static void ClearUnoccupiedTracking(
             DynamicBuffer<MegaShipGunnerSlotElement> gunners,
@@ -241,9 +240,6 @@ namespace TitanOrbit.ECS
             for (int i = 0; i < gunners.Length; i++)
             {
                 var slot = gunners[i];
-                if (slot.OccupiedByNetworkId != 0)
-                    continue;
-
                 slot.TargetDistance = 0f;
                 slot.AimWorldX = 0f;
                 slot.AimWorldZ = 0f;

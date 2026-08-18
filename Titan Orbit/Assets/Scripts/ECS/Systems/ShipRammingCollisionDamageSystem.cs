@@ -130,8 +130,6 @@ namespace TitanOrbit.ECS
                 if (state.EntityManager.HasComponent<ShipTurretControlState>(shipEntity) &&
                     state.EntityManager.GetComponentData<ShipTurretControlState>(shipEntity).IsControlling)
                     continue;
-                if (MegaShipGunnerLogic.IsControllingMegaGun(state.EntityManager, shipEntity))
-                    continue;
 
                 if (IsMoonDockImmune(ref state, shipEntity))
                     continue;

@@ -34,6 +34,15 @@ namespace TitanOrbit.Data
             _active != null ? _active.ClampedBankSmoothing : 8f;
 
         /// <summary>
+        /// Yaw rate (°/s) treated as “full turn” for the bank curve.
+        /// Authored on the published asset, else the fleet global max.
+        /// </summary>
+        public static float ReferenceTurnDegreesPerSecond =>
+            _active != null
+                ? _active.ResolveReferenceTurnDegreesPerSecond()
+                : ShipPropulsionAggregation.GetGlobalMaxTurnSpeedDegreesPerSecond();
+
+        /// <summary>
         /// Points the cache at a designer asset so EG / turret bank and unset hybrid proxies
         /// share one feel. Hybrid proxies that bound a family asset read that asset directly.
         /// </summary>

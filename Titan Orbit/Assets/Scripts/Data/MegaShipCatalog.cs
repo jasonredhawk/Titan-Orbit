@@ -213,6 +213,12 @@ namespace TitanOrbit.Data
         [Min(0.25f)]
         public float thrusterVfxScale = DefaultThrusterVfxScale;
 
+        [Tooltip(
+            "Client-only roll-while-turning profile for every MEGA hull. " +
+            "Create via Assets → Create → Titan Orbit → Ship Bank Visual Settings. " +
+            "Leave empty to fall back to Resources/MegaShipBankVisualSettings, then the shared ship default.")]
+        public ShipBankVisualSettings bankVisualSettings;
+
         [Tooltip("Field of view for theatrical (3/4 hero) orbit-menu preview renders.")]
         [Range(20f, 55f)]
         public float menuPreviewTheatricalFieldOfView = 35f;
@@ -448,6 +454,17 @@ namespace TitanOrbit.Data
         public float GetThrusterVfxScale()
         {
             return thrusterVfxScale > 0.01f ? thrusterVfxScale : DefaultThrusterVfxScale;
+        }
+
+        /// <summary>
+        /// Cosmetic bank profile for MEGA hulls. Catalog field first, then
+        /// <c>Resources/MegaShipBankVisualSettings</c>, then the shared ship default.
+        /// </summary>
+        public ShipBankVisualSettings GetBankVisualSettings()
+        {
+            if (bankVisualSettings != null)
+                return bankVisualSettings;
+            return ShipBankVisualSettings.LoadMegaDefault() ?? ShipBankVisualSettings.LoadDefault();
         }
 
         /// <summary>Extra radius around a MEGA hull for gameplay camera framing.</summary>
