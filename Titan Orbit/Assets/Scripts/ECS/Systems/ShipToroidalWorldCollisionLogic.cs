@@ -48,8 +48,10 @@ namespace TitanOrbit.ECS
 
             // --- Collider-local AABB, then apply entity scale ---
             // [PHYSICS] Chassis bake often stores presentation-sized geometry with Scale ≈ 1.
+            // Unity.Physics Aabb.Extents is Max−Min (full size), not half-extents. Using the
+            // full width as a radius doubled MEGA keep-out and blocked small-planet orbit rings.
             Aabb aabb = physicsCollider.Value.Value.CalculateAabb();
-            float r = math.max(aabb.Extents.x, aabb.Extents.z);
+            float r = math.max(aabb.Extents.x, aabb.Extents.z) * 0.5f;
             r *= math.max(0.01f, transformScale);
             if (r < BodyCollisionMath.MinShipHullRadiusWorld)
                 return fallback;
@@ -138,6 +140,14 @@ namespace TitanOrbit.ECS
         /// <param name="bodyMass">
         /// Virtual asteroid mass (&gt; 0). ≤ 0 ⇒ infinite-mass wall (planets).
         /// </param>
+        /// <param name="resolveSameTile">
+        /// When true, also depenetrate Euclidean (same-tile) pairs. MEGA vs planet uses this
+        /// after PhysX planet shove is undone, so a covering sphere can be capped at the orbit ring.
+        /// </param>
+        /// <param name="maxKeepOut">
+        /// When &gt; 0, cap <c>shipRadius + bodyRadius</c> so the ship center can still reach this
+        /// distance (orbit-ring inner). 0 = use the natural sphere sum.
+        /// </param>
         /// <returns>True when a penetration was resolved this call.</returns>
         public static bool TryResolveShipVsWorldSphere(
             ref float3 shipPos,
@@ -151,19 +161,24 @@ namespace TitanOrbit.ECS
             float friction = 0f,
             float dt = 0f,
             float shipMass = 0f,
-            float bodyMass = 0f)
+            float bodyMass = 0f,
+            bool resolveSameTile = false,
+            float maxKeepOut = 0f)
         {
             // --- Same tile: leave to Unity Physics + bounce/friction + drive inward-reject ---
             // [TITAN-ORBIT] Avoids double-bounce near the origin where Euclidean contacts already work.
             // Progressive grind dig-in is stopped by ShipAsteroidContactState (motor cannot push into
             // the rock). Do NOT sphere-push from AABB radii — compound hulls over-estimate and shove.
-            if (!NeedsToroidalResolve(shipPos, bodyPos, mapW, mapH))
+            // MEGA vs planet opts in (resolveSameTile) with an orbit-ring keep-out cap.
+            if (!resolveSameTile && !NeedsToroidalResolve(shipPos, bodyPos, mapW, mapH))
                 return false;
 
             // --- Toroidal separation (ship → body) ---
             float3 offset = ToroidalMapEcs.ShortestOffsetXZ(shipPos, bodyPos, mapW, mapH);
             float dist = math.length(offset);
             float minDist = math.max(0.01f, shipRadius + bodyRadius);
+            if (maxKeepOut > 0.01f)
+                minDist = math.min(minDist, maxKeepOut);
             if (dist >= minDist)
                 return false;
 

@@ -441,19 +441,39 @@ namespace TitanOrbit.Game
             if (feedback.RemainingHealth.HasValue
                 && (Settings == null || Settings.IsAsteroidHealthRemainingEnabled()))
             {
-                var settings = Settings;
-                Color hpColor = settings != null ? settings.healthColor : new Color(0.2f, 0.9f, 0.3f, 1f);
-                int hp = Mathf.Max(0, Mathf.RoundToInt(feedback.RemainingHealth.Value));
-                ShowOrRefreshLabeled(
+                ShowRemainingHealth(
                     targetId,
                     targetAnchor,
-                    targetAnchor.position,
-                    FloatingCountChannel.HealthChange,
-                    hp.ToString(),
-                    hpColor,
-                    ResolveTypeIcon(FloatingCountChannel.HealthChange),
-                    bodyRadius);
+                    bodyRadius,
+                    feedback.RemainingHealth.Value);
             }
+        }
+
+        /// <summary>
+        /// Stacked remaining-HP label (replaces, does not sum). Same lane as asteroid HP Left.
+        /// Callers own visibility (asteroid HP-remaining vs ship Health Change).
+        /// </summary>
+        public void ShowRemainingHealth(
+            int targetId,
+            Transform targetAnchor,
+            float bodyRadius,
+            float remainingHealth)
+        {
+            if (targetAnchor == null)
+                return;
+
+            var settings = Settings;
+            Color hpColor = settings != null ? settings.healthColor : new Color(0.2f, 0.9f, 0.3f, 1f);
+            int hp = Mathf.Max(0, Mathf.RoundToInt(remainingHealth));
+            ShowOrRefreshLabeled(
+                targetId,
+                targetAnchor,
+                targetAnchor.position,
+                FloatingCountChannel.HealthChange,
+                hp.ToString(),
+                hpColor,
+                ResolveTypeIcon(FloatingCountChannel.HealthChange),
+                bodyRadius);
         }
 
         bool TryPrepareAmount(

@@ -106,6 +106,22 @@ namespace TitanOrbit.Simulation
         }
 
         /// <summary>
+        /// Planet collision keep-out for a ship center. Natural hull+planet spheres must never
+        /// sit outside the orbit-ring inner radius — MEGA covering spheres are larger than the
+        /// surface→ring gap on small neutrals (size 9), which blocked ring entry.
+        /// </summary>
+        /// <param name="shipRadius">Ship collision sphere (world).</param>
+        /// <param name="planetRadius">Planet body radius (world).</param>
+        /// <param name="planetScale">Planet <c>LocalTransform.Scale</c> (orbit ring uses this).</param>
+        /// <returns>Distance the ship center must stay from the planet center.</returns>
+        public static float GetPlanetCollisionKeepOut(float shipRadius, float planetRadius, float planetScale)
+        {
+            float natural = math.max(0.01f, shipRadius + planetRadius);
+            GetRingRadiiWorld(math.max(0.25f, planetScale), 0, out float innerWorld, out _, out _);
+            return math.min(natural, innerWorld);
+        }
+
+        /// <summary>
         /// Canonical tangential speed for a planet's ship/moon orbit ring (centerline).
         /// Larger planets get a slightly faster ring; position inside the thin annulus does
         /// <b>not</b> change speed — ships and moons must share one speed so they co-orbit.

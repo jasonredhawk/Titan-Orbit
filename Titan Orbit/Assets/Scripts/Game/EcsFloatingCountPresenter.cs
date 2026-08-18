@@ -19,8 +19,11 @@ namespace TitanOrbit.Game
     /// and immediate bullet-impact hooks.
     /// Compares per-frame snapshots of ship gems/people/health. Asteroid bullet HitRpc floats
     /// use <see cref="TryNotifyLocalAsteroidBulletHit"/> with server <c>AsteroidHealthAfter</c>
-    /// (never ghost − damage) and park on the asteroid proxy. <see cref="PollAsteroids"/> remains
-    /// a fallback for rams / missed RPCs. Delegates display to <see cref="WorldFloatingCountManager"/>.
+    /// (never ghost − damage) and park on the asteroid proxy. Ship bullet HitRpc floats use
+    /// <see cref="TryNotifyShipBulletHit"/> (actual hull loss, accumulated on
+    /// <see cref="FloatingCountChannel.DamageShipOrDrone"/>). <see cref="PollShips"/> /
+    /// <see cref="PollAsteroids"/> remain fallbacks for rams / mines / missed RPCs.
+    /// Delegates display to <see cref="WorldFloatingCountManager"/>.
     /// Runs on main thread in Update.
     /// <para>
     /// People load/unload floats are owned by <see cref="PeopleTransportVfxDriver"/> (sphere leave/consume).
@@ -105,6 +108,24 @@ namespace TitanOrbit.Game
         /// Asteroid ghosts use a low MaxSendRate — keep this above one snapshot interval.
         /// </summary>
         const float AsteroidOptimisticHoldSeconds = 1.25f;
+
+        /// <summary>
+        /// How long HitRpc / burn-tick hull estimates may sit below ghost Health before we
+        /// accept a snapshot heal. Same idea as <see cref="AsteroidOptimisticHoldSeconds"/>.
+        /// </summary>
+        const float ShipOptimisticHoldSeconds = 1.25f;
+
+        /// <summary>
+        /// Optimistic hull after a HitRpc / burn tick, keyed by NetworkId. May sit below
+        /// ghost Health until the snapshot catches up.
+        /// </summary>
+        readonly Dictionary<int, float> _shipOptimisticHealth = new Dictionary<int, float>();
+
+        /// <summary>
+        /// Unscaled-time deadline while optimistic ship HP may stay below ghost Health
+        /// (HitRpc and burn ticks land before the hull snapshot).
+        /// </summary>
+        readonly Dictionary<int, float> _shipOptimisticUntil = new Dictionary<int, float>();
 
         void OnEnable()
         {
@@ -313,6 +334,8 @@ namespace TitanOrbit.Game
             _planetGems.Clear();
             _asteroidHealth.Clear();
             _asteroidOptimisticUntil.Clear();
+            _shipOptimisticHealth.Clear();
+            _shipOptimisticUntil.Clear();
 
             // --- Ships (tiny query — safe after ShouldSkipShipEntityQueries clears) ---
             using var shipQuery = em.CreateEntityQuery(
@@ -411,7 +434,7 @@ namespace TitanOrbit.Game
                 if (!TryGetShipAnchor(networkId, out Transform anchor))
                     continue;
 
-                ReadBurnTick(em, shipEntity, out uint burnSeq, out float burnTickDamage, out bool burnActive, elapsed);
+                ReadBurnTick(em, shipEntity, out uint burnSeq, out float burnTickDamage, out _, elapsed);
 
                 if (!_ships.TryGetValue(networkId, out ShipSnapshot last))
                 {
@@ -419,7 +442,7 @@ namespace TitanOrbit.Game
                     {
                         People = state.CurrentPeople,
                         Gems = state.CurrentGems,
-                        Health = state.Health,
+                        Health = PeekTrackedShipHealth(networkId, state.Health),
                         IsDead = state.IsDead,
                         ShipLevel = state.ShipLevel,
                         LastBurnTickSequence = burnSeq,
@@ -454,43 +477,80 @@ namespace TitanOrbit.Game
                     }
                 }
 
+                bool isLocalShip = hasLocalNetworkId && networkId == localNetworkId;
+                bool canShowCombat = isLocalShip || IsAnchorOnScreen(anchor);
+
                 bool showedBurnDamage = false;
+                float burnShown = 0f;
                 if (!justRespawned &&
                     !TitanOrbitDebugFlags.IsolateDisableFloatingCounts &&
                     burnSeq > last.LastBurnTickSequence &&
                     burnTickDamage > 0.01f)
                 {
                     uint skipped = burnSeq - last.LastBurnTickSequence;
-                    float shown = burnTickDamage * skipped;
-                    bool isLocalBurn = hasLocalNetworkId && networkId == localNetworkId;
-                    if (isLocalBurn || IsAnchorOnScreen(anchor))
+                    burnShown = burnTickDamage * skipped;
+                    if (canShowCombat)
                     {
                         WorldFloatingCountManager.Instance.ShowOrAccumulateOnShip(
                             networkId,
                             anchor,
                             FloatingCountChannel.DamageShipOrDrone,
-                            -shown,
+                            -burnShown,
                             state.Team);
                         showedBurnDamage = true;
                     }
                 }
 
-                if (!state.IsDead && !justDied && !justRespawned)
+                float trackedHealth = PeekTrackedShipHealth(networkId, last.Health);
+                if (showedBurnDamage && burnShown > 0.01f)
                 {
-                    float healthDelta = state.Health - last.Health;
-                    // Burn ticks already spawned Damage floats — skip the overlapping Health line.
-                    bool skipBurnHealth = (showedBurnDamage || burnActive) && healthDelta < 0f;
-                    bool isLocalHealth = hasLocalNetworkId && networkId == localNetworkId;
-                    if (!skipBurnHealth && Mathf.Abs(healthDelta) >= 1f &&
-                        (isLocalHealth || IsAnchorOnScreen(anchor)))
+                    trackedHealth = math.max(0f, trackedHealth - burnShown);
+                    NoteOptimisticShipHealth(networkId, trackedHealth);
+                }
+
+                float ghostHealth = state.Health;
+                bool holdOptimistic = IsShipOptimisticHoldActive(networkId);
+                float healthDelta = ghostHealth - trackedHealth;
+
+                // HitRpc / burn already subtracted hull — ignore the lagging ghost sitting higher.
+                if (holdOptimistic && healthDelta > 0f)
+                    healthDelta = 0f;
+
+                if (!state.IsDead && !justDied && !justRespawned &&
+                    !TitanOrbitDebugFlags.IsolateDisableFloatingCounts &&
+                    canShowCombat)
+                {
+                    // Hull loss that was not already presented as a burn tick this frame.
+                    if (healthDelta <= -0.01f)
                     {
                         WorldFloatingCountManager.Instance.ShowOrAccumulateOnShip(
                             networkId,
                             anchor,
-                            FloatingCountChannel.HealthChange,
+                            FloatingCountChannel.DamageShipOrDrone,
+                            healthDelta,
+                            state.Team);
+                        TryShowShipRemainingHealth(networkId, anchor, ghostHealth);
+                    }
+                    else if (healthDelta >= 1f)
+                    {
+                        WorldFloatingCountManager.Instance.ShowOrAccumulateOnShip(
+                            networkId,
+                            anchor,
+                            FloatingCountChannel.Healing,
                             healthDelta,
                             state.Team);
                     }
+                    else if (showedBurnDamage)
+                    {
+                        TryShowShipRemainingHealth(networkId, anchor, trackedHealth);
+                    }
+                }
+
+                if (justRespawned || justDied || !holdOptimistic || ghostHealth <= trackedHealth + 0.01f)
+                {
+                    trackedHealth = ghostHealth;
+                    _shipOptimisticHealth.Remove(networkId);
+                    _shipOptimisticUntil.Remove(networkId);
                 }
 
                 // Preserve remote deposit BeatSequence across cargo snapshot writes.
@@ -498,7 +558,7 @@ namespace TitanOrbit.Game
                 {
                     People = state.CurrentPeople,
                     Gems = state.CurrentGems,
-                    Health = state.Health,
+                    Health = trackedHealth,
                     IsDead = state.IsDead,
                     ShipLevel = state.ShipLevel,
                     LastDepositBeatSequence = snap.LastDepositBeatSequence,
@@ -609,6 +669,118 @@ namespace TitanOrbit.Game
                 impactWorldPosition);
 
             return true;
+        }
+
+        /// <summary>
+        /// Immediate ship-hull float for a <c>BulletHitRpc</c> that was not an asteroid or
+        /// planetary-defense pad. Parks on the hull proxy, accumulates on
+        /// <see cref="FloatingCountChannel.DamageShipOrDrone"/>, and latches optimistic HP
+        /// so <see cref="PollShips"/> does not double-count the lagging ghost drop.
+        /// </summary>
+        /// <param name="shipEntity">Hybrid-proxy ship ghost that was hit.</param>
+        /// <param name="incomingDamage">
+        /// Bullet damage from the HitRpc. Card resist is applied here so the number matches
+        /// server <see cref="CardEffectQuery.ScaleIncomingDamage"/>.
+        /// </param>
+        /// <param name="ownerTeam">Shooter team — same-team hits are heals and are ignored.</param>
+        /// <returns>True when a damage popup was spawned or accumulated.</returns>
+        public static bool TryNotifyShipBulletHit(
+            Entity shipEntity,
+            float incomingDamage,
+            TeamId ownerTeam)
+        {
+            if (TitanOrbitDebugFlags.IsolateDisableFloatingCounts)
+                return false;
+
+            var presenter = Active;
+            if (presenter == null || WorldFloatingCountManager.Instance == null)
+                return false;
+            if (shipEntity == Entity.Null || incomingDamage <= 0.01f)
+                return false;
+
+            var world = EcsGameBridge.GetVisualizationWorld();
+            if (world == null || !world.IsCreated)
+                return false;
+
+            var em = world.EntityManager;
+            if (!em.Exists(shipEntity) ||
+                !em.HasComponent<ShipState>(shipEntity) ||
+                !em.HasComponent<GhostOwner>(shipEntity))
+                return false;
+
+            var state = em.GetComponentData<ShipState>(shipEntity);
+            if (state.IsDead)
+                return false;
+            if (state.Team != TeamId.None && state.Team == ownerTeam)
+                return false;
+
+            int networkId = em.GetComponentData<GhostOwner>(shipEntity).NetworkId;
+            if (networkId <= 0)
+                return false;
+            if (!TryGetShipAnchor(networkId, out Transform anchor) || anchor == null)
+                return false;
+
+            float scaled = CardEffectQuery.ScaleIncomingDamage(em, shipEntity, incomingDamage);
+            float tracked = presenter.PeekTrackedShipHealth(networkId, state.Health);
+            float hullLoss = math.min(scaled, math.max(0f, tracked));
+            if (hullLoss < 0.01f)
+                return false;
+
+            float remaining = math.max(0f, tracked - hullLoss);
+            presenter.NoteOptimisticShipHealth(networkId, remaining);
+
+            int localNetworkId = EcsGameBridge.GetLocalNetworkId();
+            bool isLocal = localNetworkId > 0 && networkId == localNetworkId;
+            if (!isLocal && !IsAnchorOnScreen(anchor))
+                return false;
+
+            WorldFloatingCountManager.Instance.ShowOrAccumulateOnShip(
+                networkId,
+                anchor,
+                FloatingCountChannel.DamageShipOrDrone,
+                -hullLoss,
+                state.Team);
+            TryShowShipRemainingHealth(networkId, anchor, remaining);
+            return true;
+        }
+
+        static void TryShowShipRemainingHealth(int networkId, Transform anchor, float remainingHealth)
+        {
+            var manager = WorldFloatingCountManager.Instance;
+            if (manager == null)
+                return;
+            if (manager.Settings != null &&
+                !manager.Settings.IsEnabled(FloatingCountChannel.HealthChange))
+                return;
+
+            manager.ShowRemainingHealth(
+                WorldFloatingCountManager.TargetIdForShip(networkId),
+                anchor,
+                WorldFloatingCountManager.ResolveShipBodyRadius(anchor),
+                remainingHealth);
+        }
+
+        float PeekTrackedShipHealth(int networkId, float fallbackHealth)
+        {
+            if (IsShipOptimisticHoldActive(networkId) &&
+                _shipOptimisticHealth.TryGetValue(networkId, out float optimistic))
+                return math.min(optimistic, fallbackHealth);
+            return fallbackHealth;
+        }
+
+        bool IsShipOptimisticHoldActive(int networkId) =>
+            _shipOptimisticUntil.TryGetValue(networkId, out float until) &&
+            Time.unscaledTime < until;
+
+        void NoteOptimisticShipHealth(int networkId, float remainingHealth)
+        {
+            _shipOptimisticHealth[networkId] = remainingHealth;
+            _shipOptimisticUntil[networkId] = Time.unscaledTime + ShipOptimisticHoldSeconds;
+            if (_ships.TryGetValue(networkId, out ShipSnapshot snap))
+            {
+                snap.Health = remainingHealth;
+                _ships[networkId] = snap;
+            }
         }
 
         /// <summary>

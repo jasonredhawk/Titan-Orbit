@@ -17,8 +17,11 @@ namespace TitanOrbit.ECS
         /// <summary>
         /// [TITAN-ORBIT] Current hull points. Hitting zero alone does not kill — death requires
         /// hull and <see cref="CurrentGems"/> both depleted (<see cref="TitanOrbit.Simulation.ShipDamageLogic"/>).
+        /// Clamp (not Interpolate): floating damage reads this field. Interpolated Health
+        /// shredded 2-HP turret hits into sub-1 fragments that PollShips dropped.
         /// </summary>
-        [GhostField] public float Health;
+        [GhostField(Smoothing = SmoothingAction.Clamp)]
+        public float Health;
 
         /// <summary>[TITAN-ORBIT] Maximum hull from chassis stats + attribute upgrades.</summary>
         [GhostField] public float MaxHealth;

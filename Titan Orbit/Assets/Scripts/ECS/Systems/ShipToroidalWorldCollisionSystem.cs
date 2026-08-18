@@ -52,6 +52,11 @@ namespace TitanOrbit.ECS
 
             /// <summary>Designer Size for asteroid virtual collision mass (0 for planets).</summary>
             public float AsteroidSize;
+
+            /// <summary>
+            /// Planet <c>LocalTransform.Scale</c> for orbit-ring keep-out (0 for asteroids).
+            /// </summary>
+            public float PlanetScale;
         }
 
         /// <summary>One simulated ship snapshot for cross-seam ship↔ship resolve.</summary>
@@ -132,6 +137,7 @@ namespace TitanOrbit.ECS
                     Entity = planetEntity,
                     IsAsteroid = 0,
                     AsteroidSize = 0f,
+                    PlanetScale = math.max(0.25f, planetTransform.ValueRO.Scale),
                 });
             }
 
@@ -301,12 +307,23 @@ namespace TitanOrbit.ECS
                         ? asteroidBounceRestitution
                         : ShipToroidalWorldCollisionLogic.WorldRestitution;
 
+                    // MEGA covering spheres are larger than the surface→ring gap on small
+                    // neutrals. Cap keep-out at the orbit inner radius and resolve same-tile
+                    // too (PhysX planet shove is undone in ShipCollisionBounceSystem).
+                    bool megaVsPlanet = ship.IsMega != 0 && body.IsAsteroid == 0;
+                    float planetKeepOut = megaVsPlanet
+                        ? PlanetOrbitMath.GetPlanetCollisionKeepOut(
+                            ship.Radius, body.Radius, body.PlanetScale)
+                        : 0f;
+
                     if (ShipToroidalWorldCollisionLogic.TryResolveShipVsWorldSphere(
                             ref shipPos, ref shipVel, ship.Radius,
                             body.Position, body.Radius,
                             mapW, mapH, restitution,
                             bodyFriction, fixedDt,
-                            ship.CollisionMass, bodyMass))
+                            ship.CollisionMass, bodyMass,
+                            resolveSameTile: megaVsPlanet,
+                            maxKeepOut: planetKeepOut))
                     {
                         anyHit = true;
 

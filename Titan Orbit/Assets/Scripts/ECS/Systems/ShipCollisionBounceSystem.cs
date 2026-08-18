@@ -17,7 +17,9 @@ namespace TitanOrbit.ECS
     /// Owns ship↔asteroid (finite virtual rock mass), ship↔ship (energy transfer), and
     /// ship↔planet/moon (infinite-mass wall) so PhysX material restitution can stay 0.
     /// MEGA hulls plow asteroids: restore pre-collision motion (no bounce) so a field does
-    /// not slow the ship. Server ram damage + client soft-destroy happen elsewhere.
+    /// not slow the ship. MEGA vs planet also restores pose — the covering sphere must not
+    /// park the hull outside a small planet's orbit ring; capped keep-out runs after this.
+    /// Server ram damage + client soft-destroy happen elsewhere.
     /// <para>
     /// Runs on ServerSimulation and ClientSimulation (predicted). Collision-event stream only —
     /// no asteroid/planet <c>ToEntityArray</c> (join-crash safe). Tangential grip stays in
@@ -38,13 +40,14 @@ namespace TitanOrbit.ECS
             public Entity EntityB;
             /// <summary>Unit normal from B toward A (XZ).</summary>
             public float3 NormalAFromB;
-            /// <summary>0 = asteroid, 1 = other ship, 2 = infinite-mass world (planet/moon).</summary>
+            /// <summary>0 = asteroid, 1 = other ship, 2 = planet, 3 = gem moon.</summary>
             public byte Kind;
         }
 
         const byte KindAsteroid = 0;
         const byte KindShip = 1;
-        const byte KindInfiniteWall = 2;
+        const byte KindPlanet = 2;
+        const byte KindMoon = 3;
 
         /// <summary>Require physics simulation + world for collision events.</summary>
         public void OnCreate(ref SystemState state)
@@ -109,9 +112,12 @@ namespace TitanOrbit.ECS
             // in one tick accumulate correctly without reading PhysX's inelastic result.
             var working = new NativeHashMap<Entity, float3>(math.max(8, pairs.Length * 2), Allocator.Temp);
 
-            // MEGA asteroid plow: ships that only hit rocks this tick keep unconstrained motion.
-            // A planet / enemy-ship contact the same tick removes them so wall bounce still sticks.
-            var megaPlowShips = new NativeHashSet<Entity>(math.max(8, pairs.Length), Allocator.Temp);
+            // MEGA asteroid plow / planet approach: restore unconstrained pose unless a
+            // ship or moon contact this tick must keep PhysX / wall bounce. Two sets so
+            // pair order cannot re-add a MEGA after a ship hit (or drop a plow after a
+            // later planet pair). Capped planet keep-out runs in ToroidalWorldCollision.
+            var megaUnconstrained = new NativeHashSet<Entity>(math.max(8, pairs.Length), Allocator.Temp);
+            var megaKeepPhysX = new NativeHashSet<Entity>(math.max(8, pairs.Length), Allocator.Temp);
 
             // --- Deduplicate ship↔ship pairs (A,B) and (B,A) ---
             var seenShipPairs = new NativeHashSet<long>(pairs.Length, Allocator.Temp);
@@ -126,8 +132,8 @@ namespace TitanOrbit.ECS
                     if (!seenShipPairs.Add(key))
                         continue;
                     ApplyShipVsShip(pair, ref working, snapshotLookup, motorLookup, shipStateLookup, megaLookup);
-                    megaPlowShips.Remove(pair.EntityA);
-                    megaPlowShips.Remove(pair.EntityB);
+                    megaKeepPhysX.Add(pair.EntityA);
+                    megaKeepPhysX.Add(pair.EntityB);
                 }
                 else if (pair.Kind == KindAsteroid)
                 {
@@ -135,14 +141,28 @@ namespace TitanOrbit.ECS
                         pair, ref working, snapshotLookup, motorLookup, shipStateLookup,
                         megaLookup, asteroidStateLookup, culledLookup, asteroidMassPerSize, asteroidRestitution);
                     if (plowed)
-                        megaPlowShips.Add(pair.EntityA);
-                    else
-                        megaPlowShips.Remove(pair.EntityA);
+                        megaUnconstrained.Add(pair.EntityA);
                 }
-                else if (pair.Kind == KindInfiniteWall)
+                else if (pair.Kind == KindPlanet)
+                {
+                    bool megaPlanet = megaLookup.HasComponent(pair.EntityA)
+                                      && megaLookup[pair.EntityA].IsMega;
+                    if (megaPlanet)
+                    {
+                        // Keep snapshot velocity — PhysX planet depenetration is undone below.
+                        working[pair.EntityA] = GetWorkingOrSnapshot(
+                            pair.EntityA, ref working, snapshotLookup);
+                        megaUnconstrained.Add(pair.EntityA);
+                    }
+                    else
+                    {
+                        ApplyShipVsInfiniteWall(pair, ref working, snapshotLookup);
+                    }
+                }
+                else if (pair.Kind == KindMoon)
                 {
                     ApplyShipVsInfiniteWall(pair, ref working, snapshotLookup);
-                    megaPlowShips.Remove(pair.EntityA);
+                    megaKeepPhysX.Add(pair.EntityA);
                 }
             }
 
@@ -158,15 +178,17 @@ namespace TitanOrbit.ECS
                 velocityLookup[e] = pv;
             }
 
-            // --- MEGA plow: undo PhysX depenetration so a field does not shove the hull ---
+            // --- MEGA plow / planet approach: undo PhysX depenetration ---
             // Reconstruct unconstrained pose from the pre-physics snapshot (drive already applied).
-            if (megaPlowShips.Count > 0)
+            if (megaUnconstrained.Count > 0)
             {
                 var transformLookup = SystemAPI.GetComponentLookup<LocalTransform>(false);
-                var plowShips = megaPlowShips.ToNativeArray(Allocator.Temp);
+                var plowShips = megaUnconstrained.ToNativeArray(Allocator.Temp);
                 for (int i = 0; i < plowShips.Length; i++)
                 {
                     Entity ship = plowShips[i];
+                    if (megaKeepPhysX.Contains(ship))
+                        continue;
                     if (!snapshotLookup.HasComponent(ship) || !transformLookup.HasComponent(ship))
                         continue;
 
@@ -205,7 +227,8 @@ namespace TitanOrbit.ECS
             written.Dispose();
             working.Dispose();
             seenShipPairs.Dispose();
-            megaPlowShips.Dispose();
+            megaUnconstrained.Dispose();
+            megaKeepPhysX.Dispose();
         }
 
         /// <summary>
@@ -436,8 +459,10 @@ namespace TitanOrbit.ECS
                 byte kind;
                 if (Asteroids.HasComponent(other))
                     kind = KindAsteroid;
-                else if (Planets.HasComponent(other) || Moons.HasComponent(other))
-                    kind = KindInfiniteWall;
+                else if (Planets.HasComponent(other))
+                    kind = KindPlanet;
+                else if (Moons.HasComponent(other))
+                    kind = KindMoon;
                 else
                     return;
 

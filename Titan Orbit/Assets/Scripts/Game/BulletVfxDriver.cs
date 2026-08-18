@@ -739,9 +739,9 @@ namespace TitanOrbit.Game
                         hit.HitPosition, _bank, ramBank, ramTeam, hit.Damage, ramScale);
 
                     var ramSynth = new Tracer { OwnerNetworkId = 0, IsAnticipation = false };
-                    TryShowAsteroidFloatForHitRpc(
+                    TryShowHitRpcFloats(
                         hitPos, hit.HitPosition, hit.Damage, ramTeam,
-                        hit.AsteroidHealthAfter, in ramSynth);
+                        hit.AsteroidHealthAfter, hit.PlanetaryDefensePlanetId, in ramSynth);
                     continue;
                 }
 
@@ -761,9 +761,9 @@ namespace TitanOrbit.Game
                         OwnerNetworkId = ownerNetworkId,
                         IsAnticipation = false,
                     };
-                    TryShowAsteroidFloatForHitRpc(
+                    TryShowHitRpcFloats(
                         hitPos, hit.HitPosition, hit.Damage, (TeamId)hit.OwnerTeam,
-                        hit.AsteroidHealthAfter, in synth);
+                        hit.AsteroidHealthAfter, hit.PlanetaryDefensePlanetId, in synth);
                     ClearStaleAnticipationTracers(hit.OwnerTeam);
                     continue;
                 }
@@ -788,9 +788,9 @@ namespace TitanOrbit.Game
                 {
                     var tracer = _tracers[idx];
                     // Always show float on HitRpc — even when VFX was client-predicted.
-                    TryShowAsteroidFloatForHitRpc(
+                    TryShowHitRpcFloats(
                         hitPos, hit.HitPosition, hit.Damage, (TeamId)hit.OwnerTeam,
-                        hit.AsteroidHealthAfter, in tracer);
+                        hit.AsteroidHealthAfter, hit.PlanetaryDefensePlanetId, in tracer);
 
                     DestroyTracerGo(tracer);
                     RemoveAtSwap(idx);
@@ -808,9 +808,9 @@ namespace TitanOrbit.Game
                     || TryFindNearestTracerIndex(hitPos, hit.OwnerTeam, maxDistance: 48f, out nearIdx))
                 {
                     var nearTracer = _tracers[nearIdx];
-                    TryShowAsteroidFloatForHitRpc(
+                    TryShowHitRpcFloats(
                         hitPos, hit.HitPosition, hit.Damage, (TeamId)hit.OwnerTeam,
-                        hit.AsteroidHealthAfter, in nearTracer);
+                        hit.AsteroidHealthAfter, hit.PlanetaryDefensePlanetId, in nearTracer);
 
                     DestroyTracerGo(nearTracer);
                     RemoveAtSwap(nearIdx);
@@ -823,44 +823,50 @@ namespace TitanOrbit.Game
                         OwnerNetworkId = recentOwnerNetworkId,
                         IsAnticipation = true,
                     };
-                    TryShowAsteroidFloatForHitRpc(
+                    TryShowHitRpcFloats(
                         hitPos, hit.HitPosition, hit.Damage, (TeamId)hit.OwnerTeam,
-                        hit.AsteroidHealthAfter, in synth);
+                        hit.AsteroidHealthAfter, hit.PlanetaryDefensePlanetId, in synth);
                     ClearStaleAnticipationTracers(hit.OwnerTeam);
                 }
                 else
                 {
                     // No tracer to destroy — still apply asteroid teardown from HitRpc.
                     var synth = new Tracer { OwnerNetworkId = 0, IsAnticipation = false };
-                    TryShowAsteroidFloatForHitRpc(
+                    TryShowHitRpcFloats(
                         hitPos, hit.HitPosition, hit.Damage, (TeamId)hit.OwnerTeam,
-                        hit.AsteroidHealthAfter, in synth);
+                        hit.AsteroidHealthAfter, hit.PlanetaryDefensePlanetId, in synth);
                 }
             }
         }
 
         /// <summary>
-        /// HitRpc path: local asteroid impact → +Damage and server-authored HP Left.
+        /// HitRpc path: asteroid mining floats, or ship-hull damage floats.
         /// <para>
         /// [TITAN-ORBIT] <paramref name="asteroidHealthAfter"/> comes from the server on
         /// <see cref="BulletHitRpc"/> — do not subtract from lagging ghost Health. Seed-hydrate
         /// asteroids are not ghosts: <see cref="BulletHitRpcClientSystem"/> writes Health /
         /// IsDestroyed; this path shows floats (local shots) and hides/tears down the hybrid GO
         /// on kill. Do not DestroyEntity here — sim-group soft-destroy owns ECS teardown.
-        /// Non-asteroid hits pass &lt; 0 and skip mining floats entirely.
+        /// Ship hits pass &lt; 0 and <paramref name="planetaryDefensePlanetId"/> 0 — we
+        /// surface-fit the hull and show accumulated damage on that ship.
         /// </para>
         /// </summary>
-        static void TryShowAsteroidFloatForHitRpc(
+        static void TryShowHitRpcFloats(
             Vector3 hitDisplayPos,
             float3 hitLogicalPos,
             float damage,
             TeamId ownerTeam,
             float asteroidHealthAfter,
+            int planetaryDefensePlanetId,
             in Tracer tracer)
         {
-            // Not an asteroid impact — do not attribute mining floats to a nearby rock.
+            // Planetary-defense pad HP is applied in BulletHitRpcClientSystem — not a ship hull.
             if (asteroidHealthAfter < 0f)
+            {
+                if (planetaryDefensePlanetId <= 0)
+                    TryShowShipFloatForHitRpc(hitDisplayPos, damage, ownerTeam);
                 return;
+            }
 
             bool localShot = tracer.IsAnticipation ||
                              BulletMuzzlePresentation.IsLocalOwner(tracer.OwnerNetworkId);
@@ -887,6 +893,23 @@ namespace TitanOrbit.Game
             // leftover invisible hull). Authoritative teardown is AsteroidDestroyedRpc only.
             if (asteroidHealthAfter <= 0.01f)
                 return;
+        }
+
+        /// <summary>
+        /// Ship-hull damage float from HitRpc. Not gated on local-shot — incoming turret
+        /// fire must show on the victim, including the local player.
+        /// </summary>
+        static void TryShowShipFloatForHitRpc(
+            Vector3 hitDisplayPos,
+            float damage,
+            TeamId ownerTeam)
+        {
+            if (damage <= 0.01f)
+                return;
+            if (!BulletCosmeticHitQuery.TryFindShipAtImpact(hitDisplayPos, out Entity shipEntity))
+                return;
+
+            EcsFloatingCountPresenter.TryNotifyShipBulletHit(shipEntity, damage, ownerTeam);
         }
 
         /// <summary>

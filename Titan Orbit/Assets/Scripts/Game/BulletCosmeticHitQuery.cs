@@ -1404,6 +1404,95 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
+        /// Finds the ship hull that best matches a server impact point (surface fit).
+        /// Same residual score as <see cref="TryFindAsteroidAtImpact"/> so a shot that
+        /// grazes one hull does not attribute damage to a neighbor.
+        /// Quarantine-safe — hybrid proxy keys only.
+        /// </summary>
+        /// <param name="hitDisplayPos">Server hit position converted to display space.</param>
+        /// <param name="shipEntity">Best surface-fit live ship, or Null.</param>
+        /// <returns>True when a live hull contains the impact.</returns>
+        public static bool TryFindShipAtImpact(Vector3 hitDisplayPos, out Entity shipEntity)
+        {
+            shipEntity = Entity.Null;
+            var visualizer = EcsWorldVisualizer.Active;
+            if (visualizer == null)
+                return false;
+
+            var world = EcsGameBridge.ClientWorld;
+            if (world == null || !world.IsCreated)
+                return false;
+
+            var em = world.EntityManager;
+            visualizer.CopyLiveProxyEntities(ProxyScratch);
+
+            bool hasRef = ToroidalDisplay.TryGetReferencePosition(out Vector3 reference);
+            float bestSurfaceError = float.MaxValue;
+            Entity best = Entity.Null;
+            float3 hit = new float3(hitDisplayPos.x, 0f, hitDisplayPos.z);
+
+            for (int i = 0; i < ProxyScratch.Count; i++)
+            {
+                Entity entity = ProxyScratch[i];
+                if (!em.Exists(entity) ||
+                    !em.HasComponent<ShipTag>(entity) ||
+                    !em.HasComponent<ShipState>(entity) ||
+                    !em.HasComponent<LocalTransform>(entity))
+                    continue;
+
+                var state = em.GetComponentData<ShipState>(entity);
+                if (state.IsDead)
+                    continue;
+                if (!visualizer.TryGetProxy(entity, out var proxyGo) ||
+                    proxyGo == null ||
+                    !proxyGo.activeSelf)
+                    continue;
+
+                var lt = em.GetComponentData<LocalTransform>(entity);
+                float3 shipCenter = MegaShipCombatAim.GetAimPoint(em, entity, lt);
+                float shipRadius;
+                if (MegaShipCombatAim.TryGetHitBoxWorld(
+                        em, entity, lt, out shipCenter, out float2 boxHe, out _, out _))
+                {
+                    shipRadius = math.length(boxHe);
+                }
+                else if (em.HasComponent<PhysicsCollider>(entity))
+                {
+                    var physicsCollider = em.GetComponentData<PhysicsCollider>(entity);
+                    shipRadius = MegaShipCombatAim.GetHitRadiusWorld(
+                        em, entity, physicsCollider, lt.Scale);
+                }
+                else
+                {
+                    shipRadius = BodyCollisionMath.GetShipHullRadiusWorld(lt.Scale);
+                }
+
+                float3 display = hasRef
+                    ? (float3)ToroidalDisplay.ToDisplayPosition(shipCenter, reference)
+                    : shipCenter;
+                display.y = 0f;
+
+                float maxDist = shipRadius + 0.35f;
+                float dist = math.distance(display, hit);
+                if (dist > maxDist)
+                    continue;
+
+                float surfaceError = math.abs(dist - shipRadius);
+                if (surfaceError >= bestSurfaceError)
+                    continue;
+
+                bestSurfaceError = surfaceError;
+                best = entity;
+            }
+
+            if (best == Entity.Null)
+                return false;
+
+            shipEntity = best;
+            return true;
+        }
+
+        /// <summary>
         /// Finds the nearest live asteroid hybrid proxy within <paramref name="maxDistance"/>.
         /// Prefer <see cref="TryFindAsteroidAtImpact"/> for HitRpc mining floats.
         /// </summary>
