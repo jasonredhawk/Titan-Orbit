@@ -8,7 +8,8 @@ namespace TitanOrbit.ECS
     /// <summary>
     /// Client-only visual roll banking for Entities Graphics ships. Applies cosmetic Z-roll on
     /// <see cref="ShipVisualBankPivotTag"/> children so hull meshes bank during turns without
-    /// affecting physics yaw. Ported from <c>ShipBankVisualApplier</c> (hybrid proxy path).
+    /// affecting physics yaw. Bank follows yaw rate only — no forward thrust required.
+    /// Ported from <c>ShipBankVisualApplier</c> (hybrid proxy path).
     /// Reads Max Bank / Sensitivity / Smoothing from <see cref="ShipBankVisualSettingsCache"/>
     /// for regular hulls, and <see cref="MegaShipCatalog.bankVisualSettings"/> for MEGAs.
     /// </summary>
@@ -17,8 +18,8 @@ namespace TitanOrbit.ECS
     [UpdateAfter(typeof(ShipEntitiesGraphicsPresentationSystem))]
     public partial class ShipEntitiesGraphicsBankSystem : SystemBase
     {
-        const float IdleVisualLinearSpeedThreshold = 0.12f;
-        const float IdleBankAngularVelDeadbandDegPerSec = 18f;
+        /// <summary>Ignore interpolation noise at rest. Intentional yaw (including slow MEGA turns) is above this.</summary>
+        const float RestBankAngularVelDeadbandDegPerSec = 2f;
 
         /// <summary>
         /// [ECS/DOTS] Presentation tick: sample yaw rate per bank pivot, map to target roll, lerp.
@@ -91,16 +92,9 @@ namespace TitanOrbit.ECS
                 SampleYawRate(ref bankState.ValueRW, yawDeg, dt, smoothing);
 
                 float signedYawRate = bankState.ValueRO.SmoothedYawRateDegPerSec;
-                if (EntityManager.HasComponent<ShipKinematics>(shipEntity))
-                {
-                    float3 vel = EntityManager.GetComponentData<ShipKinematics>(shipEntity).Velocity;
-                    float speedSq = vel.x * vel.x + vel.z * vel.z;
-                    if (speedSq < IdleVisualLinearSpeedThreshold * IdleVisualLinearSpeedThreshold
-                        && math.abs(signedYawRate) < IdleBankAngularVelDeadbandDegPerSec)
-                    {
-                        signedYawRate = 0f;
-                    }
-                }
+                // [TITAN-ORBIT] Kill rest-pose interpolation noise only — rotating in place still banks.
+                if (math.abs(signedYawRate) < RestBankAngularVelDeadbandDegPerSec)
+                    signedYawRate = 0f;
 
                 // --- Target bank (same helper as hybrid ShipBankVisualApplier) ---
                 float targetBank = ShipPropulsionAggregation.ComputeVisualBankTargetAngle(
