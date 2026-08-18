@@ -157,11 +157,11 @@ namespace TitanOrbit.ECS
             else
                 em.AddComponentData(shipEntity, vitals);
 
-            // MEGA hull size: tier-7 baseline × catalog globalScale (default 0.2 ≈ 5× smaller).
+            // MEGA hull size: tier-7 baseline × this visual family's catalog scale.
             if (em.HasComponent<LocalTransform>(shipEntity))
             {
                 var lt = em.GetComponentData<LocalTransform>(shipEntity);
-                float hullScale = BodyCollisionMath.GetShipTierScale(7) * catalog.GetGlobalScale();
+                float hullScale = BodyCollisionMath.GetShipTierScale(7) * catalog.GetScaleForEntry(entry);
                 if (!Mathf.Approximately(lt.Scale, hullScale))
                 {
                     lt.Scale = hullScale;

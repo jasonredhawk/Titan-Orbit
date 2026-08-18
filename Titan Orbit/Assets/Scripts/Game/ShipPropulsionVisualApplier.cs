@@ -199,7 +199,7 @@ namespace TitanOrbit.Game
             RebuildVfx();
         }
 
-        /// <summary>MEGA hulls shrink with globalScale — boost jet local scale so flames stay visible.</summary>
+        /// <summary>MEGA hulls shrink with per-family catalog scale — boost jet local scale so flames stay visible.</summary>
         static float ResolveMegaVfxScale(Entity shipEntity)
         {
             var world = EcsGameBridge.ClientWorld;

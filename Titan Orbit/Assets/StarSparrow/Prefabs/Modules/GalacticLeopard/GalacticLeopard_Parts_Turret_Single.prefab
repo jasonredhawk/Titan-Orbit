@@ -11,7 +11,7 @@ GameObject:
   - component: {fileID: 2352006120413541057}
   m_Layer: 0
   m_Name: GalacticLeopard_Parts_Turret_Single
-  m_TagString: Untagged
+  m_TagString: Gun
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
@@ -23,6 +23,7 @@ Transform:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 2352006120413541056}
+  serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
   m_LocalPosition: {x: 0, y: 0, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
@@ -31,7 +32,6 @@ Transform:
   - {fileID: 3892824376159851229}
   - {fileID: 6749899842621912670}
   m_Father: {fileID: 0}
-  m_RootOrder: 0
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &2352006120751750123
 GameObject:
@@ -56,6 +56,7 @@ Transform:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 2352006120751750123}
+  serializedVersion: 2
   m_LocalRotation: {x: -0, y: -5.293956e-23, z: -3.3178941e-15, w: 1}
   m_LocalPosition: {x: 0, y: 3.08, z: -0.26000214}
   m_LocalScale: {x: 1, y: 1, z: 1}
@@ -65,7 +66,6 @@ Transform:
   - {fileID: 3892824377707944813}
   - {fileID: 3892824377516776445}
   m_Father: {fileID: 6749899842621912670}
-  m_RootOrder: 1
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &6473384403838087246
 GameObject:
@@ -90,6 +90,7 @@ Transform:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 6473384403838087246}
+  serializedVersion: 2
   m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
   m_LocalPosition: {x: 0, y: 0, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
@@ -98,13 +99,13 @@ Transform:
   - {fileID: 3798521815869167812}
   - {fileID: 2352006120751750124}
   m_Father: {fileID: 2352006120413541057}
-  m_RootOrder: 1
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1001 &2352006118887196982
 PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 2352006120413541057}
     m_Modifications:
     - target: {fileID: 1630890477721770987, guid: 562c2b1c9e5d53244970ef0de59b64f4, type: 3}
@@ -172,6 +173,9 @@ PrefabInstance:
       value: GalacticLeopard_Parts_Cylinder
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 562c2b1c9e5d53244970ef0de59b64f4, type: 3}
 --- !u!4 &3892824376159851229 stripped
 Transform:
@@ -183,6 +187,7 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 2352006120751750124}
     m_Modifications:
     - target: {fileID: 1630890477721770987, guid: 562c2b1c9e5d53244970ef0de59b64f4, type: 3}
@@ -250,6 +255,9 @@ PrefabInstance:
       value: GalacticLeopard_Parts_Cylinder_Right
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 562c2b1c9e5d53244970ef0de59b64f4, type: 3}
 --- !u!4 &3892824377707944813 stripped
 Transform:
@@ -261,6 +269,7 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 2352006120751750124}
     m_Modifications:
     - target: {fileID: 1630890477721770987, guid: 562c2b1c9e5d53244970ef0de59b64f4, type: 3}
@@ -328,6 +337,9 @@ PrefabInstance:
       value: GalacticLeopard_Parts_Cylinder_Left
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 562c2b1c9e5d53244970ef0de59b64f4, type: 3}
 --- !u!4 &3892824377516776445 stripped
 Transform:
@@ -339,6 +351,7 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 6749899842621912670}
     m_Modifications:
     - target: {fileID: 1446515769415873844, guid: bc6177e3ac49cac4ca9171bac7fed2a7, type: 3}
@@ -406,6 +419,9 @@ PrefabInstance:
       value: GalacticLeopard_Parts_Turret
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: bc6177e3ac49cac4ca9171bac7fed2a7, type: 3}
 --- !u!4 &3798521815869167812 stripped
 Transform:
@@ -417,6 +433,7 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 2352006120751750124}
     m_Modifications:
     - target: {fileID: 3888519119879321401, guid: 3a931d7ea0d891a498daf202a7d6a8c2, type: 3}
@@ -484,6 +501,9 @@ PrefabInstance:
       value: GalacticLeopard_Parts_Gun
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 3a931d7ea0d891a498daf202a7d6a8c2, type: 3}
 --- !u!4 &1536513157603732435 stripped
 Transform:

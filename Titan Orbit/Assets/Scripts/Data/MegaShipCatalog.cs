@@ -184,12 +184,12 @@ namespace TitanOrbit.Data
         /// <summary>Floor on MEGA turret traverse after defaults (degrees/sec).</summary>
         public const float MinWeaponRotationSpeed = 25f;
 
-        /// <summary>Default thruster/engine jet scale boost so MEGA VFX stays visible at globalScale 0.2.</summary>
+        /// <summary>Default thruster/engine jet scale boost so MEGA VFX stays visible at family scale 0.2.</summary>
         public const float DefaultThrusterVfxScale = 5f;
 
         /// <summary>
         /// Whole-hull multiplier vs the previous MEGA size (tier-7 transform scale).
-        /// 0.2 is about 5× smaller.
+        /// 0.2 is about 5× smaller. Used when a family scale is unset.
         /// </summary>
         public const float DefaultGlobalScale = 0.2f;
 
@@ -216,8 +216,23 @@ namespace TitanOrbit.Data
         public float asteroidPlowDamageMultiplier = DefaultAsteroidPlowDamageMultiplier;
 
         [Header("Presentation")]
-        [Tooltip("Whole-hull scale for every MEGA. 1 = previous size, 0.2 ≈ 5× smaller. Applied to LocalTransform.Scale (visuals, colliders, gun pads).")]
+        [Tooltip("Whole-hull scale for Craizan Star MEGAs. 1 = previous size, 0.2 ≈ 5× smaller. Applied to LocalTransform.Scale (visuals, colliders, gun pads). 0 uses the legacy global fallback.")]
         [Min(0.05f)]
+        public float craizanStarScale;
+
+        [Tooltip("Whole-hull scale for Galactic Leopard MEGAs. 1 = previous size, 0.2 ≈ 5× smaller. 0 uses the legacy global fallback.")]
+        [Min(0.05f)]
+        public float galacticLeopardScale;
+
+        [Tooltip("Whole-hull scale for Galactic Okamoto MEGAs. 1 = previous size, 0.2 ≈ 5× smaller. 0 uses the legacy global fallback.")]
+        [Min(0.05f)]
+        public float galacticOkamotoScale;
+
+        /// <summary>
+        /// Legacy whole-hull scale for every MEGA. Kept as fallback when a family scale is 0
+        /// so existing catalog assets that never serialized the per-family fields stay the same size.
+        /// </summary>
+        [HideInInspector]
         public float globalScale = DefaultGlobalScale;
 
         [Tooltip("Cruise speed = fastest engine or thruster + this fraction of every other propulsion part's moveSpeed. Default 0.02 (2%).")]
@@ -227,7 +242,7 @@ namespace TitanOrbit.Data
         [Tooltip("Optional 5-team material sets for theatrical menu previews. Empty = reuse regular family teamMaterials (same in-game MEGA tint).")]
         public List<ShipFamilyTeamMaterialSet> teamMaterials = new List<ShipFamilyTeamMaterialSet>();
 
-        [Tooltip("Jet VFX local scale multiplier on MEGA hulls. Compensates for globalScale (0.2 → use ~5).")]
+        [Tooltip("Jet VFX local scale multiplier on MEGA hulls. Compensates for a small family scale (0.2 → use ~5).")]
         [Min(0.25f)]
         public float thrusterVfxScale = DefaultThrusterVfxScale;
 
@@ -463,12 +478,36 @@ namespace TitanOrbit.Data
         }
 
         /// <summary>
-        /// Whole-hull MEGA scale. Existing assets that never serialized this field
-        /// (0) fall back to <see cref="DefaultGlobalScale"/>.
+        /// Legacy whole-hull MEGA scale. Existing assets that never serialized this field
+        /// (0) fall back to <see cref="DefaultGlobalScale"/>. Prefer
+        /// <see cref="GetScaleForFamily"/> so each visual line can differ.
         /// </summary>
         public float GetGlobalScale()
         {
             return globalScale > 0.001f ? globalScale : DefaultGlobalScale;
+        }
+
+        /// <summary>
+        /// Whole-hull scale for one MEGA visual family. Unset family fields (0) use
+        /// <see cref="GetGlobalScale"/> so older catalogs keep a single shared size.
+        /// </summary>
+        public float GetScaleForFamily(MegaShipVisualFamily family)
+        {
+            float authored = family switch
+            {
+                MegaShipVisualFamily.CraizanStar => craizanStarScale,
+                MegaShipVisualFamily.GalacticLeopard => galacticLeopardScale,
+                MegaShipVisualFamily.GalacticOkamoto => galacticOkamotoScale,
+                _ => 0f,
+            };
+            float raw = authored > 0.001f ? authored : GetGlobalScale();
+            return Mathf.Max(0.05f, raw);
+        }
+
+        /// <summary>Whole-hull scale for a catalog hull, or the legacy global when the entry is null.</summary>
+        public float GetScaleForEntry(MegaShipCatalogEntry entry)
+        {
+            return entry != null ? GetScaleForFamily(entry.visualFamily) : GetGlobalScale();
         }
 
         /// <summary>Extra propulsion cruise fraction (0.02 = 2% of every engine/thruster past the fastest).</summary>
@@ -688,6 +727,7 @@ namespace TitanOrbit.Data
             purchaseGemCost = DefaultPurchaseGemCost;
             if (globalScale <= 0.001f)
                 globalScale = DefaultGlobalScale;
+            SeedUnsetFamilyScalesFromGlobal();
             if (extraEngineSpeedPercent <= 0f)
                 extraEngineSpeedPercent = DefaultExtraEngineSpeedPercent;
             if (thrusterVfxScale <= 0.01f)
@@ -841,11 +881,28 @@ namespace TitanOrbit.Data
             };
         }
 
+        /// <summary>
+        /// Copies <see cref="globalScale"/> onto any family scale that is still 0 so the
+        /// inspector shows the size ships already use, then each family can be edited apart.
+        /// </summary>
+        void SeedUnsetFamilyScalesFromGlobal()
+        {
+            float fallback = GetGlobalScale();
+            if (craizanStarScale <= 0.001f)
+                craizanStarScale = fallback;
+            if (galacticLeopardScale <= 0.001f)
+                galacticLeopardScale = fallback;
+            if (galacticOkamotoScale <= 0.001f)
+                galacticOkamotoScale = fallback;
+        }
+
 #if UNITY_EDITOR
         void OnValidate()
         {
             if (weaponBulletStats.firePower <= 0.01f && hullStats.healthCap <= 0.01f)
                 ApplyDefaultStaticStats();
+            else
+                SeedUnsetFamilyScalesFromGlobal();
         }
 #endif
     }
