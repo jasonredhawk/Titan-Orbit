@@ -51,6 +51,24 @@ namespace TitanOrbit.ECS
         public const float MoonLandingApproachDelaySeconds = 0.5f;
 
         /// <summary>
+        /// Seconds to force a departing hull from the moon's space-side surface to outside
+        /// the drawn orbit zone. Matches the client takeoff cinematic.
+        /// </summary>
+        public const float MoonTakeoffDurationSeconds = 1f;
+
+        /// <summary>
+        /// Extra world units past the moon orbit shell so takeoff ends in open space
+        /// (not on the planet-facing rim where orbit motor / moon body can recapture).
+        /// </summary>
+        public const float MoonTakeoffExitPadWorld = 1.15f;
+
+        /// <summary>
+        /// Small gap past moon-body contact at takeoff start so the first tick is not
+        /// sitting inside the moon collider.
+        /// </summary>
+        public const float MoonTakeoffSurfaceStandoffWorld = 0.2f;
+
+        /// <summary>
         /// Historical gems/sec factor (<c>ShipLevel × 2</c>). Kept so docs and design notes still
         /// match the discrete beat math: one full chunk every <see cref="GemDepositBeatIntervalSeconds"/>.
         /// </summary>

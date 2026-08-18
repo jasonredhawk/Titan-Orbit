@@ -20,7 +20,10 @@ namespace TitanOrbit.ECS
     /// the client grow/shrink land cinematic. Ships stowed in a planetary defense turret never
     /// accumulate dock state (pad parks under home-moon paths). MEGA hulls start landing when any
     /// part of the collider box is inside the moon orbit shell (pivot-only tests missed long ships).
-    /// Runs before <see cref="GemDepositSystem"/> so deposit sees the latest dock flags.
+    /// Thrust while fully landed starts a forced takeoff — <see cref="ShipPhysicsDriveLogic"/>
+    /// drives the hull out of the moon orbit zone away from the planet; this system does not
+    /// rewrite dock state during that window. Runs before <see cref="GemDepositSystem"/> so
+    /// deposit sees the latest dock flags.
     /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation)]
     [UpdateInGroup(typeof(SimulationSystemGroup))]
@@ -83,10 +86,29 @@ namespace TitanOrbit.ECS
                     continue;
                 }
 
+                // --- Forced takeoff owns dock state until the hull leaves the orbit zone ---
+                // [TITAN-ORBIT] DriveLogic starts/advances takeoff on predicted + server ticks.
+                // Do not rewrite MoonPlanetId here or we wipe TakeoffPlanetId and recapture
+                // the ship in the moon/planet sandwich.
+                if (moonDock.ValueRO.IsTakingOff)
+                    continue;
+
                 // --- Thrust always undocks (explicit player takeoff) ---
                 if (shipInput.ValueRO.Thrust && moonDock.ValueRO.MoonPlanetId != 0)
                 {
-                    moonDock.ValueRW = default;
+                    if (moonDock.ValueRO.IsFullyLanded)
+                    {
+                        moonDock.ValueRW = new ShipMoonDockState
+                        {
+                            TakeoffPlanetId = moonDock.ValueRO.MoonPlanetId,
+                            TakeoffProgress = 0f,
+                        };
+                    }
+                    else
+                    {
+                        moonDock.ValueRW = default;
+                    }
+
                     continue;
                 }
 
@@ -246,6 +268,8 @@ namespace TitanOrbit.ECS
                     MoonPlanetId = landedPlanetId,
                     LandingProgress = landingProgress,
                     LandingApproachDelay = approachDelay,
+                    TakeoffPlanetId = 0,
+                    TakeoffProgress = 0f,
                 };
             }
         }

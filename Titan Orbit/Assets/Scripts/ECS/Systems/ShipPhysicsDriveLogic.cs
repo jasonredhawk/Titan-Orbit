@@ -50,7 +50,11 @@ namespace TitanOrbit.ECS
         /// </summary>
         /// <param name="input">Predicted ship input for this tick.</param>
         /// <param name="motor">Designer motor caps (thrust, max speed, turn rate).</param>
-        /// <param name="moonDock">Moon landing progress — co-orbits moon surface when fully landed without thrust.</param>
+        /// <param name="moonDock">
+        /// Moon landing progress — co-orbits moon surface when fully landed without thrust.
+        /// Thrust while fully landed writes takeoff fields and <see cref="ShipMoonTakeoffLogic"/>
+        /// owns the motor until the hull is outside the moon orbit zone.
+        /// </param>
         /// <param name="shipState">Death / team-select / mass contributors (HP, gems).</param>
         /// <param name="physicsVelocity">Read/write linear velocity handed to Unity Physics.</param>
         /// <param name="physicsDamping">Cleared so package damping cannot fight motor curves.</param>
@@ -88,7 +92,7 @@ namespace TitanOrbit.ECS
         public static void Step(
             in ShipInput input,
             in ShipMotorConfig motor,
-            in ShipMoonDockState moonDock,
+            ref ShipMoonDockState moonDock,
             ref ShipState shipState,
             ref PhysicsVelocity physicsVelocity,
             ref PhysicsDamping physicsDamping,
@@ -128,6 +132,48 @@ namespace TitanOrbit.ECS
                 ClearTerritoryBoostLatch(ref territoryLatch);
                 shipState.OverdriveLockout = false;
                 return;
+            }
+
+            // --- Forced moon takeoff (thrust while fully landed, or already departing) ---
+            // [TITAN-ORBIT] Exit along planet→moon (away from the planet) so the hull cannot
+            // stall between the moon and the planet orbit ring. Bank visuals hold 0 until
+            // TakeoffPlanetId clears (outside the drawn orbit zone).
+            bool startMoonTakeoff =
+                moonDock.MoonPlanetId != 0 &&
+                moonDock.LandingProgress >= GemEconomyConstants.MoonLandingCompleteThreshold &&
+                input.Thrust;
+            if (moonDock.IsTakingOff || startMoonTakeoff)
+            {
+                if (!moonDock.IsTakingOff)
+                {
+                    moonDock.TakeoffPlanetId = moonDock.MoonPlanetId;
+                    moonDock.TakeoffProgress = 0f;
+                    moonDock.MoonPlanetId = 0;
+                    moonDock.LandingProgress = 0f;
+                    moonDock.LandingApproachDelay = 0f;
+                }
+
+                float takeoffSpeed = math.max(8f, motor.MaxSpeed);
+                if (ShipMoonTakeoffLogic.TryApply(
+                        ref moonDock,
+                        ref transform,
+                        ref physicsVelocity,
+                        in planets,
+                        dt,
+                        mapW,
+                        mapH,
+                        elapsedSeconds,
+                        takeoffSpeed,
+                        isMegaShip))
+                {
+                    physicsDamping = default;
+                    orbitState = default;
+                    ClearTerritoryBoostLatch(ref territoryLatch);
+                    shipState.OverdriveLockout = false;
+                    return;
+                }
+
+                // Takeoff just finished — continue into normal flight this tick.
             }
 
             // --- Landed moon dock — co-orbit the moon until thrust undocks ---

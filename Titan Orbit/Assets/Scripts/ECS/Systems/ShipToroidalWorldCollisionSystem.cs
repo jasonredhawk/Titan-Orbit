@@ -69,6 +69,8 @@ namespace TitanOrbit.ECS
             public float CollisionMass;
             public byte IsMega;
             public bool Dirty;
+            /// <summary>1 while forced moon takeoff owns pose — skip planet/moon keep-out.</summary>
+            public byte TakingOff;
         }
 
         /// <summary>
@@ -203,9 +205,10 @@ namespace TitanOrbit.ECS
 
             // --- Ship snapshots for world + ship↔ship seam resolve ---
             var ships = new NativeList<ShipSphere>(16, Allocator.Temp);
-            foreach (var (transform, velocity, physicsCollider, shipState, motor, mega, shipEntity) in SystemAPI
+            foreach (var (transform, velocity, physicsCollider, shipState, motor, mega, moonDock, shipEntity) in SystemAPI
                          .Query<RefRO<LocalTransform>, RefRO<PhysicsVelocity>, RefRO<PhysicsCollider>,
-                             RefRO<ShipState>, RefRO<ShipMotorConfig>, RefRO<MegaShipState>>()
+                             RefRO<ShipState>, RefRO<ShipMotorConfig>, RefRO<MegaShipState>,
+                             RefRO<ShipMoonDockState>>()
                          .WithAll<ShipTag, Simulate>()
                          .WithEntityAccess())
             {
@@ -236,6 +239,7 @@ namespace TitanOrbit.ECS
                     CollisionMass = collisionMass,
                     IsMega = mega.ValueRO.IsMega ? (byte)1 : (byte)0,
                     Dirty = false,
+                    TakingOff = moonDock.ValueRO.IsTakingOff ? (byte)1 : (byte)0,
                 });
             }
 
@@ -307,6 +311,11 @@ namespace TitanOrbit.ECS
                         ? asteroidBounceRestitution
                         : ShipToroidalWorldCollisionLogic.WorldRestitution;
 
+                    // Forced moon takeoff writes pose along the outward ray — planet keep-out
+                    // must not shove the hull back into the moon/planet sandwich.
+                    if (ship.TakingOff != 0 && body.IsAsteroid == 0)
+                        continue;
+
                     // MEGA covering spheres are larger than the surface→ring gap on small
                     // neutrals. Cap keep-out at the orbit inner radius and resolve same-tile
                     // too (PhysX planet shove is undone in ShipCollisionBounceSystem).
@@ -351,6 +360,9 @@ namespace TitanOrbit.ECS
 
                 for (int i = 0; i < moons.Length; i++)
                 {
+                    if (ship.TakingOff != 0)
+                        break;
+
                     MoonObstacle moon = moons[i];
                     if (!ShipToroidalWorldCollisionLogic.NeedsToroidalResolve(
                             shipPos, moon.CanonicalPosition, mapW, mapH))

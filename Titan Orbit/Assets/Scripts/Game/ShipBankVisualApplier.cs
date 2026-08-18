@@ -153,14 +153,19 @@ namespace TitanOrbit.Game
                     return;
             }
 
-            // [TITAN-ORBIT] Moon dock cinematic owns transform — skip banking.
+            // [TITAN-ORBIT] Moon dock / takeoff own presentation — hold bank at 0 until
+            // the hull leaves the moon orbit zone (TakeoffPlanetId clears).
             if (em.HasComponent<ShipMoonDockState>(_shipEntity))
             {
                 var moonDock = em.GetComponentData<ShipMoonDockState>(_shipEntity);
-                if (moonDock.MoonPlanetId != 0 && moonDock.LandingProgress > 0.001f)
+                if (moonDock.IsTakingOff ||
+                    (moonDock.MoonPlanetId != 0 && moonDock.LandingProgress > 0.001f))
                 {
                     _bankPivot.localRotation = Quaternion.identity;
                     _currentBankAngle = 0f;
+                    _cachedBankAngularVelDegPerSec = 0f;
+                    _prevBankYawDeg = GetPlanarYawDegrees(transform.rotation);
+                    _bankYawInitialized = true;
                     return;
                 }
             }

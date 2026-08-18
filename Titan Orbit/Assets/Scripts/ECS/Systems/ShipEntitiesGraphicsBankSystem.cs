@@ -69,6 +69,10 @@ namespace TitanOrbit.ECS
                 if (ShouldSuppressForMoonDock(shipEntity))
                 {
                     bankState.ValueRW.CurrentBankAngleDeg = 0f;
+                    bankState.ValueRW.SmoothedYawRateDegPerSec = 0f;
+                    bankState.ValueRW.PrevYawDeg = GetPlanarYawDegrees(
+                        EntityManager.GetComponentData<LocalTransform>(shipEntity).Rotation);
+                    bankState.ValueRW.YawInitialized = true;
                     pivotTransform.ValueRW.Rotation = quaternion.identity;
                     continue;
                 }
@@ -140,7 +144,8 @@ namespace TitanOrbit.ECS
                 return false;
 
             var moonDock = EntityManager.GetComponentData<ShipMoonDockState>(shipEntity);
-            return moonDock.MoonPlanetId != 0 && moonDock.LandingProgress > 0.001f;
+            return moonDock.IsTakingOff ||
+                   (moonDock.MoonPlanetId != 0 && moonDock.LandingProgress > 0.001f);
         }
 
         /// <summary>Exponentially smooths planar yaw rate (°/s) for stable bank targets.</summary>

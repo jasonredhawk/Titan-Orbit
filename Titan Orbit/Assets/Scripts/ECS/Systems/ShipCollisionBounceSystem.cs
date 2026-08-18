@@ -103,6 +103,7 @@ namespace TitanOrbit.ECS
             var snapshotLookup = SystemAPI.GetComponentLookup<ShipPreCollisionVelocity>(true);
             var motorLookup = SystemAPI.GetComponentLookup<ShipMotorConfig>(true);
             var shipStateLookup = SystemAPI.GetComponentLookup<ShipState>(true);
+            var moonDockLookup = SystemAPI.GetComponentLookup<ShipMoonDockState>(true);
             var megaLookup = SystemAPI.GetComponentLookup<MegaShipState>(true);
             var asteroidStateLookup = SystemAPI.GetComponentLookup<AsteroidState>(true);
             var culledLookup = SystemAPI.GetComponentLookup<AsteroidClientCulledTag>(true);
@@ -145,6 +146,9 @@ namespace TitanOrbit.ECS
                 }
                 else if (pair.Kind == KindPlanet)
                 {
+                    if (IsTakingOffMoon(pair.EntityA, moonDockLookup))
+                        continue;
+
                     bool megaPlanet = megaLookup.HasComponent(pair.EntityA)
                                       && megaLookup[pair.EntityA].IsMega;
                     if (megaPlanet)
@@ -161,6 +165,9 @@ namespace TitanOrbit.ECS
                 }
                 else if (pair.Kind == KindMoon)
                 {
+                    if (IsTakingOffMoon(pair.EntityA, moonDockLookup))
+                        continue;
+
                     ApplyShipVsInfiniteWall(pair, ref working, snapshotLookup);
                     megaKeepPhysX.Add(pair.EntityA);
                 }
@@ -254,6 +261,15 @@ namespace TitanOrbit.ECS
                 // Mix into one long — good enough for per-frame dedup sets.
                 return lo ^ (hi * 397);
             }
+        }
+
+        /// <summary>
+        /// True while forced moon takeoff owns the hull — planet/moon wall bounce would
+        /// shove the ship back into the orbit sandwich.
+        /// </summary>
+        static bool IsTakingOffMoon(Entity ship, ComponentLookup<ShipMoonDockState> moonDock)
+        {
+            return moonDock.HasComponent(ship) && moonDock[ship].IsTakingOff;
         }
 
         /// <summary>Reads snapshot (or current working) velocity for a ship entity.</summary>

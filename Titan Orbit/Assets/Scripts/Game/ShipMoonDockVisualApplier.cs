@@ -33,7 +33,7 @@ namespace TitanOrbit.Game
         /// <summary>Proxy scale multiplier when parked on the moon surface.</summary>
         const float DockScaleAtSurface = 0.24f;
 
-        /// <summary>Landing and takeoff cinematic duration (seconds).</summary>
+        /// <summary>Landing cinematic duration (seconds). Takeoff uses <see cref="GemEconomyConstants.MoonTakeoffDurationSeconds"/>.</summary>
         const float LandingDurationSeconds = 1f;
 
         /// <summary>
@@ -515,7 +515,9 @@ namespace TitanOrbit.Game
             Quaternion endRotation = lt.Rotation;
             float endScale = flightScale;
 
-            _takeoffProgress = Mathf.Min(1f, _takeoffProgress + Time.deltaTime / LandingDurationSeconds);
+            _takeoffProgress = Mathf.Min(
+                1f,
+                _takeoffProgress + Time.deltaTime / GemEconomyConstants.MoonTakeoffDurationSeconds);
             float eased = GemMoonDockEaseInOut(_takeoffProgress);
 
             transform.position = Vector3.Lerp(_takeoffStartPosition, endPosition, eased);
