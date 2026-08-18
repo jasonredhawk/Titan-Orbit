@@ -901,11 +901,21 @@ namespace TitanOrbit.UI
         public void OnCurrentShipDisplayNodeClicked() =>
             OnUpgradeTreeNodeClicked(ShipLevel, BranchIndex);
 
-        /// <summary>Your Ship bar: Extra Level at current ship level with every HUD ability maxed.</summary>
+        /// <summary>
+        /// Your Ship bar: Extra Level at current ship level with every HUD ability maxed.
+        /// MEGA hulls use the static catalog sum (no Extra Level, gem cap 0).
+        /// </summary>
         public ShipFamilyPowerScoreBreakdown GetCurrentShipPowerBreakdown()
         {
             if (!TryGetChassisIdForTreeSlot(ShipLevel, BranchIndex, out string chassisId))
                 return default;
+            if (MegaShipCatalog.IsMegaChassisId(chassisId)
+                && MegaShipCatalog.TryParseCatalogIndex(chassisId, out ushort megaIndex))
+            {
+                var mega = MegaShipCatalog.Load();
+                return mega != null ? mega.GetPowerBreakdown(megaIndex) : default;
+            }
+
             var config = ShipStatApplyLogic.Config;
             return config != null
                 ? config.GetPowerScoreBreakdownForChassisIdAtShipLevel(chassisId, ShipLevel)

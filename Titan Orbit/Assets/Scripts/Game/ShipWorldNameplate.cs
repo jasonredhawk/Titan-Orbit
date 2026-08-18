@@ -8,8 +8,9 @@ using UnityEngine.Rendering;
 namespace TitanOrbit.Game
 {
     /// <summary>
-    /// World-space nameplate sitting <b>above mid-center</b> of a ship (world +Y), locked to world
-    /// orientation so it does <b>not</b> spin when the hull yaws:
+    /// World-space nameplate locked to world orientation so it does <b>not</b> spin when the hull yaws.
+    /// Regular ships sit <b>screen-below</b> the hull (world −Z); MEGA hulls sit <b>above mid-center</b>
+    /// (world +Y):
     /// <code>
     /// [Name] .............. [Lv N]
     /// [Score] ............. [#Rank]
@@ -22,10 +23,11 @@ namespace TitanOrbit.Game
     /// Name / score are left-justified; ship level / rank are right-justified inside one shared
     /// content width. Long names are truncated by cutting characters.
     /// <para>
-    /// [HYBRID] Client presentation only — fed by <see cref="EcsWorldVisualizer"/>. Clearance is
-    /// half the ship's widest local footprint (+ padding), frozen until ability-upgrade growth;
-    /// yaw must not move the plate. The label root is unparented so text/bars stay world-upright.
-    /// Fully moon-docked ships hide the plate until takeoff.
+    /// [HYBRID] Client presentation only — fed by <see cref="EcsWorldVisualizer"/>. Regular-ship
+    /// clearance is half the widest local footprint (+ padding); MEGA clearance is half-height
+    /// above mid-center. Both are frozen until ability-upgrade growth; yaw must not move the plate.
+    /// The label root is unparented so text/bars stay world-upright. Fully moon-docked ships hide
+    /// the plate until takeoff.
     /// </para>
     /// </summary>
     [DefaultExecutionOrder(120)]
@@ -59,11 +61,20 @@ namespace TitanOrbit.Game
 
         const float HeightAbovePlane = 0.08f;
 
-        /// <summary>Gap above the hull top so the plate sits over mid-center, not inside the mesh.</summary>
+        /// <summary>Gap past the hull edge — keep readable space under regular ships.</summary>
+        const float PaddingPastHull = 0.35f;
+
+        /// <summary>Gap above the hull top so MEGA plates sit over mid-center, not inside the mesh.</summary>
         const float PaddingAboveHull = 0.45f;
         const float FallbackHullExtentWorld = 0.4f;
 
-        /// <summary>Hard cap on measured half-height so a bad bounds read cannot throw the plate away.</summary>
+        /// <summary>Hard cap so a bad bounds read can never throw a regular plate off-screen.</summary>
+        const float MaxClearanceWorld = 1.6f;
+
+        /// <summary>Fraction of half-widest used as the under-ship offset (full half-extent + padding).</summary>
+        const float ClearanceScale = 1.0f;
+
+        /// <summary>Hard cap on measured half-height so a bad MEGA bounds read cannot throw the plate away.</summary>
         const float MaxHeightWorld = 8f;
 
         /// <summary>Bar track height in label-local units (world ≈ 0.10 after 25% thinner).</summary>
@@ -88,7 +99,7 @@ namespace TitanOrbit.Game
         /// <summary>
         /// Bump when row spacing / fonts / clearance policy change so live proxies refresh layout.
         /// </summary>
-        const int LayoutVersion = 13;
+        const int LayoutVersion = 14;
 
         /// <summary>Max name characters before width-fit (wider plate allows longer names).</summary>
         const int MaxNameCharacters = 28;
@@ -108,6 +119,8 @@ namespace TitanOrbit.Game
         static readonly Color FullVersionBadgeColor = new Color(1f, 0.82f, 0.25f, 0.95f);
         static readonly Color MetaRightColor = new Color(0.85f, 0.90f, 1f, 0.95f);
         static readonly Color ScoreColor = new Color(0.95f, 0.86f, 0.55f, 1f);
+
+        static readonly Vector3 ScreenBelowWorld = new Vector3(0f, 0f, -1f);
 
         static Sprite s_WhiteSprite;
         static readonly StringBuilder s_NameScratch = new StringBuilder(32);
@@ -147,6 +160,7 @@ namespace TitanOrbit.Game
         bool _cachedMiner;
         bool _cachedTransporter;
         bool _cachedVisible = true;
+        bool _isMega;
 
         /// <summary>
         /// Half of the ship's widest horizontal dimension in <b>world</b> units, cached until growth.
@@ -207,6 +221,9 @@ namespace TitanOrbit.Game
         /// <param name="isStowedInTurret">
         /// True when <c>ShipTurretControlState.IsControlling</c> — hull is hidden on a pad.
         /// </param>
+        /// <param name="isMega">
+        /// True when this hull is a purchased MEGA — plate sits above mid-center instead of under the ship.
+        /// </param>
         public void ApplyPresentation(
             int networkId,
             string displayName,
@@ -226,10 +243,12 @@ namespace TitanOrbit.Game
             int peopleCapacity,
             bool isTopKiller,
             bool isTopMiner,
-            bool isTopTransporter)
+            bool isTopTransporter,
+            bool isMega)
         {
             if (networkId > 0)
                 _networkId = networkId;
+            _isMega = isMega;
             EnsureHierarchy();
             if (!_ready || _labelRoot == null)
                 return;
@@ -377,8 +396,9 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// World position above the hull geometric center. Height follows measured half-height
-        /// so MEGAs and tiny fighters both sit the plate just over the mesh.
+        /// Regular ships: screen-below the hull footprint by half the widest world dimension.
+        /// MEGA hulls: above the geometric mid-center by measured half-height.
+        /// Clearance is frozen until ability-upgrade growth changes the signature.
         /// </summary>
         void RefreshAnchorPose()
         {
@@ -387,14 +407,32 @@ namespace TitanOrbit.Game
 
             RefreshCachedHullFootprintIfGrown();
 
-            float lift = Mathf.Clamp(
-                Mathf.Max(0.12f, _cachedHalfHeightWorld) + PaddingAboveHull,
-                0.2f,
-                MaxHeightWorld);
+            Vector3 worldPos;
+            if (_isMega)
+            {
+                float lift = Mathf.Clamp(
+                    Mathf.Max(0.12f, _cachedHalfHeightWorld) + PaddingAboveHull,
+                    0.2f,
+                    MaxHeightWorld);
 
-            Vector3 centerWorld = transform.TransformPoint(_cachedLocalCenter);
-            Vector3 worldPos = centerWorld;
-            worldPos.y = centerWorld.y + lift + HeightAbovePlane;
+                Vector3 centerWorld = transform.TransformPoint(_cachedLocalCenter);
+                worldPos = centerWorld;
+                worldPos.y = centerWorld.y + lift + HeightAbovePlane;
+            }
+            else
+            {
+                float clearance = Mathf.Clamp(
+                    Mathf.Max(0.1f, _cachedHalfWidestWorld) * ClearanceScale + PaddingPastHull,
+                    0.1f,
+                    MaxClearanceWorld);
+
+                // Anchor from XZ hull center (not raw pivot) so yaw keeps the plate under the ship.
+                Vector3 localCenter = _cachedLocalCenter;
+                localCenter.y = 0f;
+                Vector3 centerWorld = transform.TransformPoint(localCenter);
+                worldPos = centerWorld + ScreenBelowWorld * clearance;
+                worldPos.y = centerWorld.y + HeightAbovePlane;
+            }
 
             // [TITAN-ORBIT] World rotation — plate stays upright while the hull turns.
             _labelRoot.SetPositionAndRotation(worldPos, Quaternion.Euler(-90f, 0f, 0f));
@@ -623,6 +661,7 @@ namespace TitanOrbit.Game
             _cachedShowBadge = false;
             _cachedHalfWidestWorld = -1f;
             _cachedLocalCenter = Vector3.zero;
+            _isMega = false;
             _hullRenderers = null;
             _cachedGrowthSignature = float.NaN;
             _appliedLayoutVersion = -1;

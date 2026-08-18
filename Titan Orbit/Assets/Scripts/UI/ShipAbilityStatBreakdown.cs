@@ -12,6 +12,7 @@ namespace TitanOrbit.UI
     /// Telemetry-style calculation cards for the ten bottom Ship Ability chips.
     /// Builds grouped part grids (N× same component) and walks Extra Level math:
     /// Tip cards: PARTS (Primary + Extras) then FORMULA.
+    /// MEGA hulls skip Extra Level and show static catalog part sums (no +per-buy).
     /// Each part type (Cockpit, Wing, …) is its own Extra Level pool; the chip is the sum.
     /// Starting prefab <c>localScale</c> multiplies that pool’s Base / PerExtra (Cockpit at 3
     /// → 3× Health / Gems / Troops). Mass tax is only shown for Move / Accel / Turn.
@@ -182,6 +183,10 @@ namespace TitanOrbit.UI
                     nextStep = 0f;
                     break;
             }
+
+            // MEGAs are not Extra-Level upgradable — hide the green +per-buy on every chip.
+            if (live.IsMega)
+                nextStep = 0f;
         }
 
         /// <summary>
@@ -208,6 +213,12 @@ namespace TitanOrbit.UI
                 : "?";
 
             ResolveChipDisplay(abilityIndex, in live, in attrs, out float chipVal, out float nextStep, out _, out string unit);
+            if (live.IsMega)
+            {
+                AppendMegaAbilityCard(sb, abilityIndex, title, shortLabel, chipVal, unit, in parts, in live, in attrs);
+                return sb.Length > 0 ? sb.ToString() : "<color=#888888>No breakdown available</color>";
+            }
+
             AppendHeader(sb, $"{shortLabel} — {title}", chipVal, unit, lv, maxLv, nextStep, abilityIndex == 6);
 
             switch (abilityIndex)
@@ -990,6 +1001,233 @@ namespace TitanOrbit.UI
             AppendTint(sb, HexMass, "Mass turn drag  -" + FDetail(drag) + "/s");
             sb.AppendLine();
         }
+
+        /// <summary>
+        /// MEGA details card: catalog part sums only. No Extra Level, no Lv / +next,
+        /// no ability purchases. Cruise speed uses fastest engine/thruster + extra%.
+        /// </summary>
+        static void AppendMegaAbilityCard(
+            StringBuilder sb,
+            int abilityIndex,
+            string title,
+            string shortLabel,
+            float chipVal,
+            string unit,
+            in ShipSpeedometerStatTooltips.PartCache parts,
+            in ShipSpeedometerStatTooltips.LiveContext live,
+            in ShipAttributeUpgradeState attrs)
+        {
+            _ = parts;
+            // --- Readout (no purchase language) ---
+            ShipStatTooltipChrome.AppendSectionBanner(sb, "READOUT", "7EC8FF");
+            sb.Append("<b><color=#E8F4FF>").Append(shortLabel).Append(" — ").Append(title)
+                .Append("</color></b>").AppendLine();
+            sb.Append("<size=125%>");
+            AppendTint(sb, HexResult, FResult(chipVal));
+            sb.Append("</size>");
+            if (!string.IsNullOrEmpty(unit))
+                AppendTint(sb, HexMute, unit);
+            sb.AppendLine();
+            AppendTint(sb, HexMute, "MEGA hull — static catalog (not Extra Level)");
+            sb.AppendLine();
+
+            StatField field = abilityIndex switch
+            {
+                0 => StatField.FirePower,
+                1 => StatField.BulletSpeed,
+                2 => StatField.HealthCap,
+                3 => StatField.HealthRegen,
+                4 => StatField.EnergyCap,
+                5 => StatField.EnergyRegen,
+                6 => StatField.MoveSpeed,
+                7 => StatField.TurnSpeed,
+                8 => StatField.MaxGems,
+                9 => StatField.MaxPeople,
+                _ => StatField.FirePower
+            };
+
+            if (abilityIndex == 8)
+            {
+                // Gem cap is forced to 0 on every MEGA (MegaShipStatsCalculator).
+                ShipStatTooltipChrome.AppendSectionBanner(sb, "CATALOG", HexMute);
+                AppendTint(sb, HexMute, "MEGA hulls cannot carry gems.");
+                sb.AppendLine();
+                AppendTotalLine(sb, 0f, unit);
+                return;
+            }
+
+            if (abilityIndex == 6)
+            {
+                AppendMegaMoveCard(sb, in live, chipVal);
+                return;
+            }
+
+            AppendMegaCatalogParts(sb, in live, field, unit);
+            AppendTotalLine(sb, chipVal, unit);
+
+            if (abilityIndex == 0)
+            {
+                // Hull-average DPS from the live weapon config (summed MEGA firepower).
+                // Skip Extra Level RAM grids — MEGA ram is already in the catalog PARTS list.
+                ShipStatTooltipChrome.AppendSectionBanner(sb, "RELATED", "FFAA66");
+                float dps = live.Weapon.BulletDamage * live.Weapon.FireRate;
+                sb.Append("Hull avg  ").Append(FResult(live.Weapon.BulletDamage)).Append("/hit  ");
+                sb.Append(FResult(dps)).Append("/s").AppendLine();
+                BulletBankHudCopy.AppendFullSection(sb, in live, in attrs);
+            }
+            else if (abilityIndex == 1 || abilityIndex == 4 || abilityIndex == 5)
+            {
+                if (abilityIndex == 1)
+                    AppendMegaCatalogParts(sb, in live, StatField.BulletRange, "Range");
+                BulletBankHudCopy.AppendFullSection(sb, in live, in attrs);
+            }
+            else if (abilityIndex == 7)
+            {
+                AppendTurnMassTax(sb, live);
+            }
+        }
+
+        /// <summary>
+        /// Lists unique MEGA parts that contribute <paramref name="field"/>, grouped by name.
+        /// Values are raw catalog numbers — hull defaults/minimums apply only to the TOTAL.
+        /// </summary>
+        static void AppendMegaCatalogParts(
+            StringBuilder sb,
+            in ShipSpeedometerStatTooltips.LiveContext live,
+            StatField field,
+            string unitLabel)
+        {
+            ShipStatTooltipChrome.AppendSectionBanner(sb, "PARTS", "5B9BD5");
+            var catalog = MegaShipCatalog.Load();
+            if (catalog == null
+                || !catalog.TryGetEntry(live.MegaCatalogIndex, out MegaShipCatalogEntry entry)
+                || entry?.componentCounts == null)
+            {
+                sb.AppendLine("<color=#5B7A94>No catalog parts.</color>");
+                return;
+            }
+
+            bool wrote = false;
+            for (int i = 0; i < entry.componentCounts.Count; i++)
+            {
+                MegaShipComponentCount count = entry.componentCounts[i];
+                if (count == null || count.count <= 0 || string.IsNullOrEmpty(count.displayName))
+                    continue;
+                if (!catalog.TryGetUniqueComponent(count.displayName, out MegaShipComponentEntry unique)
+                    || unique == null)
+                    continue;
+
+                float each = ReadMegaField(unique.stats, field);
+                if (each <= 0.0001f)
+                    continue;
+
+                wrote = true;
+                AppendTint(sb, HexCount, count.count.ToString(CultureInfo.InvariantCulture) + "×");
+                sb.Append(" ").Append(count.displayName).Append("  ");
+                AppendTint(sb, HexResult, FDetail(each));
+                if (!string.IsNullOrEmpty(unitLabel))
+                {
+                    sb.Append(" ");
+                    AppendTint(sb, HexMute, unitLabel);
+                }
+
+                if (count.count > 1)
+                {
+                    sb.Append("  ");
+                    AppendTint(sb, HexMute, "→ ");
+                    AppendTint(sb, HexResult, FResult(each * count.count));
+                }
+
+                sb.AppendLine();
+            }
+
+            if (!wrote)
+                sb.AppendLine("<color=#5B7A94>No contributing parts.</color>");
+        }
+
+        /// <summary>
+        /// MEGA cruise: fastest Engine/Thruster + extra% of the rest — same as
+        /// <see cref="MegaShipComponentInventory.CombineEngineCruise"/>.
+        /// </summary>
+        static void AppendMegaMoveCard(
+            StringBuilder sb,
+            in ShipSpeedometerStatTooltips.LiveContext live,
+            float chipVal)
+        {
+            ShipStatTooltipChrome.AppendSectionBanner(sb, "MOVE PARTS", "5B9BD5");
+            var catalog = MegaShipCatalog.Load();
+            if (catalog == null
+                || !catalog.TryGetEntry(live.MegaCatalogIndex, out MegaShipCatalogEntry entry)
+                || entry?.componentCounts == null)
+            {
+                sb.AppendLine("<color=#5B7A94>No catalog parts.</color>");
+                AppendTotalLine(sb, chipVal, "Move");
+                return;
+            }
+
+            float extraPercent = catalog.GetExtraEngineSpeedPercent();
+            var moves = new List<float>(8);
+            for (int i = 0; i < entry.componentCounts.Count; i++)
+            {
+                MegaShipComponentCount count = entry.componentCounts[i];
+                if (count == null || count.count <= 0 || string.IsNullOrEmpty(count.displayName))
+                    continue;
+                if (!catalog.TryGetUniqueComponent(count.displayName, out MegaShipComponentEntry unique)
+                    || unique == null)
+                    continue;
+                if (!ShipFamilyPartTypes.IsPropulsion(unique.partType))
+                    continue;
+                if (unique.stats.moveSpeed <= 0.0001f)
+                    continue;
+
+                for (int n = 0; n < count.count; n++)
+                    moves.Add(unique.stats.moveSpeed);
+
+                AppendTint(sb, HexCount, count.count.ToString(CultureInfo.InvariantCulture) + "×");
+                sb.Append(" ").Append(count.displayName).Append("  ");
+                AppendTint(sb, HexResult, FDetail(unique.stats.moveSpeed));
+                sb.Append(" ");
+                AppendTint(sb, HexMute, unique.partType);
+                sb.AppendLine();
+            }
+
+            ShipStatTooltipChrome.AppendSectionBanner(sb, "CRUISE", "7DFFB2");
+            AppendTint(sb, HexMute, "fastest + ");
+            AppendTint(sb, HexPerExtra, (extraPercent * 100f).ToString("0.##", CultureInfo.InvariantCulture) + "%");
+            AppendTint(sb, HexMute, " of other engines/thrusters");
+            sb.AppendLine();
+            float combined = MegaShipComponentInventory.CombineEngineCruise(moves, extraPercent);
+            if (combined > 0.0001f)
+            {
+                AppendTint(sb, HexMute, "raw  ");
+                AppendTint(sb, HexResult, FResult(combined));
+                sb.AppendLine();
+            }
+
+            AppendMegaCatalogParts(sb, in live, StatField.AccelerationCap, "Accel");
+            AppendTurnMassTax(sb, live);
+            AppendTotalLine(sb, chipVal, "Move");
+        }
+
+        /// <summary>Reads one HUD field from a raw MEGA unique-component block.</summary>
+        static float ReadMegaField(in MegaShipPartStats s, StatField field) =>
+            field switch
+            {
+                StatField.FirePower => s.firePower,
+                StatField.BulletSpeed => s.bulletSpeed,
+                StatField.HealthCap => s.healthCap,
+                StatField.HealthRegen => s.healthRegen,
+                StatField.EnergyCap => s.energyCap,
+                StatField.EnergyRegen => s.energyRegen,
+                StatField.MoveSpeed => s.moveSpeed,
+                StatField.TurnSpeed => s.turnSpeed,
+                StatField.MaxGems => 0f,
+                StatField.MaxPeople => s.maxPeople,
+                StatField.AccelerationCap => s.accelerationCap,
+                StatField.BulletRange => s.bulletRange,
+                StatField.RammingPower => s.rammingPower,
+                _ => 0f
+            };
 
         /// <summary>
         /// Telemetry-style header: title, big readout, Lv / next step, then a tech divider.

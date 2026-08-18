@@ -236,6 +236,11 @@ namespace TitanOrbit.Game
             /// True when the ship is stowed in a planetary defense turret — nameplate stays hidden.
             /// </summary>
             public bool IsStowedInTurret;
+
+            /// <summary>
+            /// True when the hull is a purchased MEGA — plate sits above mid-center, not under the ship.
+            /// </summary>
+            public bool IsMega;
         }
 
         /// <summary>
@@ -1954,7 +1959,7 @@ namespace TitanOrbit.Game
                 bool landedOnMoon = IsShipFullyLandedOnMoon(em, shipEntity);
                 ApplyShipNameplatePresentation(
                     proxyGo, networkId, ship, kills, gemsDeposited, peopleDelivered,
-                    landedOnMoon, stowedInTurret);
+                    landedOnMoon, stowedInTurret, IsMegaNameplateHull(em, shipEntity));
             }
         }
 
@@ -2342,6 +2347,9 @@ namespace TitanOrbit.Game
         /// <param name="isStowedInTurret">
         /// True when the ship is piloting a planetary defense pad — plate is hidden.
         /// </param>
+        /// <param name="isMega">
+        /// True when the hull is a purchased MEGA — plate sits above mid-center, not under the ship.
+        /// </param>
         void ApplyShipNameplatePresentation(
             GameObject proxyGo,
             int networkId,
@@ -2350,7 +2358,8 @@ namespace TitanOrbit.Game
             int gemsDeposited,
             int peopleDelivered,
             bool isLandedOnMoon,
-            bool isStowedInTurret)
+            bool isStowedInTurret,
+            bool isMega)
         {
             // --- ApplyShipNameplatePresentation ---
             if (proxyGo == null)
@@ -2384,7 +2393,8 @@ namespace TitanOrbit.Game
                 ship.PeopleCapacity,
                 ShipTopOfTeamRoles.IsKiller(ship.Team, networkId),
                 ShipTopOfTeamRoles.IsMiner(ship.Team, networkId),
-                ShipTopOfTeamRoles.IsTransporter(ship.Team, networkId));
+                ShipTopOfTeamRoles.IsTransporter(ship.Team, networkId),
+                isMega);
         }
 
         /// <summary>
@@ -2409,7 +2419,8 @@ namespace TitanOrbit.Game
                     pending.GemsDeposited,
                     pending.PeopleDelivered,
                     pending.IsLandedOnMoon,
-                    pending.IsStowedInTurret);
+                    pending.IsStowedInTurret,
+                    pending.IsMega);
             }
 
             _pendingShipNameplates.Clear();
@@ -2449,6 +2460,7 @@ namespace TitanOrbit.Game
             // [NETCODE] ShipTurretControlState is ghosted — nameplate root is unparented, so we
             // must hide explicitly (SetActive(false) on the hull proxy is not enough).
             bool stowedInTurret = IsShipHullStowed(em, entity);
+            bool isMega = IsMegaNameplateHull(em, entity);
 
             _nameplateRoleCandidates.Add(new ShipTopOfTeamRoles.Candidate
             {
@@ -2470,6 +2482,7 @@ namespace TitanOrbit.Game
                 PeopleDelivered = peopleDelivered,
                 IsLandedOnMoon = landedOnMoon,
                 IsStowedInTurret = stowedInTurret,
+                IsMega = isMega,
             });
         }
 
@@ -2487,6 +2500,20 @@ namespace TitanOrbit.Game
         {
             return em.HasComponent<ShipTurretControlState>(shipEntity)
                 && em.GetComponentData<ShipTurretControlState>(shipEntity).IsControlling;
+        }
+
+        /// <summary>
+        /// True when this hull should use the MEGA mid-center nameplate (ghost MEGA or MEGA chassis id).
+        /// Reads the already-synced ghost / cached chassis id — not a ship gather.
+        /// </summary>
+        bool IsMegaNameplateHull(EntityManager em, Entity shipEntity)
+        {
+            if (em.HasComponent<MegaShipState>(shipEntity)
+                && em.GetComponentData<MegaShipState>(shipEntity).IsMega)
+                return true;
+
+            return _proxyChassisIds.TryGetValue(shipEntity, out string chassisId)
+                   && MegaShipCatalog.IsMegaChassisId(chassisId);
         }
 
         static bool IsShipFullyLandedOnMoon(EntityManager em, Entity shipEntity)

@@ -146,6 +146,18 @@ namespace TitanOrbit.UI
 
             /// <summary>Bottom-HUD Fire Power purchases (Extra Level steps with ship level).</summary>
             public int FirePowerAbilityLevel;
+
+            /// <summary>
+            /// True when the local hull is a MEGA. Chips hide +per-buy and the details card
+            /// shows catalog sums instead of Extra Level (MEGAs are not bottom-bar upgradable).
+            /// </summary>
+            public bool IsMega;
+
+            /// <summary>
+            /// <see cref="MegaShipCatalog"/> index when <see cref="IsMega"/> is true.
+            /// Details cards walk unique-component counts from this row.
+            /// </summary>
+            public ushort MegaCatalogIndex;
         }
 
         /// <summary>
@@ -184,6 +196,12 @@ namespace TitanOrbit.UI
             {
                 return true;
             }
+
+            // --- MEGA hulls: unique-component library, not family Extra Level ---
+            // [TITAN-ORBIT] MEGA_### is not an AstroEagle/CosmicShark chassis. Instantiating
+            // a family prefab here would list the wrong parts and Extra-Level them.
+            if (MegaShipCatalog.IsMegaChassisId(chassisId))
+                return TryRefreshMegaPartCache(chassisId, shipLevel, ref cache);
 
             // --- Resolve family + tier prefab ---
             if (!ShipStatApplyLogic.TryResolveFamilyForChassisId(chassisId, out ShipFamilyDefinition family)
@@ -248,6 +266,74 @@ namespace TitanOrbit.UI
             cache.ChassisId = chassisId;
             cache.ShipLevel = shipLevel;
             cache.EquipmentHash = equipmentHash;
+            cache.Valid = cache.Ids.Count > 0;
+            return cache.Valid;
+        }
+
+        /// <summary>
+        /// Fills <paramref name="cache"/> from the MEGA unique-component library × hull counts.
+        /// No prefab Instantiate, no Extra Level, no moon-store extras (MEGAs do not buy parts).
+        /// Each counted copy is one list row so the details card can show <c>3× Armor1</c>.
+        /// </summary>
+        /// <param name="chassisId">MEGA chassis id (<c>MEGA_007</c>).</param>
+        /// <param name="shipLevel">Unused for MEGA math — stored so the cache key stays stable.</param>
+        /// <param name="cache">In/out part cache for chip / tip grids.</param>
+        /// <returns>True when at least one unique component was listed.</returns>
+        static bool TryRefreshMegaPartCache(string chassisId, int shipLevel, ref PartCache cache)
+        {
+            // --- Catalog row ---
+            var catalog = MegaShipCatalog.Load();
+            if (catalog == null
+                || !catalog.TryGetEntryByChassisId(chassisId, out MegaShipCatalogEntry entry)
+                || entry == null)
+            {
+                cache.Valid = false;
+                return false;
+            }
+
+            if (cache.Ids == null)
+                cache.Ids = new List<string>(16);
+            else
+                cache.Ids.Clear();
+            if (cache.Stats == null)
+                cache.Stats = new List<ShipComponentAbilityStats>(16);
+            else
+                cache.Stats.Clear();
+            if (cache.LocalScales == null)
+                cache.LocalScales = new List<Vector3>(16);
+            else
+                cache.LocalScales.Clear();
+
+            // --- Unique names × how many times they appear on this hull ---
+            List<MegaShipComponentCount> counts = entry.componentCounts;
+            if (counts != null)
+            {
+                for (int i = 0; i < counts.Count; i++)
+                {
+                    MegaShipComponentCount row = counts[i];
+                    if (row == null || row.count <= 0 || string.IsNullOrEmpty(row.displayName))
+                        continue;
+                    if (!catalog.TryGetUniqueComponent(row.displayName, out MegaShipComponentEntry unique)
+                        || unique == null)
+                        continue;
+
+                    // Raw unique-component numbers — hull-level defaults/minimums apply only
+                    // to the summed chip total (MegaShipStatsCalculator), not each listed part.
+                    ShipComponentAbilityStats stats = unique.stats.ToAbilityStats();
+                    for (int n = 0; n < row.count; n++)
+                    {
+                        cache.Ids.Add(row.displayName);
+                        cache.Stats.Add(stats);
+                        cache.LocalScales.Add(Vector3.one);
+                    }
+                }
+            }
+
+            cache.Propulsion = default;
+            cache.Family = null;
+            cache.ChassisId = chassisId;
+            cache.ShipLevel = shipLevel;
+            cache.EquipmentHash = 0;
             cache.Valid = cache.Ids.Count > 0;
             return cache.Valid;
         }

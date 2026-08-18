@@ -1101,13 +1101,25 @@ namespace TitanOrbit.UI
 
             if (string.IsNullOrEmpty(chassisId))
             {
-                ShipStatApplyLogic.TryResolveChassisId(
-                    ship.Team,
-                    ship.ShipLevel,
-                    branchIndex,
-                    out chassisId,
-                    allowFallback: true,
-                    shipFamilyConfigIndex: familyIndex);
+                // MEGA ghosts store CatalogIndex on MegaShipState — do not map L7+slot
+                // onto a regular family ladder chassis (that was painting AstroEagle L7 numbers).
+                if (em.HasComponent<MegaShipState>(shipEntity)
+                    && em.GetComponentData<MegaShipState>(shipEntity).IsMega)
+                {
+                    chassisId = MegaShipCatalog.FormatChassisId(
+                        em.GetComponentData<MegaShipState>(shipEntity).CatalogIndex);
+                }
+                else
+                {
+                    ShipStatApplyLogic.TryResolveChassisId(
+                        ship.Team,
+                        ship.ShipLevel,
+                        branchIndex,
+                        out chassisId,
+                        allowFallback: true,
+                        shipFamilyConfigIndex: familyIndex);
+                }
+
                 _cachedChassisId = chassisId;
             }
 
@@ -1118,41 +1130,56 @@ namespace TitanOrbit.UI
                 ShipSpeedometerStatTooltips.TryRefreshPartCache(
                     em, shipEntity, chassisId, ship.ShipLevel, ref _partCache);
 
-                ShipAbilityLevelCounts abilityCounts = hasAttrs
-                    ? ShipAttributeUpgradeLogic.ToAbilityLevelCounts(in attrs)
-                    : default;
-
-                if (_partCache.Valid && _partCache.Ids != null && _partCache.Ids.Count > 0)
+                bool megaChassis = MegaShipCatalog.IsMegaChassisId(chassisId);
+                if (megaChassis)
                 {
-                    effectiveStats = ShipComponentExtraLevelMath.AggregateAndEvaluate(
-                        _partCache.Ids,
-                        _partCache.Stats,
-                        ship.ShipLevel,
-                        in abilityCounts);
-                    effectiveStats = ShipComponentExtraLevelMath.ApplyMobilityPenalties(
-                        effectiveStats, ship.ShipLevel);
-                    if (ShipStatApplyLogic.TryResolveFamilyForChassisId(chassisId, out ShipFamilyDefinition family)
-                        && family != null)
-                    {
-                        effectiveStats = family.ApplyStatFallbacks(effectiveStats);
-                        effectiveStats = family.ApplySpecialBonuses(effectiveStats);
-                    }
+                    // Static catalog sum — MEGAs have no Extra Level and no bottom-HUD purchases.
+                    // GetEffectiveStatsAtShipLevel would treat shipLevel 7 as six Extra Level steps
+                    // and inflate every chip far above the motor.
+                    if (MegaShipCatalog.TryParseCatalogIndex(chassisId, out ushort megaIdx))
+                        MegaShipStatsCalculator.TrySumForCatalogIndex(megaIdx, out effectiveStats);
+                    else
+                        ShipStatApplyLogic.TryGetBaseStatsForChassis(
+                            chassisId, ship.ShipLevel, out effectiveStats);
                 }
-                else if (ShipStatApplyLogic.TryGetBaseStatsForChassis(
-                             chassisId, ship.ShipLevel, out ShipComponentAbilityStats summed))
+                else
                 {
-                    // Fallback: single-pool Extra Level (count=1) when prefab parts are unavailable.
-                    effectiveStats = ShipComponentStoreData.GetEffectiveStatsAtShipLevel(
-                        summed, ship.ShipLevel);
-                    if (hasAttrs)
+                    ShipAbilityLevelCounts abilityCounts = hasAttrs
+                        ? ShipAttributeUpgradeLogic.ToAbilityLevelCounts(in attrs)
+                        : default;
+
+                    if (_partCache.Valid && _partCache.Ids != null && _partCache.Ids.Count > 0)
                     {
-                        // [LEGACY] ApplyMultipliers / ApplyMoveSpeedAbilitySteps are no-ops —
-                        // Extra Level already includes ability purchases when part lists exist.
-                        ShipAttributeUpgradeLogic.ApplyMultipliers(ref effectiveStats, attrs);
-                        ShipAttributeUpgradeLogic.ResolveMoveSpeedAbilitySteps(
-                            summed, out float moveStep, out float accelStep, out float odDrainStep);
-                        ShipAttributeUpgradeLogic.ApplyMoveSpeedAbilitySteps(
-                            ref effectiveStats, attrs, moveStep, accelStep, odDrainStep);
+                        effectiveStats = ShipComponentExtraLevelMath.AggregateAndEvaluate(
+                            _partCache.Ids,
+                            _partCache.Stats,
+                            ship.ShipLevel,
+                            in abilityCounts);
+                        effectiveStats = ShipComponentExtraLevelMath.ApplyMobilityPenalties(
+                            effectiveStats, ship.ShipLevel);
+                        if (ShipStatApplyLogic.TryResolveFamilyForChassisId(chassisId, out ShipFamilyDefinition family)
+                            && family != null)
+                        {
+                            effectiveStats = family.ApplyStatFallbacks(effectiveStats);
+                            effectiveStats = family.ApplySpecialBonuses(effectiveStats);
+                        }
+                    }
+                    else if (ShipStatApplyLogic.TryGetBaseStatsForChassis(
+                                 chassisId, ship.ShipLevel, out ShipComponentAbilityStats summed))
+                    {
+                        // Fallback: single-pool Extra Level (count=1) when prefab parts are unavailable.
+                        effectiveStats = ShipComponentStoreData.GetEffectiveStatsAtShipLevel(
+                            summed, ship.ShipLevel);
+                        if (hasAttrs)
+                        {
+                            // [LEGACY] ApplyMultipliers / ApplyMoveSpeedAbilitySteps are no-ops —
+                            // Extra Level already includes ability purchases when part lists exist.
+                            ShipAttributeUpgradeLogic.ApplyMultipliers(ref effectiveStats, attrs);
+                            ShipAttributeUpgradeLogic.ResolveMoveSpeedAbilitySteps(
+                                summed, out float moveStep, out float accelStep, out float odDrainStep);
+                            ShipAttributeUpgradeLogic.ApplyMoveSpeedAbilitySteps(
+                                ref effectiveStats, attrs, moveStep, accelStep, odDrainStep);
+                        }
                     }
                 }
             }
@@ -1645,11 +1672,19 @@ namespace TitanOrbit.UI
                     RamSelfDamage = tipRamSelf,
                     RamRating = tipRamRating,
                     ComponentSize = componentSize,
-                    MoveSpeedAbilityLevel = _moveSpeedAbilityLevel,
-                    MoveStepPreview = _partCache.Valid
-                        ? Mathf.Max(0f, _partCache.Propulsion.moveSpeedPerExtraLevel)
-                        : 0f,
+                    MoveSpeedAbilityLevel = localMega ? 0 : _moveSpeedAbilityLevel,
+                    // MEGAs are not Extra-Level upgradable — hide the green +per-buy on chips.
+                    MoveStepPreview = localMega
+                        ? 0f
+                        : (_partCache.Valid
+                            ? Mathf.Max(0f, _partCache.Propulsion.moveSpeedPerExtraLevel)
+                            : 0f),
                     FirePowerAbilityLevel = _statsCacheAttrs.FirePower,
+                    IsMega = localMega,
+                    MegaCatalogIndex = localMega
+                        && MegaShipCatalog.TryParseCatalogIndex(_cachedChassisId, out ushort liveMegaIdx)
+                        ? liveMegaIdx
+                        : (ushort)0,
                 };
                 BulletBankHudCopy.ApplyLoadout(ref _liveTooltipContext);
             }

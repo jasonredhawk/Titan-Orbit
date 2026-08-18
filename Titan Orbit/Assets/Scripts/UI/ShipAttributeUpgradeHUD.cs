@@ -28,6 +28,7 @@ namespace TitanOrbit.UI
     /// a calculation card from <see cref="ShipAbilityStatBreakdown"/> when the STATS row is on.
     /// MEGA hulls keep the ten buttons visible but disabled (no Extra Level purchases) and hide
     /// the little tick squares so the strip does not look like upgrades are still available.
+    /// Quick-stat chips and hover details use <see cref="MegaShipStatsCalculator"/> (no +per-buy).
     /// Chip values and tip bodies are rebuilt when the ship / ability snapshot key changes
     /// (new ship or ability purchase) — never every frame for live HP/speed/cargo.
     /// The snapshot key latches only after chassis stats <b>and</b> hull ComponentSize are ready
@@ -332,13 +333,30 @@ namespace TitanOrbit.UI
         /// </summary>
         static bool IsLocalShipMega()
         {
+            return TryGetLocalMegaCatalogIndex(out _);
+        }
+
+        /// <summary>
+        /// Reads the local owner's <see cref="MegaShipState.CatalogIndex"/> when the hull is a MEGA.
+        /// Uses the seeded local-ship lookup — no extra archetype gather (Join Team Crash!!! safe).
+        /// </summary>
+        /// <param name="catalogIndex">MEGA catalog row when this returns true.</param>
+        /// <returns>True when the local ghost is a MEGA with a readable catalog index.</returns>
+        static bool TryGetLocalMegaCatalogIndex(out ushort catalogIndex)
+        {
+            catalogIndex = 0;
             var world = EcsGameBridge.ClientWorld;
             if (world == null || !world.IsCreated)
                 return false;
             if (!EcsGameBridge.TryGetLocalShipEntityOnWorld(world, out var shipEntity))
                 return false;
-            return world.EntityManager.HasComponent<MegaShipState>(shipEntity)
-                   && world.EntityManager.GetComponentData<MegaShipState>(shipEntity).IsMega;
+            if (!world.EntityManager.HasComponent<MegaShipState>(shipEntity))
+                return false;
+            var mega = world.EntityManager.GetComponentData<MegaShipState>(shipEntity);
+            if (!mega.IsMega)
+                return false;
+            catalogIndex = mega.CatalogIndex;
+            return true;
         }
 
         private bool ShouldShowUpgradeBar() =>
@@ -1100,11 +1118,15 @@ namespace TitanOrbit.UI
         /// Hull ComponentSize used for mass tax. Included so MS/TS chips repaint when
         /// <see cref="ShipMotorConfig.HullMassReference"/> arrives after the first chassis paint.
         /// </param>
+        /// <param name="megaCatalogKey">
+        /// 0 for a regular hull; MEGA catalog index + 1 so chips rebuild when the MEGA row changes.
+        /// </param>
         /// <returns>Stable fingerprint for the current loadout matrix.</returns>
         static int ComputeStatsSnapshotKey(
             in ShipState ship,
             in ShipAttributeUpgradeState attrs,
-            float componentSize)
+            float componentSize,
+            int megaCatalogKey)
         {
             // [STANDARD] Unchecked hash combine — collisions are rare; worst case is one extra rebuild.
             unchecked
@@ -1130,6 +1152,9 @@ namespace TitanOrbit.UI
                 h = h * 31 + Mathf.RoundToInt(ship.CurrentGems);
                 h = h * 31 + ship.CurrentPeople;
                 h = h * 31 + BulletBankHudCopy.SnapshotKey();
+                // MEGA catalog row — buying / swapping a MEGA must rebuild chips even when
+                // ship level and family stay at 7. 0 = regular hull.
+                h = h * 31 + megaCatalogKey;
                 return h;
             }
         }
@@ -1358,6 +1383,56 @@ namespace TitanOrbit.UI
                 Motor = new ShipMotorConfig { SkipMassTax = IsLocalShipMega() ? (byte)1 : (byte)0 },
             };
             BulletBankHudCopy.ApplyLoadout(ref live);
+
+            bool mega = IsLocalShipMega();
+            ushort megaIndex = 0;
+            if (mega)
+                TryGetLocalMegaCatalogIndex(out megaIndex);
+            else if (gotMobilityShared && mobilityShared.IsMega)
+            {
+                // Speedometer already latched MEGA this frame (entity lookup can miss during backlog).
+                mega = true;
+                megaIndex = mobilityShared.MegaCatalogIndex;
+            }
+
+            live.IsMega = mega;
+            if (mega && MegaShipStatsCalculator.TrySumForCatalogIndex(megaIndex, out ShipComponentAbilityStats megaStats))
+            {
+                // --- MEGA: catalog totals only ---
+                // [TITAN-ORBIT] Team+level+branch would resolve a regular L7 family chassis
+                // (same slot index as the MEGA planet slot) and Extra-Level it. MEGAs are
+                // static — no Extra Level, no +per-buy, gem cap stays 0.
+                live.MegaCatalogIndex = megaIndex;
+                live.EffectiveStats = megaStats;
+                live.ChassisMaxSpeed = megaStats.moveSpeed;
+                live.ChassisAccel = megaStats.accelerationCap > 0.1f
+                    ? megaStats.accelerationCap
+                    : megaStats.moveSpeed;
+                live.ChassisTurnDeg = ShipPropulsionAggregation.ConvertTurnDefinitionToDegreesPerSecond(
+                    megaStats.turnSpeed);
+                live.MoveStepPreview = 0f;
+                if (hasComponentSize)
+                {
+                    ShipMobilityResolution.TaxedMotorStats taxed = ShipMobilityResolution.ResolveLiveMotorStats(
+                        live.ChassisMaxSpeed,
+                        live.ChassisAccel,
+                        live.ChassisTurnDeg,
+                        ship.CurrentGems,
+                        ship.CurrentPeople,
+                        componentSize,
+                        skipMassTax: true);
+                    live.TotalMass = taxed.TotalMass;
+                    live.CruiseMaxSpeed = taxed.MaxSpeed;
+                    live.TaxedAccel = taxed.EngineThrust;
+                    live.TaxedTurnDeg = taxed.RotationSpeed;
+                    live.LiveMaxSpeed = taxed.MaxSpeed;
+                }
+
+                if (ramAst <= 0.0001f && megaStats.rammingPower > 0.01f)
+                    live.RamRating = megaStats.rammingPower;
+
+                return true;
+            }
 
             if (ShipStatApplyLogic.TryResolveChassisId(
                     ship.Team,
@@ -1845,6 +1920,7 @@ namespace TitanOrbit.UI
             {
                 _lastMegaHud = mega;
                 _slotVisualsSeeded = false;
+                _statsSnapshotKey = int.MinValue;
                 ApplyMegaButtonChrome(mega);
             }
 
@@ -1925,7 +2001,8 @@ namespace TitanOrbit.UI
                 return;
 
             // Key includes ComponentSize + CurrentGems/People so cargo mass tax repaints MS/TS.
-            int snapshotKey = ComputeStatsSnapshotKey(in ship, in attrs, live.ComponentSize);
+            int snapshotKey = ComputeStatsSnapshotKey(
+                in ship, in attrs, live.ComponentSize, live.IsMega ? live.MegaCatalogIndex + 1 : 0);
             if (snapshotKey == _statsSnapshotKey)
                 return;
 

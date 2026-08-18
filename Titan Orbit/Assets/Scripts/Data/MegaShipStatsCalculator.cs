@@ -5,6 +5,8 @@ namespace TitanOrbit.Data
     /// <summary>
     /// Sums static MEGA part stats from the catalog unique-component library × prefab
     /// name counts. No Extra Level, no attribute upgrades.
+    /// HUD chips and orbit-menu power bars call here so they never Extra-Level a MEGA
+    /// as if it were a regular L7 family hull.
     /// </summary>
     public static class MegaShipStatsCalculator
     {
@@ -53,6 +55,24 @@ namespace TitanOrbit.Data
             summed = resolved.ToAbilityStats();
             summed.maxGems = 0f;
             return true;
+        }
+
+        /// <summary>
+        /// HUD / speedometer helper: catalog sum for a MEGA chassis index.
+        /// Returns false when the catalog or hull row is missing.
+        /// </summary>
+        /// <param name="catalogIndex">Index into <see cref="MegaShipCatalog.entries"/>.</param>
+        /// <param name="summed">Runtime-resolved catalog totals (gem cap forced to 0).</param>
+        /// <returns>True when the catalog row existed and summed.</returns>
+        public static bool TrySumForCatalogIndex(int catalogIndex, out ShipComponentAbilityStats summed)
+        {
+            summed = default;
+            var catalog = MegaShipCatalog.Load();
+            if (catalog == null || !catalog.TryGetEntry(catalogIndex, out MegaShipCatalogEntry entry)
+                || entry == null)
+                return false;
+
+            return SumFromEntry(entry, catalog, out summed);
         }
 
         /// <summary>True when a stored sum was never written (all zeros).</summary>
