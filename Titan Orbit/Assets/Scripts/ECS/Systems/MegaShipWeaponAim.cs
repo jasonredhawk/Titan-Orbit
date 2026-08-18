@@ -1,3 +1,4 @@
+using TitanOrbit.Generation;
 using Unity.Entities;
 using Unity.Mathematics;
 using Unity.NetCode;
@@ -180,6 +181,40 @@ namespace TitanOrbit.ECS
             mouseDir = math.normalize(mouseDir);
             aimPoint = hull.Position + mouseDir * dist;
             aimPoint.y = hull.Position.y;
+            return true;
+        }
+
+        /// <summary>
+        /// World XZ from this muzzle to the owner's mouse point (streams converge).
+        /// Falls back to a shared mouse direction only when <see cref="ShipInput.AimDistance"/>
+        /// is missing (old command layout).
+        /// </summary>
+        public static bool TryGetMuzzleDirToMousePoint(
+            in LocalTransform hull,
+            in ShipWeaponMountElement mount,
+            in ShipInput input,
+            float mapW,
+            float mapH,
+            out float3 worldDir)
+        {
+            worldDir = default;
+            if (TryGetOwnerMouseAimPoint(in hull, in input, out float3 aimPoint))
+            {
+                if (!ShipWeaponPose.TryResolve(hull, mount, out float3 muzzle, out _))
+                    muzzle = hull.Position;
+                float3 offset = ToroidalMapEcs.ShortestOffsetXZ(muzzle, aimPoint, mapW, mapH);
+                offset.y = 0f;
+                float len = math.length(offset);
+                if (len < 0.05f)
+                    return false;
+                worldDir = offset / len;
+                return true;
+            }
+
+            float3 mouseDir = new float3(input.AimPlanarDir.x, 0f, input.AimPlanarDir.y);
+            if (math.lengthsq(mouseDir) < 0.01f)
+                return false;
+            worldDir = math.normalize(mouseDir);
             return true;
         }
 

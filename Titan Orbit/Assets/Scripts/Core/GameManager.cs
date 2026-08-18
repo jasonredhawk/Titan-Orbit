@@ -81,7 +81,7 @@ namespace TitanOrbit.Core
         [SerializeField] bool debugSelfHarmRocketsAndMines;
 
         [Header("Debug — MEGA Ships")]
-        [Tooltip("When enabled, MEGA guns auto-aim and fire on asteroids (damage mode). Heal mode is unchanged. Local Editor / MPPM host only.")]
+        [Tooltip("When enabled, MEGA guns can auto-aim asteroids in damage mode — lowest priority after ships, planetary defense turrets, and moon shields. Heal mode is unchanged. Local Editor / MPPM host only.")]
         [SerializeField] bool debugMegaShipsAutoFireAsteroids;
 
         [Header("Debug — Asteroid Destroy Hitch")]

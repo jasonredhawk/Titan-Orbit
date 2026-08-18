@@ -4,6 +4,7 @@ using TitanOrbit.ECS;
 using TitanOrbit.Generation;
 using Unity.Entities;
 using Unity.Mathematics;
+using Unity.Transforms;
 using UnityEngine;
 
 // EcsGameBridge lives in TitanOrbit (parent of this namespace).
@@ -120,8 +121,6 @@ namespace TitanOrbit.Game
 
             Vector3 hullFwd = Flatten(proxy.transform.forward);
             Quaternion shipHeading = Quaternion.LookRotation(hullFwd, Vector3.up);
-            bool haveOwnerMouseDir = TryGetLocalOwnerMouseWorldDir(
-                em, shipEntity, out Vector3 ownerMouseDir);
             bool ownerFiring = em.HasComponent<LocalPlayerShipTag>(shipEntity)
                 && em.HasComponent<ShipInput>(shipEntity)
                 && em.GetComponentData<ShipInput>(shipEntity).Fire.IsSet;
@@ -137,7 +136,8 @@ namespace TitanOrbit.Game
                 float yawDeg = 0f;
                 bool tracking = hasGunners && i < gunners.Length
                     && MegaShipWeaponAim.IsTrackingAim(gunners[i]);
-                if (haveOwnerMouseDir)
+                if (TryGetLocalOwnerMouseWorldDir(
+                        em, shipEntity, yawRoot.position, out Vector3 ownerMouseDir))
                 {
                     desiredBarrelWorld = Quaternion.LookRotation(ownerMouseDir, Vector3.up);
                     binding.RememberWorldYaw(i, PlanarYaw(ownerMouseDir));
@@ -245,22 +245,37 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Local MEGA owner holding Shift: live mouse world direction (not a reconstructed
-        /// point LookAt — that swings as the predicted hull moves).
+        /// Local MEGA owner holding Shift: direction from this muzzle to the mouse
+        /// world point so barrels converge. A shared hull-center dir fires parallel.
         /// </summary>
         static bool TryGetLocalOwnerMouseWorldDir(
             EntityManager em,
             Entity shipEntity,
+            Vector3 muzzleDisplay,
             out Vector3 worldDir)
         {
             worldDir = Vector3.forward;
             if (!em.HasComponent<LocalPlayerShipTag>(shipEntity)
-                || !em.HasComponent<ShipInput>(shipEntity))
+                || !em.HasComponent<ShipInput>(shipEntity)
+                || !em.HasComponent<LocalTransform>(shipEntity))
                 return false;
 
             var input = em.GetComponentData<ShipInput>(shipEntity);
             if (!input.Overdrive)
                 return false;
+
+            var hull = em.GetComponentData<LocalTransform>(shipEntity);
+            if (MegaShipWeaponAim.TryGetOwnerMouseAimPoint(in hull, in input, out float3 aimPoint)
+                && MegaShipWeaponVisualTargets.TryGetTiledPoint(
+                    aimPoint.x, aimPoint.z, muzzleDisplay, out Vector3 tiled))
+            {
+                Vector3 toPoint = Flatten(tiled - muzzleDisplay);
+                if (toPoint.sqrMagnitude > 1e-6f)
+                {
+                    worldDir = toPoint;
+                    return true;
+                }
+            }
 
             Vector3 dir = Flatten(new Vector3(input.AimPlanarDir.x, 0f, input.AimPlanarDir.y));
             if (dir.sqrMagnitude < 1e-4f)

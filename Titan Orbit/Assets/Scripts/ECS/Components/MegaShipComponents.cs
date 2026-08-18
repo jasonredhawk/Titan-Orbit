@@ -60,9 +60,9 @@ namespace TitanOrbit.ECS
     }
 
     /// <summary>
-    /// Server-only sticky auto-aim, one slot per weapon mount. A single hull-center
-    /// search fills empty slots when Fire is pressed. Locks clear when Fire is released
-    /// so the next press re-acquires the closest targets.
+    /// Server-only sticky auto-aim, one slot per weapon mount. Each muzzle searches
+    /// when Fire is pressed (ships / pads / moon shields first, asteroids second).
+    /// Locks clear when Fire is released so the next press re-acquires.
     /// <para>
     /// [TITAN-ORBIT] <see cref="AimPoint"/> is the lead intercept (target motion +
     /// this hull's velocity), not the target's current pivot. Phase B still fires

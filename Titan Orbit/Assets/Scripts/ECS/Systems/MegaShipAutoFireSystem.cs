@@ -16,13 +16,17 @@ namespace TitanOrbit.ECS
     /// Server: MEGA mounts auto-aim like planetary turrets, but only fire when the MEGA
     /// owner's <see cref="ShipInput.Fire"/> is held. Only the ship owner aims these guns —
     /// there is no remote Take Control path.
-    /// Damage mode aims at the nearest enemy ship, planetary turret, or enemy moon.
-    /// Heal mode aims at the nearest friendly ship. Asteroids are targeted only when
-    /// <see cref="TitanOrbitDebugFlags.MegaShipsAutoFireAsteroids"/> is on (Editor / MPPM host).
+    /// Damage mode treats enemy ships, planetary defense turrets, and enemy moon
+    /// shields as one priority — closest in range wins. Asteroids are second
+    /// (only when no combat target is in that gun's range). Heal mode aims at the
+    /// nearest friendly ship. Asteroids are targeted only when
+    /// <see cref="TitanOrbitDebugFlags.MegaShipsAutoFireAsteroids"/> is on
+    /// (Editor / MPPM host).
     /// <para>
-    /// Each gun searches from its own muzzle for the closest in-range target
-    /// when Fire is pressed. Locks stay until that target dies, leaves that gun's range,
-    /// or the owner releases Fire (release clears locks so the next press re-acquires).
+    /// Each gun searches from its own muzzle when Fire is pressed. Locks stay until
+    /// that target dies, leaves that gun's range, a higher-priority class enters
+    /// range, or the owner releases Fire (release clears locks so the next press
+    /// re-acquires).
     /// If a gun finds nothing, it fires along hull forward until Fire is released.
     /// Aim points are lead intercepts from <see cref="MegaShipLeadAim"/> — target velocity
     /// minus this hull's velocity — so inherited <c>shipVel</c> on the bullet does not
@@ -200,7 +204,28 @@ namespace TitanOrbit.ECS
                 int mountCount = mounts.Length;
                 ResizeAimSlots(aims, mountCount);
 
-                int emptySlots = 0;
+                if (!shipsLoaded)
+                {
+                    ships = _shipQuery.ToEntityArray(Allocator.Temp);
+                    shipStates = _shipQuery.ToComponentDataArray<ShipState>(Allocator.Temp);
+                    shipXfs = _shipQuery.ToComponentDataArray<LocalTransform>(Allocator.Temp);
+                    shipsLoaded = true;
+                }
+
+                if (!heal && !planetsLoaded)
+                {
+                    planets = _planetQuery.ToEntityArray(Allocator.Temp);
+                    planetsLoaded = true;
+                }
+
+                if (!heal && debugAsteroids && !asteroidsLoaded)
+                {
+                    asteroidEntities = _asteroidQuery.ToEntityArray(Allocator.Temp);
+                    asteroidStates = _asteroidQuery.ToComponentDataArray<AsteroidState>(Allocator.Temp);
+                    asteroidXfs = _asteroidQuery.ToComponentDataArray<LocalTransform>(Allocator.Temp);
+                    asteroidsLoaded = true;
+                }
+
                 for (int m = 0; m < mountCount; m++)
                 {
                     var slot = aims[m];
@@ -209,71 +234,42 @@ namespace TitanOrbit.ECS
 
                     float3 muzzle = ResolveMuzzle(xf, mounts[m]);
                     float mountRange = ResolveMountRange(mounts[m], in weapon) + 8f;
-                    if (TryKeepStickyTarget(
+                    bool kept = TryKeepStickyTarget(
                         mega, ship.Team, heal, muzzle, shooterVel, leadBulletSpeed, mountRange,
-                        mapW, mapH, moonElapsed, ref slot))
+                        mapW, mapH, moonElapsed, ref slot);
+                    var betterThan = MegaShipAutoAimClass.None;
+                    if (kept)
+                    {
+                        betterThan = ClassifyStickyTarget(
+                            slot.Target, ship.Team, heal, muzzle, mountRange,
+                            mapW, mapH, moonElapsed);
+                    }
+
+                    if (TryAcquireClosestTarget(
+                        mega, ship.Team, heal, muzzle, shooterVel, leadBulletSpeed, mountRange,
+                        mapW, mapH, moonElapsed, betterThan,
+                        ships, shipStates, shipXfs, planets,
+                        debugAsteroids, asteroidEntities, asteroidStates, asteroidXfs,
+                        out Entity target, out float3 aimPoint, out float interceptDistance))
+                    {
+                        aims[m] = new MegaShipAutoAimSlotElement
+                        {
+                            Target = target,
+                            AimPoint = aimPoint,
+                            InterceptDistance = interceptDistance,
+                        };
+                    }
+                    else if (kept)
                     {
                         aims[m] = slot;
-                        continue;
                     }
-
-                    aims[m] = default;
-                    emptySlots++;
-                }
-
-                if (emptySlots > 0)
-                {
-                    if (!shipsLoaded)
+                    else
                     {
-                        ships = _shipQuery.ToEntityArray(Allocator.Temp);
-                        shipStates = _shipQuery.ToComponentDataArray<ShipState>(Allocator.Temp);
-                        shipXfs = _shipQuery.ToComponentDataArray<LocalTransform>(Allocator.Temp);
-                        shipsLoaded = true;
-                    }
-
-                    if (!heal && !planetsLoaded)
-                    {
-                        planets = _planetQuery.ToEntityArray(Allocator.Temp);
-                        planetsLoaded = true;
-                    }
-
-                    if (!heal && debugAsteroids && !asteroidsLoaded)
-                    {
-                        asteroidEntities = _asteroidQuery.ToEntityArray(Allocator.Temp);
-                        asteroidStates = _asteroidQuery.ToComponentDataArray<AsteroidState>(Allocator.Temp);
-                        asteroidXfs = _asteroidQuery.ToComponentDataArray<LocalTransform>(Allocator.Temp);
-                        asteroidsLoaded = true;
-                    }
-
-                    for (int m = 0; m < mountCount; m++)
-                    {
-                        if (aims[m].Target != Entity.Null)
-                            continue;
-
-                        float3 muzzle = ResolveMuzzle(xf, mounts[m]);
-                        float mountRange = ResolveMountRange(mounts[m], in weapon) + 8f;
-                        if (TryAcquireClosestTarget(
-                            mega, ship.Team, heal, muzzle, shooterVel, leadBulletSpeed, mountRange,
-                            mapW, mapH, moonElapsed,
-                            ships, shipStates, shipXfs, planets,
-                            debugAsteroids, asteroidEntities, asteroidStates, asteroidXfs,
-                            out Entity target, out float3 aimPoint, out float interceptDistance))
+                        aims[m] = new MegaShipAutoAimSlotElement
                         {
-                            aims[m] = new MegaShipAutoAimSlotElement
-                            {
-                                Target = target,
-                                AimPoint = aimPoint,
-                                InterceptDistance = interceptDistance,
-                            };
-                        }
-                        else
-                        {
-                            aims[m] = new MegaShipAutoAimSlotElement
-                            {
-                                Target = mega,
-                                AimPoint = default,
-                            };
-                        }
+                            Target = mega,
+                            AimPoint = default,
+                        };
                     }
                 }
 
@@ -564,8 +560,54 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// Closest in-range target from this muzzle. Ships, hostile pads/moons, and (debug)
-        /// asteroids compete by toroidal distance — two guns may lock the same entity.
+        /// Auto-aim class order. Combat (ships, pads, moon shields) beats asteroids
+        /// even when the rock is closer.
+        /// </summary>
+        enum MegaShipAutoAimClass : byte
+        {
+            None = 0,
+            Asteroid = 1,
+            Combat = 2,
+        }
+
+        /// <summary>
+        /// Class of a live sticky lock. Ships, hostile pads, and moon shields are
+        /// one combat class; asteroids are lower.
+        /// </summary>
+        MegaShipAutoAimClass ClassifyStickyTarget(
+            Entity target,
+            TeamId ownerTeam,
+            bool heal,
+            float3 from,
+            float range,
+            float mapW,
+            float mapH,
+            double moonElapsed)
+        {
+            if (target == Entity.Null || !EntityManager.Exists(target))
+                return MegaShipAutoAimClass.None;
+
+            if (EntityManager.HasComponent<ShipState>(target))
+                return MegaShipAutoAimClass.Combat;
+
+            if (!heal
+                && EntityManager.HasComponent<PlanetState>(target)
+                && TryResolvePlanetAim(
+                    target, ownerTeam, from, range, mapW, mapH, moonElapsed, out _, out _))
+                return MegaShipAutoAimClass.Combat;
+
+            if (!heal && EntityManager.HasComponent<AsteroidState>(target))
+                return MegaShipAutoAimClass.Asteroid;
+
+            return MegaShipAutoAimClass.None;
+        }
+
+        /// <summary>
+        /// Closest in-range target from this muzzle. Ships, hostile pads, and moon
+        /// shields compete by toroidal distance; (debug) asteroids are only used when
+        /// none of those are in range. Two guns may lock the same entity.
+        /// <paramref name="betterThan"/> skips classes at or below a live sticky lock
+        /// so a combat target can steal an asteroid, not the reverse.
         /// mapW/mapH from <see cref="MapStateSingleton"/>.
         /// </summary>
         bool TryAcquireClosestTarget(
@@ -579,6 +621,7 @@ namespace TitanOrbit.ECS
             float mapW,
             float mapH,
             double moonElapsed,
+            MegaShipAutoAimClass betterThan,
             NativeArray<Entity> ships,
             NativeArray<ShipState> shipStates,
             NativeArray<LocalTransform> shipXfs,
@@ -594,68 +637,89 @@ namespace TitanOrbit.ECS
             target = Entity.Null;
             aimPoint = default;
             interceptDistance = 0f;
-            float best = range;
             float3 nowPos = default;
             float3 nowVel = float3.zero;
 
-            int shipCount = math.min(ships.Length, math.min(shipStates.Length, shipXfs.Length));
-            for (int i = 0; i < shipCount; i++)
+            if (MegaShipAutoAimClass.Combat > betterThan)
             {
-                if (ships[i] == self)
-                    continue;
-                var other = shipStates[i];
-                if (other.IsDead || other.Team == TeamId.None)
-                    continue;
+                float best = range;
+                if (ships.IsCreated)
+                {
+                    int shipCount = math.min(ships.Length, math.min(shipStates.Length, shipXfs.Length));
+                    for (int i = 0; i < shipCount; i++)
+                    {
+                        if (ships[i] == self)
+                            continue;
+                        var other = shipStates[i];
+                        if (other.IsDead || other.Team == TeamId.None)
+                            continue;
+                        if (heal)
+                        {
+                            if (other.Team != ownerTeam)
+                                continue;
+                        }
+                        else if (other.Team == ownerTeam)
+                            continue;
+
+                        // Acquire on current position (who is closest now). Lead is applied after.
+                        float3 pos = MegaShipCombatAim.GetAimPoint(EntityManager, ships[i], shipXfs[i]);
+                        float d = ToroidalMapEcs.ToroidalDistance(from, pos, mapW, mapH);
+                        if (d >= best)
+                            continue;
+                        best = d;
+                        target = ships[i];
+                        nowPos = pos;
+                        nowVel = ReadPlanarVelocity(ships[i]);
+                    }
+                }
+
                 if (heal)
                 {
-                    if (other.Team != ownerTeam)
-                        continue;
+                    if (target == Entity.Null)
+                        return false;
+                    WriteLeadAimValues(from, shooterVel, nowPos, nowVel, bulletSpeed, range,
+                        mapW, mapH, out aimPoint, out interceptDistance);
+                    return true;
                 }
-                else if (other.Team == ownerTeam)
-                    continue;
 
-                // Acquire on current position (who is closest now). Lead is applied after.
-                float3 pos = MegaShipCombatAim.GetAimPoint(EntityManager, ships[i], shipXfs[i]);
-                float d = ToroidalMapEcs.ToroidalDistance(from, pos, mapW, mapH);
-                if (d >= best)
-                    continue;
-                best = d;
-                target = ships[i];
-                nowPos = pos;
-                nowVel = ReadPlanarVelocity(ships[i]);
+                if (planets.IsCreated)
+                {
+                    for (int p = 0; p < planets.Length; p++)
+                    {
+                        Entity planet = planets[p];
+                        if (!TryResolvePlanetAim(
+                                planet, ownerTeam, from, best, mapW, mapH, moonElapsed,
+                                out float3 planetAim, out float3 planetVel))
+                            continue;
+
+                        float d = ToroidalMapEcs.ToroidalDistance(from, planetAim, mapW, mapH);
+                        if (d >= best)
+                            continue;
+                        best = d;
+                        target = planet;
+                        nowPos = planetAim;
+                        nowVel = planetVel;
+                    }
+                }
+
+                if (target != Entity.Null)
+                {
+                    WriteLeadAimValues(from, shooterVel, nowPos, nowVel, bulletSpeed, range,
+                        mapW, mapH, out aimPoint, out interceptDistance);
+                    return true;
+                }
             }
 
             if (heal)
-            {
-                if (target == Entity.Null)
-                    return false;
-                WriteLeadAimValues(from, shooterVel, nowPos, nowVel, bulletSpeed, range,
-                    mapW, mapH, out aimPoint, out interceptDistance);
-                return true;
-            }
+                return false;
 
-            if (planets.IsCreated)
+            if (debugAsteroids
+                && MegaShipAutoAimClass.Asteroid > betterThan
+                && asteroidEntities.IsCreated
+                && asteroidStates.IsCreated
+                && asteroidXfs.IsCreated)
             {
-                for (int p = 0; p < planets.Length; p++)
-                {
-                    Entity planet = planets[p];
-                    if (!TryResolvePlanetAim(
-                            planet, ownerTeam, from, best, mapW, mapH, moonElapsed,
-                            out float3 planetAim, out float3 planetVel))
-                        continue;
-
-                    float d = ToroidalMapEcs.ToroidalDistance(from, planetAim, mapW, mapH);
-                    if (d >= best)
-                        continue;
-                    best = d;
-                    target = planet;
-                    nowPos = planetAim;
-                    nowVel = planetVel;
-                }
-            }
-
-            if (debugAsteroids && asteroidEntities.IsCreated && asteroidStates.IsCreated && asteroidXfs.IsCreated)
-            {
+                float best = range;
                 int rockCount = math.min(
                     asteroidEntities.Length, math.min(asteroidStates.Length, asteroidXfs.Length));
                 for (int a = 0; a < rockCount; a++)
@@ -684,7 +748,7 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// Best hostile pad or moon on one planet, or the planet hull if those are farther.
+        /// Best hostile pad or moon on one planet — they compete by distance.
         /// Returns false when the planet is friendly, empty, or out of range.
         /// </summary>
         bool TryResolvePlanetAim(
@@ -814,28 +878,15 @@ namespace TitanOrbit.ECS
             hullForward.y = 0f;
             hullForward = math.normalizesafe(hullForward, new float3(0f, 0f, 1f));
 
-            float3 aimPoint = xf.Position + hullForward * 100f;
-            bool haveMousePoint = false;
-            if (EntityManager.HasComponent<ShipInput>(mega))
-            {
-                var input = EntityManager.GetComponentData<ShipInput>(mega);
-                float2 aim2 = input.AimPlanarDir;
-                float3 mouseDir = new float3(aim2.x, 0f, aim2.y);
-                float dist = input.AimDistance;
-                if (math.lengthsq(mouseDir) >= 0.01f && dist > 0.05f)
-                {
-                    mouseDir = math.normalize(mouseDir);
-                    aimPoint = xf.Position + mouseDir * dist;
-                    aimPoint.y = xf.Position.y;
-                    haveMousePoint = true;
-                }
-                else if (math.lengthsq(mouseDir) >= 0.01f)
-                {
-                    // Distance missing (old client) — still better than hull forward,
-                    // but barrels stay parallel.
-                    hullForward = math.normalize(mouseDir);
-                }
-            }
+            bool haveInput = EntityManager.HasComponent<ShipInput>(mega);
+            var input = haveInput
+                ? EntityManager.GetComponentData<ShipInput>(mega)
+                : default;
+            float3 aimPoint = xf.Position;
+            bool haveMousePoint = haveInput
+                && MegaShipWeaponAim.TryGetOwnerMouseAimPoint(in xf, in input, out aimPoint);
+            if (!haveMousePoint)
+                aimPoint = xf.Position;
 
             int mountCount = mounts.Length;
             for (int m = 0; m < mountCount; m++)
@@ -843,16 +894,16 @@ namespace TitanOrbit.ECS
                 var mount = mounts[m];
                 float3 desired = hullForward;
                 float targetDist = 0f;
-                if (haveMousePoint)
+                if (haveInput
+                    && MegaShipWeaponAim.TryGetMuzzleDirToMousePoint(
+                        in xf, in mount, in input, mapW, mapH, out float3 toCursor))
                 {
-                    float3 muzzle = ResolveMuzzle(xf, mount);
-                    float3 offset = ToroidalMapEcs.ShortestOffsetXZ(muzzle, aimPoint, mapW, mapH);
-                    offset.y = 0f;
-                    float dist = math.length(offset);
-                    if (dist >= 0.05f)
+                    desired = toCursor;
+                    if (haveMousePoint)
                     {
-                        desired = offset / dist;
-                        targetDist = dist;
+                        float3 muzzle = ResolveMuzzle(xf, mount);
+                        targetDist = math.length(
+                            ToroidalMapEcs.ShortestOffsetXZ(muzzle, aimPoint, mapW, mapH));
                     }
                 }
 

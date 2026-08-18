@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using TitanOrbit.Data;
 using TitanOrbit.ECS;
 using TitanOrbit.ECS.Authoring;
+using TitanOrbit.Generation;
 using TitanOrbit.Shared;
 using TitanOrbit.Simulation;
 using Unity.Entities;
@@ -18,8 +19,8 @@ namespace TitanOrbit.Game
     /// Prefers the live weapon component: <c>origin = weapon.position</c>, aim = <b>unbanked</b>
     /// planar <c>weapon.forward</c> (BankPivot roll stripped) + authored
     /// <see cref="ShipWeaponMountAuthoring.DirectionAngleDeg"/>. That keeps sequential fire aligned
-    /// with each barrel mesh. MEGA hulls skip the live GO and LookAt the ghosted world
-    /// aim point (or the owner's live Shift mouse) so mixed Gun / Cannon / Missile /
+    /// with each barrel mesh. MEGA hulls skip the live GO and aim each mount at the Shift
+    /// mouse <b>point</b> (or ghosted fire heading) so mixed Gun / Cannon / Missile /
     /// Sniper prefabs cannot overwrite the server ray with a parent that still faces
     /// hull-forward. Falls back to ECS <see cref="ShipWeaponPose"/> when no live GO.
     /// Velocity is <c>aim * BulletSpeed + shipVel</c> (planar). Damage is server-side.
@@ -381,8 +382,7 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Overlay the ghosted world fire heading (or live Shift mouse dir) as hull-local
-        /// yaw using the current hull — same world ray, no lagged-point LookAt.
+        /// Overlay live Shift mouse-point aim (per muzzle) or the ghosted world fire heading.
         /// </summary>
         static void OverlayMegaMountAim(
             EntityManager em,
@@ -407,11 +407,13 @@ namespace TitanOrbit.Game
                 && em.HasComponent<ShipInput>(shipEntity))
             {
                 var input = em.GetComponentData<ShipInput>(shipEntity);
-                float3 mouseDir = new float3(input.AimPlanarDir.x, 0f, input.AimPlanarDir.y);
-                if (input.Overdrive && math.lengthsq(mouseDir) >= 0.01f)
+                if (input.Overdrive
+                    && ToroidalMapEcs.TryGetMapSize(out float mapW, out float mapH)
+                    && MegaShipWeaponAim.TryGetMuzzleDirToMousePoint(
+                        in shipTransform, in mount, in input, mapW, mapH, out float3 toCursor))
                 {
                     MegaShipWeaponAim.RotateMountTowardWorldDir(
-                        in shipTransform, ref mount, math.normalize(mouseDir), 0f);
+                        in shipTransform, ref mount, toCursor, 0f);
                     return;
                 }
             }
