@@ -450,6 +450,8 @@ namespace TitanOrbit.ECS
             // --- Client VFX spawn (PeopleTransportVfxDriver) ---
             float3 bakedTarget = targetPos;
             bakedTarget.y = 0f;
+            // VFX/RPC carry the involved ship for hull floats (load dest, or unload source).
+            int vfxShipId = targetShipNetworkId != 0 ? targetShipNetworkId : sourceShipNetworkId;
             var vfxReq = new PeopleTransportVfxBridge.SpawnRequest
             {
                 Sequence = sequence,
@@ -458,7 +460,7 @@ namespace TitanOrbit.ECS
                 Velocity = velocity,
                 CruiseSpeed = cruise,
                 Amount = amount,
-                TargetShipNetworkId = targetShipNetworkId,
+                TargetShipNetworkId = vfxShipId,
                 SourcePlanetId = sourcePlanetId,
                 TargetPlanetId = targetPlanetId,
                 IsLoad = isLoadByte,
@@ -477,7 +479,7 @@ namespace TitanOrbit.ECS
                 Velocity = velocity,
                 CruiseSpeed = cruise,
                 Amount = amount,
-                TargetShipNetworkId = targetShipNetworkId,
+                TargetShipNetworkId = vfxShipId,
                 SourcePlanetId = sourcePlanetId,
                 TargetPlanetId = targetPlanetId,
                 IsLoad = isLoadByte,
