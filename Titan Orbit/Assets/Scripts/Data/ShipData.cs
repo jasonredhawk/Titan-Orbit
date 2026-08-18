@@ -58,7 +58,7 @@ namespace TitanOrbit.Data
         /// <summary>Maximum gems the hull can carry in cargo.</summary>
         public float baseGemCapacity = 100f;
 
-        /// <summary>Maximum people / colonists the hull can transport.</summary>
+        /// <summary>Troop cap the hull can transport.</summary>
         public float basePeopleCapacity = 10f;
 
         [Header("Energy (weapon system)")]

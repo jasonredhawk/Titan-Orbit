@@ -75,13 +75,13 @@ namespace TitanOrbit.Data
                 case "aegis":
                     c.slotType = SlotType.Ship;
                     c.displayName = $"Aegis Plating {L} ({RarityNames[r]})";
-                    c.description = $"+{CardDeckBalance.AegisHullAdd(L, r):F0} max hull.";
+                    c.description = $"+{CardDeckBalance.AegisHullAdd(L, r):F0} health cap.";
                     c.maxHealthAdd = CardDeckBalance.AegisHullAdd(L, r);
                     break;
                 case "cargo":
                     c.slotType = SlotType.Cargo;
                     c.displayName = $"Cargo Bay {L} ({RarityNames[r]})";
-                    c.description = $"+{CardDeckBalance.CargoGemAdd(L, r):F0} gem capacity.";
+                    c.description = $"+{CardDeckBalance.CargoGemAdd(L, r):F0} gem cap.";
                     c.gemCapacityAdd = CardDeckBalance.CargoGemAdd(L, r);
                     break;
                 case "shard":
@@ -99,7 +99,7 @@ namespace TitanOrbit.Data
                 case "cap":
                     c.slotType = SlotType.Ship;
                     c.displayName = $"Capacitor Bank {L} ({RarityNames[r]})";
-                    c.description = $"+{CardDeckBalance.CapacitorEnergyCapAdd(L, r):F0} energy capacity.";
+                    c.description = $"+{CardDeckBalance.CapacitorEnergyCapAdd(L, r):F0} energy cap.";
                     c.energyCapacityAdd = CardDeckBalance.CapacitorEnergyCapAdd(L, r);
                     break;
                 case "refinery":
@@ -116,7 +116,7 @@ namespace TitanOrbit.Data
                     c.displayName = $"Transit Uplink {L} ({RarityNames[r]})";
                     {
                         float qol = CardDeckBalance.QualityOfLifeMultiplier(L, r);
-                        c.description = $"+{(qol - 1f) * 100f:F1}% people transfer speed.";
+                        c.description = $"+{(qol - 1f) * 100f:F1}% troop transfer speed.";
                         c.peopleTransferSpeedMultiplier = qol;
                     }
                     break;
@@ -168,7 +168,7 @@ namespace TitanOrbit.Data
                     c.rarity = CardRarity.Common;
                     c.slotType = SlotType.Cargo;
                     c.displayName = $"Colony Pod {L}";
-                    c.description = $"+{CardDeckBalance.ColonyPeopleAdd(L):F0} people capacity.";
+                    c.description = $"+{CardDeckBalance.ColonyPeopleAdd(L):F0} troop cap.";
                     c.peopleCapacityAdd = CardDeckBalance.ColonyPeopleAdd(L);
                     break;
                 case "titanforge":

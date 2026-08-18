@@ -54,7 +54,7 @@ namespace TitanOrbit.Audio
         [SerializeField] private AudioClip shipCollisionSound;
         [Tooltip("Gem pickup. Assign magic_03 from ShootingSound folder.")]
         [SerializeField] private AudioClip gemCollectSound;
-        [Tooltip("People transfer SFX used for both loading and unloading.")]
+        [Tooltip("Troop transfer SFX used for both loading and unloading.")]
         [SerializeField] private AudioClip peopleTransferSound;
         [SerializeField] private AudioClip miningSound;
         [SerializeField] private AudioClip captureSound;
@@ -89,7 +89,7 @@ namespace TitanOrbit.Audio
         [SerializeField] private float gemPitchMin = 0.15f;
         [Tooltip("Pitch at gem value 1 (highest C / ET root). Value 13 = this÷2 (one octave). Unity AudioClip clamps at 3 — default is that ceiling.")]
         [SerializeField] private float gemPitchMax = 3f;
-        [Tooltip("People load/unload pitch clamp after base pitch and amount offset.")]
+        [Tooltip("Troop load/unload pitch clamp after base pitch and amount offset.")]
         [SerializeField] private float peoplePitchMin = 0.01f;
         [SerializeField] private float peoplePitchMax = 1f;
 

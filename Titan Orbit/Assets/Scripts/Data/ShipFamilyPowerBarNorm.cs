@@ -61,7 +61,7 @@ namespace TitanOrbit.Data
             peopleCap = Mathf.Max(peopleCap, breakdown.GetDisplayStatValue(9));
         }
 
-        /// <summary>Global max for display stat index 0–9 (Fire Power … People Cap).</summary>
+        /// <summary>Global max for display stat index 0–9 (Fire Power … Troop Cap).</summary>
         public float Get(int statIndex)
         {
             switch (statIndex)

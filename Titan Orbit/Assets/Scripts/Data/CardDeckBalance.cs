@@ -38,7 +38,7 @@ namespace TitanOrbit.Data
         public static float CapacitorEnergyCapAdd(int L, int r) =>
             3f + L * 3f + (r - 1) * 2f;
 
-        /// <summary>Multiplier on gem deposit speed (Refinery Drones) and people transfer (Transit Uplink).</summary>
+        /// <summary>Multiplier on gem deposit speed (Refinery Drones) and troop transfer (Transit Uplink).</summary>
         public static float QualityOfLifeMultiplier(int L, int r) =>
             1f + 0.02f * L + 0.012f * (r - 1);
 
@@ -58,7 +58,7 @@ namespace TitanOrbit.Data
         public static float MiningRateAdd(int L) =>
             0.12f + L * 0.08f;
 
-        /// <summary>Flat people capacity — whole number stored as float on <see cref="CardData"/>.</summary>
+        /// <summary>Flat troop cap — whole number stored as float on <see cref="CardData"/>.</summary>
         public static float ColonyPeopleAdd(int L) =>
             2 + L * 2;
 

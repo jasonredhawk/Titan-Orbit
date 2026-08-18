@@ -57,7 +57,7 @@ namespace TitanOrbit.Data
         public float energyRegenAdd;
         /// <summary>Flat additive carried-gem capacity.</summary>
         public float gemCapacityAdd;
-        /// <summary>Flat additive colonist / people capacity.</summary>
+        /// <summary>Flat additive troop cap.</summary>
         public float peopleCapacityAdd;
         /// <summary>Flat additive asteroid mining rate.</summary>
         public float miningRateAdd;

@@ -53,7 +53,9 @@ namespace TitanOrbit.Data
         [FormerlySerializedAs("extraSpeedEnergyPercentMul")]
         public float extraSpeedEnergyDrainMul;
 
+        [InspectorName("Gem Cap Mul")]
         public float maxGemsMul;
+        [InspectorName("Troop Cap Mul")]
         public float maxPeopleMul;
         public float tractorDistanceMul;
         public float tractorPowerMul;

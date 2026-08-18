@@ -67,10 +67,10 @@ namespace TitanOrbit.Game
         [InspectorName("Health regen")]
         public bool healthRegen = true;
 
-        [InspectorName("People — load")]
+        [InspectorName("Troops — load")]
         public bool peopleLoad = true;
 
-        [InspectorName("People — unload")]
+        [InspectorName("Troops — unload")]
         public bool peopleUnload = true;
 
         [InspectorName("Energy")]

@@ -124,7 +124,7 @@ namespace TitanOrbit.Data
                     list.Add(Add("ClusterRack", "Cluster Rack", "Mine packs include extras.", CardEffectKind.MinePackSizeAdd, 1f, 0.3f, CardRarity.Epic));
                     break;
                 case "NightAye":
-                    list.Add(Mul("NightFerry", "Night Ferry", "People load and unload faster.", CardEffectKind.PeopleTransferSpeedMul, 1.12f, 0.03f, CardRarity.Rare));
+                    list.Add(Mul("NightFerry", "Night Ferry", "Troops load and unload faster.", CardEffectKind.PeopleTransferSpeedMul, 1.12f, 0.03f, CardRarity.Rare));
                     list.Add(Mul("OrbitLift", "Orbit Lift", "Orbit-ring transfers run hotter.", CardEffectKind.PeopleTransferSpeedMul, 1.08f, 0.02f, CardRarity.Uncommon));
                     list.Add(Mul("AyeTow", "Aye Tow", "Tractor pull is stronger.", CardEffectKind.TractorPowerMul, 1.12f, 0.03f, CardRarity.Epic));
                     break;
@@ -144,14 +144,14 @@ namespace TitanOrbit.Data
                     list.Add(Mul("AegisDrone", "Aegis Drone", "Shield drones absorb more.", CardEffectKind.ShieldDroneAbsorbMul, 1.12f, 0.03f, CardRarity.Epic));
                     break;
                 case "StriderOx":
-                    list.Add(Mul("CattleCar", "Cattle Car", "People transfers run faster.", CardEffectKind.PeopleTransferSpeedMul, 1.14f, 0.03f, CardRarity.Rare));
-                    list.Add(Add("WideRamp", "Wide Ramp", "Each unload sphere carries more people.", CardEffectKind.PeopleUnloadChunkAdd, 1f, 0.25f, CardRarity.Uncommon));
+                    list.Add(Mul("CattleCar", "Cattle Car", "Troop transfers run faster.", CardEffectKind.PeopleTransferSpeedMul, 1.14f, 0.03f, CardRarity.Rare));
+                    list.Add(Add("WideRamp", "Wide Ramp", "Each unload sphere carries more troops.", CardEffectKind.PeopleUnloadChunkAdd, 1f, 0.25f, CardRarity.Uncommon));
                     list.Add(Mul("OxVault", "Ox Vault", "Gem deposits clear faster.", CardEffectKind.GemDepositSpeedMul, 1.10f, 0.025f, CardRarity.Epic));
                     break;
                 default:
                     list.Add(Mul("GenericDeposit", "Refinery Link", "Gem deposits clear faster.", CardEffectKind.GemDepositSpeedMul, 1.08f, 0.02f, CardRarity.Uncommon));
                     list.Add(Mul("GenericMine", "Survey Laser", "Mining chips rocks faster.", CardEffectKind.MiningRateMul, 1.08f, 0.02f, CardRarity.Rare));
-                    list.Add(Mul("GenericFerry", "Transit Link", "People load and unload faster.", CardEffectKind.PeopleTransferSpeedMul, 1.08f, 0.02f, CardRarity.Epic));
+                    list.Add(Mul("GenericFerry", "Transit Link", "Troops load and unload faster.", CardEffectKind.PeopleTransferSpeedMul, 1.08f, 0.02f, CardRarity.Epic));
                     break;
             }
 

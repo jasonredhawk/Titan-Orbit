@@ -65,10 +65,10 @@ namespace TitanOrbit.UI
         /// <summary>[TITAN-ORBIT] Max gem cargo (<c>ShipState.GemCapacity</c>).</summary>
         public float GemCapacity;
 
-        /// <summary>[TITAN-ORBIT] People currently aboard (<c>ShipState.CurrentPeople</c>).</summary>
+        /// <summary>[TITAN-ORBIT] Troops currently aboard (<c>ShipState.CurrentPeople</c>).</summary>
         public int CurrentPeople;
 
-        /// <summary>[TITAN-ORBIT] Max people capacity (<c>ShipState.PeopleCapacity</c>).</summary>
+        /// <summary>[TITAN-ORBIT] Troop cap (<c>ShipState.PeopleCapacity</c>).</summary>
         public int PeopleCapacity;
 
         // --- Match-long scores (ghosted ShipMatchStats) ---
@@ -78,7 +78,7 @@ namespace TitanOrbit.UI
         /// <summary>[TITAN-ORBIT] Cumulative gems deposited this match.</summary>
         public int GemsDeposited;
 
-        /// <summary>[TITAN-ORBIT] Cumulative people delivered this match.</summary>
+        /// <summary>[TITAN-ORBIT] Cumulative troops delivered this match.</summary>
         public int PeopleDelivered;
 
         /// <summary>

@@ -27,7 +27,7 @@ namespace TitanOrbit.Game
     /// <list type="bullet">
     /// <item><b>objective</b> — expanded full-map minimap (all planets + territory triangles), plus a world pullback</item>
     /// <item><b>planet_ships</b> — several distinct in-game planets (different surfaces) + cross-family catalog thumbs</item>
-    /// <item><b>transport</b> — yellow people-transport flight orbs (not defense turrets)</item>
+    /// <item><b>transport</b> — yellow troop-transport flight orbs (not defense turrets)</item>
     /// <item><b>mining</b> — asteroid field with red gems (simple frame)</item>
     /// <item><b>upgrades</b> — moon dock / orbit station UI</item>
     /// </list>
@@ -363,10 +363,10 @@ namespace TitanOrbit.Game
             _guidedSteps.Add(new GuidedStep
             {
                 FileName = "guided_transport.png",
-                Subject = "Yellow people transports mid-flight (not turrets)",
+                Subject = "Yellow troop transports mid-flight (not turrets)",
                 InstructionCard = "transport",
                 Prompt =
-                    "TRANSPORT: Orbit a friendly planet until YELLOW people-transport spheres fly ship↔planet. " +
+                    "TRANSPORT: Orbit a friendly planet until YELLOW troop-transport spheres fly ship↔planet. " +
                     "Frame those yellow orbs (not defense pads/turrets), then F8."
             });
 
@@ -1252,7 +1252,7 @@ namespace TitanOrbit.Game
                         "  09_bonus_people_transport.png → instruction_transport (if transports nearby)\n" +
                         "  ship_ref_*                    → cross-family catalog thumbs\n\n" +
                         "GUIDED plates (player-framed):\n" +
-                        "  guided_transport.png          → yellow people transports (NOT turrets)\n" +
+                        "  guided_transport.png          → yellow troop transports (NOT turrets)\n" +
                         "  guided_mining_red_gems.png    → asteroids + red gems\n" +
                         "  guided_orbit_station.png      → moon dock / upgrades UI\n" +
                         "  guided_planet_ships_a/b.png   → more distinct in-game planets\n\n" +

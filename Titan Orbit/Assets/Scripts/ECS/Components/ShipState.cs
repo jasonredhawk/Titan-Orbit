@@ -57,10 +57,10 @@ namespace TitanOrbit.ECS
         /// <summary>[TITAN-ORBIT] Maximum energy from chassis stats.</summary>
         [GhostField] public float MaxEnergy;
 
-        /// <summary>[TITAN-ORBIT] Population units aboard (people transport gameplay).</summary>
+        /// <summary>[TITAN-ORBIT] Troop units aboard (troop transport gameplay).</summary>
         [GhostField] public int CurrentPeople;
 
-        /// <summary>[TITAN-ORBIT] Maximum population cargo capacity.</summary>
+        /// <summary>[TITAN-ORBIT] Troop cap aboard this hull.</summary>
         [GhostField] public int PeopleCapacity;
 
         /// <summary>

@@ -72,7 +72,7 @@ namespace TitanOrbit.UI
             /// <summary>
             /// Authored prefab child <c>localScale</c> parallel to <see cref="Ids"/>.
             /// Store extras are <c>(1,1,1)</c>. Ability details cards use this so Base / PerExtra
-            /// can show the starting-scale multiply (Cockpit at 3 → ×3 Health / Gems / People).
+            /// can show the starting-scale multiply (Cockpit at 3 → ×3 Health / Gems / Troops).
             /// </summary>
             public List<Vector3> LocalScales;
 
@@ -337,7 +337,7 @@ namespace TitanOrbit.UI
         {
             AppendHeader(sb, "MASS — totalMass (mobility tax)");
             ShipStatTooltipChrome.AppendSectionBanner(sb, "BREAKDOWN", "C9A0FF");
-            sb.AppendLine("<color=#5B7A94>totalMass = gems x MassPerGem + people x MassPerPerson + size x MassPerComponentSize</color>");
+            sb.AppendLine("<color=#5B7A94>totalMass = gems x MassPerGem + troops x MassPerPerson + size x MassPerComponentSize</color>");
 
             ShipCargoMobilitySettings settings = ShipCargoMobilitySettingsCache.ResolveOrDefault();
             float mGem = settings != null ? settings.massPerGem : 0.01f;
@@ -351,7 +351,7 @@ namespace TitanOrbit.UI
             sb.Append("Gems  ").Append(F0(live.Ship.CurrentGems))
                 .Append(" x ").Append(F2(mGem))
                 .Append(" = ").Append(F2(gemMass)).AppendLine();
-            sb.Append("People  ").Append(F0(live.Ship.CurrentPeople))
+            sb.Append("Troops  ").Append(F0(live.Ship.CurrentPeople))
                 .Append(" x ").Append(F2(mPerson))
                 .Append(" = ").Append(F2(peopleMass)).AppendLine();
             sb.Append("ComponentSize  ").Append(F1(live.ComponentSize))
@@ -528,7 +528,7 @@ namespace TitanOrbit.UI
             sb.Append("Gems  ").Append(F0(live.Ship.CurrentGems))
                 .Append(" x ").Append(F2(mGem))
                 .Append(" = ").Append(F2(gemMass)).AppendLine();
-            sb.Append("People  ").Append(F0(live.Ship.CurrentPeople))
+            sb.Append("Troops  ").Append(F0(live.Ship.CurrentPeople))
                 .Append(" x ").Append(F2(mPerson))
                 .Append(" = ").Append(F2(peopleMass)).AppendLine();
             sb.Append("Hull size  ").Append(F1(live.ComponentSize))

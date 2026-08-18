@@ -45,7 +45,7 @@ namespace TitanOrbit.Data
             AppendIfNotOne(sb, "OD%", bonuses.extraSpeedPercentMul);
             AppendIfNotOne(sb, "OD DRAIN", bonuses.extraSpeedEnergyDrainMul);
             AppendIfNotOne(sb, "GEMS", bonuses.maxGemsMul);
-            AppendIfNotOne(sb, "PEOPLE", bonuses.maxPeopleMul);
+            AppendIfNotOne(sb, "TROOPS", bonuses.maxPeopleMul);
             AppendIfNotOne(sb, "TRACTOR", bonuses.tractorDistanceMul);
             AppendIfNotOne(sb, "T.PWR", bonuses.tractorPowerMul);
             return sb.ToString().Trim();

@@ -168,10 +168,10 @@ namespace TitanOrbit.Editor
 
                 EditorGUILayout.Space(2);
                 EditorGUILayout.LabelField("Capacity", EditorStyles.miniBoldLabel);
-                EditorGUILayout.FloatField("Max Gems", total.maxGems);
-                EditorGUILayout.FloatField("Max Gems / Extra Level", total.maxGemsPerExtraLevel);
-                EditorGUILayout.FloatField("Max People", total.maxPeople);
-                EditorGUILayout.FloatField("Max People / Extra Level", total.maxPeoplePerExtraLevel);
+                EditorGUILayout.FloatField("Gem Cap", total.maxGems);
+                EditorGUILayout.FloatField("Gem Cap / Extra Level", total.maxGemsPerExtraLevel);
+                EditorGUILayout.FloatField("Troop Cap", total.maxPeople);
+                EditorGUILayout.FloatField("Troop Cap / Extra Level", total.maxPeoplePerExtraLevel);
 
                 if (preview != null)
                 {
@@ -281,10 +281,10 @@ namespace TitanOrbit.Editor
                                 s.turnSpeedPerExtraLevel);
 
                             EditorGUILayout.LabelField("Capacity", EditorStyles.miniBoldLabel);
-                            EditorGUILayout.FloatField("  Max Gems", s.maxGems);
-                            EditorGUILayout.FloatField("  Max Gems / Extra Level", s.maxGemsPerExtraLevel);
-                            EditorGUILayout.FloatField("  Max People", s.maxPeople);
-                            EditorGUILayout.FloatField("  Max People / Extra Level", s.maxPeoplePerExtraLevel);
+                            EditorGUILayout.FloatField("  Gem Cap", s.maxGems);
+                            EditorGUILayout.FloatField("  Gem Cap / Extra Level", s.maxGemsPerExtraLevel);
+                            EditorGUILayout.FloatField("  Troop Cap", s.maxPeople);
+                            EditorGUILayout.FloatField("  Troop Cap / Extra Level", s.maxPeoplePerExtraLevel);
                             EditorGUI.indentLevel--;
                         }
                     }

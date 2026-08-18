@@ -153,10 +153,10 @@ namespace TitanOrbit.Data
         /// </summary>
         public const int HullColliderRevision = 4;
 
-        /// <summary>Minimum people capacity after resolve.</summary>
+        /// <summary>Minimum troop cap after resolve.</summary>
         public const float MinHullPeople = 400f;
 
-        /// <summary>Default people capacity when the catalog sum is still 0.</summary>
+        /// <summary>Default troop cap when the catalog sum is still 0.</summary>
         public const float DefaultHullPeople = 600f;
 
         /// <summary>Default extra world radius around a MEGA when framing the gameplay camera.</summary>
@@ -237,10 +237,10 @@ namespace TitanOrbit.Data
         [Tooltip("Sniper — high damage, high bullet speed, very slow fire rate.")]
         public MegaShipPartStats weaponSniperStats;
 
-        [Tooltip("Cockpit / bridge — people capacity lives here.")]
+        [Tooltip("Cockpit / bridge — troop cap lives here.")]
         public MegaShipPartStats cockpitStats;
 
-        [Tooltip("Wings — extra people, no gems.")]
+        [Tooltip("Wings — extra troops, no gems.")]
         public MegaShipPartStats wingStats;
 
         [Tooltip("Engines — slow cruise + energy pool.")]

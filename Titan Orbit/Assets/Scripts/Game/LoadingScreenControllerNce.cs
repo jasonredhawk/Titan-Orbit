@@ -89,8 +89,8 @@ namespace TitanOrbit.Game
                 "Win by controlling every planet. Move population between worlds to grow your empire.",
                 "InstructionScreens/instruction_objective"),
             new InstructionStep(
-                "Transport People",
-                "Pick up people at friendly planets and deliver them to capture neutral or enemy worlds.",
+                "Transport Troops",
+                "Pick up troops at friendly planets and deliver them to capture neutral or enemy worlds.",
                 "InstructionScreens/instruction_transport"),
             new InstructionStep(
                 "Mine Asteroids",

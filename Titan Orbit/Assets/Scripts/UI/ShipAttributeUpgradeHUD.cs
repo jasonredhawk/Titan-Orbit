@@ -135,10 +135,10 @@ namespace TitanOrbit.UI
         private static readonly string[] Titles =
         {
             "Fire Power", "Bullet Speed",
-            "Max Health", "Health Regen",
+            "Health Cap", "Health Regen",
             "Energy Cap", "Energy Regen",
             "Move Speed", "Turn Speed",
-            "Max Gems", "Max People"
+            "Gem Cap", "Troop Cap"
         };
 
         private GameObject rootPanel;
@@ -1762,7 +1762,7 @@ namespace TitanOrbit.UI
         /// Rebuilds or retints the Extra Level squares on one bottom button.
         /// Skipped while the column is hidden (MEGA). Called from Update for regular hulls only.
         /// </summary>
-        /// <param name="index">Ability slot 0–9 (Fire Power … Max People).</param>
+        /// <param name="index">Ability slot 0–9 (Fire Power … Troop Cap).</param>
         /// <param name="currentLevel">Purchased Extra Levels for this ability.</param>
         /// <param name="maxLevel">Ship-level cap (how many squares to show).</param>
         /// <param name="slotState">Ready / Locked / Maxed — drives lit vs empty colours.</param>

@@ -44,7 +44,7 @@ namespace TitanOrbit.Data
 
         [Header("Hit points")]
         [Tooltip(
-            "Max Health = Size × this. Size 50 × 3 = 150 HP. " +
+            "Health Cap = Size × this. Size 50 × 3 = 150 HP. " +
             "Combat (bullets / ramming) drains Health; mining drains gems separately.")]
         [Min(0.01f)]
         public float HealthPerSize = 1f;
@@ -155,7 +155,7 @@ namespace TitanOrbit.Data
 
         void OnValidate() => ClampValues();
 
-        /// <summary>Max Health from designer Size (floored to at least 1).</summary>
+        /// <summary>Health Cap from designer Size (floored to at least 1).</summary>
         public float ComputeMaxHealth(float size)
         {
             ClampValues();

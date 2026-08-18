@@ -16,7 +16,7 @@ namespace TitanOrbit.Data
         Energy = 2,
         /// <summary>Move speed, acceleration, turn rate.</summary>
         Movement = 3,
-        /// <summary>Gems, people, tractor beam.</summary>
+        /// <summary>Gems, troops, tractor beam.</summary>
         Capacity = 4
     }
 
@@ -134,10 +134,12 @@ namespace TitanOrbit.Data
         [UnityEngine.Serialization.FormerlySerializedAs("turnSpeedPerLevel")]
         [UnityEngine.Serialization.FormerlySerializedAs("turnSpeedPerShipLevel")]
         public float turnSpeedPerExtraLevel;
+        [InspectorName("Gem Cap")]
         public float maxGems;
         [UnityEngine.Serialization.FormerlySerializedAs("maxGemsPerAbilityLevel")]
         [UnityEngine.Serialization.FormerlySerializedAs("maxGemsPerLevel")]
         [UnityEngine.Serialization.FormerlySerializedAs("maxGemsPerShipLevel")]
+        [InspectorName("Gem Cap / Extra Level")]
         public float maxGemsPerExtraLevel;
         /// <summary>Wing tractor beam reach in world units.</summary>
         public float tractorBeamDistance;
@@ -150,10 +152,12 @@ namespace TitanOrbit.Data
         [UnityEngine.Serialization.FormerlySerializedAs("tractorBeamPowerPerLevel")]
         [UnityEngine.Serialization.FormerlySerializedAs("tractorBeamPowerPerShipLevel")]
         public float tractorBeamPowerPerExtraLevel;
+        [InspectorName("Troop Cap")]
         public float maxPeople;
         [UnityEngine.Serialization.FormerlySerializedAs("maxPeoplePerAbilityLevel")]
         [UnityEngine.Serialization.FormerlySerializedAs("maxPeoplePerLevel")]
         [UnityEngine.Serialization.FormerlySerializedAs("maxPeoplePerShipLevel")]
+        [InspectorName("Troop Cap / Extra Level")]
         public float maxPeoplePerExtraLevel;
 
         /// <summary>

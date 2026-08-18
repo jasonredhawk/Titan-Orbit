@@ -218,7 +218,7 @@ namespace TitanOrbit.Data
             TryAddLine(lines, "Turn", s.turnSpeed, maxLines);
             TryAddLine(lines, "Gems", s.maxGems, maxLines);
             TryAddLine(lines, "Tractor", s.tractorBeamDistance, maxLines);
-            TryAddLine(lines, "People", s.maxPeople, maxLines);
+            TryAddLine(lines, "Troops", s.maxPeople, maxLines);
 
             if (lines.Count == 0)
                 return "No stat bonus";
@@ -324,7 +324,7 @@ namespace TitanOrbit.Data
             TryQueue(lines, s.maxGems, "Gem Cap", 8);
             TryQueue(lines, s.tractorBeamDistance, "Tractor Dist", 8);
             TryQueue(lines, s.tractorBeamPower, "Tractor Power", 8);
-            TryQueue(lines, s.maxPeople, "People Cap", 9);
+            TryQueue(lines, s.maxPeople, "Troop Cap", 9);
 
             if (lines.Count == 0)
                 return richText ? "<color=#888888>—</color>" : "No stat bonus";
@@ -609,7 +609,7 @@ namespace TitanOrbit.Data
             Line("Turn", s.turnSpeed, false);
             Line("Ramming", s.rammingPower, false);
             Line("Gem Cap", s.maxGems, false);
-            Line("People Cap", s.maxPeople, false);
+            Line("Troop Cap", s.maxPeople, false);
 
             if (propulsion)
             {

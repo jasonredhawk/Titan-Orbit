@@ -14,7 +14,7 @@ namespace TitanOrbit.UI
     /// Tip cards: PARTS (Primary + Extras) then FORMULA.
     /// Each part type (Cockpit, Wing, …) is its own Extra Level pool; the chip is the sum.
     /// Starting prefab <c>localScale</c> multiplies that pool’s Base / PerExtra (Cockpit at 3
-    /// → 3× Health / Gems / People). Mass tax is only shown for Move / Accel / Turn.
+    /// → 3× Health / Gems / Troops). Mass tax is only shown for Move / Accel / Turn.
     /// Token colours are shared: violet = start scale, amber = part count N, steel = Primary,
     /// cyan = PerExtra, blue = ship−1, green = ability, mint = total.
     /// Presentation-only — never writes ECS.
@@ -88,7 +88,7 @@ namespace TitanOrbit.UI
             public float CatalogEach;
             /// <summary>
             /// Prefab start-scale multiplier for this field (1 = no mesh scale).
-            /// Cockpit at localScale 3 → 3 on Health / Gems / People.
+            /// Cockpit at localScale 3 → 3 on Health / Gems / Troops.
             /// </summary>
             public float ScaleFactor;
             /// <summary>[LEGACY] Unused — Extra Stack Weight retired (kept so older tip builders compile).</summary>
@@ -250,10 +250,10 @@ namespace TitanOrbit.UI
                     AppendTurnMassTax(sb, live);
                     break;
                 case 8:
-                    AppendTenPercentPipeline(sb, parts, live, attrs, StatField.MaxGems, "Max Gems", lv, live.EffectiveStats.maxGems);
+                    AppendTenPercentPipeline(sb, parts, live, attrs, StatField.MaxGems, "Gem Cap", lv, live.EffectiveStats.maxGems);
                     break;
                 case 9:
-                    AppendTenPercentPipeline(sb, parts, live, attrs, StatField.MaxPeople, "Max People", lv, live.EffectiveStats.maxPeople);
+                    AppendTenPercentPipeline(sb, parts, live, attrs, StatField.MaxPeople, "Troop Cap", lv, live.EffectiveStats.maxPeople);
                     break;
                 default:
                     sb.AppendLine("<color=#888888>Unknown ability</color>");
@@ -559,7 +559,7 @@ namespace TitanOrbit.UI
 
         /// <summary>
         /// One Extra Level pool’s numbers for a chip field. Cockpit and Wing are separate
-        /// pools — Max Gems is their sum, not a single primary.
+        /// pools — Gem Cap is their sum, not a single primary.
         /// </summary>
         struct FieldPoolEval
         {

@@ -71,11 +71,15 @@ namespace TitanOrbit.Data
         [Tooltip("Flat additive modifiers.")]
         public float movementSpeedAdd;
         public float rotationSpeedAdd;
+        [InspectorName("Health Cap Add")]
         public float maxHealthAdd;
         public float healthRegenAdd;
+        [InspectorName("Energy Cap Add")]
         public float energyCapacityAdd;
         public float energyRegenAdd;
+        [InspectorName("Gem Cap Add")]
         public float gemCapacityAdd;
+        [InspectorName("Troop Cap Add")]
         public float peopleCapacityAdd;
         public float miningRateAdd;
 
@@ -85,7 +89,7 @@ namespace TitanOrbit.Data
         public float bulletSpeedMultiplier = 1f;
         [Tooltip("Multiplies gem deposit transfer speed while docked at a gem moon.")]
         public float gemDepositSpeedMultiplier = 1f;
-        [Tooltip("Multiplies people load and unload speed while in orbit.")]
+        [Tooltip("Multiplies troop load and unload speed while in orbit.")]
         public float peopleTransferSpeedMultiplier = 1f;
 
         [Header("Unique Effects")]

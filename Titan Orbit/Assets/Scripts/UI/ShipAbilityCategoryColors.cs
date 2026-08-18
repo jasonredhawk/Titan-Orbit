@@ -35,7 +35,7 @@ namespace TitanOrbit.UI
             "HC", "HR",
             "EC", "ER",
             "MS", "TS",
-            "GC", "PC"
+            "GC", "TC"
         };
 
         /// <summary>Full labels for the ship-tree power legend (matches ship upgrade menu order).</summary>
@@ -45,7 +45,7 @@ namespace TitanOrbit.UI
             "Health Cap", "Health Regen",
             "Energy Cap", "Energy Regen",
             "Move Speed", "Turn Speed",
-            "Gem Cap", "People Cap"
+            "Gem Cap", "Troop Cap"
         };
 
         public const int PowerBreakdownPairCount = PowerBreakdownStatCount / 2;

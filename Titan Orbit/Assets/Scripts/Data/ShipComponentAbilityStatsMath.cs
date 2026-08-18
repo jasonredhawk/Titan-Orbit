@@ -388,7 +388,7 @@ namespace TitanOrbit.Data
         /// Multiplier <see cref="ScaleStatsByTransform"/> applies to one Base / PerExtra pair.
         /// <para>
         /// [TITAN-ORBIT] Starting prefab <c>localScale</c> is an art lever: a Cockpit at
-        /// scale 3 contributes <c>3 ×</c> catalog Health / Gems / People. Weapons use
+        /// scale 3 contributes <c>3 ×</c> catalog Health / Gems / Troops. Weapons use
         /// wider XY for fire power and deeper Z for a slower fire rate. Turn, ramming,
         /// propulsion move/accel, and weapon bullet speed/range stay at ×1.
         /// </para>

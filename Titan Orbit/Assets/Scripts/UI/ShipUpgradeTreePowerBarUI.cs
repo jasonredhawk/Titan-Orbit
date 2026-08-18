@@ -16,7 +16,7 @@ namespace TitanOrbit.UI
     public class ShipUpgradeTreePowerBarUI : MonoBehaviour
     {
         /// <summary>
-        /// Gem Cap (8) and People Cap (9) bar widths use this fraction of raw stat power
+        /// Gem Cap (8) and Troop Cap (9) bar widths use this fraction of raw stat power
         /// on equipment cards only, so high gem capacity does not dominate those bars.
         /// Moon-tree equal slots no longer need this — each stat has its own 10% lane.
         /// </summary>

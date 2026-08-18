@@ -27,7 +27,7 @@ namespace TitanOrbit.Game
         [SerializeField] Color orbitZoneTint = new Color(0.5f, 0.7f, 0.95f);
         [Range(0f, 1f)]
         [SerializeField] float orbitZonePeakAlpha = 0.3f;
-        [Tooltip("Local Y offset for the people-transfer ring. 0 = planet equator / cross-section.")]
+        [Tooltip("Local Y offset for the troop-transfer ring. 0 = planet equator / cross-section.")]
         [SerializeField] float orbitZoneHeightBelowPlanet = 0f;
 
         Transform _planetRoot;

@@ -147,7 +147,7 @@ namespace TitanOrbit.Data
                     result.MatchedComponentIds.Add(componentId);
                     result.PerComponentStats.Add(scaled);
                     // [TITAN-ORBIT] Keep the authored start scale so HUD formula cards can show
-                    // catalog × scale (a Cockpit at 3× multiplies Health / Gems / People by 3).
+                    // catalog × scale (a Cockpit at 3× multiplies Health / Gems / Troops by 3).
                     result.PerComponentLocalScales.Add(t.localScale);
                 }
 

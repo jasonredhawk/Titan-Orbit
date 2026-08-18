@@ -32,7 +32,7 @@ namespace TitanOrbit.ECS
             /// <summary>Rolled Size upper bound.</summary>
             public float MaxSize;
 
-            /// <summary>Max Health = Size × this.</summary>
+            /// <summary>Health Cap = Size × this.</summary>
             public float HealthPerSize;
 
             /// <summary>Gem capacity = Size × this.</summary>

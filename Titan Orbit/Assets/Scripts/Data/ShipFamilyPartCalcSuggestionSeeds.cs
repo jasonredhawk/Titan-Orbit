@@ -243,7 +243,7 @@ namespace TitanOrbit.Data
             GetSuggestedTractorPower(version) * ShipPropulsionAggregation.PerLevelFractionOfBase;
     }
 
-    /// <summary>Scan/auto-populate people capacity defaults.</summary>
+    /// <summary>Scan/auto-populate troop cap defaults.</summary>
     public static class ShipComponentPeopleCapacitySuggestions
     {
         public const float PeopleCapacityV1 = 2f;

@@ -20,7 +20,7 @@ namespace TitanOrbit.Simulation
         /// <summary>
         /// [TITAN-ORBIT] Seconds for a planet to grow from 0 to its current max population at the
         /// passive rate. Growth = maxPop / FullRefillSeconds people per second, so larger / higher-level
-        /// planets add more people per second but still take this long to refill.
+        /// planets add more population per second but still take this long to refill.
         /// Longer refill leaves a freshly captured (empty) planet vulnerable to recapture before it
         /// can stock defenders again.
         /// </summary>
@@ -29,7 +29,7 @@ namespace TitanOrbit.Simulation
         /// <summary>
         /// [TITAN-ORBIT] Exponent on planet level in the max-population formula
         /// (<c>size × level^PopulationLevelExponent</c>). Higher than the old 1.5 so late-game
-        /// planets hold more people relative to a few fully loaded high-level ships.
+        /// planets hold more population relative to a few fully loaded high-level ships.
         /// </summary>
         public const float PopulationLevelExponent = 1.7f;
 

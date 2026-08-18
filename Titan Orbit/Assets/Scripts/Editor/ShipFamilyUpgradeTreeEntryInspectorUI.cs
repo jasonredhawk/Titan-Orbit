@@ -23,7 +23,7 @@ namespace TitanOrbit.Editor
             "Health Cap", "Health Reg",
             "Energy Cap", "Energy Regen",
             "Move Speed", "Turn Speed",
-            "Gem Cap", "People Cap"
+            "Gem Cap", "Troop Cap"
         };
 
         public static float GetHeight(SerializedProperty element, bool isExpanded)

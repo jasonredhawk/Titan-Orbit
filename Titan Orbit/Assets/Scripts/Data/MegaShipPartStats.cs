@@ -30,6 +30,7 @@ namespace TitanOrbit.Data
         /// </summary>
         [Tooltip("Weapon mount yaw speed in degrees/sec. Hull turnSpeed is the ship body — this is the turret.")]
         public float weaponRotationSpeed;
+        [InspectorName("Troop Cap")]
         public float maxPeople;
 
         /// <summary>Copies into the shared ship-stat struct with every PerExtraLevel left at 0.</summary>

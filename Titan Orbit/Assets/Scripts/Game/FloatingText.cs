@@ -26,7 +26,7 @@ namespace TitanOrbit.Game
         public Sprite damageIcon;
         [Tooltip("Health change and remaining HP.")]
         public Sprite healthIcon;
-        [Tooltip("People load and unload.")]
+        [Tooltip("Troop load and unload.")]
         public Sprite peopleIcon;
         [Tooltip("Energy.")]
         public Sprite energyIcon;
@@ -63,10 +63,10 @@ namespace TitanOrbit.Game
         [Tooltip("Play-plane gap between stacked types on the same target (damage vs HP vs gems).")]
         public float stackLineSpacing = 1.25f;
 
-        [Header("People / Planet")]
-        [Tooltip("How far past the planet radius people-transport text sits on the play plane.")]
+        [Header("Troops / Planet")]
+        [Tooltip("How far past the planet radius troop-transport text sits on the play plane.")]
         public float planetClearance = 1.25f;
-        [Tooltip("World Y for people-transport popups. Keep near 0 so text sits beside the planet, not above it.")]
+        [Tooltip("World Y for troop-transport popups. Keep near 0 so text sits beside the planet, not above it.")]
         public float worldPopupHeight = 0.4f;
 
         [Header("Streak")]

@@ -545,7 +545,7 @@ namespace TitanOrbit.Editor
             md.AppendLine("- `partType` = **broad group** (shared Part Profile stats + attribute mesh-scale bucket).");
             md.AppendLine("- Allowed partType values ONLY:");
             md.AppendLine("  `Cockpit`, `Weapon Bullet`, `Weapon Cannon`, `Wing`, `Engine`, `Thruster`, `Tail`, `Hull`, `Ignore`");
-            md.AppendLine("- `Cockpit` and `Cockpit_Base` both → `Cockpit` so Max People scales together.");
+            md.AppendLine("- `Cockpit` and `Cockpit_Base` both → `Cockpit` so Troop Cap scales together.");
             md.AppendLine("- Engine meshes → `Engine` (move/accel + Energy Cap/Regen). VFX **off**.");
             md.AppendLine("- Thruster / Exhaust mounts → `Thruster` (move/accel + turn). VFX **on**.");
             md.AppendLine("- Fin → `Tail`. Everything else that is not a gameplay part → `Hull`.");
