@@ -26,6 +26,8 @@ namespace TitanOrbit.UI
     /// </para>
     /// <para>
     /// Rich text is shown inside <see cref="ShipStatTooltipChrome"/> (Shift sci-fi frame).
+    /// Ends with a small RANK 1 footer from <see cref="ShipPowerBarStatCopy"/> so chips
+    /// match the Orbit Menu power-bar hover.
     /// Paired with <see cref="ShipAttributeUpgradeHUD"/> chips and
     /// <see cref="ShipSpeedometerStatTooltips"/> (shared <see cref="ShipSpeedometerStatTooltips.PartCache"/>).
     /// </para>
@@ -250,6 +252,8 @@ namespace TitanOrbit.UI
             if (live.IsMega)
             {
                 AppendMegaAbilityCard(sb, abilityIndex, title, shortLabel, chipVal, unit, in parts, in live, in attrs);
+                // Small RANK 1 — same catalog winner the Orbit Menu power bar shows.
+                ShipPowerBarStatCopy.AppendRankOneFooter(sb, abilityIndex, megaPool: true, parts.ChassisId);
                 return sb.Length > 0 ? sb.ToString() : "<color=#888888>No breakdown available</color>";
             }
 
@@ -305,6 +309,7 @@ namespace TitanOrbit.UI
                     break;
             }
 
+            ShipPowerBarStatCopy.AppendRankOneFooter(sb, abilityIndex, megaPool: false, parts.ChassisId);
             return sb.Length > 0 ? sb.ToString() : "<color=#888888>No breakdown available</color>";
         }
 

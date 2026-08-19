@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -92,12 +93,59 @@ namespace TitanOrbit.Data
     }
 
     /// <summary>
+    /// The chassis that currently owns one power-bar slot's catalog max.
+    /// Regular-family and MEGA pools keep separate winners so a 90-gun MEGA cannot
+    /// steal RANK 1 from NightAye on the L1–L6 tree.
+    /// <para>
+    /// [TITAN-ORBIT] Identity only — combat never reads this. Hover tips in
+    /// <c>ShipPowerBarStatTooltip</c> show the hull as a small RANK 1 line.
+    /// </para>
+    /// </summary>
+    public struct ShipPowerBarStatLeader
+    {
+        /// <summary>Family folder id (<c>AstroEagle</c>) or <c>MEGA</c>.</summary>
+        public string familyId;
+
+        /// <summary>Orbit-menu hull name (<see cref="ShipFamilyChassisTierEntry.upgradeTreeShipName"/> or MEGA display name).</summary>
+        public string hullName;
+
+        /// <summary>Stable chassis id (<c>NightAye_16</c>, <c>MEGA_007</c>).</summary>
+        public string chassisId;
+
+        /// <summary>Tree level 1–6 for family hulls. MEGAs use 7.</summary>
+        public int treeLevel;
+
+        /// <summary>Winning display-stat value (same units as the bar fill numerator).</summary>
+        public float value;
+
+        /// <summary>Existing menu thumbnail. Null when the tier has no preview baked.</summary>
+        public Sprite previewSprite;
+
+        /// <summary>True when a real hull won this slot (not the empty cache default).</summary>
+        public bool IsValid =>
+            value > ShipPowerBarStatMaxes.MinDenominator
+            && (!string.IsNullOrEmpty(chassisId) || !string.IsNullOrEmpty(hullName));
+
+        /// <summary>
+        /// True when <paramref name="otherChassisId"/> is this winner.
+        /// Used so a hovered card can say "this hull" instead of repeating its own name.
+        /// </summary>
+        public bool MatchesChassis(string otherChassisId)
+        {
+            if (string.IsNullOrEmpty(chassisId) || string.IsNullOrEmpty(otherChassisId))
+                return false;
+            return string.Equals(chassisId, otherChassisId, StringComparison.OrdinalIgnoreCase);
+        }
+    }
+
+    /// <summary>
     /// Resolves upgrade-tree power-bar stats: Extra Level at ship level with every HUD
     /// ability maxed (<see cref="ShipAbilityLevelCounts.Maxed"/>). Same formulas as live
     /// ships — non-weapons use <c>(ship−1) + ability + (N−1)</c>; weapons omit N;
     /// weapon bullet speed is ability-only. Live prefab sums are cached per session.
     /// Also walks the regular-family catalog and the MEGA catalog for two separate
-    /// ten-stat max pools.
+    /// ten-stat max pools, and remembers which hull set each slot's ceiling
+    /// (RANK 1 for power-bar hover tips).
     /// </summary>
     public static class ShipFamilyPowerBarNorm
     {
@@ -111,6 +159,8 @@ namespace TitanOrbit.Data
 
         static ShipPowerBarStatMaxes s_cachedRegularMaxes;
         static ShipPowerBarStatMaxes s_cachedMegaMaxes;
+        static ShipPowerBarStatLeader[] s_cachedRegularLeaders;
+        static ShipPowerBarStatLeader[] s_cachedMegaLeaders;
         static bool s_hasCachedRegularMaxes;
         static bool s_hasCachedMegaMaxes;
 
@@ -220,6 +270,7 @@ namespace TitanOrbit.Data
             // HyperFalcon L6 Health Cap. That only works if every regular chassis
             // shares the same denominator — and MEGAs stay out of that denominator.
             var maxes = ShipPowerBarStatMaxes.CreateEmpty();
+            ShipPowerBarStatLeader[] leaders = CreateEmptyLeaders();
             IEnumerable<ShipFamilyDefinition> families = EnumerateFamilies(config);
             if (families != null)
             {
@@ -242,12 +293,27 @@ namespace TitanOrbit.Data
 
                         ShipFamilyPowerScoreBreakdown breakdown = GetBreakdownAtShipLevel(def, tier, level);
                         maxes.Absorb(breakdown);
+
+                        // --- Remember who set each slot's max ---
+                        // [TITAN-ORBIT] Same numbers as the bar fill. First hull keeps a
+                        // tie so RANK 1 is stable across refreshes.
+                        // Blank upgradeTreeShipName fills from the prefab
+                        // (SpaceExcalibur_7 → Space Excalibur 7).
+                        AbsorbLeaders(
+                            leaders,
+                            breakdown,
+                            def.familyId,
+                            ResolveTierShipDisplayName(tier, def.familyId),
+                            tier.chassisId,
+                            level,
+                            tier.GetMenuPreviewSprite());
                     }
                 }
             }
 
             maxes.EnsureMinimum();
             s_cachedRegularMaxes = maxes;
+            s_cachedRegularLeaders = leaders;
             s_hasCachedRegularMaxes = true;
             return s_cachedRegularMaxes;
         }
@@ -267,6 +333,7 @@ namespace TitanOrbit.Data
             // hulls. Comparing MEGAs to each other needs a MEGA-only ceiling so a
             // mid-pack hull does not paint every segment full.
             var maxes = ShipPowerBarStatMaxes.CreateEmpty();
+            ShipPowerBarStatLeader[] leaders = CreateEmptyLeaders();
             MegaShipCatalog catalog = MegaShipCatalog.Load();
             if (catalog?.entries != null)
             {
@@ -279,11 +346,22 @@ namespace TitanOrbit.Data
 
                     ShipFamilyPowerScoreBreakdown breakdown = catalog.GetPowerBreakdown(i);
                     maxes.Absorb(breakdown);
+
+                    MegaShipCatalogEntry entry = catalog.entries[i];
+                    AbsorbLeaders(
+                        leaders,
+                        breakdown,
+                        "MEGA",
+                        catalog.GetDisplayName(i),
+                        MegaShipCatalog.FormatChassisId(i),
+                        MegaTreeLevel,
+                        entry != null ? entry.GetMenuPreviewSprite() : null);
                 }
             }
 
             maxes.EnsureMinimum();
             s_cachedMegaMaxes = maxes;
+            s_cachedMegaLeaders = leaders;
             s_hasCachedMegaMaxes = true;
             return s_cachedMegaMaxes;
         }
@@ -320,8 +398,32 @@ namespace TitanOrbit.Data
         public static bool IsMegaTreeLevel(int treeLevel) => treeLevel >= MegaTreeLevel;
 
         /// <summary>
-        /// Drops live-sum, regular-family max, and MEGA max caches after an editor
-        /// rebake or catalog rebuild.
+        /// Hull that owns the catalog max for one display slot (0–9).
+        /// Uses the same pool as the bar fill: regular families for L1–L6, MEGAs for L7.
+        /// Builds the matching max cache on first call.
+        /// </summary>
+        /// <param name="statIndex">Power-bar slot (0 = DPS … 9 = Troop Cap).</param>
+        /// <param name="megaPool">True for MEGA catalog winners; false for regular families.</param>
+        public static ShipPowerBarStatLeader GetStatLeader(int statIndex, bool megaPool)
+        {
+            if (statIndex < 0 || statIndex >= ShipPowerBarStatMaxes.StatCount)
+                return default;
+
+            // --- Ensure the walk that fills maxes also filled leaders ---
+            if (megaPool)
+                GetMegaMaxPerStat();
+            else
+                GetGlobalMaxPerStat();
+
+            ShipPowerBarStatLeader[] leaders = megaPool ? s_cachedMegaLeaders : s_cachedRegularLeaders;
+            if (leaders == null || statIndex >= leaders.Length)
+                return default;
+            return leaders[statIndex];
+        }
+
+        /// <summary>
+        /// Drops live-sum, regular-family max, MEGA max, and RANK 1 leader caches after
+        /// an editor rebake or catalog rebuild.
         /// </summary>
         public static void InvalidateCache()
         {
@@ -329,7 +431,65 @@ namespace TitanOrbit.Data
             s_hasCachedMegaMaxes = false;
             s_cachedRegularMaxes = default;
             s_cachedMegaMaxes = default;
+            s_cachedRegularLeaders = null;
+            s_cachedMegaLeaders = null;
             s_liveCache.Clear();
+        }
+
+        /// <summary>
+        /// Player-facing ship name for one upgrade-tree chassis.
+        /// Prefers the authored Orbit Menu name, then the formatted prefab
+        /// (<c>SpaceExcalibur_7</c> → Space Excalibur 7), then the chassis id.
+        /// Never returns only the family when a hull is known.
+        /// </summary>
+        public static string ResolveTierShipDisplayName(ShipFamilyChassisTierEntry tier, string familyId)
+        {
+            if (tier == null)
+                return familyId ?? string.Empty;
+
+            string name = tier.ResolveUpgradeTreeShipName();
+            return !string.IsNullOrWhiteSpace(name) ? name : (familyId ?? string.Empty);
+        }
+
+        /// <summary>Allocates ten empty leader slots (one per power-bar stat).</summary>
+        static ShipPowerBarStatLeader[] CreateEmptyLeaders()
+        {
+            return new ShipPowerBarStatLeader[ShipPowerBarStatMaxes.StatCount];
+        }
+
+        /// <summary>
+        /// Keeps the higher value per display stat and records that hull as RANK 1.
+        /// Ties keep the first winner so the tip does not flip between equal ships.
+        /// </summary>
+        static void AbsorbLeaders(
+            ShipPowerBarStatLeader[] leaders,
+            in ShipFamilyPowerScoreBreakdown breakdown,
+            string familyId,
+            string hullName,
+            string chassisId,
+            int treeLevel,
+            Sprite preview)
+        {
+            if (leaders == null)
+                return;
+
+            for (int stat = 0; stat < leaders.Length; stat++)
+            {
+                // One iteration = one ODEMC slot (DPS, Bullet Speed, … Troop Cap).
+                float value = breakdown.GetDisplayStatValue(stat);
+                if (value <= leaders[stat].value)
+                    continue;
+
+                leaders[stat] = new ShipPowerBarStatLeader
+                {
+                    familyId = familyId ?? string.Empty,
+                    hullName = hullName ?? string.Empty,
+                    chassisId = chassisId ?? string.Empty,
+                    treeLevel = treeLevel,
+                    value = value,
+                    previewSprite = preview
+                };
+            }
         }
 
         static IEnumerable<ShipFamilyDefinition> EnumerateFamilies(PlanetShipFamilyConfig config)

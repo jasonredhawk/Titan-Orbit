@@ -174,13 +174,12 @@ namespace TitanOrbit.Editor
             int bankIndex = BulletBankProfileUtility.ResolveBankIndexForFamily(family);
             TryReadBank(bankIndex, out string bankName, out float fpMul, out float rateMul, out float speedMul);
 
+            string displayName = tier.ResolveUpgradeTreeShipName();
             var row = new ShipFamilyBalanceRankRow
             {
                 familyId = family.familyId,
                 chassisId = tier.chassisId,
-                displayName = !string.IsNullOrWhiteSpace(tier.upgradeTreeShipName)
-                    ? tier.upgradeTreeShipName.Trim()
-                    : tier.chassisId,
+                displayName = !string.IsNullOrWhiteSpace(displayName) ? displayName : tier.chassisId,
                 treeLevel = shipLevel,
                 gunCount = CountRegularGuns(in raw),
                 bankName = bankName,

@@ -60,6 +60,7 @@ namespace TitanOrbit.UI
         void Awake()
         {
             // --- Unity lifecycle ---
+            EnsureCanvasGroup();
             AutoBindReferences();
             CacheRows();
             ApplyLayoutToAllRows();
@@ -69,6 +70,7 @@ namespace TitanOrbit.UI
         void OnEnable()
         {
             // --- Unity lifecycle ---
+            EnsureCanvasGroup();
             AutoBindReferences();
             CacheRows();
             ApplyLayoutToAllRows();
@@ -121,12 +123,31 @@ namespace TitanOrbit.UI
         /// </summary>
         void SetHudVisible(bool visible)
         {
-            if (_canvasGroup == null)
-                _canvasGroup = GetComponent<CanvasGroup>() ?? gameObject.AddComponent<CanvasGroup>();
+            if (!EnsureCanvasGroup())
+                return;
 
             _canvasGroup.alpha = visible ? 1f : 0f;
             _canvasGroup.interactable = false;
             _canvasGroup.blocksRaycasts = false;
+        }
+
+        /// <summary>
+        /// Resolves or adds the fade group on this HUD root. [UNITY] Do not use
+        /// <c>??</c> after <c>GetComponent</c> — a destroyed CanvasGroup is a
+        /// "fake null" that C# coalescing treats as alive, then <c>.alpha</c> throws
+        /// <c>MissingComponentException</c> on ShipStatsPanel.
+        /// </summary>
+        /// <returns>True when <see cref="_canvasGroup"/> can be written.</returns>
+        bool EnsureCanvasGroup()
+        {
+            if (_canvasGroup != null)
+                return true;
+
+            _canvasGroup = GetComponent<CanvasGroup>();
+            if (_canvasGroup == null)
+                _canvasGroup = gameObject.AddComponent<CanvasGroup>();
+
+            return _canvasGroup != null;
         }
 
         /// <summary>

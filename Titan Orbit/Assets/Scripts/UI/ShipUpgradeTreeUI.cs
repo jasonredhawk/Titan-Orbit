@@ -386,8 +386,10 @@ namespace TitanOrbit.UI
                     else
                         node.ClearMegaShipCardStyle();
                     string shipName = tier != null
-                        ? (string.IsNullOrEmpty(tier.upgradeTreeShipName) ? tier.chassisId : tier.upgradeTreeShipName)
+                        ? tier.ResolveUpgradeTreeShipName()
                         : $"Branch {b + 1}";
+                    if (string.IsNullOrWhiteSpace(shipName))
+                        shipName = $"Branch {b + 1}";
                     node.SetShipName(shipName);
                     node.SetPrice(family != null ? "—" : "Preview");
                     node.SetPreview(tier != null ? tier.menuPreviewSprite : null);

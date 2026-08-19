@@ -1,5 +1,6 @@
 using UnityEditor;
 using UnityEngine;
+using TitanOrbit.Core;
 using TitanOrbit.Data;
 
 namespace TitanOrbit.Editor
@@ -81,8 +82,13 @@ namespace TitanOrbit.Editor
 
             y += gap;
             y = DrawStandardProperty(new Rect(position.x, y, width, line), element.FindPropertyRelative("chassisId"), gap);
+
+            // Blank names fill from the prefab before the text field draws
+            // (SpaceExcalibur_7 → Space Excalibur 7). Authored names are left alone.
+            PrepopulateUpgradeTreeShipNameIfBlank(element);
             y = DrawStandardProperty(new Rect(position.x, y, width, line), element.FindPropertyRelative("upgradeTreeShipName"), gap);
             y = DrawStandardProperty(new Rect(position.x, y, width, line), element.FindPropertyRelative("prefab"), gap);
+            PrepopulateUpgradeTreeShipNameIfBlank(element);
 
             float menuPreviewHeight = EditorGUI.GetPropertyHeight(element.FindPropertyRelative("menuPreviewSprite"), true);
             y = DrawPropertyBlock(new Rect(position.x, y, width, menuPreviewHeight), element.FindPropertyRelative("menuPreviewSprite"), gap);
@@ -379,6 +385,27 @@ namespace TitanOrbit.Editor
             float gap)
         {
             return DrawStatRow(rect, label, minValue, maxValue, labelWidth, valueWidth, valueGap, gap, null);
+        }
+
+        /// <summary>
+        /// When Upgrade Tree Ship Name is empty and a prefab is assigned, write the
+        /// formatted prefab name into the serialized field so the Inspector shows
+        /// Space Excalibur 7 instead of a blank box. Designers can still edit after.
+        /// </summary>
+        private static void PrepopulateUpgradeTreeShipNameIfBlank(SerializedProperty element)
+        {
+            SerializedProperty nameProp = element.FindPropertyRelative("upgradeTreeShipName");
+            if (nameProp == null || !string.IsNullOrWhiteSpace(nameProp.stringValue))
+                return;
+
+            SerializedProperty prefabProp = element.FindPropertyRelative("prefab");
+            GameObject prefab = prefabProp != null ? prefabProp.objectReferenceValue as GameObject : null;
+            if (prefab == null || string.IsNullOrWhiteSpace(prefab.name))
+                return;
+
+            string generated = DisplayNameFormatting.FormatPrefabShipName(prefab.name);
+            if (!string.IsNullOrWhiteSpace(generated))
+                nameProp.stringValue = generated;
         }
 
         private static float DrawStandardProperty(Rect rect, SerializedProperty prop, float gap)

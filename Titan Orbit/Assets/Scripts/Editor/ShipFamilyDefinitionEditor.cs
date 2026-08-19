@@ -1418,15 +1418,13 @@ namespace TitanOrbit.Editor
             return ShipFamilyUpgradeTreeStatScanner.SumStatsForPrefabAsset(prefab, def, familyId);
         }
 
-        /// <summary>Second segment after splitting prefab root name on '_' (e.g. AstroEagle_Thumper ΓåÆ Thumper).</summary>
+        /// <summary>
+        /// Orbit Menu name from the prefab root: CamelCase, digits, and underscores
+        /// become spaces (SpaceExcalibur_7 → Space Excalibur 7).
+        /// </summary>
         private static string GetUpgradeTreeShipNameFromPrefabName(string prefabRootName)
         {
-            if (string.IsNullOrEmpty(prefabRootName))
-                return string.Empty;
-            string[] parts = prefabRootName.Split(new[] { '_' }, StringSplitOptions.RemoveEmptyEntries);
-            if (parts.Length < 2)
-                return string.Empty;
-            return parts[1];
+            return DisplayNameFormatting.FormatPrefabShipName(prefabRootName);
         }
 
         /// <summary>Per-level stat terms are ~25% of the base value (within the 20ΓÇô30% design band).</summary>

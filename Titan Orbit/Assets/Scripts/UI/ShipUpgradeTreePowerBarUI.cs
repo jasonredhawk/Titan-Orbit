@@ -13,7 +13,9 @@ namespace TitanOrbit.UI
     /// increments stay visible on that wider fill. The ship's value is a solid fill
     /// and the rest of the lane is a dimmed matching color.
     /// Equipment cards keep the older proportional widths (one or two stats side by
-    /// side, hide empty pairs). Built at runtime by <see cref="Create"/> /
+    /// side, hide empty pairs). Hovering a slot opens
+    /// <see cref="ShipPowerBarStatTooltip"/> (stat details + small RANK 1 hull).
+    /// Built at runtime by <see cref="Create"/> /
     /// <see cref="CreateInTrack"/>, or upgraded in place from the serialized node prefab.
     /// </summary>
     public class ShipUpgradeTreePowerBarUI : MonoBehaviour
@@ -48,6 +50,11 @@ namespace TitanOrbit.UI
 
         Image[] _remainders;
         bool _slotLayersReady;
+        ShipPowerBarStatHoverRelay _hoverRelay;
+        ShipFamilyPowerScoreBreakdown _hoverBreakdown;
+        ShipPowerBarStatMaxes _hoverMaxes;
+        bool _hoverMegaPool;
+        string _hoverChassisId;
 
         public float TrackWidth { get; private set; }
 
@@ -168,6 +175,7 @@ namespace TitanOrbit.UI
             powerBar.Initialize(segments, barHeight, pairGap);
             powerBar._remainders = remainders;
             powerBar._slotLayersReady = true;
+            powerBar.EnsureHoverRelay();
             return powerBar;
         }
 
@@ -298,12 +306,16 @@ namespace TitanOrbit.UI
         /// Slot 0 is sustained DPS (<c>firePower × fireRate</c>), not raw Fire Power.
         /// Called when a tree node or store tile paints its colourful stats bar.
         /// </summary>
+        /// <param name="megaPool">True when <paramref name="globalMaxes"/> came from the MEGA catalog (RANK 1 must match).</param>
         public void ApplyBreakdown(
             ShipFamilyPowerScoreBreakdown breakdown,
             in ShipPowerBarStatMaxes globalMaxes,
-            float trackWidth)
+            float trackWidth,
+            bool megaPool = false)
         {
             EnsureSlotLayers();
+            // Hover tips must use this paint's breakdown and pool (regular vs MEGA).
+            BindHoverContext(breakdown, in globalMaxes, megaPool, chassisId: null);
             TrackWidth = Mathf.Max(0f, trackWidth);
             float nodeW = TrackWidth > 0.01f ? TrackWidth : 100f;
             float scaledBarHeight = barHeight * _heightScale;
@@ -337,6 +349,12 @@ namespace TitanOrbit.UI
             float trackWidth)
         {
             EnsureSlotLayers();
+            // Gear tiles still explain the ten stats + RANK 1 from the regular-family pool.
+            BindHoverContext(
+                breakdown,
+                ShipFamilyPowerBarNorm.GetGlobalMaxPerStat(),
+                megaPool: false,
+                chassisId: null);
             ApplyBreakdownInternal(breakdown, strongestComponentTotalPower, trackWidth, equipmentLayout: true);
         }
 
@@ -807,6 +825,124 @@ namespace TitanOrbit.UI
             }
 
             return null;
+        }
+
+        /// <summary>
+        /// Stores the painted breakdown so hover tips use the same numbers as the fill.
+        /// Creates the padded hit overlay the first time a bar is shown.
+        /// </summary>
+        void BindHoverContext(
+            in ShipFamilyPowerScoreBreakdown breakdown,
+            in ShipPowerBarStatMaxes maxes,
+            bool megaPool,
+            string chassisId)
+        {
+            _hoverBreakdown = breakdown;
+            _hoverMaxes = maxes;
+            _hoverMegaPool = megaPool;
+            _hoverChassisId = chassisId;
+            EnsureHoverRelay();
+        }
+
+        /// <summary>
+        /// Adds a transparent, layout-ignored overlay that is taller than the 10px bar
+        /// so the tiny stacked lanes are actually hoverable. Click/drag still reach the card.
+        /// </summary>
+        void EnsureHoverRelay()
+        {
+            if (_hoverRelay != null)
+            {
+                _hoverRelay.Owner = this;
+                return;
+            }
+
+            Transform existing = transform.Find("HoverHit");
+            GameObject hitGo = existing != null ? existing.gameObject : null;
+            if (hitGo == null)
+            {
+                hitGo = new GameObject("HoverHit");
+                hitGo.transform.SetParent(transform, false);
+                RectTransform hitRt = hitGo.AddComponent<RectTransform>();
+                hitRt.anchorMin = Vector2.zero;
+                hitRt.anchorMax = Vector2.one;
+                // Extra pad so a 4px stacked lane is hittable without covering the name/preview.
+                hitRt.offsetMin = new Vector2(-4f, -8f);
+                hitRt.offsetMax = new Vector2(4f, 8f);
+                var hitLe = hitGo.AddComponent<LayoutElement>();
+                hitLe.ignoreLayout = true;
+                var hitImg = hitGo.AddComponent<Image>();
+                hitImg.color = new Color(0f, 0f, 0f, 0f);
+                hitImg.raycastTarget = true;
+            }
+
+            _hoverRelay = hitGo.GetComponent<ShipPowerBarStatHoverRelay>();
+            if (_hoverRelay == null)
+                _hoverRelay = hitGo.AddComponent<ShipPowerBarStatHoverRelay>();
+            _hoverRelay.Owner = this;
+            hitGo.transform.SetAsLastSibling();
+        }
+
+        /// <summary>
+        /// Slot 0–9 under <paramref name="screenPoint"/>, or the nearest slot when the
+        /// pointer is in the padded gutter. Hidden equipment pairs are skipped.
+        /// </summary>
+        /// <param name="eventCamera">
+        /// Canvas camera, or null for Overlay. [UNITY] Must be
+        /// <c>UnityEngine.Camera</c> — <c>TitanOrbit.Camera</c> is a namespace.
+        /// </param>
+        public int PickSlotAtScreenPoint(Vector2 screenPoint, UnityEngine.Camera eventCamera)
+        {
+            EnsureSlotLayers();
+            if (segments == null)
+                return -1;
+
+            int nearest = -1;
+            float nearestDist = float.MaxValue;
+            for (int i = 0; i < segments.Length; i++)
+            {
+                RectTransform slot = GetSlotRect(i);
+                if (slot == null || !slot.gameObject.activeInHierarchy)
+                    continue;
+
+                if (RectTransformUtility.RectangleContainsScreenPoint(slot, screenPoint, eventCamera))
+                    return i;
+
+                Vector3[] corners = new Vector3[4];
+                slot.GetWorldCorners(corners);
+                Vector3 worldCenter = (corners[0] + corners[2]) * 0.5f;
+                Vector2 screenCenter = RectTransformUtility.WorldToScreenPoint(eventCamera, worldCenter);
+                float dist = (screenCenter - screenPoint).sqrMagnitude;
+                if (dist < nearestDist)
+                {
+                    nearestDist = dist;
+                    nearest = i;
+                }
+            }
+
+            return nearest;
+        }
+
+        /// <summary>Opens the shared STAT TELEMETRY card for one painted slot.</summary>
+        public void ShowStatTooltip(int statIndex)
+        {
+            RectTransform anchor = GetSlotRect(statIndex);
+            if (anchor == null)
+                anchor = transform as RectTransform;
+            ShipPowerBarStatTooltip.Show(
+                statIndex,
+                in _hoverBreakdown,
+                in _hoverMaxes,
+                _hoverMegaPool,
+                anchor,
+                _hoverChassisId);
+        }
+
+        /// <summary>Slot wrapper rect (fill + dim). Null when the segment was never built.</summary>
+        RectTransform GetSlotRect(int statIndex)
+        {
+            if (segments == null || statIndex < 0 || statIndex >= segments.Length || segments[statIndex] == null)
+                return null;
+            return segments[statIndex].transform.parent as RectTransform;
         }
     }
 }

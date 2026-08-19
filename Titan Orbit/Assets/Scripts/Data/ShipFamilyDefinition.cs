@@ -666,9 +666,23 @@ namespace TitanOrbit.Data
             }
 
             EnforceComponentStatCategories();
+            PrepopulateBlankUpgradeTreeShipNames();
             InvalidateComponentStatsLookup();
             InvalidateGlobalMaxUpgradeTreeTurnSpeedCache();
             _runtimeProceduralCards = null;
+        }
+
+        /// <summary>
+        /// Fills empty <see cref="ShipFamilyChassisTierEntry.upgradeTreeShipName"/> fields
+        /// from the chassis prefab (SpaceExcalibur_7 → Space Excalibur 7). Authored names stay.
+        /// </summary>
+        void PrepopulateBlankUpgradeTreeShipNames()
+        {
+            if (upgradeTree == null)
+                return;
+
+            for (int i = 0; i < upgradeTree.Count; i++)
+                upgradeTree[i]?.TryPrepopulateUpgradeTreeShipName();
         }
 #endif
     }
@@ -678,6 +692,12 @@ namespace TitanOrbit.Data
     public class ShipFamilyChassisTierEntry
     {
         public string chassisId;
+
+        /// <summary>
+        /// Orbit Menu ship name. Leave blank and the prefab name is used:
+        /// SpaceExcalibur_7 → Space Excalibur 7 (CamelCase, digits, underscores).
+        /// </summary>
+        [Tooltip("Orbit Menu ship name. Blank fills from the prefab (SpaceExcalibur_7 → Space Excalibur 7).")]
         public string upgradeTreeShipName;
         public GameObject prefab;
         public Sprite menuPreviewSprite;
@@ -703,6 +723,45 @@ namespace TitanOrbit.Data
         public ShipFamilyPowerScoreBreakdown powerScoreBreakdownAtShipLevel;
         public float componentMass;
         public bool lockedInUpgradeTree;
+
+        /// <summary>
+        /// Authored Orbit Menu name, or a spaced prefab name when that field is blank.
+        /// SpaceExcalibur_7 becomes Space Excalibur 7. Used by the upgrade tree, moon dock,
+        /// and power-bar RANK 1 tips so empty designer fields still show a real hull name.
+        /// </summary>
+        public string ResolveUpgradeTreeShipName()
+        {
+            if (!string.IsNullOrWhiteSpace(upgradeTreeShipName))
+                return upgradeTreeShipName.Trim();
+
+            if (prefab != null && !string.IsNullOrWhiteSpace(prefab.name))
+                return DisplayNameFormatting.FormatPrefabShipName(prefab.name);
+
+            if (!string.IsNullOrWhiteSpace(chassisId))
+                return DisplayNameFormatting.FormatPrefabShipName(chassisId);
+
+            return string.Empty;
+        }
+
+        /// <summary>
+        /// Writes the formatted prefab name into <see cref="upgradeTreeShipName"/> when that
+        /// field is still blank. Editor OnValidate and the family inspector call this so
+        /// designers see Space Excalibur 7 instead of an empty box. Returns true when it wrote.
+        /// </summary>
+        public bool TryPrepopulateUpgradeTreeShipName()
+        {
+            if (!string.IsNullOrWhiteSpace(upgradeTreeShipName))
+                return false;
+            if (prefab == null || string.IsNullOrWhiteSpace(prefab.name))
+                return false;
+
+            string generated = DisplayNameFormatting.FormatPrefabShipName(prefab.name);
+            if (string.IsNullOrWhiteSpace(generated))
+                return false;
+
+            upgradeTreeShipName = generated;
+            return true;
+        }
 
         /// <summary>Top-down menu sprite, preferring a team tint when available.</summary>
         public Sprite GetMenuPreviewSprite(TeamManager.Team team = TeamManager.Team.None)

@@ -318,7 +318,10 @@ namespace TitanOrbit.Data
             return null;
         }
 
-        /// <summary>Upgrade-tree display name from <see cref="ShipFamilyChassisTierEntry.upgradeTreeShipName"/> for this chassis, or null if unset.</summary>
+        /// <summary>
+        /// Orbit Menu name for a chassis: authored <c>upgradeTreeShipName</c>, or the
+        /// formatted prefab (SpaceExcalibur_7 → Space Excalibur 7) when that field is blank.
+        /// </summary>
         public string GetUpgradeTreeShipNameForChassisId(string chassisId)
         {
             // --- Compute value ---
@@ -338,14 +341,25 @@ namespace TitanOrbit.Data
                 {
                     if (tier != null && tier.chassisId == chassisId)
                     {
-                        if (!string.IsNullOrEmpty(tier.upgradeTreeShipName))
-                            return tier.upgradeTreeShipName.Trim();
-                        return null;
+                        string resolved = tier.ResolveUpgradeTreeShipName();
+                        return string.IsNullOrEmpty(resolved) ? null : resolved;
                     }
                 }
                 return null;
             }
             return null;
+        }
+
+        /// <summary>
+        /// Chassis card title: formatted prefab/authored name, then chassis id if both are empty.
+        /// </summary>
+        static string ResolveChassisDisplayName(ShipFamilyChassisTierEntry tier)
+        {
+            if (tier == null)
+                return string.Empty;
+
+            string name = tier.ResolveUpgradeTreeShipName();
+            return !string.IsNullOrWhiteSpace(name) ? name : (tier.chassisId ?? string.Empty);
         }
 
         /// <summary>Upgrade-tree tier entry for a chassis ID, or null.</summary>
@@ -472,7 +486,7 @@ namespace TitanOrbit.Data
             var chassis = ScriptableObject.CreateInstance<ShipChassisDefinition>();
             chassis.chassisId = tier.chassisId;
             chassis.shipFamily = family.shipFamilyDefinition.familyId;
-            chassis.displayName = !string.IsNullOrEmpty(tier.upgradeTreeShipName) ? tier.upgradeTreeShipName.Trim() : tier.chassisId;
+            chassis.displayName = ResolveChassisDisplayName(tier);
             chassis.basePrefab = tier.prefab;
             chassis.originPlanetId = planetId;
             chassis.minHomePlanetLevel = tier.minHomePlanetLevel;
@@ -516,7 +530,7 @@ namespace TitanOrbit.Data
                         var chassis = ScriptableObject.CreateInstance<ShipChassisDefinition>();
                         chassis.chassisId = tier.chassisId;
                         chassis.shipFamily = f.shipFamilyDefinition.familyId;
-                        chassis.displayName = !string.IsNullOrEmpty(tier.upgradeTreeShipName) ? tier.upgradeTreeShipName.Trim() : tier.chassisId;
+                        chassis.displayName = ResolveChassisDisplayName(tier);
                         chassis.basePrefab = tier.prefab;
                         chassis.originPlanetId = f.planetId;
                         chassis.minHomePlanetLevel = tier.minHomePlanetLevel;
@@ -549,7 +563,7 @@ namespace TitanOrbit.Data
                 var chassis = ScriptableObject.CreateInstance<ShipChassisDefinition>();
                 chassis.chassisId = tier.chassisId;
                 chassis.shipFamily = family.shipFamilyDefinition.familyId;
-                chassis.displayName = !string.IsNullOrEmpty(tier.upgradeTreeShipName) ? tier.upgradeTreeShipName.Trim() : tier.chassisId;
+                chassis.displayName = ResolveChassisDisplayName(tier);
                 chassis.basePrefab = tier.prefab;
                 chassis.originPlanetId = planetId;
                 chassis.minHomePlanetLevel = tier.minHomePlanetLevel;
