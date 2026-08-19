@@ -32,8 +32,10 @@ namespace TitanOrbit.ECS
     /// Lead uses <see cref="PlanetaryDefenseAimMath.ShipVelocityLeadScale"/> (1 — no accel bias)
     /// for ships and transports so constant-velocity strafe matches the quadratic.
     /// <see cref="BulletVisualScale"/> grows tracers with fire power. Bullet bank is the
-    /// family's <see cref="ShipFamilyDefinition.bulletPrefabIndex"/>; fire applies that
-    /// profile's stat multipliers (fire power, speed, fire rate, range).
+    /// recipe's inherit / pinned category (default: family's
+    /// <see cref="ShipFamilyDefinition.bulletPrefabIndex"/>). Combat stats come from
+    /// <see cref="PlanetaryDefenseConfig.GetCombatLevelStats"/> so that bank's
+    /// fire-power / fire-rate / speed / range multipliers rewrite the recipe defaults.
     /// Each shot's <see cref="BulletElement.MaxDistance"/> is
     /// <see cref="PlanetaryDefenseAimMath.ComputeBulletMaxDistance"/> — at least engage range,
     /// but longer when lead intercept sits past the acquisition sphere (fleeing/crossing ships).
@@ -54,7 +56,6 @@ namespace TitanOrbit.ECS
 
         PlanetShipFamilyConfig _familyConfig;
         BulletVfxBank _vfxBank;
-        readonly Dictionary<int, int> _bankIndexByFamily = new Dictionary<int, int>(16);
         bool _warmed;
 
         EntityQuery _planetQuery;
@@ -130,19 +131,15 @@ namespace TitanOrbit.ECS
 
                 var config = PlanetaryDefenseConfig.ResolveForFamily(
                     _familyConfig, planet.ShipFamilyConfigIndex);
-                ShipFamilyDefinition familyDef = null;
-                if (_familyConfig != null)
-                {
-                    var entry = _familyConfig.GetFamilyByConfigIndex(planet.ShipFamilyConfigIndex);
-                    familyDef = entry != null ? entry.shipFamilyDefinition : null;
-                }
+                ShipFamilyDefinition familyDef = PlanetaryDefenseConfig.ResolveFamilyDefinition(
+                    _familyConfig, planet.ShipFamilyConfigIndex);
 
                 var xf = EntityManager.GetComponentData<LocalTransform>(planetEntity);
                 float3 planetPos = xf.Position;
                 float planetSize = math.max(0.25f, xf.Scale);
                 int slotCount = buffer.Length;
                 byte ownerTeam = (byte)planet.Ownership;
-                int bankIndex = ResolveBankIndex(familyDef);
+                int bankIndex = config.ResolveBulletBankIndex(familyDef);
                 if (_vfxBank != null)
                     categoryUpgradeScale = _vfxBank.GetCategoryUpgradeVisualScaleMultiplier(bankIndex);
 
@@ -183,14 +180,13 @@ namespace TitanOrbit.ECS
                     if (slot.OccupiedByNetworkId != 0)
                         continue;
 
-                    var stats = config.GetLevelStats(slot.TurretLevel);
+                    // --- Recipe defaults × bank profile ---
+                    // [TITAN-ORBIT] Lightning (and every other bank) must rewrite fire rate /
+                    // fire power / speed / engage range here — not only the tracer BankIndex.
+                    var stats = config.GetCombatLevelStats(slot.TurretLevel, bankIndex);
                     float fireRate = math.max(0.05f, stats.fireRate);
                     float bulletSpeed = math.max(1f, stats.bulletSpeed);
                     float damage = math.max(0.05f, stats.damage);
-                    float unusedLifetime = 0f;
-                    float rangeMul = 1f;
-                    BulletBankCombatLogic.ApplyFireModifiers(
-                        bankIndex, ref damage, ref bulletSpeed, ref rangeMul, ref unusedLifetime, ref fireRate);
                     int cooldownKey = (planetEntity.Index << 16) ^ (i & 0xFFFF);
                     if (_nextFireTime.TryGetValue(cooldownKey, out float next) && now < next)
                         continue;
@@ -239,8 +235,9 @@ namespace TitanOrbit.ECS
                     // need a longer Euclidean MaxDistance or BulletSimulation culls the shot
                     // before the intercept (transports inbound rarely hit this). Lifetime = 0
                     // disables the age timer so slow bullets can use the full flight budget.
+                    float burnRangeMul = BulletBankCombatLogic.GetBurnBulletRangeMultiplier(bankIndex);
                     float maxDistance = PlanetaryDefenseAimMath.ComputeBulletMaxDistance(
-                        engageRange, interceptDistance) * math.max(0.1f, rangeMul);
+                        engageRange, interceptDistance) * burnRangeMul;
                     var spawn = new BulletElement
                     {
                         Position = muzzle,
@@ -400,16 +397,5 @@ namespace TitanOrbit.ECS
             _warmed = true;
         }
 
-        /// <summary>Owning family's default damage bank (heal is never a family default).</summary>
-        int ResolveBankIndex(ShipFamilyDefinition family)
-        {
-            int familyBullet = family != null ? family.bulletPrefabIndex : 0;
-            if (_bankIndexByFamily.TryGetValue(familyBullet, out int cached))
-                return cached;
-
-            int idx = BulletBankProfileUtility.ResolveBankIndexForPlanetaryDefense(family);
-            _bankIndexByFamily[familyBullet] = idx;
-            return idx;
-        }
     }
 }

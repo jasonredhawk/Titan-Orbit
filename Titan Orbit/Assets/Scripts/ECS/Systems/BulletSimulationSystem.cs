@@ -390,7 +390,7 @@ namespace TitanOrbit.ECS
                         ref state, ref ecb, bulletEntity, entity,
                         mounts, ownerMayFire, weaponCfg.ValueRO, ref shipState.ValueRW,
                         transform.ValueRO, ghostOwner.ValueRO,
-                        bankIndex, categoryUpgradeScale, shipVel,
+                        bankIndex, vfxBankForScale, shipVel,
                         dt, mapW, mapH, moonElapsed, serverElapsed,
                         gemPrefab, gemSpawnServerTime);
                     continue;
@@ -425,6 +425,7 @@ namespace TitanOrbit.ECS
                         weaponCfg.ValueRO, in mount, bankIndex, firePowerExtras,
                         categoryUpgradeScale, shipVel,
                         ghostOwner.ValueRO.NetworkId, (byte)shipState.ValueRO.Team,
+                        shipState.ValueRO.ShipLevel,
                         dt, gemPrefab, gemSpawnServerTime, mapW, mapH,
                         moonElapsed, serverElapsed);
 
@@ -469,8 +470,8 @@ namespace TitanOrbit.ECS
             ref ShipState shipState,
             in LocalTransform transform,
             in GhostOwner ghostOwner,
-            int bankIndex,
-            float categoryUpgradeScale,
+            int fallbackBankIndex,
+            BulletVfxBank vfxBankForScale,
             float3 shipVel,
             float dt,
             float mapW,
@@ -499,6 +500,11 @@ namespace TitanOrbit.ECS
                 if (energy < mount.FirePower)
                     continue;
 
+                int mountBank = mount.BulletBankIndex >= 0 ? mount.BulletBankIndex : fallbackBankIndex;
+                float categoryUpgradeScale = vfxBankForScale != null
+                    ? vfxBankForScale.GetCategoryUpgradeVisualScaleMultiplier(mountBank)
+                    : 1f;
+
                 float interceptDistance = 0f;
                 if (aims.IsCreated && m < aims.Length)
                     interceptDistance = aims[m].InterceptDistance;
@@ -507,9 +513,10 @@ namespace TitanOrbit.ECS
                 float fireRateMul = SpawnAndCollideShipBullet(
                     ref state, ref ecb, bulletEntity, m,
                     fireOrigin, fireForward, mount.FirePower,
-                    weaponCfg, in mount, bankIndex, firePowerExtras: 0,
+                    weaponCfg, in mount, mountBank, firePowerExtras: 0,
                     categoryUpgradeScale, shipVel,
                     megaOwnerNet, (byte)shipState.Team,
+                    shipState.ShipLevel,
                     dt, gemPrefab, gemSpawnServerTime, mapW, mapH,
                     moonElapsed, serverElapsed,
                     interceptDistance);
@@ -573,6 +580,7 @@ namespace TitanOrbit.ECS
             float3 shipVel,
             int ownerNetworkId,
             byte ownerTeam,
+            int shipLevel,
             float dt,
             Entity gemPrefab,
             float gemSpawnServerTime,
@@ -591,29 +599,48 @@ namespace TitanOrbit.ECS
             float refDamage = mount.ReferenceFirePower > 0.01f
                 ? mount.ReferenceFirePower
                 : fallbackRefDamage;
+            float muzzleSpeed = BulletShotMath.ResolveMuzzleSpeed(mount.BulletSpeed, weaponCfg.BulletSpeed);
+            float refMuzzleSpeed = mount.BulletSpeed > 0.01f ? mount.BulletSpeed : refSpeed;
+            float maxDistanceForLife = BulletShotMath.ResolveMaxDistance(
+                mount.BulletRange, weaponCfg.BulletMaxDistance);
+            float lifetime = mount.BulletSpeed > 0.01f
+                ? math.max(0.25f, maxDistanceForLife / math.max(1f, muzzleSpeed))
+                : weaponCfg.BulletLifetime;
 
             var plan = BulletShotMath.Build(
                 fireOrigin,
                 fireForward,
                 shipVel,
                 damage,
-                weaponCfg.BulletSpeed,
+                muzzleSpeed,
                 weaponCfg.BulletMaxDistance,
-                weaponCfg.BulletLifetime,
+                lifetime,
                 weaponCfg.FireRate,
                 mount.BulletRange,
                 weaponCfg.BulletScale,
                 refDamage,
-                refSpeed,
+                refMuzzleSpeed,
                 bankIndex,
                 firePowerExtras,
                 categoryUpgradeScale);
+
+            byte homing = 0;
+            float turnSpeedDeg = 0f;
+            float acquireRange = 0f;
+            if (RocketHomingFire.TryApply(
+                    bankIndex, shipLevel, fireForward, ref plan,
+                    out turnSpeedDeg, out acquireRange))
+            {
+                homing = 1;
+            }
 
             // --- Lead flight budget (MEGA auto-aim) ---
             // [TITAN-ORBIT] Same bug planetary turrets had: intercept for a fleeing /
             // crossing target sits past current range. Without this, the sim culls the
             // round before it arrives and it looks like undershoot.
-            if (interceptDistance > 0.5f)
+            // Rockets use catalog lifetime / unlimited travel — do not clamp them to
+            // MaxBulletTravelDistance or they cannot chase.
+            if (homing == 0 && interceptDistance > 0.5f)
             {
                 float engage = plan.MaxDistance;
                 float lead = PlanetaryDefenseAimMath.ComputeBulletMaxDistance(
@@ -624,10 +651,10 @@ namespace TitanOrbit.ECS
                 plan.MaxDistance = math.min(lead, MegaShipCatalog.MaxBulletTravelDistance);
                 if (plan.MaxDistance > engage + 0.01f)
                 {
-                    float muzzleSpeed = math.length(plan.Velocity - shipVel);
-                    if (muzzleSpeed < 1f)
-                        muzzleSpeed = 1f;
-                    plan.Lifetime = math.max(plan.Lifetime, plan.MaxDistance / muzzleSpeed);
+                    float planarMuzzleSpeed = math.length(plan.Velocity - shipVel);
+                    if (planarMuzzleSpeed < 1f)
+                        planarMuzzleSpeed = 1f;
+                    plan.Lifetime = math.max(plan.Lifetime, plan.MaxDistance / planarMuzzleSpeed);
                 }
             }
 
@@ -645,6 +672,9 @@ namespace TitanOrbit.ECS
                 BankIndex = bankIndex,
                 ScaleMultiplier = plan.VisualScale,
                 FirePowerExtraLevels = firePowerExtras,
+                Homing = homing,
+                TurnSpeedDeg = turnSpeedDeg,
+                AcquireRange = acquireRange,
             };
 
             var spawnEvents = state.EntityManager.GetBuffer<BulletSpawnEventElement>(bulletEntity);

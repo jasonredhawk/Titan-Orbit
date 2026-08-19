@@ -441,6 +441,18 @@ namespace TitanOrbit.ECS
 
                 megaCatalogIndex = megaSlot.CatalogIndex;
 
+                // --- Unique hull across the match ---
+                // [TITAN-ORBIT] MEGAs are unique. Occupancy lives on this planet's slot, but
+                // the armed pool can wrap and assign the same catalog row to another planet.
+                // Reject a second buyer even when this slot still reads as free.
+                if (MegaShipPlanetLogic.TryFindCatalogOccupant(em, megaCatalogIndex, out int catalogOwner)
+                    && catalogOwner != 0
+                    && catalogOwner != networkId)
+                {
+                    message = "That MEGA is already owned.";
+                    return false;
+                }
+
                 // --- Unarmed hulls stay in the catalog, never in a match ---
                 // [TITAN-ORBIT] Match roll already skips firepower-0, but a stale slot or
                 // debug click must not spend gems or spawn an unarmed MEGA.

@@ -33,7 +33,8 @@ namespace TitanOrbit.Game
     /// ships (<see cref="ShipBankVisualApplier"/> / <see cref="ShipBankVisualSettingsCache"/>).
     /// Yaw and bank are kept separate so roll never fights the aim slerp. Hostile tracking uses
     /// the same <see cref="PlanetaryDefenseAimMath"/> lead as server combat (identical
-    /// per-level <c>bulletSpeed</c>, engage range for max-lead cap, and
+    /// bank-scaled <c>bulletSpeed</c> / engage range from
+    /// <see cref="PlanetaryDefenseConfig.GetCombatLevelStats"/>, and
     /// <see cref="PlanetaryDefenseAimMath.ShipVelocityLeadScale"/>) so barrels point where
     /// bullets go (ships via <see cref="ShipKinematics"/>, people transports via
     /// <see cref="PeopleTransportVfxDriver.CopyAimFlights"/>).
@@ -482,6 +483,9 @@ namespace TitanOrbit.Game
                 _alivePlanetIds.Add(planet.PlanetId);
                 var config = PlanetaryDefenseConfig.ResolveForFamily(
                     _familyConfig, planet.ShipFamilyConfigIndex);
+                ShipFamilyDefinition familyDef = PlanetaryDefenseConfig.ResolveFamilyDefinition(
+                    _familyConfig, planet.ShipFamilyConfigIndex);
+                int bankIndex = config.ResolveBulletBankIndex(familyDef);
 
                 if (!_groupsByPlanetId.TryGetValue(planet.PlanetId, out var group))
                 {
@@ -575,10 +579,12 @@ namespace TitanOrbit.Game
                                 vis.AppliedTeam = planet.Ownership;
                             }
 
-                            var levelStats = config.GetLevelStats(slot.TurretLevel);
+                            // Authored mesh scale + bank-scaled combat (speed / engage for lead).
+                            var authoredStats = config.GetLevelStats(slot.TurretLevel);
+                            var levelStats = config.GetCombatLevelStats(slot.TurretLevel, bankIndex);
 
                             // Modest size vs pad — level visualScale nudges slightly, stays clamped.
-                            float scaleMul = math.clamp(levelStats.visualScale, 0.4f, 1.1f);
+                            float scaleMul = math.clamp(authoredStats.visualScale, 0.4f, 1.1f);
                             float worldScale = math.clamp(
                                 padWorldRadius * TurretSizeVsPadRadius * scaleMul,
                                 MinTurretWorldScale,

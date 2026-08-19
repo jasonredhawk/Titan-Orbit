@@ -16,8 +16,9 @@ namespace TitanOrbit.ECS
     /// <summary>
     /// Server: while a ship has <see cref="ShipTurretControlState.IsControlling"/>, Aim + Fire from
     /// ghosted <see cref="ShipInput"/> drive that pad's muzzle. AI combat skips occupied slots
-    /// (<see cref="PlanetaryDefenseCombatSystem"/>). Uses the same bullet append path / fire-rate
-    /// ladder as AI turrets, but aim direction is the player's planar aim (no lead solve).
+    /// (<see cref="PlanetaryDefenseCombatSystem"/>). Uses the same bullet append path and
+    /// <see cref="PlanetaryDefenseConfig.GetCombatLevelStats"/> bank-scaled recipe as AI
+    /// turrets, but aim direction is the player's planar aim (no lead solve).
     /// <para>
     /// World: ServerSimulation. Runs after AI combat so player shots resolve next tick with
     /// the shared bullet buffer.
@@ -33,7 +34,6 @@ namespace TitanOrbit.ECS
 
         PlanetShipFamilyConfig _familyConfig;
         BulletVfxBank _vfxBank;
-        readonly Dictionary<int, int> _bankIndexByFamily = new Dictionary<int, int>(16);
         bool _warmed;
 
         /// <summary>Require bullets + map.</summary>
@@ -101,14 +101,12 @@ namespace TitanOrbit.ECS
 
                 var config = PlanetaryDefenseConfig.ResolveForFamily(
                     _familyConfig, planet.ShipFamilyConfigIndex);
-                ShipFamilyDefinition familyDef = null;
-                if (_familyConfig != null)
-                {
-                    var entry = _familyConfig.GetFamilyByConfigIndex(planet.ShipFamilyConfigIndex);
-                    familyDef = entry != null ? entry.shipFamilyDefinition : null;
-                }
+                ShipFamilyDefinition familyDef = PlanetaryDefenseConfig.ResolveFamilyDefinition(
+                    _familyConfig, planet.ShipFamilyConfigIndex);
+                int bankIndex = config.ResolveBulletBankIndex(familyDef);
 
-                var stats = config.GetLevelStats(slot.TurretLevel);
+                // --- Recipe defaults × bank profile (same as AI combat) ---
+                var stats = config.GetCombatLevelStats(slot.TurretLevel, bankIndex);
                 float fireRate = math.max(0.05f, stats.fireRate);
                 int cooldownKey = shipEntity.Index;
 
@@ -130,9 +128,6 @@ namespace TitanOrbit.ECS
                 float bulletSpeed = math.max(1f, stats.bulletSpeed);
                 float damage = math.max(0.05f, stats.damage);
                 float engageRange = math.max(0.5f, stats.engageRange);
-                int bankIndex = ResolveBankIndex(familyDef);
-                float unusedLifetime = 0f;
-                float rangeMul = 1f;
                 int firePowerAbilityLv = 0;
                 if (EntityManager.HasComponent<ShipAttributeUpgradeState>(shipEntity))
                     firePowerAbilityLv = EntityManager.GetComponentData<ShipAttributeUpgradeState>(shipEntity).FirePower;
@@ -143,9 +138,6 @@ namespace TitanOrbit.ECS
                         EntityManager.GetComponentData<ShipState>(shipEntity).ShipLevel, firePowerAbilityLv);
                 }
 
-                BulletBankCombatLogic.ApplyFireModifiers(
-                    bankIndex, ref damage, ref bulletSpeed, ref rangeMul, ref unusedLifetime, ref fireRate,
-                    firePowerExtras);
                 if (_nextFireTime.TryGetValue(cooldownKey, out float next) && now < next)
                     continue;
                 if (_vfxBank != null)
@@ -163,7 +155,9 @@ namespace TitanOrbit.ECS
                 float3 bulletVel = aim * bulletSpeed;
                 uint sequence = BulletVfxBridge.NextSequence();
                 // Manual aim — flight budget is engage range (no lead intercept extension).
-                float maxDistance = engageRange * math.max(0.1f, rangeMul);
+                float burnRangeMul = BulletBankCombatLogic.GetBurnBulletRangeMultiplier(
+                    bankIndex, firePowerExtras);
+                float maxDistance = engageRange * burnRangeMul;
                 byte ownerTeam = (byte)planet.Ownership;
 
                 var spawn = new BulletElement
@@ -215,16 +209,5 @@ namespace TitanOrbit.ECS
             _warmed = true;
         }
 
-        /// <summary>Owning family's default damage bank (heal is never a family default).</summary>
-        int ResolveBankIndex(ShipFamilyDefinition family)
-        {
-            int familyBullet = family != null ? family.bulletPrefabIndex : 0;
-            if (_bankIndexByFamily.TryGetValue(familyBullet, out int cached))
-                return cached;
-
-            int idx = BulletBankProfileUtility.ResolveBankIndexForPlanetaryDefense(family);
-            _bankIndexByFamily[familyBullet] = idx;
-            return idx;
-        }
     }
 }

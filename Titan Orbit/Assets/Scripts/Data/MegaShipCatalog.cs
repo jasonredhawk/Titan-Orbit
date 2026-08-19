@@ -112,6 +112,27 @@ namespace TitanOrbit.Data
         /// <summary>Default acquire + travel range for MEGA snipers (world units).</summary>
         public const float DefaultSniperAcquireRange = 28f;
 
+        /// <summary>
+        /// Unique-component / type-table bank field meaning "use the named default for this
+        /// weapon type" (Bullets / Plasma / Rockets / Laser).
+        /// </summary>
+        public const int InheritTypeTableBankIndex = -1;
+
+        /// <summary>Named <see cref="BulletVfxBank"/> default for rapid MEGA guns.</summary>
+        public const string DefaultWeaponBulletBankName = "Bullets";
+
+        /// <summary>Named <see cref="BulletVfxBank"/> default for MEGA cannons.</summary>
+        public const string DefaultWeaponCannonBankName = "Plasma";
+
+        /// <summary>
+        /// Named <see cref="BulletVfxBank"/> default for MEGA missiles.
+        /// Rockets stay off regular-family B-key cycle; MEGA mounts may still fire them.
+        /// </summary>
+        public const string DefaultWeaponMissileBankName = "Rockets";
+
+        /// <summary>Named <see cref="BulletVfxBank"/> default for MEGA snipers.</summary>
+        public const string DefaultWeaponSniperBankName = "Laser";
+
         /// <summary>Minimum cruise speed after summing a hull (thruster-only prefabs).</summary>
         public const float MinHullMoveSpeed = 12f;
 
@@ -276,6 +297,23 @@ namespace TitanOrbit.Data
         [Tooltip("Sniper — high damage, high bullet speed, very slow fire rate.")]
         public MegaShipPartStats weaponSniperStats;
 
+        [Header("Weapon bullet banks")]
+        [Tooltip("BulletVfxBank category for rapid MEGA guns. Named default is Bullets.")]
+        [BulletVfxBankCategory(true, "Default (Bullets)")]
+        public int weaponBulletBankIndex = InheritTypeTableBankIndex;
+
+        [Tooltip("BulletVfxBank category for MEGA cannons. Named default is Plasma.")]
+        [BulletVfxBankCategory(true, "Default (Plasma)")]
+        public int weaponCannonBankIndex = InheritTypeTableBankIndex;
+
+        [Tooltip("BulletVfxBank category for MEGA missile launchers. Named default is Rockets (target-seeking, same as store ALT rockets).")]
+        [BulletVfxBankCategory(true, "Default (Rockets)")]
+        public int weaponMissileBankIndex = InheritTypeTableBankIndex;
+
+        [Tooltip("BulletVfxBank category for MEGA snipers. Named default is Laser.")]
+        [BulletVfxBankCategory(true, "Default (Laser)")]
+        public int weaponSniperBankIndex = InheritTypeTableBankIndex;
+
         [Tooltip("Cockpit / bridge — troop cap lives here.")]
         public MegaShipPartStats cockpitStats;
 
@@ -322,8 +360,15 @@ namespace TitanOrbit.Data
             return s_instance;
         }
 
-        /// <summary>Clears the cached instance after editor rebuilds.</summary>
-        public static void InvalidateCache() => s_instance = null;
+        /// <summary>
+        /// Clears the cached catalog instance after editor rebuilds and drops Orbit Menu
+        /// MEGA power-bar maxes so the next paint re-walks the new hull list.
+        /// </summary>
+        public static void InvalidateCache()
+        {
+            s_instance = null;
+            ShipFamilyPowerBarNorm.InvalidateCache();
+        }
 
         /// <summary>Formats the stable chassis id for a catalog index (<c>MEGA_007</c>).</summary>
         public static string FormatChassisId(int catalogIndex)
@@ -394,6 +439,90 @@ namespace TitanOrbit.Data
             return FormatChassisId(catalogIndex);
         }
 
+        /// <summary>
+        /// Named <see cref="BulletVfxBank"/> fallback when a type-table bank field is -1.
+        /// </summary>
+        public static string GetDefaultBankNameForPartType(string partType)
+        {
+            if (string.Equals(partType, ShipFamilyPartTypes.WeaponSniper, StringComparison.OrdinalIgnoreCase))
+                return DefaultWeaponSniperBankName;
+            if (string.Equals(partType, ShipFamilyPartTypes.WeaponMissile, StringComparison.OrdinalIgnoreCase))
+                return DefaultWeaponMissileBankName;
+            if (string.Equals(partType, ShipFamilyPartTypes.WeaponCannon, StringComparison.OrdinalIgnoreCase))
+                return DefaultWeaponCannonBankName;
+            return DefaultWeaponBulletBankName;
+        }
+
+        /// <summary>Authored type-table bank for a weapon part type (-1 when unset).</summary>
+        public int GetAuthoredTypeTableBankIndex(string partType)
+        {
+            if (string.Equals(partType, ShipFamilyPartTypes.WeaponSniper, StringComparison.OrdinalIgnoreCase))
+                return weaponSniperBankIndex;
+            if (string.Equals(partType, ShipFamilyPartTypes.WeaponMissile, StringComparison.OrdinalIgnoreCase))
+                return weaponMissileBankIndex;
+            if (string.Equals(partType, ShipFamilyPartTypes.WeaponCannon, StringComparison.OrdinalIgnoreCase))
+                return weaponCannonBankIndex;
+            if (string.Equals(partType, ShipFamilyPartTypes.WeaponBullet, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(partType, "Weapon", StringComparison.OrdinalIgnoreCase))
+                return weaponBulletBankIndex;
+            return InheritTypeTableBankIndex;
+        }
+
+        /// <summary>
+        /// BulletVfxBank category for a MEGA weapon type. Authored type-table index wins;
+        /// -1 resolves the named default (Bullets / Plasma / Rockets / Laser).
+        /// </summary>
+        public int GetTypeTableBankIndex(string partType)
+        {
+            int authored = GetAuthoredTypeTableBankIndex(partType);
+            if (authored >= 0)
+                return authored;
+            return ResolveNamedBankIndex(GetDefaultBankNameForPartType(partType));
+        }
+
+        /// <summary>
+        /// Bank this unique weapon fires. Authored <see cref="MegaShipComponentEntry.bulletPrefabIndex"/>
+        /// wins; -1 inherits <see cref="GetTypeTableBankIndex"/>.
+        /// </summary>
+        public int ResolveWeaponBankIndex(MegaShipComponentEntry row)
+        {
+            if (row != null && row.bulletPrefabIndex >= 0)
+                return row.bulletPrefabIndex;
+            return GetTypeTableBankIndex(row != null ? row.partType : null);
+        }
+
+        /// <summary>First armed unique weapon bank on a hull (HUD / ram display), or false.</summary>
+        public bool TryGetFirstWeaponBankIndex(MegaShipCatalogEntry entry, out int bankIndex)
+        {
+            bankIndex = 0;
+            if (entry?.componentCounts == null)
+                return false;
+
+            for (int i = 0; i < entry.componentCounts.Count; i++)
+            {
+                MegaShipComponentCount count = entry.componentCounts[i];
+                if (count == null || count.count <= 0 || string.IsNullOrEmpty(count.displayName))
+                    continue;
+                if (!TryGetUniqueComponent(count.displayName, out MegaShipComponentEntry row) || row == null)
+                    continue;
+                if (!row.isWeapon && !ShipFamilyPartTypes.IsWeapon(row.partType))
+                    continue;
+                bankIndex = ResolveWeaponBankIndex(row);
+                return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>Looks up a <see cref="BulletVfxBank"/> category by name; 0 (Laserbolt) when missing.</summary>
+        public static int ResolveNamedBankIndex(string categoryName)
+        {
+            var bank = BulletVfxBank.LoadDefault();
+            if (bank != null && bank.TryGetCategoryIndexByName(categoryName, out int index))
+                return index;
+            return 0;
+        }
+
         /// <summary>Part-profile stats for MEGA summing. Unknown types use hull.</summary>
         public MegaShipPartStats GetStatsForPartType(string partType)
         {
@@ -443,6 +572,12 @@ namespace TitanOrbit.Data
         /// <summary>
         /// Static power-bar breakdown for a MEGA hull: sum the catalogued component stats
         /// (or walk the prefab with the type table if the list is empty), then force gem cap to 0.
+        /// <para>
+        /// [TITAN-ORBIT] Catalog <c>summedStats.fireRate</c> is the sum of every gun's
+        /// rate. Slot 0 of the power bar is DPS (<c>firePower × fireRate</c>), so a summed
+        /// rate would inflate a 10-gun hull by 10×. We replace <c>fireRate</c> with the
+        /// damage-weighted average so <c>sum(FP) × weightedRoF = sum(FP × RoF)</c>.
+        /// </para>
         /// </summary>
         public ShipFamilyPowerScoreBreakdown GetPowerBreakdown(int catalogIndex)
         {
@@ -451,7 +586,50 @@ namespace TitanOrbit.Data
 
             MegaShipStatsCalculator.SumFromEntry(entry, this, out ShipComponentAbilityStats summed);
             summed.maxGems = 0f;
-            return ShipFamilyPowerScoreBreakdown.FromSummedShipStats(summed);
+            ShipFamilyPowerScoreBreakdown breakdown = ShipFamilyPowerScoreBreakdown.FromSummedShipStats(summed);
+
+            // --- All-gun DPS (each unique part × copy count) ---
+            // Catalog fireRate is summed; FP × summed RoF is not DPS. Stamp the true sum.
+            float trueDps = ComputeSustainedDps(entry);
+            breakdown.sustainedDps = trueDps;
+            if (breakdown.firePower > 0.01f)
+                breakdown.fireRate = trueDps / breakdown.firePower;
+            else
+                breakdown.fireRate = 0f;
+
+            return breakdown;
+        }
+
+        /// <summary>
+        /// True sustained DPS for a MEGA: each unique gun's
+        /// <c>firePower × fireRate × copy count</c>. Runtime defaults fill a missing
+        /// rate so a designer-zero RoF still matches in-game guns.
+        /// </summary>
+        /// <param name="entry">Catalog hull row. Null returns 0.</param>
+        /// <returns>Sum of per-gun DPS. 0 when the hull is unarmed or missing.</returns>
+        public float ComputeSustainedDps(MegaShipCatalogEntry entry)
+        {
+            if (entry?.componentCounts == null || uniqueComponents == null)
+                return 0f;
+
+            float dps = 0f;
+            for (int i = 0; i < entry.componentCounts.Count; i++)
+            {
+                MegaShipComponentCount count = entry.componentCounts[i];
+                if (count == null || count.count <= 0 || string.IsNullOrEmpty(count.displayName))
+                    continue;
+                if (!TryGetUniqueComponent(count.displayName, out MegaShipComponentEntry row) || row == null)
+                    continue;
+
+                MegaShipPartStats stats = ResolveRuntimeStats(row.stats);
+                if (stats.firePower <= 0.01f)
+                    continue;
+
+                dps += count.count * ShipFamilyPowerScoreBreakdown.ComputeSustainedDps(
+                    stats.firePower, stats.fireRate);
+            }
+
+            return dps;
         }
 
         /// <summary>Purchase cost (catalog field, fallback 1200).</summary>
@@ -757,6 +935,8 @@ namespace TitanOrbit.Data
                 move: 0f, accel: 0f, turn: 0f, gems: 0f, people: 0f,
                 weaponRotationSpeed: DefaultWeaponRotationSpeed);
 
+            SeedUnsetTypeTableBanksFromNames();
+
             cockpitStats = CreateStatic(
                 firePower: 0f, bulletSpeed: 0f, bulletRange: 0f, fireRate: 0f, ramming: 4f,
                 health: 220f, healthRegen: 3.5f, energy: 600f, energyRegen: 18f,
@@ -790,12 +970,50 @@ namespace TitanOrbit.Data
             runtimeDefaultStats = CreateBuiltInRuntimeDefaults();
             runtimeMinimumStats = CreateBuiltInRuntimeMinimums();
             ApplyTypeTableBulletRangesToUniqueWeapons();
+            ApplyTypeTableBulletBanksToUniqueWeapons();
             ApplyTypeTableVitalsToUniqueParts();
             MegaShipComponentInventory.RecalcAllShipSums(this);
             if (cameraHullViewPadding <= 0f)
                 cameraHullViewPadding = DefaultCameraHullViewPadding;
             if (cameraMaxHeight <= 1f)
                 cameraMaxHeight = DefaultCameraMaxHeight;
+        }
+
+        /// <summary>
+        /// Writes named-default bank indices onto type-table fields that are still inherit (-1).
+        /// </summary>
+        void SeedUnsetTypeTableBanksFromNames()
+        {
+            if (weaponBulletBankIndex < 0)
+                weaponBulletBankIndex = ResolveNamedBankIndex(DefaultWeaponBulletBankName);
+            if (weaponCannonBankIndex < 0)
+                weaponCannonBankIndex = ResolveNamedBankIndex(DefaultWeaponCannonBankName);
+            if (weaponMissileBankIndex < 0)
+                weaponMissileBankIndex = ResolveNamedBankIndex(DefaultWeaponMissileBankName);
+            if (weaponSniperBankIndex < 0)
+                weaponSniperBankIndex = ResolveNamedBankIndex(DefaultWeaponSniperBankName);
+        }
+
+        /// <summary>
+        /// Writes type-table banks onto unique weapon rows that still inherit (-1) so the
+        /// inspector shows the live category. Hand-picked unique overrides stay.
+        /// </summary>
+        void ApplyTypeTableBulletBanksToUniqueWeapons()
+        {
+            if (uniqueComponents == null)
+                return;
+
+            for (int i = 0; i < uniqueComponents.Count; i++)
+            {
+                MegaShipComponentEntry row = uniqueComponents[i];
+                if (row == null)
+                    continue;
+                if (!row.isWeapon && !ShipFamilyPartTypes.IsWeapon(row.partType))
+                    continue;
+                if (row.bulletPrefabIndex >= 0)
+                    continue;
+                row.bulletPrefabIndex = GetTypeTableBankIndex(row.partType);
+            }
         }
 
         /// <summary>

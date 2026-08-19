@@ -148,6 +148,17 @@ namespace TitanOrbit.UI
             public int FirePowerAbilityLevel;
 
             /// <summary>
+            /// Sum of every gun's Extra-Leveled <c>firePower × fireRate</c>.
+            /// Fire Power chip and hover DPS use this, not the primary-gun hull average.
+            /// </summary>
+            public float AllGunDps;
+
+            /// <summary>
+            /// All-gun DPS after one more Fire Power purchase (green + on the chip).
+            /// </summary>
+            public float AllGunDpsNextStep;
+
+            /// <summary>
             /// True when the local hull is a MEGA. Chips hide +per-buy and the details card
             /// shows catalog sums instead of Extra Level (MEGAs are not bottom-bar upgradable).
             /// </summary>

@@ -179,7 +179,7 @@ namespace TitanOrbit.ECS
                 }
 
                 float3 shooterVel = ReadPlanarVelocity(mega);
-                float leadBulletSpeed = ResolveLeadBulletSpeed(in weapon, bankIndex);
+                int shipLevel = math.max(1, ship.ShipLevel);
 
                 bool ownerShift = IsOwnerShiftHeld(mega);
                 bool ownerWantsFire = OwnerWantsFire(mega);
@@ -234,6 +234,11 @@ namespace TitanOrbit.ECS
 
                     float3 muzzle = ResolveMuzzle(xf, mounts[m]);
                     float mountRange = ResolveMountRange(mounts[m], in weapon) + 8f;
+                    int mountBank = mounts[m].BulletBankIndex >= 0
+                        ? mounts[m].BulletBankIndex
+                        : bankIndex;
+                    float leadBulletSpeed = ResolveLeadBulletSpeed(
+                        in weapon, mounts[m], mountBank, shipLevel);
                     bool kept = TryKeepStickyTarget(
                         mega, ship.Team, heal, muzzle, shooterVel, leadBulletSpeed, mountRange,
                         mapW, mapH, moonElapsed, ref slot);
@@ -940,10 +945,23 @@ namespace TitanOrbit.ECS
         /// <summary>
         /// Muzzle-relative bullet speed after the same bank modifiers Phase B applies.
         /// Lead must use this value or the intercept systematically under- or over-leads.
+        /// Rockets use <see cref="RocketCatalog"/> speed (same as <see cref="RocketHomingFire"/>).
         /// </summary>
-        static float ResolveLeadBulletSpeed(in ShipWeaponConfig weapon, int bankIndex)
+        static float ResolveLeadBulletSpeed(
+            in ShipWeaponConfig weapon,
+            in ShipWeaponMountElement mount,
+            int bankIndex,
+            int shipLevel)
         {
-            float speed = math.max(PlanetaryDefenseAimMath.MinBulletSpeed, weapon.BulletSpeed);
+            if (RocketHomingFire.IsRocketBank(bankIndex))
+            {
+                float catalogSpeed = RocketCatalog.Get(math.max(1, shipLevel)).speed;
+                return math.max(PlanetaryDefenseAimMath.MinBulletSpeed, catalogSpeed);
+            }
+
+            float speed = math.max(
+                PlanetaryDefenseAimMath.MinBulletSpeed,
+                BulletShotMath.ResolveMuzzleSpeed(mount.BulletSpeed, weapon.BulletSpeed));
             float damage = 1f;
             float maxDistance = 1f;
             float lifetime = 0f;

@@ -70,6 +70,20 @@ namespace TitanOrbit.Simulation
                 lifetime = math.max(0.1f, maxDistance / math.max(1f, speed));
         }
 
+        /// <summary>
+        /// Burn-ability extra travel multiplier (1 when the bank has no burn).
+        /// Planetary defense bakes <see cref="BulletBankStatModifiers.bulletRangeMultiplier"/>
+        /// into engage range via <c>GetCombatLevelStats</c>; this is the leftover DoT range bump.
+        /// </summary>
+        public static float GetBurnBulletRangeMultiplier(int bankIndex, int firePowerExtraLevels = 0)
+        {
+            if (!TryGetProfile(bankIndex, out BulletBankProfile profile) ||
+                profile == null ||
+                !profile.HasBurn)
+                return 1f;
+            return math.max(0.1f, profile.GetBurnBulletRangeMultiplier(firePowerExtraLevels));
+        }
+
         /// <summary>Fire-power / cooldown scale for a planned ship volley (0 → 1).</summary>
         public static void GetShotScales(int bankIndex, out float firePowerMul, out float fireRateMul)
         {

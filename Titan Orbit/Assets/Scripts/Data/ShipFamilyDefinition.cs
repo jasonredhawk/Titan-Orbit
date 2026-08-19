@@ -590,7 +590,8 @@ namespace TitanOrbit.Data
         public float powerScoreAtMaxLevel;
         /// <summary>
         /// Level-1 Extra Level sum (abilities = 0). Used for gem cost, tree sort, and
-        /// runtime chassis bases. Do not put ship-level PerExtra growth here — that
+        /// runtime chassis bases. <c>sustainedDps</c> is all-gun DPS; sort uses that
+        /// after energy-sustain. Do not put ship-level PerExtra growth here — that
         /// double-applies when the live ship is evaluated.
         /// </summary>
         public ShipFamilyPowerScoreBreakdown powerScoreBreakdown;

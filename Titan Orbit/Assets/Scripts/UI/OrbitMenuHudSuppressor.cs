@@ -4,7 +4,11 @@ using UnityEngine;
 
 namespace TitanOrbit.UI
 {
-    /// <summary>Hides gameplay HUD canvases while the moon orbit menu is open.</summary>
+    /// <summary>
+    /// Hides gameplay HUD canvases while the moon Orbit Menu overlay is on screen.
+    /// [TITAN-ORBIT] Closing the menu with × (still docked) must restore HUD — we follow
+    /// <see cref="OrbitStationUI.IsMoonDockMenuOpen"/>, not a sticky "is docked" flag.
+    /// </summary>
     public class OrbitMenuHudSuppressor : MonoBehaviour
     {
         struct HiddenUiState
@@ -32,9 +36,12 @@ namespace TitanOrbit.UI
 
         void LateUpdate()
         {
-            // --- Toggle hide when orbit station opens/closes ---
-            bool shouldHide = MoonOrbitClientState.IsOrbitMenuVisible
-                || (OrbitStationUI.Instance != null && OrbitStationUI.Instance.IsMoonDockMenuOpen);
+            // --- Toggle hide when the Orbit Menu overlay is actually on screen ---
+            // [TITAN-ORBIT] Prefer the visual dock flag. Closing × while still on the moon
+            // hides the overlay but the ship stays docked — gameplay HUD must return.
+            bool shouldHide = OrbitStationUI.Instance != null
+                ? OrbitStationUI.Instance.IsMoonDockMenuOpen
+                : MoonOrbitClientState.IsOrbitMenuVisible;
             if (shouldHide == _isHiding)
                 return;
 

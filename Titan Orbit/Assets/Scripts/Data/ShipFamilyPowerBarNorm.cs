@@ -5,15 +5,25 @@ namespace TitanOrbit.Data
 {
     /// <summary>
     /// Per-stat ceilings for the Orbit Menu upgrade-tree power bar. Each of the ten
-    /// ability slots fills as <c>thisShip / globalMax</c>, so Health Regen is readable
-    /// next to Health Cap. Values come from every family's chassis evaluated at that
-    /// chassis's tree level with every HUD ability maxed. Paired with
-    /// <see cref="UI.ShipUpgradeTreePowerBarUI"/>.
+    /// ability slots fills as <c>thisShip / poolMax</c>, so Health Regen is readable
+    /// next to Health Cap.
+    /// <para>
+    /// Regular hulls (levels 1–6) share one pool: every family's chassis at that
+    /// chassis's tree level with every HUD ability maxed. MEGA hulls (level 7) share
+    /// a second pool: every armed catalog MEGA. The two pools never mix — a MEGA's
+    /// firepower would otherwise squash regular bars, and regular maxes would flatten
+    /// every MEGA bar to full. Slot 0 is sustained DPS (<c>firePower × fireRate</c>).
+    /// Paired with <see cref="UI.ShipUpgradeTreePowerBarUI"/>.
+    /// </para>
     /// </summary>
     public struct ShipPowerBarStatMaxes
     {
         public const int StatCount = ShipFamilyPowerScoreBreakdown.DisplayStatCount;
 
+        /// <summary>
+        /// Highest sustained DPS in this pool (<c>firePower × fireRate</c>), not raw
+        /// damage per shot. NightAye cannons and AstroEagle machineguns share this ceiling.
+        /// </summary>
         public float firePower;
         public float bulletSpeed;
         public float healthCap;
@@ -61,7 +71,7 @@ namespace TitanOrbit.Data
             peopleCap = Mathf.Max(peopleCap, breakdown.GetDisplayStatValue(9));
         }
 
-        /// <summary>Global max for display stat index 0–9 (Fire Power … Troop Cap).</summary>
+        /// <summary>Pool max for display stat index 0–9 (DPS … Troop Cap).</summary>
         public float Get(int statIndex)
         {
             switch (statIndex)
@@ -86,15 +96,23 @@ namespace TitanOrbit.Data
     /// ability maxed (<see cref="ShipAbilityLevelCounts.Maxed"/>). Same formulas as live
     /// ships — non-weapons use <c>(ship−1) + ability + (N−1)</c>; weapons omit N;
     /// weapon bullet speed is ability-only. Live prefab sums are cached per session.
-    /// Also walks the catalog for the ten global maxes.
+    /// Also walks the regular-family catalog and the MEGA catalog for two separate
+    /// ten-stat max pools.
     /// </summary>
     public static class ShipFamilyPowerBarNorm
     {
+        /// <summary>
+        /// MEGA tree column / ship level. Family upgrade trees stop at 6; slot 7 is catalog MEGAs.
+        /// </summary>
+        public const int MegaTreeLevel = 7;
+
         static readonly Dictionary<string, ShipFamilyPowerScoreBreakdown> s_liveCache =
             new Dictionary<string, ShipFamilyPowerScoreBreakdown>();
 
-        static ShipPowerBarStatMaxes s_cachedMaxes;
-        static bool s_hasCachedMaxes;
+        static ShipPowerBarStatMaxes s_cachedRegularMaxes;
+        static ShipPowerBarStatMaxes s_cachedMegaMaxes;
+        static bool s_hasCachedRegularMaxes;
+        static bool s_hasCachedMegaMaxes;
 
         /// <summary>
         /// Extra Level at the tier's tree level with every HUD ability maxed.
@@ -114,11 +132,11 @@ namespace TitanOrbit.Data
 
             int shipLevel = Mathf.Max(1, entry.minHomePlanetLevel);
             ShipAbilityLevelCounts maxed = ShipAbilityLevelCounts.Maxed(shipLevel);
-            if (ShipFamilyStatsCalculator.TrySumFromPrefab(
-                    entry.prefab, family, shipLevel, in maxed, out ShipComponentAbilityStats stats))
+            if (TryBuildBreakdown(
+                    entry.prefab, family, shipLevel, in maxed,
+                    out _, out ShipFamilyPowerScoreBreakdown breakdown))
             {
-                entry.powerScoreBreakdownAtShipLevel =
-                    ShipFamilyPowerScoreBreakdown.FromSummedShipStats(stats);
+                entry.powerScoreBreakdownAtShipLevel = breakdown;
                 return;
             }
 
@@ -146,11 +164,10 @@ namespace TitanOrbit.Data
             ShipAbilityLevelCounts maxed = ShipAbilityLevelCounts.Maxed(shipLevel);
             if (tier.prefab != null &&
                 family != null &&
-                ShipFamilyStatsCalculator.TrySumFromPrefab(
-                    tier.prefab, family, shipLevel, in maxed, out ShipComponentAbilityStats stats))
+                TryBuildBreakdown(
+                    tier.prefab, family, shipLevel, in maxed,
+                    out _, out ShipFamilyPowerScoreBreakdown live))
             {
-                ShipFamilyPowerScoreBreakdown live =
-                    ShipFamilyPowerScoreBreakdown.FromSummedShipStats(stats);
                 s_liveCache[cacheKey] = live;
                 return live;
             }
@@ -160,15 +177,48 @@ namespace TitanOrbit.Data
         }
 
         /// <summary>
-        /// Highest value of each of the ten display stats across every upgrade-tree chassis,
-        /// each evaluated at that chassis's tree level with every HUD ability maxed.
-        /// Cached until <see cref="InvalidateCache"/>.
+        /// Extra Level the prefab, then stamp all-gun DPS onto the breakdown
+        /// (every mount's <c>firePower × fireRate</c>, plus family offense muls).
+        /// Used by power-bar bake, live tree paint, and upgrade-tree resort.
         /// </summary>
+        public static bool TryBuildBreakdown(
+            GameObject prefab,
+            ShipFamilyDefinition family,
+            int shipLevel,
+            in ShipAbilityLevelCounts abilities,
+            out ShipComponentAbilityStats stats,
+            out ShipFamilyPowerScoreBreakdown breakdown)
+        {
+            stats = default;
+            breakdown = default;
+            if (!ShipFamilyStatsCalculator.TrySumFromPrefab(
+                    prefab, family, shipLevel, in abilities, out stats,
+                    out ShipFamilyStatsCalculator.SumResult raw))
+                return false;
+
+            float dps = ShipWeaponDpsMath.SumAllGunDps(
+                raw.MatchedComponentIds, raw.PerComponentStats, shipLevel, in abilities);
+            dps = ShipWeaponDpsMath.ApplyFamilyOffenseMuls(dps, family);
+            breakdown = ShipFamilyPowerScoreBreakdown.FromEvaluatedHull(stats, dps);
+            return true;
+        }
+
+        /// <summary>
+        /// Highest value of each of the ten display stats across every regular-family
+        /// chassis (levels 1–6), each evaluated at that chassis's tree level with every
+        /// HUD ability maxed. MEGA catalog hulls are excluded. Cached until
+        /// <see cref="InvalidateCache"/>.
+        /// </summary>
+        /// <param name="config">Optional planet-family list. Null scans every loaded family asset.</param>
         public static ShipPowerBarStatMaxes GetGlobalMaxPerStat(PlanetShipFamilyConfig config = null)
         {
-            if (s_hasCachedMaxes)
-                return s_cachedMaxes;
+            if (s_hasCachedRegularMaxes)
+                return s_cachedRegularMaxes;
 
+            // --- Regular-family pool (L1–L6, all families) ---
+            // [TITAN-ORBIT] One AstroEagle L3 Health Cap must be readable next to a
+            // HyperFalcon L6 Health Cap. That only works if every regular chassis
+            // shares the same denominator — and MEGAs stay out of that denominator.
             var maxes = ShipPowerBarStatMaxes.CreateEmpty();
             IEnumerable<ShipFamilyDefinition> families = EnumerateFamilies(config);
             if (families != null)
@@ -184,7 +234,12 @@ namespace TitanOrbit.Data
                         if (tier == null)
                             continue;
 
+                        // Skip leftover L7 family rows and any MEGA_### chassis id.
+                        // Family assets normally stop at level 6; this is the safety net.
                         int level = Mathf.Max(1, tier.minHomePlanetLevel);
+                        if (IsMegaTreeLevel(level) || MegaShipCatalog.IsMegaChassisId(tier.chassisId))
+                            continue;
+
                         ShipFamilyPowerScoreBreakdown breakdown = GetBreakdownAtShipLevel(def, tier, level);
                         maxes.Absorb(breakdown);
                     }
@@ -192,16 +247,88 @@ namespace TitanOrbit.Data
             }
 
             maxes.EnsureMinimum();
-            s_cachedMaxes = maxes;
-            s_hasCachedMaxes = true;
-            return s_cachedMaxes;
+            s_cachedRegularMaxes = maxes;
+            s_hasCachedRegularMaxes = true;
+            return s_cachedRegularMaxes;
         }
 
-        /// <summary>Drops live-sum and global-max caches after an editor rebake.</summary>
+        /// <summary>
+        /// Highest value of each of the ten display stats across every armed MEGA hull
+        /// in <see cref="MegaShipCatalog"/>. Regular-family chassis are excluded.
+        /// Cached until <see cref="InvalidateCache"/>.
+        /// </summary>
+        public static ShipPowerBarStatMaxes GetMegaMaxPerStat()
+        {
+            if (s_hasCachedMegaMaxes)
+                return s_cachedMegaMaxes;
+
+            // --- MEGA-only pool ---
+            // [TITAN-ORBIT] MEGA firepower is an order of magnitude above L6 family
+            // hulls. Comparing MEGAs to each other needs a MEGA-only ceiling so a
+            // mid-pack hull does not paint every segment full.
+            var maxes = ShipPowerBarStatMaxes.CreateEmpty();
+            MegaShipCatalog catalog = MegaShipCatalog.Load();
+            if (catalog?.entries != null)
+            {
+                for (int i = 0; i < catalog.entries.Count; i++)
+                {
+                    // Unarmed editor rows stay in the catalog but never appear on the
+                    // tree — skip them so a 0-gun hull cannot set a bogus health max.
+                    if (!catalog.IsEligibleForMatch(i))
+                        continue;
+
+                    ShipFamilyPowerScoreBreakdown breakdown = catalog.GetPowerBreakdown(i);
+                    maxes.Absorb(breakdown);
+                }
+            }
+
+            maxes.EnsureMinimum();
+            s_cachedMegaMaxes = maxes;
+            s_hasCachedMegaMaxes = true;
+            return s_cachedMegaMaxes;
+        }
+
+        /// <summary>
+        /// True for the MEGA column (level 7) or any <c>MEGA_###</c> chassis id.
+        /// Regular family hulls always use levels 1–6.
+        /// </summary>
+        /// <param name="treeLevel">Upgrade-tree slot level (1–7).</param>
+        /// <param name="chassisId">Optional chassis id; MEGA prefix wins even if level is stale.</param>
+        public static bool UsesMegaPowerBarPool(int treeLevel, string chassisId = null)
+        {
+            return IsMegaTreeLevel(treeLevel) || MegaShipCatalog.IsMegaChassisId(chassisId);
+        }
+
+        /// <summary>
+        /// Regular-family maxes for L1–L6 nodes; MEGA catalog maxes for L7 / MEGA hulls.
+        /// Pass already-resolved regular maxes so tree refresh does not recompute them.
+        /// </summary>
+        /// <param name="treeLevel">Node or current-ship level.</param>
+        /// <param name="regularMaxes">Precomputed <see cref="GetGlobalMaxPerStat"/> result.</param>
+        /// <param name="chassisId">Optional; forces the MEGA pool when the id is <c>MEGA_###</c>.</param>
+        public static ShipPowerBarStatMaxes ResolveForTreeLevel(
+            int treeLevel,
+            in ShipPowerBarStatMaxes regularMaxes,
+            string chassisId = null)
+        {
+            return UsesMegaPowerBarPool(treeLevel, chassisId)
+                ? GetMegaMaxPerStat()
+                : regularMaxes;
+        }
+
+        /// <summary>True when this upgrade-tree level is the MEGA column.</summary>
+        public static bool IsMegaTreeLevel(int treeLevel) => treeLevel >= MegaTreeLevel;
+
+        /// <summary>
+        /// Drops live-sum, regular-family max, and MEGA max caches after an editor
+        /// rebake or catalog rebuild.
+        /// </summary>
         public static void InvalidateCache()
         {
-            s_hasCachedMaxes = false;
-            s_cachedMaxes = default;
+            s_hasCachedRegularMaxes = false;
+            s_hasCachedMegaMaxes = false;
+            s_cachedRegularMaxes = default;
+            s_cachedMegaMaxes = default;
             s_liveCache.Clear();
         }
 

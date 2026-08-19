@@ -24,7 +24,7 @@ namespace TitanOrbit.UI
         private const float MoonMinNodeWidth = 74f;
         private const float MoonMegaScale = 1.5f;
         private const float MoonLevelColGap = 20f;
-        private const float MoonBranchGapY = 8f;
+        private const float MoonBranchGapY = 10f;
         private const float LayoutWidthBucketPixels = 32f;
         private const float MoonChromeHeightHint = 28f;
         private const float VerticalNodeHeight = 188f;
@@ -226,15 +226,17 @@ namespace TitanOrbit.UI
             if (nodesCanvas == null || nodePrefab == null)
                 return;
 
-            ShipPowerBarStatMaxes maxes = ShipFamilyPowerBarNorm.GetGlobalMaxPerStat();
+            // Regular L1–L6 nodes share one family-wide ceiling. L7 MEGA nodes share a
+            // second ceiling from the MEGA catalog so the two rosters never mix.
+            ShipPowerBarStatMaxes regularMaxes = ShipFamilyPowerBarNorm.GetGlobalMaxPerStat();
+            ShipPowerBarStatMaxes megaMaxes = ShipFamilyPowerBarNorm.GetMegaMaxPerStat();
 
             const int maxLevel = 7;
             PrepareHorizontalContainerLayout();
-            ComputeMoonHorizontalGeometry(out float nodeW, out float nodeH, out float canvasW, out float canvasH);
+            ComputeMoonHorizontalGeometry(out float nodeW, out float nodeH, out float megaH, out float canvasW, out float canvasH);
             ApplyHorizontalTreeCanvasLayout(canvasW, canvasH);
             float trackW = GetMoonPowerBarTrackWidth(nodeW);
             float megaW = Mathf.Round(nodeW * MoonMegaScale);
-            float megaH = Mathf.Round(nodeH * MoonMegaScale);
             float megaTrackW = GetMoonPowerBarTrackWidth(megaW);
 
             var byLevel = new Dictionary<int, List<ShipUpgradeTreeNodeUI>>();
@@ -260,7 +262,11 @@ namespace TitanOrbit.UI
                     var node = InstantiateNodeForPreview();
                     node.BindSlot(level, b, null, useW, useH, useTrack);
                     node.ConfigureLayout(true);
-                    node.SetLevelLabel(level == 1 ? "Lv 1" : $"Lv {level}");
+                    node.SetLevelLabel(ShipUpgradeTreeNodeUI.FormatTreeLevelCaption(level, true));
+                    if (mega)
+                        node.ApplyMegaShipCardStyle(false, false, false, false);
+                    else
+                        node.ClearMegaShipCardStyle();
                     string shipName = tier != null
                         ? (string.IsNullOrEmpty(tier.upgradeTreeShipName) ? tier.chassisId : tier.upgradeTreeShipName)
                         : $"Branch {b + 1}";
@@ -271,10 +277,10 @@ namespace TitanOrbit.UI
                     {
                         ShipFamilyPowerScoreBreakdown breakdown = ShipFamilyPowerBarNorm.GetBreakdownAtShipLevel(
                             family, tier, level);
-                        node.ApplyPowerBreakdown(breakdown, maxes);
+                        node.ApplyPowerBreakdown(breakdown, mega ? megaMaxes : regularMaxes);
                     }
                     else
-                        node.ApplyPowerBreakdown(default, maxes);
+                        node.ApplyPowerBreakdown(default, mega ? megaMaxes : regularMaxes);
 
                     GetMoonNodePosition(level, b, count, nodeW, nodeH, megaW, canvasW, canvasH,
                         ComputeMaxColumnStackHeight(nodeH), out colX, out nodeY);
@@ -334,7 +340,7 @@ namespace TitanOrbit.UI
             }
 
             const int maxLevel = 7;
-            ComputeMoonHorizontalGeometry(out float nodeW, out float nodeH, out float canvasW, out float canvasH);
+            ComputeMoonHorizontalGeometry(out float nodeW, out float nodeH, out float megaH, out float canvasW, out float canvasH);
             ApplyHorizontalTreeCanvasLayout(canvasW, canvasH);
             float trackW = GetMoonPowerBarTrackWidth(nodeW);
 
@@ -342,7 +348,6 @@ namespace TitanOrbit.UI
             var byLevel = new Dictionary<int, List<ShipUpgradeTreeNodeUI>>();
 
             float megaW = Mathf.Round(nodeW * MoonMegaScale);
-            float megaH = Mathf.Round(nodeH * MoonMegaScale);
             float megaTrackW = GetMoonPowerBarTrackWidth(megaW);
 
             for (int level = 1; level <= maxLevel; level++)
@@ -580,7 +585,7 @@ namespace TitanOrbit.UI
         }
 
         private static float GetMoonPowerBarTrackWidth(float nodeW) =>
-            Mathf.Max(48f, nodeW - 12f);
+            Mathf.Max(48f, nodeW - ShipUpgradeTreeNodeUI.TreeCardEdgePad * 2f);
 
         private void GetMoonContainerSize(out float width, out float height)
         {
@@ -652,10 +657,10 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// Vertical gap so a 1.25× mega centered on an L6 pair does not overlap those cards.
+        /// Tight vertical air between stacked family cards. MEGA hulls live in their own
+        /// column (centered on an L6 pair), so this gap does not need to reserve 1.5× height.
         /// </summary>
-        private static float ComputeMoonBranchGapY(float nodeH) =>
-            Mathf.Max(MoonBranchGapY, Mathf.Round(nodeH * (MoonMegaScale - 1f) + 12f));
+        private static float ComputeMoonBranchGapY(float _) => MoonBranchGapY;
 
         private static float ComputeMaxColumnStackHeight(float nodeH)
         {
@@ -670,7 +675,7 @@ namespace TitanOrbit.UI
         /// <summary>
         /// Derives uniform node size from available row width. Prefab layout size is reference aspect only.
         /// </summary>
-        private void ComputeMoonHorizontalGeometry(out float nodeW, out float nodeH, out float canvasW, out float canvasH)
+        private void ComputeMoonHorizontalGeometry(out float nodeW, out float nodeH, out float megaH, out float canvasW, out float canvasH)
         {
             // --- Compute value ---
             float margin = CanvasInnerMargin;
@@ -691,25 +696,36 @@ namespace TitanOrbit.UI
             nodeW = Mathf.Round(Mathf.Max(MoonMinNodeWidth, nodeW));
             canvasW = availableW;
 
-            nodeH = nodePrefab != null ? nodePrefab.LayoutHeight : MoonNodeHeight;
-            nodeH = Mathf.Max(MoonNodeHeight, nodeH);
+            // Halfway between the old compact cards (~prefab 100px) and a full-row stretch.
+            // Full-row height hid ship names under the silhouette.
+            float compactH = nodePrefab != null ? nodePrefab.LayoutHeight : MoonNodeHeight;
+            compactH = Mathf.Max(MoonNodeHeight, compactH);
+            int maxStack = 1;
+            for (int level = 1; level <= 7; level++)
+                maxStack = Mathf.Max(maxStack, UpgradeTree.GetShipCountForLevel(level));
+            float gapY = ComputeMoonBranchGapY(compactH);
+            float maxCanvasH = Mathf.Max(160f, containerH - 4f);
+            float targetStackH = Mathf.Max(72f, maxCanvasH - margin * 2f);
+            float fillH = (targetStackH - (maxStack - 1) * gapY) / maxStack;
+            nodeH = Mathf.Max(72f, Mathf.Round(Mathf.Lerp(compactH, fillH, 0.5f) * 0.8f));
 
             float maxColStackH = ComputeMaxColumnStackHeight(nodeH);
             canvasH = margin * 2f + maxColStackH;
-
-            float maxCanvasH = Mathf.Max(160f, containerH - 4f);
             if (canvasH > maxCanvasH)
             {
-                float stackScale = (maxCanvasH - margin * 2f) / maxColStackH;
-                nodeH = Mathf.Max(72f, Mathf.Round(nodeH * stackScale));
+                nodeH = Mathf.Max(72f, Mathf.Round((targetStackH - (maxStack - 1) * gapY) / maxStack));
                 maxColStackH = ComputeMaxColumnStackHeight(nodeH);
                 canvasH = margin * 2f + maxColStackH;
             }
-            else if (canvasH < maxCanvasH - 8f)
+
+            // MEGA height stays on this snapshot. Regular L1–L6 cards grow 10%.
+            megaH = Mathf.Round(nodeH * MoonMegaScale);
+            nodeH = Mathf.Round(nodeH * 1.1f);
+            maxColStackH = ComputeMaxColumnStackHeight(nodeH);
+            canvasH = margin * 2f + maxColStackH;
+            if (canvasH > maxCanvasH)
             {
-                // --- if ---
-                float targetStackH = maxCanvasH - margin * 2f;
-                nodeH = Mathf.Max(72f, Mathf.Round(nodeH * (targetStackH / maxColStackH)));
+                nodeH = Mathf.Max(72f, Mathf.Round((targetStackH - (maxStack - 1) * gapY) / maxStack));
                 maxColStackH = ComputeMaxColumnStackHeight(nodeH);
                 canvasH = margin * 2f + maxColStackH;
             }
@@ -818,7 +834,8 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// Ten global catalog maxes for equal-slot bars (all families, each chassis at its tree level).
+        /// Regular-family (L1–L6) catalog maxes for equal-slot bars. MEGA nodes resolve
+        /// <see cref="ShipFamilyPowerBarNorm.GetMegaMaxPerStat"/> when they paint.
         /// </summary>
         ShipPowerBarStatMaxes ComputePowerBarStatMaxes()
         {

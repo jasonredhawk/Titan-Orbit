@@ -46,6 +46,14 @@ namespace TitanOrbit.Simulation
         }
 
         /// <summary>
+        /// Per-mount muzzle speed when authored (MEGA unique component), otherwise hull speed.
+        /// </summary>
+        public static float ResolveMuzzleSpeed(float mountBulletSpeed, float hullBulletSpeed)
+        {
+            return mountBulletSpeed > 0.01f ? mountBulletSpeed : hullBulletSpeed;
+        }
+
+        /// <summary>
         /// One ship/MEGA shot: bank modifiers, visual scale, Starblast velocity.
         /// </summary>
         public static BulletShotPlan Build(

@@ -73,11 +73,26 @@ namespace TitanOrbit.ECS
         public float BulletRange;
 
         /// <summary>
+        /// [TITAN-ORBIT] Muzzle speed for this barrel (MEGA unique-component
+        /// <c>bulletSpeed</c>). Regular ships leave this 0 and use hull
+        /// <c>ShipWeaponConfig.BulletSpeed</c>. Not a hull sum — guns/cannons/snipers
+        /// each keep their own catalog number.
+        /// </summary>
+        public float BulletSpeed;
+
+        /// <summary>
         /// [TITAN-ORBIT] MEGA turret traverse in degrees/sec. Regular ships leave this 0
         /// (barrels stay at bake pose). Written by <c>MegaShipStatApplyLogic</c> from
         /// <c>MegaShipPartStats.weaponRotationSpeed</c> after runtime defaults/minimums.
         /// </summary>
         public float WeaponRotationSpeed;
+
+        /// <summary>
+        /// [TITAN-ORBIT] MEGA per-mount <c>BulletVfxBank</c> category from the catalog unique
+        /// weapon row (or type-table default). Regular ships leave this 0 and fire the
+        /// hull <c>ShipLoadoutState.RuntimeBulletIndex</c>.
+        /// </summary>
+        public int BulletBankIndex;
     }
 
     /// <summary>

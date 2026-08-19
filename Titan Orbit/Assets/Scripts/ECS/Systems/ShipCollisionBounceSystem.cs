@@ -212,6 +212,8 @@ namespace TitanOrbit.ECS
 
             // Client predicts the rock vanishing so the next physics step cannot pin the MEGA
             // while HitRpc is still in flight. Server authority + self-damage stay in ramming.
+            // SoftDestroy strips PhysicsCollider (structural) and invalidates ComponentLookup —
+            // collect rocks first, then teardown after megaLookup is no longer used.
             if (state.World.IsClient())
             {
                 var seenPlowRocks = new NativeHashSet<Entity>(math.max(8, pairs.Length), Allocator.Temp);
@@ -222,10 +224,19 @@ namespace TitanOrbit.ECS
                         continue;
                     if (!megaLookup.HasComponent(pair.EntityA) || !megaLookup[pair.EntityA].IsMega)
                         continue;
-                    if (!seenPlowRocks.Add(pair.EntityB))
-                        continue;
-                    ClientLocalAsteroidCombatSync.SoftDestroyLocalAsteroidEntity(
-                        state.EntityManager, pair.EntityB);
+                    seenPlowRocks.Add(pair.EntityB);
+                }
+
+                if (seenPlowRocks.Count > 0)
+                {
+                    var plowList = seenPlowRocks.ToNativeArray(Allocator.Temp);
+                    for (int i = 0; i < plowList.Length; i++)
+                    {
+                        ClientLocalAsteroidCombatSync.SoftDestroyLocalAsteroidEntity(
+                            state.EntityManager, plowList[i]);
+                    }
+
+                    plowList.Dispose();
                 }
 
                 seenPlowRocks.Dispose();

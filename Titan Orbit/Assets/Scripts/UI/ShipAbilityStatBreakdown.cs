@@ -108,7 +108,18 @@ namespace TitanOrbit.UI
 
         /// <summary>
         /// Chip glance numbers: current effective value, next purchase step, ability level.
+        /// Slot 0 (Fire Power) shows sustained DPS — <c>firePower × fireRate</c> — not
+        /// damage per shot. The next-buy step is one Extra Level of Fire Power at the
+        /// current rate (buying Fire Power does not raise Fire Rate).
+        /// Called when the HUD snapshot key changes or a hover card opens — not every frame.
         /// </summary>
+        /// <param name="abilityIndex">0–9 (Fire Power … Troop Cap).</param>
+        /// <param name="live">Static chassis snapshot from the last HUD rebuild.</param>
+        /// <param name="attrs">Bottom-bar Extra Level purchases.</param>
+        /// <param name="value">Number painted on the chip (DPS for slot 0).</param>
+        /// <param name="nextStep">Green +per-buy; 0 on MEGA or when maxed math is 0.</param>
+        /// <param name="abilityLv">Purchased Extra Levels for this slot.</param>
+        /// <param name="unitSuffix">TMP suffix on the current value (<c>/s</c>, <c>°/s</c>).</param>
         public static void ResolveChipDisplay(
             int abilityIndex,
             in ShipSpeedometerStatTooltips.LiveContext live,
@@ -125,9 +136,32 @@ namespace TitanOrbit.UI
             switch (abilityIndex)
             {
                 case 0:
-                    value = Mathf.Max(0f, eff.firePower);
-                    unitSuffix = "/hit";
-                    nextStep = Mathf.Max(0f, eff.firePowerPerExtraLevel);
+                    // --- Fire Power chip = sustained DPS ---
+                    // [TITAN-ORBIT] A NightAye cannon (~69 /hit at 0.5/s) and an AstroEagle
+                    // gun (~12 /hit at 3/s) look similar as DPS. Raw Fire Power hid that.
+                    // Chip paints "12.5 DPS/s" so it is not read as damage-per-hit.
+                    unitSuffix = " DPS/s";
+                    if (live.IsMega)
+                    {
+                        var mega = MegaShipCatalog.Load();
+                        value = mega != null
+                            ? mega.GetPowerBreakdown(live.MegaCatalogIndex).GetDisplayDps()
+                            : ShipFamilyPowerScoreBreakdown.ComputeSustainedDps(eff.firePower, eff.fireRate);
+                        nextStep = 0f;
+                    }
+                    else if (live.AllGunDps > 0.0001f)
+                    {
+                        // Every mount Extra-Leveled, then FP × RoF, then summed.
+                        value = live.AllGunDps;
+                        nextStep = Mathf.Max(0f, live.AllGunDpsNextStep - live.AllGunDps);
+                    }
+                    else
+                    {
+                        float rate = Mathf.Max(0f, eff.fireRate);
+                        value = ShipFamilyPowerScoreBreakdown.ComputeSustainedDps(eff.firePower, rate);
+                        nextStep = ShipFamilyPowerScoreBreakdown.ComputeSustainedDps(
+                            eff.firePowerPerExtraLevel, rate);
+                    }
                     break;
                 case 1:
                     value = Mathf.Max(0f, eff.bulletSpeed);
@@ -964,7 +998,14 @@ namespace TitanOrbit.UI
             in ShipSpeedometerStatTooltips.LiveContext live)
         {
             ShipStatTooltipChrome.AppendSectionBanner(sb, "RELATED", "FFAA66");
+            // Chip / power-bar Fire Power lane uses this product (DPS), not /hit alone.
             float dps = live.Weapon.BulletDamage * live.Weapon.FireRate;
+            float chipDps = live.AllGunDps > 0.0001f
+                ? live.AllGunDps
+                : ShipFamilyPowerScoreBreakdown.ComputeSustainedDps(
+                    live.EffectiveStats.firePower, live.EffectiveStats.fireRate);
+            sb.Append("Chip DPS  ").Append(FResult(chipDps)).Append("/s  ")
+                .Append("<color=#5B7A94>(all guns)</color>").AppendLine();
             sb.Append("Hull avg  ").Append(FResult(live.Weapon.BulletDamage)).Append("/hit  ");
             sb.Append(FResult(dps)).Append("/s  ");
             sb.Append("<color=#5B7A94>").Append(FResult(live.Weapon.FireRate)).Append("/s</color>").AppendLine();
@@ -1067,9 +1108,14 @@ namespace TitanOrbit.UI
 
             if (abilityIndex == 0)
             {
-                // Hull-average DPS from the live weapon config (summed MEGA firepower).
-                // Skip Extra Level RAM grids — MEGA ram is already in the catalog PARTS list.
+                // Chip / power bar use per-gun catalog DPS, not summed-rate × summed-damage.
                 ShipStatTooltipChrome.AppendSectionBanner(sb, "RELATED", "FFAA66");
+                var mega = MegaShipCatalog.Load();
+                float chipDps = mega != null
+                    ? mega.GetPowerBreakdown(live.MegaCatalogIndex).GetDisplayDps()
+                    : ShipFamilyPowerScoreBreakdown.ComputeSustainedDps(
+                        live.EffectiveStats.firePower, live.EffectiveStats.fireRate);
+                sb.Append("Chip DPS  ").Append(FResult(chipDps)).Append("/s").AppendLine();
                 float dps = live.Weapon.BulletDamage * live.Weapon.FireRate;
                 sb.Append("Hull avg  ").Append(FResult(live.Weapon.BulletDamage)).Append("/hit  ");
                 sb.Append(FResult(dps)).Append("/s").AppendLine();

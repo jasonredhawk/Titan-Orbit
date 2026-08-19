@@ -378,7 +378,7 @@ namespace TitanOrbit.Editor
                 MessageType.None);
             EditorGUILayout.Space();
             EditorGUILayout.HelpBox(
-                "Resort Upgrade Tree: recomputes power scores from prefabs and places ships into levels by ascending power score " +
+                "Resort Upgrade Tree: recomputes power scores from prefabs (all-gun DPS + energy sustain) and places ships into levels by ascending power score " +
                 "(weaker unlock earlier). Within each level, ships are sorted by purchase gem cost descending " +
                 "(most expensive → least expensive). Locked tiers keep their list index.",
                 MessageType.None);
@@ -1059,8 +1059,10 @@ namespace TitanOrbit.Editor
                 var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(path);
                 if (prefab == null) continue;
 
-                ShipComponentAbilityStats stats = SumStatsForPrefab(prefab, def, familyId);
-                ShipFamilyPowerScoreBreakdown breakdown = ShipFamilyPowerScoreBreakdown.FromSummedShipStats(stats);
+                if (!ShipFamilyPowerBarNorm.TryBuildBreakdown(
+                        prefab, def, shipLevel: 1, default,
+                        out _, out ShipFamilyPowerScoreBreakdown breakdown))
+                    continue;
                 float power = breakdown.GetUpgradeTreeSortPowerScore();
                 list.Add((prefab, power, breakdown));
             }
@@ -1113,7 +1115,10 @@ namespace TitanOrbit.Editor
                     minHomePlanetLevel = currentLevel,
                     componentMass = def.ComputeComponentMassFromPrefab(prefab)
                 };
-                ShipComponentAbilityStats stats = SumStatsForPrefab(prefab, def, familyId);
+                if (!ShipFamilyPowerBarNorm.TryBuildBreakdown(
+                        prefab, def, shipLevel: 1, default,
+                        out ShipComponentAbilityStats stats, out _))
+                    stats = default;
                 AssignTierPowerScores(entry, stats, breakdown);
                 def.upgradeTree.Add(entry);
                 assignedAtThisLevel++;
@@ -1180,8 +1185,10 @@ namespace TitanOrbit.Editor
                     continue;
                 }
 
-                ShipComponentAbilityStats stats = SumStatsForPrefab(tier.prefab, def, familyId);
-                ShipFamilyPowerScoreBreakdown breakdown = ShipFamilyPowerScoreBreakdown.FromSummedShipStats(stats);
+                if (!ShipFamilyPowerBarNorm.TryBuildBreakdown(
+                        tier.prefab, def, shipLevel: 1, default,
+                        out _, out ShipFamilyPowerScoreBreakdown breakdown))
+                    continue;
                 float power = breakdown.GetUpgradeTreeSortPowerScore();
                 tier.powerScoreBreakdown = breakdown;
                 tier.componentMass = def.ComputeComponentMassFromPrefab(tier.prefab);
@@ -1262,6 +1269,8 @@ namespace TitanOrbit.Editor
                 AssetDatabase.SaveAssets();
                 AssetDatabase.Refresh();
             }
+
+            ShipFamilyPowerBarNorm.InvalidateCache();
 
             result.success = true;
             result.resortedUnlocked = orderedUnlocked.Count;
@@ -1393,10 +1402,12 @@ namespace TitanOrbit.Editor
             {
                 ShipFamilyChassisTierEntry tier = def.upgradeTree[i];
                 if (tier?.prefab == null) continue;
-                ShipComponentAbilityStats stats = SumStatsForPrefab(tier.prefab, def, familyId);
-                int maxUpgrades = ShipFamilyPowerScoreBreakdown.GetMaxUpgradeCountForTier(tier.minHomePlanetLevel);
-                tier.powerScoreAtMaxLevel = ShipFamilyPowerScoreBreakdown.FromSummedShipStats(
-                    ShipFamilyPowerScoreBreakdown.ApplyMaxEffectiveLevels(stats, maxUpgrades)).Total;
+                int shipLevel = Mathf.Max(1, tier.minHomePlanetLevel);
+                ShipAbilityLevelCounts maxed = ShipAbilityLevelCounts.Maxed(shipLevel);
+                if (ShipFamilyPowerBarNorm.TryBuildBreakdown(
+                        tier.prefab, def, shipLevel, in maxed,
+                        out _, out ShipFamilyPowerScoreBreakdown atLevel))
+                    tier.powerScoreAtMaxLevel = atLevel.GetUpgradeTreeSortPowerScore();
                 // Extra Level at this chassis's tree level with every HUD ability maxed.
                 ShipFamilyPowerBarNorm.BakeAtShipLevel(tier, def);
             }

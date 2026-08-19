@@ -20,6 +20,14 @@ namespace TitanOrbit.Data
         /// <summary>True when this row is a tagged MEGA weapon prefab (Gun / Cannon / Missile / Sniper).</summary>
         public bool isWeapon;
 
+        /// <summary>
+        /// BulletVfxBank category this weapon fires. -1 inherits the catalog type-table
+        /// bank for <see cref="partType"/> (guns / cannons / missiles / snipers).
+        /// </summary>
+        [BulletVfxBankCategory(true, "Type table default")]
+        [Tooltip("Bullet bank this unique weapon fires. Type table default follows the catalog Gun/Cannon/Missile/Sniper bank. Rockets seek like store ALT rockets.")]
+        public int bulletPrefabIndex = MegaShipCatalog.InheritTypeTableBankIndex;
+
         /// <summary>Per-name stats. Seeded from the type table; then hand-tunable.</summary>
         public MegaShipPartStats stats;
     }
@@ -52,6 +60,7 @@ namespace TitanOrbit.Data
                 return 0;
 
             var previous = new Dictionary<string, MegaShipPartStats>(StringComparer.OrdinalIgnoreCase);
+            var previousBanks = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
             if (keepManualStats && catalog.uniqueComponents != null)
             {
                 for (int i = 0; i < catalog.uniqueComponents.Count; i++)
@@ -60,6 +69,7 @@ namespace TitanOrbit.Data
                     if (old == null || string.IsNullOrEmpty(old.displayName))
                         continue;
                     previous[old.displayName] = old.stats;
+                    previousBanks[old.displayName] = old.bulletPrefabIndex;
                 }
             }
 
@@ -81,6 +91,8 @@ namespace TitanOrbit.Data
                 var row = pair.Value;
                 if (keepManualStats && previous.TryGetValue(row.displayName, out MegaShipPartStats kept))
                     row.stats = kept;
+                if (keepManualStats && previousBanks.TryGetValue(row.displayName, out int keptBank))
+                    row.bulletPrefabIndex = keptBank;
                 next.Add(row);
             }
 
@@ -226,6 +238,7 @@ namespace TitanOrbit.Data
                     displayName = id,
                     partType = partType,
                     isWeapon = isWeapon,
+                    bulletPrefabIndex = MegaShipCatalog.InheritTypeTableBankIndex,
                     stats = catalog != null
                         ? catalog.GetStatsForPartType(partType)
                         : default,

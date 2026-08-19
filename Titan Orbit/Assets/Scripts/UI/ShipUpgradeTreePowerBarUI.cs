@@ -249,15 +249,15 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// Equipment cards include fire rate and ramming in the offense pair segments
-        /// (fire rate with bullet speed, ramming with fire power).
+        /// Equipment cards: offense pair is sustained DPS plus ramming, then bullet speed.
+        /// Fire Rate is already inside DPS — do not add it again on the Bullet Speed lane.
         /// </summary>
         public static float GetEquipmentBarStatValue(ShipFamilyPowerScoreBreakdown breakdown, int statIndex)
         {
             switch (statIndex)
             {
-                case 0: return breakdown.firePower + breakdown.rammingPower;
-                case 1: return breakdown.bulletSpeed + breakdown.fireRate;
+                case 0: return breakdown.GetDisplayDps() + breakdown.rammingPower;
+                case 1: return breakdown.bulletSpeed;
                 default: return GetMoonTreeBarStatValue(breakdown, statIndex);
             }
         }
@@ -293,7 +293,9 @@ namespace TitanOrbit.UI
 
         /// <summary>
         /// Moon / Orbit Menu layout: full track width, five equal category columns,
-        /// two abilities stacked in each column. Fill amount = value / global max.
+        /// two abilities stacked in each column. Fill amount = value / pool max
+        /// (regular-family maxes on L1–L6, MEGA catalog maxes on L7).
+        /// Slot 0 is sustained DPS (<c>firePower × fireRate</c>), not raw Fire Power.
         /// Called when a tree node or store tile paints its colourful stats bar.
         /// </summary>
         public void ApplyBreakdown(
@@ -705,9 +707,22 @@ namespace TitanOrbit.UI
             var barLe = GetComponent<LayoutElement>();
             if (barLe != null)
             {
-                barLe.preferredWidth = Mathf.Round(nodeW);
-                barLe.flexibleWidth = 1f;
-                barLe.minWidth = Mathf.Round(nodeW);
+                // Inside a PowerBarTrack the parent VLG already pads. A large minWidth
+                // here shoved the colourful lanes into the tray edges.
+                bool inTrack = transform.parent != null && transform.parent.name == "PowerBarTrack";
+                if (inTrack)
+                {
+                    barLe.minWidth = 0f;
+                    barLe.preferredWidth = -1f;
+                    barLe.flexibleWidth = 1f;
+                }
+                else
+                {
+                    barLe.preferredWidth = Mathf.Round(nodeW);
+                    barLe.minWidth = Mathf.Round(nodeW);
+                    barLe.flexibleWidth = 1f;
+                }
+
                 barLe.preferredHeight = scaledBarHeight;
                 barLe.minHeight = scaledBarHeight;
             }

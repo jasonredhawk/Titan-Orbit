@@ -191,6 +191,10 @@ namespace TitanOrbit.UI
         internal void RefreshShipUpgradeTreeNodeStates(IReadOnlyList<ShipUpgradeTreeNodeUI> nodes, ShipPowerBarStatMaxes maxes)
         {
             UpdateShipTreeHintText();
+
+            // [HYBRID] Names for unique MEGA occupancy chips — refresh once per tree paint.
+            EcsGameBridge.RefreshPlayerDisplayNameCache();
+
             if (nodes == null || nodes.Count == 0)
                 return;
 
@@ -237,18 +241,14 @@ namespace TitanOrbit.UI
 
             bool isCurrent = view.Level == currentLevel && view.BranchIndex == currentBranch;
             bool megaOccupied = false;
+            int megaOccupiedBy = 0;
             bool megaUnlockBlocked = false;
             bool megaUnarmed = false;
             if (view.Level == 7)
             {
-                if (EcsGameBridge.TryGetPlanetMegaSlot(storePlanet.PlanetId, view.BranchIndex, out ushort megaIndex, out int occupiedBy))
-                {
-                    if (occupiedBy != 0)
-                        megaOccupied = true;
-                    var mega = MegaShipCatalog.Load();
-                    if (mega != null && !mega.IsEligibleForMatch(megaIndex))
-                        megaUnarmed = true;
-                }
+                if (MoonOrbitStationUI.TryResolveMegaOccupancy(
+                        storePlanet.PlanetId, view.BranchIndex, out megaOccupiedBy, out megaUnarmed))
+                    megaOccupied = megaOccupiedBy != 0;
                 if (!EcsGameBridge.TryGetPlanetGemMoonStateByPlanetId(storePlanet.PlanetId, out var moon)
                     || !MegaShipPlanetLogic.IsMegaPurchaseUnlocked(
                         storePlanet.PlanetLevel, moon.CurrentMoonGems, moon.MaxMoonGems))
@@ -276,6 +276,7 @@ namespace TitanOrbit.UI
                 : 0;
             bool canPurchase = isNextChoice && canBuyAny && contributedGems >= nodeCost && !tierBlocked
                 && canApplyPurchase && !megaOccupied && !megaUnarmed;
+            bool clickable = !megaOccupied && (canSwapHull || canPurchase);
 
             string slotChassisId = CardShopSystem.Instance.GetChassisIdForUpgradeLadderSlot(
                 currentShip, storePlanet.PlanetId, currentLevel, currentBranch);
@@ -283,7 +284,7 @@ namespace TitanOrbit.UI
                 && !string.Equals(slotChassisId, currentShip.CurrentChassisId, StringComparison.OrdinalIgnoreCase)
                 && storePlanetLevel < currentLevel;
 
-            view.SetInteractable(canSwapHull || canPurchase);
+            view.SetInteractable(clickable);
             view.EnsureStableButtonRendering();
             if (canSwapHull) view.SetButtonBackgroundColor(new Color(0.28f, 0.68f, 0.82f, 0.98f));
             else if (isCurrent) view.SetButtonBackgroundColor(new Color(0.26f, 0.62f, 0.36f, 0.98f));
@@ -294,15 +295,19 @@ namespace TitanOrbit.UI
             Sprite sp = ResolveShipTreePreviewSprite(view.Level, view.BranchIndex);
             view.SetPreview(sp);
 
-            if (view.UsesMoonHorizontalLayout)
-                view.SetLevelLabel(view.Level == 1 ? "Lv 1" : $"Lv {view.Level}");
+            view.SetLevelLabel(ShipUpgradeTreeNodeUI.FormatTreeLevelCaption(view.Level, view.UsesMoonHorizontalLayout));
+            if (view.Level == 7)
+                view.ApplyMegaShipCardStyle(isCurrent, canPurchase, megaOccupied, tierBlocked);
             else
-                view.SetLevelLabel(view.Level == 1 ? "1" : view.Level.ToString());
+                view.ClearMegaShipCardStyle();
 
             view.SetShipName(GetShipDisplayName(view.Node, view.Level, view.BranchIndex));
 
             if (megaOccupied)
-                view.SetPrice("IN SERVICE");
+            {
+                view.SetPrice(MoonOrbitStationUI.FormatMegaOwnerPriceLabel(megaOccupiedBy));
+                view.SetOwnedOccupantStyle();
+            }
             else if (megaUnarmed)
                 view.SetPrice("NO WEAPONS");
             else if (megaUnlockBlocked)
@@ -318,7 +323,13 @@ namespace TitanOrbit.UI
             else
                 view.SetPrice($"{CardShopSystem.Instance.GetPurchaseGemCostForUpgradeSlot(currentShip, storePlanet.PlanetId, view.Level, view.BranchIndex)}g");
 
-            view.ApplyPowerBreakdown(GetPowerBreakdownForTreeNode(view.Level, view.BranchIndex), maxes);
+            // --- Power bar (regular vs MEGA pool) ---
+            // [TITAN-ORBIT] Regular hulls fill against every family's L1–L6 chassis.
+            // MEGA hulls fill against the armed MEGA catalog only. Mixing those
+            // ceilings would shrink regular bars and flatten every MEGA bar to full.
+            view.ApplyPowerBreakdown(
+                GetPowerBreakdownForTreeNode(view.Level, view.BranchIndex),
+                ShipFamilyPowerBarNorm.ResolveForTreeLevel(view.Level, maxes));
         }
 
         private void PopulateTreeNodeDebug(ShipUpgradeTreeNodeUI view, ShipPowerBarStatMaxes maxes)
@@ -328,26 +339,52 @@ namespace TitanOrbit.UI
             bool isCurrent = view.Level == currentLevel && view.BranchIndex == currentBranch;
             int nodeLevel = view.Level;
             int nodeBranch = view.BranchIndex;
+            Planet storePlanet = GetShipUpgradeStorePlanet();
 
-            view.SetInteractable(true);
+            // --- Unique MEGA occupancy (debug still honors uniqueness) ---
+            bool megaOccupied = false;
+            int megaOccupiedBy = 0;
+            if (nodeLevel == 7
+                && storePlanet != null
+                && MoonOrbitStationUI.TryResolveMegaOccupancy(
+                    storePlanet.PlanetId, nodeBranch, out megaOccupiedBy, out _)
+                && megaOccupiedBy != 0)
+                megaOccupied = true;
+
+            bool clickable = !megaOccupied;
+            view.SetInteractable(clickable);
             view.EnsureStableButtonRendering();
-            view.SetInteractable(true);
-            view.SetButtonBackgroundColor(isCurrent
-                ? new Color(0.26f, 0.62f, 0.36f, 0.98f)
-                : new Color(0.28f, 0.68f, 0.82f, 0.98f));
+            view.SetInteractable(clickable);
+            view.SetButtonBackgroundColor(megaOccupied
+                ? new Color(0.15f, 0.16f, 0.18f, 0.92f)
+                : isCurrent
+                    ? new Color(0.26f, 0.62f, 0.36f, 0.98f)
+                    : new Color(0.28f, 0.68f, 0.82f, 0.98f));
 
             view.SetPreview(ResolveShipTreePreviewSprite(view.Level, view.BranchIndex));
 
-            if (view.UsesMoonHorizontalLayout)
-                view.SetLevelLabel(view.Level == 1 ? "Lv 1" : $"Lv {view.Level}");
+            view.SetLevelLabel(ShipUpgradeTreeNodeUI.FormatTreeLevelCaption(view.Level, view.UsesMoonHorizontalLayout));
+            if (view.Level == 7)
+                view.ApplyMegaShipCardStyle(isCurrent, clickable && !isCurrent, megaOccupied, false);
             else
-                view.SetLevelLabel(view.Level == 1 ? "1" : view.Level.ToString());
+                view.ClearMegaShipCardStyle();
 
             view.SetShipName(GetShipDisplayName(view.Node, view.Level, view.BranchIndex));
 
-            view.SetPrice("Free");
-            view.ApplyPowerBreakdown(GetPowerBreakdownForTreeNode(view.Level, view.BranchIndex), maxes);
-            view.SetPriceClickHandler(() => OnUpgradeTreeNodeClicked(nodeLevel, nodeBranch));
+            if (megaOccupied)
+            {
+                view.SetPrice(MoonOrbitStationUI.FormatMegaOwnerPriceLabel(megaOccupiedBy));
+                view.SetOwnedOccupantStyle();
+            }
+            else
+                view.SetPrice("Free");
+
+            view.ApplyPowerBreakdown(
+                GetPowerBreakdownForTreeNode(view.Level, view.BranchIndex),
+                ShipFamilyPowerBarNorm.ResolveForTreeLevel(view.Level, maxes));
+            view.SetPriceClickHandler(clickable ? () => OnUpgradeTreeNodeClicked(nodeLevel, nodeBranch) : null);
+            if (megaOccupied)
+                view.SetOwnedOccupantStyle();
         }
 
         private void PopulateCurrentShipDisplayNode(ShipUpgradeTreeNodeUI view, ShipPowerBarStatMaxes maxes)
@@ -375,7 +412,10 @@ namespace TitanOrbit.UI
                 view.SetLevelLabel($"Lv {currentLevel}");
             view.SetShipName(GetCurrentShipDisplayName());
             view.SetPrice(canSwapHull ? "Free" : "—");
-            view.ApplyPowerBreakdown(GetCurrentShipPowerBreakdown(), maxes);
+            // Sidebar "You" card uses the same pool as the tree node for this hull.
+            view.ApplyPowerBreakdown(
+                GetCurrentShipPowerBreakdown(),
+                ShipFamilyPowerBarNorm.ResolveForTreeLevel(currentLevel, maxes, currentShip.CurrentChassisId));
         }
 
         private void UpdateShipTreeHintText()
@@ -414,7 +454,7 @@ namespace TitanOrbit.UI
             bool upgradeBlockedByStoreLevel = homeAllowsNextUpgrade && nextLevel > storePlanetLevel;
 
             if (IsDebugFreeShipUpgradeTree())
-                shipUpgradeTree.Hint.text = "Debug: click any ship to try it for free (all tiers unlocked).";
+                shipUpgradeTree.Hint.text = "Debug: click any ship for free. Claimed MEGAs stay with their owner.";
             else if (canSwapHullAtCurrentSlot)
                 shipUpgradeTree.Hint.text = "Click your ship in the left panel to swap to this moon's hull at your tier (free).";
             else if (storePlanetLevelBlocksSwap)

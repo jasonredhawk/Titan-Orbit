@@ -228,25 +228,45 @@ namespace TitanOrbit.Game
                     continue;
 
                 ShipWeaponMountElement mount = mounts[mountIdx];
+                int shotBank = isMega ? mount.BulletBankIndex : bankIndex;
+                if (shotBank < 0)
+                    shotBank = bankIndex;
+                float shotCategoryScale = vfxBank != null
+                    ? vfxBank.GetCategoryUpgradeVisualScaleMultiplier(shotBank)
+                    : categoryUpgradeScale;
                 float refDamage = mount.ReferenceFirePower > 0.01f
                     ? mount.ReferenceFirePower
                     : fallbackRefDamage;
+                float muzzleSpeed = BulletShotMath.ResolveMuzzleSpeed(mount.BulletSpeed, weaponCfg.BulletSpeed);
+                float refMuzzleSpeed = mount.BulletSpeed > 0.01f ? mount.BulletSpeed : refSpeed;
+                float maxDistanceForLife = BulletShotMath.ResolveMaxDistance(
+                    mount.BulletRange, weaponCfg.BulletMaxDistance);
+                float lifetime = mount.BulletSpeed > 0.01f
+                    ? math.max(0.25f, maxDistanceForLife / math.max(1f, muzzleSpeed))
+                    : weaponCfg.BulletLifetime;
                 var plan = BulletShotMath.Build(
                     fireOrigin,
                     fireForward,
                     shipVel,
                     planned.Damage,
-                    weaponCfg.BulletSpeed,
+                    muzzleSpeed,
                     weaponCfg.BulletMaxDistance,
-                    weaponCfg.BulletLifetime,
+                    lifetime,
                     weaponCfg.FireRate,
                     mount.BulletRange,
                     weaponCfg.BulletScale,
                     refDamage,
-                    refSpeed,
-                    bankIndex,
+                    refMuzzleSpeed,
+                    shotBank,
                     firePowerExtras,
-                    categoryUpgradeScale);
+                    shotCategoryScale);
+                byte homing = 0;
+                float turnSpeedDeg = 0f;
+                float acquireRange = 0f;
+                if (RocketHomingFire.TryApply(
+                        shotBank, shipState.ShipLevel, fireForward, ref plan,
+                        out turnSpeedDeg, out acquireRange))
+                    homing = 1;
 
                 if (!BulletVfxBridge.TryEnqueueSpawn(new BulletVfxBridge.SpawnRequest
                 {
@@ -258,11 +278,14 @@ namespace TitanOrbit.Game
                     Damage = plan.Damage,
                     OwnerTeam = (byte)shipState.Team,
                     OwnerNetworkId = ownerNetworkId,
-                    BankIndex = bankIndex,
+                    BankIndex = shotBank,
                     ScaleMultiplier = plan.VisualScale,
                     MountIndex = mountIdx,
                     IsAnticipation = true,
                     IsDisplaySpace = false,
+                    Homing = homing,
+                    TurnSpeedDeg = turnSpeedDeg,
+                    AcquireRange = acquireRange,
                 }))
                     break;
 

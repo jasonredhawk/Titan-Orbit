@@ -22,10 +22,14 @@ namespace TitanOrbit.UI
     /// (move + accel + OD drain together) — see ShipAttributeUpgradeLogic.
     /// <para>
     /// [TITAN-ORBIT] Optional quick-stat chips above each button show <b>current</b> and
-    /// <c>+per-buy</c> (toggle via a small STATS control). Bottom buttons keep name + gem cost
+    /// <c>+per-buy</c> (toggle via a small STATS control). Fire Power's chip is sustained
+    /// DPS (<c>firePower × fireRate</c>), not damage per shot — same score as the Orbit
+    /// Menu power-bar Fire Power lane. Bottom buttons keep name + gem cost
     /// and paint three purchase states: Ready (affordable), Locked (not enough gems), Maxed.
     /// Both rows share dark-glass + category-accent chrome (space-gamer HUD). Chip hover opens
     /// a calculation card from <see cref="ShipAbilityStatBreakdown"/> when the STATS row is on.
+    /// That card uses a nested Canvas (sort 150) so rockets, brakes, turret pad, and sibling HUD
+    /// cannot paint through it.
     /// MEGA hulls keep the ten buttons visible but disabled (no Extra Level purchases) and hide
     /// the little tick squares so the strip does not look like upgrades are still available.
     /// Quick-stat chips and hover details use <see cref="MegaShipStatsCalculator"/> (no +per-buy).
@@ -119,6 +123,15 @@ namespace TitanOrbit.UI
         [SerializeField] private Color gemCostIconColor = new Color(0.9f, 0.92f, 0.95f, 1f);
 
         const string StatsChipsPrefsKey = "TitanOrbit.AbilityStatsChipsVisible";
+
+        /// <summary>
+        /// Nested-canvas sort for the hover calculation card.
+        /// Main HUD canvas is 0; rocket / space-brake overlays are 80; turret pad is 120;
+        /// orbit station is 200. 150 sits above gameplay HUD and below dock / death / match-end.
+        /// <see cref="Transform.SetAsLastSibling"/> only wins inside one canvas — it cannot beat
+        /// those overlay canvases.
+        /// </summary>
+        const int AbilityTipSortingOrder = 150;
 
         /// <summary>
         /// Purchase affordance for one bottom upgrade slot.
@@ -1079,6 +1092,38 @@ namespace TitanOrbit.UI
             if (_abilityTipLabel != null)
                 _abilityTipLabel.fontSize = F(11f);
 
+            ElevateAbilityTipDrawOrder();
+        }
+
+        /// <summary>
+        /// Gives the calculation card its own nested Canvas so it paints above other HUD.
+        /// Called once at build and again on hover in case a later HUD sibling stole hierarchy order.
+        /// </summary>
+        void ElevateAbilityTipDrawOrder()
+        {
+            if (_abilityTipPanel == null)
+                return;
+
+            // --- Nested canvas (beats overlay HUDs that sibling-order cannot) ---
+            // [UNITY] A child Canvas with overrideSorting is a separate draw batch. Without it,
+            // RocketLoadoutHUD / SpaceBrakesHUD (order 80) and the turret pad (120) always
+            // cover this tip even after SetAsLastSibling on the main canvas.
+            Canvas tipCanvas = _abilityTipPanel.GetComponent<Canvas>();
+            if (tipCanvas == null)
+                tipCanvas = _abilityTipPanel.AddComponent<Canvas>();
+
+            tipCanvas.overrideSorting = true;
+            tipCanvas.sortingOrder = AbilityTipSortingOrder;
+
+            // [UNITY] Nested canvases start with no extra shader channels. TMP needs TexCoord1
+            // (and usually Normal / Tangent) or the body text disappears.
+            tipCanvas.additionalShaderChannels =
+                AdditionalCanvasShaderChannels.TexCoord1
+                | AdditionalCanvasShaderChannels.Normal
+                | AdditionalCanvasShaderChannels.Tangent;
+
+            // Intentional: no GraphicRaycaster — fill/frame are already non-raycast so clicks
+            // still reach the chips and the world under the card.
             _abilityTipPanel.transform.SetAsLastSibling();
         }
 
@@ -1102,8 +1147,7 @@ namespace TitanOrbit.UI
             // Build once on enter — not every Update (LIVE vitals removed; body is static until upgrade).
             RefreshAbilityTipContent();
             PositionAbilityTipPanel(abilityIndex);
-            // Draw above leaderboard / other HUD so bars and names cannot bleed through.
-            _abilityTipPanel.transform.SetAsLastSibling();
+            ElevateAbilityTipDrawOrder();
             if (!_abilityTipPanel.activeSelf)
                 _abilityTipPanel.SetActive(true);
         }
@@ -1454,12 +1498,21 @@ namespace TitanOrbit.UI
                         ship.ShipLevel,
                         in abilityCounts);
                     effective = ShipComponentExtraLevelMath.ApplyMobilityPenalties(effective, ship.ShipLevel);
-                    if (ShipStatApplyLogic.TryResolveFamilyForChassisId(chassisId, out ShipFamilyDefinition family)
+                    ShipFamilyDefinition family = null;
+                    if (ShipStatApplyLogic.TryResolveFamilyForChassisId(chassisId, out family)
                         && family != null)
                     {
                         effective = family.ApplyStatFallbacks(effective);
                         effective = family.ApplySpecialBonuses(effective);
                     }
+
+                    // --- All-gun DPS for the Fire Power chip ---
+                    float allGun = ShipWeaponDpsMath.SumAllGunDps(
+                        parts.Ids, parts.Stats, ship.ShipLevel, in abilityCounts);
+                    float allGunNext = ShipWeaponDpsMath.SumAllGunDpsAtNextFirePower(
+                        parts.Ids, parts.Stats, ship.ShipLevel, in abilityCounts);
+                    live.AllGunDps = ShipWeaponDpsMath.ApplyFamilyOffenseMuls(allGun, family);
+                    live.AllGunDpsNextStep = ShipWeaponDpsMath.ApplyFamilyOffenseMuls(allGunNext, family);
                 }
                 else if (ShipStatApplyLogic.TryGetBaseStatsForChassis(
                              chassisId, ship.ShipLevel, out ShipComponentAbilityStats levelOneSummed))
@@ -1570,7 +1623,7 @@ namespace TitanOrbit.UI
             _ = abilityLv;
             var sb = new System.Text.StringBuilder(64);
             AppendCurrentAndPerBuy(sb, value, nextStep, unit, sizePercent: 100);
-            // Fire Power / Bullet Speed glance: live bullet type under the number.
+            // Fire Power chip is DPS (/s). Bullet type sits under the number.
             if (index == 0 || index == 1)
             {
                 string typeLine = BulletBankHudCopy.FormatChipTypeLine(in live);
@@ -1582,7 +1635,7 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// Appends <c>12.5/hit  +1.25</c> — the two glance stats on each top chip (not the bottom button).
+        /// Appends <c>12.5 DPS/s  +1.25</c> — the two glance stats on each top chip (not the bottom button).
         /// </summary>
         /// <param name="sb">TMP rich-text builder.</param>
         /// <param name="value">Current effective value.</param>

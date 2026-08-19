@@ -11,6 +11,8 @@ namespace TitanOrbit.ECS
     /// Server + shared helpers for per-planet MEGA slot buffers: roll any three armed
     /// catalog hulls at match start (firepower &gt; 0), occupy / free unique hulls, and
     /// resolve chassis ids for UI and purchase. Unarmed hulls stay in the catalog.
+    /// <see cref="TryFindCatalogOccupant"/> finds the living owner of a catalog row
+    /// even when two planets rolled the same hull after the armed pool wrapped.
     /// Paired with <see cref="PlanetMegaShipSlotElement"/> on the planet ghost.
     /// </summary>
     public static class MegaShipPlanetLogic
@@ -147,6 +149,47 @@ namespace TitanOrbit.ECS
             occupiedByNetworkId = slot.OccupiedByNetworkId;
             chassisId = MegaShipCatalog.FormatChassisId(catalogIndex);
             return true;
+        }
+
+        /// <summary>
+        /// Finds the player flying this unique MEGA hull, if anyone is.
+        /// MEGAs are unique in a match: one living owner per catalog index, even when
+        /// the armed pool wrapped and two planets rolled the same hull.
+        /// </summary>
+        /// <param name="em">Server or client EntityManager that has planet ghosts.</param>
+        /// <param name="catalogIndex">Index into <c>MegaShipCatalog.entries</c>.</param>
+        /// <param name="occupiedByNetworkId">GhostOwner NetworkId of the owner, or 0 when free.</param>
+        /// <returns>True when an owner was found (occupancy &gt; 0).</returns>
+        public static bool TryFindCatalogOccupant(
+            EntityManager em,
+            ushort catalogIndex,
+            out int occupiedByNetworkId)
+        {
+            occupiedByNetworkId = 0;
+            if (ShouldRefuseClientGathers(em))
+                return false;
+
+            // --- Scan every planet's 3-slot MEGA buffer ---
+            // [TITAN-ORBIT] Occupancy is stored on the selling planet, but uniqueness is
+            // per catalog row. A second planet that rolled the same hull must still show
+            // as owned so nobody else can buy the duplicate card.
+            using var query = em.CreateEntityQuery(typeof(PlanetTag), typeof(PlanetMegaShipSlotElement));
+            using var entities = query.ToEntityArray(Allocator.Temp);
+            for (int i = 0; i < entities.Length; i++)
+            {
+                var buffer = em.GetBuffer<PlanetMegaShipSlotElement>(entities[i]);
+                for (int s = 0; s < buffer.Length; s++)
+                {
+                    var slot = buffer[s];
+                    if (slot.CatalogIndex != catalogIndex || slot.OccupiedByNetworkId == 0)
+                        continue;
+
+                    occupiedByNetworkId = slot.OccupiedByNetworkId;
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         /// <summary>Marks a slot occupied by the buyer. Returns false if already taken.</summary>

@@ -2687,6 +2687,39 @@ namespace TitanOrbit.Game
             return TryFindPlanetMegaSlot(ClientWorld, planetId, branchIndex, out catalogIndex, out occupiedByNetworkId);
         }
 
+        /// <summary>
+        /// True when this unique MEGA catalog hull is already flown by someone in the match.
+        /// Orbit Menu uses this so a duplicate rolled card on another planet stays disabled
+        /// and can show the owner's name.
+        /// </summary>
+        /// <param name="catalogIndex">Index into <c>MegaShipCatalog.entries</c>.</param>
+        /// <param name="occupiedByNetworkId">GhostOwner NetworkId of the living owner.</param>
+        /// <returns>True when an owner was found.</returns>
+        public static bool TryGetMegaCatalogOccupant(ushort catalogIndex, out int occupiedByNetworkId)
+        {
+            occupiedByNetworkId = 0;
+            if (ClientJoinSettleCache.ShouldSkipMapBodyQueries)
+                return false;
+
+            // --- Prefer ServerWorld on Local Host (authoritative occupancy) ---
+            // [NETCODE] PlanetMegaShipSlotElement is ghosted; dedicated clients read ClientWorld.
+            if (IsLocalHost() && TryFindMegaCatalogOccupant(ServerWorld, catalogIndex, out occupiedByNetworkId))
+                return true;
+            return TryFindMegaCatalogOccupant(ClientWorld, catalogIndex, out occupiedByNetworkId);
+        }
+
+        /// <summary>
+        /// Walks planet MEGA slot buffers in one ECS world for a catalog-index owner.
+        /// </summary>
+        static bool TryFindMegaCatalogOccupant(World world, ushort catalogIndex, out int occupiedByNetworkId)
+        {
+            occupiedByNetworkId = 0;
+            if (world == null || !world.IsCreated)
+                return false;
+            return MegaShipPlanetLogic.TryFindCatalogOccupant(
+                world.EntityManager, catalogIndex, out occupiedByNetworkId);
+        }
+
         static bool TryFindPlanetMegaSlot(
             World world,
             int planetId,

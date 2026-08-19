@@ -25,8 +25,8 @@ MonoBehaviour:
   healthAtLevel6: 900
   damageAtLevel1: 3
   damageAtLevel6: 18
-  fireRateAtLevel1: 5
-  fireRateAtLevel6: 5
+  fireRateAtLevel1: 3
+  fireRateAtLevel6: 3
   engageRangeAtLevel1: 15
   engageRangeAtLevel6: 25
   cameraViewRadiusAtLevel1: 15
@@ -37,13 +37,14 @@ MonoBehaviour:
   gemsAtLevel1: 174
   gemsAtLevel6: 852
   gemsAtLevel7: 963
+  bulletBankIndex: -1
   bulletBankCategoryName: LaserSmall
   bulletVisualScale: 1.25
   levels:
   - gemsToReachLevel: 174
     maxHealth: 150
     damage: 3
-    fireRate: 5
+    fireRate: 3
     bulletSpeed: 12
     engageRange: 15
     cameraViewRadius: 15
@@ -52,7 +53,7 @@ MonoBehaviour:
   - gemsToReachLevel: 285
     maxHealth: 300
     damage: 6
-    fireRate: 5
+    fireRate: 3
     bulletSpeed: 12
     engageRange: 17
     cameraViewRadius: 17
@@ -61,7 +62,7 @@ MonoBehaviour:
   - gemsToReachLevel: 396
     maxHealth: 450
     damage: 9
-    fireRate: 5
+    fireRate: 3
     bulletSpeed: 12
     engageRange: 19
     cameraViewRadius: 19
@@ -70,7 +71,7 @@ MonoBehaviour:
   - gemsToReachLevel: 528
     maxHealth: 600
     damage: 12
-    fireRate: 5
+    fireRate: 3
     bulletSpeed: 12
     engageRange: 21
     cameraViewRadius: 21
@@ -79,7 +80,7 @@ MonoBehaviour:
   - gemsToReachLevel: 639
     maxHealth: 750
     damage: 15
-    fireRate: 5
+    fireRate: 3
     bulletSpeed: 12
     engageRange: 23
     cameraViewRadius: 23
@@ -88,7 +89,7 @@ MonoBehaviour:
   - gemsToReachLevel: 852
     maxHealth: 900
     damage: 18
-    fireRate: 5
+    fireRate: 3
     bulletSpeed: 12
     engageRange: 25
     cameraViewRadius: 25
@@ -97,7 +98,7 @@ MonoBehaviour:
   - gemsToReachLevel: 963
     maxHealth: 1050
     damage: 21
-    fireRate: 5
+    fireRate: 3
     bulletSpeed: 12
     engageRange: 27
     cameraViewRadius: 27

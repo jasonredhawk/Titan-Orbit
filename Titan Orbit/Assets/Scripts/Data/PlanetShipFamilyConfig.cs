@@ -414,7 +414,11 @@ namespace TitanOrbit.Data
             return ShipFamilyPowerBarNorm.GetBreakdownAtShipLevel(family, tier, shipLevel);
         }
 
-        /// <summary>Ten global maxes for equal-slot power bars (cached; all families × chassis at tree level).</summary>
+        /// <summary>
+        /// Ten regular-family maxes for equal-slot power bars (cached; all families ×
+        /// L1–L6 chassis at tree level). MEGA hulls use
+        /// <see cref="ShipFamilyPowerBarNorm.GetMegaMaxPerStat"/> instead.
+        /// </summary>
         public ShipPowerBarStatMaxes GetGlobalPowerBarStatMaxes() =>
             ShipFamilyPowerBarNorm.GetGlobalMaxPerStat(this);
 

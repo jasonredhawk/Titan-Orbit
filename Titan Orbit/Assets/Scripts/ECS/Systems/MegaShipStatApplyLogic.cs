@@ -12,10 +12,10 @@ namespace TitanOrbit.ECS
 {
     /// <summary>
     /// Writes static MEGA motor / weapon / vitals onto a ship. No Extra Level, no attribute
-    /// upgrades, gem cap forced to 0. Bullet bank and fire mode come from the store planet's
-    /// gameplay family (AstroEagle, CosmicShark, …), not from the MEGA visual line.
-    /// Paired with <see cref="ShipStatApplyLogic.ApplyToShip"/> which routes here when
-    /// <see cref="MegaShipState.IsMega"/> is true.
+    /// upgrades, gem cap forced to 0. Each mount fires the catalog unique-component (or
+    /// type-table) bullet bank — not the store planet's gameplay family. Fire mode still
+    /// comes from that family. Paired with <see cref="ShipStatApplyLogic.ApplyToShip"/>
+    /// which routes here when <see cref="MegaShipState.IsMega"/> is true.
     /// </summary>
     public static class MegaShipStatApplyLogic
     {
@@ -68,10 +68,11 @@ namespace TitanOrbit.ECS
                 em.SetComponentData(shipEntity, ship);
             }
 
-            // --- Weapon hull averages (HUD / display only — live shots use per-mount FirePower) ---
+            // --- Weapon hull averages (HUD / display only) ---
             // [TITAN-ORBIT] summedStats.firePower is the sum of every gun for power bars.
-            // BulletSimulationSystem Phase B must NOT read BulletDamage
-            // as a per-shot fallback — that inflated every bullet to the fleet total.
+            // Live shots use per-mount FirePower / FireRate / BulletSpeed / BulletRange.
+            // BulletSimulationSystem Phase B must NOT read hull BulletDamage or BulletSpeed
+            // as a per-shot fallback — that inflated every bullet to the fleet total / fastest gun.
             if (em.HasComponent<ShipWeaponConfig>(shipEntity))
             {
                 float firePower = Mathf.Max(0f, effective.firePower);
@@ -98,14 +99,12 @@ namespace TitanOrbit.ECS
                 em.SetComponentData(shipEntity, weapon);
             }
 
-            // --- Family bullet bank (CosmicShark MEGA shoots CosmicShark rounds) ---
-            if (writeGhostedShipState &&
-                em.HasComponent<ShipLoadoutState>(shipEntity) &&
-                TryGetFamily(familyIndex, out ShipFamilyDefinition bankFamily) &&
-                bankFamily != null)
+            // --- Loadout display bank (first catalog weapon) — live shots use per-mount banks ---
+            if (writeGhostedShipState && em.HasComponent<ShipLoadoutState>(shipEntity))
             {
                 var loadout = em.GetComponentData<ShipLoadoutState>(shipEntity);
-                loadout.RuntimeBulletIndex = BulletBankProfileUtility.ResolveBankIndexForFamily(bankFamily);
+                if (catalog.TryGetFirstWeaponBankIndex(entry, out int firstBank))
+                    loadout.RuntimeBulletIndex = firstBank;
                 loadout.BranchIndex = mega.MegaSlotIndex;
                 loadout.ChassisIndex = mega.MegaSlotIndex;
                 em.SetComponentData(shipEntity, loadout);
@@ -188,9 +187,9 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// Overwrites each MEGA mount's firePower / fireRate / bulletRange from the unique
-        /// component named like that prefab child. Family combat apply runs first and would
-        /// otherwise stamp regular-ship numbers onto MEGA barrels.
+        /// Overwrites each MEGA mount's firePower / fireRate / bulletRange / bulletSpeed from
+        /// the unique component named like that prefab child. Family combat apply runs first
+        /// and would otherwise stamp regular-ship numbers onto MEGA barrels.
         /// </summary>
         public static void ApplyCatalogWeaponMountStats(
             EntityManager em,
@@ -224,8 +223,11 @@ namespace TitanOrbit.ECS
                 mount.BulletRange = math.min(
                     MegaShipCatalog.MaxBulletTravelDistance,
                     math.max(4f, resolved.bulletRange > 0.5f ? resolved.bulletRange : row.stats.bulletRange));
+                float partSpeed = resolved.bulletSpeed > 0.01f ? resolved.bulletSpeed : row.stats.bulletSpeed;
+                mount.BulletSpeed = math.max(0.1f, partSpeed);
                 mount.ReferenceFirePower = math.max(0f, row.stats.firePower);
                 mount.WeaponRotationSpeed = 0f;
+                mount.BulletBankIndex = catalog.ResolveWeaponBankIndex(row);
                 mounts[w] = mount;
                 if (em.HasBuffer<MegaShipGunnerSlotElement>(shipEntity))
                 {

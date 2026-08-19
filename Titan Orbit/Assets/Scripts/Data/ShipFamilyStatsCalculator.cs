@@ -54,19 +54,37 @@ namespace TitanOrbit.Data
             in ShipAbilityLevelCounts abilities,
             out ShipComponentAbilityStats effectiveAtLevel)
         {
+            return TrySumFromPrefab(
+                prefab, family, shipLevel, in abilities, out effectiveAtLevel, out _);
+        }
+
+        /// <summary>
+        /// Same as <see cref="TrySumFromPrefab(GameObject, ShipFamilyDefinition, int, in ShipAbilityLevelCounts, out ShipComponentAbilityStats)"/>
+        /// and also returns the scale-adjusted per-part list so callers can sum
+        /// all-gun DPS (every mount Extra-Leveled, then <c>FP × RoF</c>).
+        /// </summary>
+        public static bool TrySumFromPrefab(
+            GameObject prefab,
+            ShipFamilyDefinition family,
+            int shipLevel,
+            in ShipAbilityLevelCounts abilities,
+            out ShipComponentAbilityStats effectiveAtLevel,
+            out SumResult rawParts)
+        {
             effectiveAtLevel = default;
+            rawParts = default;
             if (prefab == null || family == null)
                 return false;
 
             // Raw parts at authored bases — Extra Level applies shipLevel + abilities below.
-            SumResult sum = SumFromPrefabHierarchy(
+            rawParts = SumFromPrefabHierarchy(
                 prefab, family, shipLevel: 1, applyPropulsionAndWeaponRules: false);
-            if (sum.MatchedComponentIds == null || sum.MatchedComponentIds.Count == 0)
+            if (rawParts.MatchedComponentIds == null || rawParts.MatchedComponentIds.Count == 0)
                 return false;
 
             effectiveAtLevel = ShipComponentExtraLevelMath.AggregateAndEvaluate(
-                sum.MatchedComponentIds,
-                sum.PerComponentStats,
+                rawParts.MatchedComponentIds,
+                rawParts.PerComponentStats,
                 shipLevel,
                 in abilities);
             effectiveAtLevel = ShipComponentExtraLevelMath.ApplyMobilityPenalties(effectiveAtLevel, shipLevel);
@@ -157,7 +175,13 @@ namespace TitanOrbit.Data
             finally
             {
                 if (destroyInstance && instance != null)
-                    UnityEngine.Object.Destroy(instance);
+                {
+                    // [UNITY] Destroy() is deferred and illegal in Edit Mode (resort / bake).
+                    if (Application.isPlaying)
+                        UnityEngine.Object.Destroy(instance);
+                    else
+                        UnityEngine.Object.DestroyImmediate(instance);
+                }
             }
 
             return result;

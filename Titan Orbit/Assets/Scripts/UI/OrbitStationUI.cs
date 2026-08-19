@@ -467,20 +467,31 @@ namespace TitanOrbit.UI
             _cachedShipTreeWidthBucket = -1;
         }
 
-        /// <summary>Closes the dock menu but keeps the ship in orbit (undock with move input).</summary>
+        /// <summary>
+        /// Closes the Orbit Menu overlay while the ship stays moon-docked.
+        /// [TITAN-ORBIT] Dismiss is visual only — deposit can keep running. Gameplay HUD
+        /// (speedometer, rockets, brakes) must come back; undock still requires thrust.
+        /// </summary>
         public void CloseMoonDockMenu()
         {
             if (!_moonDockLayoutActive || _moonDockCenterView == MoonDockCenterView.None)
                 return;
+
+            // --- Dismiss overlay, keep dock session ---
             _moonDockMenuClosedByUser = true;
             SetMoonDockCenterView(MoonDockCenterView.None);
         }
 
-        /// <summary>Reopens the dock menu after the player dismissed it (still gem-moon docked).</summary>
+        /// <summary>
+        /// Reopens the Orbit Menu after a close-button / Escape dismiss (still gem-moon docked).
+        /// Escape toggles via <see cref="HandleMoonDockDismissInput"/>.
+        /// </summary>
         public void OpenMoonDockMenu(bool upgradesPanel = true)
         {
             if (!_moonDockLayoutActive || _moonDockCenterView != MoonDockCenterView.None)
                 return;
+
+            // --- Restore overlay ---
             _moonDockMenuClosedByUser = false;
             SetMoonDockCenterView(upgradesPanel ? MoonDockCenterView.Ships : MoonDockCenterView.Gear);
         }
@@ -6642,12 +6653,22 @@ namespace TitanOrbit.UI
             HUDController.SetShipUpgradeTreeObscuresHud(obscuring);
         }
 
+        /// <summary>
+        /// Shows or hides the full-screen Orbit Menu (sidebar + SHIPS / GEAR / CARDS).
+        /// <paramref name="view"/> <see cref="MoonDockCenterView.None"/> is a dismiss:
+        /// the ship can stay on the moon, and gameplay HUD must return.
+        /// </summary>
         private void SetMoonDockCenterView(MoonDockCenterView view)
         {
             _moonDockCenterView = view;
+            bool show = view != MoonDockCenterView.None;
+
+            // [TITAN-ORBIT] OrbitMenuHudSuppressor, rockets, brakes, and fire input all
+            // key off this flag. Closing the × button must clear it even while still docked.
+            MoonOrbitClientState.SetOrbitMenuVisible(show);
+
             if (moonDockCenterBackdrop == null) return;
 
-            bool show = view != MoonDockCenterView.None;
             moonDockCenterBackdrop.SetActive(show);
             if (!show)
             {
