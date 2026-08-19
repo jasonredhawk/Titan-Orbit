@@ -11,7 +11,7 @@ namespace TitanOrbit.ECS
     /// combat stats. Stored in a DynamicBuffer so multi-cannon ships fire from multiple muzzles.
     /// Pose is baked from child <see cref="Authoring.ShipWeaponMountAuthoring"/> / chassis prefab
     /// Weapon children via <see cref="ShipChassisPrefabBakeUtility"/>. Combat numbers come from
-    /// <see cref="ShipWeaponMountCombatLogic"/> (family Weapon stats × transform scale × ship level).
+    /// <see cref="ShipWeaponMountCombatLogic"/> (family Weapon catalog stats × ship level).
     /// <para>
     /// <see cref="LocalPosition"/> is <b>unscaled prefab-local</b> (same contract as
     /// <see cref="ShipWingTractorBeamElement"/>). <see cref="ShipWeaponPose"/> multiplies by
@@ -20,8 +20,8 @@ namespace TitanOrbit.ECS
     /// </para>
     /// <para>
     /// [TITAN-ORBIT] Each barrel keeps its own <see cref="FirePower"/> and <see cref="FireRate"/> —
-    /// not a hull average. A large main gun can deal high damage at a slow cadence while small
-    /// side guns deal less damage but shoot faster (driven by Weapon child XY / Z scale).
+    /// not a hull average. Regular-ship weapon stats ignore prefab child scale so a fat mesh
+    /// and a slim mesh with the same catalog Weapon row deal the same damage and cadence.
     /// </para>
     /// </summary>
     public struct ShipWeaponMountElement : IBufferElementData
@@ -44,12 +44,12 @@ namespace TitanOrbit.ECS
 
         /// <summary>
         /// [TITAN-ORBIT] Damage and energy cost for bullets from this barrel only
-        /// (scale-adjusted family firePower + ship level + Fire Power attributes).
+        /// (catalog family firePower + ship level + Fire Power attributes).
         /// </summary>
         public float FirePower;
 
         /// <summary>
-        /// [TITAN-ORBIT] Shots per second for this barrel only (scale-adjusted family fireRate +
+        /// [TITAN-ORBIT] Shots per second for this barrel only (catalog family fireRate +
         /// ship level). Independent of other mounts — see <see cref="FireCooldown"/>.
         /// </summary>
         public float FireRate;

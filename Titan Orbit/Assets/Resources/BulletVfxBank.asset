@@ -229,20 +229,20 @@ MonoBehaviour:
       statModifiers:
         firePowerMultiplier: 0.9
         bulletSpeedMultiplier: 1
-        fireRateMultiplier: 0.25
+        fireRateMultiplier: 0.5
         rammingPowerMultiplier: 1
         bulletRangeMultiplier: 1
       abilities:
       - type: 0
         magnitude: 1
         magnitudePerExtra: 0
-        duration: 0.5
+        duration: 0.3
         durationPerExtra: 0.1
         tickInterval: 0.25
         tickIntervalPerExtra: 0
         radius: 0
         radiusPerExtra: 0
-        energyDrain: 3.5
+        energyDrain: 1.5
         energyDrainPerExtra: 0.5
         damageTarget: 0
   - categoryName: Liquid

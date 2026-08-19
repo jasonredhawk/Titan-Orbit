@@ -28,8 +28,8 @@ namespace TitanOrbit.ECS
     /// <para>
     /// [TITAN-ORBIT] Scale factors grow visuals <b>and</b> the ECS <c>PhysicsCollider</c> compound
     /// (same math on server + client). They must still never rewrite fire power / fire rate —
-    /// those come from family Weapon stats × <b>authored prefab</b> localScale
-    /// (via <c>ShipWeaponMountCombatLogic</c>) plus ship level and numeric attribute multipliers.
+    /// those come from family Weapon catalog stats (via <c>ShipWeaponMountCombatLogic</c>)
+    /// plus ship level and numeric attribute multipliers — not prefab or live mesh scale.
     /// </para>
     /// <para>
     /// [TITAN-ORBIT] Whole-ship tier size (+10%/level) is <c>LocalTransform.Scale</c> /

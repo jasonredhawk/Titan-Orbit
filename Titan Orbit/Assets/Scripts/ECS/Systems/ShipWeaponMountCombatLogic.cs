@@ -10,9 +10,9 @@ namespace TitanOrbit.ECS
     /// <summary>
     /// Fills each <see cref="ShipWeaponMountElement"/> with Extra Level fire power / fire rate.
     /// <para>
-    /// [TITAN-ORBIT] Each barrel keeps its own Base / PerExtra (prefab XY/Z scale) and evaluates
-    /// independently — weapons do <b>not</b> use the non-weapon <c>(N−1)</c> stack term:
-    /// <c>Base + PerExtra × ((shipLevel−1) + abilityLevel)</c>.
+    /// [TITAN-ORBIT] Each barrel keeps its own catalog Base / PerExtra (not prefab-scale
+    /// multiplied) and evaluates independently — weapons do <b>not</b> use the non-weapon
+    /// <c>(N−1)</c> stack term: <c>Base + PerExtra × ((shipLevel−1) + abilityLevel)</c>.
     /// </para>
     /// <para>
     /// Combat stats are read from a fresh Instantiates of the chassis prefab — never from the
@@ -35,16 +35,16 @@ namespace TitanOrbit.ECS
             /// <summary>Matches <see cref="ShipWeaponMountElement.CannonIndex"/> / bake order.</summary>
             public int CannonIndex;
 
-            /// <summary>Authored firePower × XY transform scale.</summary>
+            /// <summary>Authored catalog firePower (not multiplied by transform scale).</summary>
             public float FirePower;
 
-            /// <summary>Authored firePowerPerExtraLevel × XY transform scale.</summary>
+            /// <summary>Authored catalog firePowerPerExtraLevel (not multiplied by transform scale).</summary>
             public float FirePowerPerLevel;
 
-            /// <summary>Authored fireRate × (1/Z) transform scale.</summary>
+            /// <summary>Authored catalog fireRate (not multiplied by transform scale).</summary>
             public float FireRate;
 
-            /// <summary>Authored fireRatePerExtraLevel × (1/Z) transform scale.</summary>
+            /// <summary>Authored catalog fireRatePerExtraLevel (not multiplied by transform scale).</summary>
             public float FireRatePerLevel;
         }
 
@@ -152,7 +152,7 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// Instantiates the chassis prefab briefly and reads each Weapon child’s scaled stats.
+        /// Instantiates the chassis prefab briefly and reads each Weapon child’s catalog stats.
         /// Order / CannonIndex match <see cref="ShipChassisPrefabBakeUtility"/> mount bake.
         /// <para>
         /// [TITAN-ORBIT] Always uses a temporary Instantiates when the asset is not already a scene
@@ -207,7 +207,7 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// Resolves family component stats for a weapon transform and applies XY / Z scale rules.
+        /// Resolves family component stats for a weapon transform (catalog values, no scale multiply).
         /// </summary>
         static bool TryBuildCombatBase(
             ShipFamilyDefinition family,

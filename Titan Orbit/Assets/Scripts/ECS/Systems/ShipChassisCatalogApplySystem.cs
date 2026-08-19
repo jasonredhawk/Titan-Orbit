@@ -376,7 +376,7 @@ namespace TitanOrbit.ECS
             }
 
             // [TITAN-ORBIT] Pose bake clears combat fields — refill per-barrel firePower / fireRate
-            // from family Weapon stats × transform scale × ship level (same helper as ShipStatApply).
+            // from family Weapon catalog stats × ship level (same helper as ShipStatApply).
             ShipStatApplyLogic.TryApplyPerMountWeaponCombat(em, entity, chassisId, ship.ShipLevel);
             TryApplyMegaWeaponMountStats(em, entity);
 

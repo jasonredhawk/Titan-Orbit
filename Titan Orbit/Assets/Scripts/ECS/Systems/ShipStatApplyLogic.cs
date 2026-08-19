@@ -595,7 +595,7 @@ namespace TitanOrbit.ECS
             // --- Whole-hull tier size (+10% per ship level above 1) ---
             // [TITAN-ORBIT] Uniform LocalTransform.Scale — not per-component mesh grow.
             // Visual proxies use Scale × ShipPresentationScale; muzzles / hit radii read Scale too.
-            // Fire power is unchanged by this (family stats + authored weapon scale + attrs).
+            // Fire power is unchanged by this (family catalog stats + attrs).
             if (em.HasComponent<LocalTransform>(shipEntity))
             {
                 var lt = em.GetComponentData<LocalTransform>(shipEntity);

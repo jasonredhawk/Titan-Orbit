@@ -11,9 +11,9 @@ namespace TitanOrbit.Data
     /// </summary>
     public enum ShipComponentScaleChannel
     {
-        /// <summary>Weapon XY average; non-weapon average localScale.</summary>
+        /// <summary>Unscaled on weapons; average localScale on non-weapons.</summary>
         FirePower = 0,
-        /// <summary>Weapon <c>1/Z</c>; non-weapon average localScale.</summary>
+        /// <summary>Unscaled on weapons; average localScale on non-weapons.</summary>
         FireRate = 1,
         /// <summary>Unscaled on weapons; average localScale on non-weapons.</summary>
         BulletSpeed = 2,
@@ -387,17 +387,17 @@ namespace TitanOrbit.Data
         /// <summary>
         /// Multiplier <see cref="ScaleStatsByTransform"/> applies to one Base / PerExtra pair.
         /// <para>
-        /// [TITAN-ORBIT] Starting prefab <c>localScale</c> is an art lever: a Cockpit at
-        /// scale 3 contributes <c>3 ×</c> catalog Health / Gems / Troops. Weapons use
-        /// wider XY for fire power and deeper Z for a slower fire rate. Turn, ramming,
-        /// propulsion move/accel, and weapon bullet speed/range stay at ×1.
+        /// [TITAN-ORBIT] Starting prefab <c>localScale</c> is an art lever for non-weapons:
+        /// a Cockpit at scale 3 contributes <c>3 ×</c> catalog Health / Gems / Troops.
+        /// Weapons keep catalog fire power / fire rate / bullet speed / range at ×1
+        /// regardless of child scale. Turn, ramming, and propulsion move/accel also stay at ×1.
         /// </para>
         /// Safe with a default <c>(1,1,1)</c> scale (moon-store extras have no prefab child).
         /// </summary>
         /// <param name="localScale">Authored chassis-prefab child scale (not live mesh grow).</param>
         /// <param name="componentId">Part id used to classify weapon vs propulsion vs cockpit.</param>
         /// <param name="channel">Which ability field we are scaling.</param>
-        /// <returns>Factor to multiply catalog Base and PerExtra by (≥ 0.01 for fire-rate Z).</returns>
+        /// <returns>Factor to multiply catalog Base and PerExtra by (always 1 for weapons).</returns>
         public static float GetScaleMultiplier(
             Vector3 localScale,
             string componentId,
@@ -413,14 +413,9 @@ namespace TitanOrbit.Data
                 || channel == ShipComponentScaleChannel.Ramming)
                 return 1f;
 
+            // [TITAN-ORBIT] Regular-ship weapons: combat stats ignore prefab scale.
             if (IsWeaponComponent(componentId))
-            {
-                if (channel == ShipComponentScaleChannel.FirePower)
-                    return (x + y) * 0.5f;
-                if (channel == ShipComponentScaleChannel.FireRate)
-                    return 1f / z;
                 return 1f;
-            }
 
             if (IsPropulsionComponent(componentId)
                 && (channel == ShipComponentScaleChannel.MoveOrAccel
@@ -441,23 +436,18 @@ namespace TitanOrbit.Data
             if (Mathf.Abs(multiplier - 1f) <= 0.01f)
                 return string.Empty;
 
-            if (IsWeaponComponent(componentId))
-            {
-                if (channel == ShipComponentScaleChannel.FirePower)
-                    return "weapon XY";
-                if (channel == ShipComponentScaleChannel.FireRate)
-                    return "weapon 1/Z";
-            }
-
+            _ = componentId;
+            _ = channel;
             return "prefab start";
         }
 
         /// <summary>
-        /// Scales authored stats by prefab child transform size. Weapons: XY → fire power, Z → fire rate.
-        /// Propulsion move/accel ignore scale; turn and ramming are never scaled.
+        /// Scales authored stats by prefab child transform size. Weapons keep catalog
+        /// combat stats (no XY / Z multiply). Propulsion move/accel ignore scale; turn
+        /// and ramming are never scaled.
         /// <para>
         /// [TITAN-ORBIT] Call only with <b>chassis prefab</b> authored localScale (art lever for
-        /// mixed calibers on one hull). Do not pass live hybrid proxies after attribute mesh grow —
+        /// non-weapon part size). Do not pass live hybrid proxies after attribute mesh grow —
         /// combat already applies Fire Power attributes as numeric multipliers (mesh/collider grow
         /// is separate from firePower / fireRate). Ability-chip math uses
         /// <see cref="GetScaleMultiplier"/> so the details card can show the same factor.
@@ -469,58 +459,16 @@ namespace TitanOrbit.Data
             string componentId)
         {
             if (t == null) return stats;
+
+            // [TITAN-ORBIT] Regular-ship weapons: catalog firePower / fireRate / speed /
+            // range stay as authored. Mesh size is presentation only — each barrel still
+            // evaluates Extra Level independently on ShipWeaponMountElement.
+            if (IsWeaponComponent(componentId))
+                return stats;
+
             float x = t.localScale.x;
             float y = t.localScale.y;
             float z = Mathf.Max(t.localScale.z, 0.01f);
-
-            if (IsWeaponComponent(componentId))
-            {
-                // [TITAN-ORBIT] Wider weapon mesh → more fire power; deeper (Z) mesh → slower fire rate.
-                // Written onto each ShipWeaponMountElement for independent barrels.
-                float firePowerScale = (x + y) * 0.5f;
-                float fireRateScale = 1f / z;
-                return new ShipComponentAbilityStats
-                {
-                    firePower = stats.firePower * firePowerScale,
-                    firePowerPerExtraLevel = stats.firePowerPerExtraLevel * firePowerScale,
-                    bulletSpeed = stats.bulletSpeed,
-                    bulletSpeedPerExtraLevel = stats.bulletSpeedPerExtraLevel,
-                    // [TITAN-ORBIT] Range is hull-level (like speed) — not scaled by mesh size.
-                    bulletRange = stats.bulletRange,
-                    bulletRangePerExtraLevel = stats.bulletRangePerExtraLevel,
-                    fireRate = stats.fireRate * fireRateScale,
-                    fireRatePerExtraLevel = stats.fireRatePerExtraLevel * fireRateScale,
-                    rammingPower = stats.rammingPower,
-                    rammingPowerPerExtraLevel = stats.rammingPowerPerExtraLevel,
-                    healthCap = stats.healthCap,
-                    healthCapPerExtraLevel = stats.healthCapPerExtraLevel,
-                    healthRegen = stats.healthRegen,
-                    healthRegenPerExtraLevel = stats.healthRegenPerExtraLevel,
-                    energyCap = stats.energyCap,
-                    energyCapPerExtraLevel = stats.energyCapPerExtraLevel,
-                    energyRegen = stats.energyRegen,
-                    energyRegenPerExtraLevel = stats.energyRegenPerExtraLevel,
-                    moveSpeed = stats.moveSpeed,
-                    moveSpeedPerExtraLevel = stats.moveSpeedPerExtraLevel,
-                    accelerationCap = stats.accelerationCap,
-                    accelerationCapPerExtraLevel = stats.accelerationCapPerExtraLevel,
-                    extraSpeedPercent = stats.extraSpeedPercent,
-                    extraSpeedPercentPerExtraLevel = stats.extraSpeedPercentPerExtraLevel,
-                    extraSpeedEnergyDrain = stats.extraSpeedEnergyDrain,
-                    extraSpeedEnergyDrainPerExtraLevel = stats.extraSpeedEnergyDrainPerExtraLevel,
-                    turnSpeed = stats.turnSpeed,
-                    turnSpeedPerExtraLevel = stats.turnSpeedPerExtraLevel,
-                    maxGems = stats.maxGems,
-                    maxGemsPerExtraLevel = stats.maxGemsPerExtraLevel,
-                    tractorBeamDistance = stats.tractorBeamDistance,
-                    tractorBeamDistancePerExtraLevel = stats.tractorBeamDistancePerExtraLevel,
-                    tractorBeamPower = stats.tractorBeamPower,
-                    tractorBeamPowerPerExtraLevel = stats.tractorBeamPowerPerExtraLevel,
-                    maxPeople = stats.maxPeople,
-                    maxPeoplePerExtraLevel = stats.maxPeoplePerExtraLevel,
-                };
-            }
-
             float scale = (x + y + z) / 3f;
             var scaled = Multiply(stats, scale);
             scaled.turnSpeed = stats.turnSpeed;
