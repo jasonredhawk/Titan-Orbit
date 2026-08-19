@@ -38,8 +38,8 @@ namespace TitanOrbit.UI
 
         /// <summary>
         /// True while this hull is a purchased MEGA (from <c>MegaShipState.IsMega</c>).
-        /// Minimap draws a triangle instead of the regular Cross so every client can
-        /// spot capital ships without opening a nameplate.
+        /// Minimap draws a team-color triangle outline (yellow troop fill) instead of
+        /// the regular Cross so every client can spot capital ships without opening a nameplate.
         /// </summary>
         public bool IsMega;
 

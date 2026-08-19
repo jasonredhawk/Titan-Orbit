@@ -407,7 +407,7 @@ namespace TitanOrbit.UI
 
         /// <summary>
         /// Copies ship ghost fields onto the minimap anchor for silhouette / cargo / badge rendering
-        /// (including <see cref="MinimapBlipAnchor.IsMega"/> so MEGAs get a triangle).
+        /// (including <see cref="MinimapBlipAnchor.IsMega"/> so MEGAs get a troop-fill triangle).
         /// Controller reads anchors only — no ECS walks there.
         /// </summary>
         static void ApplyShipAnchorPresentation(
