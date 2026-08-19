@@ -20,7 +20,7 @@ namespace TitanOrbit.UI
     /// damage, remaining shots, and a caret for the pack that will fire (UP / DOWN / click).
     /// Mine tiles sit under a MINES header; click or UP/DOWN onto that row selects the pack.
     /// The focused section owns ALT (rockets fire, mines place). E also places a mine.
-    /// Hidden on the main menu, Join Team, and Orbit Menu.
+    /// Hidden on the main menu, Join Team, Orbit Menu, and while the local ship is dead.
     /// <para>
     /// [TITAN-ORBIT] Reads the local ship's ghosted <see cref="EquippedEquipmentElement"/>
     /// buffer and <see cref="ShipLoadoutState.NextRocketFireTime"/>. Skips ship gathers
@@ -109,7 +109,8 @@ namespace TitanOrbit.UI
             // paint this overlay on Main Menu or Join Team.
             if (ClientTeamFlowState.ShouldSuppressLocalPlayerControl() ||
                 IsMainMenuShowing() ||
-                MoonOrbitClientState.IsOrbitMenuVisible)
+                MoonOrbitClientState.IsOrbitMenuVisible ||
+                HUDController.LocalPlayerDeathHidesHud)
             {
                 SetVisible(false);
                 return;

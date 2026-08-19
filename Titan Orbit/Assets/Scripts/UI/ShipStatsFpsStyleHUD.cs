@@ -51,6 +51,9 @@ namespace TitanOrbit.UI
         bool _hasHudCache;
         ShipState _cachedShip;
 
+        /// <summary>Fades the whole strip on death without disabling LateUpdate.</summary>
+        CanvasGroup _canvasGroup;
+
         /// <summary>Dirty-check strings so TMP does not rebuild every frame while farming gems.</summary>
         readonly string[] _lastValueText = new string[4];
 
@@ -113,8 +116,23 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
+        /// Shows or hides the vitals strip via CanvasGroup. We do not SetActive(false) —
+        /// that would stop LateUpdate and the bars would never return after respawn.
+        /// </summary>
+        void SetHudVisible(bool visible)
+        {
+            if (_canvasGroup == null)
+                _canvasGroup = GetComponent<CanvasGroup>() ?? gameObject.AddComponent<CanvasGroup>();
+
+            _canvasGroup.alpha = visible ? 1f : 0f;
+            _canvasGroup.interactable = false;
+            _canvasGroup.blocksRaycasts = false;
+        }
+
+        /// <summary>
         /// Polls ECS each frame and updates four stat rows. Uses last-good cache when ship entity
-        /// lookups are gated; only zeros bars when the local ship is truly gone.
+        /// lookups are gated; only zeros bars when the local ship is truly gone. Hidden while
+        /// <see cref="HUDController.LocalPlayerDeathHidesHud"/>.
         /// </summary>
         void LateUpdate()
         {
@@ -123,6 +141,15 @@ namespace TitanOrbit.UI
                 ApplyLayoutToAllRows();
             if (!_barsStyled)
                 ApplySquareBarStyleToAll();
+
+            // --- Death: hide the vitals strip so only the death plaque remains ---
+            if (HUDController.LocalPlayerDeathHidesHud)
+            {
+                SetHudVisible(false);
+                return;
+            }
+
+            SetHudVisible(true);
 
             bool hasShip = EcsGameBridge.TryGetLocalShipState(out var ship);
             if (hasShip)

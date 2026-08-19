@@ -1433,6 +1433,14 @@ namespace TitanOrbit.UI
                 return;
             }
 
+            // --- Death: hide the radar so the explosion and death plaque stay unobstructed ---
+            // [TITAN-ORBIT] LocalPlayerDeathHidesHud is cached once per frame (HUDController).
+            if (HUDController.LocalPlayerDeathHidesHud || playerAnchor.IsDead)
+            {
+                SetMinimapVisible(false);
+                return;
+            }
+
             // Toggle minimap expanded/minimized with M key
             if (Keyboard.current != null && Keyboard.current.mKey.wasPressedThisFrame)
                 ToggleExpand();

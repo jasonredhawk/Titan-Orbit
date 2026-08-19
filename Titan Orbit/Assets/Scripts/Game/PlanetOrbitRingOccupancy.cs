@@ -9,8 +9,8 @@ namespace TitanOrbit.Game
 {
     /// <summary>
     /// Per-planet orbit-ring occupancy published each client presentation tick.
-    /// World rings and the minimap share this so every locked-in team's color is visible —
-    /// cycling when more than one team is in the ring.
+    /// World rings and the minimap share this so every positively locked team's color is
+    /// visible — cycling when more than one team is captured in the ring.
     /// </summary>
     public static class PlanetOrbitRingOccupancy
     {
@@ -202,7 +202,8 @@ namespace TitanOrbit.Game
                     continue;
 
                 var o = orbit.ValueRO;
-                if (!o.InOrbitRing || !o.UsingOrbitMotor || o.OrbitPlanetId == 0)
+                // Positive lock only — ignore ships still flying into or blending onto the rail.
+                if (!o.OrbitLocked || o.OrbitPlanetId == 0)
                     continue;
 
                 PlanetOrbitRingOccupancy.AddLockedShip(o.OrbitPlanetId, ship.ValueRO.Team);

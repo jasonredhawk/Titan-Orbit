@@ -34,10 +34,17 @@ namespace TitanOrbit.ECS
         [GhostField] public bool UsingOrbitMotor;
 
         /// <summary>
+        /// [TITAN-ORBIT] True when the passive motor has actually captured this hull
+        /// (velocity close to the ring tangent). False while still flying into the annulus
+        /// or blending inbound speed. Ghosted so every client tints the planet ring only
+        /// for a positive lock — friendly or enemy.
+        /// </summary>
+        [GhostField] public bool OrbitLocked;
+
+        /// <summary>
         /// [TITAN-ORBIT] True when this ship is dwelling long enough that people load/unload is
-        /// in progress (or inbound crew is still in flight). Ghosted so every client can tint
-        /// that planet's orbit ring yellow for any locked-in hull — friendly or enemy.
-        /// Written by <c>PeopleTransportDispatchSystem</c>; the motor preserves it while
+        /// in progress (or inbound crew is still in flight). Written by
+        /// <c>PeopleTransportDispatchSystem</c>; the motor preserves it while
         /// <see cref="UsingOrbitMotor"/> stays true and clears it on thrust / leave.
         /// </summary>
         [GhostField] public bool IsTransferringPeople;

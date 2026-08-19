@@ -12,7 +12,7 @@ namespace TitanOrbit.Game
     /// <para>
     /// [TITAN-ORBIT] This is presentation only — the server still owns death and respawn
     /// (<see cref="ShipDeathRecordingSystem"/> / <see cref="ShipRespawnSystem"/>). We never write
-    /// ship state from this overlay. The plaque sits at the bottom of the screen so the hull
+    /// ship state from this overlay. The plaque sits at the top of the screen so the hull
     /// explosion stays visible in the camera centre (the old centred block of text covered it).
     /// Visual language matches the dark space HUD: void glass, thin warning rail, corner brackets,
     /// uppercase telemetry copy. Paired with <c>ShipStatTooltipChrome</c> palette, built locally
@@ -214,7 +214,7 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Builds the bottom-centre telemetry plaque once. Recreates if we find the old
+        /// Builds the top-centre telemetry plaque once. Recreates if we find the old
         /// centred "Ship destroyed" label from an earlier version (hot-reload / lingering children).
         /// </summary>
         void EnsureUi()
@@ -249,16 +249,18 @@ namespace TitanOrbit.Game
             scaler.referenceResolution = new Vector2(1920f, 1080f);
             scaler.matchWidthOrHeight = 0.5f;
 
-            // --- Plaque: compact HUD card, bottom-centre, well below the explosion ---
+            // --- Plaque: compact HUD card, top-centre, well above the explosion ---
+            // Speedometer / upgrade chrome already hide while the local ship is dead, so this
+            // strip does not collide with live HUD.
             const float plaqueW = 420f;
             const float plaqueH = 78f;
             var plaqueGo = new GameObject("DeathPlaque");
             plaqueGo.transform.SetParent(canvasGo.transform, false);
             var plaqueRt = plaqueGo.AddComponent<RectTransform>();
-            plaqueRt.anchorMin = new Vector2(0.5f, 0f);
-            plaqueRt.anchorMax = new Vector2(0.5f, 0f);
-            plaqueRt.pivot = new Vector2(0.5f, 0f);
-            plaqueRt.anchoredPosition = new Vector2(0f, 36f);
+            plaqueRt.anchorMin = new Vector2(0.5f, 1f);
+            plaqueRt.anchorMax = new Vector2(0.5f, 1f);
+            plaqueRt.pivot = new Vector2(0.5f, 1f);
+            plaqueRt.anchoredPosition = new Vector2(0f, -28f);
             plaqueRt.sizeDelta = new Vector2(plaqueW, plaqueH);
             overlayRoot = plaqueGo;
 

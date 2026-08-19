@@ -345,6 +345,7 @@ namespace TitanOrbit.ECS
             float3 vel = physicsVelocity.Linear;
             vel.y = 0f;
 
+            float3 orbitDesiredVel = float3.zero;
             if (useOrbit)
             {
                 // --- Passive orbit blend (replaces thrust/coast this tick) ---
@@ -359,11 +360,11 @@ namespace TitanOrbit.ECS
                     movementMass,
                     mapW,
                     mapH,
-                    out float3 desiredVel,
+                    out orbitDesiredVel,
                     out float alignRate);
-                desiredVel.y = 0f;
+                orbitDesiredVel.y = 0f;
                 float t = math.saturate(alignRate * dt);
-                vel = math.lerp(vel, desiredVel, t);
+                vel = math.lerp(vel, orbitDesiredVel, t);
                 vel.y = 0f;
             }
             else
@@ -416,14 +417,18 @@ namespace TitanOrbit.ECS
             physicsDamping = default;
 
             // --- Replicate orbit context for HUD, tractor beam, people transports ---
-            // Preserve IsTransferringPeople while still locked so client prediction does not
+            // Preserve IsTransferringPeople while still coasting so client prediction does not
             // wipe the server/ghost flag; clear immediately on thrust or leave.
+            // OrbitLocked waits until velocity has captured the rail — ring tint uses this.
             bool transferring = useOrbit && orbitState.IsTransferringPeople;
+            bool orbitLocked = PlanetOrbitMath.EvaluatePositiveOrbitLock(
+                useOrbit, vel, orbitDesiredVel, orbitState.OrbitLocked);
             orbitState = new ShipOrbitState
             {
                 OrbitPlanetId = inOrbitRing ? orbitPlanetState.PlanetId : 0,
                 InOrbitRing = inOrbitRing,
                 UsingOrbitMotor = useOrbit,
+                OrbitLocked = orbitLocked,
                 IsTransferringPeople = transferring,
             };
         }

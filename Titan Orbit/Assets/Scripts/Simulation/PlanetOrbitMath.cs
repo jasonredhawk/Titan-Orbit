@@ -347,5 +347,35 @@ namespace TitanOrbit.Simulation
             float captureScale = math.lerp(1f, OrbitEdgeCaptureMultiplier, edgeT);
             alignRate = (OrbitCaptureResponsiveness * gravityFactor * captureScale) / massFactor;
         }
+
+        /// <summary>
+        /// True when the hull has actually captured the ring — velocity is close to the
+        /// motor's desired orbit velocity, not merely coasting through the annulus.
+        /// Hysteresis stops the lock from flickering while the radial spring trims.
+        /// </summary>
+        /// <param name="useOrbit">Passive orbit motor is running this tick (in ring, no thrust).</param>
+        /// <param name="velocity">Current planar ship velocity after the orbit lerp.</param>
+        /// <param name="desiredVelocity">Target from <see cref="BuildOrbitMotorParams"/>.</param>
+        /// <param name="wasLocked">Previous tick's lock (for hysteresis).</param>
+        public static bool EvaluatePositiveOrbitLock(
+            bool useOrbit,
+            float3 velocity,
+            float3 desiredVelocity,
+            bool wasLocked)
+        {
+            if (!useOrbit)
+                return false;
+
+            float desiredSpeed = math.length(desiredVelocity);
+            if (desiredSpeed < 0.05f)
+                return false;
+
+            float err = math.length(velocity - desiredVelocity);
+            // Acquire is tighter than release so a ship still dumping inbound speed
+            // does not light the ring, but a captured hull stays locked through small spring trims.
+            float acquire = math.max(0.12f, desiredSpeed * 0.18f);
+            float release = math.max(0.22f, desiredSpeed * 0.38f);
+            return wasLocked ? err <= release : err <= acquire;
+        }
     }
 }

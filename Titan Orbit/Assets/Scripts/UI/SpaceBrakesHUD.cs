@@ -56,12 +56,17 @@ namespace TitanOrbit.UI
             SetVisible(false);
         }
 
-        /// <summary>Paints ON/OFF from <see cref="PlayerInputHandler"/>; no ship queries.</summary>
+        /// <summary>
+        /// Paints ON/OFF from <see cref="PlayerInputHandler"/>. Hides on menus and while
+        /// <see cref="HUDController.LocalPlayerDeathHidesHud"/> (death uses the cached HUD gate,
+        /// not a second ship-entity gather).
+        /// </summary>
         void LateUpdate()
         {
             if (ClientTeamFlowState.ShouldSuppressLocalPlayerControl() ||
                 IsMainMenuShowing() ||
-                !EcsGameBridge.HasLocalPlayerShip())
+                !EcsGameBridge.HasLocalPlayerShip() ||
+                HUDController.LocalPlayerDeathHidesHud)
             {
                 SetVisible(false);
                 return;
