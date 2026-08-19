@@ -57,6 +57,63 @@ namespace TitanOrbit.Game
                 MoonLabelWorldScaleMax);
         }
 
+        /// <summary>
+        /// One-shot hull / body clearance from mesh AABBs. Call on ship spawn / chassis swap only —
+        /// floating counts must read the cached result, not remesh every frame.
+        /// </summary>
+        public static bool TryMeasureBodyClearance(Transform root, out float liftFromPivot, out float xzRadius)
+        {
+            liftFromPivot = 0f;
+            xzRadius = 0f;
+            if (root == null)
+                return false;
+
+            Renderer[] renderers = root.GetComponentsInChildren<Renderer>(true);
+            if (!TryEncapsulateBodyBounds(renderers, out Bounds bounds))
+                return false;
+
+            liftFromPivot = Mathf.Max(0f, bounds.max.y - root.position.y);
+            xzRadius = Mathf.Max(bounds.extents.x, bounds.extents.z);
+            return liftFromPivot > 0.0001f || xzRadius > 0.0001f;
+        }
+
+        /// <summary>
+        /// World AABB of mesh / skinned-mesh body renderers (skips labels, particles, nameplates).
+        /// </summary>
+        public static bool TryEncapsulateBodyBounds(Renderer[] renderers, out Bounds bounds)
+        {
+            bounds = default;
+            if (renderers == null)
+                return false;
+
+            bool any = false;
+            for (int i = 0; i < renderers.Length; i++)
+            {
+                Renderer renderer = renderers[i];
+                if (!IsBodyMeshRenderer(renderer))
+                    continue;
+
+                if (!any)
+                {
+                    bounds = renderer.bounds;
+                    any = true;
+                }
+                else
+                {
+                    bounds.Encapsulate(renderer.bounds);
+                }
+            }
+
+            return any;
+        }
+
+        public static bool IsBodyMeshRenderer(Renderer renderer)
+        {
+            if (ShouldSkipRenderer(renderer) || !renderer.enabled)
+                return false;
+            return renderer is MeshRenderer || renderer is SkinnedMeshRenderer;
+        }
+
         public static bool ShouldSkipRenderer(Renderer renderer)
         {
             // --- ShouldSkipRenderer ---

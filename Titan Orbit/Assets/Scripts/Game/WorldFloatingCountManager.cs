@@ -145,6 +145,28 @@ namespace TitanOrbit.Game
             return BodyCollisionMath.GetShipHullRadiusWorld(ecsScale);
         }
 
+        /// <summary>
+        /// Local hull pose plus the clearance snapshot taken at hull spawn / chassis swap.
+        /// Live position only — does not remesh.
+        /// </summary>
+        public bool TryGetLocalShipVisualClearance(out Vector3 shipPos, out float visualTopY, out float xzRadius)
+        {
+            shipPos = Vector3.zero;
+            visualTopY = 0f;
+            xzRadius = 0f;
+
+            int localId = EcsGameBridge.GetLocalNetworkId();
+            if (localId <= 0 ||
+                !ShipWeaponProxyRegistry.TryGetHull(localId, out Transform hull) ||
+                hull == null ||
+                !ShipWeaponProxyRegistry.TryGetCachedHullClearance(localId, out float liftFromPivot, out xzRadius))
+                return false;
+
+            shipPos = hull.position;
+            visualTopY = hull.position.y + liftFromPivot;
+            return true;
+        }
+
         void Awake()
         {
             if (floatingText == null)
@@ -187,7 +209,7 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Ship-hull convenience: parks on the ship mid-center and accumulates on <paramref name="networkId"/>.
+        /// Ship-hull convenience: parks above the cached hull height and accumulates on <paramref name="networkId"/>.
         /// </summary>
         public void ShowOrAccumulateOnShip(
             int networkId,
@@ -202,7 +224,8 @@ namespace TitanOrbit.Game
                 ResolveShipBodyRadius(shipAnchor),
                 channel,
                 signedAmount,
-                team);
+                team,
+                clearShipHull: true);
         }
 
         /// <summary>
@@ -218,7 +241,8 @@ namespace TitanOrbit.Game
                 ResolveShipBodyRadius(shipAnchor),
                 channel,
                 signedAmount,
-                team);
+                team,
+                clearShipHull: true);
         }
 
         /// <summary>
@@ -232,7 +256,8 @@ namespace TitanOrbit.Game
             float signedAmount,
             TeamId team,
             Vector3? impactWorldPosition = null,
-            bool ignoreChannelVisibility = false)
+            bool ignoreChannelVisibility = false,
+            bool clearShipHull = false)
         {
             if (anchor == null)
                 return;
@@ -268,7 +293,8 @@ namespace TitanOrbit.Game
                         out Color color, out _, ignoreChannelVisibility))
                     return;
 
-                slot.Popup.Refresh(message, color, anchor, Vector3.zero, lane, spacing, refreshIcon, bodyRadius);
+                slot.Popup.Refresh(message, color, anchor, Vector3.zero, lane, spacing, refreshIcon, bodyRadius,
+                    clearShipHull);
                 return;
             }
 
@@ -297,7 +323,8 @@ namespace TitanOrbit.Game
                 lane,
                 spacing,
                 fontToUse,
-                bodyRadius);
+                bodyRadius,
+                clearShipHull);
             if (popup == null)
                 return;
 
@@ -458,7 +485,8 @@ namespace TitanOrbit.Game
             int targetId,
             Transform targetAnchor,
             float bodyRadius,
-            float remainingHealth)
+            float remainingHealth,
+            bool clearShipHull = false)
         {
             if (targetAnchor == null)
                 return;
@@ -473,7 +501,8 @@ namespace TitanOrbit.Game
                 FormatUnsignedAmount(remainingHealth),
                 hpColor,
                 ResolveTypeIcon(FloatingCountChannel.HealthChange),
-                bodyRadius);
+                bodyRadius,
+                clearShipHull);
         }
 
         bool TryPrepareAmount(
@@ -565,7 +594,8 @@ namespace TitanOrbit.Game
             string message,
             Color color,
             Sprite icon,
-            float bodyRadius)
+            float bodyRadius,
+            bool clearShipHull = false)
         {
             if (anchor == null || string.IsNullOrEmpty(message))
                 return;
@@ -589,7 +619,8 @@ namespace TitanOrbit.Game
                 slot.StreakDeadline = now + window;
                 slot.Anchor = anchor;
                 slot.ParkWorld = parkWorld;
-                slot.Popup.Refresh(message, color, anchor, Vector3.zero, lane, spacing, icon, bodyRadius);
+                slot.Popup.Refresh(message, color, anchor, Vector3.zero, lane, spacing, icon, bodyRadius,
+                    clearShipHull);
                 return;
             }
 
@@ -613,7 +644,8 @@ namespace TitanOrbit.Game
                 lane,
                 spacing,
                 fontToUse,
-                bodyRadius);
+                bodyRadius,
+                clearShipHull);
             if (popup == null)
                 return;
 
@@ -666,7 +698,8 @@ namespace TitanOrbit.Game
             int stackLane,
             float stackSpacing,
             TMP_FontAsset fontToUse,
-            float bodyRadius)
+            float bodyRadius,
+            bool clearShipHull = false)
         {
             if (string.IsNullOrEmpty(message) || anchor == null)
                 return null;
@@ -689,7 +722,8 @@ namespace TitanOrbit.Game
                 followWorldOffset: followWorldOffset,
                 stackLane: stackLane,
                 stackSpacing: stackSpacing,
-                bodyRadius: bodyRadius);
+                bodyRadius: bodyRadius,
+                clearShipHull: clearShipHull);
             return popup;
         }
 

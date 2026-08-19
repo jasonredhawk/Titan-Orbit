@@ -55,9 +55,11 @@ namespace TitanOrbit.Game
         public float iconLeftPadding = 8f;
 
         [Header("World Placement")]
-        [Tooltip("Added on top of the target's visual height. Small rocks/ships sit lower; large ones sit higher.")]
+        [Tooltip("Gap above the target's cached visual height. Small rocks/ships sit lower; large ones sit higher.")]
         [FormerlySerializedAs("worldLiftY")]
         public float extraHeight = 8f;
+        [Tooltip("Extra world-Y on top of the ship's cached hull height (measured once at spawn / chassis swap). Raise this if load/unload, damage, or heal numbers still sit inside the mesh.")]
+        public float shipExtraHeight = 2f;
         [Tooltip("Extra world-space nudge applied to every popup (ships, asteroids, transports).")]
         public Vector3 worldOffset = Vector3.zero;
         [Tooltip("Play-plane gap between stacked types on the same target (damage vs HP vs gems).")]
@@ -79,6 +81,7 @@ namespace TitanOrbit.Game
         public float IconScale => Mathf.Max(0.05f, iconScale);
         public float IconLeftPadding => Mathf.Max(0f, iconLeftPadding);
         public float ExtraHeight => Mathf.Max(0f, extraHeight);
+        public float ShipExtraHeight => Mathf.Max(0f, shipExtraHeight);
 
         /// <summary>Target visual height (from mesh / radius) plus <see cref="ExtraHeight"/>.</summary>
         public float ResolveLiftY(float targetHeight) =>

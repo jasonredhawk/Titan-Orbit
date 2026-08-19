@@ -1903,6 +1903,8 @@ namespace TitanOrbit.Game
                     shipEntity, networkId, team, shipLevel, branchIndex, chassisId, scale, muzzleOffset);
                 if (TryGetPresentationTransform(shipEntity, em, out var presentLt))
                     ApplyShipProxyTransform(shipEntity, em, true, presentLt, go.transform, scale);
+                if (networkId > 0)
+                    ShipWeaponProxyRegistry.SnapshotClearance(networkId);
             }
 
             // --- Pose sync for the one known entity (no WithEntityAccess / ToEntityArray) ---
@@ -2073,6 +2075,8 @@ namespace TitanOrbit.Game
                     entity, networkId, team, shipLevel, branchIndex, chassisId, scale, muzzleOffset);
                 if (TryGetPresentationTransform(entity, em, out var presentLt))
                     ApplyShipProxyTransform(entity, em, isLocalPlayerShip, presentLt, go.transform, scale);
+                if (networkId > 0)
+                    ShipWeaponProxyRegistry.SnapshotClearance(networkId);
 
                 // After pose apply: if still fully moon-docked, snap cinematic to landed (chassis swap).
                 // Prefer preserved surface dir so purchase keeps the spinning moon pose.
@@ -2198,6 +2202,7 @@ namespace TitanOrbit.Game
                         if (existingId > 0)
                             ShipWeaponProxyRegistry.Unregister(existingId, go.transform);
                         ShipWeaponProxyRegistry.Register(networkId, go.transform);
+                        ShipWeaponProxyRegistry.SnapshotClearance(networkId);
                         _proxyNetworkIds[entity] = networkId;
                     }
                 }
@@ -2246,10 +2251,7 @@ namespace TitanOrbit.Game
             ShipWingTractorBeamCollector.EnsureWingTractorBeamsOnHierarchy(go.transform);
 
             if (networkId > 0)
-            {
-                ShipWeaponProxyRegistry.Register(networkId, go.transform);
                 _proxyNetworkIds[entity] = networkId;
-            }
 
             // --- Bookkeeping for rebuild detection ---
             _proxyShipLevels[entity] = shipLevel;
@@ -2315,6 +2317,9 @@ namespace TitanOrbit.Game
             // --- World nameplate (name / badge / thin bars / top-role slots) ---
             // [HYBRID] Presentation only — vitals pushed from SyncShipProxyTransforms.
             EnsureShipNameplate(go, networkId);
+
+            if (networkId > 0)
+                ShipWeaponProxyRegistry.Register(networkId, go.transform);
 
             return go;
         }

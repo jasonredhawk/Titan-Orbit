@@ -19,7 +19,6 @@ namespace TitanOrbit.Game
     [DefaultExecutionOrder(67050)]
     public class FloatingCountPopup : MonoBehaviour
     {
-        const float MinPopupWorldY = 4f;
         const int TextSortingOrder = 5001;
         const int IconSortingOrder = 5000;
         static readonly int RenderQueueOverlay = (int)RenderQueue.Overlay;
@@ -55,6 +54,7 @@ namespace TitanOrbit.Game
         float _iconLeftPadding = 8f;
         float _baseWorldScale = 0.155f;
         float _extraHeight = 8f;
+        float _shipExtraHeight = 2f;
         Vector3 _worldOffset;
         float _hotAge;
         float _fontSize = 32f;
@@ -62,9 +62,9 @@ namespace TitanOrbit.Game
         float _textRight;
         float _bodyRadius;
         float _cachedTargetHeight;
-        Renderer _targetRenderer;
         Vector3 _lockedWorldPos;
         bool _hasLockedWorldPos;
+        bool _clearShipHull;
 
         public Action<FloatingCountPopup> OnFinished;
 
@@ -106,11 +106,13 @@ namespace TitanOrbit.Game
             Vector3 followWorldOffset,
             int stackLane,
             float stackSpacing,
-            float bodyRadius = 0f)
+            float bodyRadius = 0f,
+            bool clearShipHull = false)
         {
             ApplySettings(settings);
             _hasLockedWorldPos = false;
             _cachedTargetHeight = 0f;
+            _clearShipHull = clearShipHull;
             SetFollow(followAnchor, followWorldOffset, stackLane, stackSpacing, bodyRadius);
             worldMotionOffset = Vector3.zero;
             EnsureTextAndIcon();
@@ -135,7 +137,7 @@ namespace TitanOrbit.Game
             {
                 Vector3 initPos = transform.position + _worldOffset;
                 lockedY = initPos.y;
-                initPos.y = lockedY;
+                initPos.y = LiftAboveLocalShipIfOverlapping(initPos);
                 transform.position = initPos;
                 _lockedWorldPos = initPos;
                 _hasLockedWorldPos = true;
@@ -173,9 +175,11 @@ namespace TitanOrbit.Game
             int stackLane,
             float stackSpacing,
             Sprite iconSprite = null,
-            float bodyRadius = -1f)
+            float bodyRadius = -1f,
+            bool clearShipHull = false)
         {
             PullLiveSettings();
+            _clearShipHull = clearShipHull;
             SetFollow(followAnchor, followWorldOffset, stackLane, stackSpacing, bodyRadius);
             worldMotionOffset = Vector3.zero;
             _phase = Phase.Hot;
@@ -201,7 +205,9 @@ namespace TitanOrbit.Game
             if (followAnchor == null)
             {
                 Vector3 pos = transform.position;
-                lockedY = pos.y;
+                if (!_hasLockedWorldPos)
+                    lockedY = pos.y;
+                pos.y = LiftAboveLocalShipIfOverlapping(new Vector3(pos.x, lockedY, pos.z));
                 transform.position = pos;
                 _lockedWorldPos = pos;
                 _hasLockedWorldPos = true;
@@ -224,6 +230,7 @@ namespace TitanOrbit.Game
             _iconScale = settings.IconScale;
             _iconLeftPadding = settings.IconLeftPadding;
             _extraHeight = settings.ExtraHeight;
+            _shipExtraHeight = settings.ShipExtraHeight;
             _worldOffset = settings.worldOffset;
             _baseWorldScale = BodyCollisionMath.ShipPresentationScale;
         }
@@ -263,23 +270,17 @@ namespace TitanOrbit.Game
 
         void CacheTargetHeight(Transform anchor)
         {
-            _targetRenderer = null;
-            float height = _bodyRadius;
-            if (IsUsableAnchor(anchor))
+            if (!IsUsableAnchor(anchor))
             {
-                _targetRenderer = anchor.GetComponent<Renderer>();
-                if (_targetRenderer == null)
-                    _targetRenderer = anchor.GetComponentInChildren<Renderer>();
-
-                if (_targetRenderer != null && _targetRenderer.enabled)
-                    height = Mathf.Max(height, _targetRenderer.bounds.extents.y);
-                _cachedTargetHeight = height;
+                if (_cachedTargetHeight <= 0.0001f)
+                    _cachedTargetHeight = _bodyRadius;
                 return;
             }
 
-            // Don't replace a good height with 0 after the mesh is gone.
-            if (_cachedTargetHeight <= 0.0001f)
-                _cachedTargetHeight = height;
+            _cachedTargetHeight = _bodyRadius;
+            if (_clearShipHull &&
+                ShipWeaponProxyRegistry.TryGetCachedHullClearance(anchor, out float liftFromPivot, out _))
+                _cachedTargetHeight = Mathf.Max(_cachedTargetHeight, liftFromPivot);
         }
 
         void LockAtCurrentPose()
@@ -303,7 +304,20 @@ namespace TitanOrbit.Game
             _hasLockedWorldPos = true;
         }
 
-        float ResolveLiftY() => _cachedTargetHeight + Mathf.Max(0f, _extraHeight);
+        float ResolveLiftY()
+        {
+            float height = Mathf.Max(_bodyRadius, _cachedTargetHeight);
+            if (_clearShipHull &&
+                IsUsableAnchor(followAnchor) &&
+                ShipWeaponProxyRegistry.TryGetCachedHullClearance(followAnchor, out float liftFromPivot, out _))
+                height = Mathf.Max(height, liftFromPivot);
+
+            return height + Mathf.Max(0f, _extraHeight) +
+                   (_clearShipHull ? Mathf.Max(0f, _shipExtraHeight) : 0f);
+        }
+
+        float ResolveShipOverlapGap() =>
+            Mathf.Max(0f, _extraHeight) + Mathf.Max(0f, _shipExtraHeight);
 
         public void RelocateWorld(Vector3 worldPosition, float bodyRadius = 0f)
         {
@@ -315,7 +329,7 @@ namespace TitanOrbit.Game
             worldMotionOffset = Vector3.zero;
             worldPosition += _worldOffset;
             lockedY = worldPosition.y;
-            worldPosition.y = lockedY;
+            worldPosition.y = LiftAboveLocalShipIfOverlapping(worldPosition);
             transform.position = worldPosition;
             _lockedWorldPos = worldPosition;
             _hasLockedWorldPos = true;
@@ -520,6 +534,7 @@ namespace TitanOrbit.Game
                 if (_phase == Phase.Fading)
                     pos += GetRiseDirectionOnPlayPlane(cam) * FadeRiseSpeed * Time.deltaTime;
                 pos.y = _hasLockedWorldPos ? lockedY : pos.y;
+                pos.y = LiftAboveLocalShipIfOverlapping(pos);
                 transform.position = pos;
                 if (_phase == Phase.Fading)
                 {
@@ -552,7 +567,24 @@ namespace TitanOrbit.Game
 
             pos += worldMotionOffset;
             pos.y = followAnchor.position.y + ResolveLiftY() + _worldOffset.y;
+            pos.y = LiftAboveLocalShipIfOverlapping(pos);
             transform.position = pos;
+        }
+
+        float LiftAboveLocalShipIfOverlapping(Vector3 worldPos)
+        {
+            var manager = WorldFloatingCountManager.Instance;
+            if (manager == null ||
+                !manager.TryGetLocalShipVisualClearance(out Vector3 shipPos, out float shipTopY, out float shipRadius))
+                return worldPos.y;
+
+            float dx = worldPos.x - shipPos.x;
+            float dz = worldPos.z - shipPos.z;
+            float reach = shipRadius + Mathf.Max(1.25f, _shipExtraHeight);
+            if (dx * dx + dz * dz > reach * reach)
+                return worldPos.y;
+
+            return Mathf.Max(worldPos.y, shipTopY + ResolveShipOverlapGap() + _worldOffset.y);
         }
 
         void ApplyZoomScale()

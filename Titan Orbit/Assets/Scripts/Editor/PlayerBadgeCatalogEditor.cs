@@ -110,9 +110,23 @@ namespace TitanOrbit.Editor
                         dirty = true;
                     }
 
-                    if (importer.filterMode != FilterMode.Trilinear)
+                    // Bilinear (not trilinear): one mip, no extra blend-softening.
+                    // Kaiser: sharper generated mips. Negative bias: pick a crisper level.
+                    if (importer.filterMode != FilterMode.Bilinear)
                     {
-                        importer.filterMode = FilterMode.Trilinear;
+                        importer.filterMode = FilterMode.Bilinear;
+                        dirty = true;
+                    }
+
+                    if (importer.mipmapFilter != TextureImporterMipFilter.KaiserFilter)
+                    {
+                        importer.mipmapFilter = TextureImporterMipFilter.KaiserFilter;
+                        dirty = true;
+                    }
+
+                    if (importer.anisoLevel < 4)
+                    {
+                        importer.anisoLevel = 4;
                         dirty = true;
                     }
 
@@ -139,7 +153,7 @@ namespace TitanOrbit.Editor
 
                     if (dirty)
                     {
-                        AssetDatabase.ImportAsset(path, ImportAssetOptions.ForceUpdate);
+                        importer.SaveAndReimport();
                         changed++;
                     }
                 }

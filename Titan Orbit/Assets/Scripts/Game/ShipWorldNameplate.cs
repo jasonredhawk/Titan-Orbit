@@ -100,6 +100,12 @@ namespace TitanOrbit.Game
         /// </summary>
         const float PlayerBadgeSize = 2.97f;
 
+        /// <summary>
+        /// Sharper mip than the GPU would pick from on-screen size. Still uses mipmaps so
+        /// the emblem does not crawl/pixelate while the camera moves.
+        /// </summary>
+        const float PlayerBadgeMipBias = -0.85f;
+
         const float HealthHighRatio = 2f / 3f;
         const float HealthLowRatio = 1f / 3f;
 
@@ -109,7 +115,7 @@ namespace TitanOrbit.Game
         /// <summary>
         /// Bump when row spacing / fonts / clearance policy change so live proxies refresh layout.
         /// </summary>
-        const int LayoutVersion = 18;
+        const int LayoutVersion = 19;
 
         /// <summary>Max name characters before width-fit (wider plate allows longer names).</summary>
         const int MaxNameCharacters = 28;
@@ -996,7 +1002,10 @@ namespace TitanOrbit.Game
                 _playerBadge.sortingOrder = PlayerBadgeSortingOrder;
                 ApplyPlayerBadgeRendererStyle(_playerBadge);
                 if (_playerBadge.enabled && _playerBadge.sprite != null)
+                {
+                    ApplyCrispBadgeSampling(_playerBadge.sprite);
                     ScaleSpriteToSize(_playerBadge, PlayerBadgeSize);
+                }
             }
 
             // Fonts may be from an older build — re-apply current sizes.
@@ -1153,7 +1162,10 @@ namespace TitanOrbit.Game
                 _playerBadge.enabled = show;
                 ApplyPlayerBadgeRendererStyle(_playerBadge);
                 if (show)
+                {
+                    ApplyCrispBadgeSampling(sprite);
                     ScaleSpriteToSize(_playerBadge, PlayerBadgeSize);
+                }
             }
 
             _cachedBadgeId = cleaned;
@@ -1197,6 +1209,29 @@ namespace TitanOrbit.Game
             renderer.shadowCastingMode = ShadowCastingMode.Off;
             renderer.receiveShadows = false;
             renderer.allowOcclusionWhenDynamic = false;
+            if (renderer.sprite != null)
+                ApplyCrispBadgeSampling(renderer.sprite);
+        }
+
+        /// <summary>
+        /// Bilinear + mipmaps + a negative mip bias: sharp at nameplate size, but the GPU
+        /// still has mip levels so motion does not crawl like point filtering would.
+        /// </summary>
+        static void ApplyCrispBadgeSampling(Sprite sprite)
+        {
+            if (sprite == null)
+                return;
+
+            Texture tex = sprite.texture;
+            if (tex == null)
+                return;
+
+            if (tex.filterMode != FilterMode.Bilinear)
+                tex.filterMode = FilterMode.Bilinear;
+            if (tex.anisoLevel < 4)
+                tex.anisoLevel = 4;
+            if (Mathf.Abs(tex.mipMapBias - PlayerBadgeMipBias) > 0.01f)
+                tex.mipMapBias = PlayerBadgeMipBias;
         }
 
         static Material GetPlayerBadgeMaterial()

@@ -405,7 +405,7 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Detects ship gem/health deltas and shows floating popups parked outside the hull.
+        /// Detects ship gem/health deltas and shows floating popups parked above the live hull.
         /// Remote health/burn floats only appear when that hull is on screen.
         /// People load/unload popups are driven by <see cref="PeopleTransportVfxDriver"/> instead.
         /// </summary>
@@ -757,7 +757,8 @@ namespace TitanOrbit.Game
                 WorldFloatingCountManager.TargetIdForShip(networkId),
                 anchor,
                 WorldFloatingCountManager.ResolveShipBodyRadius(anchor),
-                remainingHealth);
+                remainingHealth,
+                clearShipHull: true);
         }
 
         float PeekTrackedShipHealth(int networkId, float fallbackHealth)
