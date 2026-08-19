@@ -23,8 +23,10 @@ namespace TitanOrbit.UI
     /// Hidden on the main menu, Join Team, and Orbit Menu.
     /// <para>
     /// [TITAN-ORBIT] Reads the local ship's ghosted <see cref="EquippedEquipmentElement"/>
-    /// buffer and <see cref="ShipLoadoutState.NextRocketFireTime"/>. Skips all ship queries
-    /// while <see cref="ClientJoinSettleCache.ShouldSkipShipEntityQueries"/> (Join Team Crash!!!).
+    /// buffer and <see cref="ShipLoadoutState.NextRocketFireTime"/>. Skips ship gathers
+    /// while <see cref="ClientJoinSettleCache.ShouldSkipShipEntityQueries"/> (Join Team Crash!!!)
+    /// but keeps the last paint visible — MEGA plow gem Instantiates used to hide this list
+    /// for a frame every rock.
     /// </para>
     /// Dark space-gamer chrome — same void glass as <see cref="ShipStatTooltipChrome"/>.
     /// </summary>
@@ -97,28 +99,38 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// Refreshes the list from the local ship. No ECS gathers during join Instantiates.
+        /// Refreshes the list from the local ship. No ECS gathers during join Instantiates;
+        /// combat gem bursts keep the last paint instead of blinking the panel off.
         /// </summary>
         void LateUpdate()
         {
-            if (ClientJoinSettleCache.ShouldSkipShipEntityQueries)
-            {
-                SetVisible(false);
-                return;
-            }
-
-            // --- Menu / team pick ---
+            // --- Menu / team pick / Orbit Menu ---
             // [TITAN-ORBIT] Same suppress as speedometer. Infinite-rocket debug must not
             // paint this overlay on Main Menu or Join Team.
             if (ClientTeamFlowState.ShouldSuppressLocalPlayerControl() ||
                 IsMainMenuShowing() ||
-                !EcsGameBridge.HasLocalPlayerShip())
+                MoonOrbitClientState.IsOrbitMenuVisible)
             {
                 SetVisible(false);
                 return;
             }
 
-            if (MoonOrbitClientState.IsOrbitMenuVisible)
+            // --- Instantiates gate: hold last paint, do not hide ---
+            // [TITAN-ORBIT] ShouldSkipShipEntityQueries is also true mid-combat when MEGA plow
+            // (or any asteroid kill) Instantiates gem ghosts. SetVisible(false) here blinked
+            // the left-side list every collision. Queries stay skipped (Join Team Crash!!!).
+            if (ClientJoinSettleCache.ShouldSkipShipEntityQueries)
+            {
+                if (_panel != null &&
+                    _panel.gameObject.activeSelf &&
+                    (EcsGameBridge.HasLocalPlayerShip() || ShipDisplayPose.HasLocalPose))
+                    return;
+
+                SetVisible(false);
+                return;
+            }
+
+            if (!EcsGameBridge.HasLocalPlayerShip())
             {
                 SetVisible(false);
                 return;

@@ -20,9 +20,7 @@ namespace TitanOrbit.Game
         const float TileSize = 72f;
         const float TileSpacing = 8f;
 
-        static readonly Color RingIdle = new Color(0.45f, 0.78f, 0.95f, 0.85f);
         static readonly Color RingSelected = new Color(1f, 0.82f, 0.35f, 0.95f);
-        static readonly Color ChipFill = new Color(0f, 0f, 0f, 0.55f);
         static readonly Color EmptySlot = new Color(0.18f, 0.24f, 0.32f, 0.85f);
         static readonly Color CaptionColor = new Color(0.72f, 0.84f, 0.96f, 0.92f);
         static readonly Color PanelFill = new Color(0.04f, 0.07f, 0.12f, 0.94f);
@@ -65,8 +63,9 @@ namespace TitanOrbit.Game
             if (_emptyMark != null)
                 _emptyMark.gameObject.SetActive(!hasSprite);
 
+            // Click target only — no plate behind the circular sprite.
             if (_chipRing != null)
-                _chipRing.color = hasSprite ? RingSelected : RingIdle;
+                _chipRing.color = Color.clear;
 
             if (_caption != null)
                 _caption.text = hasSprite ? "Change badge" : "Choose a badge";

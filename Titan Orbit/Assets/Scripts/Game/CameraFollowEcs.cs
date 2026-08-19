@@ -24,7 +24,8 @@ namespace TitanOrbit.Game
     /// MEGA catalog owns framing. <see cref="CurrentHeightZoomFactor"/> exposes that zoom proportion
     /// for the collapsed minimap (<see cref="TitanOrbit.UI.MinimapController"/>) so both views stay in sync.
     /// During gem Instantiates (<see cref="ClientJoinSettleCache.ShouldSkipShipEntityQueries"/>) look-ahead
-    /// freezes and ship level holds last-good — avoids false zoom when asteroids break or hits spike speed.
+    /// freezes, ship level holds last-good, and MEGA vs family camera stays latched — avoids false
+    /// zoom when MEGA plow Instantiates gem ghosts.
     /// Ship flight smoothing stays owned by NetCode — we only SmoothDamp camera composition.
     /// </para>
     /// Moon-dock cinematic overrides the follow target with a hard lock on the spinning hull.
@@ -122,6 +123,12 @@ namespace TitanOrbit.Game
         /// <see cref="CameraFollowSettings.ComputeTargetHeight"/>.
         /// </summary>
         float _familyCameraHeightMul = 1f;
+
+        /// <summary>
+        /// Last resolved MEGA vs family camera. Held while gem Instantiates skip ship gathers
+        /// so MEGA plow does not swap to the family profile for a frame (zoom flicker).
+        /// </summary>
+        bool _latchedIsMega;
 
         /// <summary>[UNITY] Cached Camera on this GameObject (may be null if misconfigured).</summary>
         UnityEngine.Camera cam;
@@ -398,11 +405,18 @@ namespace TitanOrbit.Game
                 }
             }
 
-            var world = EcsGameBridge.ClientWorld;
-            bool isMega = world != null && world.IsCreated
-                && EcsGameBridge.TryGetLocalShipEntityOnWorld(world, out var shipEntity)
-                && world.EntityManager.HasComponent<MegaShipState>(shipEntity)
-                && world.EntityManager.GetComponentData<MegaShipState>(shipEntity).IsMega;
+            // --- MEGA catalog camera (latch through gem Instantiates) ---
+            // [TITAN-ORBIT] TryGetLocalShipEntityOnWorld is false during GhostSpawnBacklog
+            // (MEGA plow → asteroid destroy → gem ghosts). Treating that miss as “not MEGA”
+            // swapped this camera onto the family profile for a frame — zoom / UI flicker.
+            bool isMega;
+            if (EcsGameBridge.TryGetLocalMegaShipState(out _))
+                isMega = true;
+            else if (ClientJoinSettleCache.ShouldSkipShipEntityQueries)
+                isMega = _latchedIsMega;
+            else
+                isMega = false;
+            _latchedIsMega = isMega;
             if (isMega)
             {
                 var megaCatalog = MegaShipCatalog.Load();

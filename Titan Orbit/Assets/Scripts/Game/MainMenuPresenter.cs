@@ -478,7 +478,7 @@ namespace TitanOrbit.Game
             chipRt.anchoredPosition = Vector2.zero;
 
             var chipFill = chipGo.GetComponent<Image>();
-            chipFill.color = new Color(0.45f, 0.78f, 0.95f, 0.85f);
+            chipFill.color = Color.clear;
             chipFill.raycastTarget = true;
 
             DestroyChildIfPresent(chipGo.transform, "Ring");

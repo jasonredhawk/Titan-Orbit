@@ -164,6 +164,11 @@ namespace TitanOrbit.UI
         /// used to SetActive(false) the speedometer for a frame on asteroid destroy (gem Instantiates).
         /// </summary>
         bool _hasHudCache;
+        /// <summary>
+        /// Last MEGA vs regular hull used for the OVERDRIVE band. Held when gem Instantiates
+        /// skip the entity read so MEGA plow does not flash a fake OD zone.
+        /// </summary>
+        bool _latchedLocalMega;
         ShipState _cachedShip;
         ShipMotorConfig _cachedMotor;
         ShipKinematics _cachedKinematics;
@@ -1589,8 +1594,15 @@ namespace TitanOrbit.UI
             // MEGAs have no overdrive — keep the bar at cruise so Shift does not paint a fake OD zone.
             var vizWorld = EcsGameBridge.GetVisualizationWorld();
             bool localMega = vizWorld != null && vizWorld.IsCreated
+                && shipEntity != Entity.Null
+                && vizWorld.EntityManager.Exists(shipEntity)
                 && vizWorld.EntityManager.HasComponent<MegaShipState>(shipEntity)
                 && vizWorld.EntityManager.GetComponentData<MegaShipState>(shipEntity).IsMega;
+            if (!localMega && EcsGameBridge.TryGetLocalMegaShipState(out _))
+                localMega = true;
+            else if (!localMega && ClientJoinSettleCache.ShouldSkipShipEntityQueries)
+                localMega = _latchedLocalMega;
+            _latchedLocalMega = localMega;
             float overdriveCapacityMult = localMega ? 1f : ResolveOverdriveCapacityMult(motor);
             float overdriveActiveMult = 1f;
             if (vizWorld != null && vizWorld.IsCreated)

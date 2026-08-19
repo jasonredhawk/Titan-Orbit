@@ -26,6 +26,7 @@ namespace TitanOrbit.UI
     /// Eligibility walks <see cref="EcsWorldVisualizer"/> planet proxies (no fresh EntityQuery).
     /// While controlling, <see cref="PlanetaryDefenseTurretClientState.DesiredViewRadiusWorld"/>
     /// is set from the pad's engage range so <c>CameraFollowEcs</c> zooms out to fit bullets.
+    /// GhostSpawnBacklog (asteroid → gem Instantiates) skips ship gathers but does not hide the button.
     /// </para>
     /// </summary>
     // Before CameraFollowEcs (67001) so pad pose is fresh when possession starts.
@@ -82,11 +83,11 @@ namespace TitanOrbit.UI
         /// </summary>
         void LateUpdate()
         {
+            // --- Instantiates gate: keep last button, do not hide ---
+            // [TITAN-ORBIT] GhostSpawnBacklog is also true mid-combat when asteroids explode
+            // into gem ghosts (MEGA plow). HideButton() here blinked the Take Control tile.
             if (ClientJoinSettleCache.ShouldSkipShipEntityQueries)
-            {
-                HideButton();
                 return;
-            }
 
             EnsureWarmed();
 

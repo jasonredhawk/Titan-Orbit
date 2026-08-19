@@ -32,6 +32,7 @@ namespace TitanOrbit.UI
     /// cannot paint through it.
     /// MEGA hulls keep the ten buttons visible but disabled (no Extra Level purchases) and hide
     /// the little tick squares so the strip does not look like upgrades are still available.
+    /// MEGA identity is latched through gem Instantiates (plow destroy) so ticks/costs do not flicker.
     /// Quick-stat chips and hover details use <see cref="MegaShipStatsCalculator"/> (no +per-buy).
     /// Chip values and tip bodies are rebuilt when the ship / ability snapshot key changes
     /// (new ship or ability purchase) — never every frame for live HP/speed/cargo.
@@ -342,11 +343,29 @@ namespace TitanOrbit.UI
 
         /// <summary>
         /// True when the local hull is a MEGA. Stats chips stay useful; Extra Level purchases
-        /// and the tick squares are blocked. Reads <see cref="MegaShipState"/> on the owner ghost.
+        /// and the tick squares are blocked.
+        /// <para>
+        /// [TITAN-ORBIT] MEGA plow instantly destroys rocks → gem Instantiates →
+        /// <see cref="ClientJoinSettleCache.GhostSpawnBacklog"/>. A miss from
+        /// <see cref="TryGetLocalShipEntityOnWorld"/> used to read as “not MEGA” and flip the
+        /// bottom strip (ticks + gem costs) for a frame. Seeded
+        /// <see cref="EcsGameBridge.TryGetLocalMegaShipState"/> plus <see cref="_lastMegaHud"/>
+        /// keep chrome stable through that burst.
+        /// </para>
         /// </summary>
-        static bool IsLocalShipMega()
+        bool IsLocalShipMega()
         {
-            return TryGetLocalMegaCatalogIndex(out _);
+            if (TryGetLocalMegaCatalogIndex(out _))
+                return true;
+
+            // --- Live regular hull ---
+            // [HYBRID] Seeded ship state without MegaShipState means this is not a MEGA.
+            if (EcsGameBridge.TryGetLocalShipState(out _))
+                return false;
+
+            // --- Instantiates miss: hold last painted identity ---
+            // [TITAN-ORBIT] Do not treat a gated entity lookup as “sold the MEGA”.
+            return _lastMegaHud == true;
         }
 
         /// <summary>
@@ -358,18 +377,18 @@ namespace TitanOrbit.UI
         static bool TryGetLocalMegaCatalogIndex(out ushort catalogIndex)
         {
             catalogIndex = 0;
-            var world = EcsGameBridge.ClientWorld;
-            if (world == null || !world.IsCreated)
-                return false;
-            if (!EcsGameBridge.TryGetLocalShipEntityOnWorld(world, out var shipEntity))
-                return false;
-            if (!world.EntityManager.HasComponent<MegaShipState>(shipEntity))
-                return false;
-            var mega = world.EntityManager.GetComponentData<MegaShipState>(shipEntity);
-            if (!mega.IsMega)
-                return false;
-            catalogIndex = mega.CatalogIndex;
-            return true;
+
+            // --- Seeded / cached owner (safe during GhostSpawnBacklog) ---
+            // [TITAN-ORBIT] TryGetLocalShipEntityOnWorld gathers and returns false while
+            // ShouldSkipShipEntityQueries — that is the MEGA-plow UI flicker. Prefer the
+            // Instantiates-hook seed the same way ShipState HUD reads do.
+            if (EcsGameBridge.TryGetLocalMegaShipState(out MegaShipState mega))
+            {
+                catalogIndex = mega.CatalogIndex;
+                return true;
+            }
+
+            return false;
         }
 
         private bool ShouldShowUpgradeBar() =>
