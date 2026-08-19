@@ -9,8 +9,8 @@ namespace TitanOrbit.Game
 {
     /// <summary>
     /// Per-planet orbit-ring occupancy published each client presentation tick.
-    /// World rings and the minimap share this so every positively locked team's color is
-    /// visible — cycling when more than one team is captured in the ring.
+    /// World rings and the minimap share this so every team that can load or unload troops
+    /// tints the ring — cycling when more than one such team is in the ring.
     /// </summary>
     public static class PlanetOrbitRingOccupancy
     {
@@ -26,6 +26,13 @@ namespace TitanOrbit.Game
         /// Occupied colors come from <see cref="TeamIdExtensions.ToColor"/>.
         /// </summary>
         public static readonly Color IdleTint = Color.white;
+
+        /// <summary>
+        /// World units the orbit-ring fill and turret-pad discs sit below the planet equator.
+        /// Keeps translucent floors under ship hulls instead of cutting through them.
+        /// Presentation only — orbit membership and pad deposit still use the XZ plane.
+        /// </summary>
+        public const float ZoneDiscBelowFlightPlane = 0.2f;
 
         /// <summary>How long each occupying team holds the ring tint before the next.</summary>
         public const float SecondsPerOccupyingTeam = 1f;
@@ -202,8 +209,8 @@ namespace TitanOrbit.Game
                     continue;
 
                 var o = orbit.ValueRO;
-                // Positive lock only — ignore ships still flying into or blending onto the rail.
-                if (!o.OrbitLocked || o.OrbitPlanetId == 0)
+                // Troop transfer lock — same gate as load/unload, not mere ring entry or coast.
+                if (!o.IsTransferringPeople || o.OrbitPlanetId == 0)
                     continue;
 
                 PlanetOrbitRingOccupancy.AddLockedShip(o.OrbitPlanetId, ship.ValueRO.Team);

@@ -29,8 +29,8 @@ namespace TitanOrbit.Game
         [SerializeField] Color orbitZoneTint = Color.white; // unused at runtime — occupancy IdleTint is the shared idle RGB
         [Range(0f, 1f)]
         [SerializeField] float orbitZonePeakAlpha = 0.3f;
-        [Tooltip("Local Y offset for the troop-transfer ring. 0 = planet equator / cross-section.")]
-        [SerializeField] float orbitZoneHeightBelowPlanet = 0f;
+        [Tooltip("World-unit drop for the troop-transfer ring. Matches turret-pad discs.")]
+        [SerializeField] float orbitZoneHeightBelowPlanet = PlanetOrbitRingOccupancy.ZoneDiscBelowFlightPlane;
 
         Transform _planetRoot;
         float _planetSize = 1f;
@@ -110,8 +110,9 @@ namespace TitanOrbit.Game
             if (drawOrbitZoneFill)
             {
                 Quaternion flatXZ = Quaternion.Euler(-90f, 0f, 0f);
+                // World-space drop (not planet-local) so every planet matches turret-pad discs.
                 Vector3 offsetBelow = new Vector3(0f, -orbitZoneHeightBelowPlanet, 0f);
-                Matrix4x4 zoneMatrix = planetMatrix * Matrix4x4.Translate(offsetBelow) * Matrix4x4.Rotate(flatXZ);
+                Matrix4x4 zoneMatrix = Matrix4x4.Translate(offsetBelow) * planetMatrix * Matrix4x4.Rotate(flatXZ);
                 // Occupied tint is published by PlanetOrbitRingOccupancySystem from ghosted
                 // ShipOrbitState (any locked-in player ship). Several teams cycle ~1s each.
                 PlanetOrbitRingOccupancy.ResolveFill(

@@ -42,10 +42,11 @@ namespace TitanOrbit.ECS
         [GhostField] public bool OrbitLocked;
 
         /// <summary>
-        /// [TITAN-ORBIT] True when this ship is dwelling long enough that people load/unload is
-        /// in progress (or inbound crew is still in flight). Written by
+        /// [TITAN-ORBIT] True when this ship can load or unload troops (dwell complete and
+        /// cargo/planet allow a transfer, or inbound crew is still in flight). Written by
         /// <c>PeopleTransportDispatchSystem</c>; the motor preserves it while
         /// <see cref="UsingOrbitMotor"/> stays true and clears it on thrust / leave.
+        /// Ghosted so every client tints that planet's orbit ring for this lock.
         /// </summary>
         [GhostField] public bool IsTransferringPeople;
     }

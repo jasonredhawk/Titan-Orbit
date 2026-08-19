@@ -6,8 +6,10 @@ namespace TitanOrbit.Data
 {
     /// <summary>
     /// Shared Orbit Menu copy for FAMILY STATS (non-identity <see cref="ShipFamilySpecialBonuses"/>)
-    /// and a one-line family display name. Presentation-only — no ECS writes.
+    /// and family display names. Presentation-only — no ECS writes.
     /// Hide the family-stat block when <see cref="ShipFamilySpecialBonuses.IsIdentity"/>.
+    /// Tree cards use <see cref="FormatFamilyDisplayName"/> (title case); header rails use
+    /// <see cref="FormatFamilyCaption"/> (uppercase).
     /// </summary>
     public static class FamilyStatHudCopy
     {
@@ -18,6 +20,50 @@ namespace TitanOrbit.Data
                 return "UNKNOWN FAMILY";
             string split = Core.DisplayNameFormatting.SplitCamelCase(family.familyId.Trim());
             return string.IsNullOrWhiteSpace(split) ? "UNKNOWN FAMILY" : split.ToUpperInvariant();
+        }
+
+        /// <summary>
+        /// Title-case family label for upgrade-tree cards (AstroEagle → Astro Eagle).
+        /// Unlike <see cref="FormatFamilyCaption"/> this is not uppercased — it sits under
+        /// the hull name as a quieter second line, just above the buy chip.
+        /// </summary>
+        /// <param name="family">Store-planet or chassis family. Null / blank id → empty.</param>
+        /// <returns>Spaced words, or empty when there is nothing to show.</returns>
+        public static string FormatFamilyDisplayName(ShipFamilyDefinition family)
+        {
+            if (family == null || string.IsNullOrWhiteSpace(family.familyId))
+                return string.Empty;
+            string split = Core.DisplayNameFormatting.SplitCamelCase(family.familyId.Trim());
+            return string.IsNullOrWhiteSpace(split) ? string.Empty : split;
+        }
+
+        /// <summary>
+        /// Family line for one upgrade-tree slot. Regular chassis use
+        /// <paramref name="fallbackFamily"/> (the docked planet's ladder). MEGA hulls use the
+        /// catalog visual line so CraizanStar reads as Craizan Star — same camel-split as
+        /// CosmicShark → Cosmic Shark.
+        /// </summary>
+        /// <param name="chassisId">Ladder or MEGA chassis token. May be null.</param>
+        /// <param name="fallbackFamily">Planet / ship family when the slot is not a MEGA.</param>
+        public static string FormatFamilyDisplayNameForChassis(string chassisId, ShipFamilyDefinition fallbackFamily)
+        {
+            // --- MEGA visual line ---
+            // [TITAN-ORBIT] MEGA ids are MEGA_007, not Family_Index. The gameplay family on
+            // the planet header is not this hull's art line — Craizan / Leopard / Okamoto is.
+            if (MegaShipCatalog.IsMegaChassisId(chassisId))
+            {
+                MegaShipCatalog mega = MegaShipCatalog.Load();
+                if (mega != null
+                    && mega.TryGetEntryByChassisId(chassisId, out MegaShipCatalogEntry entry)
+                    && entry != null)
+                {
+                    string visual = Core.DisplayNameFormatting.SplitCamelCase(entry.visualFamily.ToString());
+                    if (!string.IsNullOrWhiteSpace(visual))
+                        return visual;
+                }
+            }
+
+            return FormatFamilyDisplayName(fallbackFamily);
         }
 
         /// <summary>

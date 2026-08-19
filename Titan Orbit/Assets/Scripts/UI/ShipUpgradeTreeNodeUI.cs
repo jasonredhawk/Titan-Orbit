@@ -7,9 +7,12 @@ using UnityEngine.UI;
 namespace TitanOrbit.UI
 {
     /// <summary>
-    /// Single ship node widget in the upgrade tree prefab. Displays level, name, price, preview sprite,
-    /// and ten-segment power bar. Population and click handlers are driven by <see cref="ShipUpgradeTreeUI"/>
-    /// and <see cref="OrbitStationUI"/>; this class owns layout scaling and price-button chrome.
+    /// Single ship node widget in the upgrade tree prefab. Displays level, hull name, family name,
+    /// price, preview sprite, and ten-segment power bar. Population and click handlers are driven by
+    /// <see cref="ShipUpgradeTreeUI"/> and <see cref="OrbitStationUI"/>; this class owns layout
+    /// scaling and price-button chrome.
+    /// The family line sits under the hull name and just above the buy chip
+    /// (CosmicShark → Cosmic Shark, smaller than the ship name).
     /// Level-7 MEGA cards use a separate bronze-void fill, gold frame, and "MEGA SHIP" caption
     /// so they read as boss hulls next to the navy L1–L6 family cards.
     /// </summary>
@@ -33,6 +36,10 @@ namespace TitanOrbit.UI
             /// <summary>One line. The old 26px slot invited wrap even when overflow had room.</summary>
             public const float NameHeight = 16f;
             public const float NameMinHeight = 16f;
+            /// <summary>Family line under the hull name — a few points smaller so Cosmic Shark reads as secondary.</summary>
+            public const float FamilyFontSize = 8f;
+            public const float FamilyHeight = 12f;
+            public const float FamilyMinHeight = 11f;
             /// <summary>MEGA SHIP overlay — 2pt above the ship name so it reads as the card rank.</summary>
             public const float MegaCaptionFontExtra = 2f;
             /// <summary>Tight tray inset — a few pixels so lanes sit inside the dark well.</summary>
@@ -61,6 +68,11 @@ namespace TitanOrbit.UI
         [SerializeField] private Button priceButton;
         [SerializeField] private TextMeshProUGUI levelText;
         [SerializeField] private TextMeshProUGUI shipNameText;
+        /// <summary>
+        /// Optional prefab wire for the family line. Runtime cards create this under LeftMiddle
+        /// when the older ShipUpgradeTreeNode prefab has no child — do not require a prefab rebuild.
+        /// </summary>
+        [SerializeField] private TextMeshProUGUI familyNameText;
         [SerializeField] private TextMeshProUGUI priceText;
         [SerializeField] private Image previewImage;
         [SerializeField] private ShipUpgradeTreePowerBarUI powerBar;
@@ -112,6 +124,7 @@ namespace TitanOrbit.UI
         private VerticalLayoutGroup _previewColVlg;
         private LayoutElement _levelLe;
         private LayoutElement _nameLe;
+        private LayoutElement _familyLe;
         private LayoutElement _priceLe;
         private Image _priceButtonImage;
         private Image _priceButtonBorder;
@@ -138,6 +151,12 @@ namespace TitanOrbit.UI
         private bool _cachedRegularTextColors;
         private Color _cachedLevelColor = Color.white;
         private Color _cachedNameColor = Color.white;
+        private Color _cachedFamilyColor = FamilyCaptionColor;
+        /// <summary>Muted cyan so the family line is quieter than the hull name.</summary>
+        static readonly Color FamilyCaptionColor = new Color(0.62f, 0.78f, 0.95f, 0.88f);
+        /// <summary>Warm gold on MEGA cards so the family line matches the bronze frame.</summary>
+        static readonly Color MegaFamilyCaptionColor = new Color(0.86f, 0.76f, 0.52f, 0.88f);
+        static readonly Color MegaFamilyOccupiedColor = new Color(0.52f, 0.52f, 0.54f, 0.85f);
 
         public void ConfigureLayout(bool useMoonHorizontal)
         {
@@ -285,6 +304,9 @@ namespace TitanOrbit.UI
                 shipNameText.maxVisibleLines = 1;
                 shipNameText.margin = new Vector4(8f, 1f, 8f, 1f);
             }
+
+            // Hero card has no buy chip — hide the family line so it does not float on the art.
+            HideFamilyNameLabel();
 
             if (_nameLe != null)
             {
@@ -584,13 +606,93 @@ namespace TitanOrbit.UI
 
             if (shipNameText != null && shipNameText.transform.parent != middle)
                 shipNameText.transform.SetParent(middle, false);
+
+            // Family sits under the hull name and just above the buy chip.
+            EnsureFamilyNameLabel();
+            if (familyNameText != null && familyNameText.transform.parent != middle)
+                familyNameText.transform.SetParent(middle, false);
+
             Transform priceRoot = ResolvePriceRootTransform();
             if (priceRoot != null && priceRoot.parent != middle)
                 priceRoot.SetParent(middle, false);
 
             if (levelText != null)
                 levelText.transform.SetAsFirstSibling();
+            if (shipNameText != null)
+                shipNameText.transform.SetAsFirstSibling();
+            if (familyNameText != null)
+                familyNameText.transform.SetSiblingIndex(shipNameText != null ? 1 : 0);
+            if (priceRoot != null)
+                priceRoot.SetAsLastSibling();
             middle.SetAsLastSibling();
+        }
+
+        /// <summary>
+        /// Builds or finds the family-name line under the hull name. Older ShipUpgradeTreeNode
+        /// prefabs have no FamilyName child, so runtime cards create one in LeftMiddle.
+        /// Sidebar hero hides this — that card overlays the hull name on the silhouette
+        /// and has no price button for the family line to sit above.
+        /// </summary>
+        void EnsureFamilyNameLabel()
+        {
+            if (_sidebarHeroLayout)
+            {
+                HideFamilyNameLabel();
+                return;
+            }
+
+            Transform middle = transform.Find("ContentRow/LeftColumn/LeftMiddle");
+            if (middle == null)
+                return;
+
+            if (familyNameText == null)
+            {
+                Transform existing = middle.Find("FamilyName");
+                if (existing != null)
+                    familyNameText = existing.GetComponent<TextMeshProUGUI>();
+            }
+
+            if (familyNameText == null)
+            {
+                // [UNITY] Runtime widget — prefab assets cannot SetParent, but scene instances can.
+                var go = new GameObject("FamilyName", typeof(RectTransform));
+                go.transform.SetParent(middle, false);
+                familyNameText = go.AddComponent<TextMeshProUGUI>();
+                familyNameText.raycastTarget = false;
+                familyNameText.fontStyle = FontStyles.Normal;
+                familyNameText.color = FamilyCaptionColor;
+                familyNameText.alignment = TextAlignmentOptions.Left;
+                familyNameText.enableWordWrapping = false;
+                familyNameText.overflowMode = TextOverflowModes.Overflow;
+                familyNameText.maxVisibleLines = 1;
+                if (shipNameText != null && shipNameText.font != null)
+                    familyNameText.font = shipNameText.font;
+                else if (TMP_Settings.defaultFontAsset != null)
+                    familyNameText.font = TMP_Settings.defaultFontAsset;
+            }
+
+            if (_familyLe == null)
+                _familyLe = familyNameText.GetComponent<LayoutElement>();
+            if (_familyLe == null)
+                _familyLe = familyNameText.gameObject.AddComponent<LayoutElement>();
+            _familyLe.ignoreLayout = false;
+            _familyLe.flexibleHeight = 0f;
+            _familyLe.flexibleWidth = 1f;
+        }
+
+        /// <summary>Collapses the family row so hero / empty slots do not keep a leftover caption.</summary>
+        void HideFamilyNameLabel()
+        {
+            if (familyNameText != null)
+                familyNameText.gameObject.SetActive(false);
+            if (_familyLe == null && familyNameText != null)
+                _familyLe = familyNameText.GetComponent<LayoutElement>();
+            if (_familyLe != null)
+            {
+                _familyLe.ignoreLayout = true;
+                _familyLe.preferredHeight = 0f;
+                _familyLe.minHeight = 0f;
+            }
         }
 
         /// <summary>Puts Lv N / MEGA SHIP back in the left-column stack (not a card overlay).</summary>
@@ -639,6 +741,8 @@ namespace TitanOrbit.UI
                 _levelLe = levelText.GetComponent<LayoutElement>();
             if (shipNameText != null)
                 _nameLe = shipNameText.GetComponent<LayoutElement>();
+            if (familyNameText != null)
+                _familyLe = familyNameText.GetComponent<LayoutElement>();
             EnsurePriceButton();
             if (priceButton != null)
                 _priceLe = priceButton.GetComponent<LayoutElement>();
@@ -887,6 +991,13 @@ namespace TitanOrbit.UI
                 ApplyTreeTitleTextSettings();
                 if (_nameLe != null)
                     _nameLe.minHeight = ScalePx(RefLayout.NameMinHeight, heroHScale);
+
+                EnsureFamilyNameLabel();
+                ApplyTextScale(familyNameText, _familyLe, RefLayout.FamilyFontSize, RefLayout.FamilyHeight, heroFontScale, heroHScale);
+                ApplyTreeFamilyTextSettings();
+                if (_familyLe != null)
+                    _familyLe.minHeight = ScalePx(RefLayout.FamilyMinHeight, heroHScale);
+
                 ApplyTextScale(priceText, _priceLe, RefLayout.PriceFontSize, RefLayout.PriceHeight, heroFontScale, heroHScale);
                 if (_priceLe != null)
                     _priceLe.minWidth = ScalePx(RefLayout.PriceMinWidth, wScale);
@@ -1444,6 +1555,24 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
+        /// Family line: same overflow as the hull name, not bold, so Cosmic Shark stays
+        /// secondary to Hawk. Word wrap is off — camel-split already inserted the space.
+        /// </summary>
+        void ApplyTreeFamilyTextSettings()
+        {
+            if (familyNameText == null || _sidebarHeroLayout)
+                return;
+
+            familyNameText.enableWordWrapping = false;
+            familyNameText.overflowMode = TextOverflowModes.Overflow;
+            familyNameText.maxVisibleLines = 1;
+            familyNameText.alignment = TextAlignmentOptions.Left;
+            familyNameText.fontStyle = FontStyles.Normal;
+            if (!_megaCardChromeActive && !_cachedRegularTextColors)
+                familyNameText.color = FamilyCaptionColor;
+        }
+
+        /// <summary>
         /// Sidebar hero only: drop the in-flow level so the hull name sits above the art.
         /// Tree cards keep Lv N / MEGA SHIP in the left column.
         /// </summary>
@@ -1467,6 +1596,42 @@ namespace TitanOrbit.UI
                 shipNameText.text = DisplayNameFormatting.SplitCamelCase(text);
             if (_sidebarHeroLayout)
                 ApplySidebarHeroChrome();
+        }
+
+        /// <summary>
+        /// Writes the family line under the hull name and just above the buy chip.
+        /// CamelCase ids are split (ForceBadger → Force Badger). Empty text hides the row
+        /// so leftover labels do not linger on unassigned slots. Sidebar hero ignores this.
+        /// </summary>
+        /// <param name="text">Family id or already-spaced display name. Null / blank hides the line.</param>
+        public void SetFamilyName(string text)
+        {
+            // --- Family line under hull name ---
+            if (_sidebarHeroLayout)
+            {
+                HideFamilyNameLabel();
+                return;
+            }
+
+            EnsureFamilyNameLabel();
+            if (familyNameText == null)
+                return;
+
+            string display = DisplayNameFormatting.SplitCamelCase(text);
+            bool show = !string.IsNullOrWhiteSpace(display);
+            familyNameText.text = show ? display : string.Empty;
+            familyNameText.gameObject.SetActive(show);
+            if (_familyLe != null)
+            {
+                _familyLe.ignoreLayout = !show;
+                if (!show)
+                {
+                    _familyLe.preferredHeight = 0f;
+                    _familyLe.minHeight = 0f;
+                }
+            }
+
+            ApplyTreeFamilyTextSettings();
         }
         public void SetPrice(string text)
         {
@@ -1640,13 +1805,17 @@ namespace TitanOrbit.UI
             }
 
             RestoreInFlowLevelLabel();
+            EnsureFamilyNameLabel();
             if (levelText != null)
                 levelText.color = occupied ? MegaCaptionOccupied : MegaCaptionGold;
             if (_megaCaptionLabel != null)
                 _megaCaptionLabel.gameObject.SetActive(false);
             if (shipNameText != null)
                 shipNameText.color = occupied ? MegaNameOccupied : MegaNameWarm;
+            if (familyNameText != null)
+                familyNameText.color = occupied ? MegaFamilyOccupiedColor : MegaFamilyCaptionColor;
             ApplyTreeTitleTextSettings();
+            ApplyTreeFamilyTextSettings();
 
             if (priceButton != null)
                 SetPriceButtonStyle(priceButton.interactable);
@@ -1675,6 +1844,10 @@ namespace TitanOrbit.UI
 
             if (shipNameText != null && _cachedRegularTextColors)
                 shipNameText.color = _cachedNameColor;
+            if (familyNameText != null && _cachedRegularTextColors)
+                familyNameText.color = _cachedFamilyColor;
+            else if (familyNameText != null)
+                familyNameText.color = FamilyCaptionColor;
         }
 
         /// <summary>
@@ -1774,6 +1947,8 @@ namespace TitanOrbit.UI
                 _cachedLevelColor = levelText.color;
             if (shipNameText != null)
                 _cachedNameColor = shipNameText.color;
+            if (familyNameText != null)
+                _cachedFamilyColor = familyNameText.color;
             _cachedRegularTextColors = true;
         }
 

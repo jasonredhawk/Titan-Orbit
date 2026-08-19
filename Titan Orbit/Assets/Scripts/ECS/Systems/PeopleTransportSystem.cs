@@ -286,8 +286,9 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// True when this ship is actually moving troops (or inbound crew is still flying).
-        /// Drives the ghosted orbit-ring yellow tint — not merely "dwelling in the ring".
+        /// True when this ship can load or unload troops (or inbound crew is still flying).
+        /// Ghosted onto <see cref="ShipOrbitState.IsTransferringPeople"/> so orbit-ring tint
+        /// matches the troop-transfer lock — not mere ring entry.
         /// </summary>
         static bool ComputeIsTransferringPeople(
             bool dwellReady,

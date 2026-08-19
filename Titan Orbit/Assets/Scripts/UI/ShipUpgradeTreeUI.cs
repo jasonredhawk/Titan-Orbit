@@ -381,16 +381,17 @@ namespace TitanOrbit.UI
                     node.BindSlot(level, b, null, useW, useH, useTrack);
                     node.ConfigureLayout(true);
                     node.SetLevelLabel(ShipUpgradeTreeNodeUI.FormatTreeLevelCaption(level, true));
-                    if (mega)
-                        node.ApplyMegaShipCardStyle(false, false, false, false);
-                    else
-                        node.ClearMegaShipCardStyle();
                     string shipName = tier != null
                         ? tier.ResolveUpgradeTreeShipName()
                         : $"Branch {b + 1}";
                     if (string.IsNullOrWhiteSpace(shipName))
                         shipName = $"Branch {b + 1}";
                     node.SetShipName(shipName);
+                    node.SetFamilyName(FamilyStatHudCopy.FormatFamilyDisplayName(family));
+                    if (mega)
+                        node.ApplyMegaShipCardStyle(false, false, false, false);
+                    else
+                        node.ClearMegaShipCardStyle();
                     node.SetPrice(family != null ? "—" : "Preview");
                     node.SetPreview(tier != null ? tier.menuPreviewSprite : null);
                     if (tier != null)

@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using TitanOrbit.Core;
+using TitanOrbit.Game;
 using UnityEngine;
 
 namespace TitanOrbit.UI
@@ -54,6 +55,10 @@ namespace TitanOrbit.UI
 
         void OnDisable() => RestoreGameplayHud();
 
+        /// <summary>
+        /// Alpha-zeros gameplay canvases so the Orbit Menu reads as the only HUD.
+        /// Skips rocket/brakes HUDs (they hide themselves) and the Escape command overlay.
+        /// </summary>
         void HideGameplayHud()
         {
             // --- Alpha-zero all gameplay canvases except orbit station ---
@@ -77,6 +82,9 @@ namespace TitanOrbit.UI
                 if (canvas.GetComponent<RocketLoadoutHUD>() != null)
                     continue;
                 if (canvas.GetComponent<SpaceBrakesHUD>() != null)
+                    continue;
+                // Escape command card must stay visible while the Orbit Menu is also up.
+                if (canvas.GetComponentInParent<InGameEscapeMenuController>() != null)
                     continue;
 
                 if (ShouldKeepOrbitCanvas(canvas.transform, keepA, keepB))

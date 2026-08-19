@@ -74,10 +74,10 @@ namespace TitanOrbit.Game
         const float IdleBankAngularVelDeadbandDegPerSec = 18f;
 
         /// <summary>
-        /// World Y for the whole slot vs planet center. Slightly below the flight plane so
-        /// ships clear the pad instead of flying under a raised disc.
+        /// World Y for the whole slot vs planet center. Same drop as the people-transfer
+        /// orbit ring so ships clear the pad disc instead of intersecting it.
         /// </summary>
-        const float PresentationLiftY = -0.08f;
+        const float PresentationLiftY = -PlanetOrbitRingOccupancy.ZoneDiscBelowFlightPlane;
 
         /// <summary>How far above the pad plane the turret mesh sits (world units).</summary>
         const float TurretAbovePadWorld = 0.22f;

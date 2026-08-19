@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using TitanOrbit.Core;
 using UnityEngine;
 
 namespace TitanOrbit.Data
@@ -348,11 +349,22 @@ namespace TitanOrbit.Data
                     maxes.Absorb(breakdown);
 
                     MegaShipCatalogEntry entry = catalog.entries[i];
+                    // Visual line (Craizan Star / Galactic Leopard / Galactic Okamoto) —
+                    // same "family" slot regular hulls use for AstroEagle. Not the
+                    // literal "MEGA" pool tag; RANK 1 must name the ship and its line.
+                    string visualFamily = entry != null
+                        ? DisplayNameFormatting.SplitCamelCase(entry.visualFamily.ToString())
+                        : "MEGA";
+                    string megaShipName = DisplayNameFormatting.FormatPrefabShipName(
+                        catalog.GetDisplayName(i));
+                    if (string.IsNullOrWhiteSpace(megaShipName))
+                        megaShipName = MegaShipCatalog.FormatChassisId(i);
+
                     AbsorbLeaders(
                         leaders,
                         breakdown,
-                        "MEGA",
-                        catalog.GetDisplayName(i),
+                        visualFamily,
+                        megaShipName,
                         MegaShipCatalog.FormatChassisId(i),
                         MegaTreeLevel,
                         entry != null ? entry.GetMenuPreviewSprite() : null);

@@ -483,8 +483,8 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// Reopens the Orbit Menu after a close-button / Escape dismiss (still gem-moon docked).
-        /// Escape toggles via <see cref="HandleMoonDockDismissInput"/>.
+        /// Reopens the Orbit Menu after a close-button dismiss (still gem-moon docked).
+        /// Escape now opens <see cref="InGameEscapeMenuController"/> instead of toggling this overlay.
         /// </summary>
         public void OpenMoonDockMenu(bool upgradesPanel = true)
         {
@@ -499,8 +499,19 @@ namespace TitanOrbit.UI
         public bool IsMoonDockMenuOpen =>
             _moonDockLayoutActive && _moonDockCenterView != MoonDockCenterView.None;
 
+        /// <summary>
+        /// Escape while gem-moon docked used to toggle this overlay. That key now opens
+        /// <see cref="InGameEscapeMenuController"/> (leave to Main Menu). The × control
+        /// still dismisses the dock overlay. This method is a no-op when the command menu
+        /// exists so the two overlays do not fight for the same key.
+        /// </summary>
         private void HandleMoonDockDismissInput()
         {
+            // --- Yield Escape to the session command menu ---
+            // [TITAN-ORBIT] Players expect Escape to leave the match. Dock close stays on ×.
+            if (InGameEscapeMenuController.IsAvailable)
+                return;
+
             if (!_moonDockLayoutActive || currentShip == null || !currentShip.GemMoonDocked)
                 return;
 

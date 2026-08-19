@@ -24,22 +24,22 @@ MonoBehaviour:
   healthAtLevel1: 150
   healthAtLevel6: 900
   damageAtLevel1: 3
-  damageAtLevel6: 18
+  damageAtLevel6: 21
   fireRateAtLevel1: 3
   fireRateAtLevel6: 3
   engageRangeAtLevel1: 15
   engageRangeAtLevel6: 25
   cameraViewRadiusAtLevel1: 15
-  cameraViewRadiusAtLevel6: 25
+  cameraViewRadiusAtLevel6: 30
   bulletSpeedAtLevel1: 12
-  bulletSpeedAtLevel6: 12
+  bulletSpeedAtLevel6: 20
   useSolfeggioGemCosts: 1
   gemsAtLevel1: 174
   gemsAtLevel6: 852
   gemsAtLevel7: 963
   bulletBankIndex: -1
   bulletBankCategoryName: LaserSmall
-  bulletVisualScale: 1.25
+  bulletVisualScale: 1
   levels:
   - gemsToReachLevel: 174
     maxHealth: 150
@@ -48,59 +48,59 @@ MonoBehaviour:
     bulletSpeed: 12
     engageRange: 15
     cameraViewRadius: 15
-    visualScale: 0.56
+    visualScale: 0.37333333
     hitRadius: 0.5
   - gemsToReachLevel: 285
     maxHealth: 300
-    damage: 6
+    damage: 6.6
     fireRate: 3
-    bulletSpeed: 12
+    bulletSpeed: 13.6
     engageRange: 17
-    cameraViewRadius: 17
-    visualScale: 0.64
+    cameraViewRadius: 18
+    visualScale: 0.42666668
     hitRadius: 0.55
   - gemsToReachLevel: 396
     maxHealth: 450
-    damage: 9
+    damage: 10.2
     fireRate: 3
-    bulletSpeed: 12
+    bulletSpeed: 15.2
     engageRange: 19
-    cameraViewRadius: 19
-    visualScale: 0.72
+    cameraViewRadius: 21
+    visualScale: 0.48
     hitRadius: 0.6
   - gemsToReachLevel: 528
     maxHealth: 600
-    damage: 12
+    damage: 13.8
     fireRate: 3
-    bulletSpeed: 12
+    bulletSpeed: 16.8
     engageRange: 21
-    cameraViewRadius: 21
-    visualScale: 0.8
+    cameraViewRadius: 24
+    visualScale: 0.53333336
     hitRadius: 0.65
   - gemsToReachLevel: 639
     maxHealth: 750
-    damage: 15
+    damage: 17.4
     fireRate: 3
-    bulletSpeed: 12
+    bulletSpeed: 18.4
     engageRange: 23
-    cameraViewRadius: 23
-    visualScale: 0.88
+    cameraViewRadius: 27
+    visualScale: 0.58666664
     hitRadius: 0.7
   - gemsToReachLevel: 852
     maxHealth: 900
-    damage: 18
+    damage: 21
     fireRate: 3
-    bulletSpeed: 12
+    bulletSpeed: 20
     engageRange: 25
-    cameraViewRadius: 25
-    visualScale: 1
+    cameraViewRadius: 30
+    visualScale: 0.6666667
     hitRadius: 0.8
   - gemsToReachLevel: 963
     maxHealth: 1050
-    damage: 21
+    damage: 24.6
     fireRate: 3
-    bulletSpeed: 12
+    bulletSpeed: 21.6
     engageRange: 27
-    cameraViewRadius: 27
-    visualScale: 1.1
+    cameraViewRadius: 33
+    visualScale: 0.73333335
     hitRadius: 0.85

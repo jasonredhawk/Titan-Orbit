@@ -318,6 +318,12 @@ namespace TitanOrbit.Systems
             return true;
         }
 
+        /// <summary>
+        /// True when this docked moon's hull at the player's current ladder slot is a
+        /// different chassis (another family's L3, or another planet's unique MEGA).
+        /// L1–L6 still require home + store planet level. L7 uses the moon-full MEGA
+        /// gate — planets never reach level 7.
+        /// </summary>
         public bool CanSwapShipAtSameTreeSlot(
             Starship ship, Planet storePlanet, int targetLevel, int targetBranchIndex, out string chassisId)
         {
@@ -328,7 +334,7 @@ namespace TitanOrbit.Systems
                 return false;
 
             HomePlanet homePlanet = FindHomePlanetForTeam(ship.ShipTeam);
-            if (homePlanet == null || targetLevel > homePlanet.HomePlanetLevel)
+            if (homePlanet == null)
                 return false;
 
             bool isHome = storePlanet is HomePlanet hp && hp.AssignedTeam == ship.ShipTeam;
@@ -336,8 +342,24 @@ namespace TitanOrbit.Systems
             if (!isHome && !isCaptured)
                 return false;
 
-            if (storePlanet.PlanetLevel < targetLevel)
-                return false;
+            // --- MEGA same-slot swap (L7) ---
+            // [TITAN-ORBIT] Planets and homes cap at 6. L7 uses the moon-full gate, same
+            // as a first MEGA purchase. Comparing targetLevel 7 to those caps blocked
+            // every family swap after the player already owned a MEGA.
+            if (targetLevel >= 7)
+            {
+                if (!EcsGameBridge.TryGetPlanetGemMoonStateByPlanetId(storePlanet.PlanetId, out var moon)
+                    || !MegaShipPlanetLogic.IsMegaPurchaseUnlocked(
+                        storePlanet.PlanetLevel, moon.CurrentMoonGems, moon.MaxMoonGems))
+                    return false;
+            }
+            else
+            {
+                if (targetLevel > homePlanet.HomePlanetLevel)
+                    return false;
+                if (storePlanet.PlanetLevel < targetLevel)
+                    return false;
+            }
 
             chassisId = GetChassisIdForUpgradeLadderSlot(ship, storePlanet.PlanetId, targetLevel, targetBranchIndex);
             if (string.IsNullOrEmpty(chassisId))

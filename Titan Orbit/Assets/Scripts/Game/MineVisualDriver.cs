@@ -149,6 +149,7 @@ namespace TitanOrbit.Game
             if (world == null || !world.IsCreated)
             {
                 ClearAll();
+                DisposeQueries();
                 return;
             }
 
@@ -383,7 +384,7 @@ namespace TitanOrbit.Game
         /// <summary>Caches a ship query on the client world.</summary>
         void EnsureQueries(World world)
         {
-            if (_queriesCreated && _cachedQueryWorld == world && _shipQuery.IsEmptyIgnoreFilter == false)
+            if (world == null || !world.IsCreated)
                 return;
             if (_queriesCreated && _cachedQueryWorld == world)
                 return;
@@ -398,11 +399,20 @@ namespace TitanOrbit.Game
             _queriesCreated = true;
         }
 
-        /// <summary>Releases the cached query when the world changes.</summary>
+        /// <summary>
+        /// Releases the cached query when the world is still alive.
+        /// After world teardown the query is already gone — <c>Dispose()</c> NREs in
+        /// <c>EntityQueryImpl</c> (UnsafeParallelHashMap.Remove).
+        /// </summary>
         void DisposeQueries()
         {
-            if (_queriesCreated && _shipQuery != default)
+            if (_queriesCreated && _shipQuery != default
+                && _cachedQueryWorld != null && _cachedQueryWorld.IsCreated)
+            {
                 _shipQuery.Dispose();
+            }
+
+            _shipQuery = default;
             _queriesCreated = false;
             _cachedQueryWorld = null;
         }

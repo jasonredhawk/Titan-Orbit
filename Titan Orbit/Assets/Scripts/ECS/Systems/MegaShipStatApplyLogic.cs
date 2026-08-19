@@ -269,6 +269,36 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
+        /// Leaves a live MEGA for a regular family hull (debug tree pick or same-tier family
+        /// swap after L7). Frees the unique planet slot and clears
+        /// <see cref="MegaShipState.IsMega"/> so <see cref="ShipStatApplyLogic.ApplyToShip"/>
+        /// writes the new chassis instead of stamping ShipLevel 7 / MEGA stats again.
+        /// Death uses <see cref="RestorePreviousHull"/> instead — that path keeps the old L6.
+        /// </summary>
+        /// <param name="em">Server entity manager (occupancy is authoritative).</param>
+        /// <param name="shipEntity">The ship that is leaving its MEGA hull.</param>
+        public static void ClearMegaHull(EntityManager em, Entity shipEntity)
+        {
+            // --- Leave MEGA without restoring the previous L6 ---
+            // [TITAN-ORBIT] Purchase already chose the next family / level / branch.
+            // We only drop occupancy + the IsMega flag. ApplyToShip runs after this.
+            if (!em.HasComponent<MegaShipState>(shipEntity))
+                return;
+
+            var mega = em.GetComponentData<MegaShipState>(shipEntity);
+            if (!mega.IsMega)
+                return;
+
+            ReleaseMegaOccupancy(em, shipEntity);
+            mega = em.GetComponentData<MegaShipState>(shipEntity);
+            mega.IsMega = false;
+            mega.CatalogIndex = 0;
+            mega.StorePlanetId = 0;
+            mega.MegaSlotIndex = 0;
+            em.SetComponentData(shipEntity, mega);
+        }
+
+        /// <summary>
         /// Restores the previous L6 hull after MEGA death: frees the planet slot (idempotent),
         /// clears MEGA flags, and reapplies regular chassis stats.
         /// </summary>

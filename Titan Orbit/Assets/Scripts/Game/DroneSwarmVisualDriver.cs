@@ -177,16 +177,23 @@ namespace TitanOrbit.Game
             ClearAllGroups();
         }
 
+        /// <summary>
+        /// Releases cached queries when the world is still alive.
+        /// After world teardown they are already gone — <c>Dispose()</c> NREs in EntityQueryImpl.
+        /// </summary>
         void DisposeQueries()
         {
-            if (_queriesCreated)
+            if (_queriesCreated && _cachedQueryWorld != null && _cachedQueryWorld.IsCreated)
             {
                 if (_shipQuery != default)
                     _shipQuery.Dispose();
                 if (_asteroidQuery != default)
                     _asteroidQuery.Dispose();
-                _queriesCreated = false;
             }
+
+            _shipQuery = default;
+            _asteroidQuery = default;
+            _queriesCreated = false;
             _cachedQueryWorld = null;
         }
 
@@ -229,6 +236,7 @@ namespace TitanOrbit.Game
             if (world == null || !world.IsCreated)
             {
                 ClearAllGroups();
+                DisposeQueries();
                 return;
             }
 

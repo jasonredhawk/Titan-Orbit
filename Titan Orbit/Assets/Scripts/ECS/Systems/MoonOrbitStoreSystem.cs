@@ -523,6 +523,15 @@ namespace TitanOrbit.ECS
                     });
                 }
             }
+            else
+            {
+                // --- Leave MEGA when buying a regular family hull ---
+                // [TITAN-ORBIT] Debug free-tree and same-tier family swaps can pick Cosmic
+                // Shark / etc. after a MEGA. ApplyToShip routes to MEGA stats while
+                // MegaShipState.IsMega is true and then writes ShipLevel 7 again — so
+                // the click looked like it did nothing. Drop occupancy first.
+                MegaShipStatApplyLogic.ClearMegaHull(em, shipEntity);
+            }
 
             ship.ShipLevel = targetLevel;
             ship.BranchIndex = targetBranchIndex;

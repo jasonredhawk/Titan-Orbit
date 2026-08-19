@@ -204,26 +204,29 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// Compact identity string that leads with the <b>ship</b>, not the family.
-        /// <c>NightAye16 · L6 · 88.1 DPS/s</c> or <c>Thumper · AstroEagle · L3 · 42</c>.
-        /// MEGAs drop the L7 tag (the pool is already MEGA-only).
+        /// Compact identity string that leads with the <b>ship</b>, then its family.
+        /// Regular: <c>Thumper · AstroEagle · L3 · 42</c>.
+        /// MEGA: <c>Void Reaper · Galactic Leopard · 88.1 DPS/s</c> (no L7 — the pool is MEGA-only).
         /// </summary>
         public static string FormatLeaderLine(in ShipPowerBarStatLeader leader, string unit)
         {
             string family = string.IsNullOrWhiteSpace(leader.familyId) ? string.Empty : leader.familyId.Trim();
             string ship = ResolveShipLabel(in leader);
-            bool mega = string.Equals(family, "MEGA", System.StringComparison.OrdinalIgnoreCase)
-                        || MegaShipCatalog.IsMegaChassisId(leader.chassisId);
+            bool mega = MegaShipCatalog.IsMegaChassisId(leader.chassisId);
 
             var line = new StringBuilder(64);
             line.Append(ship);
 
-            // Family is a qualifier only when the ship token does not already include it.
-            if (!mega
-                && !string.IsNullOrEmpty(family)
-                && ship.IndexOf(family, System.StringComparison.OrdinalIgnoreCase) < 0)
+            // Family / MEGA visual line. Regular hulls skip it when the ship token
+            // already contains the family (NightAye16). MEGAs always include the
+            // visual family so Craizan / Leopard / Okamoto is visible next to the hull name.
+            if (!string.IsNullOrEmpty(family)
+                && !string.Equals(family, "MEGA", System.StringComparison.OrdinalIgnoreCase))
             {
-                line.Append(" · ").Append(family);
+                bool alreadyInName = !mega
+                    && ship.IndexOf(family, System.StringComparison.OrdinalIgnoreCase) >= 0;
+                if (!alreadyInName)
+                    line.Append(" · ").Append(family);
             }
 
             if (!mega && leader.treeLevel > 0)

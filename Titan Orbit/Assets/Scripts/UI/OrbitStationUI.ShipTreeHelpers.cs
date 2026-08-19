@@ -296,12 +296,12 @@ namespace TitanOrbit.UI
             view.SetPreview(sp);
 
             view.SetLevelLabel(ShipUpgradeTreeNodeUI.FormatTreeLevelCaption(view.Level, view.UsesMoonHorizontalLayout));
+            view.SetShipName(GetShipDisplayName(view.Node, view.Level, view.BranchIndex));
+            view.SetFamilyName(GetShipFamilyDisplayName(view.Level, view.BranchIndex));
             if (view.Level == 7)
                 view.ApplyMegaShipCardStyle(isCurrent, canPurchase, megaOccupied, tierBlocked);
             else
                 view.ClearMegaShipCardStyle();
-
-            view.SetShipName(GetShipDisplayName(view.Node, view.Level, view.BranchIndex));
 
             if (megaOccupied)
             {
@@ -364,12 +364,12 @@ namespace TitanOrbit.UI
             view.SetPreview(ResolveShipTreePreviewSprite(view.Level, view.BranchIndex));
 
             view.SetLevelLabel(ShipUpgradeTreeNodeUI.FormatTreeLevelCaption(view.Level, view.UsesMoonHorizontalLayout));
+            view.SetShipName(GetShipDisplayName(view.Node, view.Level, view.BranchIndex));
+            view.SetFamilyName(GetShipFamilyDisplayName(view.Level, view.BranchIndex));
             if (view.Level == 7)
                 view.ApplyMegaShipCardStyle(isCurrent, clickable && !isCurrent, megaOccupied, false);
             else
                 view.ClearMegaShipCardStyle();
-
-            view.SetShipName(GetShipDisplayName(view.Node, view.Level, view.BranchIndex));
 
             if (megaOccupied)
             {
@@ -411,6 +411,7 @@ namespace TitanOrbit.UI
             else
                 view.SetLevelLabel($"Lv {currentLevel}");
             view.SetShipName(GetCurrentShipDisplayName());
+            view.SetFamilyName(GetCurrentShipFamilyDisplayName());
             view.SetPrice(canSwapHull ? "Free" : "—");
             // Sidebar "You" card uses the same pool as the tree node for this hull.
             view.ApplyPowerBreakdown(
@@ -468,6 +469,40 @@ namespace TitanOrbit.UI
                 shipUpgradeTree.Hint.text = $"Locked — raise home planet to level {nextLevel}.";
             else
                 shipUpgradeTree.Hint.text = ShipUpgradeTreeUI.PanelDefaultSubtitle;
+        }
+
+        /// <summary>
+        /// Family line for one tree card. Regular slots use the docked planet's family
+        /// (CosmicShark → Cosmic Shark). MEGA slots use the catalog visual line.
+        /// </summary>
+        string GetShipFamilyDisplayName(int level, int branchIndex)
+        {
+            Planet storePlanet = GetShipUpgradeStorePlanet();
+            string chassisId = null;
+            if (currentShip != null && storePlanet != null && CardShopSystem.Instance != null)
+            {
+                chassisId = CardShopSystem.Instance.GetChassisIdForUpgradeLadderSlot(
+                    currentShip, storePlanet.PlanetId, level, branchIndex);
+            }
+
+            return FamilyStatHudCopy.FormatFamilyDisplayNameForChassis(
+                chassisId, ResolveUpgradeTreeFamily());
+        }
+
+        /// <summary>
+        /// Family line on the left-panel "Your Ship" card — the hull you are flying,
+        /// not the store planet's ladder (you may be docked at another family's moon).
+        /// </summary>
+        string GetCurrentShipFamilyDisplayName()
+        {
+            if (currentShip == null)
+                return string.Empty;
+
+            ShipFamilyDefinition shipFamily = CardShopSystem.Instance != null
+                ? CardShopSystem.Instance.GetShipFamilyForShip(currentShip)
+                : null;
+            return FamilyStatHudCopy.FormatFamilyDisplayNameForChassis(
+                currentShip.CurrentChassisId, shipFamily);
         }
 
         /// <summary>
@@ -530,7 +565,9 @@ namespace TitanOrbit.UI
             {
                 if (IsDebugFreeShipUpgradeTree())
                 {
-                    if (nodeLevel == currentShip.ShipLevel && targetBranchIndex == currentShip.BranchIndex)
+                    // Same ladder slot on this planet can still be a different chassis
+                    // (other family at this tier, or another planet's unique MEGA).
+                    if (IsAlreadyFlyingUpgradeSlot(nodeLevel, targetBranchIndex))
                         return;
 
                     int storePlanetId = OrbitStationEcsContext.StorePlanetId;
@@ -578,7 +615,7 @@ namespace TitanOrbit.UI
 
             if (IsDebugFreeShipUpgradeTree())
             {
-                if (nodeLevel == currentShip.ShipLevel && targetBranchIndex == currentShip.BranchIndex)
+                if (IsAlreadyFlyingUpgradeSlot(nodeLevel, targetBranchIndex))
                     return;
 
                 var nm = Unity.Netcode.NetworkManager.Singleton;
@@ -612,6 +649,30 @@ namespace TitanOrbit.UI
                     return;
                 CardShopSystem.Instance.SwapShipAtSameTreeSlotServerRpc(planetNo.NetworkObjectId, currentShip.NetworkObjectId, nodeLevel, targetBranchIndex);
             }
+        }
+
+        /// <summary>
+        /// True when this store slot is the hull the player is already flying.
+        /// Level + branch alone is not enough: Cosmic Shark L3 and Astro Eagle L3 share
+        /// a slot index, and every family's L7 branch 0 looks like "your MEGA" after
+        /// you buy one. Compare chassis ids so a different family's ship still clicks.
+        /// </summary>
+        bool IsAlreadyFlyingUpgradeSlot(int level, int branchIndex)
+        {
+            if (currentShip == null || CardShopSystem.Instance == null)
+                return false;
+
+            Planet storePlanet = GetShipUpgradeStorePlanet();
+            if (storePlanet == null)
+                return false;
+
+            string slotChassis = CardShopSystem.Instance.GetChassisIdForUpgradeLadderSlot(
+                currentShip, storePlanet.PlanetId, level, branchIndex);
+            string flown = currentShip.CurrentChassisId;
+            if (string.IsNullOrEmpty(slotChassis) || string.IsNullOrEmpty(flown))
+                return level == currentShip.ShipLevel && branchIndex == currentShip.BranchIndex;
+
+            return string.Equals(slotChassis, flown, StringComparison.OrdinalIgnoreCase);
         }
     }
 }

@@ -346,6 +346,11 @@ namespace TitanOrbit.Game
             }
         }
 
+        /// <summary>
+        /// Attaches client-only match overlays (floaters, match-end, death, Escape command menu)
+        /// onto this GameObject if they are missing. Skipped on dedicated-server processes
+        /// that have no presentation canvas.
+        /// </summary>
         void EnsureMatchFlowControllers()
         {
             if (!TitanOrbitDedicatedServerAutoBoot.ShouldRunClientPresentation())
@@ -359,6 +364,35 @@ namespace TitanOrbit.Game
                 gameObject.AddComponent<MatchEndScreenController>();
             if (GetComponent<DeathScreenController>() == null)
                 gameObject.AddComponent<DeathScreenController>();
+            if (GetComponent<InGameEscapeMenuController>() == null)
+                gameObject.AddComponent<InGameEscapeMenuController>();
+        }
+
+        /// <summary>
+        /// Called by the Escape command overlay before disconnect so Play / Join work again.
+        /// Clears loading-handoff latches that would otherwise keep MainMenuPanel hidden.
+        /// </summary>
+        public void NotifyReturningToMainMenu()
+        {
+            // --- Drop join / spawn latches ---
+            // [TITAN-ORBIT] _holdLoadingOverlay is set on Play click and only cleared when
+            // map-ready flags arrive. A manual leave never hits that path, so we clear it here
+            // or MainMenuPanel stays off under a stale loading backdrop.
+            _holdLoadingOverlay = false;
+            _latchedHasShipThisSession = false;
+            _autoStartSent = false;
+            _teamPickRequestedAt = -1f;
+            _teamPickRetryCount = 0;
+            _postConfirmShipWaitAt = -1f;
+            _postConfirmShipRetryCount = 0;
+            _teamPickTimeoutHint = null;
+            _connectedAt = -1f;
+            _dedicatedConnectedAt = -1f;
+            _mppmConnectedSince = -1f;
+            if (_joinBrowser != null)
+                _joinBrowser.ClearLoadingHandoff();
+            _statusMessage = "Returned to main menu.";
+            PushStatusToUi();
         }
 
         async System.Threading.Tasks.Task PrimeGuestSessionAndPrefetchLobbiesAsync()
