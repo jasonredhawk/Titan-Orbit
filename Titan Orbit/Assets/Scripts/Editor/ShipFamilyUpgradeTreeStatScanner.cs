@@ -263,7 +263,7 @@ namespace TitanOrbit.Editor
                 if (!name.StartsWith(familyId + "_", StringComparison.OrdinalIgnoreCase))
                     continue;
 
-                string componentId = name.Substring(familyId.Length + 1);
+                string componentId = ShipFamilyDefinition.NormalizeComponentId(name);
                 if (string.IsNullOrWhiteSpace(componentId))
                     continue;
 

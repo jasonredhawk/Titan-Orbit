@@ -53,6 +53,28 @@ namespace TitanOrbit.Data
             Hull,
         };
 
+        /// <summary>
+        /// Inspector popup for Name Mapping / suggestion Part Type:
+        /// Unmapped, eight core groups, Ignore.
+        /// </summary>
+        public static readonly string[] InspectorChoices =
+        {
+            Unmapped,
+            Cockpit,
+            WeaponBullet,
+            WeaponCannon,
+            Wing,
+            Engine,
+            Thruster,
+            Tail,
+            Hull,
+            Ignore,
+        };
+
+        /// <summary>Popup labels for mapping rows (Unmapped + core + Ignore) or profile rows (core only).</summary>
+        public static string[] GetInspectorChoices(bool includeUnmappedAndIgnore) =>
+            includeUnmappedAndIgnore ? InspectorChoices : CoreProfiles;
+
         /// <summary>True for Engine, Thruster, and legacy Engine/Thrust labels.</summary>
         public static bool IsPropulsion(string partType)
         {

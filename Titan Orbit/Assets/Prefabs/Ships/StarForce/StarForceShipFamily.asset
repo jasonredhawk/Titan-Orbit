@@ -82,7 +82,7 @@ MonoBehaviour:
   menuPreviewBoundsPadding: 1.22
   menuPreviewBackgroundColor: {r: 0, g: 0, b: 0, a: 1}
   components:
-  - componentId: Body1
+  - componentId: StarForce_Body1
     displayName: Hull 1
     statCategories: 01000000
     stats:
@@ -159,7 +159,7 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: 6b47392ff5708764294cebab6beaa016, type: 3}
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
-  - componentId: Body2
+  - componentId: StarForce_Body2
     displayName: Hull 2
     statCategories: 01000000
     stats:
@@ -236,7 +236,7 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: 40b2b5ae10ea3294cb8e07c9573cb70e, type: 3}
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
-  - componentId: Cockpit
+  - componentId: StarForce_Cockpit
     displayName: Cockpit 1
     statCategories: 000000000100000004000000
     stats:
@@ -313,7 +313,7 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: 7d46528ae709d434198f49662951aee8, type: 3}
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
-  - componentId: Engine
+  - componentId: StarForce_Engine
     displayName: Engine 1
     statCategories: 0300000002000000
     stats:
@@ -390,7 +390,7 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: d0db1608a9ed12a479686b4005ff8d0f, type: 3}
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
-  - componentId: EngineComp1
+  - componentId: StarForce_EngineComp1
     displayName: Engine 1
     statCategories: 0300000002000000
     stats:
@@ -467,7 +467,7 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: dfbd970d821a9474ba059b85a92d52f9, type: 3}
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
-  - componentId: EngineComp2
+  - componentId: StarForce_EngineComp2
     displayName: Engine 2
     statCategories: 0300000002000000
     stats:
@@ -544,7 +544,7 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: c355a77b8d73ab140bedd5efcf930946, type: 3}
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
-  - componentId: Flap
+  - componentId: StarForce_Flap
     displayName: Hull 1
     statCategories: 01000000
     stats:
@@ -606,7 +606,7 @@ MonoBehaviour:
     teamTheatricalMenuPreviewSprites: []
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
-  - componentId: Thruster
+  - componentId: StarForce_Thruster
     displayName: Thruster 1
     statCategories: 03000000
     stats:
@@ -683,7 +683,7 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: 61bce0f6a866e0845a514eb58d4ab0fe, type: 3}
     enablePropulsionVfx: 1
     propulsionVfxScale: 1
-  - componentId: Weapon
+  - componentId: StarForce_Weapon
     displayName: Weapon Bullet 1
     statCategories: 0000000002000000
     stats:
@@ -760,7 +760,7 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: b0aaff3f300592345b69befe5952380e, type: 3}
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
-  - componentId: Wing
+  - componentId: StarForce_Wing
     displayName: Wing 1
     statCategories: 0100000004000000
     stats:

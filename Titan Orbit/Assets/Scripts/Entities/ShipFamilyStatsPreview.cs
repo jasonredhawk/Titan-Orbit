@@ -126,7 +126,8 @@ namespace TitanOrbit.Entities
                 float scale = 1f;
                 if (!string.IsNullOrEmpty(familyId) && !string.IsNullOrEmpty(id))
                 {
-                    string want = familyId + "_" + id;
+                    string suffix = ShipFamilyDefinition.GetComponentIdSuffix(familyId, id);
+                    string want = ShipFamilyDefinition.ComposeFamilyPrefixedComponentId(familyId, id);
                     for (int t = 0; t < transforms.Length; t++)
                     {
                         Transform tr = transforms[t];
@@ -134,7 +135,9 @@ namespace TitanOrbit.Entities
                             continue;
                         string name = ShipFamilyDefinition.NormalizeComponentId(tr.name);
                         if (string.Equals(name, want, StringComparison.OrdinalIgnoreCase)
-                            || name.EndsWith("_" + id, StringComparison.OrdinalIgnoreCase))
+                            || string.Equals(name, id, StringComparison.OrdinalIgnoreCase)
+                            || (!string.IsNullOrEmpty(suffix)
+                                && name.EndsWith("_" + suffix, StringComparison.OrdinalIgnoreCase)))
                         {
                             scale = ChassisComponentStats.GetScaleFactor(tr);
                             break;

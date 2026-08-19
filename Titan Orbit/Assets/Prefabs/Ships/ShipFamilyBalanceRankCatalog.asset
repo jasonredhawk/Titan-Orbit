@@ -12,7 +12,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: a1b8c3d4e5f64789a0b1c2d3e4f50617, type: 3}
   m_Name: ShipFamilyBalanceRankCatalog
   m_EditorClassIdentifier: Assembly-CSharp::TitanOrbit.Data.ShipFamilyBalanceRankCatalog
-  lastRefreshedLocal: 2026-08-19 14:54
+  lastRefreshedLocal: 2026-08-19 15:18
   lastRefreshRowCount: 320
   regularRows:
   - familyId: AstroEagle
@@ -4386,31 +4386,8 @@ MonoBehaviour:
     prefab: {fileID: 1210802384589220, guid: ad0d3ad0931e2f147bfda693898317b0, type: 3}
     megaCatalog: {fileID: 0}
   - familyId: SpaceExcalibur
-    chassisId: SpaceExcalibur_01
-    displayName: SpaceExcalibur_01
-    treeLevel: 2
-    gunCount: 5
-    bankName: Rift
-    bankFirePowerMul: 1
-    bankFireRateMul: 0.55
-    bankBulletSpeedMul: 1
-    hullDps: 88.2
-    bankDps: 48.51
-    firePower: 5.88
-    fireRate: 3
-    healthCap: 150.21529
-    healthRegen: 4.470693
-    energyCap: 45
-    energyRegen: 3
-    moveSpeed: 6.8
-    turnSpeed: 18
-    bulletSpeed: 15.84
-    family: {fileID: 11400000, guid: 433622f0516dd72458eeb97201b623d1, type: 2}
-    prefab: {fileID: 1497309590149072, guid: a320fcb5bf8c0c344ae002da03586e54, type: 3}
-    megaCatalog: {fileID: 0}
-  - familyId: SpaceExcalibur
-    chassisId: SpaceExcalibur_12
-    displayName: SpaceExcalibur_12
+    chassisId: SpaceExcalibur_06
+    displayName: SpaceExcalibur_06
     treeLevel: 2
     gunCount: 4
     bankName: Rift
@@ -4421,61 +4398,61 @@ MonoBehaviour:
     bankDps: 38.808
     firePower: 5.88
     fireRate: 3
-    healthCap: 144.6768
-    healthRegen: 4.305857
+    healthCap: 133.84201
+    healthRegen: 3.9833927
     energyCap: 45
     energyRegen: 3
-    moveSpeed: 8.925
-    turnSpeed: 28
+    moveSpeed: 6.8
+    turnSpeed: 18
     bulletSpeed: 15.84
     family: {fileID: 11400000, guid: 433622f0516dd72458eeb97201b623d1, type: 2}
-    prefab: {fileID: 1484765232302376, guid: 2ee103bbf051849488692836ac4a35b7, type: 3}
+    prefab: {fileID: 1430591442999010, guid: 12108e32b36bf7b4a9eabd000d00eab7, type: 3}
     megaCatalog: {fileID: 0}
   - familyId: SpaceExcalibur
-    chassisId: SpaceExcalibur_05
-    displayName: SpaceExcalibur_05
-    treeLevel: 3
-    gunCount: 14
+    chassisId: SpaceExcalibur_08
+    displayName: SpaceExcalibur_08
+    treeLevel: 2
+    gunCount: 8
     bankName: Rift
     bankFirePowerMul: 1
     bankFireRateMul: 0.55
     bankBulletSpeedMul: 1
-    hullDps: 393.12
-    bankDps: 216.216
-    firePower: 30.24
-    fireRate: 1
-    healthCap: 147.42003
-    healthRegen: 4.387501
-    energyCap: 135
+    hullDps: 141.12
+    bankDps: 77.616
+    firePower: 5.88
+    fireRate: 3
+    healthCap: 128.74725
+    healthRegen: 3.831763
+    energyCap: 45
     energyRegen: 3
-    moveSpeed: 9.775001
-    turnSpeed: 32
-    bulletSpeed: 15.4
+    moveSpeed: 9.35
+    turnSpeed: 30
+    bulletSpeed: 15.84
     family: {fileID: 11400000, guid: 433622f0516dd72458eeb97201b623d1, type: 2}
-    prefab: {fileID: 1078639209821914, guid: f4fea68ecda22144c9126d1486afce47, type: 3}
+    prefab: {fileID: 1865648301431312, guid: df3e148963f80b5488a6e5106a1c5d94, type: 3}
     megaCatalog: {fileID: 0}
   - familyId: SpaceExcalibur
-    chassisId: SpaceExcalibur_06
-    displayName: SpaceExcalibur_06
+    chassisId: SpaceExcalibur_01
+    displayName: SpaceExcalibur_01
     treeLevel: 3
-    gunCount: 10
+    gunCount: 5
     bankName: Rift
     bankFirePowerMul: 1
     bankFireRateMul: 0.55
     bankBulletSpeedMul: 1
-    hullDps: 272.16
-    bankDps: 149.688
-    firePower: 30.24
-    fireRate: 1
-    healthCap: 183.27481
-    healthRegen: 5.4546065
-    energyCap: 135
+    hullDps: 113.4
+    bankDps: 62.370003
+    firePower: 7.56
+    fireRate: 3
+    healthCap: 199.40686
+    healthRegen: 5.9347277
+    energyCap: 63
     energyRegen: 3
     moveSpeed: 7.65
     turnSpeed: 22
-    bulletSpeed: 15.4
+    bulletSpeed: 18.48
     family: {fileID: 11400000, guid: 433622f0516dd72458eeb97201b623d1, type: 2}
-    prefab: {fileID: 1430591442999010, guid: 12108e32b36bf7b4a9eabd000d00eab7, type: 3}
+    prefab: {fileID: 1497309590149072, guid: a320fcb5bf8c0c344ae002da03586e54, type: 3}
     megaCatalog: {fileID: 0}
   - familyId: SpaceExcalibur
     chassisId: SpaceExcalibur_10
@@ -4501,39 +4478,85 @@ MonoBehaviour:
     prefab: {fileID: 1989786707681420, guid: 03d9c945efaa9b649b6ccc5cb3fd167a, type: 3}
     megaCatalog: {fileID: 0}
   - familyId: SpaceExcalibur
-    chassisId: SpaceExcalibur_04
-    displayName: SpaceExcalibur_04
-    treeLevel: 4
-    gunCount: 10
+    chassisId: SpaceExcalibur_12
+    displayName: SpaceExcalibur_12
+    treeLevel: 3
+    gunCount: 4
     bankName: Rift
     bankFirePowerMul: 1
     bankFireRateMul: 0.55
     bankBulletSpeedMul: 1
-    hullDps: 332.64
-    bankDps: 182.95201
-    firePower: 36.96
-    fireRate: 1
+    hullDps: 90.72
+    bankDps: 49.896
+    firePower: 7.56
+    fireRate: 3
+    healthCap: 186.06241
+    healthRegen: 5.5375714
+    energyCap: 63
+    energyRegen: 3
+    moveSpeed: 9.775001
+    turnSpeed: 32
+    bulletSpeed: 18.48
+    family: {fileID: 11400000, guid: 433622f0516dd72458eeb97201b623d1, type: 2}
+    prefab: {fileID: 1484765232302376, guid: 2ee103bbf051849488692836ac4a35b7, type: 3}
+    megaCatalog: {fileID: 0}
+  - familyId: SpaceExcalibur
+    chassisId: SpaceExcalibur_04
+    displayName: SpaceExcalibur_04
+    treeLevel: 4
+    gunCount: 4
+    bankName: Rift
+    bankFirePowerMul: 1
+    bankFireRateMul: 0.55
+    bankBulletSpeedMul: 1
+    hullDps: 110.88
+    bankDps: 60.984
+    firePower: 9.24
+    fireRate: 3
     healthCap: 246.1392
     healthRegen: 7.325571
-    energyCap: 165
+    energyCap: 81
     energyRegen: 3
     moveSpeed: 8.5
     turnSpeed: 26
-    bulletSpeed: 17.6
+    bulletSpeed: 21.119999
     family: {fileID: 11400000, guid: 433622f0516dd72458eeb97201b623d1, type: 2}
     prefab: {fileID: 1152214231295606, guid: 069d364ac21694f4d86514710fc9f4e8, type: 3}
+    megaCatalog: {fileID: 0}
+  - familyId: SpaceExcalibur
+    chassisId: SpaceExcalibur_05
+    displayName: SpaceExcalibur_05
+    treeLevel: 4
+    gunCount: 6
+    bankName: Rift
+    bankFirePowerMul: 1
+    bankFireRateMul: 0.55
+    bankBulletSpeedMul: 1
+    hullDps: 184.8
+    bankDps: 101.64001
+    firePower: 36.96
+    fireRate: 1
+    healthCap: 185.22002
+    healthRegen: 5.5125003
+    energyCap: 165
+    energyRegen: 3
+    moveSpeed: 10.625
+    turnSpeed: 36
+    bulletSpeed: 17.6
+    family: {fileID: 11400000, guid: 433622f0516dd72458eeb97201b623d1, type: 2}
+    prefab: {fileID: 1078639209821914, guid: f4fea68ecda22144c9126d1486afce47, type: 3}
     megaCatalog: {fileID: 0}
   - familyId: SpaceExcalibur
     chassisId: SpaceExcalibur_07
     displayName: SpaceExcalibur_07
     treeLevel: 4
-    gunCount: 16
+    gunCount: 6
     bankName: Rift
     bankFirePowerMul: 1
     bankFireRateMul: 0.55
     bankBulletSpeedMul: 1
-    hullDps: 554.4
-    bankDps: 304.92
+    hullDps: 184.8
+    bankDps: 101.64001
     firePower: 36.96
     fireRate: 1
     healthCap: 239.22005
@@ -4545,29 +4568,6 @@ MonoBehaviour:
     bulletSpeed: 17.6
     family: {fileID: 11400000, guid: 433622f0516dd72458eeb97201b623d1, type: 2}
     prefab: {fileID: 1287367741633752, guid: 9f30e70368e8ad840a335252efa96ef0, type: 3}
-    megaCatalog: {fileID: 0}
-  - familyId: SpaceExcalibur
-    chassisId: SpaceExcalibur_08
-    displayName: SpaceExcalibur_08
-    treeLevel: 4
-    gunCount: 19
-    bankName: Rift
-    bankFirePowerMul: 1
-    bankFireRateMul: 0.55
-    bankBulletSpeedMul: 1
-    hullDps: 628.32
-    bankDps: 345.57602
-    firePower: 36.96
-    fireRate: 1
-    healthCap: 212.89944
-    healthRegen: 6.336293
-    energyCap: 165
-    energyRegen: 3
-    moveSpeed: 11.05
-    turnSpeed: 38
-    bulletSpeed: 17.6
-    family: {fileID: 11400000, guid: 433622f0516dd72458eeb97201b623d1, type: 2}
-    prefab: {fileID: 1865648301431312, guid: df3e148963f80b5488a6e5106a1c5d94, type: 3}
     megaCatalog: {fileID: 0}
   - familyId: SpaceExcalibur
     chassisId: SpaceExcalibur_09
@@ -4596,22 +4596,22 @@ MonoBehaviour:
     chassisId: SpaceExcalibur_02
     displayName: SpaceExcalibur_02
     treeLevel: 5
-    gunCount: 8
+    gunCount: 4
     bankName: Rift
     bankFirePowerMul: 1
     bankFireRateMul: 0.55
     bankBulletSpeedMul: 1
-    hullDps: 305.76
-    bankDps: 168.16801
-    firePower: 43.68
-    fireRate: 1
+    hullDps: 131.04
+    bankDps: 72.072
+    firePower: 10.92
+    fireRate: 3
     healthCap: 370.70224
     healthRegen: 11.0328045
-    energyCap: 195
+    energyCap: 99
     energyRegen: 3
     moveSpeed: 8.925
     turnSpeed: 28
-    bulletSpeed: 19.8
+    bulletSpeed: 23.76
     family: {fileID: 11400000, guid: 433622f0516dd72458eeb97201b623d1, type: 2}
     prefab: {fileID: 1804943218186170, guid: 6eaf04f116eead84585c0a806ef4e418, type: 3}
     megaCatalog: {fileID: 0}
@@ -4619,22 +4619,22 @@ MonoBehaviour:
     chassisId: SpaceExcalibur_02B
     displayName: SpaceExcalibur_02B
     treeLevel: 5
-    gunCount: 8
+    gunCount: 4
     bankName: Rift
     bankFirePowerMul: 1
     bankFireRateMul: 0.55
     bankBulletSpeedMul: 1
-    hullDps: 305.76
-    bankDps: 168.16801
-    firePower: 43.68
-    fireRate: 1
+    hullDps: 131.04
+    bankDps: 72.072
+    firePower: 10.92
+    fireRate: 3
     healthCap: 370.70224
     healthRegen: 11.0328045
-    energyCap: 195
+    energyCap: 99
     energyRegen: 3
     moveSpeed: 8.925
     turnSpeed: 28
-    bulletSpeed: 19.8
+    bulletSpeed: 23.76
     family: {fileID: 11400000, guid: 433622f0516dd72458eeb97201b623d1, type: 2}
     prefab: {fileID: 1804943218186170, guid: 6eaf04f116eead84585c0a806ef4e418, type: 3}
     megaCatalog: {fileID: 0}
@@ -4665,13 +4665,13 @@ MonoBehaviour:
     chassisId: SpaceExcalibur_14
     displayName: SpaceExcalibur_14
     treeLevel: 5
-    gunCount: 8
+    gunCount: 4
     bankName: Rift
     bankFirePowerMul: 1
     bankFireRateMul: 0.55
     bankBulletSpeedMul: 1
-    hullDps: 327.6
-    bankDps: 180.18001
+    hullDps: 152.88
+    bankDps: 84.08401
     firePower: 43.68
     fireRate: 1
     healthCap: 362.04578
@@ -4688,22 +4688,22 @@ MonoBehaviour:
     chassisId: SpaceExcalibur_16
     displayName: SpaceExcalibur_16
     treeLevel: 5
-    gunCount: 20
+    gunCount: 8
     bankName: Rift
     bankFirePowerMul: 1
     bankFireRateMul: 0.55
     bankBulletSpeedMul: 1
-    hullDps: 786.24
-    bankDps: 432.432
-    firePower: 43.68
-    fireRate: 1
+    hullDps: 262.08
+    bankDps: 144.144
+    firePower: 10.92
+    fireRate: 3
     healthCap: 387.04382
     healthRegen: 11.51916
-    energyCap: 195
+    energyCap: 99
     energyRegen: 3
     moveSpeed: 11.05
     turnSpeed: 38
-    bulletSpeed: 19.8
+    bulletSpeed: 23.76
     family: {fileID: 11400000, guid: 433622f0516dd72458eeb97201b623d1, type: 2}
     prefab: {fileID: 1456150948882614, guid: 6f63dd65779fcee4fa2589e1d109a674, type: 3}
     megaCatalog: {fileID: 0}
@@ -4711,13 +4711,13 @@ MonoBehaviour:
     chassisId: SpaceExcalibur_13
     displayName: SpaceExcalibur_13
     treeLevel: 6
-    gunCount: 10
+    gunCount: 6
     bankName: Rift
     bankFirePowerMul: 1
     bankFireRateMul: 0.55
     bankBulletSpeedMul: 1
-    hullDps: 453.6
-    bankDps: 249.48001
+    hullDps: 252
+    bankDps: 138.6
     firePower: 50.4
     fireRate: 1
     healthCap: 509.28174
@@ -4734,13 +4734,13 @@ MonoBehaviour:
     chassisId: SpaceExcalibur_15
     displayName: SpaceExcalibur_15
     treeLevel: 6
-    gunCount: 14
+    gunCount: 10
     bankName: Rift
     bankFirePowerMul: 1
     bankFireRateMul: 0.55
     bankBulletSpeedMul: 1
-    hullDps: 604.8
-    bankDps: 332.64
+    hullDps: 403.2
+    bankDps: 221.76001
     firePower: 50.4
     fireRate: 1
     healthCap: 589.8963
@@ -4780,13 +4780,13 @@ MonoBehaviour:
     chassisId: SpaceExcalibur_18
     displayName: SpaceExcalibur_18
     treeLevel: 6
-    gunCount: 10
+    gunCount: 6
     bankName: Rift
     bankFirePowerMul: 1
     bankFireRateMul: 0.55
     bankBulletSpeedMul: 1
-    hullDps: 453.6
-    bankDps: 249.48001
+    hullDps: 252
+    bankDps: 138.6
     firePower: 50.4
     fireRate: 1
     healthCap: 506.52
@@ -4826,13 +4826,13 @@ MonoBehaviour:
     chassisId: SpaceExcalibur_20
     displayName: SpaceExcalibur_20
     treeLevel: 6
-    gunCount: 9
+    gunCount: 5
     bankName: Rift
     bankFirePowerMul: 1
     bankFireRateMul: 0.55
     bankBulletSpeedMul: 1
-    hullDps: 415.8
-    bankDps: 228.69
+    hullDps: 214.2
+    bankDps: 117.81
     firePower: 50.4
     fireRate: 1
     healthCap: 864.627

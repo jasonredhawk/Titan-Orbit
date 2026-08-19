@@ -82,7 +82,7 @@ MonoBehaviour:
   menuPreviewBoundsPadding: 1.22
   menuPreviewBackgroundColor: {r: 0, g: 0, b: 0, a: 1}
   components:
-  - componentId: Acc
+  - componentId: GalaxyRaptor_Acc
     displayName: Hull 1
     statCategories: 01000000
     stats:
@@ -159,7 +159,7 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: 7e47cb030886d5b4687adec68aab5659, type: 3}
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
-  - componentId: Barrel
+  - componentId: GalaxyRaptor_Barrel
     displayName: Weapon Bullet 1
     statCategories: 0000000002000000
     stats:
@@ -236,7 +236,7 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: 58ce2ec107b61f04dbabc6168692d5b7, type: 3}
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
-  - componentId: Cockpit
+  - componentId: GalaxyRaptor_Cockpit
     displayName: Cockpit 1
     statCategories: 000000000100000004000000
     stats:
@@ -313,7 +313,7 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: b9629097922366e4a84d3fdf223249a6, type: 3}
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
-  - componentId: Cylinder
+  - componentId: GalaxyRaptor_Cylinder
     displayName: Hull 1
     statCategories: 01000000
     stats:
@@ -390,7 +390,7 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: 063c643c0805de84289fef643e6e39c0, type: 3}
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
-  - componentId: Detail
+  - componentId: GalaxyRaptor_Detail
     displayName: Hull 1
     statCategories: 01000000
     stats:
@@ -467,7 +467,7 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: 639648d624308be429df3940a1bbbcc2, type: 3}
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
-  - componentId: Engine
+  - componentId: GalaxyRaptor_Engine
     displayName: Engine 1
     statCategories: 0300000002000000
     stats:
@@ -544,7 +544,7 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: abae6929b86b95740b26739516364a31, type: 3}
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
-  - componentId: Gun
+  - componentId: GalaxyRaptor_Gun
     displayName: Weapon Bullet 1
     statCategories: 0000000002000000
     stats:
@@ -621,7 +621,7 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: bbb8e832d42a89f49b2f8433533c8cb7, type: 3}
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
-  - componentId: MainBody1
+  - componentId: GalaxyRaptor_MainBody1
     displayName: Hull 1
     statCategories: 01000000
     stats:
@@ -698,7 +698,7 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: 1887ab9644f96f24d9024b29d7018991, type: 3}
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
-  - componentId: MainBody2
+  - componentId: GalaxyRaptor_MainBody2
     displayName: Hull 2
     statCategories: 01000000
     stats:
@@ -775,7 +775,7 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: 289430234fafba544967c404867b49c0, type: 3}
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
-  - componentId: MainBody3
+  - componentId: GalaxyRaptor_MainBody3
     displayName: Hull 3
     statCategories: 01000000
     stats:
@@ -852,7 +852,7 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: b84f2eb9747ff4c41ba0dfe569a16bc7, type: 3}
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
-  - componentId: MainBody4
+  - componentId: GalaxyRaptor_MainBody4
     displayName: Hull 4
     statCategories: 01000000
     stats:
@@ -929,7 +929,7 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: ae1fbf8a352975f43a0883c1d85d1b9e, type: 3}
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
-  - componentId: ThrustCover
+  - componentId: GalaxyRaptor_ThrustCover
     displayName: Thruster 1
     statCategories: 03000000
     stats:
@@ -1006,7 +1006,7 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: 32a0ab71c9726b24984934b3b33275b7, type: 3}
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
-  - componentId: Wing1
+  - componentId: GalaxyRaptor_Wing1
     displayName: Wing 1
     statCategories: 0100000004000000
     stats:
@@ -1083,7 +1083,7 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: 5265185a2186de34d97f003072eab3e2, type: 3}
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
-  - componentId: Wing2
+  - componentId: GalaxyRaptor_Wing2
     displayName: Wing 2
     statCategories: 0100000004000000
     stats:
@@ -1160,7 +1160,7 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: 203193466bec700418ba9b289a660b3d, type: 3}
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
-  - componentId: Wing3
+  - componentId: GalaxyRaptor_Wing3
     displayName: Wing 3
     statCategories: 0100000004000000
     stats:
@@ -1237,7 +1237,7 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: ff3d29fdd77f0784b9a3020a534ea548, type: 3}
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
-  - componentId: Wing4
+  - componentId: GalaxyRaptor_Wing4
     displayName: Wing 4
     statCategories: 0100000004000000
     stats:
@@ -1314,7 +1314,7 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: 7c1bcc08b7c46da47a2a70e16cd9f02f, type: 3}
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
-  - componentId: WingHolder
+  - componentId: GalaxyRaptor_WingHolder
     displayName: Wing 1
     statCategories: 0100000004000000
     stats:

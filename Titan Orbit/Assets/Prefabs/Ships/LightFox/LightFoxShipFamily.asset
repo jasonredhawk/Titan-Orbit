@@ -82,7 +82,7 @@ MonoBehaviour:
   menuPreviewBoundsPadding: 1.22
   menuPreviewBackgroundColor: {r: 0, g: 0, b: 0, a: 1}
   components:
-  - componentId: Body
+  - componentId: LightFox_Body
     displayName: Hull 1
     statCategories: 01000000
     stats:
@@ -159,7 +159,7 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: 2b3e2e85a3871ad4483b6a4157ebf4cf, type: 3}
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
-  - componentId: Cockpit
+  - componentId: LightFox_Cockpit
     displayName: Cockpit 1
     statCategories: 000000000100000004000000
     stats:
@@ -236,7 +236,7 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: 5bff245c1f6839e4d91cbba83044bc98, type: 3}
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
-  - componentId: CockpitCover
+  - componentId: LightFox_CockpitCover
     displayName: CockpitCover 1
     statCategories: 000000000100000004000000
     stats:
@@ -313,7 +313,7 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: 3282c39f0e1ecca4fa49eb90f721e847, type: 3}
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
-  - componentId: Engine1
+  - componentId: LightFox_Engine1
     displayName: Engine 1
     statCategories: 0300000002000000
     stats:
@@ -390,7 +390,7 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: c95f6df1a6aa4534a90e3e2c5d499d1a, type: 3}
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
-  - componentId: Engine2
+  - componentId: LightFox_Engine2
     displayName: Engine 2
     statCategories: 0300000002000000
     stats:
@@ -467,7 +467,7 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: c4a2d1548006a5640b83e76eb846452a, type: 3}
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
-  - componentId: Weapon
+  - componentId: LightFox_Weapon
     displayName: Weapon Bullet 1
     statCategories: 0000000002000000
     stats:
@@ -544,7 +544,7 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: 905d0a4bcabc5664bae71b8736dc9d39, type: 3}
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
-  - componentId: Wing_1
+  - componentId: LightFox_Wing_1
     displayName: Wing 1
     statCategories: 0100000004000000
     stats:
@@ -621,7 +621,7 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: 0b387868c41622047896f53f5e64caee, type: 3}
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
-  - componentId: Wing_2
+  - componentId: LightFox_Wing_2
     displayName: Wing 2
     statCategories: 0100000004000000
     stats:
@@ -698,7 +698,7 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: 835df790c1066e448b8d3fb95b361187, type: 3}
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
-  - componentId: Wing_3
+  - componentId: LightFox_Wing_3
     displayName: Wing 3
     statCategories: 0100000004000000
     stats:
@@ -775,7 +775,7 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: c9ec3042868d1044291a28c1f0260bfa, type: 3}
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
-  - componentId: Wing_4
+  - componentId: LightFox_Wing_4
     displayName: Wing 4
     statCategories: 0100000004000000
     stats:

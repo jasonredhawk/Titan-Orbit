@@ -82,7 +82,7 @@ MonoBehaviour:
   menuPreviewBoundsPadding: 1.22
   menuPreviewBackgroundColor: {r: 0, g: 0, b: 0, a: 1}
   components:
-  - componentId: Arm
+  - componentId: MeteorMantis_Arm
     displayName: Hull 1
     statCategories: 01000000
     stats:
@@ -159,7 +159,7 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: 184df6614b724494ba690849dab77db3, type: 3}
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
-  - componentId: Body
+  - componentId: MeteorMantis_Body
     displayName: Hull 1
     statCategories: 01000000
     stats:
@@ -236,7 +236,7 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: fdf84433082891d46b02ab321925c59f, type: 3}
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
-  - componentId: Cockpit
+  - componentId: MeteorMantis_Cockpit
     displayName: Cockpit 1
     statCategories: 000000000100000004000000
     stats:
@@ -313,7 +313,7 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: 261ec294d470fd845a14a123cb83dc26, type: 3}
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
-  - componentId: Cockpit_Base
+  - componentId: MeteorMantis_Cockpit_Base
     displayName: Cockpit 1
     statCategories: 000000000100000004000000
     stats:
@@ -390,7 +390,7 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: 274a036f9ed9a76409c3a1e85ade75f2, type: 3}
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
-  - componentId: Engine
+  - componentId: MeteorMantis_Engine
     displayName: Engine 1
     statCategories: 0300000002000000
     stats:
@@ -467,7 +467,7 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: b54abdcbb2928ca479193ed68fe46990, type: 3}
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
-  - componentId: Joint
+  - componentId: MeteorMantis_Joint
     displayName: Hull 1
     statCategories: 01000000
     stats:
@@ -544,7 +544,7 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: 1e18a72eb4b5cdf44affc12616b59112, type: 3}
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
-  - componentId: Shell
+  - componentId: MeteorMantis_Shell
     displayName: Hull 1
     statCategories: 01000000
     stats:
@@ -621,7 +621,7 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: 456434a40814ff140b7f865a437ea2c0, type: 3}
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
-  - componentId: Tail
+  - componentId: MeteorMantis_Tail
     displayName: Tail 1
     statCategories: 03000000
     stats:
@@ -698,7 +698,7 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: 06f0fb59aead4af409752d22c702676b, type: 3}
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
-  - componentId: Weapon
+  - componentId: MeteorMantis_Weapon
     displayName: Weapon Bullet 1
     statCategories: 0000000002000000
     stats:
@@ -775,7 +775,7 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: f72a54ba59d6d8d4292949b503e80b92, type: 3}
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
-  - componentId: Wing
+  - componentId: MeteorMantis_Wing
     displayName: Wing 1
     statCategories: 0100000004000000
     stats:

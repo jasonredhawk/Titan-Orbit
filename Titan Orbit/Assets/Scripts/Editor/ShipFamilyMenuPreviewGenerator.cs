@@ -760,7 +760,9 @@ namespace TitanOrbit.Editor
                         continue;
 
                     string suffix = name.Substring(familyPrefix.Length);
-                    if (def.TryGetComponentEntry(suffix, out ShipFamilyComponentEntry entry) &&
+                    string fullId = ShipFamilyDefinition.NormalizeComponentId(name);
+                    if ((def.TryGetComponentEntry(fullId, out ShipFamilyComponentEntry entry)
+                            || def.TryGetComponentEntry(suffix, out entry)) &&
                         entry != null &&
                         !string.IsNullOrWhiteSpace(entry.componentId))
                     {
@@ -892,8 +894,16 @@ namespace TitanOrbit.Editor
                 return false;
 
             string matchedId = ShipFamilyDefinition.NormalizeComponentId(matchedEntry.componentId?.Trim());
-            return !string.IsNullOrEmpty(matchedId) &&
-                   string.Equals(matchedId, targetId, StringComparison.OrdinalIgnoreCase);
+            if (string.IsNullOrEmpty(matchedId))
+                return false;
+            if (string.Equals(matchedId, targetId, StringComparison.OrdinalIgnoreCase))
+                return true;
+
+            string matchedSuffix = ShipFamilyDefinition.GetComponentIdSuffix(familyId, matchedId);
+            string targetSuffix = ShipFamilyDefinition.GetComponentIdSuffix(familyId, targetId);
+            return !string.IsNullOrEmpty(matchedSuffix)
+                   && string.Equals(matchedSuffix, targetSuffix, StringComparison.OrdinalIgnoreCase)
+                   && string.Equals(matchedSuffix, suffix, StringComparison.OrdinalIgnoreCase);
         }
 
         private static Bounds CalculateEnabledRendererBounds(GameObject root)

@@ -106,7 +106,7 @@ namespace TitanOrbit.Editor
 
             EditorGUILayout.HelpBox(
                 "Two lists, different jobs:\n" +
-                "• Name Mappings = inventory of unique prefab part names (sorted A→Z).\n" +
+                "• Name Mappings = inventory of unique family-prefixed prefab part names (sorted A→Z).\n" +
                 "• Part Profiles = shared stats per group:\n" +
                 "  Cockpit, Weapon Bullet, Weapon Cannon, Wing, Engine, Thruster, Tail, Hull.\n\n" +
                 "Attribute mesh grow: Global Upgrade Scale Multiplier (top of the asset, default 0.25) " +
@@ -403,7 +403,10 @@ namespace TitanOrbit.Editor
                 // Asset / root name is the full ship (FamilyId_ShipName) — not a chassis part.
                 string hull = ShipFamilyPrefabComponentNameUtility.ExtractFamilySuffix(prefab.name, familyId);
                 if (!string.IsNullOrEmpty(hull))
+                {
                     shipHullNames.Add(hull);
+                    shipHullNames.Add(familyId + "_" + hull);
+                }
 
                 DiscoverNamesOnPrefab(set, prefab, familyId);
                 count++;
@@ -476,7 +479,7 @@ namespace TitanOrbit.Editor
                         && string.Equals(rest, rootShipSuffix, StringComparison.OrdinalIgnoreCase))
                         continue;
 
-                    set.MergeDiscoveredName(rest, familyId);
+                    set.MergeDiscoveredName(familyId + "_" + rest, familyId);
                 }
             }
             finally
@@ -527,11 +530,11 @@ namespace TitanOrbit.Editor
                           $"({discoverResult.familyFolderCount} family folders, {discoverResult.prefabCount} prefabs).");
             md.AppendLine();
             md.AppendLine("## Task");
-            md.AppendLine("Classify each `discoveredName` (prefab asset suffix). Return **ONLY** a JSON array (no markdown fences) of objects:");
+            md.AppendLine("Classify each `discoveredName` (full family-prefixed prefab part id). Return **ONLY** a JSON array (no markdown fences) of objects:");
             md.AppendLine();
             md.AppendLine("```");
             md.AppendLine("{");
-            md.AppendLine("  \"discoveredName\": \"Thrusters_Big\",");
+            md.AppendLine("  \"discoveredName\": \"SpaceExcalibur_Thrusters_Big\",");
             md.AppendLine("  \"partType\": \"Thruster\",");
             md.AppendLine("  \"contributesAbilityStats\": true,");
             md.AppendLine("  \"enablePropulsionVfx\": true,");
@@ -684,7 +687,7 @@ namespace TitanOrbit.Editor
                 var row = _pendingSuggestions[i];
                 EditorGUILayout.BeginVertical(EditorStyles.helpBox);
                 row.apply = EditorGUILayout.ToggleLeft(row.discoveredName, row.apply);
-                row.partType = EditorGUILayout.TextField("Part Type (group)", row.partType);
+                row.partType = ShipFamilyPartTypeDrawer.DrawPopupLayout("Part Type (group)", row.partType);
                 row.contributesAbilityStats = EditorGUILayout.Toggle("Contributes Ability Stats", row.contributesAbilityStats);
                 row.enablePropulsionVfx = EditorGUILayout.Toggle("Propulsion VFX", row.enablePropulsionVfx);
                 row.propulsionVfxScale = EditorGUILayout.FloatField("VFX Scale", row.propulsionVfxScale);

@@ -70,8 +70,12 @@ namespace TitanOrbit.Data
     public class ShipFamilyDefinition : ScriptableObject
     {
         static readonly Regex CloneSuffixRegex = new Regex(@"\(Clone\)\s*$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
-        static readonly Regex PropulsionIdUnderscoreFormRegex = new Regex(@"^(Engine|Thruster)_(\d+)$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
-        static readonly Regex PropulsionIdCompactFormRegex = new Regex(@"^(Engine|Thruster)(\d+)$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+        static readonly Regex PropulsionIdUnderscoreFormRegex = new Regex(
+            @"^(?:(?<family>[A-Za-z]+)_)?(?<kind>Engine|Thruster)_(?<num>\d+)$",
+            RegexOptions.Compiled | RegexOptions.IgnoreCase);
+        static readonly Regex PropulsionIdCompactFormRegex = new Regex(
+            @"^(?:(?<family>[A-Za-z]+)_)?(?<kind>Engine|Thruster)(?<num>\d+)$",
+            RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
         public string familyId;
 
@@ -322,8 +326,9 @@ namespace TitanOrbit.Data
         public void InvalidateComponentStatsLookup() => _lookupBuilt = false;
 
         /// <summary>
-        /// Looks up authored stats for a prefab child name such as <c>Weapon_1</c> or <c>Engine_2</c>.
-        /// Tries raw id, normalized id, and alternate propulsion naming (<c>Engine1</c> ↔ <c>Engine_1</c>).
+        /// Looks up authored stats for a prefab child name such as <c>AstroEagle_Engine_2</c>
+        /// or the short suffix <c>Engine_2</c>. Tries raw id, normalized id, family-prefixed /
+        /// suffix forms, and alternate propulsion naming (<c>Engine1</c> ↔ <c>Engine_1</c>).
         /// </summary>
         public bool TryGetStatsForComponent(string componentId, out ShipComponentAbilityStats stats)
         {
@@ -332,14 +337,32 @@ namespace TitanOrbit.Data
             if (string.IsNullOrWhiteSpace(componentId))
                 return false;
 
-            string raw = componentId.Trim();
-            if (_lookup.TryGetValue(raw, out stats))
+            if (TryLookupStats(componentId, out stats))
                 return true;
-            string canonical = NormalizeComponentId(raw);
-            if (!string.IsNullOrEmpty(canonical) && _lookup.TryGetValue(canonical, out stats))
+            if (TryLookupStats(NormalizeComponentId(componentId), out stats))
                 return true;
-            string alternate = GetAlternateComponentIdForm(raw);
-            return !string.IsNullOrEmpty(alternate) && _lookup.TryGetValue(alternate, out stats);
+            if (TryLookupStats(GetAlternateComponentIdForm(componentId), out stats))
+                return true;
+
+            if (string.IsNullOrWhiteSpace(familyId))
+                return false;
+
+            string full = ComposeFamilyPrefixedComponentId(familyId, componentId);
+            if (TryLookupStats(full, out stats))
+                return true;
+            if (TryLookupStats(GetAlternateComponentIdForm(full), out stats))
+                return true;
+
+            string suffix = GetComponentIdSuffix(familyId, componentId);
+            if (TryLookupStats(suffix, out stats))
+                return true;
+            return TryLookupStats(GetAlternateComponentIdForm(suffix), out stats);
+        }
+
+        bool TryLookupStats(string key, out ShipComponentAbilityStats stats)
+        {
+            stats = default;
+            return !string.IsNullOrWhiteSpace(key) && _lookup.TryGetValue(key.Trim(), out stats);
         }
 
         /// <summary>Full component row (stats, preview sprite, categories) for a component id, or false.</summary>
@@ -349,19 +372,39 @@ namespace TitanOrbit.Data
             if (components == null || string.IsNullOrWhiteSpace(componentId))
                 return false;
 
+            if (TryMatchComponentEntry(componentId, out entry))
+                return true;
+
+            if (string.IsNullOrWhiteSpace(familyId))
+                return false;
+
+            if (TryMatchComponentEntry(ComposeFamilyPrefixedComponentId(familyId, componentId), out entry))
+                return true;
+            return TryMatchComponentEntry(GetComponentIdSuffix(familyId, componentId), out entry);
+        }
+
+        bool TryMatchComponentEntry(string componentId, out ShipFamilyComponentEntry entry)
+        {
+            entry = null;
+            if (string.IsNullOrWhiteSpace(componentId))
+                return false;
+
             string id = componentId.Trim();
             string canonical = NormalizeComponentId(id);
+            string alternate = GetAlternateComponentIdForm(id);
             for (int i = 0; i < components.Count; i++)
             {
                 if (components[i] == null) continue;
                 string test = components[i].componentId?.Trim();
-                if (string.Equals(test, id, StringComparison.OrdinalIgnoreCase))
-                {
-                    entry = components[i];
-                    return true;
-                }
-                if (!string.IsNullOrEmpty(canonical) &&
-                    string.Equals(NormalizeComponentId(test), canonical, StringComparison.OrdinalIgnoreCase))
+                if (string.IsNullOrEmpty(test))
+                    continue;
+                if (string.Equals(test, id, StringComparison.OrdinalIgnoreCase)
+                    || (!string.IsNullOrEmpty(canonical)
+                        && string.Equals(NormalizeComponentId(test), canonical, StringComparison.OrdinalIgnoreCase))
+                    || (!string.IsNullOrEmpty(alternate)
+                        && string.Equals(NormalizeComponentId(test), alternate, StringComparison.OrdinalIgnoreCase))
+                    || (!string.IsNullOrEmpty(alternate)
+                        && string.Equals(GetAlternateComponentIdForm(test), alternate, StringComparison.OrdinalIgnoreCase)))
                 {
                     entry = components[i];
                     return true;
@@ -437,7 +480,8 @@ namespace TitanOrbit.Data
         }
 
         /// <summary>
-        /// Strips Unity clone suffixes and mirrored-part markers so prefab child names match authored ids.
+        /// Strips Unity clone suffixes, mirrored-part markers, and left/right suffixes so prefab
+        /// child names match authored ids (<c>AstroEagle_Wing_1_L</c> → <c>AstroEagle_Wing_1</c>).
         /// </summary>
         public static string NormalizeComponentId(string rawId)
         {
@@ -448,11 +492,47 @@ namespace TitanOrbit.Data
             s = CloneSuffixRegex.Replace(s, string.Empty);
             if (s.EndsWith("_Mirrored", StringComparison.OrdinalIgnoreCase))
                 s = s.Substring(0, s.Length - "_Mirrored".Length);
+            if (s.EndsWith("_L", StringComparison.OrdinalIgnoreCase)
+                || s.EndsWith("_R", StringComparison.OrdinalIgnoreCase))
+                s = s.Substring(0, s.Length - 2);
             return s.Trim();
         }
 
         /// <summary>
-        /// Converts between <c>Engine_1</c> and <c>Engine1</c> forms so lookups survive inconsistent naming.
+        /// Builds <c>FamilyId_Part</c> when the part is not already family-prefixed.
+        /// </summary>
+        public static string ComposeFamilyPrefixedComponentId(string familyId, string partOrFullId)
+        {
+            string part = NormalizeComponentId(partOrFullId);
+            if (string.IsNullOrEmpty(part))
+                return string.Empty;
+            if (string.IsNullOrWhiteSpace(familyId))
+                return part;
+
+            string fid = familyId.Trim();
+            if (part.StartsWith(fid + "_", StringComparison.OrdinalIgnoreCase))
+                return part;
+            return fid + "_" + part;
+        }
+
+        /// <summary>
+        /// Returns the part suffix after <c>FamilyId_</c> when present; otherwise the normalized id.
+        /// </summary>
+        public static string GetComponentIdSuffix(string familyId, string componentId)
+        {
+            string id = NormalizeComponentId(componentId);
+            if (string.IsNullOrEmpty(id) || string.IsNullOrWhiteSpace(familyId))
+                return id;
+
+            string fid = familyId.Trim();
+            if (id.StartsWith(fid + "_", StringComparison.OrdinalIgnoreCase))
+                return id.Substring(fid.Length + 1);
+            return id;
+        }
+
+        /// <summary>
+        /// Converts between <c>Engine_1</c> and <c>Engine1</c> forms (including
+        /// <c>AstroEagle_Engine_1</c> ↔ <c>AstroEagle_Engine1</c>) so lookups survive inconsistent naming.
         /// </summary>
         public static string GetAlternateComponentIdForm(string componentId)
         {
@@ -462,11 +542,21 @@ namespace TitanOrbit.Data
             string s = NormalizeComponentId(componentId);
             Match underscored = PropulsionIdUnderscoreFormRegex.Match(s);
             if (underscored.Success)
-                return underscored.Groups[1].Value + underscored.Groups[2].Value;
+            {
+                string family = underscored.Groups["family"].Value;
+                string kind = underscored.Groups["kind"].Value;
+                string num = underscored.Groups["num"].Value;
+                return string.IsNullOrEmpty(family) ? kind + num : family + "_" + kind + num;
+            }
 
             Match compact = PropulsionIdCompactFormRegex.Match(s);
             if (compact.Success)
-                return compact.Groups[1].Value + "_" + compact.Groups[2].Value;
+            {
+                string family = compact.Groups["family"].Value;
+                string kind = compact.Groups["kind"].Value;
+                string num = compact.Groups["num"].Value;
+                return string.IsNullOrEmpty(family) ? kind + "_" + num : family + "_" + kind + "_" + num;
+            }
 
             return string.Empty;
         }
@@ -485,6 +575,15 @@ namespace TitanOrbit.Data
                     RegisterLookupKey(raw, entry.stats);
                     RegisterLookupKey(NormalizeComponentId(raw), entry.stats);
                     RegisterLookupKey(GetAlternateComponentIdForm(raw), entry.stats);
+                    if (!string.IsNullOrWhiteSpace(familyId))
+                    {
+                        string full = ComposeFamilyPrefixedComponentId(familyId, raw);
+                        RegisterLookupKey(full, entry.stats);
+                        RegisterLookupKey(GetAlternateComponentIdForm(full), entry.stats);
+                        string suffix = GetComponentIdSuffix(familyId, raw);
+                        RegisterLookupKey(suffix, entry.stats);
+                        RegisterLookupKey(GetAlternateComponentIdForm(suffix), entry.stats);
+                    }
                 }
             }
 

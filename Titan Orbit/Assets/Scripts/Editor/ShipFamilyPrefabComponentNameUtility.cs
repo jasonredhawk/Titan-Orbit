@@ -18,8 +18,9 @@ namespace TitanOrbit.Editor
             new Regex(@"\s*\(\d+\)\s*$", RegexOptions.Compiled);
 
         /// <summary>
-        /// Tries to read a family-prefixed component rest (e.g. <c>Cockpit_Base_2</c>) for a
-        /// transform under a ship prefab. Prefers the nested prefab asset name.
+        /// Tries to read the part suffix after <c>FamilyId_</c> (e.g. <c>Cockpit_Base_2</c>)
+        /// for a transform under a ship prefab. Discover / Scan prepend the family id to form
+        /// the catalog id. Prefers the nested prefab asset name.
         /// </summary>
         /// <param name="t">Child transform inside a loaded ship prefab.</param>
         /// <param name="familyId">Family folder id (AstroEagle, …).</param>

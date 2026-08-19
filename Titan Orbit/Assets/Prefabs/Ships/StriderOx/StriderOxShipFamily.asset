@@ -82,7 +82,7 @@ MonoBehaviour:
   menuPreviewBoundsPadding: 1.22
   menuPreviewBackgroundColor: {r: 0, g: 0, b: 0, a: 1}
   components:
-  - componentId: Arm
+  - componentId: StriderOx_Arm
     displayName: Hull 1
     statCategories: 01000000
     stats:
@@ -159,7 +159,7 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: 0125d489a5167fa4dae04d58e39a99cd, type: 3}
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
-  - componentId: Cockpit
+  - componentId: StriderOx_Cockpit
     displayName: Cockpit 1
     statCategories: 000000000100000004000000
     stats:
@@ -236,7 +236,7 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: aba34736f7c99a94e994459de9384b43, type: 3}
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
-  - componentId: Core
+  - componentId: StriderOx_Core
     displayName: Hull 1
     statCategories: 01000000
     stats:
@@ -313,7 +313,7 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: 18ecd2c3dd96b0442a362fa4fa5d353b, type: 3}
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
-  - componentId: Cover
+  - componentId: StriderOx_Cover
     displayName: Cover 1
     statCategories: 01000000
     stats:
@@ -390,7 +390,7 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: 31b38713a57d7bf4fbc9769a0fe0cfe5, type: 3}
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
-  - componentId: Engine
+  - componentId: StriderOx_Engine
     displayName: Engine 1
     statCategories: 0300000002000000
     stats:
@@ -467,7 +467,7 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: fd299c9c7e54dbf40a2ec7c0c9effb50, type: 3}
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
-  - componentId: Fin
+  - componentId: StriderOx_Fin
     displayName: Tail 1
     statCategories: 03000000
     stats:
@@ -544,7 +544,7 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: acb7fa10ad70ec04f855044789203c8f, type: 3}
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
-  - componentId: Support
+  - componentId: StriderOx_Support
     displayName: Hull 1
     statCategories: 01000000
     stats:
@@ -621,7 +621,7 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: d528540b0d6a84744806b39d2fa9b6bd, type: 3}
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
-  - componentId: Thruster
+  - componentId: StriderOx_Thruster
     displayName: Thruster 1
     statCategories: 03000000
     stats:
@@ -698,7 +698,7 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: af7bbd85511961248b479ba87b407782, type: 3}
     enablePropulsionVfx: 1
     propulsionVfxScale: 1
-  - componentId: Weapon
+  - componentId: StriderOx_Weapon
     displayName: Weapon Bullet 1
     statCategories: 0000000002000000
     stats:
@@ -775,7 +775,7 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: 4d55c1e3e3fab78419e8d178fc5380af, type: 3}
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
-  - componentId: Wing
+  - componentId: StriderOx_Wing
     displayName: Wing 1
     statCategories: 0100000004000000
     stats:

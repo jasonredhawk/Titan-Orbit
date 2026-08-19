@@ -82,7 +82,7 @@ MonoBehaviour:
   menuPreviewBoundsPadding: 1.22
   menuPreviewBackgroundColor: {r: 0, g: 0, b: 0, a: 1}
   components:
-  - componentId: Cockpit
+  - componentId: NightAye_Cockpit
     displayName: Cockpit 1
     statCategories: 000000000100000004000000
     stats:
@@ -144,7 +144,7 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: ed2cdf374b0f75f4fb945c57fe4a677d, type: 3}
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
-  - componentId: Engine
+  - componentId: NightAye_Engine
     displayName: Engine 1
     statCategories: 0300000002000000
     stats:
@@ -206,7 +206,7 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: 63cdaba3dcca5a246a55acef767b3830, type: 3}
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
-  - componentId: Hood
+  - componentId: NightAye_Hood
     displayName: Hull 1
     statCategories: 01000000
     stats:
@@ -268,7 +268,7 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: 7447293dd0b3f2d439f2a99037fecf10, type: 3}
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
-  - componentId: Hull
+  - componentId: NightAye_Hull
     displayName: Hull 1
     statCategories: 01000000
     stats:
@@ -330,7 +330,7 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: 163fc79fd7658494c849cec4ea42a8bc, type: 3}
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
-  - componentId: Missile
+  - componentId: NightAye_Missile
     displayName: Weapon Cannon 1
     statCategories: 0000000002000000
     stats:
@@ -392,7 +392,7 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: efa731ab3ef299f41b967144b5a7aa70, type: 3}
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
-  - componentId: Spike
+  - componentId: NightAye_Spike
     displayName: Hull 1
     statCategories: 01000000
     stats:
@@ -454,7 +454,7 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: ad7dd0a7f3f557840aa5d671a7161aad, type: 3}
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
-  - componentId: WingMain
+  - componentId: NightAye_WingMain
     displayName: Wing 1
     statCategories: 0100000004000000
     stats:
@@ -516,7 +516,7 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: ad2db7246334df047bed07c463f3e6b1, type: 3}
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
-  - componentId: WingMini
+  - componentId: NightAye_WingMini
     displayName: Wing 1
     statCategories: 0100000004000000
     stats:
@@ -578,7 +578,7 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: 8d68a26ff2be0d74292a66612159e5d1, type: 3}
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
-  - componentId: WingTip
+  - componentId: NightAye_WingTip
     displayName: Wing 1
     statCategories: 0100000004000000
     stats:
@@ -640,7 +640,7 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: 89a060e5167d2874dacea68bf67d315c, type: 3}
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
-  - componentId: WingWide
+  - componentId: NightAye_WingWide
     displayName: Wing 1
     statCategories: 0100000004000000
     stats:

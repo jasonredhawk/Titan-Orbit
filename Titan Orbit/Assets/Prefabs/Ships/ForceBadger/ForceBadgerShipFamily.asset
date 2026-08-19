@@ -82,7 +82,7 @@ MonoBehaviour:
   menuPreviewBoundsPadding: 1.22
   menuPreviewBackgroundColor: {r: 0, g: 0, b: 0, a: 1}
   components:
-  - componentId: Cockpit
+  - componentId: ForceBadger_Cockpit
     displayName: Cockpit 1
     statCategories: 000000000100000004000000
     stats:
@@ -159,7 +159,7 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: f1b285f388298534996cc4be014ad673, type: 3}
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
-  - componentId: Engine
+  - componentId: ForceBadger_Engine
     displayName: Engine 1
     statCategories: 0300000002000000
     stats:
@@ -236,7 +236,7 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: 2f401252282c5c840b61ca9d6cc79223, type: 3}
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
-  - componentId: Fin
+  - componentId: ForceBadger_Fin
     displayName: Tail 1
     statCategories: 03000000
     stats:
@@ -313,7 +313,7 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: 3b31b3e36536d954bafdcde1e75ea6fe, type: 3}
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
-  - componentId: Sensor
+  - componentId: ForceBadger_Sensor
     displayName: Hull 1
     statCategories: 01000000
     stats:
@@ -390,7 +390,7 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: 098988c7334fef44fa198c2f603b9cfc, type: 3}
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
-  - componentId: Support
+  - componentId: ForceBadger_Support
     displayName: Hull 1
     statCategories: 01000000
     stats:
@@ -467,7 +467,7 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: 543b0f27fbdc5ba4093c6682b96adb3c, type: 3}
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
-  - componentId: Tail
+  - componentId: ForceBadger_Tail
     displayName: Tail 1
     statCategories: 03000000
     stats:
@@ -544,7 +544,7 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: a31bede419153a94099951193cbeced4, type: 3}
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
-  - componentId: Thruster
+  - componentId: ForceBadger_Thruster
     displayName: Thruster 1
     statCategories: 03000000
     stats:
@@ -621,7 +621,7 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: 2413a5cd6e27a944ea9c1b4b6bebbf52, type: 3}
     enablePropulsionVfx: 1
     propulsionVfxScale: 1
-  - componentId: Weapon
+  - componentId: ForceBadger_Weapon
     displayName: Weapon Bullet 1
     statCategories: 0000000002000000
     stats:
@@ -698,7 +698,7 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: 5eed932d20ffdd745826c970abd592a8, type: 3}
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
-  - componentId: Wing
+  - componentId: ForceBadger_Wing
     displayName: Wing 1
     statCategories: 0100000004000000
     stats:

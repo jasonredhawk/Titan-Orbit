@@ -82,7 +82,7 @@ MonoBehaviour:
   menuPreviewBoundsPadding: 1.22
   menuPreviewBackgroundColor: {r: 0, g: 0, b: 0, a: 1}
   components:
-  - componentId: Cockpit
+  - componentId: AstroEagle_Cockpit
     displayName: Cockpit 1
     statCategories: 000000000100000004000000
     stats:
@@ -144,7 +144,7 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: a6b294945d26a4748bb76692487e5ea2, type: 3}
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
-  - componentId: Cockpit_Base_1
+  - componentId: AstroEagle_Cockpit_Base_1
     displayName: Cockpit 1
     statCategories: 000000000100000004000000
     stats:
@@ -206,7 +206,7 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: f35ac39a7be16e741bc7af8e76542017, type: 3}
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
-  - componentId: Cockpit_Base_2
+  - componentId: AstroEagle_Cockpit_Base_2
     displayName: Cockpit 2
     statCategories: 000000000100000004000000
     stats:
@@ -268,7 +268,7 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: de183fa8412c4af44bedf16433ee3b7e, type: 3}
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
-  - componentId: Engine_1
+  - componentId: AstroEagle_Engine_1
     displayName: Engine 1
     statCategories: 0300000002000000
     stats:
@@ -330,7 +330,7 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: 4cb91348b055e8348afbfede00e114b0, type: 3}
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
-  - componentId: Engine_2
+  - componentId: AstroEagle_Engine_2
     displayName: Engine 2
     statCategories: 0300000002000000
     stats:
@@ -392,7 +392,7 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: 824997546dd6c2c4c9b1e339351aa656, type: 3}
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
-  - componentId: Fin
+  - componentId: AstroEagle_Fin
     displayName: Tail 1
     statCategories: 03000000
     stats:
@@ -454,7 +454,7 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: 74c06797e1e46394a95f71798bca06ac, type: 3}
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
-  - componentId: Part_1
+  - componentId: AstroEagle_Part_1
     displayName: Hull 1
     statCategories: 01000000
     stats:
@@ -516,7 +516,7 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: ad7228d7b46854d458b1f5d3d15c453e, type: 3}
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
-  - componentId: Part_2
+  - componentId: AstroEagle_Part_2
     displayName: Hull 2
     statCategories: 01000000
     stats:
@@ -578,7 +578,7 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: d23d3910bddf63a4d8ba376ad23ed503, type: 3}
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
-  - componentId: Tail
+  - componentId: AstroEagle_Tail
     displayName: Tail 1
     statCategories: 03000000
     stats:
@@ -640,7 +640,7 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: bd61a448d40d8424e8d4b302d68d7e25, type: 3}
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
-  - componentId: Thruster
+  - componentId: AstroEagle_Thruster
     displayName: Thruster 1
     statCategories: 03000000
     stats:
@@ -702,7 +702,7 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: 6e9ff45da2a2b4242ae58a9183be9075, type: 3}
     enablePropulsionVfx: 1
     propulsionVfxScale: 1
-  - componentId: Weapon
+  - componentId: AstroEagle_Weapon
     displayName: Weapon Bullet 1
     statCategories: 0000000002000000
     stats:
@@ -764,7 +764,7 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: 5c7c5a849f55c1f4daf56246b159ae54, type: 3}
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
-  - componentId: Wing_1
+  - componentId: AstroEagle_Wing_1
     displayName: Wing 1
     statCategories: 0100000004000000
     stats:
@@ -826,7 +826,7 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: 95b0689f0dcedfb4bb7f42e6033c533e, type: 3}
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
-  - componentId: Wing_2
+  - componentId: AstroEagle_Wing_2
     displayName: Wing 2
     statCategories: 0100000004000000
     stats:
@@ -888,7 +888,7 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: cd6c74af31bbd7341a50c14bb627274c, type: 3}
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
-  - componentId: Wing_3
+  - componentId: AstroEagle_Wing_3
     displayName: Wing 3
     statCategories: 0100000004000000
     stats:
@@ -950,7 +950,7 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: 3c1745c36613d914a949ff78bbac5eff, type: 3}
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
-  - componentId: Wing_4
+  - componentId: AstroEagle_Wing_4
     displayName: Wing 4
     statCategories: 0100000004000000
     stats:
@@ -1012,7 +1012,7 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: 105498d11e5187047a5f70dffc9c420b, type: 3}
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
-  - componentId: Wing_5
+  - componentId: AstroEagle_Wing_5
     displayName: Wing 5
     statCategories: 0100000004000000
     stats:

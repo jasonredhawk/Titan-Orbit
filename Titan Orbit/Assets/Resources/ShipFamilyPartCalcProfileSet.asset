@@ -14,127 +14,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: TitanOrbit.Data::TitanOrbit.Data.ShipFamilyPartCalcProfileSet
   globalUpgradeScaleMultiplier: 0.25
   nameMappings:
-  - discoveredName: Acc
-    partType: Hull
-    contributesAbilityStats: 1
-    enablePropulsionVfx: 0
-    propulsionVfxScale: 1
-    seenInFamilies: GalaxyRaptor
-    notes: 
-    includeInPopulate: 1
-  - discoveredName: Ammunition
-    partType: Weapon Bullet
-    contributesAbilityStats: 1
-    enablePropulsionVfx: 0
-    propulsionVfxScale: 1
-    seenInFamilies: SpaceExcalibur
-    notes: 
-    includeInPopulate: 1
-  - discoveredName: Arm
-    partType: Hull
-    contributesAbilityStats: 1
-    enablePropulsionVfx: 0
-    propulsionVfxScale: 1
-    seenInFamilies: MeteorMantis,ProtonLegacy,StriderOx
-    notes: 
-    includeInPopulate: 1
-  - discoveredName: Armor_01
-    partType: Hull
-    contributesAbilityStats: 1
-    enablePropulsionVfx: 0
-    propulsionVfxScale: 1
-    seenInFamilies: SpaceExcalibur
-    notes: 
-    includeInPopulate: 1
-  - discoveredName: Armor_02
-    partType: Hull
-    contributesAbilityStats: 1
-    enablePropulsionVfx: 0
-    propulsionVfxScale: 1
-    seenInFamilies: SpaceExcalibur
-    notes: 
-    includeInPopulate: 1
-  - discoveredName: Barrel
-    partType: Weapon Bullet
-    contributesAbilityStats: 1
-    enablePropulsionVfx: 0
-    propulsionVfxScale: 1
-    seenInFamilies: GalaxyRaptor
-    notes: 
-    includeInPopulate: 1
-  - discoveredName: Body
-    partType: Hull
-    contributesAbilityStats: 1
-    enablePropulsionVfx: 0
-    propulsionVfxScale: 1
-    seenInFamilies: CosmicShark,LightFox,MeteorMantis
-    notes: 
-    includeInPopulate: 1
-  - discoveredName: Body1
-    partType: Hull
-    contributesAbilityStats: 1
-    enablePropulsionVfx: 0
-    propulsionVfxScale: 1
-    seenInFamilies: StarForce
-    notes: 
-    includeInPopulate: 1
-  - discoveredName: Body2
-    partType: Hull
-    contributesAbilityStats: 1
-    enablePropulsionVfx: 0
-    propulsionVfxScale: 1
-    seenInFamilies: StarForce
-    notes: 
-    includeInPopulate: 1
-  - discoveredName: Body_01
-    partType: Hull
-    contributesAbilityStats: 1
-    enablePropulsionVfx: 0
-    propulsionVfxScale: 1
-    seenInFamilies: SpaceExcalibur
-    notes: 
-    includeInPopulate: 1
-  - discoveredName: Body_02
-    partType: Hull
-    contributesAbilityStats: 1
-    enablePropulsionVfx: 0
-    propulsionVfxScale: 1
-    seenInFamilies: SpaceExcalibur
-    notes: 
-    includeInPopulate: 1
-  - discoveredName: Body_03
-    partType: Hull
-    contributesAbilityStats: 1
-    enablePropulsionVfx: 0
-    propulsionVfxScale: 1
-    seenInFamilies: SpaceExcalibur
-    notes: 
-    includeInPopulate: 1
-  - discoveredName: Cockpit
-    partType: Cockpit
-    contributesAbilityStats: 1
-    enablePropulsionVfx: 0
-    propulsionVfxScale: 1
-    seenInFamilies: AstroEagle,ForceBadger,GalaxyRaptor,HyperFalcon,LightFox,MeteorMantis,NightAye,ProtonLegacy,SpaceExcalibur,StarForce,StriderOx
-    notes: 
-    includeInPopulate: 1
-  - discoveredName: CockpitCover
-    partType: Cockpit
-    contributesAbilityStats: 0
-    enablePropulsionVfx: 0
-    propulsionVfxScale: 1
-    seenInFamilies: LightFox
-    notes: 
-    includeInPopulate: 1
-  - discoveredName: Cockpit_Base
-    partType: Cockpit
-    contributesAbilityStats: 1
-    enablePropulsionVfx: 0
-    propulsionVfxScale: 1
-    seenInFamilies: MeteorMantis
-    notes: 
-    includeInPopulate: 1
-  - discoveredName: Cockpit_Base_1
+  - discoveredName: AstroEagle_Cockpit
     partType: Cockpit
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
@@ -142,7 +22,7 @@ MonoBehaviour:
     seenInFamilies: AstroEagle
     notes: 
     includeInPopulate: 1
-  - discoveredName: Cockpit_Base_2
+  - discoveredName: AstroEagle_Cockpit_Base_1
     partType: Cockpit
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
@@ -150,79 +30,15 @@ MonoBehaviour:
     seenInFamilies: AstroEagle
     notes: 
     includeInPopulate: 1
-  - discoveredName: Core
-    partType: Hull
+  - discoveredName: AstroEagle_Cockpit_Base_2
+    partType: Cockpit
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
-    seenInFamilies: HyperFalcon,ProtonLegacy,StriderOx
+    seenInFamilies: AstroEagle
     notes: 
     includeInPopulate: 1
-  - discoveredName: Cover
-    partType: Hull
-    contributesAbilityStats: 0
-    enablePropulsionVfx: 0
-    propulsionVfxScale: 1
-    seenInFamilies: StriderOx
-    notes: 
-    includeInPopulate: 1
-  - discoveredName: Cylinder
-    partType: Hull
-    contributesAbilityStats: 1
-    enablePropulsionVfx: 0
-    propulsionVfxScale: 1
-    seenInFamilies: GalaxyRaptor
-    notes: 
-    includeInPopulate: 1
-  - discoveredName: Detail
-    partType: Hull
-    contributesAbilityStats: 1
-    enablePropulsionVfx: 0
-    propulsionVfxScale: 1
-    seenInFamilies: GalaxyRaptor
-    notes: 
-    includeInPopulate: 1
-  - discoveredName: Engine
-    partType: Engine
-    contributesAbilityStats: 1
-    enablePropulsionVfx: 0
-    propulsionVfxScale: 1
-    seenInFamilies: ForceBadger,GalaxyRaptor,HyperFalcon,MeteorMantis,NightAye,ProtonLegacy,StarForce,StriderOx
-    notes: 
-    includeInPopulate: 1
-  - discoveredName: Engine1
-    partType: Engine
-    contributesAbilityStats: 1
-    enablePropulsionVfx: 0
-    propulsionVfxScale: 1
-    seenInFamilies: CosmicShark,LightFox
-    notes: 
-    includeInPopulate: 1
-  - discoveredName: Engine2
-    partType: Engine
-    contributesAbilityStats: 1
-    enablePropulsionVfx: 0
-    propulsionVfxScale: 1
-    seenInFamilies: CosmicShark,LightFox
-    notes: 
-    includeInPopulate: 1
-  - discoveredName: EngineComp1
-    partType: Engine
-    contributesAbilityStats: 1
-    enablePropulsionVfx: 0
-    propulsionVfxScale: 1
-    seenInFamilies: StarForce
-    notes: 
-    includeInPopulate: 1
-  - discoveredName: EngineComp2
-    partType: Engine
-    contributesAbilityStats: 1
-    enablePropulsionVfx: 0
-    propulsionVfxScale: 1
-    seenInFamilies: StarForce
-    notes: 
-    includeInPopulate: 1
-  - discoveredName: Engine_1
+  - discoveredName: AstroEagle_Engine_1
     partType: Engine
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
@@ -230,7 +46,7 @@ MonoBehaviour:
     seenInFamilies: AstroEagle
     notes: 
     includeInPopulate: 1
-  - discoveredName: Engine_2
+  - discoveredName: AstroEagle_Engine_2
     partType: Engine
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
@@ -238,71 +54,95 @@ MonoBehaviour:
     seenInFamilies: AstroEagle
     notes: 
     includeInPopulate: 1
-  - discoveredName: Exhaust
-    partType: Thruster
-    contributesAbilityStats: 1
-    enablePropulsionVfx: 1
-    propulsionVfxScale: 1
-    seenInFamilies: HyperFalcon
-    notes: 
-    includeInPopulate: 1
-  - discoveredName: Fin
+  - discoveredName: AstroEagle_Fin
     partType: Tail
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
-    seenInFamilies: AstroEagle,ForceBadger,ProtonLegacy,StriderOx
+    seenInFamilies: AstroEagle
     notes: 
     includeInPopulate: 1
-  - discoveredName: Flap
+  - discoveredName: AstroEagle_Part_1
     partType: Hull
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
-    seenInFamilies: StarForce
+    seenInFamilies: AstroEagle
     notes: 
     includeInPopulate: 1
-  - discoveredName: Gun
+  - discoveredName: AstroEagle_Part_2
+    partType: Hull
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: AstroEagle
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: AstroEagle_Tail
+    partType: Tail
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: AstroEagle
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: AstroEagle_Thruster
+    partType: Thruster
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 1
+    propulsionVfxScale: 1
+    seenInFamilies: AstroEagle
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: AstroEagle_Weapon
     partType: Weapon Bullet
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
-    seenInFamilies: GalaxyRaptor
+    seenInFamilies: AstroEagle
     notes: 
     includeInPopulate: 1
-  - discoveredName: Hatch
-    partType: Hull
+  - discoveredName: AstroEagle_Wing_1
+    partType: Wing
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
-    seenInFamilies: SpaceExcalibur
+    seenInFamilies: AstroEagle
     notes: 
     includeInPopulate: 1
-  - discoveredName: Hood
-    partType: Hull
+  - discoveredName: AstroEagle_Wing_2
+    partType: Wing
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
-    seenInFamilies: NightAye
+    seenInFamilies: AstroEagle
     notes: 
     includeInPopulate: 1
-  - discoveredName: Hull
-    partType: Hull
+  - discoveredName: AstroEagle_Wing_3
+    partType: Wing
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
-    seenInFamilies: CosmicShark,NightAye
+    seenInFamilies: AstroEagle
     notes: 
     includeInPopulate: 1
-  - discoveredName: Joint
-    partType: Hull
+  - discoveredName: AstroEagle_Wing_4
+    partType: Wing
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
-    seenInFamilies: MeteorMantis
+    seenInFamilies: AstroEagle
     notes: 
     includeInPopulate: 1
-  - discoveredName: Knob
+  - discoveredName: AstroEagle_Wing_5
+    partType: Wing
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: AstroEagle
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: CosmicShark_Body
     partType: Hull
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
@@ -310,87 +150,95 @@ MonoBehaviour:
     seenInFamilies: CosmicShark
     notes: 
     includeInPopulate: 1
-  - discoveredName: Machinegun
+  - discoveredName: CosmicShark_Engine1
+    partType: Engine
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: CosmicShark
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: CosmicShark_Engine2
+    partType: Engine
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: CosmicShark
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: CosmicShark_Hull
+    partType: Hull
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: CosmicShark
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: CosmicShark_Knob
+    partType: Hull
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: CosmicShark
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: CosmicShark_Thruster
+    partType: Thruster
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 1
+    propulsionVfxScale: 1
+    seenInFamilies: CosmicShark
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: CosmicShark_Weapon
     partType: Weapon Bullet
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
-    seenInFamilies: SpaceExcalibur
+    seenInFamilies: CosmicShark
     notes: 
     includeInPopulate: 1
-  - discoveredName: MainBody1
-    partType: Hull
+  - discoveredName: CosmicShark_Wing1
+    partType: Wing
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
-    seenInFamilies: GalaxyRaptor
+    seenInFamilies: CosmicShark
     notes: 
     includeInPopulate: 1
-  - discoveredName: MainBody2
-    partType: Hull
+  - discoveredName: CosmicShark_Wing2
+    partType: Wing
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
-    seenInFamilies: GalaxyRaptor
+    seenInFamilies: CosmicShark
     notes: 
     includeInPopulate: 1
-  - discoveredName: MainBody3
-    partType: Hull
+  - discoveredName: ForceBadger_Cockpit
+    partType: Cockpit
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
-    seenInFamilies: GalaxyRaptor
+    seenInFamilies: ForceBadger
     notes: 
     includeInPopulate: 1
-  - discoveredName: MainBody4
-    partType: Hull
+  - discoveredName: ForceBadger_Engine
+    partType: Engine
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
-    seenInFamilies: GalaxyRaptor
+    seenInFamilies: ForceBadger
     notes: 
     includeInPopulate: 1
-  - discoveredName: Missile
-    partType: Weapon Cannon
+  - discoveredName: ForceBadger_Fin
+    partType: Tail
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
-    seenInFamilies: NightAye,SpaceExcalibur
+    seenInFamilies: ForceBadger
     notes: 
     includeInPopulate: 1
-  - discoveredName: Missile_Launcher
-    partType: Weapon Cannon
-    contributesAbilityStats: 1
-    enablePropulsionVfx: 0
-    propulsionVfxScale: 1
-    seenInFamilies: SpaceExcalibur
-    notes: 
-    includeInPopulate: 1
-  - discoveredName: Part_1
-    partType: Hull
-    contributesAbilityStats: 1
-    enablePropulsionVfx: 0
-    propulsionVfxScale: 1
-    seenInFamilies: AstroEagle
-    notes: 
-    includeInPopulate: 1
-  - discoveredName: Part_2
-    partType: Hull
-    contributesAbilityStats: 1
-    enablePropulsionVfx: 0
-    propulsionVfxScale: 1
-    seenInFamilies: AstroEagle
-    notes: 
-    includeInPopulate: 1
-  - discoveredName: Ring
-    partType: Hull
-    contributesAbilityStats: 1
-    enablePropulsionVfx: 0
-    propulsionVfxScale: 1
-    seenInFamilies: ProtonLegacy
-    notes: 
-    includeInPopulate: 1
-  - discoveredName: Sensor
+  - discoveredName: ForceBadger_Sensor
     partType: Hull
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
@@ -398,7 +246,343 @@ MonoBehaviour:
     seenInFamilies: ForceBadger
     notes: 
     includeInPopulate: 1
-  - discoveredName: Shell
+  - discoveredName: ForceBadger_Support
+    partType: Hull
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: ForceBadger
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: ForceBadger_Tail
+    partType: Tail
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: ForceBadger
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: ForceBadger_Thruster
+    partType: Thruster
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 1
+    propulsionVfxScale: 1
+    seenInFamilies: ForceBadger
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: ForceBadger_Weapon
+    partType: Weapon Bullet
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: ForceBadger
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: ForceBadger_Wing
+    partType: Wing
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: ForceBadger
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: GalaxyRaptor_Acc
+    partType: Hull
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: GalaxyRaptor
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: GalaxyRaptor_Barrel
+    partType: Weapon Bullet
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: GalaxyRaptor
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: GalaxyRaptor_Cockpit
+    partType: Cockpit
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: GalaxyRaptor
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: GalaxyRaptor_Cylinder
+    partType: Hull
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: GalaxyRaptor
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: GalaxyRaptor_Detail
+    partType: Hull
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: GalaxyRaptor
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: GalaxyRaptor_Engine
+    partType: Engine
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: GalaxyRaptor
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: GalaxyRaptor_Gun
+    partType: Weapon Bullet
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: GalaxyRaptor
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: GalaxyRaptor_MainBody1
+    partType: Hull
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: GalaxyRaptor
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: GalaxyRaptor_MainBody2
+    partType: Hull
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: GalaxyRaptor
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: GalaxyRaptor_MainBody3
+    partType: Hull
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: GalaxyRaptor
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: GalaxyRaptor_MainBody4
+    partType: Hull
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: GalaxyRaptor
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: GalaxyRaptor_ThrustCover
+    partType: Thruster
+    contributesAbilityStats: 0
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: GalaxyRaptor
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: GalaxyRaptor_Wing1
+    partType: Wing
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: GalaxyRaptor
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: GalaxyRaptor_Wing2
+    partType: Wing
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: GalaxyRaptor
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: GalaxyRaptor_Wing3
+    partType: Wing
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: GalaxyRaptor
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: GalaxyRaptor_Wing4
+    partType: Wing
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: GalaxyRaptor
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: GalaxyRaptor_WingHolder
+    partType: Wing
+    contributesAbilityStats: 0
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: GalaxyRaptor
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: HyperFalcon_Cockpit
+    partType: Cockpit
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: HyperFalcon
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: HyperFalcon_Core
+    partType: Hull
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: HyperFalcon
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: HyperFalcon_Engine
+    partType: Engine
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: HyperFalcon
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: HyperFalcon_Exhaust
+    partType: Thruster
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 1
+    propulsionVfxScale: 1
+    seenInFamilies: HyperFalcon
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: HyperFalcon_Support
+    partType: Hull
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: HyperFalcon
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: HyperFalcon_Thruster
+    partType: Thruster
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 1
+    propulsionVfxScale: 1
+    seenInFamilies: HyperFalcon
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: HyperFalcon_Tracks
+    partType: Hull
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: HyperFalcon
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: HyperFalcon_Vents
+    partType: Hull
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: HyperFalcon
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: HyperFalcon_Wing_1
+    partType: Wing
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: HyperFalcon
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: HyperFalcon_Wing_2
+    partType: Wing
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: HyperFalcon
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: LightFox_Body
+    partType: Hull
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: LightFox
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: LightFox_Cockpit
+    partType: Cockpit
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: LightFox
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: LightFox_CockpitCover
+    partType: Cockpit
+    contributesAbilityStats: 0
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: LightFox
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: LightFox_Engine1
+    partType: Engine
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: LightFox
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: LightFox_Engine2
+    partType: Engine
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: LightFox
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: LightFox_Weapon
+    partType: Weapon Bullet
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: LightFox
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: LightFox_Wing_1
+    partType: Wing
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: LightFox
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: LightFox_Wing_2
+    partType: Wing
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: LightFox
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: LightFox_Wing_3
+    partType: Wing
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: LightFox
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: LightFox_Wing_4
+    partType: Wing
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: LightFox
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: MeteorMantis_Arm
     partType: Hull
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
@@ -406,15 +590,159 @@ MonoBehaviour:
     seenInFamilies: MeteorMantis
     notes: 
     includeInPopulate: 1
-  - discoveredName: Small_Wing
+  - discoveredName: MeteorMantis_Body
+    partType: Hull
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: MeteorMantis
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: MeteorMantis_Cockpit
+    partType: Cockpit
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: MeteorMantis
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: MeteorMantis_Cockpit_Base
+    partType: Cockpit
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: MeteorMantis
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: MeteorMantis_Engine
+    partType: Engine
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: MeteorMantis
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: MeteorMantis_Joint
+    partType: Hull
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: MeteorMantis
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: MeteorMantis_Shell
+    partType: Hull
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: MeteorMantis
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: MeteorMantis_Tail
+    partType: Tail
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: MeteorMantis
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: MeteorMantis_Weapon
+    partType: Weapon Bullet
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: MeteorMantis
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: MeteorMantis_Wing
     partType: Wing
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
-    seenInFamilies: SpaceExcalibur
+    seenInFamilies: MeteorMantis
     notes: 
     includeInPopulate: 1
-  - discoveredName: Solar
+  - discoveredName: NightAye_Cockpit
+    partType: Cockpit
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: NightAye
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: NightAye_Engine
+    partType: Engine
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: NightAye
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: NightAye_Hood
+    partType: Hull
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: NightAye
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: NightAye_Hull
+    partType: Hull
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: NightAye
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: NightAye_Missile
+    partType: Weapon Cannon
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: NightAye
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: NightAye_Spike
+    partType: Hull
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: NightAye
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: NightAye_WingMain
+    partType: Wing
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: NightAye
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: NightAye_WingMini
+    partType: Wing
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: NightAye
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: NightAye_WingTip
+    partType: Wing
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: NightAye
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: NightAye_WingWide
+    partType: Wing
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: NightAye
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: ProtonLegacy_Arm
     partType: Hull
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
@@ -422,55 +750,175 @@ MonoBehaviour:
     seenInFamilies: ProtonLegacy
     notes: 
     includeInPopulate: 1
-  - discoveredName: Something
+  - discoveredName: ProtonLegacy_Cockpit
+    partType: Cockpit
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: ProtonLegacy
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: ProtonLegacy_Core
     partType: Hull
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
-    seenInFamilies: SpaceExcalibur
+    seenInFamilies: ProtonLegacy
     notes: 
     includeInPopulate: 1
-  - discoveredName: Spike
-    partType: Hull
+  - discoveredName: ProtonLegacy_Engine
+    partType: Engine
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
-    seenInFamilies: NightAye
+    seenInFamilies: ProtonLegacy
     notes: 
     includeInPopulate: 1
-  - discoveredName: Support
-    partType: Hull
-    contributesAbilityStats: 1
-    enablePropulsionVfx: 0
-    propulsionVfxScale: 1
-    seenInFamilies: ForceBadger,HyperFalcon,StriderOx
-    notes: 
-    includeInPopulate: 1
-  - discoveredName: Tail
+  - discoveredName: ProtonLegacy_Fin
     partType: Tail
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
-    seenInFamilies: AstroEagle,ForceBadger,MeteorMantis
+    seenInFamilies: ProtonLegacy
     notes: 
     includeInPopulate: 1
-  - discoveredName: ThrustCover
-    partType: Thruster
-    contributesAbilityStats: 0
+  - discoveredName: ProtonLegacy_Ring
+    partType: Hull
+    contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
-    seenInFamilies: GalaxyRaptor
+    seenInFamilies: ProtonLegacy
     notes: 
     includeInPopulate: 1
-  - discoveredName: Thruster
-    partType: Thruster
+  - discoveredName: ProtonLegacy_Solar
+    partType: Hull
     contributesAbilityStats: 1
-    enablePropulsionVfx: 1
+    enablePropulsionVfx: 0
     propulsionVfxScale: 1
-    seenInFamilies: AstroEagle,CosmicShark,ForceBadger,HyperFalcon,StarForce,StriderOx
+    seenInFamilies: ProtonLegacy
     notes: 
     includeInPopulate: 1
-  - discoveredName: Thrusters
+  - discoveredName: ProtonLegacy_Weapon
+    partType: Weapon Bullet
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: ProtonLegacy
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: ProtonLegacy_Wing
+    partType: Wing
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: ProtonLegacy
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: SpaceExcalibur_Ammunition
+    partType: Weapon Bullet
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: SpaceExcalibur
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: SpaceExcalibur_Armor_01
+    partType: Hull
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: SpaceExcalibur
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: SpaceExcalibur_Armor_02
+    partType: Hull
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: SpaceExcalibur
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: SpaceExcalibur_Body_01
+    partType: Hull
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: SpaceExcalibur
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: SpaceExcalibur_Body_02
+    partType: Hull
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: SpaceExcalibur
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: SpaceExcalibur_Body_03
+    partType: Hull
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: SpaceExcalibur
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: SpaceExcalibur_Cockpit
+    partType: Cockpit
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: SpaceExcalibur
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: SpaceExcalibur_Hatch
+    partType: Hull
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: SpaceExcalibur
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: SpaceExcalibur_Machinegun
+    partType: Weapon Bullet
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: SpaceExcalibur
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: SpaceExcalibur_Missile
+    partType: Hull
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: SpaceExcalibur
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: SpaceExcalibur_Missile_Launcher
+    partType: Weapon Cannon
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: SpaceExcalibur
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: SpaceExcalibur_Small_Wing
+    partType: Wing
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: SpaceExcalibur
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: SpaceExcalibur_Something
+    partType: Hull
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: SpaceExcalibur
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: SpaceExcalibur_Thrusters
     partType: Thruster
     contributesAbilityStats: 1
     enablePropulsionVfx: 1
@@ -478,7 +926,7 @@ MonoBehaviour:
     seenInFamilies: SpaceExcalibur
     notes: 
     includeInPopulate: 1
-  - discoveredName: Thrusters_Big
+  - discoveredName: SpaceExcalibur_Thrusters_Big
     partType: Thruster
     contributesAbilityStats: 1
     enablePropulsionVfx: 1
@@ -486,7 +934,7 @@ MonoBehaviour:
     seenInFamilies: SpaceExcalibur
     notes: 
     includeInPopulate: 1
-  - discoveredName: Thruster_Place
+  - discoveredName: SpaceExcalibur_Thruster_Place
     partType: Thruster
     contributesAbilityStats: 0
     enablePropulsionVfx: 0
@@ -494,7 +942,7 @@ MonoBehaviour:
     seenInFamilies: SpaceExcalibur
     notes: 
     includeInPopulate: 1
-  - discoveredName: Tiny_Thrusters
+  - discoveredName: SpaceExcalibur_Tiny_Thrusters
     partType: Thruster
     contributesAbilityStats: 1
     enablePropulsionVfx: 1
@@ -502,7 +950,7 @@ MonoBehaviour:
     seenInFamilies: SpaceExcalibur
     notes: 
     includeInPopulate: 1
-  - discoveredName: Tiny_Wing
+  - discoveredName: SpaceExcalibur_Tiny_Wing
     partType: Wing
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
@@ -510,172 +958,188 @@ MonoBehaviour:
     seenInFamilies: SpaceExcalibur
     notes: 
     includeInPopulate: 1
-  - discoveredName: Tracks
+  - discoveredName: SpaceExcalibur_Wing_01
+    partType: Wing
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: SpaceExcalibur
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: SpaceExcalibur_Wing_02
+    partType: Wing
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: SpaceExcalibur
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: SpaceExcalibur_Wing_03
+    partType: Wing
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: SpaceExcalibur
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: StarForce_Body1
     partType: Hull
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
-    seenInFamilies: HyperFalcon
+    seenInFamilies: StarForce
     notes: 
     includeInPopulate: 1
-  - discoveredName: Vents
+  - discoveredName: StarForce_Body2
     partType: Hull
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
-    seenInFamilies: HyperFalcon
+    seenInFamilies: StarForce
     notes: 
     includeInPopulate: 1
-  - discoveredName: Weapon
+  - discoveredName: StarForce_Cockpit
+    partType: Cockpit
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: StarForce
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: StarForce_Engine
+    partType: Engine
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: StarForce
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: StarForce_EngineComp1
+    partType: Engine
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: StarForce
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: StarForce_EngineComp2
+    partType: Engine
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: StarForce
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: StarForce_Flap
+    partType: Hull
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: StarForce
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: StarForce_Thruster
+    partType: Thruster
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 1
+    propulsionVfxScale: 1
+    seenInFamilies: StarForce
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: StarForce_Weapon
     partType: Weapon Bullet
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
-    seenInFamilies: AstroEagle,CosmicShark,ForceBadger,LightFox,MeteorMantis,ProtonLegacy,StarForce,StriderOx
+    seenInFamilies: StarForce
     notes: 
     includeInPopulate: 1
-  - discoveredName: Wing
+  - discoveredName: StarForce_Wing
     partType: Wing
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
-    seenInFamilies: ForceBadger,MeteorMantis,ProtonLegacy,StarForce,StriderOx
+    seenInFamilies: StarForce
     notes: 
     includeInPopulate: 1
-  - discoveredName: Wing1
-    partType: Wing
+  - discoveredName: StriderOx_Arm
+    partType: Hull
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
-    seenInFamilies: CosmicShark,GalaxyRaptor
+    seenInFamilies: StriderOx
     notes: 
     includeInPopulate: 1
-  - discoveredName: Wing2
-    partType: Wing
+  - discoveredName: StriderOx_Cockpit
+    partType: Cockpit
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
-    seenInFamilies: CosmicShark,GalaxyRaptor
+    seenInFamilies: StriderOx
     notes: 
     includeInPopulate: 1
-  - discoveredName: Wing3
-    partType: Wing
+  - discoveredName: StriderOx_Core
+    partType: Hull
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
-    seenInFamilies: GalaxyRaptor
+    seenInFamilies: StriderOx
     notes: 
     includeInPopulate: 1
-  - discoveredName: Wing4
-    partType: Wing
-    contributesAbilityStats: 1
-    enablePropulsionVfx: 0
-    propulsionVfxScale: 1
-    seenInFamilies: GalaxyRaptor
-    notes: 
-    includeInPopulate: 1
-  - discoveredName: WingHolder
-    partType: Wing
+  - discoveredName: StriderOx_Cover
+    partType: Hull
     contributesAbilityStats: 0
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
-    seenInFamilies: GalaxyRaptor
+    seenInFamilies: StriderOx
     notes: 
     includeInPopulate: 1
-  - discoveredName: WingMain
+  - discoveredName: StriderOx_Engine
+    partType: Engine
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: StriderOx
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: StriderOx_Fin
+    partType: Tail
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: StriderOx
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: StriderOx_Support
+    partType: Hull
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: StriderOx
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: StriderOx_Thruster
+    partType: Thruster
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 1
+    propulsionVfxScale: 1
+    seenInFamilies: StriderOx
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: StriderOx_Weapon
+    partType: Weapon Bullet
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: StriderOx
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: StriderOx_Wing
     partType: Wing
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
-    seenInFamilies: NightAye
-    notes: 
-    includeInPopulate: 1
-  - discoveredName: WingMini
-    partType: Wing
-    contributesAbilityStats: 1
-    enablePropulsionVfx: 0
-    propulsionVfxScale: 1
-    seenInFamilies: NightAye
-    notes: 
-    includeInPopulate: 1
-  - discoveredName: WingTip
-    partType: Wing
-    contributesAbilityStats: 1
-    enablePropulsionVfx: 0
-    propulsionVfxScale: 1
-    seenInFamilies: NightAye
-    notes: 
-    includeInPopulate: 1
-  - discoveredName: WingWide
-    partType: Wing
-    contributesAbilityStats: 1
-    enablePropulsionVfx: 0
-    propulsionVfxScale: 1
-    seenInFamilies: NightAye
-    notes: 
-    includeInPopulate: 1
-  - discoveredName: Wing_01
-    partType: Wing
-    contributesAbilityStats: 1
-    enablePropulsionVfx: 0
-    propulsionVfxScale: 1
-    seenInFamilies: SpaceExcalibur
-    notes: 
-    includeInPopulate: 1
-  - discoveredName: Wing_02
-    partType: Wing
-    contributesAbilityStats: 1
-    enablePropulsionVfx: 0
-    propulsionVfxScale: 1
-    seenInFamilies: SpaceExcalibur
-    notes: 
-    includeInPopulate: 1
-  - discoveredName: Wing_03
-    partType: Wing
-    contributesAbilityStats: 1
-    enablePropulsionVfx: 0
-    propulsionVfxScale: 1
-    seenInFamilies: SpaceExcalibur
-    notes: 
-    includeInPopulate: 1
-  - discoveredName: Wing_1
-    partType: Wing
-    contributesAbilityStats: 1
-    enablePropulsionVfx: 0
-    propulsionVfxScale: 1
-    seenInFamilies: AstroEagle,HyperFalcon,LightFox
-    notes: 
-    includeInPopulate: 1
-  - discoveredName: Wing_2
-    partType: Wing
-    contributesAbilityStats: 1
-    enablePropulsionVfx: 0
-    propulsionVfxScale: 1
-    seenInFamilies: AstroEagle,HyperFalcon,LightFox
-    notes: 
-    includeInPopulate: 1
-  - discoveredName: Wing_3
-    partType: Wing
-    contributesAbilityStats: 1
-    enablePropulsionVfx: 0
-    propulsionVfxScale: 1
-    seenInFamilies: AstroEagle,LightFox
-    notes: 
-    includeInPopulate: 1
-  - discoveredName: Wing_4
-    partType: Wing
-    contributesAbilityStats: 1
-    enablePropulsionVfx: 0
-    propulsionVfxScale: 1
-    seenInFamilies: AstroEagle,LightFox
-    notes: 
-    includeInPopulate: 1
-  - discoveredName: Wing_5
-    partType: Wing
-    contributesAbilityStats: 1
-    enablePropulsionVfx: 0
-    propulsionVfxScale: 1
-    seenInFamilies: AstroEagle
+    seenInFamilies: StriderOx
     notes: 
     includeInPopulate: 1
   partProfiles:

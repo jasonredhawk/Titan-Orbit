@@ -82,7 +82,7 @@ MonoBehaviour:
   menuPreviewBoundsPadding: 1.22
   menuPreviewBackgroundColor: {r: 0, g: 0, b: 0, a: 1}
   components:
-  - componentId: Cockpit
+  - componentId: HyperFalcon_Cockpit
     displayName: Cockpit 1
     statCategories: 000000000100000004000000
     stats:
@@ -159,7 +159,7 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: 278cff2a8954e124eb3e3297dcbebf90, type: 3}
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
-  - componentId: Core
+  - componentId: HyperFalcon_Core
     displayName: Hull 1
     statCategories: 01000000
     stats:
@@ -236,7 +236,7 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: c4a50560521a3c84abe2b7b3e2303078, type: 3}
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
-  - componentId: Engine
+  - componentId: HyperFalcon_Engine
     displayName: Engine 1
     statCategories: 0300000002000000
     stats:
@@ -313,7 +313,7 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: eaf48775e5e18d34cb116613d9ba7c5a, type: 3}
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
-  - componentId: Exhaust
+  - componentId: HyperFalcon_Exhaust
     displayName: Thruster 1
     statCategories: 03000000
     stats:
@@ -390,7 +390,7 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: 9b69ff3a9cfbdcf4a967e9651545f5d8, type: 3}
     enablePropulsionVfx: 1
     propulsionVfxScale: 1
-  - componentId: Support
+  - componentId: HyperFalcon_Support
     displayName: Hull 1
     statCategories: 01000000
     stats:
@@ -467,7 +467,7 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: b9a00c189ad06da42b36a92a1c3a7a9f, type: 3}
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
-  - componentId: Thruster
+  - componentId: HyperFalcon_Thruster
     displayName: Thruster 1
     statCategories: 03000000
     stats:
@@ -544,7 +544,7 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: 1857c457b6adaeb4d8d8d8c2f23c1ee7, type: 3}
     enablePropulsionVfx: 1
     propulsionVfxScale: 1
-  - componentId: Tracks
+  - componentId: HyperFalcon_Tracks
     displayName: Hull 1
     statCategories: 01000000
     stats:
@@ -621,7 +621,7 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: c45d0393d57f5444c8410772e60d95f7, type: 3}
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
-  - componentId: Vents
+  - componentId: HyperFalcon_Vents
     displayName: Hull 1
     statCategories: 01000000
     stats:
@@ -698,7 +698,7 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: 87b3306447959c543b82532452e49148, type: 3}
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
-  - componentId: Wing_1
+  - componentId: HyperFalcon_Wing_1
     displayName: Wing 1
     statCategories: 0100000004000000
     stats:
@@ -775,7 +775,7 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: 118e435a65b47ff48b4f6d7faa6409bd, type: 3}
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
-  - componentId: Wing_2
+  - componentId: HyperFalcon_Wing_2
     displayName: Wing 2
     statCategories: 0100000004000000
     stats:

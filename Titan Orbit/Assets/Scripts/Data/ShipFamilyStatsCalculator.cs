@@ -6,7 +6,7 @@ namespace TitanOrbit.Data
 {
     /// <summary>
     /// Static stat summing from a chassis prefab hierarchy plus a <see cref="ShipFamilyDefinition"/>.
-    /// Walks child transforms named <c>{familyId}_{componentId}</c>, scales stats by transform size, applies
+    /// Walks child transforms named <c>{familyId}_{part}</c> (catalog id is the full name), scales stats by transform size, applies
     /// propulsion aggregation, weapon projectile-speed max (not sum), then stat fallbacks. Weapon fire
     /// power / rate stay summed for power scores; live shots use per-mount combat from
     /// <c>ShipWeaponMountCombatLogic</c>. Shared by editor previews, power-score baking, and runtime UI.
@@ -153,7 +153,7 @@ namespace TitanOrbit.Data
                     if (!name.StartsWith(familyId + "_", StringComparison.OrdinalIgnoreCase))
                         continue;
 
-                    string componentId = name.Substring(familyId.Length + 1);
+                    string componentId = ShipFamilyDefinition.NormalizeComponentId(name);
                     if (string.IsNullOrWhiteSpace(componentId))
                         continue;
 

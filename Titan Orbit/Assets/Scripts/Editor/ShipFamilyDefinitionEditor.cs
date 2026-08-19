@@ -1011,13 +1011,10 @@ namespace TitanOrbit.Editor
             return count;
         }
 
-        /// <summary>First integer in the suffix (e.g. Wing_3_L → 3, Weapon1 → 1); 1 if none.</summary>
+        /// <summary>First integer in the part suffix (e.g. AstroEagle_Wing_3 → 3, Weapon1 → 1); 1 if none.</summary>
         private static int ExtractFirstVersionNumberFromComponentRest(string rest)
         {
-            if (string.IsNullOrEmpty(rest)) return 1;
-            Match m = Regex.Match(rest, @"\d+");
-            if (!m.Success) return 1;
-            return int.TryParse(m.Value, out int v) ? Mathf.Max(1, v) : 1;
+            return ShipFamilyPartCalcProfileSet.ExtractVersion(rest);
         }
 
         private static void BuildUpgradeTreeFromFolder(ShipFamilyDefinition def)
@@ -1742,7 +1739,7 @@ namespace TitanOrbit.Editor
                     && string.Equals(rest, rootShipSuffix, StringComparison.OrdinalIgnoreCase))
                     continue;
 
-                string canonicalId = ShipFamilyDefinition.NormalizeComponentId(rest);
+                string canonicalId = ShipFamilyDefinition.ComposeFamilyPrefixedComponentId(familyId, rest);
                 if (string.IsNullOrWhiteSpace(canonicalId)) continue;
 
                 string type = ShipComponentAbilityStats.ResolvePartTypeForSuggestedStats(canonicalId);

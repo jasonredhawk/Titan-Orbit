@@ -82,7 +82,7 @@ MonoBehaviour:
   menuPreviewBoundsPadding: 1.22
   menuPreviewBackgroundColor: {r: 0, g: 0, b: 0, a: 1}
   components:
-  - componentId: Body
+  - componentId: CosmicShark_Body
     displayName: Hull 1
     statCategories: 01000000
     stats:
@@ -159,7 +159,7 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: 1beff06496169fe4695671265e617f45, type: 3}
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
-  - componentId: Engine1
+  - componentId: CosmicShark_Engine1
     displayName: Engine 1
     statCategories: 0300000002000000
     stats:
@@ -236,7 +236,7 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: 87923982c888dd947878897e7f4fc7ce, type: 3}
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
-  - componentId: Engine2
+  - componentId: CosmicShark_Engine2
     displayName: Engine 2
     statCategories: 0300000002000000
     stats:
@@ -313,7 +313,7 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: 434f97499e09d4c4b8530db97e4133de, type: 3}
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
-  - componentId: Hull
+  - componentId: CosmicShark_Hull
     displayName: Hull 1
     statCategories: 01000000
     stats:
@@ -390,7 +390,7 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: a12592a4f826588448ea7b7cc144f22e, type: 3}
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
-  - componentId: Knob
+  - componentId: CosmicShark_Knob
     displayName: Hull 1
     statCategories: 01000000
     stats:
@@ -467,7 +467,7 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: f9f7e7e4a046c47478c9bfb064baca8f, type: 3}
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
-  - componentId: Thruster
+  - componentId: CosmicShark_Thruster
     displayName: Thruster 1
     statCategories: 03000000
     stats:
@@ -544,7 +544,7 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: 0a7ce34300a1fc24192d4d1d8bf09d70, type: 3}
     enablePropulsionVfx: 1
     propulsionVfxScale: 1
-  - componentId: Weapon
+  - componentId: CosmicShark_Weapon
     displayName: Weapon Bullet 1
     statCategories: 0000000002000000
     stats:
@@ -621,7 +621,7 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: b8718436c90637a4e8caad8f61d09c64, type: 3}
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
-  - componentId: Wing1
+  - componentId: CosmicShark_Wing1
     displayName: Wing 1
     statCategories: 0100000004000000
     stats:
@@ -698,7 +698,7 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: b0d699029447d974cbed6f3fd19661af, type: 3}
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
-  - componentId: Wing2
+  - componentId: CosmicShark_Wing2
     displayName: Wing 2
     statCategories: 0100000004000000
     stats:

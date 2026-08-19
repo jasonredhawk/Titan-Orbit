@@ -223,8 +223,11 @@ namespace TitanOrbit.ECS
             string componentId = ResolveComponentId(weaponTransform.name, familyId);
             if (!family.TryGetStatsForComponent(componentId, out ShipComponentAbilityStats stats))
             {
-                // [TITAN-ORBIT] Prefab child may be named "Weapon" while the family entry is "Weapon".
-                if (!family.TryGetStatsForComponent("Weapon", out stats))
+                // [TITAN-ORBIT] Prefab child may be named "Weapon" while the family entry is FamilyId_Weapon.
+                if (!family.TryGetStatsForComponent(
+                        ShipFamilyDefinition.ComposeFamilyPrefixedComponentId(familyId, "Weapon"),
+                        out stats)
+                    && !family.TryGetStatsForComponent("Weapon", out stats))
                     return false;
             }
 
@@ -243,22 +246,18 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// Strips <c>FamilyId_</c> prefix when present so family lookup matches catalog component ids.
+        /// Keeps the family-prefixed prefab child name so catalog lookup matches Name Mapping ids.
         /// </summary>
         static string ResolveComponentId(string transformName, string familyId)
         {
             if (string.IsNullOrEmpty(transformName))
-                return "Weapon";
+                return ShipFamilyDefinition.ComposeFamilyPrefixedComponentId(familyId, "Weapon");
 
-            if (!string.IsNullOrEmpty(familyId) &&
-                transformName.StartsWith(familyId + "_", StringComparison.OrdinalIgnoreCase))
-                return transformName.Substring(familyId.Length + 1);
+            string normalized = ShipFamilyDefinition.NormalizeComponentId(transformName);
+            if (!string.IsNullOrEmpty(normalized))
+                return normalized;
 
-            int underscore = transformName.IndexOf('_');
-            if (underscore > 0 && underscore < transformName.Length - 1)
-                return transformName.Substring(underscore + 1);
-
-            return transformName;
+            return ShipFamilyDefinition.ComposeFamilyPrefixedComponentId(familyId, "Weapon");
         }
 
         /// <summary>
