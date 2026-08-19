@@ -1119,12 +1119,15 @@ namespace TitanOrbit.UI
         private static readonly Color MegaFillCurrent = new Color(0.14f, 0.10f, 0.035f, 0.98f);
         private static readonly Color MegaFillReady = new Color(0.11f, 0.08f, 0.03f, 0.98f);
         private static readonly Color MegaFillBlocked = new Color(0.04f, 0.03f, 0.02f, 0.96f);
-        private static readonly Color MegaFillOccupied = new Color(0.08f, 0.06f, 0.03f, 0.96f);
+        /// <summary>Claimed unique MEGA — slate glass so the card reads disabled, not bronze.</summary>
+        private static readonly Color MegaFillOccupied = new Color(0.18f, 0.19f, 0.22f, 0.96f);
         private static readonly Color MegaBorderIdle = new Color(0.72f, 0.54f, 0.20f, 0.92f);
         private static readonly Color MegaBorderCurrent = new Color(0.96f, 0.82f, 0.36f, 0.98f);
         private static readonly Color MegaBorderReady = new Color(0.88f, 0.70f, 0.26f, 0.96f);
         private static readonly Color MegaBorderBlocked = new Color(0.46f, 0.36f, 0.16f, 0.72f);
-        private static readonly Color MegaBorderOccupied = new Color(0.78f, 0.62f, 0.28f, 0.95f);
+        private static readonly Color MegaBorderOccupied = new Color(0.40f, 0.42f, 0.46f, 0.85f);
+        private static readonly Color MegaCaptionOccupied = new Color(0.58f, 0.58f, 0.60f, 1f);
+        private static readonly Color MegaNameOccupied = new Color(0.55f, 0.56f, 0.58f, 1f);
         private static readonly Color MegaCaptionGold = new Color(0.96f, 0.86f, 0.52f, 1f);
         private static readonly Color MegaNameWarm = new Color(0.96f, 0.90f, 0.72f, 1f);
         private static readonly Color MegaGlow = new Color(0.95f, 0.74f, 0.22f, 0.42f);
@@ -1590,6 +1593,8 @@ namespace TitanOrbit.UI
 
             Color fill;
             Color border;
+            // Any claimed unique MEGA uses the disabled slate — including the hull you
+            // are flying. Solo debug otherwise kept that card gold and hid the state.
             if (occupied)
             {
                 fill = MegaFillOccupied;
@@ -1620,19 +1625,22 @@ namespace TitanOrbit.UI
             ApplyMegaBorderColor(border);
             if (_megaOuterGlow != null)
             {
-                _megaOuterGlow.enabled = true;
-                _megaOuterGlow.effectColor = occupied || isCurrent || purchasable
-                    ? MegaGlow
-                    : new Color(MegaGlow.r, MegaGlow.g, MegaGlow.b, 0.22f);
+                _megaOuterGlow.enabled = !occupied;
+                if (_megaOuterGlow.enabled)
+                {
+                    _megaOuterGlow.effectColor = isCurrent || purchasable
+                        ? MegaGlow
+                        : new Color(MegaGlow.r, MegaGlow.g, MegaGlow.b, 0.22f);
+                }
             }
 
             RestoreInFlowLevelLabel();
             if (levelText != null)
-                levelText.color = MegaCaptionGold;
+                levelText.color = occupied ? MegaCaptionOccupied : MegaCaptionGold;
             if (_megaCaptionLabel != null)
                 _megaCaptionLabel.gameObject.SetActive(false);
             if (shipNameText != null)
-                shipNameText.color = MegaNameWarm;
+                shipNameText.color = occupied ? MegaNameOccupied : MegaNameWarm;
             ApplyTreeTitleTextSettings();
 
             if (priceButton != null)
