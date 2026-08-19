@@ -89,6 +89,7 @@ namespace TitanOrbit.Game
                 name.Contains("DefenseSlot") ||
                 name.Contains("ShipNameplate") ||
                 name.Contains("FullVersionBadge") ||
+                name.Contains("PlayerBadge") ||
                 name.Contains("HealthBar") ||
                 name.Contains("GemsBar") ||
                 name.Contains("PeopleBar") ||

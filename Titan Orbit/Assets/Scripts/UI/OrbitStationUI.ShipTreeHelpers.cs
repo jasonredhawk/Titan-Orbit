@@ -403,7 +403,7 @@ namespace TitanOrbit.UI
                 view.SetButtonBackgroundColor(new Color(0.26f, 0.62f, 0.36f, 0.98f));
 
             view.SetPreview(ResolveCurrentShipPreviewSprite());
-            // Sidebar hero hides level ("You") and shows only the centered ship name above the art.
+            // Sidebar hero hides level ("You") and shows the hull name on top of the ship art.
             if (view.UsesSidebarHeroLayout)
                 view.SetLevelLabel(string.Empty);
             else if (view.UsesMoonHorizontalLayout)

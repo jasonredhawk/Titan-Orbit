@@ -438,6 +438,7 @@ namespace TitanOrbit.Game
 
         /// <summary>
         /// Resolves the display title for this planet's ship family (designer name or camel-split id).
+        /// Same helper the minimap hover tip uses so both surfaces stay in sync.
         /// </summary>
         static string ResolveShipFamilyTitle(in PlanetState state)
         {
@@ -446,21 +447,10 @@ namespace TitanOrbit.Game
             if (config == null)
                 return string.Empty;
 
-            var entry = config.GetFamilyForPlanet(
+            return config.GetPlanetDisplayName(
                 state.PlanetId,
                 state.IsHomePlanet,
                 state.ShipFamilyConfigIndex);
-            if (entry == null)
-                return string.Empty;
-
-            if (!string.IsNullOrWhiteSpace(entry.familyName))
-                return entry.familyName.Trim();
-
-            string familyId = entry.shipFamilyDefinition != null ? entry.shipFamilyDefinition.familyId : null;
-            if (string.IsNullOrWhiteSpace(familyId))
-                return string.Empty;
-
-            return DisplayNameFormatting.SplitCamelCase(familyId.Trim());
         }
 
         /// <summary>

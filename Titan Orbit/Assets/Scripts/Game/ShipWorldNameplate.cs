@@ -1,6 +1,8 @@
 using System.Collections.Generic;
 using System.Text;
 using TitanOrbit.Core;
+using TitanOrbit.Data;
+using TitanOrbit.ECS;
 using TMPro;
 using UnityEngine;
 using UnityEngine.Rendering;
@@ -16,6 +18,7 @@ namespace TitanOrbit.Game
     /// [Score] ............. [#Rank]
     /// [---- Full Version ----]
     /// [------ Health bar -----]
+    /// [      (Badge)          ]  mid-center, overlaps the three bars
     /// [------- Mine bar ------]
     /// [---- Transports bar ---]
     /// [ K ] [ G ] [ T ]
@@ -39,6 +42,7 @@ namespace TitanOrbit.Game
         const int BarSortingOrder = 5000;
         const int RoleSortingOrder = 5003;
         const int BadgeSortingOrder = 5001;
+        const int PlayerBadgeSortingOrder = 5004;
 
         /// <summary>
         /// World scale for the unparented flat label root.
@@ -90,6 +94,12 @@ namespace TitanOrbit.Game
         const float RoleSlotSize = 0.98f;
         const float RoleSlotGap = 0.12f;
 
+        /// <summary>
+        /// Profile emblem over the three stat bars (label-local). Taller than the bar stack
+        /// so it overlaps health / mine / transports as a centered medallion.
+        /// </summary>
+        const float PlayerBadgeSize = 2.97f;
+
         const float HealthHighRatio = 2f / 3f;
         const float HealthLowRatio = 1f / 3f;
 
@@ -99,7 +109,7 @@ namespace TitanOrbit.Game
         /// <summary>
         /// Bump when row spacing / fonts / clearance policy change so live proxies refresh layout.
         /// </summary>
-        const int LayoutVersion = 14;
+        const int LayoutVersion = 18;
 
         /// <summary>Max name characters before width-fit (wider plate allows longer names).</summary>
         const int MaxNameCharacters = 28;
@@ -123,6 +133,7 @@ namespace TitanOrbit.Game
         static readonly Vector3 ScreenBelowWorld = new Vector3(0f, 0f, -1f);
 
         static Sprite s_WhiteSprite;
+        static Material s_PlayerBadgeMaterial;
         static readonly StringBuilder s_NameScratch = new StringBuilder(32);
 
         // --- Bound identity ---
@@ -137,6 +148,7 @@ namespace TitanOrbit.Game
         TextMeshPro _scoreText;
         TextMeshPro _rankText;
         SpriteRenderer _fullVersionBadge;
+        SpriteRenderer _playerBadge;
         ThinBar _healthBar;
         ThinBar _gemsBar;
         ThinBar _peopleBar;
@@ -153,6 +165,7 @@ namespace TitanOrbit.Game
         string _cachedScore;
         string _cachedRank;
         bool _cachedShowBadge;
+        int _cachedBadgeId = int.MinValue;
         float _cachedHealthRatio = -1f;
         float _cachedGemsRatio = -1f;
         float _cachedPeopleRatio = -1f;
@@ -224,9 +237,11 @@ namespace TitanOrbit.Game
         /// <param name="isMega">
         /// True when this hull is a purchased MEGA — plate sits above mid-center instead of under the ship.
         /// </param>
+        /// <param name="badgeId">Filename-stable profile badge id, or 0 for none.</param>
         public void ApplyPresentation(
             int networkId,
             string displayName,
+            int badgeId,
             TeamId team,
             bool isDead,
             bool awaitingTeamSelection,
@@ -271,6 +286,8 @@ namespace TitanOrbit.Game
 
             if (!visible)
                 return;
+
+            ApplyPlayerBadge(badgeId);
 
             // --- Row 1: Name (left) + Ship Level (right) ---
             string rawName = string.IsNullOrEmpty(displayName) ? $"Player {_networkId}" : displayName;
@@ -622,6 +639,9 @@ namespace TitanOrbit.Game
             _gemsBar = CreateThinBar(_labelRoot, "GemsBar");
             _peopleBar = CreateThinBar(_labelRoot, "PeopleBar");
 
+            DestroyChildIfPresent(_labelRoot, "PlayerBadgeBack");
+            _playerBadge = CreatePlayerBadgeRenderer(_labelRoot, "PlayerBadge", PlayerBadgeSortingOrder);
+
             var roleRow = new GameObject("RoleRow");
             roleRow.transform.SetParent(_labelRoot, false);
             _roleKiller = CreateRoleSlot(roleRow.transform, "Killer", "K", RoleKiller);
@@ -644,6 +664,7 @@ namespace TitanOrbit.Game
             _scoreText = null;
             _rankText = null;
             _fullVersionBadge = null;
+            _playerBadge = null;
             _healthBar = default;
             _gemsBar = default;
             _peopleBar = default;
@@ -659,6 +680,7 @@ namespace TitanOrbit.Game
             _cachedGemsRatio = -1f;
             _cachedPeopleRatio = -1f;
             _cachedShowBadge = false;
+            _cachedBadgeId = int.MinValue;
             _cachedHalfWidestWorld = -1f;
             _cachedLocalCenter = Vector3.zero;
             _isMega = false;
@@ -691,6 +713,7 @@ namespace TitanOrbit.Game
 
             _nameText = nameRow.Find("Name")?.GetComponent<TextMeshPro>();
             _shipLevelText = nameRow.Find("ShipLevel")?.GetComponent<TextMeshPro>();
+            RecoverOrMigratePlayerBadge(nameRow);
             _scoreText = scoreRow.Find("Score")?.GetComponent<TextMeshPro>();
             _rankText = scoreRow.Find("Rank")?.GetComponent<TextMeshPro>();
             _fullVersionBadge = _labelRoot.Find("FullVersionBadge")?.GetComponent<SpriteRenderer>();
@@ -783,9 +806,12 @@ namespace TitanOrbit.Game
                 y -= BadgeHeight * 0.5f + RowGap;
             }
 
+            float barsTop = y;
             PlaceBar(ref _healthBar, ref y);
             PlaceBar(ref _gemsBar, ref y);
             PlaceBar(ref _peopleBar, ref y);
+            float barsBottom = y + RowGap;
+            PlacePlayerBadgeOverBars((barsTop + barsBottom) * 0.5f);
 
             y -= RowGap;
             if (roleRow != null)
@@ -807,7 +833,7 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>Left + right TMP inside <see cref="ContentWidth"/>; row height from preferredHeight.</summary>
-        static void LayoutDualTextRow(TextMeshPro left, TextMeshPro right)
+        void LayoutDualTextRow(TextMeshPro left, TextMeshPro right)
         {
             if (left == null || right == null)
                 return;
@@ -854,7 +880,7 @@ namespace TitanOrbit.Game
         /// Further shrinks <paramref name="name"/> against a live TMP until it fits
         /// roughly half of <see cref="ContentWidth"/> (leaves room for ship level).
         /// </summary>
-        static string FitNameToWidth(TextMeshPro tmp, string name)
+        string FitNameToWidth(TextMeshPro tmp, string name)
         {
             if (tmp == null || string.IsNullOrEmpty(name))
                 return name ?? string.Empty;
@@ -964,6 +990,14 @@ namespace TitanOrbit.Game
 
             if (_fullVersionBadge != null)
                 _fullVersionBadge.transform.localScale = new Vector3(ContentWidth, BadgeHeight, 1f);
+
+            if (_playerBadge != null)
+            {
+                _playerBadge.sortingOrder = PlayerBadgeSortingOrder;
+                ApplyPlayerBadgeRendererStyle(_playerBadge);
+                if (_playerBadge.enabled && _playerBadge.sprite != null)
+                    ScaleSpriteToSize(_playerBadge, PlayerBadgeSize);
+            }
 
             // Fonts may be from an older build — re-apply current sizes.
             if (_nameText != null) _nameText.fontSize = NameFontSize;
@@ -1075,6 +1109,135 @@ namespace TitanOrbit.Game
                 Fill = fill,
                 FillRenderer = fillSr,
             };
+        }
+
+        void RecoverOrMigratePlayerBadge(Transform nameRow)
+        {
+            DestroyChildIfPresent(_labelRoot, "PlayerBadgeBack");
+            if (nameRow != null)
+                DestroyChildIfPresent(nameRow, "PlayerBadgeBack");
+
+            _playerBadge = _labelRoot.Find("PlayerBadge")?.GetComponent<SpriteRenderer>();
+
+            // Older builds parented the emblem on NameRow — move it onto the plate root.
+            if (_playerBadge == null && nameRow != null)
+            {
+                Transform leftover = nameRow.Find("PlayerBadge");
+                if (leftover != null)
+                    leftover.SetParent(_labelRoot, false);
+                _playerBadge = leftover != null
+                    ? leftover.GetComponent<SpriteRenderer>()
+                    : null;
+            }
+
+            if (_playerBadge == null)
+                _playerBadge = CreatePlayerBadgeRenderer(_labelRoot, "PlayerBadge", PlayerBadgeSortingOrder);
+            else
+            {
+                _playerBadge.sortingOrder = PlayerBadgeSortingOrder;
+                ApplyPlayerBadgeRendererStyle(_playerBadge);
+            }
+        }
+
+        void ApplyPlayerBadge(int badgeId)
+        {
+            int cleaned = PlayerBadgeIdUtil.Sanitize(badgeId);
+            if (cleaned == _cachedBadgeId && _playerBadge != null)
+                return;
+
+            Sprite sprite = PlayerBadgeCatalog.FindSprite(cleaned);
+            bool show = sprite != null;
+            if (_playerBadge != null)
+            {
+                _playerBadge.sprite = sprite;
+                _playerBadge.enabled = show;
+                ApplyPlayerBadgeRendererStyle(_playerBadge);
+                if (show)
+                    ScaleSpriteToSize(_playerBadge, PlayerBadgeSize);
+            }
+
+            _cachedBadgeId = cleaned;
+        }
+
+        void PlacePlayerBadgeOverBars(float midY)
+        {
+            if (_playerBadge == null)
+                return;
+
+            _playerBadge.transform.localPosition = new Vector3(0f, midY, -0.04f);
+        }
+
+        static SpriteRenderer CreatePlayerBadgeRenderer(Transform parent, string name, int sortingOrder)
+        {
+            Transform existing = parent.Find(name);
+            GameObject go = existing != null ? existing.gameObject : new GameObject(name);
+            if (existing == null)
+                go.transform.SetParent(parent, false);
+
+            var sr = go.GetComponent<SpriteRenderer>();
+            if (sr == null)
+                sr = go.AddComponent<SpriteRenderer>();
+            sr.sprite = null;
+            sr.color = Color.white;
+            sr.sortingOrder = sortingOrder;
+            sr.enabled = false;
+            ApplyPlayerBadgeRendererStyle(sr);
+            go.transform.localScale = new Vector3(PlayerBadgeSize, PlayerBadgeSize, 1f);
+            return sr;
+        }
+
+        static void ApplyPlayerBadgeRendererStyle(SpriteRenderer renderer)
+        {
+            if (renderer == null)
+                return;
+
+            renderer.sharedMaterial = GetPlayerBadgeMaterial();
+            renderer.color = Color.white;
+            renderer.drawMode = SpriteDrawMode.Simple;
+            renderer.shadowCastingMode = ShadowCastingMode.Off;
+            renderer.receiveShadows = false;
+            renderer.allowOcclusionWhenDynamic = false;
+        }
+
+        static Material GetPlayerBadgeMaterial()
+        {
+            if (s_PlayerBadgeMaterial != null)
+                return s_PlayerBadgeMaterial;
+
+            Shader shader = Shader.Find("Sprites/Default");
+            if (shader == null)
+                shader = Shader.Find("Universal Render Pipeline/2D/Sprite-Unlit-Default");
+
+            s_PlayerBadgeMaterial = shader != null
+                ? new Material(shader)
+                : new Material(Shader.Find("Hidden/InternalErrorShader"));
+            s_PlayerBadgeMaterial.name = "ShipNameplatePlayerBadge";
+            s_PlayerBadgeMaterial.renderQueue = RenderQueueOverlay;
+            return s_PlayerBadgeMaterial;
+        }
+
+        static void DestroyChildIfPresent(Transform parent, string name)
+        {
+            if (parent == null)
+                return;
+            Transform child = parent.Find(name);
+            if (child == null)
+                return;
+            if (Application.isPlaying)
+                Object.Destroy(child.gameObject);
+            else
+                Object.DestroyImmediate(child.gameObject);
+        }
+
+        static void ScaleSpriteToSize(SpriteRenderer renderer, float targetSize)
+        {
+            if (renderer == null || renderer.sprite == null)
+                return;
+
+            Sprite sprite = renderer.sprite;
+            float worldW = sprite.rect.width / Mathf.Max(1f, sprite.pixelsPerUnit);
+            float scale = targetSize / Mathf.Max(0.01f, worldW);
+            renderer.transform.localScale = new Vector3(scale, scale, 1f);
         }
 
         /// <summary>Full-width bling strip under the score row (hidden until entitlement exists).</summary>

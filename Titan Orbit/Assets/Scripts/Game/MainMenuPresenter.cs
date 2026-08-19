@@ -37,6 +37,9 @@ namespace TitanOrbit.Game
         /// <summary>Child name for the player-name TMP_InputField.</summary>
         public const string PlayerNameInputObjectName = "PlayerNameInput";
 
+        /// <summary>Child name for the collapsed profile-badge chip.</summary>
+        public const string PlayerBadgePickerObjectName = MainMenuBadgePicker.RootObjectName;
+
         /// <summary>Soft status text color.</summary>
         static readonly Color StatusColor = new Color(0.72f, 0.84f, 0.96f, 0.92f);
 
@@ -104,10 +107,11 @@ namespace TitanOrbit.Game
             // --- Player display name (persisted via LocalPlayerDisplayName) ---
             EnsurePlayerNameField(panel.transform);
 
+            // --- Profile badge chip under the name field (pixel gap, not a second screen-fraction) ---
+            EnsurePlayerBadgePicker(panel.transform);
+
             // --- Button column ---
             var stack = EnsureButtonStack(panel.transform);
-            // Extra room under the larger name field — push Play / Join further down.
-            float stackTopY = -24f;
 
             if (playButton != null)
             {
@@ -141,7 +145,7 @@ namespace TitanOrbit.Game
                 DestroyChildIfPresent(stack, "LocalClientButton");
             }
 
-            LayoutStack(stack, stackTopY);
+            LayoutStack(stack, ComputeStackYBelowBadge(panel.transform));
 
             // --- Status line under the stack (must run after LayoutStack so height is known) ---
             statusText = EnsureStatusTextBelowStack(panel.transform, stack);
@@ -433,6 +437,120 @@ namespace TitanOrbit.Game
             inputGo.SetActive(true);
         }
 
+        /// <summary>
+        /// Collapsed badge chip under the name field. Click opens the full-grid overlay.
+        /// Restores the saved pick from <see cref="LocalPlayerBadge"/>.
+        /// </summary>
+        static void EnsurePlayerBadgePicker(Transform panel)
+        {
+            Transform existing = panel.Find(PlayerBadgePickerObjectName);
+            GameObject rootGo = existing != null
+                ? existing.gameObject
+                : new GameObject(PlayerBadgePickerObjectName, typeof(RectTransform));
+            if (existing == null)
+                rootGo.transform.SetParent(panel, false);
+
+            var rootRt = rootGo.GetComponent<RectTransform>();
+            // Same screen-fraction as the name box; hang below it by a fixed pixel gap
+            // so the two never overlap when the window height changes.
+            var inputRt = panel.Find(PlayerNameInputObjectName) as RectTransform;
+            const float gapBelowName = 22f;
+            float inputHalfH = inputRt != null ? inputRt.rect.height * 0.5f : 56f;
+            Vector2 nameAnchor = inputRt != null ? inputRt.anchorMin : new Vector2(0.5f, 0.42f);
+            rootRt.anchorMin = nameAnchor;
+            rootRt.anchorMax = nameAnchor;
+            rootRt.pivot = new Vector2(0.5f, 1f);
+            rootRt.sizeDelta = new Vector2(280f, 118f);
+            rootRt.anchoredPosition = new Vector2(0f, -inputHalfH - gapBelowName);
+
+            Transform chipTf = rootGo.transform.Find("Chip");
+            GameObject chipGo = chipTf != null
+                ? chipTf.gameObject
+                : new GameObject("Chip", typeof(RectTransform), typeof(Image), typeof(Button));
+            if (chipTf == null)
+                chipGo.transform.SetParent(rootGo.transform, false);
+
+            var chipRt = chipGo.GetComponent<RectTransform>();
+            chipRt.anchorMin = new Vector2(0.5f, 1f);
+            chipRt.anchorMax = new Vector2(0.5f, 1f);
+            chipRt.pivot = new Vector2(0.5f, 1f);
+            chipRt.sizeDelta = new Vector2(88f, 88f);
+            chipRt.anchoredPosition = Vector2.zero;
+
+            var chipFill = chipGo.GetComponent<Image>();
+            chipFill.color = new Color(0.45f, 0.78f, 0.95f, 0.85f);
+            chipFill.raycastTarget = true;
+
+            DestroyChildIfPresent(chipGo.transform, "Ring");
+
+            var badgeGo = EnsureChild(chipGo.transform, "Badge", typeof(Image));
+            var badgeRt = badgeGo.GetComponent<RectTransform>();
+            badgeRt.anchorMin = Vector2.zero;
+            badgeRt.anchorMax = Vector2.one;
+            badgeRt.offsetMin = new Vector2(6f, 6f);
+            badgeRt.offsetMax = new Vector2(-6f, -6f);
+            var badgeImage = badgeGo.GetComponent<Image>();
+            badgeImage.preserveAspect = true;
+            badgeImage.raycastTarget = false;
+            badgeImage.color = Color.white;
+
+            var emptyGo = EnsureChild(chipGo.transform, "EmptyMark", typeof(TextMeshProUGUI));
+            var emptyRt = emptyGo.GetComponent<RectTransform>();
+            emptyRt.anchorMin = Vector2.zero;
+            emptyRt.anchorMax = Vector2.one;
+            emptyRt.offsetMin = Vector2.zero;
+            emptyRt.offsetMax = Vector2.zero;
+            var emptyTmp = emptyGo.GetComponent<TextMeshProUGUI>();
+            emptyTmp.text = "+";
+            emptyTmp.fontSize = 42f;
+            emptyTmp.alignment = TextAlignmentOptions.Center;
+            emptyTmp.color = StatusColor;
+            emptyTmp.raycastTarget = false;
+
+            var captionGo = EnsureChild(rootGo.transform, "Caption", typeof(TextMeshProUGUI));
+            var captionRt = captionGo.GetComponent<RectTransform>();
+            captionRt.anchorMin = new Vector2(0f, 0f);
+            captionRt.anchorMax = new Vector2(1f, 0f);
+            captionRt.pivot = new Vector2(0.5f, 0f);
+            captionRt.sizeDelta = new Vector2(0f, 26f);
+            captionRt.anchoredPosition = Vector2.zero;
+            var captionTmp = captionGo.GetComponent<TextMeshProUGUI>();
+            captionTmp.fontSize = 18f;
+            captionTmp.alignment = TextAlignmentOptions.Center;
+            captionTmp.color = StatusColor;
+            captionTmp.raycastTarget = false;
+
+            var picker = rootGo.GetComponent<MainMenuBadgePicker>();
+            if (picker == null)
+                picker = rootGo.AddComponent<MainMenuBadgePicker>();
+            picker.Configure(badgeImage, chipFill, emptyTmp, captionTmp);
+
+            var chipBtn = chipGo.GetComponent<Button>();
+            chipBtn.transition = Selectable.Transition.ColorTint;
+            chipBtn.targetGraphic = chipFill;
+            chipBtn.onClick.RemoveAllListeners();
+            chipBtn.onClick.AddListener(picker.OpenOverlay);
+
+            rootGo.SetActive(true);
+        }
+
+        /// <summary>Finds or creates a named child with the given extra components.</summary>
+        static GameObject EnsureChild(Transform parent, string name, params System.Type[] extras)
+        {
+            Transform existing = parent.Find(name);
+            if (existing != null)
+                return existing.gameObject;
+
+            var types = new System.Type[extras.Length + 1];
+            types[0] = typeof(RectTransform);
+            for (int i = 0; i < extras.Length; i++)
+                types[i + 1] = extras[i];
+
+            var go = new GameObject(name, types);
+            go.transform.SetParent(parent, false);
+            return go;
+        }
+
         /// <summary>Creates the centered vertical column that holds Play / Join / Local client.</summary>
         static Transform EnsureButtonStack(Transform panel)
         {
@@ -445,9 +563,11 @@ namespace TitanOrbit.Game
                 go.transform.SetParent(panel, false);
 
             var rt = go.GetComponent<RectTransform>();
-            // Below the larger name field.
-            rt.anchorMin = new Vector2(0.5f, 0.28f);
-            rt.anchorMax = new Vector2(0.5f, 0.28f);
+            // Same anchor as the name/badge column — Y is set in LayoutStack from the chip.
+            var badgeRt = panel.Find(PlayerBadgePickerObjectName) as RectTransform;
+            Vector2 columnAnchor = badgeRt != null ? badgeRt.anchorMin : new Vector2(0.5f, 0.42f);
+            rt.anchorMin = columnAnchor;
+            rt.anchorMax = columnAnchor;
             rt.pivot = new Vector2(0.5f, 1f);
             rt.sizeDelta = new Vector2(360f, 240f);
             rt.anchoredPosition = Vector2.zero;
@@ -596,6 +716,20 @@ namespace TitanOrbit.Game
                 tmp.color = Color.white;
                 tmp.raycastTarget = false;
             }
+        }
+
+        /// <summary>
+        /// Pixel Y for the button stack: just under the badge chip, same name-column anchor.
+        /// </summary>
+        static float ComputeStackYBelowBadge(Transform panel)
+        {
+            const float gapBelowBadge = 20f;
+            var badgeRt = panel.Find(PlayerBadgePickerObjectName) as RectTransform;
+            if (badgeRt == null)
+                return -208f;
+
+            // Badge pivot is top, so its bottom is anchoredPosition.y - height.
+            return badgeRt.anchoredPosition.y - badgeRt.sizeDelta.y - gapBelowBadge;
         }
 
         /// <summary>Forces layout rebuild after children change.</summary>

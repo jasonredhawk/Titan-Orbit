@@ -136,5 +136,8 @@ namespace TitanOrbit.ECS
 
         /// <summary>[TITAN-ORBIT] UTF-8 display name for scoreboard and HUD.</summary>
         [GhostField] public FixedString64Bytes DisplayName;
+
+        /// <summary>Filename-stable badge id from Badge (N).png. 0 = none.</summary>
+        [GhostField] public int BadgeId;
     }
 }

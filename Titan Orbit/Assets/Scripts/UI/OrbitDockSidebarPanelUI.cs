@@ -473,7 +473,7 @@ namespace TitanOrbit.UI
             float innerW = PanelWidth - 32f;
             float trackW = Mathf.Max(48f, innerW - 56f);
 
-            // Node already built — still re-apply hero layout so name-above-art / hide-"You" edits stick after code changes.
+            // Node already built — still re-apply hero layout so the name overlay / hide-You edits stick after code changes.
             if (_currentShipNode != null)
             {
                 _currentShipNode.ApplySidebarHeroPreviewLayout(innerW, CurrentShipNodeHeight, trackW);

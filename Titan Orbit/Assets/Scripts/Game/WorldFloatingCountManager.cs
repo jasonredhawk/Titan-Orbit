@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using TitanOrbit;
 using TitanOrbit.Core;
 using TitanOrbit.Simulation;
@@ -464,13 +465,12 @@ namespace TitanOrbit.Game
 
             var settings = Settings;
             Color hpColor = settings != null ? settings.healthColor : new Color(0.2f, 0.9f, 0.3f, 1f);
-            int hp = Mathf.Max(0, Mathf.RoundToInt(remainingHealth));
             ShowOrRefreshLabeled(
                 targetId,
                 targetAnchor,
                 targetAnchor.position,
                 FloatingCountChannel.HealthChange,
-                hp.ToString(),
+                FormatUnsignedAmount(remainingHealth),
                 hpColor,
                 ResolveTypeIcon(FloatingCountChannel.HealthChange),
                 bodyRadius);
@@ -517,13 +517,17 @@ namespace TitanOrbit.Game
             return true;
         }
 
+        /// <summary>+/− amount: whole numbers stay bare, fractions get one decimal (5 → +5, 5.3 → +5.3).</summary>
         static string FormatSignedAmount(float signedAmount)
         {
-            float abs = Mathf.Abs(signedAmount);
-            int amountInt = Mathf.RoundToInt(abs);
-            if (amountInt <= 0)
-                amountInt = 1;
-            return signedAmount >= 0f ? $"+{amountInt}" : $"-{amountInt}";
+            string body = FormatUnsignedAmount(Mathf.Abs(signedAmount));
+            return signedAmount >= 0f ? $"+{body}" : $"-{body}";
+        }
+
+        static string FormatUnsignedAmount(float amount)
+        {
+            float abs = Mathf.Max(0f, amount);
+            return abs.ToString("0.#", CultureInfo.InvariantCulture);
         }
 
         bool IsFloatingCountChannelVisible(FloatingCountChannel channel) =>

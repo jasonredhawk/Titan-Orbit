@@ -2366,7 +2366,7 @@ namespace TitanOrbit.Game
                 string name = buffer[i].DisplayName.ToString();
                 if (string.IsNullOrWhiteSpace(name))
                     continue;
-                PlayerNameRosterCache.Upsert(buffer[i].NetworkId, name);
+                PlayerNameRosterCache.Upsert(buffer[i].NetworkId, name, buffer[i].BadgeId);
             }
         }
 
@@ -2379,7 +2379,7 @@ namespace TitanOrbit.Game
             int localId = GetLocalNetworkId();
             if (localId <= 0)
                 return;
-            PlayerNameRosterCache.Upsert(localId, LocalPlayerDisplayName.Get());
+            PlayerNameRosterCache.Upsert(localId, LocalPlayerDisplayName.Get(), LocalPlayerBadge.Get());
         }
 
         /// <summary>
@@ -2432,6 +2432,24 @@ namespace TitanOrbit.Game
                 return LocalPlayerDisplayName.Get();
 
             return "Player " + networkId;
+        }
+
+        /// <summary>
+        /// Profile badge id from <see cref="PlayerNameRosterCache"/> (announce RPC + local overlay).
+        /// Falls back to the Main Menu pick for the local player, or 0 (none) for remotes.
+        /// </summary>
+        public static int GetCachedPlayerBadgeId(int networkId)
+        {
+            if (networkId <= 0)
+                return PlayerBadgeIdUtil.None;
+
+            if (PlayerNameRosterCache.TryGetBadgeId(networkId, out int badgeId))
+                return badgeId;
+
+            if (networkId == GetLocalNetworkId())
+                return LocalPlayerBadge.Get();
+
+            return PlayerBadgeIdUtil.None;
         }
 
         /// <summary>Number of teams in this match (from home planets, then server team state).</summary>

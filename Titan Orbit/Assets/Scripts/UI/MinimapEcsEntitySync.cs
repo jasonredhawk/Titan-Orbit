@@ -328,6 +328,8 @@ namespace TitanOrbit.UI
                     anchor.PlanetLevel = planet.PlanetLevel;
                     anchor.Population = planet.Population;
                     anchor.PlanetId = planet.PlanetId;
+                    anchor.IsHomePlanet = planet.IsHomePlanet;
+                    anchor.ShipFamilyConfigIndex = planet.ShipFamilyConfigIndex;
                     anchor.BodySize = math.max(0.25f, lt.Scale);
                     // Per-entity buffer read — not a map-body archetype gather (quarantine-safe).
                     anchor.DefenseTurretBuiltMask = ReadDefenseTurretBuiltMask(em, entity);
@@ -404,7 +406,8 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// Copies ship ghost fields onto the minimap anchor for silhouette / cargo / badge rendering.
+        /// Copies ship ghost fields onto the minimap anchor for silhouette / cargo / badge rendering
+        /// (including <see cref="MinimapBlipAnchor.IsMega"/> so MEGAs get a triangle).
         /// Controller reads anchors only — no ECS walks there.
         /// </summary>
         static void ApplyShipAnchorPresentation(
@@ -424,10 +427,17 @@ namespace TitanOrbit.UI
                                     em.HasComponent<GhostOwnerIsLocal>(entity));
             anchor.BodySize = math.max(0.25f, lt.Scale);
 
-            // --- Chassis ladder (kept on anchor for other UI; minimap uses Cross + role dots) ---
+            // --- Chassis ladder (kept on anchor for other UI; minimap uses Cross / MEGA triangle + role dots) ---
             anchor.ShipLevel = ship.ShipLevel;
             anchor.BranchIndex = ship.BranchIndex;
             anchor.ShipFamilyConfigIndex = ship.ShipFamilyConfigIndex;
+
+            // --- MEGA hull flag (hex vs Cross on the minimap) ---
+            // [NETCODE] MegaShipState is baked on StarshipGhost and ghosted, so late joiners
+            // already see IsMega. Per-entity HasComponent matches ShipMatchStats below —
+            // not a map-body gather, so this stays quarantine-safe.
+            anchor.IsMega = em.HasComponent<MegaShipState>(entity)
+                            && em.GetComponentData<MegaShipState>(entity).IsMega;
 
             // --- Live vitals / cargo (nameplates + minimap consumers) ---
             anchor.Health = ship.Health;
@@ -437,7 +447,7 @@ namespace TitanOrbit.UI
             anchor.CurrentPeople = ship.CurrentPeople;
             anchor.PeopleCapacity = ship.PeopleCapacity;
 
-            // --- Facing (optional consumers; Cross blips stay axis-aligned) ---
+            // --- Facing (optional consumers; ship blips stay axis-aligned) ---
             float3 forward = math.mul(lt.Rotation, new float3(0f, 0f, 1f));
             anchor.YawDegrees = math.degrees(math.atan2(forward.x, forward.z));
 
@@ -510,6 +520,9 @@ namespace TitanOrbit.UI
             anchor.PlanetLevel = state.PlanetLevel;
             anchor.Population = state.Population;
             anchor.PlanetId = state.PlanetId;
+            // Home + family index — world labels and the minimap hover tip resolve the name from these.
+            anchor.IsHomePlanet = state.IsHomePlanet;
+            anchor.ShipFamilyConfigIndex = state.ShipFamilyConfigIndex;
             anchor.BodySize = math.max(0.25f, lt.Scale);
             // Per-entity buffer read — not a map-body archetype gather (quarantine-safe).
             anchor.DefenseTurretBuiltMask = ReadDefenseTurretBuiltMask(em, entity);

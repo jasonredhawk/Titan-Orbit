@@ -48,6 +48,9 @@ namespace TitanOrbit.UI
             public const float PowerBarMinWidth = 48f;
         }
 
+        /// <summary>Dark caption strip height for the hull name overlaid on the Your Ship preview.</summary>
+        const float HeroNameOverlayHeight = 28f;
+
         [Header("Reference layout (prefab editor preview; runtime width comes from panel)")]
         [Tooltip("Reference width for prefab authoring. Runtime nodes scale uniformly to fill the tree row.")]
         [SerializeField] private float layoutWidth = 120f;
@@ -175,8 +178,8 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// Current-ship node in the Orbit Menu sidebar: centered name on top, large preview, power bar under art.
-        /// Hides the "You"/level label and the dark price pill.
+        /// Current-ship node in the Orbit Menu sidebar: large preview, hull name overlaid at the
+        /// top of the art, power bar under the silhouette. Hides the "You"/level label and the dark price pill.
         /// </summary>
         public void ApplySidebarHeroPreviewLayout(float width, float height, float powerTrackWidth)
         {
@@ -193,12 +196,14 @@ namespace TitanOrbit.UI
             PowerBarTrackWidth = powerTrackWidth;
             _boundHeight = height;
             ApplyFixedLayoutSize(width, height);
-            // Size may be unchanged on rebuild — still force hero chrome (name-above-art, hide "You").
+            // Size may be unchanged on rebuild — still force hero chrome (name on art, hide "You").
             EnsureSidebarHeroLayout();
             ApplyScaledChildLayout(width, height);
             ApplySidebarHeroChrome();
             if (Rect != null)
                 LayoutRebuilder.ForceRebuildLayoutImmediate(Rect);
+            // [UNITY] Layout rebuild can reset ignoreLayout rects — pin the caption again.
+            EnsureHeroNameAboveArt();
         }
 
         /// <summary>Current-ship node stacked in <see cref="OrbitDockSidebarPanelUI"/> (uses layout group, not tree overlay).</summary>
@@ -244,18 +249,18 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// Sidebar hero chrome: no "You"/level, no price pill, name centered above the ship art.
+        /// Sidebar hero chrome: no "You"/level, no price pill, hull name pinned to the top of the ship art.
         /// </summary>
         private void ApplySidebarHeroChrome()
         {
-            // --- Hide level + price; center the ship name ---
+            // --- Hide level + price; pin the hull name on the art ---
             if (!_sidebarHeroLayout)
                 return;
 
             ApplySidebarHeroPriceHidden();
             EnsureHeroNameAboveArt();
 
-            // Drop the "You" / Lv label — name above the art is enough.
+            // Drop the "You" / Lv label — the hull name on the art is enough.
             if (levelText != null)
             {
                 levelText.gameObject.SetActive(false);
@@ -272,17 +277,20 @@ namespace TitanOrbit.UI
             if (shipNameText != null)
             {
                 shipNameText.gameObject.SetActive(true);
-                // [UNITY] TMP center alignment so the title sits over the preview, not left-ragged.
+                // [UNITY] Center + middle so the title sits in the dark caption strip, not left-ragged.
                 shipNameText.alignment = TextAlignmentOptions.Center;
+                shipNameText.fontStyle = FontStyles.Bold;
                 shipNameText.enableWordWrapping = false;
                 shipNameText.overflowMode = TextOverflowModes.Ellipsis;
                 shipNameText.maxVisibleLines = 1;
+                shipNameText.margin = new Vector4(8f, 1f, 8f, 1f);
             }
 
             if (_nameLe != null)
             {
-                _nameLe.ignoreLayout = false;
-                _nameLe.flexibleWidth = 1f;
+                // Overlay uses ignoreLayout — a flow row used to shrink to 17px and RectMask2D-clip the glyphs.
+                _nameLe.ignoreLayout = true;
+                _nameLe.flexibleWidth = 0f;
                 _nameLe.flexibleHeight = 0f;
             }
         }
@@ -337,10 +345,20 @@ namespace TitanOrbit.UI
             Rect.anchoredPosition = new Vector2(margin, -margin);
         }
 
+        /// <summary>
+        /// Prefab assets are not in a scene. Unity blocks <c>SetParent</c> on them so
+        /// <c>Resources.Load</c> cannot corrupt the asset. Scene instances and
+        /// Prefab Mode previews have a valid scene and may rebuild hierarchy.
+        /// </summary>
+        bool CanRewriteHierarchy()
+        {
+            return gameObject != null && gameObject.scene.IsValid();
+        }
+
         private void ApplyFixedLayoutSize(float width, float height)
         {
             // --- Apply changes ---
-            if (Rect == null)
+            if (Rect == null || !CanRewriteHierarchy())
                 return;
 
             bool sizeChanged = Mathf.Abs(_appliedWidth - width) > 0.5f || Mathf.Abs(_appliedHeight - height) > 0.5f;
@@ -402,9 +420,13 @@ namespace TitanOrbit.UI
             }
         }
 
+        /// <summary>
+        /// Turns the tree-card ContentRow (name | art) into a vertical stack for Your Ship:
+        /// silhouette fills the body, hull name overlays the top of that art.
+        /// </summary>
         private void EnsureSidebarHeroLayout()
         {
-            // --- Ensure name-above-art vertical stack ---
+            // --- Ensure preview stack + name overlay ---
             if (!_sidebarHeroLayout)
                 return;
 
@@ -452,7 +474,11 @@ namespace TitanOrbit.UI
             _sidebarHeroLayoutConfigured = true;
         }
 
-        /// <summary>Keeps the hull name as a full-width row above the preview on Your Ship.</summary>
+        /// <summary>
+        /// Pins the hull name to the top of the ship silhouette on Your Ship.
+        /// A separate flow row used to steal height from the art, then RectMask2D clipped
+        /// the 16px font inside a 17px box so the title vanished.
+        /// </summary>
         void EnsureHeroNameAboveArt()
         {
             if (shipNameText == null)
@@ -461,19 +487,50 @@ namespace TitanOrbit.UI
             if (contentRow == null)
                 return;
 
-            if (shipNameText.transform.parent != contentRow)
-                shipNameText.transform.SetParent(contentRow, false);
-            shipNameText.transform.SetAsFirstSibling();
-            shipNameText.gameObject.SetActive(true);
             Transform leftCol = contentRow.Find("LeftColumn");
             if (leftCol != null)
                 leftCol.gameObject.SetActive(false);
+
+            // [TITAN-ORBIT] Overlay root: dark caption strip across the top of the preview.
+            // ignoreLayout so the VerticalLayoutGroup still gives the silhouette the full card body.
+            Transform overlay = contentRow.Find("HeroNameOverlay");
+            if (overlay == null)
+            {
+                var overlayGo = new GameObject("HeroNameOverlay", typeof(RectTransform));
+                overlayGo.transform.SetParent(contentRow, false);
+                overlay = overlayGo.transform;
+                var overlayLe = overlayGo.AddComponent<LayoutElement>();
+                overlayLe.ignoreLayout = true;
+                var scrim = overlayGo.AddComponent<Image>();
+                scrim.color = new Color(0.01f, 0.015f, 0.03f, 0.62f);
+                scrim.raycastTarget = false;
+            }
+
+            var overlayRt = overlay as RectTransform;
+            overlayRt.anchorMin = new Vector2(0f, 1f);
+            overlayRt.anchorMax = new Vector2(1f, 1f);
+            overlayRt.pivot = new Vector2(0.5f, 1f);
+            overlayRt.anchoredPosition = Vector2.zero;
+            overlayRt.sizeDelta = new Vector2(0f, HeroNameOverlayHeight);
+            overlay.SetAsLastSibling();
+
+            if (shipNameText.transform.parent != overlay)
+                shipNameText.transform.SetParent(overlay, false);
+            StretchRectToFill(shipNameText.rectTransform);
+            shipNameText.gameObject.SetActive(true);
+
+            // [UNITY] Prefab ShipName carries RectMask2D. Overlay height is 28px; the mask
+            // still clips TMP padding if the rect is stale, so turn it off on the hero.
+            var nameMask = shipNameText.GetComponent<RectMask2D>();
+            if (nameMask != null)
+                nameMask.enabled = false;
+
             if (_nameLe == null)
                 _nameLe = shipNameText.GetComponent<LayoutElement>();
             if (_nameLe == null)
                 _nameLe = shipNameText.gameObject.AddComponent<LayoutElement>();
-            _nameLe.ignoreLayout = false;
-            _nameLe.flexibleWidth = 1f;
+            _nameLe.ignoreLayout = true;
+            _nameLe.flexibleWidth = 0f;
             _nameLe.flexibleHeight = 0f;
         }
 
@@ -689,16 +746,15 @@ namespace TitanOrbit.UI
             float hScale = height / layoutHeight;
             float fontScale = Mathf.Min(wScale, hScale);
 
-            // [TITAN-ORBIT] Sidebar hero ("Your Ship"): pack preview + labels tightly, then place the
-            // power bar immediately underneath. Inflating ContentRow past its children left a dark empty
-            // strip above the colourful stats (card background showing through).
+            // [TITAN-ORBIT] Sidebar hero ("Your Ship"): give the silhouette the full body height.
+            // The hull name is a ignoreLayout overlay on top of the art (not a flow row).
+            // Inflating ContentRow past its children left a dark empty strip above the stats.
             float heroPadTop = 2f;
             float heroPadBottom = 4f;
             float heroRootSpacing = 4f; // Tight gap between ship art and the colour stats bar.
             float heroBarH = 12f;
             float heroPreviewH = 0f;
             float heroContentH = 0f;
-            float heroNameH = 0f;
             // One pad on every side so left/right of the power bar and preview match.
             float padScale = Mathf.Min(wScale, hScale);
             int cardPad = ScalePxInt(RefLayout.CardPad, padScale);
@@ -712,12 +768,9 @@ namespace TitanOrbit.UI
                 float heroTrackH = heroBarH + trackPadY * 2f;
                 float chrome = heroPadTop + heroPadBottom + heroRootSpacing + heroTrackH;
                 float available = Mathf.Max(72f, height - chrome);
-                // Name only above the art ("You"/level and price are hidden) — rest goes to the preview.
-                float heroLabelScale = 1.05f;
-                heroNameH = ScalePx(RefLayout.NameHeight, heroLabelScale);
-                float heroLabelsH = heroNameH + 1f; // Tight gap between name and preview
-                heroPreviewH = Mathf.Max(96f, available - heroLabelsH);
-                heroContentH = heroPreviewH + heroLabelsH;
+                // Name is overlaid on the art — do not reserve a flow row (that row was clipping the title).
+                heroPreviewH = Mathf.Max(96f, available);
+                heroContentH = heroPreviewH;
             }
 
             if (_rootVlg != null)
@@ -780,26 +833,12 @@ namespace TitanOrbit.UI
                     _leftVlg.childControlHeight = true;
                 }
             }
-            if (_leftLe != null)
+            if (_leftLe != null && !_sidebarHeroLayout)
             {
-                if (_sidebarHeroLayout)
-                {
-                    // Full-width name row so centered TMP can span the card.
-                    float nameRowW = width - cardPad * 2f;
-                    _leftLe.minWidth = nameRowW;
-                    _leftLe.preferredWidth = nameRowW;
-                    _leftLe.flexibleWidth = 1f;
-                    _leftLe.flexibleHeight = 0f;
-                    _leftLe.preferredHeight = heroNameH;
-                    _leftLe.minHeight = heroNameH;
-                }
-                else
-                {
-                    _leftLe.minWidth = ScalePx(RefLayout.LeftMinWidth, wScale);
-                    _leftLe.preferredWidth = ScalePx(72f, wScale);
-                    _leftLe.flexibleWidth = 1f;
-                    _leftLe.flexibleHeight = 1f;
-                }
+                _leftLe.minWidth = ScalePx(RefLayout.LeftMinWidth, wScale);
+                _leftLe.preferredWidth = ScalePx(72f, wScale);
+                _leftLe.flexibleWidth = 1f;
+                _leftLe.flexibleHeight = 1f;
             }
 
             if (_leftMiddleLe != null && !_sidebarHeroLayout)
@@ -813,14 +852,10 @@ namespace TitanOrbit.UI
 
             if (_sidebarHeroLayout)
             {
-                // Title above art — slightly larger, fixed row height; level stays collapsed.
-                ApplyTextScale(shipNameText, _nameLe, RefLayout.NameFontSize + 1f, RefLayout.NameHeight, heroFontScale, heroHScale);
-                if (_nameLe != null)
-                {
-                    _nameLe.minHeight = heroNameH;
-                    _nameLe.preferredHeight = heroNameH;
-                    _nameLe.flexibleWidth = 1f;
-                }
+                // Overlay caption — scale the font only. LayoutElement stays ignoreLayout.
+                ApplyTextScale(shipNameText, null, RefLayout.NameFontSize + 2f, RefLayout.NameHeight, heroFontScale, heroHScale);
+                if (shipNameText != null)
+                    shipNameText.fontSize = Mathf.Max(13f, shipNameText.fontSize);
                 ApplySidebarHeroChrome();
             }
             else
@@ -1024,6 +1059,9 @@ namespace TitanOrbit.UI
         private void OnValidate()
         {
             // --- OnValidate ---
+            // Resources.Load fires this on the prefab *asset*. Do not reparent there.
+            if (!CanRewriteHierarchy())
+                return;
             if (NodeButtonWidth > 0.01f)
                 return;
             if (Rect == null || layoutWidth < 1f || layoutHeight < 1f)

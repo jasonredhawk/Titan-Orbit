@@ -62,13 +62,14 @@ namespace TitanOrbit.Game
             }
 
             string name = LocalPlayerDisplayName.Get();
+            int badgeId = LocalPlayerBadge.Get();
             int localId = EcsGameBridge.GetLocalNetworkId();
 
             // --- Immediate local plate / leaderboard ---
             // [TITAN-ORBIT] Do this even if the RPC is still in flight so the owner never sees
             // "Player 1" on their own hull.
             if (localId > 0)
-                PlayerNameRosterCache.Upsert(localId, name);
+                PlayerNameRosterCache.Upsert(localId, name, badgeId);
 
             if (s_SendCount >= MaxSendsPerSession)
                 return;
@@ -77,7 +78,7 @@ namespace TitanOrbit.Game
                 Time.realtimeSinceStartup - s_LastSendRealtime < ResendIntervalSeconds)
                 return;
 
-            bool sent = TryEnqueueLocalHost(name, localId) || TrySendDedicatedRpc(name);
+            bool sent = TryEnqueueLocalHost(name, badgeId, localId) || TrySendDedicatedRpc(name, badgeId);
             if (!sent)
                 return;
 
@@ -90,9 +91,10 @@ namespace TitanOrbit.Game
         /// <see cref="PlayerNameServerSystem"/> sees it next tick without IPC.
         /// </summary>
         /// <param name="name">Sanitized-enough raw name (server sanitizes again).</param>
+        /// <param name="badgeId">Filename-stable badge id, or 0 for none.</param>
         /// <param name="networkId">Local GhostOwner / connection id.</param>
         /// <returns>True when the server entity was created.</returns>
-        static bool TryEnqueueLocalHost(string name, int networkId)
+        static bool TryEnqueueLocalHost(string name, int badgeId, int networkId)
         {
             if (!EcsGameBridge.IsLocalHost())
                 return false;
@@ -112,6 +114,7 @@ namespace TitanOrbit.Game
             em.AddComponentData(rpcEntity, new SetPlayerNameCommand
             {
                 DisplayName = PlayerDisplayNameUtil.ToFixed(name),
+                BadgeId = PlayerBadgeIdUtil.Sanitize(badgeId),
             });
             em.AddComponentData(rpcEntity, new ReceiveRpcCommandRequest { SourceConnection = connection });
             return true;
@@ -122,8 +125,9 @@ namespace TitanOrbit.Game
         /// server that owns this client connection."
         /// </summary>
         /// <param name="name">Name from PlayerPrefs / Main Menu.</param>
+        /// <param name="badgeId">Filename-stable badge id, or 0 for none.</param>
         /// <returns>True when the ClientWorld RPC entity was created.</returns>
-        static bool TrySendDedicatedRpc(string name)
+        static bool TrySendDedicatedRpc(string name, int badgeId)
         {
             var world = EcsGameBridge.ClientWorld;
             if (world == null || !world.IsCreated)
@@ -134,6 +138,7 @@ namespace TitanOrbit.Game
             em.AddComponentData(entity, new SetPlayerNameCommand
             {
                 DisplayName = PlayerDisplayNameUtil.ToFixed(name),
+                BadgeId = PlayerBadgeIdUtil.Sanitize(badgeId),
             });
             em.AddComponentData(entity, new SendRpcCommandRequest { TargetConnection = Entity.Null });
             return true;

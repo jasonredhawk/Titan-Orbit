@@ -1014,7 +1014,7 @@ namespace TitanOrbit.UI
             bool debugFree = IsDebugFreeShipUpgradeTree();
             view.SetInteractable(debugFree);
             view.SetButtonBackgroundColor(new Color(0.26f, 0.62f, 0.36f, 0.98f));
-            // Sidebar hero: no "You" label — centered ship name sits above the art instead.
+            // Sidebar hero: no "You" label — hull name sits on top of the ship art instead.
             if (view.UsesSidebarHeroLayout)
                 view.SetLevelLabel(string.Empty);
             else

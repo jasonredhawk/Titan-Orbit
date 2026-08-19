@@ -74,6 +74,12 @@ namespace TitanOrbit.ECS
     {
         /// <summary>[TITAN-ORBIT] UTF-8 display name (length capped by FixedString64).</summary>
         public FixedString64Bytes DisplayName;
+
+        /// <summary>
+        /// Filename-stable badge id from Badge (N).png. 0 = none.
+        /// Adding fields changes RPC layout: client and Linux headless must rebuild together.
+        /// </summary>
+        public int BadgeId;
     }
 
     /// <summary>
@@ -89,6 +95,9 @@ namespace TitanOrbit.ECS
 
         /// <summary>[TITAN-ORBIT] Sanitized UTF-8 display name.</summary>
         public FixedString64Bytes DisplayName;
+
+        /// <summary>Filename-stable badge id from Badge (N).png. 0 = none.</summary>
+        public int BadgeId;
     }
 
     /// <summary>

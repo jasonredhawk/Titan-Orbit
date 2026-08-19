@@ -70,12 +70,13 @@ namespace TitanOrbit.ECS
                     continue;
 
                 FixedString64Bytes displayName = PlayerDisplayNameUtil.SanitizeFixed(cmd.ValueRO.DisplayName);
-                UpsertRoster(names, networkId, displayName);
-                PlayerNameRosterCache.Upsert(networkId, displayName);
-                BroadcastName(ecb, networkId, displayName);
+                int badgeId = PlayerBadgeIdUtil.Sanitize(cmd.ValueRO.BadgeId);
+                UpsertRoster(names, networkId, displayName, badgeId);
+                PlayerNameRosterCache.Upsert(networkId, displayName, badgeId);
+                BroadcastName(ecb, networkId, displayName, badgeId);
 
                 Debug.Log("[PlayerName] Server stored name for networkId=" + networkId +
-                          " name=" + displayName);
+                          " name=" + displayName + " badge=" + badgeId);
             }
 
             // --- Phase 2: late-join catch-up ---
@@ -96,6 +97,7 @@ namespace TitanOrbit.ECS
                     {
                         NetworkId = row.NetworkId,
                         DisplayName = row.DisplayName,
+                        BadgeId = row.BadgeId,
                     });
                     ecb.AddComponent(announce, new SendRpcCommandRequest { TargetConnection = connection });
                 }
@@ -113,10 +115,12 @@ namespace TitanOrbit.ECS
         /// <param name="names">Match-singleton name buffer.</param>
         /// <param name="networkId">Owning connection id.</param>
         /// <param name="displayName">Sanitized name.</param>
+        /// <param name="badgeId">Sanitized filename-stable badge id, or 0 for none.</param>
         static void UpsertRoster(
             DynamicBuffer<PlayerNameElement> names,
             int networkId,
-            in FixedString64Bytes displayName)
+            in FixedString64Bytes displayName,
+            int badgeId)
         {
             for (int i = 0; i < names.Length; i++)
             {
@@ -125,6 +129,7 @@ namespace TitanOrbit.ECS
 
                 PlayerNameElement row = names[i];
                 row.DisplayName = displayName;
+                row.BadgeId = badgeId;
                 names[i] = row;
                 return;
             }
@@ -133,6 +138,7 @@ namespace TitanOrbit.ECS
             {
                 NetworkId = networkId,
                 DisplayName = displayName,
+                BadgeId = badgeId,
             });
         }
 
@@ -144,13 +150,15 @@ namespace TitanOrbit.ECS
         static void BroadcastName(
             EntityCommandBuffer ecb,
             int networkId,
-            in FixedString64Bytes displayName)
+            in FixedString64Bytes displayName,
+            int badgeId)
         {
             Entity announce = ecb.CreateEntity();
             ecb.AddComponent(announce, new PlayerNameAnnounceRpc
             {
                 NetworkId = networkId,
                 DisplayName = displayName,
+                BadgeId = badgeId,
             });
             ecb.AddComponent(announce, new SendRpcCommandRequest { TargetConnection = Entity.Null });
         }

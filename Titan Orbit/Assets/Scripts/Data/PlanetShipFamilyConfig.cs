@@ -179,13 +179,35 @@ namespace TitanOrbit.Data
         }
 
         /// <summary>
-        /// World-space planet label from this planet's <see cref="ShipFamilyDefinition.familyId"/> (CamelCase split for display).
+        /// World-space / minimap planet label from this planet's family.
+        /// Prefers designer <see cref="ShipFamilyEntry.familyName"/>, then camel-splits <c>familyId</c>
+        /// (AstroEagle → "Astro Eagle"). Same string the world label and minimap hover tip show.
         /// </summary>
-        public string GetPlanetDisplayNameFromFamilyId(int planetId)
+        /// <param name="planetId">Stable <c>PlanetState.PlanetId</c>.</param>
+        public string GetPlanetDisplayNameFromFamilyId(int planetId) =>
+            GetPlanetDisplayName(planetId, isHomePlanet: false, shipFamilyConfigIndex: -1);
+
+        /// <summary>
+        /// Resolves the player-facing planet name using home flag + ghosted family index.
+        /// Homes always use the AstroEagle slot; neutrals use the index rolled at spawn.
+        /// </summary>
+        /// <param name="planetId">Stable planet id (homes are 0).</param>
+        /// <param name="isHomePlanet">True for team home worlds — forces config index 0.</param>
+        /// <param name="shipFamilyConfigIndex">Ghosted <c>PlanetState.ShipFamilyConfigIndex</c> (−1 = infer).</param>
+        /// <returns>Display name, or empty when the config list has no family for this planet.</returns>
+        public string GetPlanetDisplayName(int planetId, bool isHomePlanet, int shipFamilyConfigIndex = -1)
         {
-            // --- Compute value ---
-            ShipFamilyEntry entry = GetFamilyForPlanet(planetId);
-            string familyId = entry?.shipFamilyDefinition != null ? entry.shipFamilyDefinition.familyId : null;
+            // --- Resolve family entry ---
+            ShipFamilyEntry entry = GetFamilyForPlanet(planetId, isHomePlanet, shipFamilyConfigIndex);
+            if (entry == null)
+                return string.Empty;
+
+            // Designer override wins (Inspector "familyName" on the config row).
+            if (!string.IsNullOrWhiteSpace(entry.familyName))
+                return entry.familyName.Trim();
+
+            // Fallback: split the ScriptableObject familyId so AstroEagle reads as "Astro Eagle".
+            string familyId = entry.shipFamilyDefinition != null ? entry.shipFamilyDefinition.familyId : null;
             if (string.IsNullOrWhiteSpace(familyId))
                 return string.Empty;
             return Core.DisplayNameFormatting.SplitCamelCase(familyId.Trim());

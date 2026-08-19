@@ -2377,6 +2377,7 @@ namespace TitanOrbit.Game
             nameplate.ApplyPresentation(
                 networkId,
                 displayName,
+                EcsGameBridge.GetCachedPlayerBadgeId(networkId),
                 ship.Team,
                 ship.IsDead,
                 ship.AwaitingTeamSelection,
