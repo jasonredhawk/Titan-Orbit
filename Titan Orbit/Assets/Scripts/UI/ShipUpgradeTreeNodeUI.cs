@@ -48,7 +48,7 @@ namespace TitanOrbit.UI
             public const float PowerBarMinWidth = 48f;
         }
 
-        /// <summary>Dark caption strip height for the hull name overlaid on the Your Ship preview.</summary>
+        /// <summary>Height reserved for the hull name overlaid on the Your Ship preview.</summary>
         const float HeroNameOverlayHeight = 28f;
 
         [Header("Reference layout (prefab editor preview; runtime width comes from panel)")]
@@ -277,7 +277,7 @@ namespace TitanOrbit.UI
             if (shipNameText != null)
             {
                 shipNameText.gameObject.SetActive(true);
-                // [UNITY] Center + middle so the title sits in the dark caption strip, not left-ragged.
+                // [UNITY] Center so the hull name sits on the art, not left-ragged.
                 shipNameText.alignment = TextAlignmentOptions.Center;
                 shipNameText.fontStyle = FontStyles.Bold;
                 shipNameText.enableWordWrapping = false;
@@ -491,8 +491,8 @@ namespace TitanOrbit.UI
             if (leftCol != null)
                 leftCol.gameObject.SetActive(false);
 
-            // [TITAN-ORBIT] Overlay root: dark caption strip across the top of the preview.
-            // ignoreLayout so the VerticalLayoutGroup still gives the silhouette the full card body.
+            // [TITAN-ORBIT] Overlay root: hull name only — no caption plate over the silhouette.
+            // ignoreLayout so the VerticalLayoutGroup still gives the art the full card body.
             Transform overlay = contentRow.Find("HeroNameOverlay");
             if (overlay == null)
             {
@@ -501,10 +501,12 @@ namespace TitanOrbit.UI
                 overlay = overlayGo.transform;
                 var overlayLe = overlayGo.AddComponent<LayoutElement>();
                 overlayLe.ignoreLayout = true;
-                var scrim = overlayGo.AddComponent<Image>();
-                scrim.color = new Color(0.01f, 0.015f, 0.03f, 0.62f);
-                scrim.raycastTarget = false;
             }
+
+            // Drop any leftover navy scrim from a previous session (overlay is created at runtime).
+            var leftoverScrim = overlay.GetComponent<Image>();
+            if (leftoverScrim != null)
+                leftoverScrim.enabled = false;
 
             var overlayRt = overlay as RectTransform;
             overlayRt.anchorMin = new Vector2(0f, 1f);

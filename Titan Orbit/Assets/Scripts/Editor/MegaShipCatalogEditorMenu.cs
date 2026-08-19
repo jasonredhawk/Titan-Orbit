@@ -38,6 +38,7 @@ namespace TitanOrbit.Editor
             var previousSprites = new Dictionary<string, Sprite>(System.StringComparer.OrdinalIgnoreCase);
             var previousTeamSprites = new Dictionary<string, List<ShipFamilyTeamMenuPreview>>(
                 System.StringComparer.OrdinalIgnoreCase);
+            var previousDisplayNames = new Dictionary<string, string>(System.StringComparer.OrdinalIgnoreCase);
             for (int i = 0; i < catalog.entries.Count; i++)
             {
                 MegaShipCatalogEntry existing = catalog.entries[i];
@@ -50,6 +51,8 @@ namespace TitanOrbit.Editor
                     previousSprites[keepPath] = existing.menuPreviewSprite;
                 if (existing.teamMenuPreviewSprites != null && existing.teamMenuPreviewSprites.Count > 0)
                     previousTeamSprites[keepPath] = existing.teamMenuPreviewSprites;
+                if (!string.IsNullOrWhiteSpace(existing.displayName))
+                    previousDisplayNames[keepPath] = existing.displayName.Trim();
             }
 
             catalog.entries.Clear();
@@ -72,11 +75,12 @@ namespace TitanOrbit.Editor
 
                     previousSprites.TryGetValue(paths[i], out Sprite keepSprite);
                     previousTeamSprites.TryGetValue(paths[i], out List<ShipFamilyTeamMenuPreview> keepTeams);
+                    previousDisplayNames.TryGetValue(paths[i], out string keepName);
                     catalog.entries.Add(new MegaShipCatalogEntry
                     {
                         catalogIndex = nextIndex,
                         visualFamily = VisualFolders[f].family,
-                        displayName = prefab.name,
+                        displayName = !string.IsNullOrWhiteSpace(keepName) ? keepName : prefab.name,
                         prefab = prefab,
                         menuPreviewSprite = keepSprite,
                         teamMenuPreviewSprites = keepTeams ?? new List<ShipFamilyTeamMenuPreview>(),
