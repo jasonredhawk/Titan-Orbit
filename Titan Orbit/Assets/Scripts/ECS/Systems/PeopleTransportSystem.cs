@@ -112,21 +112,23 @@ namespace TitanOrbit.ECS
             var ecb = new EntityCommandBuffer(Allocator.Temp);
 
             foreach (var (shipState, shipInput, orbit, moonDock, transferState, shipTransform, shipEntity) in SystemAPI
-                         .Query<RefRW<ShipState>, RefRO<ShipInput>, RefRO<ShipOrbitState>, RefRO<ShipMoonDockState>,
+                         .Query<RefRW<ShipState>, RefRO<ShipInput>, RefRW<ShipOrbitState>, RefRO<ShipMoonDockState>,
                              RefRW<ShipPeopleTransferState>, RefRO<LocalTransform>>()
                          .WithAll<ShipTag>()
                          .WithEntityAccess())
             {
                 if (shipState.ValueRO.IsDead || shipState.ValueRO.AwaitingTeamSelection)
+                {
+                    orbit.ValueRW.IsTransferringPeople = false;
                     continue;
+                }
 
                 ref var transfer = ref transferState.ValueRW;
                 float3 shipPos = shipTransform.ValueRO.Position;
                 if (!orbit.ValueRO.InOrbitRing || orbit.ValueRO.OrbitPlanetId == 0)
                 {
-                    transfer.OrbitDwellSeconds = 0f;
-                    transfer.LoadAccumulator = 0f;
-                    transfer.UnloadAccumulator = 0f;
+                    ResetTransferDwell(ref transfer);
+                    orbit.ValueRW.IsTransferringPeople = false;
                     continue;
                 }
 
@@ -135,26 +137,31 @@ namespace TitanOrbit.ECS
                         in orbit.ValueRO, in shipInput.ValueRO, in moonDock.ValueRO, shipPos,
                         orbitPlanetId, planetTransformById, planetStateById, mapW, mapH))
                 {
-                    transfer.OrbitDwellSeconds = 0f;
-                    transfer.LoadAccumulator = 0f;
-                    transfer.UnloadAccumulator = 0f;
+                    ResetTransferDwell(ref transfer);
+                    orbit.ValueRW.IsTransferringPeople = false;
                     continue;
                 }
 
                 if (orbitPlanetId != transfer.LastOrbitPlanetId)
                 {
                     transfer.LastOrbitPlanetId = orbitPlanetId;
-                    transfer.OrbitDwellSeconds = 0f;
-                    transfer.LoadAccumulator = 0f;
-                    transfer.UnloadAccumulator = 0f;
+                    ResetTransferDwell(ref transfer);
                 }
 
                 transfer.OrbitDwellSeconds += dt;
-                if (transfer.OrbitDwellSeconds < PeopleTransportConstants.OrbitDwellBeforeTransferSeconds)
+                bool dwellReady = transfer.OrbitDwellSeconds >=
+                    PeopleTransportConstants.OrbitDwellBeforeTransferSeconds;
+                if (!dwellReady)
+                {
+                    orbit.ValueRW.IsTransferringPeople = transfer.PeopleInTransit > 0.01f;
                     continue;
+                }
 
                 if (!planetById.TryGetValue(orbitPlanetId, out var planetEntity))
+                {
+                    orbit.ValueRW.IsTransferringPeople = false;
                     continue;
+                }
 
                 var planetState = planetStateById[orbitPlanetId];
                 var planetTransform = planetTransformById[orbitPlanetId];
@@ -185,10 +192,17 @@ namespace TitanOrbit.ECS
                 float unloadStep = unloadChunk * dt * PeopleTransportConstants.TransferSpeedMultiplier * transferMul;
                 int shipNetworkId = GetShipNetworkId(ref state, shipEntity);
                 if (shipNetworkId == 0)
+                {
+                    orbit.ValueRW.IsTransferringPeople = false;
                     continue;
+                }
                 float3 planetPos = planetTransform.Position;
                 float shipHullRadius = PeopleTransportMath.GetShipHullRadius(shipTransform.ValueRO.Scale);
                 bool friendly = shipState.ValueRO.Team != TeamId.None && planetState.Ownership == shipState.ValueRO.Team;
+                orbit.ValueRW.IsTransferringPeople = ComputeIsTransferringPeople(
+                    dwellReady, friendly, planetState.Population, halfCap,
+                    shipState.ValueRO.CurrentPeople, shipState.ValueRO.PeopleCapacity,
+                    transfer.PeopleInTransit);
 
                 if (friendly)
                 {
@@ -262,6 +276,44 @@ namespace TitanOrbit.ECS
             planetById.Dispose();
             planetStateById.Dispose();
             planetTransformById.Dispose();
+        }
+
+        static void ResetTransferDwell(ref ShipPeopleTransferState transfer)
+        {
+            transfer.OrbitDwellSeconds = 0f;
+            transfer.LoadAccumulator = 0f;
+            transfer.UnloadAccumulator = 0f;
+        }
+
+        /// <summary>
+        /// True when this ship is actually moving troops (or inbound crew is still flying).
+        /// Drives the ghosted orbit-ring yellow tint — not merely "dwelling in the ring".
+        /// </summary>
+        static bool ComputeIsTransferringPeople(
+            bool dwellReady,
+            bool friendly,
+            int planetPopulation,
+            int halfCap,
+            int currentPeople,
+            int peopleCapacity,
+            float peopleInTransit)
+        {
+            if (peopleInTransit > 0.01f)
+                return true;
+            if (!dwellReady)
+                return false;
+
+            if (friendly)
+            {
+                if (planetPopulation < halfCap)
+                    return currentPeople > 0;
+
+                int space = peopleCapacity - currentPeople;
+                int surplus = planetPopulation - halfCap;
+                return space > 0 && surplus > 0;
+            }
+
+            return currentPeople > 0;
         }
 
         static bool CanTransferPeople(

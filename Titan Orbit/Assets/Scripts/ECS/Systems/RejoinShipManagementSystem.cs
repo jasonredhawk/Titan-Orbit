@@ -116,6 +116,7 @@ namespace TitanOrbit.ECS
                 orbit.OrbitPlanetId = 0;
                 orbit.InOrbitRing = false;
                 orbit.UsingOrbitMotor = false;
+                orbit.IsTransferringPeople = false;
                 ecb.SetComponent(ship, orbit);
             }
 

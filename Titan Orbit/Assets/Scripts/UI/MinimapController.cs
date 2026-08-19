@@ -21,8 +21,9 @@ namespace TitanOrbit.UI
     /// (<c>CurrentPeople / PeopleCapacity</c>). Small colored
     /// circles mark a team's top killer (blue) / gem miner (red) / transporter (yellow).
     /// Also planets, home planets, gem moons, and asteroids. Each team has its own color.
-    /// Planet blips also draw a thin team-colored ring at the gem-moon / ship orbit radius
-    /// (<see cref="PlanetOrbitMath.GetOrbitRingCenterRadiusLocal"/>) so the orbit path is readable on the map.
+    /// Planet blips also draw a thin orbit ring at the gem-moon / ship orbit radius
+    /// (<see cref="PlanetOrbitMath.GetOrbitRingCenterRadiusLocal"/>). Ring RGB always matches
+    /// the world orbit fill (idle gray-blue, or locked-in ship teams cycling ~1s each).
     /// Collapsed world radius scales with ship-level camera zoom (<see cref="CameraFollowEcs.CurrentHeightZoomFactor"/>)
     /// so the circle shows proportionally more map as the gameplay camera rises. Expanded mode still fits the full torus.
     /// Hovering a planet disc (or its off-screen edge arrow) shows the family name via
@@ -49,7 +50,7 @@ namespace TitanOrbit.UI
         [SerializeField] private float asteroidBlipScaleFactor = 1f; // Asteroids use physical scale for blip size
         [SerializeField] private float moonBlipScaleFactor = 0.85f;
         [SerializeField] private float moonBlipMinSize = 5f;
-        [Tooltip("Alpha of the thin moon-orbit ring around each planet blip (team tint).")]
+        [Tooltip("Alpha of the thin moon-orbit ring around each planet blip (planet team, or locked-in ship teams).")]
         [SerializeField] [Range(0.15f, 1f)] private float planetOrbitRingAlpha = 0.4f;
         [SerializeField] private float edgeMarkerSize = 36f; // Base size of edge markers for planets outside visible area
         [SerializeField] private float edgeMarkerMinSize = 20f; // Minimum size for farthest planets
@@ -2462,7 +2463,7 @@ namespace TitanOrbit.UI
             // [TITAN-ORBIT] Same centerline as PlanetOrbitMath / gem moon — not the tight level-dot ring.
             // Ring uses worldToMinimapScale (position scale), not the enlarged planet disc size.
             float planetWorldSize = ResolvePlanetWorldSize(p);
-            AddOrUpdatePlanetOrbitRing(rt, planetWorldSize, worldToMinimapScale, color);
+            AddOrUpdatePlanetOrbitRing(rt, planetWorldSize, worldToMinimapScale, p.PlanetId);
 
             // --- Level dots (small circles just outside the planet fill) ---
             var dotsGo = new GameObject("LevelDots", typeof(RectTransform));
@@ -2556,18 +2557,19 @@ namespace TitanOrbit.UI
 
         /// <summary>
         /// Creates or refreshes the thin OrbitRing child under a planet blip.
-        /// Drawn behind LevelDots / PlanetFill; tinted with the planet team color.
+        /// Drawn behind LevelDots / PlanetFill. RGB always matches the world orbit ring
+        /// via <see cref="PlanetOrbitRingOccupancy"/> (idle gray-blue, or locked-in teams).
         /// Radius follows the gem-moon orbit centerline in UI space.
         /// </summary>
         /// <param name="planetBlipRoot">Root RectTransform of the planet blip hierarchy.</param>
         /// <param name="planetWorldSize">Planet world scale for <see cref="PlanetOrbitMath"/>.</param>
         /// <param name="worldToMinimapScale">Same scale used to project moon/planet positions.</param>
-        /// <param name="planetColor">Team (or neutral) color used for the planet fill.</param>
+        /// <param name="planetId">Stable planet id for occupancy lookup (0 = shared idle tint).</param>
         private void AddOrUpdatePlanetOrbitRing(
             RectTransform planetBlipRoot,
             float planetWorldSize,
             float worldToMinimapScale,
-            Color planetColor)
+            int planetId)
         {
             if (planetBlipRoot == null) return;
 
@@ -2603,12 +2605,38 @@ namespace TitanOrbit.UI
                 ringTf.SetAsFirstSibling();
             }
 
-            // --- Size + team tint ---
+            // --- Size + occupancy / planet tint ---
             float ringDiameter = GetPlanetOrbitRingBlipDiameter(planetWorldSize, worldToMinimapScale);
             ringRt.sizeDelta = new Vector2(ringDiameter, ringDiameter);
-            Color ringColor = planetColor;
+            ApplyPlanetOrbitRingOccupancyTint(ringImg, planetId);
+        }
+
+        /// <summary>
+        /// Tints a planet's minimap orbit ring with the same RGB as the world ring
+        /// (idle gray-blue, or locked-in team colors, including the multi-team cycle).
+        /// </summary>
+        void ApplyPlanetOrbitRingOccupancyTint(Image ringImg, int planetId)
+        {
+            if (ringImg == null)
+                return;
+
+            Color ringColor = PlanetOrbitRingOccupancy.ResolveRingTint(planetId);
             ringColor.a = planetOrbitRingAlpha;
             ringImg.color = ringColor;
+        }
+
+        /// <summary>
+        /// Finds the OrbitRing child and applies the shared occupancy tint.
+        /// Used when planet blip layout is stable so the cycle still animates.
+        /// </summary>
+        void ApplyPlanetOrbitRingOccupancyTint(RectTransform planetBlipRoot, int planetId)
+        {
+            if (planetBlipRoot == null)
+                return;
+            Transform ringTf = planetBlipRoot.Find("OrbitRing");
+            if (ringTf == null)
+                return;
+            ApplyPlanetOrbitRingOccupancyTint(ringTf.GetComponent<Image>(), planetId);
         }
 
         /// <summary>
@@ -2780,7 +2808,8 @@ namespace TitanOrbit.UI
                 prev.DefenseTurretBuiltMask == turretMask &&
                 prev.Color.r == c32.r && prev.Color.g == c32.g && prev.Color.b == c32.b && prev.Color.a == c32.a)
             {
-                // Layout is stable, but the hover pad must still exist after a script reload.
+                // Layout is stable — still retint the orbit ring so multi-team cycles animate.
+                ApplyPlanetOrbitRingOccupancyTint(blipRt, p.PlanetId);
                 MinimapPlanetHoverTip.AttachToPlanetBlip(blipRt, p, qSize);
                 return;
             }
@@ -2798,7 +2827,7 @@ namespace TitanOrbit.UI
             // --- Root + orbit ring (ring follows moon path; disc may be larger for readability) ---
             blipRt.sizeDelta = new Vector2(qSize, qSize);
             float planetWorldSize = ResolvePlanetWorldSize(p);
-            AddOrUpdatePlanetOrbitRing(blipRt, planetWorldSize, worldToMinimapScale, color);
+            AddOrUpdatePlanetOrbitRing(blipRt, planetWorldSize, worldToMinimapScale, p.PlanetId);
 
             // --- Planet fill tint ---
             Image planetImg = null;

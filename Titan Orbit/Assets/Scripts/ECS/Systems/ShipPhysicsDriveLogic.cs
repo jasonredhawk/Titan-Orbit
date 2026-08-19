@@ -416,11 +416,15 @@ namespace TitanOrbit.ECS
             physicsDamping = default;
 
             // --- Replicate orbit context for HUD, tractor beam, people transports ---
+            // Preserve IsTransferringPeople while still locked so client prediction does not
+            // wipe the server/ghost flag; clear immediately on thrust or leave.
+            bool transferring = useOrbit && orbitState.IsTransferringPeople;
             orbitState = new ShipOrbitState
             {
                 OrbitPlanetId = inOrbitRing ? orbitPlanetState.PlanetId : 0,
                 InOrbitRing = inOrbitRing,
                 UsingOrbitMotor = useOrbit,
+                IsTransferringPeople = transferring,
             };
         }
 

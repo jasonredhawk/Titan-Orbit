@@ -118,6 +118,7 @@ namespace TitanOrbit.ECS
             orbit.OrbitPlanetId = 0;
             orbit.InOrbitRing = false;
             orbit.UsingOrbitMotor = false;
+            orbit.IsTransferringPeople = false;
             // [TITAN-ORBIT] Drop sticky triangle boost so respawn at home does not keep a latched mult.
             ShipPhysicsDriveLogic.ClearTerritoryBoostLatch(ref territoryLatch);
 

@@ -4,6 +4,7 @@ using TitanOrbit.Data;
 using TitanOrbit.ECS;
 using TitanOrbit.Game;
 using TitanOrbit.Simulation;
+using TitanOrbit.Systems;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
@@ -727,6 +728,7 @@ namespace TitanOrbit.UI
             _shipTree.EnsurePanelHeader();
             if (_shipTree.Title != null)
                 _shipTree.Title.text = ShipUpgradeTreeUI.PanelTitleText;
+            _shipTree.ApplyFamilyIdentity(ResolveUpgradeTreeFamily());
 
             if (_shipTree.Hint == null)
                 return;
@@ -1094,6 +1096,33 @@ namespace TitanOrbit.UI
             return config != null
                 ? config.GetPowerScoreBreakdownForChassisIdAtShipLevel(chassisId, level)
                 : default;
+        }
+
+        /// <summary>
+        /// Family whose hull ladder fills this tree — the docked store planet, not the
+        /// player's current chassis. Same mapping as <see cref="TryGetChassisIdForTreeSlot"/>.
+        /// </summary>
+        ShipFamilyDefinition ResolveUpgradeTreeFamily()
+        {
+            // --- Resolve store-planet family ---
+            if (CardShopSystem.Instance != null && _storePlanetId > 0)
+                return CardShopSystem.Instance.GetShipFamilyForStorePlanet(_storePlanetId);
+
+            var config = ShipStatApplyLogic.Config;
+            if (config == null || _storePlanetId <= 0)
+                return null;
+
+            bool isHome = false;
+            int familyIndex = -1;
+            if (EcsGameBridge.TryGetPlanetStateByPlanetId(_storePlanetId, out var planet))
+            {
+                isHome = planet.IsHomePlanet;
+                familyIndex = planet.IsHomePlanet
+                    ? PlanetShipFamilyAssignment.HomeFamilyConfigIndex
+                    : planet.ShipFamilyConfigIndex;
+            }
+
+            return config.GetFamilyForPlanet(_storePlanetId, isHome, familyIndex)?.shipFamilyDefinition;
         }
 
         /// <summary>

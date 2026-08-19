@@ -426,6 +426,7 @@ namespace TitanOrbit.UI
             shipUpgradeTree.EnsurePanelHeader();
             if (shipUpgradeTree.Title != null)
                 shipUpgradeTree.Title.text = ShipUpgradeTreeUI.PanelTitleText;
+            shipUpgradeTree.ApplyFamilyIdentity(ResolveUpgradeTreeFamily());
 
             if (shipUpgradeTree.Hint == null || currentShip == null)
                 return;
@@ -467,6 +468,22 @@ namespace TitanOrbit.UI
                 shipUpgradeTree.Hint.text = $"Locked — raise home planet to level {nextLevel}.";
             else
                 shipUpgradeTree.Hint.text = ShipUpgradeTreeUI.PanelDefaultSubtitle;
+        }
+
+        /// <summary>
+        /// Family whose hull ladder fills this tree — the docked store planet, not the
+        /// player's current chassis. Docking a Cosmic Shark moon while flying Astro Eagle
+        /// should still title the tree COSMIC SHARK.
+        /// </summary>
+        ShipFamilyDefinition ResolveUpgradeTreeFamily()
+        {
+            // --- Resolve store-planet family ---
+            Planet storePlanet = GetShipUpgradeStorePlanet();
+            if (CardShopSystem.Instance != null && storePlanet != null)
+                return CardShopSystem.Instance.GetShipFamilyForStorePlanet(storePlanet.PlanetId, currentShip);
+            if (CardShopSystem.Instance != null && currentShip != null)
+                return CardShopSystem.Instance.GetShipFamilyForShip(currentShip);
+            return null;
         }
 
         internal ShipFamilyPowerScoreBreakdown GetPowerBreakdownForTreeNode(int level, int branchIndex)

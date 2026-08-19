@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using Shapes;
+using TitanOrbit.Core;
 using UnityEngine;
 
 namespace TitanOrbit.Game
@@ -7,9 +8,10 @@ namespace TitanOrbit.Game
     /// <summary>
     /// [HYBRID] Soft deposit/pad disc for one planetary-defense slot — data + registry only.
     /// <para>
-    /// Tint and peak alpha match the people-transfer orbit ring fill and gem-moon orbit zone
+    /// Idle tint and peak alpha match the people-transfer orbit ring fill and gem-moon orbit zone
     /// (<see cref="PlanetOrbitRingVisual"/> / <see cref="GemMoonOrbitZoneVisual"/>): cool blue,
-    /// translucent, fading out toward the outer rim.
+    /// translucent, fading out toward the outer rim. While a friendly ship is depositing gems
+    /// the disc eases to that team's canonical color (<see cref="TeamIdExtensions.ToColor"/>).
     /// </para>
     /// <para>
     /// [TITAN-ORBIT] Pads are <b>not</b> individual <see cref="ImmediateModeShapeDrawer"/>s.
@@ -31,6 +33,15 @@ namespace TitanOrbit.Game
 
         /// <summary>Peak fill alpha matching orbit-zone soft discs (~0.3).</summary>
         public const float OrbitZonePeakAlpha = 0.3f;
+
+        /// <summary>
+        /// Peak fill alpha while a friendly ship is depositing — slightly stronger than idle
+        /// so the team hue reads on the faded disc.
+        /// </summary>
+        public const float DepositPeakAlpha = 0.45f;
+
+        /// <summary>How fast idle ↔ deposit tint eases (higher = snappier).</summary>
+        public const float HighlightLerpSpeed = 10f;
 
         /// <summary>
         /// Soft-disc ring count. Was 24 per pad × ~81 pads ≈ 2k rings/frame; 8 still reads as a soft pad.
@@ -129,6 +140,22 @@ namespace TitanOrbit.Game
         {
             zoneTint = OrbitZoneTint;
             peakAlpha = OrbitZonePeakAlpha;
+        }
+
+        /// <summary>
+        /// Eases this pad toward team color while a friendly ship is depositing, or back to
+        /// the shared cool-blue idle look. Presentation only — does not affect deposit sim.
+        /// </summary>
+        /// <param name="depositing">True when a friendly ship is feeding this slot.</param>
+        /// <param name="teamColor">Canonical team RGB from <see cref="TeamIdExtensions.ToColor"/>.</param>
+        /// <param name="dt">Frame delta (seconds).</param>
+        public void TickHighlight(bool depositing, Color teamColor, float dt)
+        {
+            Color targetTint = depositing ? teamColor : OrbitZoneTint;
+            float targetPeak = depositing ? DepositPeakAlpha : OrbitZonePeakAlpha;
+            float t = 1f - Mathf.Exp(-HighlightLerpSpeed * Mathf.Max(0f, dt));
+            zoneTint = Color.Lerp(zoneTint, targetTint, t);
+            peakAlpha = Mathf.Lerp(peakAlpha, targetPeak, t);
         }
 
         /// <summary>

@@ -10,8 +10,10 @@ using UnityEditor;
 namespace TitanOrbit.UI
 {
     /// <summary>
-    /// Prefab-driven ship upgrade tree panel (hint line, node canvas, connectors). Assigned on a GameObject
-    /// under the orbit station ships tab; <see cref="OrbitStationUI"/> binds runtime state via <see cref="IOrbitStationHost"/>.
+    /// Prefab-driven ship upgrade tree panel (title + family caption, hint line, node canvas, connectors).
+    /// Assigned on a GameObject under the orbit station ships tab; <see cref="OrbitStationUI"/> binds
+    /// runtime state via <see cref="IOrbitStationHost"/>. The header shows the docked planet's ship
+    /// family (Astro Eagle, Cosmic Shark, …) so players can tell whose hull ladder they are buying.
     /// Supports horizontal moon-dock layout and vertical fallback. Optional <see cref="previewFamily"/> fills editor preview.
     /// </summary>
     public class ShipUpgradeTreeUI : MonoBehaviour
@@ -38,6 +40,7 @@ namespace TitanOrbit.UI
 
         [Header("Template references (edit on prefab)")]
         [SerializeField] private TextMeshProUGUI titleText;
+        [SerializeField] private TextMeshProUGUI familyText;
         [SerializeField] private TextMeshProUGUI hintText;
         [SerializeField] private RectTransform centerRow;
         [SerializeField] private RectTransform nodesCanvas;
@@ -59,6 +62,7 @@ namespace TitanOrbit.UI
         private ShipUpgradeTreeNodeUI _currentShipNode;
 
         public TextMeshProUGUI Title => titleText;
+        public TextMeshProUGUI Family => familyText;
         public TextMeshProUGUI Hint => hintText;
         public RectTransform CenterRow => centerRow;
         public RectTransform NodesCanvas => nodesCanvas;
@@ -77,42 +81,156 @@ namespace TitanOrbit.UI
             EnsurePanelHeader();
         }
 
-        /// <summary>Creates a title row on older prefabs that only had a dynamic hint line.</summary>
+        /// <summary>
+        /// Creates the title + family header on older prefabs that only had a dynamic hint line.
+        /// Title stays "Ship Upgrade Tree"; family sits on the right of the same row so the
+        /// docked planet's lineage (Astro Eagle, Cosmic Shark, …) is visible without eating
+        /// extra tree height.
+        /// </summary>
         public void EnsurePanelHeader()
         {
-            // --- Ensure setup ---
+            // --- Title label ---
             if (titleText == null)
             {
-                var existing = transform.Find("Title");
+                var existing = transform.Find("HeaderRow/Title") ?? transform.Find("Title");
                 if (existing != null)
                     titleText = existing.GetComponent<TextMeshProUGUI>();
             }
 
-            if (titleText != null)
+            if (titleText == null)
             {
+                var titleGo = new GameObject("Title", typeof(RectTransform));
+                titleGo.transform.SetParent(transform, false);
+                titleGo.transform.SetAsFirstSibling();
+
+                titleText = titleGo.AddComponent<TextMeshProUGUI>();
                 titleText.text = PanelTitleText;
+                titleText.fontSize = 22;
+                titleText.fontStyle = FontStyles.Bold;
+                titleText.alignment = TextAlignmentOptions.Left;
+                titleText.color = new Color(0.94f, 0.96f, 1f, 1f);
+                titleText.enableWordWrapping = false;
+                titleText.raycastTarget = false;
+                if (TMP_Settings.defaultFontAsset != null)
+                    titleText.font = TMP_Settings.defaultFontAsset;
+
+                var titleLe = titleGo.AddComponent<LayoutElement>();
+                titleLe.preferredHeight = 34f;
+                titleLe.minHeight = 28f;
+                titleLe.flexibleHeight = 0f;
+            }
+            else
+                titleText.text = PanelTitleText;
+
+            // --- Family caption on the same header row ---
+            EnsureFamilyHeader();
+        }
+
+        /// <summary>
+        /// Writes the uppercase family name on the tree header (right side of the title row).
+        /// Uses the same caption as the sidebar / gear rail so Cosmic Shark reads as COSMIC SHARK.
+        /// Called from orbit hosts when the docked store planet (or editor preview family) is known.
+        /// </summary>
+        public void ApplyFamilyIdentity(ShipFamilyDefinition family)
+        {
+            // --- Apply caption ---
+            EnsurePanelHeader();
+            if (familyText == null)
                 return;
+            familyText.text = FamilyStatHudCopy.FormatFamilyCaption(family);
+        }
+
+        /// <summary>
+        /// Finds or builds the right-side family label. Older ShipUpgradeTree prefabs only had
+        /// Title as a direct child — we wrap that into HeaderRow so both labels share one line.
+        /// </summary>
+        void EnsureFamilyHeader()
+        {
+            // --- Reuse wired / existing label ---
+            if (familyText == null)
+            {
+                var existing = transform.Find("HeaderRow/Family") ?? transform.Find("Family");
+                if (existing != null)
+                    familyText = existing.GetComponent<TextMeshProUGUI>();
             }
 
-            var titleGo = new GameObject("Title", typeof(RectTransform));
-            titleGo.transform.SetParent(transform, false);
-            titleGo.transform.SetAsFirstSibling();
+            if (familyText != null)
+                return;
 
-            titleText = titleGo.AddComponent<TextMeshProUGUI>();
-            titleText.text = PanelTitleText;
-            titleText.fontSize = 22;
-            titleText.fontStyle = FontStyles.Bold;
+            // --- Header row (title left, family right) ---
+            RectTransform headerRt = FindOrCreateHeaderRow();
+            if (headerRt == null)
+                return;
+
+            var familyGo = new GameObject("Family", typeof(RectTransform));
+            familyGo.transform.SetParent(headerRt, false);
+            familyText = familyGo.AddComponent<TextMeshProUGUI>();
+            familyText.text = "FAMILY";
+            familyText.fontSize = 16f;
+            familyText.fontStyle = FontStyles.Bold;
+            familyText.characterSpacing = 1.6f;
+            familyText.alignment = TextAlignmentOptions.Right;
+            familyText.color = new Color(0.62f, 0.78f, 0.95f, 0.95f);
+            familyText.enableWordWrapping = false;
+            familyText.overflowMode = TextOverflowModes.Ellipsis;
+            familyText.raycastTarget = false;
+            if (titleText != null && titleText.font != null)
+                familyText.font = titleText.font;
+            else if (TMP_Settings.defaultFontAsset != null)
+                familyText.font = TMP_Settings.defaultFontAsset;
+
+            var familyLe = familyGo.AddComponent<LayoutElement>();
+            familyLe.flexibleWidth = 0.7f;
+            familyLe.minWidth = 120f;
+            familyLe.preferredHeight = 34f;
+            familyLe.minHeight = 28f;
+            familyLe.flexibleHeight = 0f;
+        }
+
+        /// <summary>
+        /// Returns the shared title/family row. Creates it when the prefab still has Title as a
+        /// top-level child of the vertical layout (Resources/ShipUpgradeTree).
+        /// </summary>
+        RectTransform FindOrCreateHeaderRow()
+        {
+            var existing = transform.Find("HeaderRow") as RectTransform;
+            if (existing != null)
+                return existing;
+
+            if (titleText == null)
+                return null;
+
+            var headerGo = new GameObject("HeaderRow", typeof(RectTransform));
+            headerGo.transform.SetParent(transform, false);
+            headerGo.transform.SetAsFirstSibling();
+            var headerRt = headerGo.GetComponent<RectTransform>();
+
+            var hlg = headerGo.AddComponent<HorizontalLayoutGroup>();
+            hlg.childAlignment = TextAnchor.MiddleLeft;
+            hlg.childControlWidth = true;
+            hlg.childControlHeight = true;
+            hlg.childForceExpandWidth = true;
+            hlg.childForceExpandHeight = false;
+            hlg.spacing = 12f;
+            hlg.padding = new RectOffset(0, 4, 0, 0);
+
+            var headerLe = headerGo.AddComponent<LayoutElement>();
+            headerLe.preferredHeight = 34f;
+            headerLe.minHeight = 28f;
+            headerLe.flexibleHeight = 0f;
+            headerLe.flexibleWidth = 1f;
+
+            // [UNITY] Reparent keeps the existing Title widget; only the layout parent changes.
+            titleText.transform.SetParent(headerRt, false);
             titleText.alignment = TextAlignmentOptions.Left;
-            titleText.color = new Color(0.94f, 0.96f, 1f, 1f);
-            titleText.enableWordWrapping = false;
-            titleText.raycastTarget = false;
-            if (TMP_Settings.defaultFontAsset != null)
-                titleText.font = TMP_Settings.defaultFontAsset;
-
-            var titleLe = titleGo.AddComponent<LayoutElement>();
+            var titleLe = titleText.GetComponent<LayoutElement>();
+            if (titleLe == null)
+                titleLe = titleText.gameObject.AddComponent<LayoutElement>();
+            titleLe.flexibleWidth = 1f;
             titleLe.preferredHeight = 34f;
             titleLe.minHeight = 28f;
             titleLe.flexibleHeight = 0f;
+            return headerRt;
         }
 
         /// <summary>
@@ -305,6 +423,7 @@ namespace TitanOrbit.UI
             EnforceUniformNodeSizesExceptMega(nodeW, nodeH, trackW, megaW, megaH, megaTrackW);
             DrawConnectors(byLevel, null, moonHorizontal: true);
 
+            ApplyFamilyIdentity(family);
             if (hintText != null)
             {
                 hintText.text = family != null

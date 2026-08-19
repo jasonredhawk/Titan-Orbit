@@ -69,6 +69,7 @@ namespace TitanOrbit.ECS
                 orbitState.ValueRW.OrbitPlanetId = 0;
                 orbitState.ValueRW.InOrbitRing = false;
                 orbitState.ValueRW.UsingOrbitMotor = false;
+                orbitState.ValueRW.IsTransferringPeople = false;
 
                 // --- MEGA death: free the store slot now; keep the MEGA visual until respawn ---
                 if (state.EntityManager.HasComponent<MegaShipState>(entity)
