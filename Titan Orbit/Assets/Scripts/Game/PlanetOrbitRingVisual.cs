@@ -26,7 +26,7 @@ namespace TitanOrbit.Game
 
         [Header("Orbit Ring Fill")]
         [SerializeField] bool drawOrbitZoneFill = true;
-        [SerializeField] Color orbitZoneTint = new Color(0.5f, 0.7f, 0.95f); // unused at runtime — occupancy IdleTint is the shared idle RGB
+        [SerializeField] Color orbitZoneTint = Color.white; // unused at runtime — occupancy IdleTint is the shared idle RGB
         [Range(0f, 1f)]
         [SerializeField] float orbitZonePeakAlpha = 0.3f;
         [Tooltip("Local Y offset for the troop-transfer ring. 0 = planet equator / cross-section.")]

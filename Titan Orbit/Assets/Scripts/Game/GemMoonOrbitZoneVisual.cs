@@ -18,7 +18,7 @@ namespace TitanOrbit.Game
         // [TITAN-ORBIT] Off by default so we can evaluate moons without the soft capture-zone disc.
         // Flip back to true (or tick in the Inspector) to restore the graphic.
         [SerializeField] bool drawOrbitZoneFill = false;
-        [SerializeField] Color orbitZoneTint = new Color(0.5f, 0.7f, 0.95f);
+        [SerializeField] Color orbitZoneTint = Color.white;
         [Range(0f, 1f)]
         [SerializeField] float orbitZoneInnerAlpha = 0.3f;
         [SerializeField] float orbitZoneHeightBelowMoon = 0f;

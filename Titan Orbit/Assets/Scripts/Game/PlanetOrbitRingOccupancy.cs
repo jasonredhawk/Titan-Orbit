@@ -22,10 +22,10 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Idle people-transfer ring RGB — world fill and minimap stroke share this exactly.
+        /// Idle people-transfer ring RGB — world fill, minimap stroke, and turret pads share this.
         /// Occupied colors come from <see cref="TeamIdExtensions.ToColor"/>.
         /// </summary>
-        public static readonly Color IdleTint = new Color(0.5f, 0.7f, 0.95f);
+        public static readonly Color IdleTint = Color.white;
 
         /// <summary>How long each occupying team holds the ring tint before the next.</summary>
         public const float SecondsPerOccupyingTeam = 1f;

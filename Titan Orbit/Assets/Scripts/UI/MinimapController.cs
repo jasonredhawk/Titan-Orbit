@@ -23,7 +23,7 @@ namespace TitanOrbit.UI
     /// Also planets, home planets, gem moons, and asteroids. Each team has its own color.
     /// Planet blips also draw a thin orbit ring at the gem-moon / ship orbit radius
     /// (<see cref="PlanetOrbitMath.GetOrbitRingCenterRadiusLocal"/>). Ring RGB always matches
-    /// the world orbit fill (idle gray-blue, or locked-in ship teams cycling ~1s each).
+    /// the world orbit fill (idle white, or locked-in ship teams cycling ~1s each).
     /// Collapsed world radius scales with ship-level camera zoom (<see cref="CameraFollowEcs.CurrentHeightZoomFactor"/>)
     /// so the circle shows proportionally more map as the gameplay camera rises. Expanded mode still fits the full torus.
     /// Hovering a planet disc (or its off-screen edge arrow) shows the family name via
@@ -2558,7 +2558,7 @@ namespace TitanOrbit.UI
         /// <summary>
         /// Creates or refreshes the thin OrbitRing child under a planet blip.
         /// Drawn behind LevelDots / PlanetFill. RGB always matches the world orbit ring
-        /// via <see cref="PlanetOrbitRingOccupancy"/> (idle gray-blue, or locked-in teams).
+        /// via <see cref="PlanetOrbitRingOccupancy"/> (idle white, or locked-in teams).
         /// Radius follows the gem-moon orbit centerline in UI space.
         /// </summary>
         /// <param name="planetBlipRoot">Root RectTransform of the planet blip hierarchy.</param>
@@ -2613,7 +2613,7 @@ namespace TitanOrbit.UI
 
         /// <summary>
         /// Tints a planet's minimap orbit ring with the same RGB as the world ring
-        /// (idle gray-blue, or locked-in team colors, including the multi-team cycle).
+        /// (idle white, or locked-in team colors, including the multi-team cycle).
         /// </summary>
         void ApplyPlanetOrbitRingOccupancyTint(Image ringImg, int planetId)
         {

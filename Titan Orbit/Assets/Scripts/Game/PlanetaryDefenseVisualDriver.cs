@@ -20,7 +20,7 @@ namespace TitanOrbit.Game
     /// <see cref="PlanetaryDefenseSlotElement"/> buffers on owned planets.
     /// <para>
     /// [HYBRID] Pad = Shapes soft disc matching the planet orbit-ring fill and
-    /// <see cref="GemMoonOrbitZoneVisual"/> tint (cool blue idle). While a friendly ship
+    /// <see cref="PlanetOrbitRingOccupancy.IdleTint"/> (white idle). While a friendly ship
     /// deposits gems the disc eases to that team's color. Turret sits in the disc center; level +
     /// gem cost text (with the same gem icon as the moon label) sits screen-below the pad.
     /// When a player occupies the pad, the level line also shows their display name

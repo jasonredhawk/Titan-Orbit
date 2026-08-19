@@ -8,10 +8,10 @@ namespace TitanOrbit.Game
     /// <summary>
     /// [HYBRID] Soft deposit/pad disc for one planetary-defense slot — data + registry only.
     /// <para>
-    /// Idle tint and peak alpha match the people-transfer orbit ring fill and gem-moon orbit zone
-    /// (<see cref="PlanetOrbitRingVisual"/> / <see cref="GemMoonOrbitZoneVisual"/>): cool blue,
-    /// translucent, fading out toward the outer rim. While a friendly ship is depositing gems
-    /// the disc eases to that team's canonical color (<see cref="TeamIdExtensions.ToColor"/>).
+    /// Idle tint and peak alpha match the people-transfer orbit ring fill
+    /// (<see cref="PlanetOrbitRingOccupancy.IdleTint"/>): white, translucent, fading out toward
+    /// the outer rim. While a friendly ship is depositing gems the disc eases to that team's
+    /// canonical color (<see cref="TeamIdExtensions.ToColor"/>).
     /// </para>
     /// <para>
     /// [TITAN-ORBIT] Pads are <b>not</b> individual <see cref="ImmediateModeShapeDrawer"/>s.
@@ -26,10 +26,9 @@ namespace TitanOrbit.Game
         public const string ZoneObjectName = "PadZone";
 
         /// <summary>
-        /// Shared cool-blue fill used by planet orbit rings and moon orbit zones.
-        /// Keep in sync with <see cref="PlanetOrbitRingVisual"/> / <see cref="GemMoonOrbitZoneVisual"/>.
+        /// Shared idle fill — same white as planet orbit rings / minimap rings.
         /// </summary>
-        public static readonly Color OrbitZoneTint = new Color(0.5f, 0.7f, 0.95f);
+        public static readonly Color OrbitZoneTint = PlanetOrbitRingOccupancy.IdleTint;
 
         /// <summary>Peak fill alpha matching orbit-zone soft discs (~0.3).</summary>
         public const float OrbitZonePeakAlpha = 0.3f;
@@ -58,8 +57,8 @@ namespace TitanOrbit.Game
         static readonly List<PlanetaryDefensePadZoneVisual> s_ActivePads =
             new List<PlanetaryDefensePadZoneVisual>(128);
 
-        /// <summary>Soft blue tint — same as orbit ring / moon orbit zone fills.</summary>
-        [SerializeField] Color zoneTint = new Color(0.5f, 0.7f, 0.95f);
+        /// <summary>Idle white tint — same as orbit ring / minimap rings.</summary>
+        [SerializeField] Color zoneTint = Color.white;
 
         /// <summary>Peak alpha near the mid-core before the outer-edge fade.</summary>
         [Range(0f, 1f)]
@@ -144,7 +143,7 @@ namespace TitanOrbit.Game
 
         /// <summary>
         /// Eases this pad toward team color while a friendly ship is depositing, or back to
-        /// the shared cool-blue idle look. Presentation only — does not affect deposit sim.
+        /// the shared white idle look. Presentation only — does not affect deposit sim.
         /// </summary>
         /// <param name="depositing">True when a friendly ship is feeding this slot.</param>
         /// <param name="teamColor">Canonical team RGB from <see cref="TeamIdExtensions.ToColor"/>.</param>
