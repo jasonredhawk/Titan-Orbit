@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using TitanOrbit.Core;
 using TitanOrbit.Data;
 using TitanOrbit.ECS;
+using Unity.Collections;
 using Unity.Entities;
 using Unity.Mathematics;
 using Unity.NetCode;
@@ -12,9 +13,11 @@ namespace TitanOrbit.Game
 {
     /// <summary>
     /// Client-side engine and thruster jet VFX on ship GameObject proxies (ported from legacy Starship).
-    /// Thruster flames follow the <b>held thrust button</b>, not hull speed. Local owner reads
-    /// <see cref="ShipPendingInput"/> (written every Unity Update); remotes read ghosted
-    /// <see cref="ShipInput.Thrust"/>. Does not drive simulation.
+    /// Thruster flames follow the <b>held thrust button</b> on the local hull, not hull speed.
+    /// Local owner reads <see cref="ShipPendingInput"/> (written every Unity Update). Remotes
+    /// cannot see owner <see cref="IInputComponentData"/> commands — they use server
+    /// <see cref="ShipInput"/> on Local Host, else ghosted <see cref="ShipKinematics"/> speed.
+    /// Does not drive simulation.
     /// Attached by <see cref="EcsWorldVisualizer"/> when spawning ship hull proxies.
     /// Cosmetic smoothing of particle emission is intentional — never applied to ship transform position.
     /// <para>
@@ -104,6 +107,10 @@ namespace TitanOrbit.Game
         bool _lastThrusterActive;
         float _thrusterVfxBlend;
 
+        /// <summary>ServerWorld ship entity for Local Host remote-input lookup (same GhostOwner).</summary>
+        Entity _cachedServerShip;
+        int _cachedServerOwnerId;
+
         /// <summary>
         /// Set by <see cref="ForceRefreshEmission"/> after attribute upgrade mount grow only
         /// (not territory/overdrive smooth lerp — that path used to blink jets every step).
@@ -187,6 +194,8 @@ namespace TitanOrbit.Game
         {
             // --- Cache binding ---
             _shipEntity = shipEntity;
+            _cachedServerShip = Entity.Null;
+            _cachedServerOwnerId = 0;
             if (!string.IsNullOrWhiteSpace(familyPrefix))
                 _familyPrefix = familyPrefix.Trim();
             _family = family;
@@ -434,17 +443,16 @@ namespace TitanOrbit.Game
 
         /// <summary>
         /// Whether this ship should show thrust jets right now.
-        /// Local owner: <see cref="ShipPendingInput"/> (live mouse/key hold from
-        /// <see cref="ShipInputBridge"/>). Remotes: ghosted <see cref="ShipInput.Thrust"/>.
+        /// Local owner: <see cref="ShipPendingInput"/>. Remotes: Local Host server input,
+        /// else ghosted <see cref="ShipInput.Thrust"/>, else <see cref="ShipKinematics"/> speed.
         /// </summary>
         /// <param name="em">Visualization world entity manager for this proxy's ship.</param>
-        /// <returns>True while the thrust control is held (local) or replicated as thrusting (remote).</returns>
+        /// <returns>True while the thrust control is held (local) or the remote hull is thrusting / moving.</returns>
         bool ResolveThrustHeld(EntityManager em)
         {
             // --- Local owner: prefer pending input (Unity Update button state) ---
             // [NETCODE] GhostOwnerIsLocal is enableable and exists on every OwnerPredicted ship.
             // HasComponent is true on remotes too — only IsComponentEnabled marks this machine's hull.
-            // Without that check, RMB thrust lights every ship's jets while only the owner moves.
             // [TITAN-ORBIT] LocalPlayerShipTag — hybrid host fallback when GhostOwnerIsLocal lags.
             // [TITAN-ORBIT] ShipInputApplySystem skips under ShouldSkipShipEntityQueries
             // (GhostSpawnBacklog). Grinding chips asteroids → gem Instantiates → backlog → ghost
@@ -452,11 +460,81 @@ namespace TitanOrbit.Game
             if (IsLocalOwnerProxy(em) && ShipPendingInput.HasValue)
                 return ShipPendingInput.Latest.Thrust;
 
-            // --- Remotes / fallback: ghost input component ---
-            if (em.HasComponent<ShipInput>(_shipEntity))
-                return em.GetComponentData<ShipInput>(_shipEntity).Thrust;
+            // --- Remotes: IInputComponentData is owner→server commands, not a client snapshot ---
+            // Interpolated ghosts usually have Thrust=false. Local Host can read ServerWorld.
+            if (TryReadLocalHostRemoteThrust(em, out bool hostThrust))
+                return hostThrust;
 
+            if (em.HasComponent<ShipInput>(_shipEntity) &&
+                em.GetComponentData<ShipInput>(_shipEntity).Thrust)
+                return true;
+
+            return IsRemoteMovingFromKinematics(em);
+        }
+
+        /// <summary>
+        /// Local Host only: remote player's <see cref="ShipInput.Thrust"/> from ServerWorld.
+        /// Caches the server ship so LateUpdate does not gather every frame.
+        /// </summary>
+        bool TryReadLocalHostRemoteThrust(EntityManager clientEm, out bool thrust)
+        {
+            thrust = false;
+            if (!EcsGameBridge.IsLocalHost())
+                return false;
+            if (!clientEm.HasComponent<GhostOwner>(_shipEntity))
+                return false;
+
+            int ownerId = clientEm.GetComponentData<GhostOwner>(_shipEntity).NetworkId;
+            if (ownerId <= 0)
+                return false;
+
+            var server = EcsGameBridge.ServerWorld;
+            if (server == null || !server.IsCreated)
+                return false;
+
+            var sem = server.EntityManager;
+            if (_cachedServerShip != Entity.Null &&
+                _cachedServerOwnerId == ownerId &&
+                sem.Exists(_cachedServerShip) &&
+                sem.HasComponent<ShipInput>(_cachedServerShip))
+            {
+                thrust = sem.GetComponentData<ShipInput>(_cachedServerShip).Thrust;
+                return true;
+            }
+
+            if (ClientJoinSettleCache.ShouldSkipShipEntityQueries)
+                return false;
+
+            using var query = sem.CreateEntityQuery(
+                ComponentType.ReadOnly<ShipTag>(),
+                ComponentType.ReadOnly<GhostOwner>(),
+                ComponentType.ReadOnly<ShipInput>());
+            using var entities = query.ToEntityArray(Allocator.Temp);
+            using var owners = query.ToComponentDataArray<GhostOwner>(Allocator.Temp);
+            for (int i = 0; i < owners.Length; i++)
+            {
+                if (owners[i].NetworkId != ownerId)
+                    continue;
+                _cachedServerShip = entities[i];
+                _cachedServerOwnerId = ownerId;
+                thrust = sem.GetComponentData<ShipInput>(entities[i]).Thrust;
+                return true;
+            }
+
+            _cachedServerShip = Entity.Null;
+            _cachedServerOwnerId = 0;
             return false;
+        }
+
+        /// <summary>True when ghosted planar speed says this remote hull is underway.</summary>
+        bool IsRemoteMovingFromKinematics(EntityManager em)
+        {
+            if (!em.HasComponent<ShipKinematics>(_shipEntity))
+                return false;
+
+            float3 vel = em.GetComponentData<ShipKinematics>(_shipEntity).Velocity;
+            vel.y = 0f;
+            return math.length(vel) >= EngineSpeedThreshold;
         }
 
         /// <summary>
