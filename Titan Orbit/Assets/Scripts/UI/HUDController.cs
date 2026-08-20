@@ -8,15 +8,18 @@ namespace TitanOrbit.UI
     /// Client-only HUD coordination. The full Netcode-for-GameObjects HUD was removed; this class
     /// keeps shared visibility flags so gameplay chrome can hide together.
     /// <para>
-    /// Two hide reasons: the ship upgrade tree overlay, and local-player death (so the explosion
-    /// and <see cref="DeathScreenController"/> plaque stay unobstructed). Widgets read the static
-    /// properties each frame — they do not write ship state.
+    /// Three hide reasons: the ship upgrade tree overlay, the expanded full-map minimap, and
+    /// local-player death (so the explosion and <see cref="DeathScreenController"/> plaque stay
+    /// unobstructed). Widgets read the static properties each frame — they do not write ship state.
     /// </para>
     /// </summary>
     public class HUDController : MonoBehaviour
     {
         // [TITAN-ORBIT] When true, bottom HUD stats defer to the full-screen upgrade tree overlay.
         static bool s_shipUpgradeTreeObscuresHud;
+
+        // [TITAN-ORBIT] When true, gameplay chrome defers to the expanded full-map minimap.
+        static bool s_minimapExpandedObscuresHud;
 
         /// <summary>
         /// Frame stamp for the cached death-hide answer. <see cref="Time.frameCount"/> so every
@@ -35,6 +38,7 @@ namespace TitanOrbit.UI
         static void ResetStatics()
         {
             s_shipUpgradeTreeObscuresHud = false;
+            s_minimapExpandedObscuresHud = false;
             s_deathGateFrame = -1;
             s_deathHidesHud = false;
         }
@@ -47,6 +51,16 @@ namespace TitanOrbit.UI
 
         /// <summary>True while the upgrade tree panel should hide conflicting HUD chrome.</summary>
         public static bool ShipUpgradeTreeObscuresHud => s_shipUpgradeTreeObscuresHud;
+
+        /// <summary>
+        /// Called from <see cref="MinimapController"/> when expanding or collapsing the full-map
+        /// overlay — other HUD widgets read this flag so they do not un-hide themselves next frame.
+        /// </summary>
+        public static void SetMinimapExpandedObscuresHud(bool obscures) =>
+            s_minimapExpandedObscuresHud = obscures;
+
+        /// <summary>True while the expanded minimap should hide the rest of the gameplay HUD.</summary>
+        public static bool MinimapExpandedObscuresHud => s_minimapExpandedObscuresHud;
 
         /// <summary>
         /// True while the local ship is destroyed and waiting to respawn. Gameplay HUD

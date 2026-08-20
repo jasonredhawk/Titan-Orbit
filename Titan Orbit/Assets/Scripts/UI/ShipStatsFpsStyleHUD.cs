@@ -163,8 +163,8 @@ namespace TitanOrbit.UI
             if (!_barsStyled)
                 ApplySquareBarStyleToAll();
 
-            // --- Death: hide the vitals strip so only the death plaque remains ---
-            if (HUDController.LocalPlayerDeathHidesHud)
+            // --- Death / expanded map: hide the vitals strip so only the plaque or full map remains ---
+            if (HUDController.LocalPlayerDeathHidesHud || HUDController.MinimapExpandedObscuresHud)
             {
                 SetHudVisible(false);
                 return;

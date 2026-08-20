@@ -170,7 +170,8 @@ namespace TitanOrbit.UI
             if (ClientTeamFlowState.ShouldSuppressLocalPlayerControl() ||
                 IsMainMenuShowing() ||
                 MoonOrbitClientState.IsOrbitMenuVisible ||
-                HUDController.LocalPlayerDeathHidesHud)
+                HUDController.LocalPlayerDeathHidesHud ||
+                HUDController.MinimapExpandedObscuresHud)
             {
                 SetVisible(false);
                 return;

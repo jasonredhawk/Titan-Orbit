@@ -237,7 +237,9 @@ namespace TitanOrbit.UI
             bool hide = false;
             if (hideWhenUpgradeTreeOpen && HUDController.ShipUpgradeTreeObscuresHud)
                 hide = true;
-            if (hideWhenMinimapExpanded && _minimapController != null && _minimapController.IsExpanded)
+            if (hideWhenMinimapExpanded &&
+                (HUDController.MinimapExpandedObscuresHud ||
+                 (_minimapController != null && _minimapController.IsExpanded)))
                 hide = true;
             // [TITAN-ORBIT] Same death hide as minimap / rockets — keep the explosion unobstructed.
             if (HUDController.LocalPlayerDeathHidesHud)

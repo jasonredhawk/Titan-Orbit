@@ -145,6 +145,12 @@ namespace TitanOrbit.UI
 
             PlanetaryDefenseTurretClientState.SetControlling(false, Vector3.zero, false, 0f);
 
+            if (HUDController.MinimapExpandedObscuresHud)
+            {
+                HideButton();
+                return;
+            }
+
             float3 shipPos = em.GetComponentData<LocalTransform>(shipEntity).Position;
             shipPos.y = PlanetaryDefenseMath.FixedY;
 

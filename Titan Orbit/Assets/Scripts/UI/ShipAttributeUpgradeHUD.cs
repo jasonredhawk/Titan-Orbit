@@ -335,7 +335,7 @@ namespace TitanOrbit.UI
                 return false;
             if (ship.IsDead || ship.AwaitingTeamSelection || ship.Team == TeamId.None)
                 return false;
-            if (HUDController.ShipUpgradeTreeObscuresHud)
+            if (HUDController.ShipUpgradeTreeObscuresHud || HUDController.MinimapExpandedObscuresHud)
                 return false;
 
             return true;

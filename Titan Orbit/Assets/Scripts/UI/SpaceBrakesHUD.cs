@@ -66,7 +66,8 @@ namespace TitanOrbit.UI
             if (ClientTeamFlowState.ShouldSuppressLocalPlayerControl() ||
                 IsMainMenuShowing() ||
                 !EcsGameBridge.HasLocalPlayerShip() ||
-                HUDController.LocalPlayerDeathHidesHud)
+                HUDController.LocalPlayerDeathHidesHud ||
+                HUDController.MinimapExpandedObscuresHud)
             {
                 SetVisible(false);
                 return;

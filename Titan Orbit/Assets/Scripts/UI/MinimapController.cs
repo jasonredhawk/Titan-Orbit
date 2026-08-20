@@ -813,9 +813,15 @@ namespace TitanOrbit.UI
             canvasGroup.blocksRaycasts = visible;
 
             if (!visible)
+            {
+                HUDController.SetMinimapExpandedObscuresHud(false);
                 RestoreNonMinimapUi();
+            }
             else if (isExpanded)
+            {
+                HUDController.SetMinimapExpandedObscuresHud(true);
                 ApplyHideNonMinimapUi();
+            }
         }
         
         private void SetupMapSizeLabel()
@@ -1034,39 +1040,89 @@ namespace TitanOrbit.UI
                     if (marker != null) marker.gameObject.SetActive(false);
                 }
 
-                ApplyHideNonMinimapUi();
                 transform.SetAsLastSibling();
             }
+
+            HUDController.SetMinimapExpandedObscuresHud(true);
+            ApplyHideNonMinimapUi();
         }
 
-        /// <summary>Hide every UI branch that is a sibling of the minimap on the path up to the HUD canvas.</summary>
+        /// <summary>
+        /// Hide every UI branch that is a sibling of the minimap on the path up to the HUD canvas,
+        /// plus other screen-space overlay canvases (rockets, brakes, turret enter, mobile steer).
+        /// </summary>
         private void ApplyHideNonMinimapUi()
         {
             if (_nonMinimapUiRestore.Count > 0)
                 return;
 
-            Canvas canvas = GetComponentInParent<Canvas>();
-            if (canvas == null)
-                return;
-
-            Transform canvasT = canvas.transform;
-            Transform t = transform;
-            while (t != null && t != canvasT)
+            Canvas minimapCanvas = GetComponentInParent<Canvas>();
+            if (minimapCanvas != null)
             {
-                Transform parent = t.parent;
-                if (parent == null)
-                    break;
-
-                for (int i = 0; i < parent.childCount; i++)
+                Transform canvasT = minimapCanvas.transform;
+                Transform t = transform;
+                while (t != null && t != canvasT)
                 {
-                    Transform sibling = parent.GetChild(i);
-                    if (sibling == t)
-                        continue;
-                    PushCanvasGroupHide(sibling.gameObject);
-                }
+                    Transform parent = t.parent;
+                    if (parent == null)
+                        break;
 
-                t = parent;
+                    for (int i = 0; i < parent.childCount; i++)
+                    {
+                        Transform sibling = parent.GetChild(i);
+                        if (sibling == t)
+                            continue;
+                        // Marker popup is a canvas sibling so clicks on the expanded map can still place pins.
+                        if (sibling.GetComponent<MarkerPlacementMenu>() != null)
+                            continue;
+                        PushCanvasGroupHide(sibling.gameObject);
+                    }
+
+                    t = parent;
+                }
             }
+
+            HideOtherOverlayCanvases(minimapCanvas);
+        }
+
+        /// <summary>
+        /// Fade gameplay overlay canvases that are not on the minimap's HUD canvas.
+        /// Escape / death / match-end stay up so those flows are not buried under the map.
+        /// </summary>
+        private void HideOtherOverlayCanvases(Canvas minimapCanvas)
+        {
+            Canvas[] canvases = FindObjectsByType<Canvas>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
+            for (int i = 0; i < canvases.Length; i++)
+            {
+                Canvas canvas = canvases[i];
+                if (ShouldKeepCanvasWhenMinimapExpanded(canvas, minimapCanvas))
+                    continue;
+
+                PushCanvasGroupHide(canvas.gameObject);
+            }
+        }
+
+        /// <summary>True when this canvas is the expanded map, a world-space plate, or a modal overlay we must not bury.</summary>
+        private bool ShouldKeepCanvasWhenMinimapExpanded(Canvas canvas, Canvas minimapCanvas)
+        {
+            if (canvas == null)
+                return true;
+            if (canvas.renderMode == RenderMode.WorldSpace)
+                return true;
+            if (minimapCanvas != null &&
+                (canvas == minimapCanvas || canvas.transform.IsChildOf(minimapCanvas.transform)))
+                return true;
+            if (canvas.transform.IsChildOf(transform) || canvas.GetComponentInParent<MinimapController>() != null)
+                return true;
+            if (canvas.GetComponentInParent<MarkerPlacementMenu>() != null)
+                return true;
+            if (canvas.GetComponentInParent<InGameEscapeMenuController>() != null)
+                return true;
+            if (canvas.GetComponentInParent<DeathScreenController>() != null)
+                return true;
+            if (canvas.GetComponentInParent<MatchEndScreenController>() != null)
+                return true;
+            return false;
         }
 
         private void PushCanvasGroupHide(GameObject root)
@@ -1113,6 +1169,7 @@ namespace TitanOrbit.UI
 
         private void OnDisable()
         {
+            HUDController.SetMinimapExpandedObscuresHud(false);
             RestoreNonMinimapUi();
         }
 
@@ -1122,13 +1179,17 @@ namespace TitanOrbit.UI
             _shipRoleDotMask.Clear();
 
             if (isExpanded)
+            {
+                HUDController.SetMinimapExpandedObscuresHud(true);
                 ApplyHideNonMinimapUi();
+            }
         }
         
         private void CollapseMinimap()
         {
             if (minimapRect == null) return;
 
+            HUDController.SetMinimapExpandedObscuresHud(false);
             RestoreNonMinimapUi();
             
             // Same minimap: restore smaller circle and zoomed-in radius
