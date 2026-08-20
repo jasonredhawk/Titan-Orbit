@@ -176,6 +176,18 @@ namespace TitanOrbit.Data
         /// <summary>Default rock-HP → MEGA hull chip (1 = equal health).</summary>
         public const float DefaultAsteroidPlowDamageMultiplier = 1f;
 
+        /// <summary>
+        /// Default plow impact VFX multiplier. 1 = mid-size rock reads as a normal boom;
+        /// hull mass and cannon fire-power do not grow this.
+        /// </summary>
+        public const float DefaultAsteroidPlowImpactVisualScale = 1f;
+
+        /// <summary>Smallest plow explosion (tiny residual-HP rocks stay readable).</summary>
+        public const float AsteroidPlowImpactVisualMinScale = 0.35f;
+
+        /// <summary>Largest plow explosion (full max-size rock) before the catalog slider.</summary>
+        public const float AsteroidPlowImpactVisualMaxScale = 1.4f;
+
         /// <summary>Legacy MEGA asteroid restitution. Unused while <see cref="PlowsAsteroids"/> is true.</summary>
         public const float AsteroidBounceRestitution = 0.06f;
 
@@ -235,6 +247,12 @@ namespace TitanOrbit.Data
             "Does not use ramming power, mass, or closing speed.")]
         [Range(0f, 5f)]
         public float asteroidPlowDamageMultiplier = DefaultAsteroidPlowDamageMultiplier;
+
+        [Tooltip(
+            "MEGA plow collision VFX size. Boom is remaining rock HP vs a mid-size rock " +
+            "(not hull mass or cannon scale). 1 = default; 0.5 = half.")]
+        [Range(0.1f, 2f)]
+        public float asteroidPlowImpactVisualScale = DefaultAsteroidPlowImpactVisualScale;
 
         [Header("Presentation")]
         [Tooltip("Whole-hull scale for Craizan Star MEGAs. 1 = previous size, 0.2 ≈ 5× smaller. Applied to LocalTransform.Scale (visuals, colliders, gun pads). 0 uses the legacy global fallback.")]
@@ -653,6 +671,44 @@ namespace TitanOrbit.Data
         public static float ComputeAsteroidPlowSelfDamage(float remainingAsteroidHealth, float multiplier)
         {
             return Mathf.Max(0f, remainingAsteroidHealth) * Mathf.Max(0f, multiplier);
+        }
+
+        /// <summary>
+        /// Plow impact VFX slider. 0 / unset assets fall back to
+        /// <see cref="DefaultAsteroidPlowImpactVisualScale"/>.
+        /// </summary>
+        public float GetAsteroidPlowImpactVisualScale()
+        {
+            return asteroidPlowImpactVisualScale > 0.01f
+                ? asteroidPlowImpactVisualScale
+                : DefaultAsteroidPlowImpactVisualScale;
+        }
+
+        /// <summary>
+        /// MEGA plow collision boom from remaining rock HP — the damage actually applied —
+        /// not hull mass, ramming rating, or cannon fire-power.
+        /// Mid-size rock (halfway between <see cref="AsteroidSettings.MinSize"/> and
+        /// <see cref="AsteroidSettings.MaxSize"/>) maps to 1, then × catalog slider.
+        /// </summary>
+        public static float ComputeAsteroidPlowImpactVisualScale(
+            float remainingAsteroidHealth,
+            float catalogMultiplier)
+        {
+            // --- HP-proportional boom (not mass / cannon) ---
+            // [TITAN-ORBIT] Feeding remaining HP into BulletVisualScale.ComputePerShotScale
+            // treats a 105 HP rock as a 13× upgraded bullet, then ×1.75 kill. Mid rocks
+            // became ~12× explosions. Size vs a mid-size rock instead.
+            var settings = AsteroidSettingsCache.ResolveOrDefault();
+            float midSize = (settings.MinSize + settings.MaxSize) * 0.5f;
+            float referenceHp = Mathf.Max(1f, settings.ComputeMaxHealth(midSize));
+            float t = Mathf.Max(0f, remainingAsteroidHealth) / referenceHp;
+            float scale = AsteroidPlowImpactVisualMinScale
+                          + (1f - AsteroidPlowImpactVisualMinScale) * t;
+            scale = Mathf.Clamp(scale, AsteroidPlowImpactVisualMinScale, AsteroidPlowImpactVisualMaxScale);
+            float mul = catalogMultiplier > 0.01f
+                ? catalogMultiplier
+                : DefaultAsteroidPlowImpactVisualScale;
+            return Mathf.Clamp(scale * mul, 0.15f, 2.5f);
         }
 
         /// <summary>

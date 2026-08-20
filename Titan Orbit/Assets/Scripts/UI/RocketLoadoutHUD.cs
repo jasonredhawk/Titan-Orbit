@@ -55,18 +55,31 @@ namespace TitanOrbit.UI
         const float PanelWidth = TileWidth + PanelPad * 2f;
 
         static readonly Color FillColor = new Color(0.012f, 0.016f, 0.028f, 0.92f);
-        static readonly Color CaptionColor = new Color(0.62f, 0.78f, 0.95f, 0.92f);
-        static readonly Color CaptionDim = new Color(0.62f, 0.78f, 0.95f, 0.38f);
-        static readonly Color BodyColor = new Color(0.88f, 0.92f, 0.98f, 1f);
-        static readonly Color BodyDim = new Color(0.88f, 0.92f, 0.98f, 0.4f);
-        static readonly Color LevelColor = new Color(0.55f, 0.95f, 1f, 1f);
-        static readonly Color LevelDim = new Color(0.55f, 0.95f, 1f, 0.42f);
+
+        /// <summary>
+        /// Focused kind word. Near-white so ROCKET / MINE stays readable on the dark
+        /// selected fill. Mid cyan-on-cyan used to disappear into the old highlight.
+        /// </summary>
+        static readonly Color CaptionSelected = new Color(0.95f, 0.98f, 1f, 1f);
+
+        static readonly Color CaptionDim = new Color(0.62f, 0.78f, 0.95f, 0.55f);
+        static readonly Color BodyColor = new Color(0.94f, 0.97f, 1f, 1f);
+        static readonly Color BodyDim = new Color(0.88f, 0.92f, 0.98f, 0.5f);
+        static readonly Color LevelColor = new Color(0.75f, 0.97f, 1f, 1f);
+        static readonly Color LevelDim = new Color(0.55f, 0.95f, 1f, 0.55f);
         static readonly Color ReadyColor = new Color(0.45f, 0.92f, 0.62f, 1f);
         static readonly Color WaitColor = new Color(0.95f, 0.72f, 0.28f, 1f);
         static readonly Color WaitDim = new Color(0.95f, 0.72f, 0.28f, 0.45f);
         static readonly Color RowIdle = new Color(1f, 1f, 1f, 0.03f);
-        static readonly Color RowSelected = new Color(0.18f, 0.68f, 0.95f, 0.48f);
+
+        /// <summary>
+        /// Focused tile fill. Stays dark navy — cyan wash at ~50% alpha sat on top of
+        /// cyan labels and hid ROCKET. Caret + outline carry the "this is active" cue.
+        /// </summary>
+        static readonly Color RowSelected = new Color(0.04f, 0.10f, 0.20f, 0.94f);
+
         static readonly Color CaretColor = new Color(0.45f, 0.95f, 1f, 1f);
+        static readonly Color LabelOutline = new Color(0.02f, 0.04f, 0.08f, 0.95f);
 
         Canvas _canvas;
         RectTransform _panel;
@@ -458,7 +471,7 @@ namespace TitanOrbit.UI
             tile.Rect.anchoredPosition = new Vector2(PanelPad, -PanelPad - row * (TileHeight + TileGap));
 
             tile.KindLabel.text = isRocket ? "ROCKET" : "MINE";
-            tile.KindLabel.color = isSelected ? CaptionColor : CaptionDim;
+            tile.KindLabel.color = isSelected ? CaptionSelected : CaptionDim;
             tile.LevelLabel.text = $"Lv {level}";
             tile.LevelLabel.color = isSelected ? LevelColor : LevelDim;
             tile.DetailLabel.text = isRocket
@@ -616,7 +629,7 @@ namespace TitanOrbit.UI
 
             // Kind on the left, ALT / seconds on the right — same top row so the
             // type word never leaves the button for a section header.
-            var kind = CreateLabel(rt, "Kind", "ROCKET", 12f, CaptionColor, Vector2.zero, TextAlignmentOptions.Left);
+            var kind = CreateLabel(rt, "Kind", "ROCKET", 12f, CaptionSelected, Vector2.zero, TextAlignmentOptions.Left);
             var kindRt = kind.rectTransform;
             kindRt.anchorMin = new Vector2(0f, 0.68f);
             kindRt.anchorMax = new Vector2(0.62f, 1f);
@@ -726,7 +739,7 @@ namespace TitanOrbit.UI
         {
             var outline = rowGo.AddComponent<Outline>();
             outline.effectColor = CaretColor;
-            outline.effectDistance = new Vector2(1.6f, -1.6f);
+            outline.effectDistance = new Vector2(2f, -2f);
             outline.useGraphicAlpha = false;
             outline.enabled = false;
             return outline;
@@ -776,6 +789,9 @@ namespace TitanOrbit.UI
             tmp.color = color;
             tmp.alignment = align;
             tmp.raycastTarget = false;
+            // Dark halo so ice-blue labels stay readable if a fill tint ever sits behind them.
+            tmp.outlineWidth = 0.22f;
+            tmp.outlineColor = LabelOutline;
             return tmp;
         }
     }

@@ -27,6 +27,7 @@ namespace TitanOrbit.ECS
     /// MEGA hulls plow asteroids: first contact instantly destroys the rock and applies
     /// remaining rock Health × <see cref="MegaShipCatalog.asteroidPlowDamageMultiplier"/>
     /// (default 1) — no grind, so a field does not stall the hull.
+    /// Plow impact VFX is remaining rock HP vs a mid-size rock, not hull mass or cannon scale.
     /// Hull/gem rules use <see cref="ShipDamageLogic"/>. Clients never predict this.
     /// Dead / 0-HP asteroids are ignored even if PhysX still emits a contact (phantom grind).
     /// Each asteroid impact and grind pulse broadcasts <see cref="BulletHitRpc"/> (Sequence 0)
@@ -214,15 +215,24 @@ namespace TitanOrbit.ECS
                         if (IsDeadAsteroid(ref state, other))
                             AsteroidDeathPhysics.QueueStripColliders(ecb, state.EntityManager, other);
 
-                        float asteroidVfx = math.max(remainingHp, 0.01f);
-                        NotifyRamAsteroidHit(
-                            ref state, ref ecb, shipEntity, other, normalShipFromOther,
-                            asteroidVfx, ship.Team);
-
                         float plowMul = MegaShipCatalog.DefaultAsteroidPlowDamageMultiplier;
+                        float plowVfxMul = MegaShipCatalog.DefaultAsteroidPlowImpactVisualScale;
                         var megaCatalog = MegaShipCatalog.Load();
                         if (megaCatalog != null)
+                        {
                             plowMul = megaCatalog.GetAsteroidPlowDamageMultiplier();
+                            plowVfxMul = megaCatalog.GetAsteroidPlowImpactVisualScale();
+                        }
+
+                        // Boom from remaining rock HP (damage actually applied), not hull mass
+                        // or cannon fire-power. ComputePerShotScale treats HP as bullet damage
+                        // vs a ref of 8 and then ×1.75 kill — mid rocks became ~12× explosions.
+                        float plowVfxScale = MegaShipCatalog.ComputeAsteroidPlowImpactVisualScale(
+                            remainingHp, plowVfxMul);
+                        NotifyRamAsteroidHit(
+                            ref state, ref ecb, shipEntity, other, normalShipFromOther,
+                            math.max(remainingHp, 0.01f), ship.Team, plowVfxScale);
+
                         float selfDamage = MegaShipCatalog.ComputeAsteroidPlowSelfDamage(
                             remainingHp, plowMul);
                         float intensity = ShipComponentRammingSuggestions.ComputeRamImpactGemExpulsionIntensity(
@@ -688,6 +698,10 @@ namespace TitanOrbit.ECS
         /// <param name="normalShipFromOther">Contact normal pointing from the rock toward the ship.</param>
         /// <param name="asteroidDamage">Damage just applied (VFX intensity).</param>
         /// <param name="team">Ramming ship's team.</param>
+        /// <param name="visualScaleOverride">
+        /// When &gt; 0, use this HitRpc scale instead of cannon fire-power × kill boom.
+        /// MEGA plow passes remaining-HP scale so hull mass cannot inflate the explosion.
+        /// </param>
         static void NotifyRamAsteroidHit(
             ref SystemState state,
             ref EntityCommandBuffer ecb,
@@ -695,7 +709,8 @@ namespace TitanOrbit.ECS
             Entity asteroid,
             float3 normalShipFromOther,
             float asteroidDamage,
-            TeamId team)
+            TeamId team,
+            float visualScaleOverride = -1f)
         {
             if (asteroidDamage <= 0.0001f)
                 return;
@@ -732,12 +747,22 @@ namespace TitanOrbit.ECS
             }
 
             // --- Visual size from ram damage; finishing blows are a bigger boom ---
-            float scaleMul = BulletVisualScale.ComputePerShotScale(
-                cannonScale,
-                asteroidDamage,
-                0f);
-            if (healthAfter <= 0.01f)
-                scaleMul *= ShipComponentRammingSuggestions.RamKillImpactVisualScale;
+            // Override (MEGA plow) is remaining rock HP vs a mid-size rock — do not feed
+            // that HP into ComputePerShotScale (ref damage 8) or the 1.75× kill boom.
+            float scaleMul;
+            if (visualScaleOverride > 0f)
+            {
+                scaleMul = visualScaleOverride;
+            }
+            else
+            {
+                scaleMul = BulletVisualScale.ComputePerShotScale(
+                    cannonScale,
+                    asteroidDamage,
+                    0f);
+                if (healthAfter <= 0.01f)
+                    scaleMul *= ShipComponentRammingSuggestions.RamKillImpactVisualScale;
+            }
 
             BulletNetNotify.SendRamAsteroidHit(
                 ref ecb,
