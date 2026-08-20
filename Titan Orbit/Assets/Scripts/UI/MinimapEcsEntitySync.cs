@@ -427,7 +427,7 @@ namespace TitanOrbit.UI
                                     em.HasComponent<GhostOwnerIsLocal>(entity));
             anchor.BodySize = math.max(0.25f, lt.Scale);
 
-            // --- Chassis ladder (kept on anchor for other UI; minimap uses Cross / MEGA triangle + role dots) ---
+            // --- Chassis ladder (minimap scales the regular-ship Cross from ShipLevel; MEGA stays a triangle) ---
             anchor.ShipLevel = ship.ShipLevel;
             anchor.BranchIndex = ship.BranchIndex;
             anchor.ShipFamilyConfigIndex = ship.ShipFamilyConfigIndex;

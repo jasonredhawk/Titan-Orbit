@@ -15,8 +15,11 @@ namespace TitanOrbit.UI
 {
     /// <summary>
     /// Minimap showing a larger region around the player (not full map).
-    /// Displays: player/remote ships as team-colored Cross (X) blips, or a team-colored triangle
-    /// outline when that hull is a purchased MEGA (<see cref="MinimapBlipAnchor.IsMega"/>).
+    /// Displays: player/remote ships as team-colored Cross (X) blips that grow with
+    /// <see cref="MinimapBlipAnchor.ShipLevel"/> (9px at level 1, +0.5px per level;
+    /// local player and remotes share that ladder),
+    /// or a team-colored triangle outline when that hull is a purchased MEGA
+    /// (<see cref="MinimapBlipAnchor.IsMega"/> — triangle size stays fixed).
     /// MEGA triangles fill yellow from the base like a troop progress bar
     /// (<c>CurrentPeople / PeopleCapacity</c>). Small colored
     /// circles mark a team's top killer (blue) / gem miner (red) / transporter (yellow).
@@ -42,7 +45,6 @@ namespace TitanOrbit.UI
         [SerializeField] private float displaySize = 150f;
         [SerializeField] private RectTransform minimapContent;
         [SerializeField] private float sizeScaleFactor = 1.2f; // Increased from 0.5f - makes entities more visible when zoomed in
-        [SerializeField] private float playerBlipSize = 10f; // Cross blip for local player (other ships use 12f)
         [Tooltip("Pixel size of a purchased MEGA on the minimap (other players). Larger than the regular Cross so capital hulls read immediately.")]
         [SerializeField] private float megaShipBlipSize = 16f;
         [Tooltip("Pixel size of the local player's MEGA Cross-replacement triangle.")]
@@ -389,6 +391,28 @@ namespace TitanOrbit.UI
             float factor = GetShipLevelZoomFactor();
             minimapRadius = baseRadius * factor;
             maxPlanetDistance = baseMaxDist * factor;
+        }
+
+        /// <summary>
+        /// Pixel size of a regular-ship Cross (X) on the minimap.
+        /// Same ladder for the local player and every other ship: 9px at level 1,
+        /// then +0.5px per level (11.5px at level 6).
+        /// MEGA triangles skip this and keep <see cref="megaShipBlipSize"/> / <see cref="megaPlayerBlipSize"/>.
+        /// [TITAN-ORBIT] Uses <see cref="MinimapBlipAnchor.ShipLevel"/> already filled by
+        /// <see cref="MinimapEcsEntitySync"/> — no extra ECS gather.
+        /// </summary>
+        /// <param name="shipLevel">Upgrade ladder level from the blip anchor (1–6 typical).</param>
+        /// <returns>RectTransform size in pixels for this ship's X this frame.</returns>
+        private static float GetRegularShipCrossSize(int shipLevel)
+        {
+            // --- Shared regular-ship X: 9px at L1, +0.5px/level (11.5px at L6) ---
+            const int minLevel = 1;
+            const int maxLevel = 6;
+            const float sizeAtLevel1 = 9f;
+            const float pixelsPerLevel = 0.5f;
+            int level = shipLevel > 0 ? shipLevel : minLevel;
+            level = Mathf.Clamp(level, minLevel, maxLevel);
+            return sizeAtLevel1 + (level - minLevel) * pixelsPerLevel;
         }
 
         // Exposed read‑only helpers so other systems (like Shapes panels) can match minimap math.
@@ -1750,7 +1774,10 @@ namespace TitanOrbit.UI
             // --- Local player ship (Cross, or triangle while flying a MEGA) ---
             TeamId playerTeam = playerAnchor.Team;
             Color playerColor = playerTeam == TeamId.None ? Color.white : GetTeamColor(playerTeam);
-            float localShipSize = playerAnchor.IsMega ? megaPlayerBlipSize : playerBlipSize;
+            // Regular X uses the shared L1–L6 ladder; MEGA triangle stays at the authored capital size.
+            float localShipSize = playerAnchor.IsMega
+                ? megaPlayerBlipSize
+                : GetRegularShipCrossSize(playerAnchor.ShipLevel);
             EnsureShipBlip(playerTransform, playerColor, localShipSize, playerAnchor.IsMega, isPlayer: true);
             if (blips.TryGetValue(playerTransform, out var playerRt) && playerRt != null)
             {
@@ -1784,7 +1811,10 @@ namespace TitanOrbit.UI
                 {
                     // Show blip when within visible area. MEGAs use a triangle so they
                     // do not look like regular fighters on the same team color.
-                    float shipSize = ship.IsMega ? megaShipBlipSize : 12f;
+                    // Regular X uses the same L1–L6 ladder as the local player; triangle size stays fixed.
+                    float shipSize = ship.IsMega
+                        ? megaShipBlipSize
+                        : GetRegularShipCrossSize(ship.ShipLevel);
                     EnsureShipBlip(ship.transform, shipColor, shipSize, ship.IsMega);
                     UpdateBlip(ship.transform, shipColor, shipSize);
                     if (ship.IsMega)
