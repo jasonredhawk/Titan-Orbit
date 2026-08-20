@@ -16,14 +16,17 @@ using UnityEngine.UI;
 namespace TitanOrbit.UI
 {
     /// <summary>
-    /// Left-middle in-flight list of equipped rocket and mine packs. Rocket tiles: level,
-    /// damage, remaining shots. Mine tiles sit under a MINES header. UP / DOWN (and click)
-    /// walk the combined list as one caret — different rocket levels and mine packs share
-    /// the same focus. ALT activates only the focused pack (fire rocket or place mine).
-    /// Hidden on the main menu, Join Team, Orbit Menu, and while the local ship is dead.
+    /// Left-middle in-flight list of equipped rocket and mine packs as one column of
+    /// gear-slot buttons. Each button names the pack (ROCKET or MINE) and prints
+    /// level, damage, and remaining shots. There is no separate ROCKETS / MINES
+    /// header — the words live on the tiles so a mixed loadout reads as one list.
+    /// UP / DOWN (and click) walk the combined list as one caret. ALT activates
+    /// only the focused pack (fire rocket or place mine). Hidden on the main menu,
+    /// Join Team, Orbit Menu, and while the local ship is dead.
     /// <para>
     /// [TITAN-ORBIT] Reads the local ship's ghosted <see cref="EquippedEquipmentElement"/>
-    /// buffer and <see cref="ShipLoadoutState.NextRocketFireTime"/>. Skips ship gathers
+    /// buffer plus <see cref="ShipLoadoutState.NextRocketFireTime"/> and
+    /// <see cref="ShipLoadoutState.NextMinePlaceTime"/>. Skips ship gathers
     /// while <see cref="ClientJoinSettleCache.ShouldSkipShipEntityQueries"/> (Join Team Crash!!!)
     /// but keeps the last paint visible — MEGA plow gem Instantiates used to hide this list
     /// for a frame every rock.
@@ -33,14 +36,23 @@ namespace TitanOrbit.UI
     [DefaultExecutionOrder(66200)]
     public class RocketLoadoutHUD : MonoBehaviour
     {
+        /// <summary>Hard cap on visible packs. Matches a typical ship loadout plus headroom.</summary>
         const int MaxRows = 8;
-        const float TileWidth = 88f;
-        const float TileHeight = 44f;
+
+        /// <summary>Button width in overlay pixels. Fits "ROCKET" plus an ALT / cooldown hint.</summary>
+        const float TileWidth = 108f;
+
+        /// <summary>Button height for kind + level + damage/charges stacked inside the tile.</summary>
+        const float TileHeight = 62f;
+
+        /// <summary>Gap between stacked gear-slot buttons.</summary>
         const float TileGap = 4f;
+
+        /// <summary>Inset from the dark panel edge to the first tile.</summary>
         const float PanelPad = 8f;
+
+        /// <summary>Panel width = tile + left/right pad. Height grows with pack count.</summary>
         const float PanelWidth = TileWidth + PanelPad * 2f;
-        const float HeaderHeight = 56f;
-        const float MineHeaderHeight = 52f;
 
         static readonly Color FillColor = new Color(0.012f, 0.016f, 0.028f, 0.92f);
         static readonly Color CaptionColor = new Color(0.62f, 0.78f, 0.95f, 0.92f);
@@ -58,32 +70,61 @@ namespace TitanOrbit.UI
 
         Canvas _canvas;
         RectTransform _panel;
-        TextMeshProUGUI _caption;
-        TextMeshProUGUI _cooldown;
-        RectTransform _cooldownFill;
-        Image _cooldownFillImage;
-        GameObject _rocketCooldownTrack;
         GameObject _mainMenuPanel;
-        readonly List<TextMeshProUGUI> _levelLabels = new List<TextMeshProUGUI>(MaxRows);
-        readonly List<TextMeshProUGUI> _detailLabels = new List<TextMeshProUGUI>(MaxRows);
-        readonly List<Button> _rowButtons = new List<Button>(MaxRows);
-        readonly List<Image> _rowBackgrounds = new List<Image>(MaxRows);
-        readonly List<Image> _rowCarets = new List<Image>(MaxRows);
-        readonly List<Outline> _rowOutlines = new List<Outline>(MaxRows);
-        readonly List<GameObject> _rowRoots = new List<GameObject>(MaxRows);
 
-        TextMeshProUGUI _mineCaption;
-        TextMeshProUGUI _mineCooldown;
-        RectTransform _mineCooldownFill;
-        Image _mineCooldownFillImage;
-        GameObject _mineHeaderRoot;
-        readonly List<TextMeshProUGUI> _mineLevelLabels = new List<TextMeshProUGUI>(MaxRows);
-        readonly List<TextMeshProUGUI> _mineDetailLabels = new List<TextMeshProUGUI>(MaxRows);
-        readonly List<Button> _mineRowButtons = new List<Button>(MaxRows);
-        readonly List<Image> _mineRowBackgrounds = new List<Image>(MaxRows);
-        readonly List<Image> _mineRowCarets = new List<Image>(MaxRows);
-        readonly List<Outline> _mineRowOutlines = new List<Outline>(MaxRows);
-        readonly List<GameObject> _mineRowRoots = new List<GameObject>(MaxRows);
+        /// <summary>
+        /// Rocket pack count from the last successful <see cref="Paint"/>. Click handlers
+        /// use this to decide whether a row index is a rocket or a mine.
+        /// </summary>
+        int _paintedRocketCount;
+
+        readonly List<PackTile> _tiles = new List<PackTile>(MaxRows);
+
+        /// <summary>
+        /// One gear-slot button. Kind, level, and damage live on the tile so rockets
+        /// and mines can share a single column without section headers.
+        /// </summary>
+        sealed class PackTile
+        {
+            /// <summary>Root GameObject. Hidden when this slot has no pack.</summary>
+            public GameObject Root;
+
+            /// <summary>Anchored to the panel top so Paint can stack rows by Y.</summary>
+            public RectTransform Rect;
+
+            /// <summary>[UNITY] Click focuses this pack. ALT still fires / places.</summary>
+            public Button Button;
+
+            /// <summary>Idle vs selected fill behind the labels.</summary>
+            public Image Background;
+
+            /// <summary>Left cyan rail. Enabled only on the focused pack.</summary>
+            public Image Caret;
+
+            /// <summary>Cyan edge. Enabled only on the focused pack.</summary>
+            public Outline Outline;
+
+            /// <summary>Player-facing type word: ROCKET or MINE.</summary>
+            public TextMeshProUGUI KindLabel;
+
+            /// <summary>ALT when this pack is focused and ready; otherwise remaining seconds.</summary>
+            public TextMeshProUGUI HintLabel;
+
+            /// <summary>Pack purchase level, e.g. "Lv 1".</summary>
+            public TextMeshProUGUI LevelLabel;
+
+            /// <summary>Damage and remaining charges, e.g. "40  ×2".</summary>
+            public TextMeshProUGUI DetailLabel;
+
+            /// <summary>Shrinking cooldown fill. Visible on this tile while that weapon reloads.</summary>
+            public RectTransform CooldownFill;
+
+            /// <summary>Fill tint: green ready, amber waiting.</summary>
+            public Image CooldownFillImage;
+
+            /// <summary>Dark track under the fill. Hidden when this pack type is ready.</summary>
+            public GameObject CooldownTrack;
+        }
 
         /// <summary>[UNITY] Creates the HUD once after the first scene load.</summary>
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
@@ -97,7 +138,7 @@ namespace TitanOrbit.UI
             go.AddComponent<RocketLoadoutHUD>();
         }
 
-        /// <summary>Builds the left-middle overlay canvas and row labels.</summary>
+        /// <summary>Builds the left-middle overlay canvas and empty gear-slot rows.</summary>
         void Awake()
         {
             BuildUi();
@@ -154,10 +195,15 @@ namespace TitanOrbit.UI
 
             int count = slots != null ? slots.Count : 0;
             int mineCount = mineSlots != null ? mineSlots.Count : 0;
+
+            // --- Caret ownership ---
+            // If only one weapon type is equipped, force focus onto that type so ALT
+            // cannot sit on an empty rocket list or an empty mine list.
             if (count <= 0 && mineCount > 0)
                 MineSlotSelection.SetHudFocused(true);
             else if (mineCount <= 0 && count > 0)
                 MineSlotSelection.SetHudFocused(false);
+
             PollCycleKeys(count, mineCount);
             RocketSlotSelection.Clamp(count);
             MineSlotSelection.Clamp(mineCount);
@@ -196,6 +242,7 @@ namespace TitanOrbit.UI
             else if (mineCount <= 0)
                 MineSlotSelection.SetHudFocused(false);
 
+            // Combined index: rockets occupy 0..rocketCount-1, mines follow.
             int index = MineSlotSelection.HudFocused
                 ? rocketCount + MineSlotSelection.Clamp(mineCount)
                 : RocketSlotSelection.Clamp(rocketCount);
@@ -216,7 +263,17 @@ namespace TitanOrbit.UI
             }
         }
 
-        /// <summary>Reads rocket + mine slots and cooldowns from the client-world local ship.</summary>
+        /// <summary>
+        /// Reads rocket + mine slots and cooldowns from the client-world local ship.
+        /// </summary>
+        /// <param name="slots">Rocket packs with remaining charges (or a debug INF stub).</param>
+        /// <param name="nextFire">ElapsedTime when the next rocket may fire.</param>
+        /// <param name="infinite">True when Editor infinite-rocket debug is on.</param>
+        /// <param name="mineSlots">Mine packs with remaining charges (or a debug INF stub).</param>
+        /// <param name="nextMine">ElapsedTime when the next mine may drop.</param>
+        /// <param name="infiniteMines">True when Editor infinite-mine debug is on.</param>
+        /// <param name="shipLevel">Local ship chassis level, used for debug stub packs.</param>
+        /// <returns>True when at least one rocket or mine pack should paint.</returns>
         static bool TryReadLoadout(
             out List<(int level, int charges)> slots,
             out double nextFire,
@@ -270,6 +327,7 @@ namespace TitanOrbit.UI
                 }
             }
 
+            // Debug stubs so the HUD still appears when the ship has no store packs.
             if (infinite && slots.Count == 0)
                 slots.Add((shipLevel, 0));
             if (infiniteMines && mineSlots.Count == 0)
@@ -278,7 +336,10 @@ namespace TitanOrbit.UI
             return slots.Count > 0 || mineSlots.Count > 0;
         }
 
-        /// <summary>Writes rocket + mine captions, cooldowns, and highlighted pack rows.</summary>
+        /// <summary>
+        /// Writes one stacked column of gear-slot buttons. Rockets first, mines after —
+        /// same order as UP / DOWN — with kind / level / damage on each tile.
+        /// </summary>
         void Paint(
             List<(int level, int charges)> slots,
             double nextFire,
@@ -293,166 +354,141 @@ namespace TitanOrbit.UI
             if (world != null && world.IsCreated)
                 now = world.Time.ElapsedTime;
 
-            float remain = nextFire > now ? (float)(nextFire - now) : 0f;
-            bool ready = remain <= 0.05f;
-            int selected = RocketSlotSelection.Clamp(slots != null ? slots.Count : 0);
+            int rocketCount = slots != null ? slots.Count : 0;
+            int mineCount = mineSlots != null ? mineSlots.Count : 0;
+            _paintedRocketCount = rocketCount;
 
-            // Caption stays one word. Pack level and charge count live on the tiles,
-            // so "ROCKETS  Lv 3" / "RKT INF" was repeating the same facts in a narrower box.
-            bool rocketsFocused = !MineSlotSelection.HudFocused;
-            if (_caption != null)
-            {
-                _caption.text = "ROCKETS";
-                _caption.color = rocketsFocused ? CaptionColor : CaptionDim;
-            }
+            int rocketSelected = RocketSlotSelection.Clamp(rocketCount);
+            int mineSelected = MineSlotSelection.Clamp(mineCount);
+            bool minesFocused = MineSlotSelection.HudFocused;
 
-            int shotLevel = slots != null && selected < slots.Count
-                ? slots[selected].level
+            // Shared cooldown per weapon type — every rocket tile uses the rocket timer,
+            // every mine tile uses the mine timer.
+            float rocketRemain = nextFire > now ? (float)(nextFire - now) : 0f;
+            bool rocketReady = rocketRemain <= 0.05f;
+            int rocketCdLevel = rocketCount > 0 && rocketSelected < rocketCount
+                ? slots[rocketSelected].level
                 : Mathf.Max(1, shipLevel);
-            float totalCd = Mathf.Max(0.1f, RocketCatalog.Get(shotLevel).fireCooldown);
-            float fraction = ready ? 1f : Mathf.Clamp01(remain / totalCd);
+            float rocketTotalCd = Mathf.Max(0.1f, RocketCatalog.Get(rocketCdLevel).fireCooldown);
+            float rocketFraction = rocketReady ? 1f : Mathf.Clamp01(rocketRemain / rocketTotalCd);
 
-            PaintActivateHint(_cooldown, ready, remain, rocketsFocused);
-
-            PaintCooldownBar(fraction, ready);
-
-            bool showRockets = slots != null && slots.Count > 0;
-            if (_caption != null)
-                _caption.gameObject.SetActive(showRockets);
-            if (_cooldown != null)
-                _cooldown.gameObject.SetActive(showRockets);
-            if (_rocketCooldownTrack != null)
-                _rocketCooldownTrack.SetActive(showRockets);
+            float mineRemain = nextMine > now ? (float)(nextMine - now) : 0f;
+            bool mineReady = mineRemain <= 0.05f;
+            int mineCdLevel = mineCount > 0 && mineSelected < mineCount
+                ? mineSlots[mineSelected].level
+                : Mathf.Max(1, shipLevel);
+            float mineTotalCd = Mathf.Max(0.1f, MineCatalog.Get(mineCdLevel).deployCooldown);
+            float mineFraction = mineReady ? 1f : Mathf.Clamp01(mineRemain / mineTotalCd);
 
             int row = 0;
-            if (showRockets)
+
+            // --- Rocket tiles ---
+            for (int i = 0; i < rocketCount && row < _tiles.Count; i++, row++)
             {
-                for (int i = 0; i < slots.Count && row < _rowRoots.Count; i++, row++)
-                {
-                    bool isSel = !MineSlotSelection.HudFocused && i == selected;
-                    _rowRoots[row].SetActive(true);
-                    _levelLabels[row].text = $"Lv {slots[i].level}";
-                    _detailLabels[row].text = FormatDetails(slots[i].level, slots[i].charges, infinite);
-                    _levelLabels[row].color = isSel ? LevelColor : LevelDim;
-                    _detailLabels[row].color = isSel ? BodyColor : BodyDim;
-                    _rowBackgrounds[row].color = isSel ? RowSelected : RowIdle;
-                    if (_rowCarets[row] != null)
-                        _rowCarets[row].enabled = isSel;
-                    if (row < _rowOutlines.Count && _rowOutlines[row] != null)
-                        _rowOutlines[row].enabled = isSel;
-                    if (row < _rowButtons.Count && _rowButtons[row] != null)
-                        _rowButtons[row].interactable = true;
-                }
+                bool isSel = !minesFocused && i == rocketSelected;
+                PaintTile(
+                    _tiles[row],
+                    row,
+                    isRocket: true,
+                    slots[i].level,
+                    slots[i].charges,
+                    infinite,
+                    isSel,
+                    rocketReady,
+                    rocketRemain,
+                    rocketFraction);
             }
 
-            for (int i = row; i < _rowRoots.Count; i++)
+            // --- Mine tiles (same column, no second header) ---
+            for (int i = 0; i < mineCount && row < _tiles.Count; i++, row++)
             {
-                _rowRoots[i].SetActive(false);
-                if (i < _rowOutlines.Count && _rowOutlines[i] != null)
-                    _rowOutlines[i].enabled = false;
+                bool isSel = minesFocused && i == mineSelected;
+                PaintTile(
+                    _tiles[row],
+                    row,
+                    isRocket: false,
+                    mineSlots[i].level,
+                    mineSlots[i].charges,
+                    infiniteMines,
+                    isSel,
+                    mineReady,
+                    mineRemain,
+                    mineFraction);
             }
 
-            float rocketHeader = showRockets ? HeaderHeight : 0f;
-            float rocketTiles = row <= 0 ? 0f : row * TileHeight + (row - 1) * TileGap;
+            for (int i = row; i < _tiles.Count; i++)
+                HideTile(_tiles[i]);
 
-            int mineRow = PaintMines(
-                mineSlots, nextMine, infiniteMines, shipLevel, now,
-                rocketHeader + rocketTiles);
-
-            float mineHeader = mineRow > 0 || (mineSlots != null && mineSlots.Count > 0)
-                ? MineHeaderHeight
-                : 0f;
-            float mineTiles = mineRow <= 0 ? 0f : mineRow * TileHeight + (mineRow - 1) * TileGap;
-            float height = rocketHeader + rocketTiles + mineHeader + mineTiles + PanelPad;
+            float tilesHeight = row <= 0 ? 0f : row * TileHeight + (row - 1) * TileGap;
+            float height = tilesHeight + PanelPad * 2f;
             if (_panel != null)
-                _panel.sizeDelta = new Vector2(PanelWidth, Mathf.Max(HeaderHeight, height));
+                _panel.sizeDelta = new Vector2(PanelWidth, Mathf.Max(TileHeight + PanelPad * 2f, height));
         }
 
         /// <summary>
-        /// Paints the MINES caption, ALT-or-seconds line, and pack tiles under the rocket list.
-        /// <paramref name="topOffset"/> is the Y drop from the panel top after rocket chrome.
+        /// Fills one gear-slot button. Kind word, level, and damage stay on the tile
+        /// so the player does not need a section header to know rocket vs mine.
         /// </summary>
-        int PaintMines(
-            List<(int level, int charges)> mineSlots,
-            double nextMine,
-            bool infiniteMines,
-            int shipLevel,
-            double now,
-            float topOffset)
+        /// <param name="tile">Chrome built in <see cref="BuildUi"/>.</param>
+        /// <param name="row">0-based stack index from the panel top.</param>
+        /// <param name="isRocket">True paints ROCKET + rocket damage; false paints MINE.</param>
+        /// <param name="level">Store purchase level stamped on the pack.</param>
+        /// <param name="charges">Shots / mines left in this pack.</param>
+        /// <param name="infinite">Editor debug: print INF instead of a charge count.</param>
+        /// <param name="isSelected">True when this row owns the caret and ALT.</param>
+        /// <param name="ready">True when this weapon type's shared cooldown is finished.</param>
+        /// <param name="remain">Seconds until that cooldown finishes.</param>
+        /// <param name="fraction">Remaining / total cooldown for the thin bar.</param>
+        void PaintTile(
+            PackTile tile,
+            int row,
+            bool isRocket,
+            int level,
+            int charges,
+            bool infinite,
+            bool isSelected,
+            bool ready,
+            float remain,
+            float fraction)
         {
-            bool show = mineSlots != null && mineSlots.Count > 0;
-            if (_mineHeaderRoot != null)
-                _mineHeaderRoot.SetActive(show);
-            if (!show)
-            {
-                for (int i = 0; i < _mineRowRoots.Count; i++)
-                {
-                    _mineRowRoots[i].SetActive(false);
-                    if (i < _mineRowOutlines.Count && _mineRowOutlines[i] != null)
-                        _mineRowOutlines[i].enabled = false;
-                }
-                return 0;
-            }
+            if (tile == null || tile.Root == null)
+                return;
 
-            if (_mineHeaderRoot != null)
-            {
-                var headerRt = _mineHeaderRoot.GetComponent<RectTransform>();
-                headerRt.anchoredPosition = new Vector2(0f, -topOffset);
-            }
+            tile.Root.SetActive(true);
+            tile.Rect.anchoredPosition = new Vector2(PanelPad, -PanelPad - row * (TileHeight + TileGap));
 
-            float remain = nextMine > now ? (float)(nextMine - now) : 0f;
-            bool ready = remain <= 0.05f;
-            int selected = MineSlotSelection.Clamp(mineSlots.Count);
-            int selLevel = selected < mineSlots.Count
-                ? mineSlots[selected].level
-                : Mathf.Max(1, shipLevel);
+            tile.KindLabel.text = isRocket ? "ROCKET" : "MINE";
+            tile.KindLabel.color = isSelected ? CaptionColor : CaptionDim;
+            tile.LevelLabel.text = $"Lv {level}";
+            tile.LevelLabel.color = isSelected ? LevelColor : LevelDim;
+            tile.DetailLabel.text = isRocket
+                ? FormatRocketDetails(level, charges, infinite)
+                : FormatMineDetails(level, charges, infinite);
+            tile.DetailLabel.color = isSelected ? BodyColor : BodyDim;
 
-            bool minesFocused = MineSlotSelection.HudFocused;
-            if (_mineCaption != null)
-            {
-                _mineCaption.text = "MINES";
-                _mineCaption.color = minesFocused ? CaptionColor : CaptionDim;
-            }
+            PaintTileHint(tile.HintLabel, ready, remain, isSelected);
+            PaintTileCooldownBar(tile, fraction, ready);
 
-            float totalCd = Mathf.Max(0.1f, MineCatalog.Get(selLevel).deployCooldown);
-            float fraction = ready ? 1f : Mathf.Clamp01(remain / totalCd);
-            PaintActivateHint(_mineCooldown, ready, remain, minesFocused);
+            tile.Background.color = isSelected ? RowSelected : RowIdle;
+            if (tile.Caret != null)
+                tile.Caret.enabled = isSelected;
+            if (tile.Outline != null)
+                tile.Outline.enabled = isSelected;
+            if (tile.Button != null)
+                tile.Button.interactable = true;
+        }
 
-            if (_mineCooldownFill != null)
-            {
-                _mineCooldownFill.anchorMax = new Vector2(Mathf.Clamp01(fraction), 1f);
-                if (_mineCooldownFillImage != null)
-                    _mineCooldownFillImage.color = ready ? ReadyColor : WaitColor;
-            }
+        /// <summary>Turns a spare row off so unused MaxRows slots do not show empty chrome.</summary>
+        static void HideTile(PackTile tile)
+        {
+            if (tile == null || tile.Root == null)
+                return;
 
-            int row = 0;
-            for (int i = 0; i < mineSlots.Count && row < _mineRowRoots.Count; i++, row++)
-            {
-                bool isSel = MineSlotSelection.HudFocused && i == selected;
-                float y = -topOffset - MineHeaderHeight - i * (TileHeight + TileGap);
-                var rt = _mineRowRoots[row].GetComponent<RectTransform>();
-                rt.anchoredPosition = new Vector2(PanelPad, y);
-                _mineRowRoots[row].SetActive(true);
-                _mineLevelLabels[row].text = $"Lv {mineSlots[i].level}";
-                _mineDetailLabels[row].text = FormatMineDetails(
-                    mineSlots[i].level, mineSlots[i].charges, infiniteMines);
-                _mineLevelLabels[row].color = isSel ? LevelColor : LevelDim;
-                _mineDetailLabels[row].color = isSel ? BodyColor : BodyDim;
-                _mineRowBackgrounds[row].color = isSel ? RowSelected : RowIdle;
-                if (_mineRowCarets[row] != null)
-                    _mineRowCarets[row].enabled = isSel;
-                if (row < _mineRowOutlines.Count && _mineRowOutlines[row] != null)
-                    _mineRowOutlines[row].enabled = isSel;
-            }
-
-            for (int i = row; i < _mineRowRoots.Count; i++)
-            {
-                _mineRowRoots[i].SetActive(false);
-                if (i < _mineRowOutlines.Count && _mineRowOutlines[i] != null)
-                    _mineRowOutlines[i].enabled = false;
-            }
-
-            return row;
+            tile.Root.SetActive(false);
+            if (tile.Outline != null)
+                tile.Outline.enabled = false;
+            if (tile.Caret != null)
+                tile.Caret.enabled = false;
         }
 
         /// <summary>True while the scene Main Menu panel is up (Play / Join Game).</summary>
@@ -464,7 +500,7 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// Shows or hides the rocket panel only. Never disables the Canvas — Orbit Menu
+        /// Shows or hides the loadout panel only. Never disables the Canvas — Orbit Menu
         /// must not share a disabled overlay.
         /// </summary>
         void SetVisible(bool visible)
@@ -475,25 +511,28 @@ namespace TitanOrbit.UI
                 _panel.gameObject.SetActive(visible);
         }
 
-        /// <summary>Click a rocket row to focus that pack. ALT then fires it.</summary>
-        static void OnRowSelected(int hudIndex)
+        /// <summary>
+        /// Click a row to focus that pack. Rows below <see cref="_paintedRocketCount"/>
+        /// are rockets; the rest are mines. ALT then fires or places.
+        /// </summary>
+        void OnRowClicked(int hudIndex)
         {
             if (MoonOrbitClientState.IsOrbitMenuVisible)
                 return;
-            MineSlotSelection.SetHudFocused(false);
-            RocketSlotSelection.Select(hudIndex, Mathf.Max(1, hudIndex + 1));
-        }
 
-        /// <summary>Click a mine row to focus that pack. ALT then places it.</summary>
-        static void OnMineRowSelected(int hudIndex)
-        {
-            if (MoonOrbitClientState.IsOrbitMenuVisible)
+            if (hudIndex < _paintedRocketCount)
+            {
+                MineSlotSelection.SetHudFocused(false);
+                RocketSlotSelection.Select(hudIndex, Mathf.Max(1, hudIndex + 1));
                 return;
+            }
+
+            int mineIndex = hudIndex - _paintedRocketCount;
             MineSlotSelection.SetHudFocused(true);
-            MineSlotSelection.Select(hudIndex, Mathf.Max(1, hudIndex + 1));
+            MineSlotSelection.Select(mineIndex, Mathf.Max(1, mineIndex + 1));
         }
 
-        /// <summary>Builds dark-glass canvas, caption, cooldown, and tappable rows.</summary>
+        /// <summary>Builds dark-glass canvas and a pool of tappable gear-slot buttons.</summary>
         void BuildUi()
         {
             _canvas = gameObject.AddComponent<Canvas>();
@@ -511,7 +550,7 @@ namespace TitanOrbit.UI
             _panel.anchorMax = new Vector2(0f, 0.5f);
             _panel.pivot = new Vector2(0f, 0.5f);
             _panel.anchoredPosition = new Vector2(14f, 0f);
-            _panel.sizeDelta = new Vector2(PanelWidth, HeaderHeight + TileHeight + PanelPad);
+            _panel.sizeDelta = new Vector2(PanelWidth, TileHeight + PanelPad * 2f);
             var bg = panelGo.GetComponent<Image>();
             bg.color = FillColor;
             bg.raycastTarget = true;
@@ -527,216 +566,123 @@ namespace TitanOrbit.UI
             accentGo.GetComponent<Image>().color = ShipAbilityCategoryColors.GetPowerBreakdownStatColorForHud(1);
             accentGo.GetComponent<Image>().raycastTarget = false;
 
-            _caption = CreateLabel(_panel, "Caption", "ROCKETS", 12f, CaptionColor, new Vector2(0f, -5f), TextAlignmentOptions.Top);
-            var captionRt = _caption.rectTransform;
-            captionRt.offsetMin = new Vector2(6f, captionRt.offsetMin.y);
-            captionRt.offsetMax = new Vector2(-6f, captionRt.offsetMax.y);
-            _cooldown = CreateLabel(_panel, "Cooldown", "ALT", 11f, ReadyColor, new Vector2(0f, -20f), TextAlignmentOptions.Top);
-            var cooldownRt = _cooldown.rectTransform;
-            cooldownRt.offsetMin = new Vector2(6f, cooldownRt.offsetMin.y);
-            cooldownRt.offsetMax = new Vector2(-6f, cooldownRt.offsetMax.y);
-            BuildCooldownBar(_panel);
-
             for (int i = 0; i < MaxRows; i++)
-            {
-                int captured = i;
-                var rowGo = new GameObject($"Tile{i}", typeof(RectTransform), typeof(Image), typeof(Button));
-                rowGo.transform.SetParent(_panel, false);
-                var rt = rowGo.GetComponent<RectTransform>();
-                rt.anchorMin = new Vector2(0f, 1f);
-                rt.anchorMax = new Vector2(0f, 1f);
-                rt.pivot = new Vector2(0f, 1f);
-                rt.anchoredPosition = new Vector2(PanelPad, -HeaderHeight - i * (TileHeight + TileGap));
-                rt.sizeDelta = new Vector2(TileWidth, TileHeight);
-                var img = rowGo.GetComponent<Image>();
-                img.color = RowIdle;
-                var btn = rowGo.GetComponent<Button>();
-                btn.transition = Selectable.Transition.None;
-                btn.onClick.AddListener(() => OnRowSelected(captured));
-                _rowButtons.Add(btn);
-                _rowBackgrounds.Add(img);
-                _rowOutlines.Add(AddFocusOutline(rowGo));
-                _rowRoots.Add(rowGo);
-
-                var caretGo = new GameObject("Caret", typeof(RectTransform), typeof(Image));
-                caretGo.transform.SetParent(rt, false);
-                var caretRt = caretGo.GetComponent<RectTransform>();
-                caretRt.anchorMin = new Vector2(0f, 0f);
-                caretRt.anchorMax = new Vector2(0f, 1f);
-                caretRt.pivot = new Vector2(0f, 0.5f);
-                caretRt.sizeDelta = new Vector2(4f, 0f);
-                caretRt.anchoredPosition = Vector2.zero;
-                var caretImg = caretGo.GetComponent<Image>();
-                caretImg.color = CaretColor;
-                caretImg.raycastTarget = false;
-                caretImg.enabled = false;
-                _rowCarets.Add(caretImg);
-
-                var level = CreateLabel(rt, "Level", "Lv 1", 15f, LevelColor, Vector2.zero, TextAlignmentOptions.Center);
-                var levelRt = level.rectTransform;
-                levelRt.anchorMin = new Vector2(0f, 0.48f);
-                levelRt.anchorMax = new Vector2(1f, 1f);
-                levelRt.offsetMin = new Vector2(8f, 0f);
-                levelRt.offsetMax = new Vector2(-6f, -2f);
-                _levelLabels.Add(level);
-
-                var detail = CreateLabel(rt, "Detail", "40  ×2", 11f, BodyColor, Vector2.zero, TextAlignmentOptions.Center);
-                var detailRt = detail.rectTransform;
-                detailRt.anchorMin = new Vector2(0f, 0f);
-                detailRt.anchorMax = new Vector2(1f, 0.52f);
-                detailRt.offsetMin = new Vector2(6f, 2f);
-                detailRt.offsetMax = new Vector2(-6f, 0f);
-                detail.enableWordWrapping = false;
-                _detailLabels.Add(detail);
-                rowGo.SetActive(false);
-            }
-
-            BuildMineSection(_panel);
-        }
-
-        /// <summary>MINES caption, cooldown bar, and tappable pack tiles under the rockets.</summary>
-        void BuildMineSection(RectTransform parent)
-        {
-            _mineHeaderRoot = new GameObject("MineHeader", typeof(RectTransform));
-            _mineHeaderRoot.transform.SetParent(parent, false);
-            var headerRt = _mineHeaderRoot.GetComponent<RectTransform>();
-            headerRt.anchorMin = new Vector2(0f, 1f);
-            headerRt.anchorMax = new Vector2(1f, 1f);
-            headerRt.pivot = new Vector2(0.5f, 1f);
-            headerRt.anchoredPosition = Vector2.zero;
-            headerRt.sizeDelta = new Vector2(0f, MineHeaderHeight);
-
-            _mineCaption = CreateLabel(
-                headerRt, "MineCaption", "MINES", 12f, CaptionColor,
-                new Vector2(0f, -2f), TextAlignmentOptions.Top);
-            var mineCaptionRt = _mineCaption.rectTransform;
-            mineCaptionRt.offsetMin = new Vector2(6f, mineCaptionRt.offsetMin.y);
-            mineCaptionRt.offsetMax = new Vector2(-6f, mineCaptionRt.offsetMax.y);
-
-            _mineCooldown = CreateLabel(
-                headerRt, "MineCooldown", "ALT", 11f, ReadyColor,
-                new Vector2(0f, -18f), TextAlignmentOptions.Top);
-            var mineCdRt = _mineCooldown.rectTransform;
-            mineCdRt.offsetMin = new Vector2(6f, mineCdRt.offsetMin.y);
-            mineCdRt.offsetMax = new Vector2(-6f, mineCdRt.offsetMax.y);
-
-            var trackGo = new GameObject("MineCooldownTrack", typeof(RectTransform), typeof(Image));
-            trackGo.transform.SetParent(headerRt, false);
-            var trackRt = trackGo.GetComponent<RectTransform>();
-            trackRt.anchorMin = new Vector2(0f, 1f);
-            trackRt.anchorMax = new Vector2(1f, 1f);
-            trackRt.pivot = new Vector2(0.5f, 1f);
-            trackRt.anchoredPosition = new Vector2(0f, -36f);
-            trackRt.sizeDelta = new Vector2(-16f, 6f);
-            var trackImg = trackGo.GetComponent<Image>();
-            trackImg.color = new Color(0.04f, 0.06f, 0.1f, 0.95f);
-            trackImg.raycastTarget = false;
-
-            var fillGo = new GameObject("MineCooldownFill", typeof(RectTransform), typeof(Image));
-            fillGo.transform.SetParent(trackRt, false);
-            _mineCooldownFill = fillGo.GetComponent<RectTransform>();
-            _mineCooldownFill.anchorMin = Vector2.zero;
-            _mineCooldownFill.anchorMax = Vector2.one;
-            _mineCooldownFill.offsetMin = Vector2.zero;
-            _mineCooldownFill.offsetMax = Vector2.zero;
-            _mineCooldownFillImage = fillGo.GetComponent<Image>();
-            _mineCooldownFillImage.color = ReadyColor;
-            _mineCooldownFillImage.raycastTarget = false;
-
-            for (int i = 0; i < MaxRows; i++)
-            {
-                int captured = i;
-                var rowGo = new GameObject($"MineTile{i}", typeof(RectTransform), typeof(Image), typeof(Button));
-                rowGo.transform.SetParent(parent, false);
-                var rt = rowGo.GetComponent<RectTransform>();
-                rt.anchorMin = new Vector2(0f, 1f);
-                rt.anchorMax = new Vector2(0f, 1f);
-                rt.pivot = new Vector2(0f, 1f);
-                rt.anchoredPosition = new Vector2(PanelPad, -HeaderHeight - i * (TileHeight + TileGap));
-                rt.sizeDelta = new Vector2(TileWidth, TileHeight);
-                var img = rowGo.GetComponent<Image>();
-                img.color = RowIdle;
-                var btn = rowGo.GetComponent<Button>();
-                btn.transition = Selectable.Transition.None;
-                btn.onClick.AddListener(() => OnMineRowSelected(captured));
-                _mineRowButtons.Add(btn);
-                _mineRowBackgrounds.Add(img);
-                _mineRowOutlines.Add(AddFocusOutline(rowGo));
-                _mineRowRoots.Add(rowGo);
-
-                var caretGo = new GameObject("Caret", typeof(RectTransform), typeof(Image));
-                caretGo.transform.SetParent(rt, false);
-                var caretRt = caretGo.GetComponent<RectTransform>();
-                caretRt.anchorMin = new Vector2(0f, 0f);
-                caretRt.anchorMax = new Vector2(0f, 1f);
-                caretRt.pivot = new Vector2(0f, 0.5f);
-                caretRt.sizeDelta = new Vector2(4f, 0f);
-                caretRt.anchoredPosition = Vector2.zero;
-                var caretImg = caretGo.GetComponent<Image>();
-                caretImg.color = CaretColor;
-                caretImg.raycastTarget = false;
-                caretImg.enabled = false;
-                _mineRowCarets.Add(caretImg);
-
-                var level = CreateLabel(rt, "Level", "Lv 1", 15f, LevelColor, Vector2.zero, TextAlignmentOptions.Center);
-                var levelRt = level.rectTransform;
-                levelRt.anchorMin = new Vector2(0f, 0.48f);
-                levelRt.anchorMax = new Vector2(1f, 1f);
-                levelRt.offsetMin = new Vector2(8f, 0f);
-                levelRt.offsetMax = new Vector2(-6f, -2f);
-                _mineLevelLabels.Add(level);
-
-                var detail = CreateLabel(rt, "Detail", "35  ×4", 11f, BodyColor, Vector2.zero, TextAlignmentOptions.Center);
-                var detailRt = detail.rectTransform;
-                detailRt.anchorMin = new Vector2(0f, 0f);
-                detailRt.anchorMax = new Vector2(1f, 0.52f);
-                detailRt.offsetMin = new Vector2(6f, 2f);
-                detailRt.offsetMax = new Vector2(-6f, 0f);
-                detail.enableWordWrapping = false;
-                _mineDetailLabels.Add(detail);
-                rowGo.SetActive(false);
-            }
-
-            _mineHeaderRoot.SetActive(false);
+                _tiles.Add(BuildTile(_panel, i));
         }
 
         /// <summary>
-        /// Dark track + shrinking fill under the seconds label. Fraction is remaining / total
-        /// so the bar counts down while the rocket reloads.
+        /// Builds one gear-slot button: kind word, ALT/cooldown hint, level, damage, thin bar.
         /// </summary>
-        void BuildCooldownBar(RectTransform parent)
+        /// <param name="parent">Dark panel that holds the stacked list.</param>
+        /// <param name="index">Pool index and click identity (0..MaxRows-1).</param>
+        PackTile BuildTile(RectTransform parent, int index)
         {
+            int captured = index;
+            var tile = new PackTile();
+
+            var rowGo = new GameObject($"Tile{index}", typeof(RectTransform), typeof(Image), typeof(Button));
+            rowGo.transform.SetParent(parent, false);
+            var rt = rowGo.GetComponent<RectTransform>();
+            rt.anchorMin = new Vector2(0f, 1f);
+            rt.anchorMax = new Vector2(0f, 1f);
+            rt.pivot = new Vector2(0f, 1f);
+            rt.anchoredPosition = new Vector2(PanelPad, -PanelPad - index * (TileHeight + TileGap));
+            rt.sizeDelta = new Vector2(TileWidth, TileHeight);
+            var img = rowGo.GetComponent<Image>();
+            img.color = RowIdle;
+            var btn = rowGo.GetComponent<Button>();
+            btn.transition = Selectable.Transition.None;
+            btn.onClick.AddListener(() => OnRowClicked(captured));
+
+            tile.Root = rowGo;
+            tile.Rect = rt;
+            tile.Button = btn;
+            tile.Background = img;
+            tile.Outline = AddFocusOutline(rowGo);
+
+            var caretGo = new GameObject("Caret", typeof(RectTransform), typeof(Image));
+            caretGo.transform.SetParent(rt, false);
+            var caretRt = caretGo.GetComponent<RectTransform>();
+            caretRt.anchorMin = new Vector2(0f, 0f);
+            caretRt.anchorMax = new Vector2(0f, 1f);
+            caretRt.pivot = new Vector2(0f, 0.5f);
+            caretRt.sizeDelta = new Vector2(4f, 0f);
+            caretRt.anchoredPosition = Vector2.zero;
+            var caretImg = caretGo.GetComponent<Image>();
+            caretImg.color = CaretColor;
+            caretImg.raycastTarget = false;
+            caretImg.enabled = false;
+            tile.Caret = caretImg;
+
+            // Kind on the left, ALT / seconds on the right — same top row so the
+            // type word never leaves the button for a section header.
+            var kind = CreateLabel(rt, "Kind", "ROCKET", 12f, CaptionColor, Vector2.zero, TextAlignmentOptions.Left);
+            var kindRt = kind.rectTransform;
+            kindRt.anchorMin = new Vector2(0f, 0.68f);
+            kindRt.anchorMax = new Vector2(0.62f, 1f);
+            kindRt.offsetMin = new Vector2(10f, 0f);
+            kindRt.offsetMax = new Vector2(-2f, -2f);
+            tile.KindLabel = kind;
+
+            var hint = CreateLabel(rt, "Hint", "ALT", 11f, ReadyColor, Vector2.zero, TextAlignmentOptions.Right);
+            var hintRt = hint.rectTransform;
+            hintRt.anchorMin = new Vector2(0.55f, 0.68f);
+            hintRt.anchorMax = new Vector2(1f, 1f);
+            hintRt.offsetMin = new Vector2(0f, 0f);
+            hintRt.offsetMax = new Vector2(-6f, -2f);
+            tile.HintLabel = hint;
+
+            var level = CreateLabel(rt, "Level", "Lv 1", 14f, LevelColor, Vector2.zero, TextAlignmentOptions.Center);
+            var levelRt = level.rectTransform;
+            levelRt.anchorMin = new Vector2(0f, 0.38f);
+            levelRt.anchorMax = new Vector2(1f, 0.70f);
+            levelRt.offsetMin = new Vector2(8f, 0f);
+            levelRt.offsetMax = new Vector2(-6f, 0f);
+            tile.LevelLabel = level;
+
+            var detail = CreateLabel(rt, "Detail", "40  ×2", 11f, BodyColor, Vector2.zero, TextAlignmentOptions.Center);
+            var detailRt = detail.rectTransform;
+            detailRt.anchorMin = new Vector2(0f, 0.10f);
+            detailRt.anchorMax = new Vector2(1f, 0.40f);
+            detailRt.offsetMin = new Vector2(6f, 0f);
+            detailRt.offsetMax = new Vector2(-6f, 0f);
+            detail.enableWordWrapping = false;
+            tile.DetailLabel = detail;
+
             var trackGo = new GameObject("CooldownTrack", typeof(RectTransform), typeof(Image));
-            trackGo.transform.SetParent(parent, false);
-            _rocketCooldownTrack = trackGo;
+            trackGo.transform.SetParent(rt, false);
             var trackRt = trackGo.GetComponent<RectTransform>();
-            trackRt.anchorMin = new Vector2(0f, 1f);
-            trackRt.anchorMax = new Vector2(1f, 1f);
-            trackRt.pivot = new Vector2(0.5f, 1f);
-            trackRt.anchoredPosition = new Vector2(0f, -38f);
-            trackRt.sizeDelta = new Vector2(-16f, 6f);
+            trackRt.anchorMin = new Vector2(0f, 0f);
+            trackRt.anchorMax = new Vector2(1f, 0f);
+            trackRt.pivot = new Vector2(0.5f, 0f);
+            trackRt.anchoredPosition = new Vector2(0f, 3f);
+            trackRt.sizeDelta = new Vector2(-12f, 4f);
             var trackImg = trackGo.GetComponent<Image>();
             trackImg.color = new Color(0.04f, 0.06f, 0.1f, 0.95f);
             trackImg.raycastTarget = false;
+            tile.CooldownTrack = trackGo;
 
             var fillGo = new GameObject("CooldownFill", typeof(RectTransform), typeof(Image));
             fillGo.transform.SetParent(trackRt, false);
-            _cooldownFill = fillGo.GetComponent<RectTransform>();
-            _cooldownFill.anchorMin = Vector2.zero;
-            _cooldownFill.anchorMax = Vector2.one;
-            _cooldownFill.offsetMin = Vector2.zero;
-            _cooldownFill.offsetMax = Vector2.zero;
-            _cooldownFillImage = fillGo.GetComponent<Image>();
-            _cooldownFillImage.color = ReadyColor;
-            _cooldownFillImage.raycastTarget = false;
+            tile.CooldownFill = fillGo.GetComponent<RectTransform>();
+            tile.CooldownFill.anchorMin = Vector2.zero;
+            tile.CooldownFill.anchorMax = Vector2.one;
+            tile.CooldownFill.offsetMin = Vector2.zero;
+            tile.CooldownFill.offsetMax = Vector2.zero;
+            tile.CooldownFillImage = fillGo.GetComponent<Image>();
+            tile.CooldownFillImage.color = ReadyColor;
+            tile.CooldownFillImage.raycastTarget = false;
+
+            rowGo.SetActive(false);
+            return tile;
         }
 
         /// <summary>
-        /// ALT only on the focused section when that pack is ready. Unfocused sections
-        /// still show remaining cooldown so the player can see the other weapon reload,
+        /// ALT only on the focused tile when that pack is ready. Unfocused tiles still
+        /// show remaining cooldown so the player can see the other weapon reload,
         /// but they never advertise a second hotkey.
         /// </summary>
-        static void PaintActivateHint(TextMeshProUGUI label, bool ready, float remain, bool focused)
+        static void PaintTileHint(TextMeshProUGUI label, bool ready, float remain, bool focused)
         {
             if (label == null)
                 return;
@@ -753,6 +699,26 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
+        /// Thin bar on this tile. Hidden when ready so idle packs stay as kind / level / damage.
+        /// </summary>
+        static void PaintTileCooldownBar(PackTile tile, float remainingFraction, bool ready)
+        {
+            if (tile == null)
+                return;
+
+            if (tile.CooldownTrack != null)
+                tile.CooldownTrack.SetActive(!ready);
+
+            if (tile.CooldownFill == null)
+                return;
+
+            float t = Mathf.Clamp01(remainingFraction);
+            tile.CooldownFill.anchorMax = new Vector2(t, 1f);
+            if (tile.CooldownFillImage != null)
+                tile.CooldownFillImage.color = ready ? ReadyColor : WaitColor;
+        }
+
+        /// <summary>
         /// Cyan edge around the focused tile so UP/DOWN / click have a clear caret
         /// beyond the fill tint. Disabled until that row owns ALT.
         /// </summary>
@@ -766,20 +732,8 @@ namespace TitanOrbit.UI
             return outline;
         }
 
-        /// <summary>Shrinks the fill from the right as remaining cooldown drops.</summary>
-        void PaintCooldownBar(float remainingFraction, bool ready)
-        {
-            if (_cooldownFill == null)
-                return;
-
-            float t = Mathf.Clamp01(remainingFraction);
-            _cooldownFill.anchorMax = new Vector2(t, 1f);
-            if (_cooldownFillImage != null)
-                _cooldownFillImage.color = ready ? ReadyColor : WaitColor;
-        }
-
-        /// <summary>Damage + charges (or INF) stacked inside a square tile.</summary>
-        static string FormatDetails(int level, int charges, bool infinite)
+        /// <summary>Rocket damage + charges (or INF) stacked inside the gear-slot button.</summary>
+        static string FormatRocketDetails(int level, int charges, bool infinite)
         {
             float damage = RocketShotMath.ResolveDamage(Mathf.Max(1, level));
             string dmg = damage.ToString("0", CultureInfo.InvariantCulture);
@@ -788,7 +742,7 @@ namespace TitanOrbit.UI
             return $"{dmg}  ×{Mathf.Max(0, charges)}";
         }
 
-        /// <summary>Mine damage + charges (or INF) stacked inside a square tile.</summary>
+        /// <summary>Mine blast damage + charges (or INF) stacked inside the gear-slot button.</summary>
         static string FormatMineDetails(int level, int charges, bool infinite)
         {
             float damage = MineShotMath.ResolveDamage(Mathf.Max(1, level));

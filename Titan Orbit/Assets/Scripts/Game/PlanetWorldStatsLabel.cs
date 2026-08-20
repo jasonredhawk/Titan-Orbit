@@ -11,8 +11,9 @@ namespace TitanOrbit.Game
     /// <summary>
     /// World-space label floating above a planet body: ship family name (title), optional
     /// capture-contributor name, plus population.
-    /// Layout reads top-to-bottom as family title, the player who delivered the most troops
-    /// during capture, then <b>current people</b>, then the population <b>capacity</b>
+    /// Layout reads top-to-bottom as family title, a small "Captured by" caption, the
+    /// player who delivered the most troops during capture, then <b>current people</b>,
+    /// then the population <b>capacity</b>
     /// (base size/level max, and when territory triangles apply, <c>base + bonus</c>).
     /// Client / hybrid presentation only — reads replicated <see cref="PlanetState"/> and the
     /// published connection graph; never drives sim. Paired with <see cref="WorldBodyVisualApplier"/>
@@ -50,8 +51,11 @@ namespace TitanOrbit.Game
         /// <summary>Ship family title uses the same size as the capacity line.</summary>
         const float TitleFontSize = MaxFontSize;
 
-        /// <summary>Capture contributor name — a little smaller than the family title.</summary>
-        const float ContributorFontSize = TitleFontSize * 0.85f;
+        /// <summary>Player name on the capture credit — smaller than the family title.</summary>
+        const float ContributorNameFontSize = TitleFontSize * 0.55f;
+
+        /// <summary>"Captured by" caption — smaller than the player name underneath.</summary>
+        const float CapturedByFontSize = ContributorNameFontSize * 0.7f;
 
         /// <summary>Local-space gap between family title and the population stack.</summary>
         const float TitleGapLocal = 2f;
@@ -59,8 +63,11 @@ namespace TitanOrbit.Game
         /// <summary>Local-space gap around the capture-contributor line.</summary>
         const float ContributorGapLocal = 0.35f;
 
-        /// <summary>Contributor line alpha vs full team color (reads as a small credit).</summary>
-        const float ContributorAlpha = 0.8f;
+        /// <summary>Player-name alpha vs full team color.</summary>
+        const float ContributorAlpha = 0.85f;
+
+        /// <summary>"Captured by" caption is a bit dimmer than the name underneath.</summary>
+        const float CapturedByAlpha = 0.65f;
 
         /// <summary>Local-space gap between current and capacity lines.</summary>
         const float ValueLineGapLocal = 0.5f;
@@ -84,7 +91,7 @@ namespace TitanOrbit.Game
 
         Transform _labelRoot;
         TextMeshPro _titleText;
-        TextMeshPro _contributorText;
+        CaptureCreditRow _captureCredit;
         StatRow _populationRow;
 
         static PlanetShipFamilyConfig _shipFamilyConfig;
@@ -95,6 +102,14 @@ namespace TitanOrbit.Game
             public Transform Root;
             public TextMeshPro CurrentText;
             public TextMeshPro MaxText;
+        }
+
+        /// <summary>Capture credit: small "Captured by" caption over the player name.</summary>
+        struct CaptureCreditRow
+        {
+            public Transform Root;
+            public TextMeshPro CaptionText;
+            public TextMeshPro NameText;
         }
 
         /// <summary>
@@ -118,7 +133,8 @@ namespace TitanOrbit.Game
             if (_labelReady &&
                 _labelRoot != null &&
                 _titleText != null &&
-                _contributorText != null &&
+                _captureCredit.CaptionText != null &&
+                _captureCredit.NameText != null &&
                 _populationRow.CurrentText != null &&
                 _populationRow.MaxText != null)
                 return;
@@ -134,7 +150,7 @@ namespace TitanOrbit.Game
 
             _labelRoot = CreateLabelRoot("PlanetStatsLabel", transform);
             _titleText = CreateValueText(_labelRoot, "FamilyTitle", TitleFontSize, Color.white);
-            _contributorText = CreateValueText(_labelRoot, "CaptureContributor", ContributorFontSize, Color.white);
+            _captureCredit = CreateCaptureCreditRow(_labelRoot, "CaptureCredit");
             _populationRow = CreatePopulationRow(_labelRoot, "PopulationRow");
 
             KeepLabelOnPlanetRoot();
@@ -161,8 +177,16 @@ namespace TitanOrbit.Game
             if (_titleText == null)
                 _titleText = _labelRoot.Find("FamilyTitle")?.GetComponent<TextMeshPro>();
 
-            if (_contributorText == null)
-                _contributorText = _labelRoot.Find("CaptureContributor")?.GetComponent<TextMeshPro>();
+            if (_captureCredit.Root == null)
+            {
+                Transform credit = _labelRoot.Find("CaptureCredit");
+                if (credit != null)
+                {
+                    _captureCredit.Root = credit;
+                    _captureCredit.CaptionText = credit.Find("CapturedBy")?.GetComponent<TextMeshPro>();
+                    _captureCredit.NameText = credit.Find("ContributorName")?.GetComponent<TextMeshPro>();
+                }
+            }
 
             if (_populationRow.Root == null)
             {
@@ -179,14 +203,17 @@ namespace TitanOrbit.Game
             if (_titleText == null || _populationRow.CurrentText == null || _populationRow.MaxText == null)
                 return false;
 
-            if (_contributorText == null)
-                _contributorText = CreateValueText(_labelRoot, "CaptureContributor", ContributorFontSize, Color.white);
+            RemoveLegacySingleLineContributor(_labelRoot);
+
+            if (_captureCredit.CaptionText == null || _captureCredit.NameText == null)
+                _captureCredit = CreateCaptureCreditRow(_labelRoot, "CaptureCredit");
 
             // Capacity line uses rich text for "base + bonus" coloring.
             _populationRow.MaxText.richText = true;
 
             ApplyReadableTextMaterial(_titleText);
-            ApplyReadableTextMaterial(_contributorText);
+            ApplyReadableTextMaterial(_captureCredit.CaptionText);
+            ApplyReadableTextMaterial(_captureCredit.NameText);
             ApplyReadableTextMaterial(_populationRow.CurrentText);
             ApplyReadableTextMaterial(_populationRow.MaxText);
             KeepLabelOnPlanetRoot();
@@ -206,7 +233,7 @@ namespace TitanOrbit.Game
                 Destroy(_labelRoot.gameObject);
                 _labelRoot = null;
                 _titleText = null;
-                _contributorText = null;
+                _captureCredit = default;
                 _populationRow = default;
             }
         }
@@ -243,6 +270,17 @@ namespace TitanOrbit.Game
             return go.transform;
         }
 
+        /// <summary>Drops the old single-line CaptureContributor TMP from an earlier credit layout.</summary>
+        static void RemoveLegacySingleLineContributor(Transform labelRoot)
+        {
+            if (labelRoot == null)
+                return;
+
+            Transform legacy = labelRoot.Find("CaptureContributor");
+            if (legacy != null)
+                Object.Destroy(legacy.gameObject);
+        }
+
         /// <summary>Removes the old people icon if a prior build left one under PopulationRow.</summary>
         static void RemoveLegacyPopulationIcon(Transform populationRow)
         {
@@ -253,6 +291,65 @@ namespace TitanOrbit.Game
             Transform icon = populationRow.Find("Icon");
             if (icon != null)
                 Object.Destroy(icon.gameObject);
+        }
+
+        /// <summary>Builds the two-line capture credit: "Captured by" over the player name.</summary>
+        static CaptureCreditRow CreateCaptureCreditRow(Transform parent, string rowName)
+        {
+            Transform existing = parent.Find(rowName);
+            if (existing != null)
+                Object.Destroy(existing.gameObject);
+
+            var rowGo = new GameObject(rowName);
+            rowGo.transform.SetParent(parent, false);
+
+            var caption = CreateValueText(rowGo.transform, "CapturedBy", CapturedByFontSize, Color.white);
+            var name = CreateValueText(rowGo.transform, "ContributorName", ContributorNameFontSize, Color.white);
+            caption.text = "Captured by";
+
+            return new CaptureCreditRow
+            {
+                Root = rowGo.transform,
+                CaptionText = caption,
+                NameText = name,
+            };
+        }
+
+        /// <summary>Stacks "Captured by" above the player name inside the credit row.</summary>
+        static void LayoutCaptureCredit(ref CaptureCreditRow row)
+        {
+            if (row.CaptionText == null || row.NameText == null)
+                return;
+
+            row.CaptionText.fontSize = CapturedByFontSize;
+            row.NameText.fontSize = ContributorNameFontSize;
+            row.CaptionText.fontStyle = FontStyles.Bold;
+            row.NameText.fontStyle = FontStyles.Bold;
+            row.CaptionText.ForceMeshUpdate();
+            row.NameText.ForceMeshUpdate();
+
+            float captionHeight = row.CaptionText.preferredHeight;
+            float nameHeight = row.NameText.preferredHeight;
+            float textHeight = captionHeight + ContributorGapLocal + nameHeight;
+            float stackTop = textHeight * 0.5f;
+
+            row.CaptionText.transform.localPosition = new Vector3(
+                0f,
+                stackTop - captionHeight * 0.5f,
+                0f);
+            row.NameText.transform.localPosition = new Vector3(
+                0f,
+                -stackTop + nameHeight * 0.5f,
+                0f);
+        }
+
+        /// <summary>Preferred height of the capture-credit stack.</summary>
+        static float GetCaptureCreditHeight(CaptureCreditRow row)
+        {
+            if (row.CaptionText == null || row.NameText == null)
+                return 0f;
+
+            return row.CaptionText.preferredHeight + ContributorGapLocal + row.NameText.preferredHeight;
         }
 
         /// <summary>Builds Current (large) + Max (capacity) TMP children under one row root.</summary>
@@ -376,12 +473,11 @@ namespace TitanOrbit.Game
                 titleHeight = _titleText.preferredHeight;
             }
 
-            float contributorHeight = 0f;
-            if (showContributor && _contributorText != null)
+            float creditHeight = 0f;
+            if (showContributor && _captureCredit.Root != null)
             {
-                _contributorText.fontSize = ContributorFontSize;
-                _contributorText.ForceMeshUpdate();
-                contributorHeight = _contributorText.preferredHeight;
+                LayoutCaptureCredit(ref _captureCredit);
+                creditHeight = GetCaptureCreditHeight(_captureCredit);
             }
 
             bool hasHeader = showTitle || showContributor;
@@ -389,12 +485,12 @@ namespace TitanOrbit.Game
             float headerGap = hasHeader ? TitleGapLocal : 0f;
             float populationHeight = GetStatRowHeight(_populationRow);
             float headerHeight = (showTitle ? titleHeight : 0f)
-                + (showContributor ? contributorHeight : 0f)
+                + (showContributor ? creditHeight : 0f)
                 + nameGap
                 + headerGap;
             float totalHeight = populationHeight + headerHeight;
 
-            // Stack: family title + contributor as one identity, then the population numbers.
+            // Stack: family title + capture credit as one identity, then the population numbers.
             float cursor = totalHeight * 0.5f;
             if (showTitle)
             {
@@ -406,14 +502,13 @@ namespace TitanOrbit.Game
                 cursor -= titleHeight + nameGap;
             }
 
-            if (showContributor && _contributorText != null)
+            if (showContributor && _captureCredit.Root != null)
             {
-                _contributorText.fontStyle = FontStyles.Bold;
-                _contributorText.transform.localPosition = new Vector3(
+                _captureCredit.Root.localPosition = new Vector3(
                     0f,
-                    cursor - contributorHeight * 0.5f,
+                    cursor - creditHeight * 0.5f,
                     0f);
-                cursor -= contributorHeight + headerGap;
+                cursor -= creditHeight + headerGap;
             }
             else if (showTitle)
             {
@@ -559,7 +654,8 @@ namespace TitanOrbit.Game
 
             EnsureLabel();
             if (_titleText == null ||
-                _contributorText == null ||
+                _captureCredit.CaptionText == null ||
+                _captureCredit.NameText == null ||
                 _populationRow.CurrentText == null ||
                 _populationRow.MaxText == null)
                 return false;
@@ -640,9 +736,12 @@ namespace TitanOrbit.Game
             _titleText.text = hasTitle ? familyTitle : string.Empty;
             _titleText.color = teamColor;
 
-            _contributorText.gameObject.SetActive(hasContributor);
-            _contributorText.text = hasContributor ? contributorName : string.Empty;
-            _contributorText.color = WithAlpha(teamColor, ContributorAlpha);
+            if (_captureCredit.Root != null)
+                _captureCredit.Root.gameObject.SetActive(hasContributor);
+            _captureCredit.CaptionText.text = hasContributor ? "Captured by" : string.Empty;
+            _captureCredit.CaptionText.color = WithAlpha(teamColor, CapturedByAlpha);
+            _captureCredit.NameText.text = hasContributor ? contributorName : string.Empty;
+            _captureCredit.NameText.color = WithAlpha(teamColor, ContributorAlpha);
 
             _populationRow.CurrentText.text = state.Population.ToString();
             _populationRow.CurrentText.color = teamColor;

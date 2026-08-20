@@ -20,7 +20,7 @@ namespace TitanOrbit.ECS
         /// </summary>
         public static bool HudFocused { get; private set; }
 
-        /// <summary>HUD caret moved onto or off the MINES section.</summary>
+        /// <summary>HUD caret moved onto or off a mine pack in the unified loadout list.</summary>
         public static void SetHudFocused(bool focused) => HudFocused = focused;
 
         /// <summary>Moves the caret by <paramref name="delta"/> and wraps.</summary>

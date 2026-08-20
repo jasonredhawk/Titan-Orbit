@@ -1,5 +1,7 @@
 using System.Collections.Generic;
 using TitanOrbit.Core;
+using TitanOrbit.Data;
+using TitanOrbit.ECS;
 using TitanOrbit.Game;
 using TitanOrbit.NetCode;
 using TMPro;
@@ -13,10 +15,10 @@ namespace TitanOrbit.UI
     /// In-game team leaderboard in the top-right corner — same width as the minimap, height
     /// stretched down until it meets the minimap below. Press TAB to cycle Team A…E panels.
     /// <para>
-    /// Shows a player list only: role icons (top killer / miner / transporter), rank, name, and a
-    /// combined score. No per-stat K/G/P columns. Client presentation only — reads
-    /// <see cref="MinimapBlipAnchor"/> caches from <see cref="MinimapEcsEntitySync"/> (no ship-entity
-    /// gathers) and names from <see cref="EcsGameBridge.RefreshPlayerDisplayNameCache"/>.
+    /// Shows a player list only: role icons (top killer / miner / transporter), rank, profile
+    /// badge, name, and a combined score. No per-stat K/G/P columns. Client presentation only —
+    /// reads <see cref="MinimapBlipAnchor"/> caches from <see cref="MinimapEcsEntitySync"/> (no
+    /// ship-entity gathers) and identity from <see cref="EcsGameBridge.RefreshPlayerDisplayNameCache"/>.
     /// </para>
     /// <para>
     /// The header tabs are a planet-control bar: the full leaderboard width is every capturable
@@ -107,6 +109,8 @@ namespace TitanOrbit.UI
         const float ContentPadding = 4f;
         const float PanelSidePad = 6f;
         const int MaxKeepExtraRows = 4;
+        /// <summary>Profile emblem beside the name. Fits the 40px row after 5px vertical padding.</summary>
+        const float PlayerBadgeSize = 26f;
 
         // Role icon colors — match minimap top-of-team dots.
         static readonly Color BadgeKiller = new Color(0.35f, 0.55f, 1f, 1f);
@@ -138,6 +142,8 @@ namespace TitanOrbit.UI
             public GameObject Root;
             public Image Background;
             public RectTransform BadgeContainer;
+            public RectTransform PlayerBadgeCell;
+            public Image PlayerBadgeImage;
             public TextMeshProUGUI RankText;
             public TextMeshProUGUI NameText;
             public TextMeshProUGUI ScoreText;
@@ -148,6 +154,7 @@ namespace TitanOrbit.UI
         {
             public int OwnerNetworkId;
             public string Name;
+            public int BadgeId;
             public int Kills;
             public int Gems;
             public int People;
@@ -195,6 +202,7 @@ namespace TitanOrbit.UI
 
             string[] names = { "Nova", "Viper", "Echo", "Ranger" };
             int[] scores = { 1280, 640, 210, 40 };
+            int[] demoBadgeIds = { 1, 2, 3, 0 };
             EnsureRowCount(names.Length);
             for (int i = 0; i < names.Length; i++)
             {
@@ -205,6 +213,7 @@ namespace TitanOrbit.UI
                 w.ScoreText.text = scores[i].ToString();
                 w.Background.color = new Color(0f, 0f, 0f, i % 2 == 0 ? 0.28f : 0.18f);
                 PopulateBadges(w.BadgeContainer, i == 0, i == 1, i == 2);
+                ApplyPlayerBadge(w, demoBadgeIds[i]);
             }
 
             if (_emptyText != null)
@@ -489,6 +498,7 @@ namespace TitanOrbit.UI
                 {
                     OwnerNetworkId = a.OwnerNetworkId,
                     Name = name,
+                    BadgeId = EcsGameBridge.GetCachedPlayerBadgeId(a.OwnerNetworkId),
                     Kills = kills,
                     Gems = gems,
                     People = people,
@@ -533,6 +543,7 @@ namespace TitanOrbit.UI
                     bestKills > 0 && r.OwnerNetworkId == bestKillerId,
                     bestGems > 0 && r.OwnerNetworkId == bestMinerId,
                     bestPeople > 0 && r.OwnerNetworkId == bestTransporterId);
+                ApplyPlayerBadge(w, r.BadgeId);
             }
 
             for (int i = _sorted.Count; i < _rows.Count; i++)
@@ -589,6 +600,35 @@ namespace TitanOrbit.UI
         // =========================================================================
         // Badge helpers
         // =========================================================================
+
+        /// <summary>
+        /// Paints the profile emblem from <see cref="PlayerBadgeCatalog"/>. Collapses the cell
+        /// when this player has no sprite so names stay tight against rank.
+        /// </summary>
+        static void ApplyPlayerBadge(RowWidgets w, int badgeId)
+        {
+            if (w == null || w.PlayerBadgeImage == null)
+                return;
+
+            Sprite sprite = PlayerBadgeCatalog.FindSprite(PlayerBadgeIdUtil.Sanitize(badgeId));
+            bool show = sprite != null;
+            w.PlayerBadgeImage.sprite = sprite;
+            w.PlayerBadgeImage.enabled = show;
+            w.PlayerBadgeImage.color = Color.white;
+            w.PlayerBadgeImage.preserveAspect = true;
+
+            var layout = w.PlayerBadgeCell != null
+                ? w.PlayerBadgeCell.GetComponent<LayoutElement>()
+                : null;
+            if (layout != null)
+            {
+                float width = show ? PlayerBadgeSize : 0f;
+                layout.preferredWidth = width;
+                layout.minWidth = width;
+                layout.preferredHeight = PlayerBadgeSize;
+                layout.minHeight = PlayerBadgeSize;
+            }
+        }
 
         /// <summary>
         /// Rebuilds K / G / T role icons for team leaders. Collapses width to 0 when none apply
@@ -966,7 +1006,7 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// One pooled row: role icons | rank | name | combined score.
+        /// One pooled row: role icons | rank | profile badge | name | combined score.
         /// </summary>
         RowWidgets CreateRow(int index)
         {
@@ -999,6 +1039,13 @@ namespace TitanOrbit.UI
             var rank = CreateRowLabel(CreateCell(rowGo.transform, "Rank", 30f), 13, TextAlignmentOptions.Center);
             rank.color = new Color(0.85f, 0.90f, 1f);
 
+            var playerBadgeCell = CreateCell(rowGo.transform, "PlayerBadge", 0f);
+            var playerBadgeImage = playerBadgeCell.gameObject.AddComponent<Image>();
+            playerBadgeImage.preserveAspect = true;
+            playerBadgeImage.raycastTarget = false;
+            playerBadgeImage.enabled = false;
+            playerBadgeImage.color = Color.white;
+
             var nameCell = CreateCell(rowGo.transform, "Name", -1f);
             nameCell.GetComponent<LayoutElement>().flexibleWidth = 1f;
             var name = CreateRowLabel(nameCell, 14, TextAlignmentOptions.Left);
@@ -1013,6 +1060,8 @@ namespace TitanOrbit.UI
                 Root = rowGo,
                 Background = bg,
                 BadgeContainer = badges,
+                PlayerBadgeCell = playerBadgeCell,
+                PlayerBadgeImage = playerBadgeImage,
                 RankText = rank,
                 NameText = name,
                 ScoreText = score,

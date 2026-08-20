@@ -132,6 +132,9 @@ namespace TitanOrbit.Game
                 name.Contains("PopulationRow") ||
                 name.Contains("FamilyTitle") ||
                 name.Contains("CaptureContributor") ||
+                name.Contains("CaptureCredit") ||
+                name.Contains("CapturedBy") ||
+                name.Contains("ContributorName") ||
                 name.Contains("GemsLabel") ||
                 name.Contains("GemRow") ||
                 name.Contains("ShieldRow") ||
