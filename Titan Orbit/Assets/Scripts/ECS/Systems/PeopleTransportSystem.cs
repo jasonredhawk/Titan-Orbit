@@ -719,13 +719,39 @@ namespace TitanOrbit.ECS
                         // Ship already debited at dispatch — only apply planet-side outcome here.
                         var planetEntity = planetById[t.TargetPlanetId];
                         var unloadOutcome = DeliverUnload(ref planetState, t.Amount, team, planetTransform, planetSize);
+
+                        // --- Per-planet siege ledger (hostile drain + the capturing unload) ---
+                        // [TITAN-ORBIT] Top contributor = most troops delivered by the capturing team.
+                        int peopleScore = (int)t.Amount;
+                        if (peopleScore > 0 &&
+                            t.SourceShipNetworkId > 0 &&
+                            (unloadOutcome == PeopleUnloadOutcome.HostileDrain ||
+                             unloadOutcome == PeopleUnloadOutcome.Captured))
+                        {
+                            PlanetPeopleContributionLogic.Add(
+                                state.EntityManager,
+                                planetEntity,
+                                t.SourceShipNetworkId,
+                                peopleScore,
+                                team);
+                        }
+
+                        if (unloadOutcome == PeopleUnloadOutcome.Captured)
+                        {
+                            planetState.TopContributorNetworkId =
+                                PlanetPeopleContributionLogic.ResolveTopAndClear(
+                                    state.EntityManager,
+                                    planetEntity,
+                                    team,
+                                    t.SourceShipNetworkId);
+                        }
+
                         planetStateById[t.TargetPlanetId] = planetState;
                         ecb.SetComponent(planetEntity, planetState);
 
                         // --- Match-long transporter score (minimap top transporter badge) ---
                         // [TITAN-ORBIT] Credit the dispatching ship for every successful unload
                         // (friendly reinforce, hostile drain, or capture) — people reached the planet.
-                        int peopleScore = (int)t.Amount;
                         if (peopleScore > 0 &&
                             t.SourceShipNetworkId > 0 &&
                             shipByNetworkId.TryGetValue(t.SourceShipNetworkId, out Entity sourceShipEntity))
@@ -755,7 +781,8 @@ namespace TitanOrbit.ECS
                                 planetState.PlanetId,
                                 team,
                                 planetState.Population,
-                                planetState.PlanetLevel);
+                                planetState.PlanetLevel,
+                                planetState.TopContributorNetworkId);
                         }
                         if (state.EntityManager.HasComponent<PlanetGrowthState>(planetEntity))
                         {

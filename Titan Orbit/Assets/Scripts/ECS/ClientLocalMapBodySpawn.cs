@@ -147,6 +147,8 @@ namespace TitanOrbit.ECS
                 em.AddComponent<HomePlanetTag>(e);
             if (isHome && !em.HasBuffer<ContributedGemsElement>(e))
                 em.AddBuffer<ContributedGemsElement>(e);
+            if (!em.HasBuffer<PlanetPeopleContributionElement>(e))
+                em.AddBuffer<PlanetPeopleContributionElement>(e);
 
             SetOrAdd(em, e, new PlanetGrowthState { FractionalPopulation = maxPopulation });
 

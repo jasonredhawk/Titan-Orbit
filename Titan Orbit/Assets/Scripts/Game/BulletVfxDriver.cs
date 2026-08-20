@@ -1438,7 +1438,8 @@ namespace TitanOrbit.Game
                 out hitSlotIndex,
                 t.DamageFilter,
                 t.ScaleMultiplier,
-                t.BankIndex);
+                t.BankIndex,
+                allowSelfHarm: TitanOrbitDebugFlags.IsHomingSelfHarmArmed(t.Homing, t.Age));
         }
 
         /// <summary>

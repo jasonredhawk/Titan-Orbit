@@ -846,6 +846,8 @@ namespace TitanOrbit.ECS
                     Planets = planets.AsArray(),
                     Defense = defense,
                     Drones = drones,
+                    AllowSelfHarmHits = TitanOrbitDebugFlags.SelfHarmRocketsAndMines ? (byte)1 : (byte)0,
+                    SelfHarmArmDelay = TitanOrbitDebugFlags.SelfHarmArmDelaySeconds,
                 };
                 job.Run();
 
@@ -1212,7 +1214,7 @@ namespace TitanOrbit.ECS
                     float health = ship.Health;
                     float gems = ship.CurrentGems;
                     bool isDead = ship.IsDead;
-                    bool selfHarmHit = b.Homing != 0 && TitanOrbitDebugFlags.IsSelfHarmArmed(b.Age);
+                    bool selfHarmHit = TitanOrbitDebugFlags.IsHomingSelfHarmArmed(b.Homing, b.Age);
                     var damageTeam = selfHarmHit && ship.Team == (TeamId)b.OwnerTeam
                         ? TeamId.None
                         : (TeamId)b.OwnerTeam;
@@ -1475,7 +1477,7 @@ namespace TitanOrbit.ECS
                 em.GetComponentData<ShipTurretControlState>(shipEntity).IsControlling)
                 return;
 
-            bool selfHarm = b.Homing != 0 && TitanOrbitDebugFlags.IsSelfHarmArmed(b.Age);
+            bool selfHarm = TitanOrbitDebugFlags.IsHomingSelfHarmArmed(b.Homing, b.Age);
             if (shipState.Team == (TeamId)b.OwnerTeam && !healFriendly && !selfHarm)
                 return;
             if (!selfHarm &&

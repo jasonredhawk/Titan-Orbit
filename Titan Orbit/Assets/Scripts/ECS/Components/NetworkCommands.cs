@@ -522,6 +522,12 @@ namespace TitanOrbit.ECS
 
         /// <summary>Planet level at flip time (fingerprint / bonuses).</summary>
         public int PlanetLevel;
+
+        /// <summary>
+        /// Player who delivered the most troops during this capture (0 = starting claim / unknown).
+        /// Immediate client label — do not wait on the rate-limited planet ghost.
+        /// </summary>
+        public int TopContributorNetworkId;
     }
 
     /// <summary>

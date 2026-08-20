@@ -47,6 +47,13 @@ namespace TitanOrbit
         public static bool IsSelfHarmArmed(float ageSeconds) =>
             SelfHarmRocketsAndMines && ageSeconds >= SelfHarmArmDelaySeconds;
 
+        /// <summary>
+        /// True when a homing rocket may lock and collide with its owner / team (debug self-harm).
+        /// Straight guns never use this path.
+        /// </summary>
+        public static bool IsHomingSelfHarmArmed(byte homing, float ageSeconds) =>
+            homing != 0 && IsSelfHarmArmed(ageSeconds);
+
         /// <summary>True when a mine placed at <paramref name="placeTime"/> is armed against its owner.</summary>
         public static bool IsSelfHarmArmed(double placeTime, double now) =>
             SelfHarmRocketsAndMines && now >= placeTime + SelfHarmArmDelaySeconds;

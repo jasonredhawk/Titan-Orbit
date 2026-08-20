@@ -45,6 +45,17 @@ namespace TitanOrbit.ECS
         [ReadOnly] public NativeArray<PlanetaryDefenseHitTarget> Defense;
         [ReadOnly] public NativeArray<DroneHitTarget> Drones;
 
+        /// <summary>
+        /// 1 when debug self-harm rockets are enabled. Homing rockets past
+        /// <see cref="SelfHarmArmDelay"/> may then collide with the shooter / same team —
+        /// otherwise this Burst sweep skips those hulls and never hands the segment to
+        /// managed hit resolution (rockets fly through you).
+        /// </summary>
+        public byte AllowSelfHarmHits;
+
+        /// <summary>Copied from <c>TitanOrbitDebugFlags.SelfHarmArmDelaySeconds</c> (Burst-safe).</summary>
+        public float SelfHarmArmDelay;
+
         [BurstCompile]
         public void Execute()
         {
@@ -113,10 +124,16 @@ namespace TitanOrbit.ECS
                     continue;
                 if (e.Kind == BulletObstacleKind.Ship)
                 {
-                    if (e.Team == b.OwnerTeam)
-                        continue;
-                    if (b.OwnerNetworkId > 0 && e.OwnerNetworkId == b.OwnerNetworkId)
-                        continue;
+                    bool selfHarm = AllowSelfHarmHits != 0 &&
+                                    b.Homing != 0 &&
+                                    b.Age >= SelfHarmArmDelay;
+                    if (!selfHarm)
+                    {
+                        if (e.Team == b.OwnerTeam)
+                            continue;
+                        if (b.OwnerNetworkId > 0 && e.OwnerNetworkId == b.OwnerNetworkId)
+                            continue;
+                    }
                 }
                 else if (e.Kind == BulletObstacleKind.Transport)
                 {

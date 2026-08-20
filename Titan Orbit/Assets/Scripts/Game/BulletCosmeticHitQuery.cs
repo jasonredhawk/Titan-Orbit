@@ -790,7 +790,8 @@ namespace TitanOrbit.Game
             out int hitSlotIndex,
             byte damageFilter = 0,
             float scaleMultiplier = 1f,
-            int bankIndex = 0)
+            int bankIndex = 0,
+            bool allowSelfHarm = false)
         {
             hitPoint = to;
             hitKind = ObstacleKind.Asteroid;
@@ -833,7 +834,7 @@ namespace TitanOrbit.Game
             {
                 int i = s_TestIndices[n];
                 var o = Obstacles[i];
-                if (!PassesTeamFilter(in o, ownerTeam, ownerNetworkId, healFriendly))
+                if (!PassesTeamFilter(in o, ownerTeam, ownerNetworkId, healFriendly, allowSelfHarm))
                     continue;
                 if (!PassesDamageFilter(filter, o.Kind))
                     continue;
@@ -1099,12 +1100,16 @@ namespace TitanOrbit.Game
         /// <summary>
         /// Team / self filters matching server <c>TryResolveBulletHit</c>.
         /// Planets/asteroids always collide; moons always test (friendly uses body-only radius);
-        /// ships and planetary-defense turrets skip friendlies / self.
+        /// ships and planetary-defense turrets skip friendlies / self unless
+        /// <paramref name="allowSelfHarm"/> (debug homing rockets after the arm delay).
         /// </summary>
-        static bool PassesTeamFilter(in Obstacle o, byte ownerTeam, int ownerNetworkId, bool healFriendly)
+        static bool PassesTeamFilter(
+            in Obstacle o, byte ownerTeam, int ownerNetworkId, bool healFriendly, bool allowSelfHarm)
         {
             if (o.Kind == ObstacleKind.Ship)
             {
+                if (allowSelfHarm)
+                    return true;
                 if (ownerNetworkId > 0 && o.OwnerNetworkId == ownerNetworkId)
                     return false;
                 if (healFriendly)

@@ -34,6 +34,12 @@ namespace TitanOrbit.ECS
 
         /// <summary>[TITAN-ORBIT] Index into PlanetShipFamilyConfig.families; 0 = AstroEagle (home only).</summary>
         [GhostField] public byte ShipFamilyConfigIndex;
+
+        /// <summary>
+        /// [TITAN-ORBIT] Player who delivered the most troops during the siege that captured this
+        /// planet (0 = none / starting claim). Ghosted so late joiners see the name without an RPC.
+        /// </summary>
+        [GhostField] public int TopContributorNetworkId;
     }
 
     /// <summary>
