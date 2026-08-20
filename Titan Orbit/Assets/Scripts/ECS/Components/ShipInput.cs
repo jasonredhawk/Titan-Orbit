@@ -78,8 +78,9 @@ namespace TitanOrbit.ECS
         public int SelectedRocketSlot;
 
         /// <summary>
-        /// [NETCODE] InputEvent — E / PlaceMine. Server <c>ShipMineDeploySystem</c> consumes
-        /// one store mine charge (unless infinite-mine debug) and appends a deployed mine.
+        /// [NETCODE] InputEvent — ALT while the loadout caret is on a mine pack.
+        /// Server <c>ShipMineDeploySystem</c> consumes one store mine charge (unless
+        /// infinite-mine debug) and appends a deployed mine.
         /// Appended after <see cref="SelectedRocketSlot"/> so older command layouts still line up.
         /// </summary>
         [GhostField]

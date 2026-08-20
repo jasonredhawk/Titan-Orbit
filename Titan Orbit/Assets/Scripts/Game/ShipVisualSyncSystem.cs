@@ -18,7 +18,8 @@ namespace TitanOrbit.Game
     /// <para>
     /// [TITAN-ORBIT] Local ship does <b>not</b> wrap — it flies unbound; camera follows that pose.
     /// World bodies reposition individually via <see cref="ToroidalDisplay"/> relative to this ship.
-    /// Soft-track on NetCode storms; H73 cruise for reconcile pops. While the hull is grinding an
+    /// Soft-track on NetCode storms; H73 cruise for reconcile pops. Death→alive hard-snaps to
+    /// the home orbit ring so the hull does not crawl across the map. While the hull is grinding an
     /// asteroid, display raw-follows sim (0-speed bounce nibbles used to coast and step the map).
     /// After contact ends, post-kill thrust ramps ~0.4→8 u/s; raw-following hitch-sized 0.22–0.30u
     /// sim steps (still under the 0.45 grind floor) looked stepped. Those frames coast + capped
@@ -50,7 +51,9 @@ namespace TitanOrbit.Game
         const float DisplayRotationSharpness = 12f;
 
         /// <summary>
-        /// Only hard-snap beyond this (respawn / abandon). Smaller gaps soft-reacquire.
+        /// Hard-snap when the display-to-sim gap exceeds this (abandon / missed death edge).
+        /// Death→alive always snaps, even under this threshold — otherwise a 20–50u crawl
+        /// to the home ring looks like the hull flying home instead of respawning.
         /// </summary>
         const float DisplayRespawnSnapDistance = 50f;
 
@@ -134,6 +137,13 @@ namespace TitanOrbit.Game
 
         /// <summary>Frames left to force H73 coast after grind so hitch-sized sim steps do not snap.</summary>
         int _postGrindCoastFrames;
+
+        /// <summary>
+        /// Previous presentation frame's local <see cref="ShipState.IsDead"/>. Detects the
+        /// death→alive edge so we hard-snap to the home orbit ring instead of soft-tracking
+        /// across the map (catch-up storms used to skip the 50u snap entirely).
+        /// </summary>
+        bool _localShipWasDead;
 
         /// <summary>
         /// Each presentation frame: publish remotes raw (when safe), then soft-track or raw-follow
@@ -220,7 +230,8 @@ namespace TitanOrbit.Game
 
         /// <summary>
         /// Builds the local owner's camera/mesh pose: soft-track on storms, H73 raw-or-coast cruise.
-        /// Hard-snaps when the local ship entity is missing or replaced (rejoin / fresh spawn).
+        /// Hard-snaps on death, respawn, ship replace, and gaps beyond
+        /// <see cref="DisplayRespawnSnapDistance"/>.
         /// </summary>
         /// <param name="localShip">Local player ship entity, or Null when not spawned.</param>
         /// <param name="skipBankPivotQuery">
@@ -297,43 +308,45 @@ namespace TitanOrbit.Game
             bool grindRawFollow = asteroidContact || _postGrindRawFrames > 0;
             bool postGrindCoast = !grindRawFollow && _postGrindCoastFrames > 0;
 
+            // --- Death / respawn edge ---
+            // [TITAN-ORBIT] Server teleports LocalTransform to the home orbit ring. Display
+            // _smoothPos stays at the wreck for the 10s countdown. Soft-track then crawled
+            // the visible hull (and camera) across the map at 22 u/s — worse when catchingUp
+            // skipped the snap-distance check. Snap on alive-again; stay glued while dead.
+            bool isDead = EntityManager.HasComponent<ShipState>(localShip) &&
+                          EntityManager.GetComponentData<ShipState>(localShip).IsDead;
+            bool justRespawned = _localShipWasDead && !isDead;
+            _localShipWasDead = isDead;
+
+            float displayErr = _smoothInitialized ? math.distance(_smoothPos, targetPos) : 0f;
+            bool hardSnap = TitanOrbitDebugFlags.IsolateDisableShipSoftTrack
+                            || grindRawFollow
+                            || !_smoothInitialized
+                            || shipChanged
+                            || isDead
+                            || justRespawned
+                            || displayErr > DisplayRespawnSnapDistance;
+
             // --- Step display state ---
             // [TITAN-ORBIT] Isolation F4: raw sim pose only — if destroy stutter vanishes, soft-track
             // was amplifying physics reconcile pops from phantom asteroid hulls.
-            if (TitanOrbitDebugFlags.IsolateDisableShipSoftTrack || grindRawFollow)
-            {
-                _smoothPos = targetPos;
-                _smoothRot = targetRot;
-                _smoothInitialized = true;
-            }
-            else if (!_smoothInitialized || shipChanged)
+            if (hardSnap)
             {
                 if (shipChanged)
                     ToroidalDisplay.ResetSession("ShipVisualSync.shipChanged");
+                else if (justRespawned && displayErr > DisplayRespawnSnapDistance)
+                    ToroidalDisplay.ResetSession("ShipVisualSync.respawn");
                 _smoothPos = targetPos;
                 _smoothRot = targetRot;
                 _smoothInitialized = true;
             }
-            else if (catchingUp)
+            else if (catchingUp || displayErr > 2f)
             {
                 StepDisplayToward(targetPos, targetRot, dt, CatchUpDisplayMaxSpeed);
             }
             else
             {
-                float err = math.distance(_smoothPos, targetPos);
-                if (err > DisplayRespawnSnapDistance)
-                {
-                    _smoothPos = targetPos;
-                    _smoothRot = targetRot;
-                }
-                else if (err > 2f)
-                {
-                    StepDisplayToward(targetPos, targetRot, dt, CatchUpDisplayMaxSpeed);
-                }
-                else
-                {
-                    StepCruiseRawOrCoast(targetPos, targetRot, simVel, dt, postGrindCoast);
-                }
+                StepCruiseRawOrCoast(targetPos, targetRot, simVel, dt, postGrindCoast);
             }
 
             // --- Publish pose for camera / hybrid / EG LocalToWorld ---
@@ -464,6 +477,7 @@ namespace TitanOrbit.Game
             _smoothShipEntity = Entity.Null;
             _smoothPos = float3.zero;
             _smoothRot = quaternion.identity;
+            _localShipWasDead = false;
         }
 
         /// <summary>

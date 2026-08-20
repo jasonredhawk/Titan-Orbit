@@ -73,7 +73,7 @@ namespace TitanOrbit.Core
         [SerializeField] bool debugInfiniteRockets;
 
         [Header("Debug — Mines")]
-        [Tooltip("When enabled, E places a mine without consuming charges (and with an empty loadout). The deploy cooldown still applies. Local Editor / MPPM host only.")]
+        [Tooltip("When enabled, ALT places the focused mine pack without consuming charges (and with an empty loadout). The deploy cooldown still applies. Local Editor / MPPM host only.")]
         [SerializeField] bool debugInfiniteMines;
 
         [Header("Debug — Rocket / Mine Self-Harm")]

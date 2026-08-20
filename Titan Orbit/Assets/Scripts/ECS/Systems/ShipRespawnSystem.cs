@@ -52,8 +52,10 @@ namespace TitanOrbit.ECS
 
                 // [TITAN-ORBIT] Random home orbit-ring spawn — shared with rejoin / Join Team.
                 // Never last death position; never inside the gem-moon dock zone (Orbit Menu).
-                float3 spawnPos = ShipHomeSpawnLogic.FindHomeSpawnPosition(
-                    state.EntityManager, shipState.ValueRO.Team, orbitElapsed);
+                // Skip this tick if home is not resolved yet — do not park the hull at origin.
+                if (!ShipHomeSpawnLogic.TryFindHomeSpawnPosition(
+                        state.EntityManager, shipState.ValueRO.Team, orbitElapsed, out float3 spawnPos))
+                    continue;
 
                 // --- MEGA: restore L6 while still IsDead so clients do not flash the MEGA at spawn ---
                 if (state.EntityManager.HasComponent<MegaShipState>(entity)

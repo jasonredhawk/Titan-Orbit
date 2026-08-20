@@ -17,9 +17,9 @@ namespace TitanOrbit.UI
 {
     /// <summary>
     /// Left-middle in-flight list of equipped rocket and mine packs. Rocket tiles: level,
-    /// damage, remaining shots, and a caret for the pack that will fire (UP / DOWN / click).
-    /// Mine tiles sit under a MINES header; click or UP/DOWN onto that row selects the pack.
-    /// The focused section owns ALT (rockets fire, mines place). E also places a mine.
+    /// damage, remaining shots. Mine tiles sit under a MINES header. UP / DOWN (and click)
+    /// walk the combined list as one caret — different rocket levels and mine packs share
+    /// the same focus. ALT activates only the focused pack (fire rocket or place mine).
     /// Hidden on the main menu, Join Team, Orbit Menu, and while the local ship is dead.
     /// <para>
     /// [TITAN-ORBIT] Reads the local ship's ghosted <see cref="EquippedEquipmentElement"/>
@@ -44,12 +44,16 @@ namespace TitanOrbit.UI
 
         static readonly Color FillColor = new Color(0.012f, 0.016f, 0.028f, 0.92f);
         static readonly Color CaptionColor = new Color(0.62f, 0.78f, 0.95f, 0.92f);
+        static readonly Color CaptionDim = new Color(0.62f, 0.78f, 0.95f, 0.38f);
         static readonly Color BodyColor = new Color(0.88f, 0.92f, 0.98f, 1f);
+        static readonly Color BodyDim = new Color(0.88f, 0.92f, 0.98f, 0.4f);
         static readonly Color LevelColor = new Color(0.55f, 0.95f, 1f, 1f);
+        static readonly Color LevelDim = new Color(0.55f, 0.95f, 1f, 0.42f);
         static readonly Color ReadyColor = new Color(0.45f, 0.92f, 0.62f, 1f);
         static readonly Color WaitColor = new Color(0.95f, 0.72f, 0.28f, 1f);
+        static readonly Color WaitDim = new Color(0.95f, 0.72f, 0.28f, 0.45f);
         static readonly Color RowIdle = new Color(1f, 1f, 1f, 0.03f);
-        static readonly Color RowSelected = new Color(0.22f, 0.55f, 0.85f, 0.28f);
+        static readonly Color RowSelected = new Color(0.18f, 0.68f, 0.95f, 0.48f);
         static readonly Color CaretColor = new Color(0.45f, 0.95f, 1f, 1f);
 
         Canvas _canvas;
@@ -65,6 +69,7 @@ namespace TitanOrbit.UI
         readonly List<Button> _rowButtons = new List<Button>(MaxRows);
         readonly List<Image> _rowBackgrounds = new List<Image>(MaxRows);
         readonly List<Image> _rowCarets = new List<Image>(MaxRows);
+        readonly List<Outline> _rowOutlines = new List<Outline>(MaxRows);
         readonly List<GameObject> _rowRoots = new List<GameObject>(MaxRows);
 
         TextMeshProUGUI _mineCaption;
@@ -77,6 +82,7 @@ namespace TitanOrbit.UI
         readonly List<Button> _mineRowButtons = new List<Button>(MaxRows);
         readonly List<Image> _mineRowBackgrounds = new List<Image>(MaxRows);
         readonly List<Image> _mineRowCarets = new List<Image>(MaxRows);
+        readonly List<Outline> _mineRowOutlines = new List<Outline>(MaxRows);
         readonly List<GameObject> _mineRowRoots = new List<GameObject>(MaxRows);
 
         /// <summary>[UNITY] Creates the HUD once after the first scene load.</summary>
@@ -161,9 +167,8 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// UP / DOWN walk rocket packs then mine packs as one list. The focused section
-        /// owns ALT (rockets fire, mines place). E still places a mine. Ignored while a
-        /// turret is possessed.
+        /// UP / DOWN walk rocket packs then mine packs as one list. The focused row
+        /// owns ALT (rockets fire, mines place). Ignored while a turret is possessed.
         /// </summary>
         static void PollCycleKeys(int rocketCount, int mineCount)
         {
@@ -292,14 +297,13 @@ namespace TitanOrbit.UI
             bool ready = remain <= 0.05f;
             int selected = RocketSlotSelection.Clamp(slots != null ? slots.Count : 0);
 
+            // Caption stays one word. Pack level and charge count live on the tiles,
+            // so "ROCKETS  Lv 3" / "RKT INF" was repeating the same facts in a narrower box.
+            bool rocketsFocused = !MineSlotSelection.HudFocused;
             if (_caption != null)
             {
-                int selLevel = slots != null && selected < slots.Count
-                    ? slots[selected].level
-                    : Mathf.Max(1, shipLevel);
-                _caption.text = infinite
-                    ? $"RKT INF  Lv {selLevel}"
-                    : $"ROCKETS  Lv {selLevel}";
+                _caption.text = "ROCKETS";
+                _caption.color = rocketsFocused ? CaptionColor : CaptionDim;
             }
 
             int shotLevel = slots != null && selected < slots.Count
@@ -308,11 +312,7 @@ namespace TitanOrbit.UI
             float totalCd = Mathf.Max(0.1f, RocketCatalog.Get(shotLevel).fireCooldown);
             float fraction = ready ? 1f : Mathf.Clamp01(remain / totalCd);
 
-            if (_cooldown != null)
-            {
-                _cooldown.text = ready ? "READY  ALT" : $"{remain:0.0}s  ALT";
-                _cooldown.color = ready ? ReadyColor : WaitColor;
-            }
+            PaintActivateHint(_cooldown, ready, remain, rocketsFocused);
 
             PaintCooldownBar(fraction, ready);
 
@@ -333,16 +333,24 @@ namespace TitanOrbit.UI
                     _rowRoots[row].SetActive(true);
                     _levelLabels[row].text = $"Lv {slots[i].level}";
                     _detailLabels[row].text = FormatDetails(slots[i].level, slots[i].charges, infinite);
+                    _levelLabels[row].color = isSel ? LevelColor : LevelDim;
+                    _detailLabels[row].color = isSel ? BodyColor : BodyDim;
                     _rowBackgrounds[row].color = isSel ? RowSelected : RowIdle;
                     if (_rowCarets[row] != null)
                         _rowCarets[row].enabled = isSel;
+                    if (row < _rowOutlines.Count && _rowOutlines[row] != null)
+                        _rowOutlines[row].enabled = isSel;
                     if (row < _rowButtons.Count && _rowButtons[row] != null)
                         _rowButtons[row].interactable = true;
                 }
             }
 
             for (int i = row; i < _rowRoots.Count; i++)
+            {
                 _rowRoots[i].SetActive(false);
+                if (i < _rowOutlines.Count && _rowOutlines[i] != null)
+                    _rowOutlines[i].enabled = false;
+            }
 
             float rocketHeader = showRockets ? HeaderHeight : 0f;
             float rocketTiles = row <= 0 ? 0f : row * TileHeight + (row - 1) * TileGap;
@@ -361,7 +369,7 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// Paints the MINES header, E cooldown, and pack tiles under the rocket list.
+        /// Paints the MINES caption, ALT-or-seconds line, and pack tiles under the rocket list.
         /// <paramref name="topOffset"/> is the Y drop from the panel top after rocket chrome.
         /// </summary>
         int PaintMines(
@@ -378,7 +386,11 @@ namespace TitanOrbit.UI
             if (!show)
             {
                 for (int i = 0; i < _mineRowRoots.Count; i++)
+                {
                     _mineRowRoots[i].SetActive(false);
+                    if (i < _mineRowOutlines.Count && _mineRowOutlines[i] != null)
+                        _mineRowOutlines[i].enabled = false;
+                }
                 return 0;
             }
 
@@ -395,21 +407,16 @@ namespace TitanOrbit.UI
                 ? mineSlots[selected].level
                 : Mathf.Max(1, shipLevel);
 
+            bool minesFocused = MineSlotSelection.HudFocused;
             if (_mineCaption != null)
             {
-                _mineCaption.text = infiniteMines
-                    ? $"MINE INF  Lv {selLevel}"
-                    : $"MINES  Lv {selLevel}";
+                _mineCaption.text = "MINES";
+                _mineCaption.color = minesFocused ? CaptionColor : CaptionDim;
             }
 
             float totalCd = Mathf.Max(0.1f, MineCatalog.Get(selLevel).deployCooldown);
             float fraction = ready ? 1f : Mathf.Clamp01(remain / totalCd);
-            if (_mineCooldown != null)
-            {
-                string keyHint = MineSlotSelection.HudFocused ? "ALT" : "E";
-                _mineCooldown.text = ready ? $"READY  {keyHint}" : $"{remain:0.0}s  {keyHint}";
-                _mineCooldown.color = ready ? ReadyColor : WaitColor;
-            }
+            PaintActivateHint(_mineCooldown, ready, remain, minesFocused);
 
             if (_mineCooldownFill != null)
             {
@@ -429,13 +436,21 @@ namespace TitanOrbit.UI
                 _mineLevelLabels[row].text = $"Lv {mineSlots[i].level}";
                 _mineDetailLabels[row].text = FormatMineDetails(
                     mineSlots[i].level, mineSlots[i].charges, infiniteMines);
+                _mineLevelLabels[row].color = isSel ? LevelColor : LevelDim;
+                _mineDetailLabels[row].color = isSel ? BodyColor : BodyDim;
                 _mineRowBackgrounds[row].color = isSel ? RowSelected : RowIdle;
                 if (_mineRowCarets[row] != null)
                     _mineRowCarets[row].enabled = isSel;
+                if (row < _mineRowOutlines.Count && _mineRowOutlines[row] != null)
+                    _mineRowOutlines[row].enabled = isSel;
             }
 
             for (int i = row; i < _mineRowRoots.Count; i++)
+            {
                 _mineRowRoots[i].SetActive(false);
+                if (i < _mineRowOutlines.Count && _mineRowOutlines[i] != null)
+                    _mineRowOutlines[i].enabled = false;
+            }
 
             return row;
         }
@@ -460,7 +475,7 @@ namespace TitanOrbit.UI
                 _panel.gameObject.SetActive(visible);
         }
 
-        /// <summary>Click a row to select that pack (ALT still fires).</summary>
+        /// <summary>Click a rocket row to focus that pack. ALT then fires it.</summary>
         static void OnRowSelected(int hudIndex)
         {
             if (MoonOrbitClientState.IsOrbitMenuVisible)
@@ -469,7 +484,7 @@ namespace TitanOrbit.UI
             RocketSlotSelection.Select(hudIndex, Mathf.Max(1, hudIndex + 1));
         }
 
-        /// <summary>Click a mine row to select that pack (E still places).</summary>
+        /// <summary>Click a mine row to focus that pack. ALT then places it.</summary>
         static void OnMineRowSelected(int hudIndex)
         {
             if (MoonOrbitClientState.IsOrbitMenuVisible)
@@ -516,7 +531,7 @@ namespace TitanOrbit.UI
             var captionRt = _caption.rectTransform;
             captionRt.offsetMin = new Vector2(6f, captionRt.offsetMin.y);
             captionRt.offsetMax = new Vector2(-6f, captionRt.offsetMax.y);
-            _cooldown = CreateLabel(_panel, "Cooldown", "READY", 11f, ReadyColor, new Vector2(0f, -20f), TextAlignmentOptions.Top);
+            _cooldown = CreateLabel(_panel, "Cooldown", "ALT", 11f, ReadyColor, new Vector2(0f, -20f), TextAlignmentOptions.Top);
             var cooldownRt = _cooldown.rectTransform;
             cooldownRt.offsetMin = new Vector2(6f, cooldownRt.offsetMin.y);
             cooldownRt.offsetMax = new Vector2(-6f, cooldownRt.offsetMax.y);
@@ -540,6 +555,7 @@ namespace TitanOrbit.UI
                 btn.onClick.AddListener(() => OnRowSelected(captured));
                 _rowButtons.Add(btn);
                 _rowBackgrounds.Add(img);
+                _rowOutlines.Add(AddFocusOutline(rowGo));
                 _rowRoots.Add(rowGo);
 
                 var caretGo = new GameObject("Caret", typeof(RectTransform), typeof(Image));
@@ -578,7 +594,7 @@ namespace TitanOrbit.UI
             BuildMineSection(_panel);
         }
 
-        /// <summary>MINES caption, E cooldown bar, and tappable pack tiles under the rockets.</summary>
+        /// <summary>MINES caption, cooldown bar, and tappable pack tiles under the rockets.</summary>
         void BuildMineSection(RectTransform parent)
         {
             _mineHeaderRoot = new GameObject("MineHeader", typeof(RectTransform));
@@ -598,7 +614,7 @@ namespace TitanOrbit.UI
             mineCaptionRt.offsetMax = new Vector2(-6f, mineCaptionRt.offsetMax.y);
 
             _mineCooldown = CreateLabel(
-                headerRt, "MineCooldown", "READY  E", 11f, ReadyColor,
+                headerRt, "MineCooldown", "ALT", 11f, ReadyColor,
                 new Vector2(0f, -18f), TextAlignmentOptions.Top);
             var mineCdRt = _mineCooldown.rectTransform;
             mineCdRt.offsetMin = new Vector2(6f, mineCdRt.offsetMin.y);
@@ -645,6 +661,7 @@ namespace TitanOrbit.UI
                 btn.onClick.AddListener(() => OnMineRowSelected(captured));
                 _mineRowButtons.Add(btn);
                 _mineRowBackgrounds.Add(img);
+                _mineRowOutlines.Add(AddFocusOutline(rowGo));
                 _mineRowRoots.Add(rowGo);
 
                 var caretGo = new GameObject("Caret", typeof(RectTransform), typeof(Image));
@@ -712,6 +729,41 @@ namespace TitanOrbit.UI
             _cooldownFillImage = fillGo.GetComponent<Image>();
             _cooldownFillImage.color = ReadyColor;
             _cooldownFillImage.raycastTarget = false;
+        }
+
+        /// <summary>
+        /// ALT only on the focused section when that pack is ready. Unfocused sections
+        /// still show remaining cooldown so the player can see the other weapon reload,
+        /// but they never advertise a second hotkey.
+        /// </summary>
+        static void PaintActivateHint(TextMeshProUGUI label, bool ready, float remain, bool focused)
+        {
+            if (label == null)
+                return;
+
+            if (!ready)
+            {
+                label.text = $"{remain:0.0}s";
+                label.color = focused ? WaitColor : WaitDim;
+                return;
+            }
+
+            label.text = focused ? "ALT" : string.Empty;
+            label.color = ReadyColor;
+        }
+
+        /// <summary>
+        /// Cyan edge around the focused tile so UP/DOWN / click have a clear caret
+        /// beyond the fill tint. Disabled until that row owns ALT.
+        /// </summary>
+        static Outline AddFocusOutline(GameObject rowGo)
+        {
+            var outline = rowGo.AddComponent<Outline>();
+            outline.effectColor = CaretColor;
+            outline.effectDistance = new Vector2(1.6f, -1.6f);
+            outline.useGraphicAlpha = false;
+            outline.enabled = false;
+            return outline;
         }
 
         /// <summary>Shrinks the fill from the right as remaining cooldown drops.</summary>

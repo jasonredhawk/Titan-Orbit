@@ -10,8 +10,9 @@ using Unity.Transforms;
 namespace TitanOrbit.ECS
 {
     /// <summary>
-    /// Server-authoritative E mine place. Consumes one charge from the selected mine
-    /// equipment slot (unless <see cref="TitanOrbitDebugFlags.InfiniteMines"/>), then
+    /// Server-authoritative mine place (ALT while the loadout caret is on a mine pack).
+    /// Consumes one charge from the selected mine equipment slot
+    /// (unless <see cref="TitanOrbitDebugFlags.InfiniteMines"/>), then
     /// appends a <see cref="DeployedMineElement"/> on the owner ship ghost.
     /// <para>
     /// [TITAN-ORBIT] Drop cooldown comes from <see cref="MineCatalog.LevelStats.deployCooldown"/>.

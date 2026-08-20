@@ -7,7 +7,8 @@ namespace TitanOrbit.Input
 {
     /// <summary>
     /// [UNITY] Cross-platform player input — New Input System actions plus keyboard/mouse fallbacks.
-    /// Feeds ShipInputBridge with move, shoot, aim world position, and toggle flags (space brakes, gem expel).
+    /// Feeds ShipInputBridge with move, shoot, aim world position, ALT (focused
+    /// rocket or mine), and toggle flags (space brakes, gem expel).
     /// Client only — server has no player input handler.
     ///
     /// [TITAN-ORBIT] Left mouse is both "fire weapon" and "click UI". When the pointer sits over a
@@ -27,7 +28,6 @@ namespace TitanOrbit.Input
         private InputAction shootAction;
         private InputAction lookAction;
         private InputAction rocketAction;
-        private InputAction mineAction;
         private InputAction cycleBulletAction;
 
         // Input values
@@ -47,7 +47,6 @@ namespace TitanOrbit.Input
         private PointerEventData _uiPointerEventData;
         private bool moveForwardPressed;
         private bool rocketPressed;
-        private bool minePressed;
         /// <summary>When true, ship decelerates when not holding move. When false, ship floats (no auto-slow). Toggled by CTRL.</summary>
         private bool spaceBrakesEnabled = true;
         /// <summary>Shift held this frame — OVERDRIVE intent (latch); burst also needs RMB thrust.</summary>
@@ -57,8 +56,11 @@ namespace TitanOrbit.Input
         public void ToggleSpaceBrakes() => spaceBrakesEnabled = !spaceBrakesEnabled;
 
         public bool ShootPressed => shootPressed;
+        /// <summary>
+        /// True the frame ALT (or FireRocket) is pressed. <c>ShipInputBridge</c> decides
+        /// whether that activates a rocket or a mine from the loadout caret.
+        /// </summary>
         public bool RocketPressed => rocketPressed;
-        public bool MinePressed => minePressed;
 
         /// <summary>True the frame Up Arrow is pressed — cycle the selected rocket pack backward.</summary>
         public bool CycleRocketUpPressed
@@ -160,7 +162,6 @@ namespace TitanOrbit.Input
                     shootAction = gameplayMap.FindAction("Shoot");
                     lookAction = gameplayMap.FindAction("Look");
                     rocketAction = gameplayMap.FindAction("FireRocket");
-                    mineAction = gameplayMap.FindAction("PlaceMine");
                     cycleBulletAction = gameplayMap.FindAction("CycleBullet");
                 }
             }
@@ -173,7 +174,6 @@ namespace TitanOrbit.Input
             if (shootAction != null) shootAction.Enable();
             if (lookAction != null) lookAction.Enable();
             if (rocketAction != null) rocketAction.Enable();
-            if (mineAction != null) mineAction.Enable();
             if (cycleBulletAction != null) cycleBulletAction.Enable();
         }
 
@@ -184,12 +184,11 @@ namespace TitanOrbit.Input
             if (shootAction != null) shootAction.Disable();
             if (lookAction != null) lookAction.Disable();
             if (rocketAction != null) rocketAction.Disable();
-            if (mineAction != null) mineAction.Disable();
             if (cycleBulletAction != null) cycleBulletAction.Disable();
         }
 
         /// <summary>
-        /// Samples shoot / thrust / brakes / rocket / mine every frame.
+        /// Samples shoot / thrust / brakes / ALT (focused rocket or mine) every frame.
         /// After raw shoot is computed, mouse-origin fire is cleared when the pointer is over UI
         /// so HUD clicks (ability upgrades, etc.) do not fire the weapon.
         /// </summary>
@@ -278,13 +277,6 @@ namespace TitanOrbit.Input
             }
 
             rocketPressed = actionRocket || altRocket;
-
-            // --- Mine place (E) ---
-            // [TITAN-ORBIT] One-shot: WasPressedThisFrame so holding E does not dump the pack.
-            // Keyboard fallback covers missing PlaceMine bindings on the Gameplay map.
-            bool actionMine = mineAction != null && mineAction.WasPressedThisFrame();
-            bool eMine = Keyboard.current != null && Keyboard.current.eKey.wasPressedThisFrame;
-            minePressed = actionMine || eMine;
         }
 
         /// <summary>

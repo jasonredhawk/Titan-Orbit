@@ -38,8 +38,8 @@ namespace TitanOrbit.ECS
         static bool s_fireRocketLatched;
 
         /// <summary>
-        /// [TITAN-ORBIT] Latched E / PlaceMine press. Same reason as FireRocket — Unity
-        /// Update can clear WasPressedThisFrame before GhostInputSystemGroup runs.
+        /// [TITAN-ORBIT] Latched ALT / PlaceMine press (caret on a mine pack). Same reason
+        /// as FireRocket — Unity Update can clear WasPressedThisFrame before GhostInputSystemGroup.
         /// </summary>
         static bool s_placeMineLatched;
 
@@ -115,13 +115,13 @@ namespace TitanOrbit.ECS
         /// <summary>True while a rocket press is waiting to be applied.</summary>
         public static bool FireRocketLatched => s_fireRocketLatched;
 
-        /// <summary>Call when the player presses E (or the mine HUD). Stays true until consumed.</summary>
+        /// <summary>Call when ALT should place the focused mine pack. Stays true until consumed.</summary>
         public static void LatchPlaceMine()
         {
             s_placeMineLatched = true;
         }
 
-        /// <summary>Clears the E latch after ShipInput has been copied onto the local ghost.</summary>
+        /// <summary>Clears the mine latch after ShipInput has been copied onto the local ghost.</summary>
         public static void ConsumePlaceMineLatch()
         {
             s_placeMineLatched = false;

@@ -7,7 +7,7 @@ namespace TitanOrbit.ECS
     /// [TITAN-ORBIT] Separate from <see cref="RocketSlotSelection"/> so a mine pack never
     /// consumes a rocket charge. HUD UP/DOWN walks rockets then mines as one list.
     /// When <see cref="HudFocused"/> is true, ALT places the selected mine instead of firing
-    /// a rocket. E still places a mine either way.
+    /// a rocket. There is no separate mine key — only the focused pack activates.
     /// </summary>
     public static class MineSlotSelection
     {
@@ -16,7 +16,7 @@ namespace TitanOrbit.ECS
 
         /// <summary>
         /// True while the loadout caret is on a mine pack. <c>ShipInputBridge</c> routes ALT
-        /// to PlaceMine so selecting mines does not keep firing rockets.
+        /// to PlaceMine so the focused row is the only thing that activates.
         /// </summary>
         public static bool HudFocused { get; private set; }
 
