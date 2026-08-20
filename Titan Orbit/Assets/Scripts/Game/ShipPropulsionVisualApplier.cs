@@ -442,15 +442,14 @@ namespace TitanOrbit.Game
         bool ResolveThrustHeld(EntityManager em)
         {
             // --- Local owner: prefer pending input (Unity Update button state) ---
-            // [NETCODE] GhostOwnerIsLocal — this machine's predicted ship.
+            // [NETCODE] GhostOwnerIsLocal is enableable and exists on every OwnerPredicted ship.
+            // HasComponent is true on remotes too — only IsComponentEnabled marks this machine's hull.
+            // Without that check, RMB thrust lights every ship's jets while only the owner moves.
             // [TITAN-ORBIT] LocalPlayerShipTag — hybrid host fallback when GhostOwnerIsLocal lags.
             // [TITAN-ORBIT] ShipInputApplySystem skips under ShouldSkipShipEntityQueries
             // (GhostSpawnBacklog). Grinding chips asteroids → gem Instantiates → backlog → ghost
             // ShipInput.Thrust can sit false while the player still holds the button. Pending stays true.
-            bool isLocalOwner =
-                em.HasComponent<GhostOwnerIsLocal>(_shipEntity) ||
-                em.HasComponent<LocalPlayerShipTag>(_shipEntity);
-            if (isLocalOwner && ShipPendingInput.HasValue)
+            if (IsLocalOwnerProxy(em) && ShipPendingInput.HasValue)
                 return ShipPendingInput.Latest.Thrust;
 
             // --- Remotes / fallback: ghost input component ---
@@ -458,6 +457,30 @@ namespace TitanOrbit.Game
                 return em.GetComponentData<ShipInput>(_shipEntity).Thrust;
 
             return false;
+        }
+
+        /// <summary>
+        /// True only for this machine's predicted hull — remotes must use ghosted <see cref="ShipInput"/>.
+        /// </summary>
+        bool IsLocalOwnerProxy(EntityManager em)
+        {
+            if (em.HasComponent<GhostOwnerIsLocal>(_shipEntity) &&
+                em.IsComponentEnabled<GhostOwnerIsLocal>(_shipEntity))
+                return true;
+
+            if (!em.HasComponent<LocalPlayerShipTag>(_shipEntity))
+                return false;
+
+            // Stale tag on a remote must not read local mouse thrust.
+            if (em.HasComponent<GhostOwner>(_shipEntity))
+            {
+                int ownerId = em.GetComponentData<GhostOwner>(_shipEntity).NetworkId;
+                int localId = EcsGameBridge.GetLocalNetworkId();
+                if (localId > 0 && ownerId != localId)
+                    return false;
+            }
+
+            return true;
         }
 
         /// <summary>

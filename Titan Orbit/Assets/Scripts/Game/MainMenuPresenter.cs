@@ -520,6 +520,30 @@ namespace TitanOrbit.Game
             captionTmp.color = StatusColor;
             captionTmp.raycastTarget = false;
 
+            // Sibling of Chip so the × click does not also open the overlay.
+            var clearGo = EnsureChild(rootGo.transform, "Clear", typeof(Image), typeof(Button));
+            var clearRt = clearGo.GetComponent<RectTransform>();
+            clearRt.anchorMin = new Vector2(0.5f, 1f);
+            clearRt.anchorMax = new Vector2(0.5f, 1f);
+            clearRt.pivot = new Vector2(0.5f, 0.5f);
+            clearRt.sizeDelta = new Vector2(28f, 28f);
+            clearRt.anchoredPosition = new Vector2(52f, -8f);
+            var clearImage = clearGo.GetComponent<Image>();
+            clearImage.color = new Color(0.12f, 0.16f, 0.22f, 0.92f);
+            clearImage.raycastTarget = true;
+            var clearMarkGo = EnsureChild(clearGo.transform, "Mark", typeof(TextMeshProUGUI));
+            var clearMarkRt = clearMarkGo.GetComponent<RectTransform>();
+            clearMarkRt.anchorMin = Vector2.zero;
+            clearMarkRt.anchorMax = Vector2.one;
+            clearMarkRt.offsetMin = Vector2.zero;
+            clearMarkRt.offsetMax = Vector2.zero;
+            var clearMark = clearMarkGo.GetComponent<TextMeshProUGUI>();
+            clearMark.text = "×";
+            clearMark.fontSize = 22f;
+            clearMark.alignment = TextAlignmentOptions.Center;
+            clearMark.color = StatusColor;
+            clearMark.raycastTarget = false;
+
             var picker = rootGo.GetComponent<MainMenuBadgePicker>();
             if (picker == null)
                 picker = rootGo.AddComponent<MainMenuBadgePicker>();
@@ -530,6 +554,12 @@ namespace TitanOrbit.Game
             chipBtn.targetGraphic = chipFill;
             chipBtn.onClick.RemoveAllListeners();
             chipBtn.onClick.AddListener(picker.OpenOverlay);
+
+            var clearBtn = clearGo.GetComponent<Button>();
+            clearBtn.transition = Selectable.Transition.ColorTint;
+            clearBtn.targetGraphic = clearImage;
+            clearBtn.onClick.RemoveAllListeners();
+            clearBtn.onClick.AddListener(picker.ClearBadge);
 
             rootGo.SetActive(true);
         }

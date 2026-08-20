@@ -1,4 +1,5 @@
 using TitanOrbit.ECS;
+using TitanOrbit.NetCode;
 using UnityEngine;
 
 namespace TitanOrbit.Game
@@ -22,7 +23,7 @@ namespace TitanOrbit.Game
         /// <summary>Reads the saved badge id, or <see cref="PlayerBadgeIdUtil.None"/> when missing / invalid.</summary>
         public static int Get()
         {
-            int raw = PlayerPrefs.GetInt(PrefsKey, PlayerBadgeIdUtil.None);
+            int raw = PlayerPrefs.GetInt(InstancePrefsKey, PlayerBadgeIdUtil.None);
             return PlayerBadgeIdUtil.Sanitize(raw);
         }
 
@@ -33,8 +34,10 @@ namespace TitanOrbit.Game
         public static void Set(int badgeId)
         {
             int cleaned = PlayerBadgeIdUtil.Sanitize(badgeId);
-            PlayerPrefs.SetInt(PrefsKey, cleaned);
+            PlayerPrefs.SetInt(InstancePrefsKey, cleaned);
             PlayerPrefs.Save();
         }
+
+        static string InstancePrefsKey => TitanOrbitPlayModeUtility.GetInstancePlayerPrefsKey(PrefsKey);
     }
 }

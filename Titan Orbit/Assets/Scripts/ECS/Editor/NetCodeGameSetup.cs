@@ -156,12 +156,55 @@ namespace TitanOrbit.ECS.Editor
         [MenuItem("Titan Orbit/Configure Multiplayer For MPPM (2 Players)")]
         public static void ConfigureMultiplayerForMppmTwoPlayers()
         {
-            ApplyDedicatedJoinNetCodePrefs();
-            ForceMppmScenarioClientRoles();
+            ApplyTestMode();
+            ForceMppmLocalTwoPlayerRoles();
             MppmBuildProfileSetup.CreateMppmClientBuildProfile();
         }
 
         const string MppmScenarioPath = "Assets/Settings/PlayMode/TitanOrbitServer.asset";
+
+        /// <summary>
+        /// Local two-window play: Main Editor = ClientAndServer (hosts), additional clones = Client.
+        /// Player 2 Role=Server launches <c>-standaloneBuildSubtarget Server</c> and Join Team fails.
+        /// </summary>
+        public static void ForceMppmLocalTwoPlayerRoles()
+        {
+            // Flags enum: Client=1, Server=2, ClientAndServer=3. (1 is Client, not Server.)
+            const int roleClientAndServer = 3;
+            const int roleClient = 1;
+
+            var asset = AssetDatabase.LoadMainAssetAtPath(MppmScenarioPath);
+            if (asset == null)
+            {
+                Debug.LogWarning("[NetCodeGameSetup] MPPM scenario missing at " + MppmScenarioPath);
+            }
+            else
+            {
+                var so = new SerializedObject(asset);
+                var mainRole = so.FindProperty("m_MainEditorInstance.m_Role");
+                if (mainRole != null)
+                    mainRole.intValue = roleClientAndServer;
+
+                var editors = so.FindProperty("m_EditorInstances");
+                if (editors != null && editors.isArray)
+                {
+                    for (int i = 0; i < editors.arraySize; i++)
+                    {
+                        var role = editors.GetArrayElementAtIndex(i).FindPropertyRelative("m_Role");
+                        if (role != null)
+                            role.intValue = roleClient;
+                    }
+                }
+
+                so.ApplyModifiedPropertiesWithoutUndo();
+                EditorUtility.SetDirty(asset);
+                AssetDatabase.SaveAssets();
+                Debug.Log("[NetCodeGameSetup] MPPM scenario: Main=ClientAndServer, clones=Client: " +
+                          MppmScenarioPath);
+            }
+
+            ForceMppmSystemDataClientRoles(roleClient);
+        }
 
         /// <summary>
         /// Forces Main Editor + Player 2 Multiplayer Role = Client on the scenario asset AND
@@ -170,10 +213,8 @@ namespace TitanOrbit.ECS.Editor
         /// </summary>
         public static void ForceMppmScenarioClientRoles()
         {
-            // Runtime evidence (basics45/46): SystemData MultiplayerRole 1 → Player 2
-            // launches with -standaloneBuildSubtarget Server (TitanOrbitDedicatedServer.log).
-            // Role values: Server=1, Client=2, ClientAndServer=3.
-            const int roleClient = 2;
+            // Flags enum: Client=1, Server=2, ClientAndServer=3.
+            const int roleClient = 1;
 
             // --- Scenario asset (source checked into Assets/Settings/PlayMode) ---
             var asset = AssetDatabase.LoadMainAssetAtPath(MppmScenarioPath);
@@ -213,7 +254,7 @@ namespace TitanOrbit.ECS.Editor
         /// <summary>
         /// Patches <c>Library/VP/SystemData.json</c> so active Main Editor + Player 2 use Client role.
         /// </summary>
-        /// <param name="roleClient">Integer for Client (Unity MultiplayerRoleFlags / scenario: 2).</param>
+        /// <param name="roleClient">Integer for Client (Unity flags enum: Client=1, Server=2).</param>
         static void ForceMppmSystemDataClientRoles(int roleClient)
         {
             // Library/VP lives next to Assets (project root), not in the git repo root.
@@ -227,20 +268,20 @@ namespace TitanOrbit.ECS.Editor
             }
 
             string json = File.ReadAllText(systemDataPath);
-            // [STANDARD] Targeted replace: only Server (1) → Client (2). Leave ClientAndServer (3) alone.
+            // Only Server (2) → Client (1). Leave Client (1) and ClientAndServer (3) alone.
             string patched = System.Text.RegularExpressions.Regex.Replace(
                 json,
-                "\"MultiplayerRole\"\\s*:\\s*1\\b",
+                "\"MultiplayerRole\"\\s*:\\s*2\\b",
                 "\"MultiplayerRole\": " + roleClient);
 
             if (patched == json)
             {
-                Debug.Log("[NetCodeGameSetup] MPPM SystemData.json already has no Server roles (no Role=1).");
+                Debug.Log("[NetCodeGameSetup] MPPM SystemData.json already has no Server roles (no Role=2).");
                 return;
             }
 
             File.WriteAllText(systemDataPath, patched);
-            Debug.Log("[NetCodeGameSetup] MPPM SystemData.json MultiplayerRole Server(1) → Client(" +
+            Debug.Log("[NetCodeGameSetup] MPPM SystemData.json MultiplayerRole Server(2) → Client(" +
                       roleClient + "): " + systemDataPath);
         }
 

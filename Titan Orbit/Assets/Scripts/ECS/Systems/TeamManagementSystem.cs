@@ -174,6 +174,17 @@ namespace TitanOrbit.ECS
             if (client == null || !client.IsCreated || server == null || !server.IsCreated)
                 return false;
 
+            // Only the in-process host client may skip SendRpc. MPPM / LAN Player 2 is a
+            // different NetworkId — swallowing their result left Join Team stuck on the clone
+            // (host already confirmed, so this used to return true and never deliver the RPC).
+            if (!TryReadClientWorldNetworkId(client, out int localId) || localId != networkId)
+            {
+                Debug.Log(
+                    $"[TeamManagementSystem] TeamChoiceResult will SendRpc (remote client) " +
+                    $"networkId={networkId} localHostId={localId}.");
+                return false;
+            }
+
             // Already confirmed / deferred — ignore duplicate retries.
             if (ClientTeamFlowState.TeamChoiceConfirmed
                 || ClientTeamFlowState.HasDeferredTeamChoiceConfirmPending)
@@ -440,6 +451,26 @@ namespace TitanOrbit.ECS
             }
 
             return gamePrefabsShip;
+        }
+
+        /// <summary>In-process ClientWorld NetworkId, or false when this process is server-only / not in-game.</summary>
+        static bool TryReadClientWorldNetworkId(World client, out int networkId)
+        {
+            networkId = 0;
+            if (client == null || !client.IsCreated)
+                return false;
+
+            var em = client.EntityManager;
+            using var ids = em.CreateEntityQuery(
+                    ComponentType.ReadOnly<NetworkStreamConnection>(),
+                    ComponentType.ReadOnly<NetworkStreamInGame>(),
+                    ComponentType.ReadOnly<NetworkId>())
+                .ToComponentDataArray<NetworkId>(Allocator.Temp);
+            if (ids.Length == 0 || ids[0].Value <= 0)
+                return false;
+
+            networkId = ids[0].Value;
+            return true;
         }
 
         /// <summary>Reads LocalTransform of the ship owned by <paramref name="networkId"/> when present.</summary>

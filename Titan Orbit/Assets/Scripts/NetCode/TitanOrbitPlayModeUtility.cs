@@ -11,10 +11,13 @@ namespace TitanOrbit.NetCode
     public static class TitanOrbitPlayModeUtility
     {
         const string ServerBuildSubtargetWarning =
-            "[TitanOrbitPlayMode] MPPM clone is using a Dedicated SERVER build (buildSubTarget=Server). " +
-            "NetCode ghost schemas will not match the main Editor host.\n\n" +
-            "Fix: In Window > Play Mode > Scenarios, set the additional instance Multiplayer Role to Client " +
-            "(not Server). Then Play from the Main Editor only.";
+            "[TitanOrbitPlayMode] This extra Editor was launched with -standaloneBuildSubtarget Server. " +
+            "UNITY_SERVER is defined, so NetCode ghost schemas will not match the main Editor.\n\n" +
+            "Player 2's Scenarios Multiplayer Role can already be Client — this flag is copied from " +
+            "the Main Editor build platform, not from that dropdown.\n\n" +
+            "Fix: File > Build Profiles → Windows Player (not Dedicated Server, not WebGL). " +
+            "Then in Window > Play Mode > Scenarios, toggle Player 2 off and on so the clone relaunches. " +
+            "Play from the Main Editor only.";
 
         /// <summary>True when launched via MPPM --virtual-project-clone (not main editor).</summary>
         public static bool IsMppmAdditionalEditorInstance()
@@ -84,6 +87,32 @@ namespace TitanOrbit.NetCode
             }
 
             return 1;
+        }
+
+        /// <summary>
+        /// PlayerPrefs key unique to this Editor instance. MPPM clones share the same registry
+        /// store as the main Editor — without a suffix, Player 2 typing a name overwrites Player 1.
+        /// </summary>
+        public static string GetInstancePlayerPrefsKey(string baseKey)
+        {
+            if (string.IsNullOrEmpty(baseKey))
+                return baseKey;
+
+#if UNITY_EDITOR
+            if (IsMppmAdditionalEditorInstance())
+                return baseKey + "_P" + GetMppmPlayerNumber();
+#endif
+            return baseKey;
+        }
+
+        /// <summary>Default Main Menu name for this instance ("Player 2" on the MPPM clone).</summary>
+        public static string GetInstanceDefaultDisplayName(string fallback)
+        {
+#if UNITY_EDITOR
+            if (IsMppmAdditionalEditorInstance())
+                return "Player " + GetMppmPlayerNumber();
+#endif
+            return fallback;
         }
 
         public static TeamId GetSuggestedTeamForMppmPlayer()

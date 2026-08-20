@@ -259,6 +259,14 @@ namespace TitanOrbit.NetCode
         static void ResumeEditorLocalServerForLocalPlay()
         {
 #if UNITY_EDITOR
+            // MPPM Player 2+ joins the main Editor host. Recreating ServerWorld here generates a
+            // second map in this process; RequestTeam / visuals then talk to the wrong world.
+            if (TitanOrbitPlayModeUtility.IsMppmAdditionalEditorInstance())
+            {
+                Debug.Log("[TitanOrbitSessionManager] MPPM clone — skipped ServerWorld recreate (join the main Editor host).");
+                return;
+            }
+
             // basics41: a Local Host recreate ran while Relay join was active (Recreated → Disposed
             // ~4s later, ServerWorld wall-clock probe during dedicated play). Never rebuild server
             // while this process is a dedicated online / Relay client.
@@ -370,6 +378,16 @@ namespace TitanOrbit.NetCode
                 yield return ClearNetworkConnections(client);
             }
 
+            // MPPM clones must stay client-only. A leftover ServerWorld from a previous Local
+            // client click would generate a second map and steal RequestTeam from the host.
+            if (TitanOrbitPlayModeUtility.IsMppmAdditionalEditorInstance())
+            {
+                DisposeMppmCloneServerWorldIfPresent();
+                if (resetNetworkDrivers)
+                    ResetClientDriverIfNeeded();
+                yield break;
+            }
+
             if (server != null && server.IsCreated)
             {
                 ClearNetworkStreamInGame(server);
@@ -381,6 +399,17 @@ namespace TitanOrbit.NetCode
                 ResetClientDriverIfNeeded();
                 ResetServerDriverIfNeeded();
             }
+        }
+
+        /// <summary>Drops a clone-local ServerWorld so Player 2 cannot host a second LAN map.</summary>
+        static void DisposeMppmCloneServerWorldIfPresent()
+        {
+            var server = ClientServerBootstrap.ServerWorld;
+            if (server == null || !server.IsCreated)
+                return;
+
+            Debug.Log("[TitanOrbitSessionManager] MPPM clone — disposing leftover ServerWorld (this window is client-only).");
+            server.Dispose();
         }
 
         /// <summary>[UNITY_SERVER] True when this process should run headless dedicated boot (no client UI).</summary>
@@ -2361,9 +2390,12 @@ namespace TitanOrbit.NetCode
             // [NETCODE] IPC: NetworkTimeSystem uses TargetCommandSlack=0 and 1-tick RTT. UDP loopback
             // was leaving ServerCommandAge ≈ +24 and metronomic 12-tick prediction snaps.
             // Prefer IPC when an in-process ServerWorld is listening (Local Host).
+            // MPPM Player 2+ must use UDP loopback — IPC in that process is the clone's own
+            // leftover ServerWorld, not the main Editor host.
             NetworkEndpoint endpoint = NetworkEndpoint.LoopbackIpv4.WithPort(port);
+            bool mppmClone = TitanOrbitPlayModeUtility.IsMppmAdditionalEditorInstance();
             var server = ClientServerBootstrap.ServerWorld;
-            if (server != null && server.IsCreated)
+            if (!mppmClone && server != null && server.IsCreated)
             {
                 using var serverQ = server.EntityManager.CreateEntityQuery(typeof(NetworkStreamDriver));
                 if (serverQ.TryGetSingleton(out NetworkStreamDriver serverDriver))
@@ -2380,6 +2412,9 @@ namespace TitanOrbit.NetCode
                     }
                 }
             }
+
+            Debug.Log("[TitanOrbitSessionManager] ConnectLocalClient " + endpoint +
+                      (mppmClone ? " (MPPM clone — UDP to host)" : " (Local Host IPC if available)"));
 
             var driver = em.CreateEntityQuery(typeof(NetworkStreamDriver)).GetSingletonRW<NetworkStreamDriver>();
             driver.ValueRW.Connect(em, endpoint);
@@ -2615,6 +2650,10 @@ namespace TitanOrbit.NetCode
         {
             // Dedicated Relay clients never inject onto a local ServerWorld.
             if (IsDedicatedOnlineClient)
+                return false;
+
+            // MPPM Player 2+ must SendRpc to the main Editor host, even if a leftover ServerWorld exists.
+            if (TitanOrbitPlayModeUtility.IsMppmAdditionalEditorInstance())
                 return false;
 
             var client = ClientServerBootstrap.ClientWorld;

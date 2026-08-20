@@ -1,4 +1,5 @@
 using TitanOrbit.ECS;
+using TitanOrbit.NetCode;
 using UnityEngine;
 
 namespace TitanOrbit.Game
@@ -29,10 +30,12 @@ namespace TitanOrbit.Game
         /// </summary>
         public static string Get()
         {
-            // --- Load + sanitize ---
-            string raw = PlayerPrefs.GetString(PrefsKey, string.Empty);
+            // --- Load + sanitize (MPPM clones use a separate prefs key) ---
+            string raw = PlayerPrefs.GetString(InstancePrefsKey, string.Empty);
             string cleaned = Sanitize(raw);
-            return string.IsNullOrEmpty(cleaned) ? DefaultName : cleaned;
+            return string.IsNullOrEmpty(cleaned)
+                ? TitanOrbitPlayModeUtility.GetInstanceDefaultDisplayName(DefaultName)
+                : cleaned;
         }
 
         /// <summary>
@@ -46,9 +49,11 @@ namespace TitanOrbit.Game
             if (string.IsNullOrEmpty(cleaned))
                 cleaned = DefaultName;
 
-            PlayerPrefs.SetString(PrefsKey, cleaned);
+            PlayerPrefs.SetString(InstancePrefsKey, cleaned);
             PlayerPrefs.Save();
         }
+
+        static string InstancePrefsKey => TitanOrbitPlayModeUtility.GetInstancePlayerPrefsKey(PrefsKey);
 
         /// <summary>
         /// Trims whitespace, strips control characters, and caps length for NetCode FixedString use.

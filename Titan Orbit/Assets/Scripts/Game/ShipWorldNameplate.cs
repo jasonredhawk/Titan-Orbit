@@ -32,8 +32,13 @@ namespace TitanOrbit.Game
     /// The label root is unparented so text/bars stay world-upright. Fully moon-docked ships hide
     /// the plate until takeoff.
     /// </para>
+    /// <para>
+    /// Health / gem / troop bars are 9-sliced sprites with a 1-texel transparent rim (bilinear AA)
+    /// and no motion vectors. Hard 1×1 quads crawled along pixel edges while the camera moved;
+    /// TMP names stay SDF so they did not show the same shimmer.
+    /// </para>
     /// </summary>
-    [DefaultExecutionOrder(120)]
+    [DefaultExecutionOrder(67002)]
     public sealed class ShipWorldNameplate : MonoBehaviour
     {
         // --- Visual constants ---
@@ -109,13 +114,22 @@ namespace TitanOrbit.Game
         const float HealthHighRatio = 2f / 3f;
         const float HealthLowRatio = 1f / 3f;
 
-        /// <summary>Discrete fill steps across the bar — reduces subpixel edge shimmer while moving.</summary>
+        /// <summary>Discrete fill steps across the bar — fill amount stays put unless vitals change.</summary>
         const int BarFillQuantizeSteps = 128;
+
+        /// <summary>
+        /// Pixels-per-unit of the 8×8 bar sprite. 1px rim ÷ this = local-unit AA width (~0.6 screen
+        /// pixels at typical follow height) so the silhouette is soft enough not to crawl.
+        /// </summary>
+        const float BarSpritePpu = 8f;
+
+        /// <summary>1px transparent rim on each side — sliced size cannot shrink below this.</summary>
+        const float BarSliceMinWidth = 2f / BarSpritePpu;
 
         /// <summary>
         /// Bump when row spacing / fonts / clearance policy change so live proxies refresh layout.
         /// </summary>
-        const int LayoutVersion = 19;
+        const int LayoutVersion = 20;
 
         /// <summary>Max name characters before width-fit (wider plate allows longer names).</summary>
         const int MaxNameCharacters = 28;
@@ -139,6 +153,7 @@ namespace TitanOrbit.Game
         static readonly Vector3 ScreenBelowWorld = new Vector3(0f, 0f, -1f);
 
         static Sprite s_WhiteSprite;
+        static Sprite s_BarSprite;
         static Material s_PlayerBadgeMaterial;
         static readonly StringBuilder s_NameScratch = new StringBuilder(32);
 
@@ -366,9 +381,11 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// After attribute-scale LateUpdate — follow the ship with a <b>fixed</b> clearance
-        /// from the widest hull dimension. Clearance only recalculates when the ship grows
-        /// (ability upgrades / root scale), not when it yaws.
+        /// After hybrid ship pose (66000) and <see cref="CameraFollowEcs"/> (67001) — follow the
+        /// hull with a <b>fixed</b> clearance from the widest dimension. Posing earlier wrote the
+        /// plate against last-frame ship position, then the visualizer moved the hull; thin bar
+        /// edges picked that up as a one-pixel crawl. Clearance only recalculates when the ship
+        /// grows (ability upgrades / root scale), not when it yaws.
         /// </summary>
         void LateUpdate()
         {
@@ -907,17 +924,19 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Sets fill width from a 0–1 ratio. Empty bars hide the fill renderer entirely —
-        /// a leftover min-width scale left a colored speck that flickered while flying.
+        /// Sets sliced fill width from a 0–1 ratio. Empty bars hide the fill renderer entirely —
+        /// a leftover min-width sliver flickered while flying. Size (not scale) keeps the 9-slice
+        /// AA rim a constant local width so the leading edge does not stretch into a smear.
         /// </summary>
         static void SetBarRatio(ref ThinBar bar, float ratio, ref float cached, Color fillColor)
         {
             if (bar.Fill == null || bar.FillRenderer == null)
                 return;
 
-            // Quantize fill so the leading edge sits on stable steps (less crawl while moving).
+            // Quantize fill so the leading edge sits on stable steps (not every float vital tick).
             float qRatio = Mathf.Round(Mathf.Clamp01(ratio) * BarFillQuantizeSteps) / BarFillQuantizeSteps;
-            bool showFill = qRatio > 0f;
+            float fillW = ContentWidth * qRatio;
+            bool showFill = fillW >= BarSliceMinWidth;
 
             if (Mathf.Abs(qRatio - cached) < 0.0001f
                 && bar.FillRenderer.enabled == showFill
@@ -926,22 +945,23 @@ namespace TitanOrbit.Game
 
             cached = qRatio;
 
-            // --- Empty: hide fill (do not leave a 0.001-wide colored sliver) ---
-            // [TITAN-ORBIT] While the camera moves, subpixel sampling of a tiny SpriteRenderer
-            // fill reads as blinking colored artifacts on gem/people bars at 0.
+            // --- Empty: hide fill (do not leave a colored sliver narrower than the AA rim) ---
+            // [TITAN-ORBIT] While the camera moves, a tiny SpriteRenderer fill reads as blinking
+            // colored artifacts on gem/people bars at 0.
             if (!showFill)
             {
                 bar.FillRenderer.enabled = false;
-                bar.Fill.localScale = new Vector3(0.001f, BarHeight, 1f);
+                bar.Fill.localScale = Vector3.one;
                 bar.Fill.localPosition = new Vector3(-ContentWidth * 0.5f, 0f, 0f);
+                bar.FillRenderer.size = new Vector2(BarSliceMinWidth, BarHeight);
                 return;
             }
 
-            // --- Non-empty: left-aligned fill inside the track ---
-            float fillW = ContentWidth * qRatio;
+            // --- Non-empty: left-aligned sliced fill inside the track ---
             bar.FillRenderer.enabled = true;
-            bar.Fill.localScale = new Vector3(fillW, BarHeight, 1f);
+            bar.Fill.localScale = Vector3.one;
             bar.Fill.localPosition = new Vector3((-ContentWidth + fillW) * 0.5f, 0f, 0f);
+            bar.FillRenderer.size = new Vector2(fillW, BarHeight);
             bar.FillRenderer.color = fillColor;
         }
 
@@ -1044,40 +1064,48 @@ namespace TitanOrbit.Game
 
             Transform bg = bar.Root.Find("Bg");
             if (bg != null)
-                bg.localScale = new Vector3(ContentWidth, BarHeight, 1f);
+            {
+                bg.localScale = Vector3.one;
+                var bgSr = bg.GetComponent<SpriteRenderer>();
+                ApplyBarRendererStyle(bgSr, BarSortingOrder);
+                if (bgSr != null)
+                    bgSr.size = new Vector2(ContentWidth, BarHeight);
+            }
 
-            // Keep height in sync; width/visibility come from SetBarRatio (do not force a speck).
+            // Height / sliced mode only — SetBarRatio owns width/visibility (avoids a full-width flash).
             if (bar.Fill != null)
             {
-                Vector3 s = bar.Fill.localScale;
-                bar.Fill.localScale = new Vector3(Mathf.Max(0.001f, s.x), BarHeight, 1f);
+                bar.Fill.localScale = Vector3.one;
+                ApplyBarRendererStyle(bar.FillRenderer, BarSortingOrder + 1);
+                if (bar.FillRenderer != null)
+                {
+                    float w = Mathf.Max(BarSliceMinWidth, bar.FillRenderer.size.x);
+                    bar.FillRenderer.size = new Vector2(w, BarHeight);
+                }
             }
         }
 
         static ThinBar CreateThinBar(Transform parent, string name)
         {
             // --- Bg + fill only (no white outline rim) ---
-            Sprite sprite = GetWhiteSprite();
             var rootGo = new GameObject(name);
             rootGo.transform.SetParent(parent, false);
 
             var bgGo = new GameObject("Bg");
             bgGo.transform.SetParent(rootGo.transform, false);
-            bgGo.transform.localScale = new Vector3(ContentWidth, BarHeight, 1f);
             var bgSr = bgGo.AddComponent<SpriteRenderer>();
-            bgSr.sprite = sprite;
             bgSr.color = BarBgColor;
-            bgSr.sortingOrder = BarSortingOrder;
+            ApplyBarRendererStyle(bgSr, BarSortingOrder);
+            bgSr.size = new Vector2(ContentWidth, BarHeight);
 
             var fillGo = new GameObject("Fill");
             fillGo.transform.SetParent(rootGo.transform, false);
             // Start hidden at left edge — SetBarRatio enables + sizes on first vitals sync.
-            fillGo.transform.localScale = new Vector3(0.001f, BarHeight, 1f);
             fillGo.transform.localPosition = new Vector3(-ContentWidth * 0.5f, 0f, 0f);
             var fillSr = fillGo.AddComponent<SpriteRenderer>();
-            fillSr.sprite = sprite;
             fillSr.color = HealthFillFull;
-            fillSr.sortingOrder = BarSortingOrder + 1;
+            ApplyBarRendererStyle(fillSr, BarSortingOrder + 1);
+            fillSr.size = new Vector2(BarSliceMinWidth, BarHeight);
             fillSr.enabled = false;
 
             return new ThinBar
@@ -1101,15 +1129,26 @@ namespace TitanOrbit.Game
 
             Transform bg = root.Find("Bg");
             if (bg != null)
-                bg.localScale = new Vector3(ContentWidth, BarHeight, 1f);
+            {
+                bg.localScale = Vector3.one;
+                var bgSr = bg.GetComponent<SpriteRenderer>();
+                ApplyBarRendererStyle(bgSr, BarSortingOrder);
+                if (bgSr != null)
+                    bgSr.size = new Vector2(ContentWidth, BarHeight);
+            }
 
             Transform fill = root.Find("Fill");
             SpriteRenderer fillSr = fill != null ? fill.GetComponent<SpriteRenderer>() : null;
             if (fill != null)
             {
-                // Height only — SetBarRatio owns width/visibility (avoids a full-width flash).
-                Vector3 s = fill.localScale;
-                fill.localScale = new Vector3(Mathf.Max(0.001f, s.x), BarHeight, 1f);
+                // Height / sliced mode only — SetBarRatio owns width/visibility (avoids a full-width flash).
+                fill.localScale = Vector3.one;
+                ApplyBarRendererStyle(fillSr, BarSortingOrder + 1);
+                if (fillSr != null)
+                {
+                    float w = Mathf.Max(BarSliceMinWidth, fillSr.size.x);
+                    fillSr.size = new Vector2(w, BarHeight);
+                }
             }
 
             return new ThinBar
@@ -1392,8 +1431,73 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// 1×1 white sprite with point filtering — bilinear on a stretched bar softens edges
-        /// and makes them crawl under camera/ship motion.
+        /// Shared look for health / gem / troop tracks: 9-sliced AA sprite, no motion vectors.
+        /// [UNITY] TAA reprojects per-object motion; thin world quads write noisy vectors and
+        /// shimmer. ForceNoMotion treats them as HUD chrome (camera motion only).
+        /// </summary>
+        static void ApplyBarRendererStyle(SpriteRenderer renderer, int sortingOrder)
+        {
+            if (renderer == null)
+                return;
+
+            renderer.sprite = GetBarSprite();
+            renderer.drawMode = SpriteDrawMode.Sliced;
+            renderer.sortingOrder = sortingOrder;
+            renderer.shadowCastingMode = ShadowCastingMode.Off;
+            renderer.receiveShadows = false;
+            renderer.allowOcclusionWhenDynamic = false;
+            renderer.motionVectorGenerationMode = MotionVectorGenerationMode.ForceNoMotion;
+        }
+
+        /// <summary>
+        /// 8×8 white sprite with a 1px transparent rim and 9-slice borders. Bilinear filtering
+        /// turns that rim into a 1-texel AA so bar edges do not crawl while the camera moves.
+        /// Stretching a 1×1 point sprite made the silhouette a hard mesh edge (the old jiggle).
+        /// </summary>
+        static Sprite GetBarSprite()
+        {
+            if (s_BarSprite != null)
+                return s_BarSprite;
+
+            const int dim = 8;
+            var tex = new Texture2D(dim, dim, TextureFormat.RGBA32, false);
+            tex.name = "ShipNameplateBarTex_v2";
+            tex.filterMode = FilterMode.Bilinear;
+            tex.wrapMode = TextureWrapMode.Clamp;
+            tex.anisoLevel = 0;
+
+            var pixels = new Color32[dim * dim];
+            var clear = new Color32(255, 255, 255, 0);
+            var solid = new Color32(255, 255, 255, 255);
+            for (int y = 0; y < dim; y++)
+            {
+                for (int x = 0; x < dim; x++)
+                {
+                    bool rim = x == 0 || y == 0 || x == dim - 1 || y == dim - 1;
+                    pixels[y * dim + x] = rim ? clear : solid;
+                }
+            }
+
+            tex.SetPixels32(pixels);
+            tex.Apply(false, true);
+
+            // [UNITY] FullRect + 1px borders so SpriteDrawMode.Sliced keeps the AA rim a fixed
+            // local width instead of stretching it with the fill.
+            s_BarSprite = Sprite.Create(
+                tex,
+                new Rect(0f, 0f, dim, dim),
+                new Vector2(0.5f, 0.5f),
+                BarSpritePpu,
+                0,
+                SpriteMeshType.FullRect,
+                new Vector4(1f, 1f, 1f, 1f));
+            s_BarSprite.name = "ShipNameplateBarSprite_v2";
+            return s_BarSprite;
+        }
+
+        /// <summary>
+        /// 1×1 white sprite with point filtering — role slots and the full-version strip stay
+        /// solid (they are not thin tracks, so a hard edge reads cleaner than a fade).
         /// </summary>
         static Sprite GetWhiteSprite()
         {

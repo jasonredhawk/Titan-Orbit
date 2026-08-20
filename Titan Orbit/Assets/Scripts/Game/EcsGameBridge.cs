@@ -899,6 +899,10 @@ namespace TitanOrbit.Game
             if (TitanOrbitSessionManager.IsDedicatedOnlineClient)
                 return false;
 
+            // MPPM Player 2+ is always a remote client of the main Editor host.
+            if (TitanOrbit.NetCode.TitanOrbitPlayModeUtility.IsMppmAdditionalEditorInstance())
+                return false;
+
             return ClientWorld != null && ClientWorld.IsCreated && ServerWorld != null && ServerWorld.IsCreated &&
                    TitanOrbitSessionManager.IsClientGameplayReady(ClientWorld) &&
                    TitanOrbitSessionManager.IsClientConnectionReady(ServerWorld);

@@ -1,6 +1,7 @@
 #if UNITY_EDITOR
 using System;
 using System.IO;
+using TitanOrbit.NetCode;
 using UnityEditor;
 using UnityEditor.Build;
 using UnityEditor.Build.Reporting;
@@ -50,6 +51,10 @@ namespace TitanOrbit.ECS.Editor
         [InitializeOnLoadMethod]
         static void AutoApplyPatchOnEditorLoad()
         {
+            // Clone dataPath is Library/VP/... — patch source lives in the main project.
+            if (TitanOrbitPlayModeUtility.IsMppmAdditionalEditorInstance())
+                return;
+
             try
             {
                 if (TryEnsurePatched(out string detail, forceRefresh: true))

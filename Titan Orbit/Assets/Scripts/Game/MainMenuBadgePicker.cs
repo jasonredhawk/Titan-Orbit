@@ -67,8 +67,18 @@ namespace TitanOrbit.Game
             if (_chipRing != null)
                 _chipRing.color = Color.clear;
 
+            Transform clearTf = transform.Find("Clear");
+            if (clearTf != null)
+                clearTf.gameObject.SetActive(hasSprite);
+
             if (_caption != null)
-                _caption.text = hasSprite ? "Change badge" : "Choose a badge";
+                _caption.text = hasSprite ? "Change badge" : "No badge";
+        }
+
+        /// <summary>Saves no emblem and closes the overlay if it is open.</summary>
+        public void ClearBadge()
+        {
+            SelectBadge(PlayerBadgeIdUtil.None);
         }
 
         /// <summary>Opens the full-grid overlay (chip click).</summary>
@@ -108,6 +118,7 @@ namespace TitanOrbit.Game
             if (existing != null)
             {
                 _overlayRoot = existing.GetComponent<RectTransform>();
+                EnsureFooterButtons();
                 return;
             }
 
@@ -207,37 +218,81 @@ namespace TitanOrbit.Game
             scroll.movementType = ScrollRect.MovementType.Clamped;
             scroll.scrollSensitivity = 28f;
 
-            // --- Cancel ---
-            var cancelGo = CreateUi("Cancel", panelGo.transform, typeof(Image), typeof(Button));
+            EnsureFooterButtons();
+        }
+
+        /// <summary>
+        /// Always-visible Off / Cancel row so clearing a badge does not depend on finding
+        /// the first grid cell among hundreds of sprites.
+        /// </summary>
+        void EnsureFooterButtons()
+        {
+            if (_overlayRoot == null)
+                return;
+
+            Transform panel = _overlayRoot.Find("Panel");
+            if (panel == null)
+                return;
+
+            const float buttonW = 200f;
+            const float buttonH = 44f;
+            const float buttonY = 14f;
+
+            Transform noneTf = panel.Find("NoBadge");
+            GameObject noneGo = noneTf != null
+                ? noneTf.gameObject
+                : CreateUi("NoBadge", panel, typeof(Image), typeof(Button));
+            var noneRt = noneGo.GetComponent<RectTransform>();
+            noneRt.anchorMin = new Vector2(0.5f, 0f);
+            noneRt.anchorMax = new Vector2(0.5f, 0f);
+            noneRt.pivot = new Vector2(0.5f, 0f);
+            noneRt.sizeDelta = new Vector2(buttonW, buttonH);
+            noneRt.anchoredPosition = new Vector2(-118f, buttonY);
+            var noneBtn = noneGo.GetComponent<Button>();
+            noneBtn.onClick.RemoveAllListeners();
+            noneBtn.onClick.AddListener(ClearBadge);
+            MainMenuPresenter.StyleGameObjectAsMenuButton(noneGo, "No badge", buttonH, buttonW);
+
+            Transform cancelTf = panel.Find("Cancel");
+            GameObject cancelGo = cancelTf != null
+                ? cancelTf.gameObject
+                : CreateUi("Cancel", panel, typeof(Image), typeof(Button));
             var cancelRt = cancelGo.GetComponent<RectTransform>();
             cancelRt.anchorMin = new Vector2(0.5f, 0f);
             cancelRt.anchorMax = new Vector2(0.5f, 0f);
             cancelRt.pivot = new Vector2(0.5f, 0f);
-            cancelRt.sizeDelta = new Vector2(220f, 44f);
-            cancelRt.anchoredPosition = new Vector2(0f, 14f);
-            var cancelImage = cancelGo.GetComponent<Image>();
-            cancelImage.color = new Color(0.22f, 0.33f, 0.42f, 0.85f);
+            cancelRt.sizeDelta = new Vector2(buttonW, buttonH);
+            cancelRt.anchoredPosition = new Vector2(118f, buttonY);
             var cancelBtn = cancelGo.GetComponent<Button>();
+            cancelBtn.onClick.RemoveAllListeners();
             cancelBtn.onClick.AddListener(CancelOverlay);
-            MainMenuPresenter.StyleGameObjectAsMenuButton(cancelGo, "Cancel", 44f, 220f);
+            MainMenuPresenter.StyleGameObjectAsMenuButton(cancelGo, "Cancel", buttonH, buttonW);
         }
 
         void EnsureGrid()
         {
-            if (_gridBuilt || _overlayRoot == null)
+            if (_overlayRoot == null)
                 return;
 
             Transform content = _overlayRoot.Find("Panel/Scroll/Viewport/Content");
             if (content == null)
                 return;
 
-            if (content.childCount > 0)
+            Transform noneTile = content.Find("Badge_" + PlayerBadgeIdUtil.None);
+            if (noneTile == null)
+            {
+                CreateTile(content, PlayerBadgeIdUtil.None, null);
+                noneTile = content.Find("Badge_" + PlayerBadgeIdUtil.None);
+            }
+
+            if (noneTile != null)
+                noneTile.SetAsFirstSibling();
+
+            if (_gridBuilt || content.childCount > 1)
             {
                 _gridBuilt = true;
                 return;
             }
-
-            CreateTile(content, PlayerBadgeIdUtil.None, null);
 
             PlayerBadgeCatalog catalog = PlayerBadgeCatalog.LoadDefault();
             if (catalog != null && catalog.entries != null)
@@ -277,9 +332,26 @@ namespace TitanOrbit.Game
             else
             {
                 icon.sprite = null;
-                icon.color = new Color(0.12f, 0.16f, 0.22f, 0.9f);
-                var noneLabel = CreateTmp(go.transform, "None", "None", 16f, FontStyles.Italic);
-                StretchFull(noneLabel.rectTransform);
+                icon.color = new Color(0.10f, 0.13f, 0.18f, 0.95f);
+
+                var slashGo = CreateUi("Slash", go.transform, typeof(Image));
+                var slashRt = slashGo.GetComponent<RectTransform>();
+                slashRt.anchorMin = new Vector2(0.5f, 0.5f);
+                slashRt.anchorMax = new Vector2(0.5f, 0.5f);
+                slashRt.pivot = new Vector2(0.5f, 0.5f);
+                slashRt.sizeDelta = new Vector2(40f, 3f);
+                slashRt.localRotation = Quaternion.Euler(0f, 0f, -42f);
+                var slash = slashGo.GetComponent<Image>();
+                slash.color = CaptionColor;
+                slash.raycastTarget = false;
+
+                var noneLabel = CreateTmp(go.transform, "None", "Off", 15f, FontStyles.Bold);
+                var noneRt = noneLabel.rectTransform;
+                noneRt.anchorMin = new Vector2(0f, 0f);
+                noneRt.anchorMax = new Vector2(1f, 0f);
+                noneRt.pivot = new Vector2(0.5f, 0f);
+                noneRt.sizeDelta = new Vector2(0f, 22f);
+                noneRt.anchoredPosition = new Vector2(0f, 4f);
                 noneLabel.alignment = TextAlignmentOptions.Center;
                 noneLabel.color = CaptionColor;
                 noneLabel.raycastTarget = false;
