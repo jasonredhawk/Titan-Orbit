@@ -138,11 +138,7 @@ namespace TitanOrbit.Game
             }
 
             shipVel = GetLocalShipVelocity(em, shipEntity, shipTransform.Position);
-            fireForward.y = 0f;
-            if (math.lengthsq(fireForward) < 0.0001f)
-                fireForward = new float3(0f, 0f, 1f);
-            else
-                fireForward = math.normalize(fireForward);
+            fireForward = SphericalMapEcs.UnitTangent(fireOrigin, fireForward);
 
             return true;
         }
@@ -373,11 +369,7 @@ namespace TitanOrbit.Game
             }
 
             shipVel = GetLocalShipVelocity(em, shipEntity, shipTransform.Position);
-            fireForward.y = 0f;
-            if (math.lengthsq(fireForward) < 0.0001f)
-                fireForward = new float3(0f, 0f, 1f);
-            else
-                fireForward = math.normalize(fireForward);
+            fireForward = SphericalMapEcs.UnitTangent(fireOrigin, fireForward);
             return true;
         }
 
@@ -487,7 +479,8 @@ namespace TitanOrbit.Game
 
             // --- Unbanked planar aim (strip BankPivot roll, keep weapon local yaw/pitch facing) ---
             Vector3 unbankedFwd = GetUnbankedWorldForward(live.Weapon);
-            if (!TryBuildPlanarAimFromWeaponForward(unbankedFwd, live.DirectionAngleDeg, out fireForward))
+            if (!TryBuildPlanarAimFromWeaponForward(
+                    (float3)fireOrigin, unbankedFwd, live.DirectionAngleDeg, out fireForward))
                 return false;
 
             if (TryGetLocalHullRoot(em, shipEntity, out Transform hullRoot) && hullRoot != null)
@@ -534,25 +527,18 @@ namespace TitanOrbit.Game
         /// Planar XZ aim from a world forward, then optional yaw offset (legacy Starship).
         /// </summary>
         static bool TryBuildPlanarAimFromWeaponForward(
+            float3 origin,
             Vector3 weaponForward,
             float directionAngleDeg,
             out float3 fireForward)
         {
-            float3 fwd = weaponForward;
-            fwd.y = 0f;
-            if (math.lengthsq(fwd) < 0.0001f)
-                fwd = new float3(0f, 0f, 1f);
-            else
-                fwd = math.normalize(fwd);
-
+            float3 fwd = SphericalMapEcs.UnitTangent(origin, (float3)weaponForward);
             float angleRad = math.radians(directionAngleDeg);
-            float3 right = math.normalize(math.cross(new float3(0f, 1f, 0f), fwd));
-            fireForward = math.normalize(fwd * math.cos(angleRad) + right * math.sin(angleRad));
-            fireForward.y = 0f;
-            if (math.lengthsq(fireForward) < 0.0001f)
-                return false;
-            fireForward = math.normalize(fireForward);
-            return true;
+            float3 up = SphericalMapEcs.LocalUp(origin);
+            float3 right = math.normalizesafe(math.cross(up, fwd), new float3(1f, 0f, 0f));
+            fireForward = SphericalMapEcs.UnitTangent(
+                origin, fwd * math.cos(angleRad) + right * math.sin(angleRad));
+            return math.lengthsq(fireForward) > 0.0001f;
         }
 
         /// <summary>

@@ -25,10 +25,8 @@ namespace TitanOrbit.ECS
             if (bullet.Sequence == 0)
                 return;
 
-            // Keep muzzle Y from the weapon mount; flatten flight to XZ (top-down).
             float3 spawnPos = bullet.Position;
             float3 velocity = bullet.Velocity;
-            velocity.y = 0f;
             int safeMount = mountIndex; // Keep -1 for drone / world spawns (no barrel reproject).
 
             var req = new BulletVfxBridge.SpawnRequest
@@ -108,7 +106,6 @@ namespace TitanOrbit.ECS
             if (bullet.Sequence == 0)
                 return;
 
-            hitPosition.y = 0f;
             var req = new BulletVfxBridge.HitRequest
             {
                 Sequence = bullet.Sequence,
@@ -171,9 +168,6 @@ namespace TitanOrbit.ECS
             float scaleMultiplier,
             float asteroidHealthAfter)
         {
-            // --- Flatten to the play plane ---
-            // [TITAN-ORBIT] Combat and display are XZ; Y is unused on the torus.
-            hitPosition.y = 0f;
             float safeScale = scaleMultiplier > 0f ? scaleMultiplier : 1f;
             int safeBank = math.max(0, bankIndex);
 

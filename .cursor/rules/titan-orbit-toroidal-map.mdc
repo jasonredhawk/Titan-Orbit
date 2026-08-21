@@ -1,36 +1,33 @@
----
-description: Toroidal (wraparound) map invariants — shortest-path sim, unbounded ship, per-body display tiles
-alwaysApply: true
----
+# Titan Orbit — Sphere-surface map
 
-# Titan Orbit — Toroidal map
+The playable map is the **outside of a sphere** at the world origin. Flying far enough around the shell brings you back to the same rocks. That is the wrap-around *feel*. There is **no** XZ torus, **no** `Wrap` of the ship, **no** display tiles, and **no** 9-tile collider copies.
 
-The playable map is a **torus on XZ**: leaving one edge wraps to the opposite. Ships **do not teleport** at seams; presentation and gameplay use different math. Paired: `ToroidalMapEcs`, `ToroidalDisplay`, ship-simulation rule. Deep dive: `Docs/TITAN-ORBIT-COMPLETE-COURSE.md` §11.4.
+Paired APIs: `SphericalMapEcs`, `SphericalMap`. Compatibility facades `ToroidalMapEcs` / `ToroidalMap` forward to geodesic math (display helpers are identity).
 
 ---
 
-## Two layers (do not mix)
+## One layer (do not invent a second)
 
 | Layer | Behavior | API |
 |-------|----------|-----|
-| **Sim / gameplay** | Ships fly **unbounded** (no wrap of owner hull). Distances, docking, orbit, combat, beams, transports use **shortest path on the torus**. | `ToroidalMapEcs.ShortestOffsetXZ`, `ToroidalDistance`, `ToroidalDirection` |
-| **Presentation** | Local ship stays put in world space; each planet/asteroid/remote picks its own nearest **map-tile copy** (+ hysteresis). | `ToroidalMapEcs.GetDisplayPosition*`, `ToroidalDisplay` |
+| **Sim + presentation** | Every body has **one** world pose on the shell. Distances are **geodesics**. Local up is radial (away from center). | `SphericalMapEcs.GeodesicDistance`, `GeodesicDirection`, `GeodesicOffset`, `ProjectToSphere`, `LocalUp`, `FlattenToTangent` |
 
 ```csharp
-// ❌ BAD — Euclidean distance across the seam (misses / false “far”)
-float d = math.distance(ship.xz, planet.xz);
+// BAD — Euclidean chord through the globe
+float d = math.distance(ship, planet);
 
-// ✅ GOOD — toroidal shortest path
-float d = ToroidalMapEcs.ToroidalDistance(ship, planet, mapW, mapH);
+// GOOD — great-circle on the shell
+float d = SphericalMapEcs.GeodesicDistance(ship, planet, radius);
 
-// ❌ BAD — wrap local ship LocalTransform at edge (global blink / retile storm)
+// BAD — extra tile copies or wrap of the local ship
 transform.Position = ToroidalMapEcs.Wrap(transform.Position);
+displayPos = ToroidalMapEcs.GetDisplayPosition(logical, ship, w, h);
 
-// ✅ GOOD — leave ship unbounded; retile *other* bodies for display only
-displayPos = ToroidalMapEcs.GetDisplayPosition(logicalPos, localShipPos, mapW, mapH);
+// GOOD — one object, real pose; project movers back onto the shell
+pos = SphericalMapEcs.ProjectToSphere(pos, radius);
 ```
 
-`Wrap` exists for canonicalization when needed — **not** the ship flight path.
+`ProjectToSphere` keeps hulls / bullets / gems on the shell. It is **not** a teleport-to-other-edge wrap.
 
 ---
 
@@ -38,26 +35,28 @@ displayPos = ToroidalMapEcs.GetDisplayPosition(logicalPos, localShipPos, mapW, m
 
 Any new range / target / spawn / magnet / orbit / unload logic must:
 
-- [ ] Read `mapW` / `mapH` from `MapStateSingleton` (or `ToroidalMapEcs` after bootstrap)
-- [ ] Use **toroidal** distance/offset/direction — never raw `distance` on XZ for gameplay
-- [ ] Place moons / surface spawns with **near-tile** helpers (`GetMoonWorldPositionNear`, surface-toward that uses shortest offset)
-- [ ] Keep presentation on `ToroidalDisplay` / display helpers — do not drive sim from display tiles
-- [ ] Cross-seam hull contact: prefer `ShipToroidalWorldCollision*` patterns, not assuming PhysX sees both sides
+- [ ] Read `MapRadius` from `MapStateSingleton` / session meta (or `SphericalMapEcs` after bootstrap)
+- [ ] Use **geodesic** distance / tangent direction — never raw `distance` for gameplay ranges
+- [ ] Place moons / surface points with `OrbitOffsetWorld` / `SurfacePointToward` (planet local up, not world Y)
+- [ ] Keep **one** GameObject / collider per body
+- [ ] Constrain bullets and scripted movers onto the shell (`StepOnSphere` / re-project)
+- [ ] Cursor aim: **near** sphere ray hit only (`SphericalMap.TryRaycastNear`) — never the far hemisphere
 
-**Orbit ring / people transport:** ring membership = `PlanetOrbitMath.IsInOrbitRing(ToroidalDistance(...), inner, outer)`. Tangents use `ShortestOffsetXZ(planet → ship)` so clockwise orbit works across seams.
+**Orbit ring:** membership = `PlanetOrbitMath.IsInOrbitRing(GeodesicDistance(...), inner, outer)`. Tangents use the planet's local up (`cross(LocalUp(planet), radial)`).
 
 ---
 
 ## Forbidden
 
-- Euclidean-only gameplay ranges on a wrapped map
-- Wrapping the **local** predicted ship transform to “fix” the seam
-- One global map snap that retiles every body when the owner crosses an edge
-- Hard-coded map size ignoring `MapStateSingleton` / session meta
+- 9-tile collider copies, wrap-duplicate GameObjects, or display tiling
+- Euclidean-only gameplay ranges (shots through the globe)
+- Flattening aim / velocity onto world Y / XZ
+- Inventing a silent map size or radius (never 1000×1000)
+- Dual torus + sphere modes
 
 ## Agent checklist
 
-- [ ] Gameplay math is toroidal
-- [ ] Ship sim stays unbounded
-- [ ] Display is per-body nearest tile (+ hysteresis where used)
-- [ ] New systems document mapW/mapH sources in comments
+- [ ] Gameplay math is geodesic / tangent
+- [ ] All movers stay on the shell
+- [ ] One object per body
+- [ ] New systems document `MapRadius` source in comments

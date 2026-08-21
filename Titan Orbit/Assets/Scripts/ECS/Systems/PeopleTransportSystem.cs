@@ -32,10 +32,8 @@ namespace TitanOrbit.ECS
         /// </summary>
         public static void WriteTransform(ref LocalTransform transform, float3 position, float mapW, float mapH)
         {
-            _ = mapW;
-            _ = mapH;
-            position.y = 0f;
-            transform.Position = position;
+            float radius = SphericalMapEcs.RadiusFromMapAxes(mapW, mapH);
+            transform.Position = SphericalMapEcs.ProjectToSphere(position, radius);
         }
 
         /// <summary>Planar write using current position (map size unused — signature kept for call sites).</summary>
@@ -502,7 +500,6 @@ namespace TitanOrbit.ECS
 
             // --- Client VFX spawn (PeopleTransportVfxDriver) ---
             float3 bakedTarget = targetPos;
-            bakedTarget.y = 0f;
             // VFX/RPC carry the involved ship for hull floats (load dest, or unload source).
             int vfxShipId = targetShipNetworkId != 0 ? targetShipNetworkId : sourceShipNetworkId;
             var vfxReq = new PeopleTransportVfxBridge.SpawnRequest
@@ -613,7 +610,6 @@ namespace TitanOrbit.ECS
                     t.Health = PeopleTransportMath.ComputeMaxHealth(t.Amount);
                 float elapsed = now - t.SpawnTime;
                 float3 myPos = transform.ValueRO.Position;
-                myPos.y = 0f;
                 bool isLoad = t.IsLoad != 0;
                 var team = (TeamId)t.Team;
 
@@ -623,7 +619,6 @@ namespace TitanOrbit.ECS
                     shipInputByNetworkId, shipOrbitByNetworkId,
                     planetTransformById, planetStateById);
                 myPos = transform.ValueRO.Position;
-                myPos.y = 0f;
 
                 if (isLoad)
                 {

@@ -103,7 +103,7 @@
 - [11.1 TeamManagementSystem](#111-teammanagementsystem)
 - [11.2 Rejoin flow](#112-rejoin-flow)
 - [11.3 Map generation algorithm](#113-map-generation-algorithm)
-- [11.4 Toroidal map naming vs reality](#114-toroidal-map-naming-vs-reality)
+- [11.4 Sphere-surface map](#114-sphere-surface-map-wrap-by-flying-around)
 
 ### Volume 12 — UI and player flow
 - [12.1 NceGameFlowController state machine](#121-ncegameflowcontroller-state-machine)
@@ -1449,13 +1449,15 @@ Returning players may have existing ship on server:
 
 **`MapGenerationSystem`** — one spawn per tick until queue empty, updates loading progress on `MapStateSingleton`.
 
-## 11.4 Toroidal map (ship flies forever)
+## 11.4 Sphere-surface map (wrap by flying around)
 
-**Gameplay math** — `ShortestOffsetXZ` / `ToroidalDistance` / `ToroidalDirection` use the shortest path on the torus (combat, docking, mining, beams). `Wrap` exists but ships do **not** teleport at the edge.
+**Embedding** — one sphere at the origin. Designer `MapSize` (square) still drives density; `MapRadius = MapSize / (2√π)` so surface area matches the old square. Local up is radial.
 
-**Sim movers** — the local ship (and other free movers) keep flying in unbounded world space past the map edge. No post-physics ship wrap.
+**Gameplay math** — `SphericalMapEcs.GeodesicDistance` / `GeodesicDirection` / `ProjectToSphere`. Compatibility names `ToroidalDistance` / `ShortestOffsetXZ` forward to geodesic / tangent offset. Display helpers are identity — one object, real world pose.
 
-**Presentation** — `ToroidalDisplay` + `EcsWorldVisualizer.GetVisualPosition`: local ship stays put; each planet/asteroid/remote independently picks its nearest map-tile copy relative to that ship (per-entity hysteresis). Bodies reposition one-by-one — not a global blink. Minimap uses shortest-path delta.
+**Sim movers** — ships, bullets, gems, and moons stay on the shell (radial lock, not world Y). Unity Physics sees real neighbors; `ShipToroidalWorldCollision` is a no-op.
+
+**Presentation** — camera sits further out along local up. Opaque globe hides the far hemisphere. Minimap is a local tangent chart. Cursor aim uses the near sphere hit only.
 
 ---
 

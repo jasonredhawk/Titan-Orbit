@@ -1,4 +1,5 @@
 using TitanOrbit.Core;
+using TitanOrbit.Generation;
 using Unity.Entities;
 using Unity.Mathematics;
 using Unity.NetCode;
@@ -128,7 +129,7 @@ namespace TitanOrbit.ECS
         /// </summary>
         /// <param name="em">Server EntityManager.</param>
         /// <param name="asteroidPrefab">Ghost prefab from <see cref="GamePrefabs.Asteroid"/>.</param>
-        /// <param name="position">World position (Y forced to 0).</param>
+        /// <param name="position">World position (projected onto the playable shell).</param>
         /// <param name="uniformScale">LocalTransform scale (map gen uses cmax of non-uniform layout).</param>
         /// <param name="gemValue">Full mineable gem capacity (MaxGems / RemainingGems).</param>
         /// <param name="maxHealth">Full combat Health (may differ from gemValue).</param>
@@ -147,8 +148,7 @@ namespace TitanOrbit.ECS
                 return Entity.Null;
 
             // --- Pose ---
-            // [TITAN-ORBIT] Keep asteroids on the play plane (Y = 0), same as original respawn manager.
-            position.y = 0f;
+            position = SphericalMapEcs.ProjectToSphere(position);
             float scale = math.max(0.01f, uniformScale);
             float gems = math.max(GemEconomyConstants.MinGemSpawnValue, gemValue);
             float health = math.max(1f, maxHealth);
@@ -166,7 +166,8 @@ namespace TitanOrbit.ECS
             designerSize = math.max(0.01f, designerSize);
 
             Entity e = em.Instantiate(asteroidPrefab);
-            em.SetComponentData(e, LocalTransform.FromPositionRotationScale(position, quaternion.identity, scale));
+            em.SetComponentData(e, LocalTransform.FromPositionRotationScale(
+                position, SphericalMapEcs.SurfaceSitRotation(position), scale));
 
             // --- Surface friction from AsteroidSettings (Inspector) ---
             // Prefab bake uses defaults; replace so live Friction edits apply to new rocks.
@@ -236,7 +237,7 @@ namespace TitanOrbit.ECS
             double nowElapsed,
             float delaySeconds)
         {
-            position.y = 0f;
+            position = SphericalMapEcs.ProjectToSphere(position);
             float restoreSize = size;
             if (restoreSize <= 0f)
             {

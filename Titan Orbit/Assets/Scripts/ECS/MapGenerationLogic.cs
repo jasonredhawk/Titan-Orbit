@@ -73,6 +73,7 @@ namespace TitanOrbit.ECS
             public uint Seed;
             public float MapWidth;
             public float MapHeight;
+            public float MapRadius;
             public int TeamCount;
             public int NeutralPlanetCount;
             public int AsteroidCount;
@@ -156,6 +157,7 @@ namespace TitanOrbit.ECS
                 Seed = seed,
                 MapWidth = mapSize,
                 MapHeight = mapSize,
+                MapRadius = SphericalMapEcs.RadiusFromMapSize(mapSize),
                 TeamCount = teamCount,
                 NeutralPlanetCount = neutralCount,
                 AsteroidCount = asteroidCount,
@@ -294,10 +296,7 @@ namespace TitanOrbit.ECS
                 bool placed = false;
                 for (int attempt = 0; attempt < fillAttemptsPerSlot; attempt++)
                 {
-                    float3 position = new float3(
-                        rng.NextFloat(-rolled.MapWidth * 0.5f, rolled.MapWidth * 0.5f),
-                        0f,
-                        rng.NextFloat(-rolled.MapHeight * 0.5f, rolled.MapHeight * 0.5f));
+                    float3 position = RandomShellPosition(rolled.MapWidth, rolled.MapHeight, ref rng);
                     if (IsTooCloseToAny(position, minSpacing, asteroidPositions))
                         continue;
                     if (OverlapsPlanetOrbitRings(
@@ -477,7 +476,7 @@ namespace TitanOrbit.ECS
                     for (int ti = 0; ti < rotationSteps; ti++)
                     {
                         float rot = baseRot + (math.PI * 2f * ti) / rotationSteps;
-                        var candidate = BuildRegularHomePolygon(teamCount, r, rot);
+                        var candidate = BuildRegularHomePolygon(teamCount, r, rot, mapWidth, mapHeight);
                         if (!MeetsMinToroidalPairSeparation(candidate, mapWidth, mapHeight, requiredMin))
                         {
                             candidate.Dispose();
@@ -535,7 +534,7 @@ namespace TitanOrbit.ECS
             for (int ri = 0; ri <= 40; ri++)
             {
                 float r = maxRadius * (ri + 1f) / 41f;
-                var candidate = BuildRegularHomePolygon(teamCount, r, rot);
+                var candidate = BuildRegularHomePolygon(teamCount, r, rot, mapWidth, mapHeight);
                 bool ok = MeetsMinToroidalPairSeparation(candidate, mapWidth, mapHeight, minSep);
                 candidate.Dispose();
                 if (ok)
@@ -545,19 +544,28 @@ namespace TitanOrbit.ECS
                 }
             }
 
-            var layout = BuildRegularHomePolygon(teamCount, chosenRadius, rot);
+            var layout = BuildRegularHomePolygon(teamCount, chosenRadius, rot, mapWidth, mapHeight);
             for (int i = 0; i < layout.Length; i++)
                 output.Add(layout[i]);
             layout.Dispose();
         }
 
-        static NativeList<float3> BuildRegularHomePolygon(int n, float radius, float rotationRad, Allocator allocator = Allocator.Temp)
+        static NativeList<float3> BuildRegularHomePolygon(
+            int n,
+            float radius,
+            float rotationRad,
+            float mapWidth,
+            float mapHeight,
+            Allocator allocator = Allocator.Temp)
         {
+            _ = radius;
             var positions = new NativeList<float3>(n, allocator);
+            float shell = SphericalMapEcs.RadiusFromMapAxes(mapWidth, mapHeight);
             for (int i = 0; i < n; i++)
             {
                 float ang = rotationRad + (math.PI * 2f * i) / n;
-                positions.Add(new float3(math.cos(ang) * radius, 0f, math.sin(ang) * radius));
+                float3 dir = new float3(math.cos(ang), 0f, math.sin(ang));
+                positions.Add(SphericalMapEcs.ProjectToSphere(dir, shell));
             }
             return positions;
         }
@@ -627,18 +635,18 @@ namespace TitanOrbit.ECS
         {
             for (int attempt = 0; attempt < maxAttempts; attempt++)
             {
-                float3 pos = new float3(
-                    rng.NextFloat(-mapWidth * 0.5f, mapWidth * 0.5f),
-                    0f,
-                    rng.NextFloat(-mapHeight * 0.5f, mapHeight * 0.5f));
+                float3 pos = RandomShellPosition(mapWidth, mapHeight, ref rng);
                 if (!OverlapsPlanetOrbitRings(config, planetPlacements, mapWidth, mapHeight, pos, candidateInfluenceRadius))
                     return pos;
             }
 
-            return new float3(
-                rng.NextFloat(-mapWidth * 0.5f, mapWidth * 0.5f),
-                0f,
-                rng.NextFloat(-mapHeight * 0.5f, mapHeight * 0.5f));
+            return RandomShellPosition(mapWidth, mapHeight, ref rng);
+        }
+
+        static float3 RandomShellPosition(float mapWidth, float mapHeight, ref Random rng)
+        {
+            float radius = SphericalMapEcs.RadiusFromMapAxes(mapWidth, mapHeight);
+            return SphericalMapEcs.RandomUnitDirection(ref rng) * radius;
         }
 
         static bool OverlapsPlanetOrbitRings(
@@ -670,26 +678,18 @@ namespace TitanOrbit.ECS
             Allocator allocator = Allocator.Temp)
         {
             var centers = new NativeArray<float3>(clusterCount, allocator);
-            float halfW = rolled.MapWidth * 0.5f;
-            float halfH = rolled.MapHeight * 0.5f;
-            float sectorWidth = math.PI * 2f / math.max(1, clusterCount);
-            float sectorJitter = sectorWidth * 0.85f;
+            float shell = SphericalMapEcs.RadiusFromMapAxes(rolled.MapWidth, rolled.MapHeight);
             float clearance = math.max(0.1f, asteroidClearanceRadius);
 
             for (int c = 0; c < clusterCount; c++)
             {
-                float sectorStart = sectorWidth * c;
-                float3 chosen = float3.zero;
+                float3 mean = SphericalMapEcs.FibonacciDirection(c, clusterCount);
+                float3 chosen = mean * shell;
                 bool found = false;
 
                 for (int attempt = 0; attempt < 200; attempt++)
                 {
-                    float angle = sectorStart + rng.NextFloat(0f, sectorJitter);
-                    float radial = rng.NextFloat(0.12f, 0.88f);
-                    float3 candidate = new float3(
-                        math.cos(angle) * radial * halfW,
-                        0f,
-                        math.sin(angle) * radial * halfH);
+                    float3 candidate = SphericalMapEcs.VonMisesFisher(mean, 4f, ref rng) * shell;
                     if (!OverlapsPlanetOrbitRings(config, planetPlacements, rolled.MapWidth, rolled.MapHeight, candidate, clearance))
                     {
                         chosen = candidate;
@@ -709,20 +709,21 @@ namespace TitanOrbit.ECS
 
         static float3 GetPositionInCluster(float3 center, int targetClusterCount, ref Random rng)
         {
+            float shell = math.max(1f, math.length(center));
             float coreRadius = math.clamp(8f + math.sqrt(math.max(1, targetClusterCount)) * 2.8f, 9f, 28f);
-            float radius = coreRadius * math.pow(rng.NextFloat(), 1.15f);
+            float arc = coreRadius * math.pow(rng.NextFloat(), 1.15f);
             if (rng.NextFloat() < 0.25f)
-                radius += coreRadius * rng.NextFloat(0.4f, 1.1f);
-            float angle = rng.NextFloat(0f, math.PI * 2f);
-            return center + new float3(math.cos(angle) * radius, 0f, math.sin(angle) * radius);
+                arc += coreRadius * rng.NextFloat(0.4f, 1.1f);
+            float kappa = math.max(2f, (shell / math.max(1f, arc)) * 0.85f);
+            return SphericalMapEcs.VonMisesFisher(math.normalizesafe(center, new float3(0f, 1f, 0f)), kappa, ref rng) * shell;
         }
 
         static bool IsTooCloseToAny(float3 pos, float minDist, NativeList<float3> positions)
         {
+            float radius = math.max(1f, math.length(pos));
             for (int i = 0; i < positions.Length; i++)
             {
-                float3 delta = pos - positions[i];
-                if (math.lengthsq(new float2(delta.x, delta.z)) < minDist * minDist)
+                if (SphericalMapEcs.GeodesicDistance(pos, positions[i], radius) < minDist)
                     return true;
             }
             return false;

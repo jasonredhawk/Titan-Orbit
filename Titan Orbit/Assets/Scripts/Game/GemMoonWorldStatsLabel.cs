@@ -1,5 +1,6 @@
 using TitanOrbit.Core;
 using TitanOrbit.ECS;
+using TitanOrbit.Generation;
 using TitanOrbit.Simulation;
 using TMPro;
 using UnityEngine;
@@ -94,9 +95,9 @@ namespace TitanOrbit.Game
             // --- Create instance ---
             var go = new GameObject(name);
             go.transform.SetParent(parent, false);
-            go.transform.localRotation = Quaternion.Euler(-90f, 0f, 0f);
+            go.transform.localRotation = Quaternion.identity;
             go.transform.localScale = new Vector3(
-                LabelWorldScaleFallback, -LabelWorldScaleFallback, LabelWorldScaleFallback);
+                LabelWorldScaleFallback, LabelWorldScaleFallback, LabelWorldScaleFallback);
             go.transform.localPosition = Vector3.zero;
             return go.transform;
         }
@@ -159,7 +160,7 @@ namespace TitanOrbit.Game
             if (EcsGameBridge.TryGetPlanetPoseByPlanetId(planetId, out _, out float ecsScale, out _))
                 planetSize = ecsScale;
             float s = WorldBodyLabelLayout.GetReadableMoonLabelWorldScale(planetSize);
-            _labelRoot.localScale = new Vector3(s, -s, s);
+            _labelRoot.localScale = new Vector3(s, s, s);
 
             WorldBodyLabelLayout.ApplySnugMoonLabel(_labelRoot, transform, _moonLocalRadius);
         }
@@ -293,6 +294,11 @@ namespace TitanOrbit.Game
             // Dirty Refresh skips ApplyLayout when gem/shield digits unchanged.
             if (Refresh())
                 ApplyLayout();
+            if (_labelRoot != null)
+            {
+                var cam = CameraFollowEcs.GameplayCamera();
+                _labelRoot.rotation = SphericalMap.BillboardFacingCamera(cam, _labelRoot.position);
+            }
         }
 
         /// <summary>

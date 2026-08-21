@@ -94,8 +94,6 @@ namespace TitanOrbit.ECS
             double elapsedSeconds,
             bool softenForPassiveOrbit = false)
         {
-            shipPos.y = 0f;
-
             for (int i = 0; i < planets.Length; i++)
             {
                 var snapshot = planets[i];
@@ -114,10 +112,8 @@ namespace TitanOrbit.ECS
                 if (shieldRadius <= 0.0001f)
                     continue;
 
-                // --- Moon on the map tile nearest the ship (toroidal unwrap) ---
-                // [TITAN-ORBIT] GetMoonWorldPositionNear uses ShortestOffsetXZ — required across seams.
-                // Moons ride the same ship orbit ring (<see cref="PlanetOrbitMath.GetShipOrbitRingOffset"/>),
-                // so coasting ships will enter this shell once per revolution on enemy/neutral planets.
+                // Moon world pose on the shell. Do not flatten Y — that collapsed every
+                // high-latitude ship onto the same XZ disk as the moons and zeroed northbound speed.
                 float3 moonPos = PlanetOrbitMath.GetMoonWorldPositionNear(
                     shipPos,
                     snapshot.Transform.Position,
@@ -127,17 +123,15 @@ namespace TitanOrbit.ECS
                     elapsedSeconds,
                     mapW,
                     mapH);
-                moonPos.y = 0f;
 
                 float dist = ToroidalMapEcs.ToroidalDistance(shipPos, moonPos, mapW, mapH);
                 if (dist > shieldRadius)
                     continue;
 
-                // --- Outward direction from moon toward ship (planar) ---
-                float3 dir = shipPos - moonPos;
-                dir.y = 0f;
+                // --- Outward geodesic direction from moon toward ship (tangent at the hull) ---
+                float3 dir = ToroidalMapEcs.ToroidalDirection(moonPos, shipPos, mapW, mapH);
                 if (math.lengthsq(dir) < 0.0001f)
-                    dir = new float3(0f, 0f, 1f);
+                    dir = SphericalMapEcs.OrthonormalTangent(SphericalMapEcs.LocalUp(shipPos));
                 else
                     dir = math.normalize(dir);
 
@@ -177,7 +171,7 @@ namespace TitanOrbit.ECS
                     velocity += dir * repelSpeed;
                 }
 
-                velocity.y = 0f;
+                velocity = SphericalMapEcs.FlattenToTangent(velocity, shipPos);
             }
         }
     }

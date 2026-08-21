@@ -1,5 +1,6 @@
 using TitanOrbit.Core;
 using TitanOrbit.Data;
+using TitanOrbit.Generation;
 using TitanOrbit.Simulation;
 using Unity.Collections;
 using Unity.Entities;
@@ -235,6 +236,7 @@ namespace TitanOrbit.ECS
             var mapState = em.GetComponentData<MapStateSingleton>(_mapEntity);
             mapState.MapWidth = _rolled.MapWidth;
             mapState.MapHeight = _rolled.MapHeight;
+            mapState.MapRadius = SphericalMapEcs.RadiusFromMapAxes(_rolled.MapWidth, _rolled.MapHeight);
             mapState.BlueprintSeed = (int)_rolled.Seed;
             mapState.LoadingProgress = 0.05f;
             mapState.LoadingComplete = false;
@@ -249,8 +251,10 @@ namespace TitanOrbit.ECS
             mapState.LoadingTotalSteps = 0;
             mapState.LoadingCompletedSteps = 0;
             em.SetComponentData(_mapEntity, mapState);
-            // --- ToroidalMapEcs.SetMapSize also mirrors into ToroidalMap (minimap twin) ---
             Generation.ToroidalMapEcs.SetMapSize(_rolled.MapWidth, _rolled.MapHeight);
+            SphericalMapEcs.SetMapSizeAndRadius(
+                math.max(_rolled.MapWidth, _rolled.MapHeight),
+                mapState.MapRadius);
 
             var teamState = SystemAPI.GetSingletonRW<TeamStateSingleton>();
             teamState.ValueRW.ActiveTeamCount = _rolled.TeamCount;

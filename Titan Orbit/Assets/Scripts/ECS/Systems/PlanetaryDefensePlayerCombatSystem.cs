@@ -110,20 +110,25 @@ namespace TitanOrbit.ECS
                 float fireRate = math.max(0.05f, stats.fireRate);
                 int cooldownKey = shipEntity.Index;
 
-                // --- Aim from player ShipInput (planar) ---
+                var xf = EntityManager.GetComponentData<LocalTransform>(planetEntity);
                 float2 aim2 = input.ValueRO.AimPlanarDir;
                 if (math.lengthsq(aim2) < 0.0001f)
                     continue;
-                float3 aim = math.normalize(new float3(aim2.x, 0f, aim2.y));
+                float3 aim;
+                if (EntityManager.HasComponent<LocalTransform>(shipEntity))
+                {
+                    var shipXf = EntityManager.GetComponentData<LocalTransform>(shipEntity);
+                    aim = SphericalMapEcs.DecodeTangentDir(shipXf.Position, shipXf.Rotation, aim2);
+                }
+                else
+                    aim = SphericalMapEcs.DecodeTangentDir(xf.Position, aim2);
 
-                var xf = EntityManager.GetComponentData<LocalTransform>(planetEntity);
                 float3 muzzle = PlanetaryDefenseMath.GetSlotWorldPosition(
                     xf.Position,
                     math.max(0.25f, xf.Scale),
                     planet.PlanetLevel,
                     slotIndex,
                     buffer.Length);
-                muzzle.y = PlanetaryDefenseMath.FixedY;
 
                 float bulletSpeed = math.max(1f, stats.bulletSpeed);
                 float damage = math.max(0.05f, stats.damage);

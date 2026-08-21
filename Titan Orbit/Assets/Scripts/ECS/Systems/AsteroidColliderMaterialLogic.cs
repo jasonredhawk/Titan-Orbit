@@ -83,13 +83,11 @@ namespace TitanOrbit.ECS
                 return linearVelocity;
 
             float3 n = surfaceNormal;
-            n.y = 0f;
             if (math.lengthsq(n) < 1e-8f)
                 return linearVelocity;
             n = math.normalize(n);
 
             float3 vel = linearVelocity;
-            vel.y = 0f;
             float vn = math.dot(vel, n);
             float3 vt = vel - n * vn;
             // PhysX-like bleed on the slide: higher Friction → sticks faster while grinding.

@@ -61,10 +61,10 @@ namespace TitanOrbit.ECS
         /// </summary>
         public static float3 UnwrapCenterNear(float3 unwrapOrigin, float3 logicalCenter, float mapW, float mapH)
         {
-            // [TITAN-ORBIT] Shortest toroidal offset places obstacle in the same "tile" as the segment.
-            float3 center = unwrapOrigin + ToroidalMapEcs.ShortestOffsetXZ(unwrapOrigin, logicalCenter, mapW, mapH);
-            center.y = logicalCenter.y;
-            return center;
+            _ = unwrapOrigin;
+            _ = mapW;
+            _ = mapH;
+            return logicalCenter;
         }
 
         /// <summary>
@@ -90,10 +90,6 @@ namespace TitanOrbit.ECS
         public static bool SegmentHitsSphere(float3 from, float3 to, float3 center, float radius, out float3 hitPoint)
         {
             hitPoint = to;
-            // --- Flatten to XZ plane (top-down shooter) ---
-            from.y = center.y;
-            to.y = center.y;
-
             float3 delta = to - from;
             float deltaLenSq = math.lengthsq(delta);
             // --- Degenerate segment: point-in-sphere test ---
@@ -127,7 +123,6 @@ namespace TitanOrbit.ECS
             }
 
             hitPoint = from + delta * t;
-            hitPoint.y = center.y;
             return true;
         }
 

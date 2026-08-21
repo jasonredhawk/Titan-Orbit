@@ -1008,7 +1008,10 @@ namespace TitanOrbit.Game
                 // child pivot (PlanetSpinVisualProxy) — root rot can stay from ECS.
                 if (kind != ProxyVisualKind.Asteroid)
                 {
-                    Quaternion displayRot = lt.Rotation;
+                    // Sit planets (and other static bodies) on the shell so local +Y faces the camera.
+                    Quaternion displayRot = kind == ProxyVisualKind.Planet
+                        ? SphericalMap.SurfaceSitRotation(displayPos)
+                        : (Quaternion)lt.Rotation;
                     if (Quaternion.Angle(t.rotation, displayRot) > 0.05f)
                         t.rotation = displayRot;
                 }
@@ -1760,43 +1763,17 @@ namespace TitanOrbit.Game
         /// <param name="forceLogical">When true, skip display unwrap (rare debug / special cases).</param>
         Vector3 GetVisualPosition(Entity entity, EntityManager em, float3 logicalPos, bool forceLogical = false)
         {
-            if (forceLogical || ToroidalDisplay.IsLocalPlayerShip(em, entity))
-                return logicalPos;
-
-            if (!_hasToroidalReference && !ToroidalDisplay.TryGetReferencePosition(out _toroidalReference))
-                return logicalPos;
-
-            _hasToroidalReference = true;
-            if (ShouldForceNearestPlanetTile(em, entity))
-            {
-                int planetId = em.HasComponent<PlanetState>(entity)
-                    ? em.GetComponentData<PlanetState>(entity).PlanetId
-                    : 0;
-                return ToroidalDisplay.ToDisplayPositionForOrbitPlanet(
-                    entity, planetId, logicalPos, _toroidalReference);
-            }
-
-            return ToroidalDisplay.ToDisplayPositionWithHysteresis(entity, logicalPos, _toroidalReference);
+            _ = entity;
+            _ = em;
+            _ = forceLogical;
+            return logicalPos;
         }
 
-        /// <summary>Per-entity tile unwrap when EntityManager is not needed for local-ship checks.</summary>
+        /// <summary>One object, real world pose — no display tiles.</summary>
         Vector3 GetVisualPosition(Entity entity, float3 logicalPos)
         {
-            if (!_hasToroidalReference && !ToroidalDisplay.TryGetReferencePosition(out _toroidalReference))
-                return logicalPos;
-
-            _hasToroidalReference = true;
-
-            // --- Orbit / dock planet: tight hysteresis via cached planet visual key ---
-            if (_forceNearestPlanetId != 0 &&
-                _proxyPlanetVisuals.TryGetValue(entity, out var planetKey) &&
-                planetKey.PlanetId == _forceNearestPlanetId)
-            {
-                return ToroidalDisplay.ToDisplayPositionForOrbitPlanet(
-                    entity, _forceNearestPlanetId, logicalPos, _toroidalReference);
-            }
-
-            return ToroidalDisplay.ToDisplayPositionWithHysteresis(entity, logicalPos, _toroidalReference);
+            _ = entity;
+            return logicalPos;
         }
 
         /// <summary>

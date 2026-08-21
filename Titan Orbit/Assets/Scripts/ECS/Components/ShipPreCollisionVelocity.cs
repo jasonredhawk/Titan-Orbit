@@ -25,5 +25,8 @@ namespace TitanOrbit.ECS
         /// PhysX depenetration cannot shove the hull off its flight path.
         /// </summary>
         public float3 Position;
+
+        /// <summary>Hull rotation captured with <see cref="Position"/> (Galaxy pose walk).</summary>
+        public quaternion Rotation;
     }
 }

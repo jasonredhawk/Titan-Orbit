@@ -509,7 +509,7 @@ namespace TitanOrbit.Input
             joystickHandle.anchoredPosition = clamped;
         }
 
-        /// <summary>World point used to aim the ship from left drag (camera-relative on XZ).</summary>
+        /// <summary>World point used to aim the ship from left drag (camera-relative on the tangent).</summary>
         public bool TryGetLeftDragAimWorldPoint(UnityEngine.Camera cam, Transform ship, out Vector3 worldPoint)
         {
             // --- Attempt resolution ---
@@ -521,12 +521,16 @@ namespace TitanOrbit.Input
             if (d.sqrMagnitude < 0.0001f)
                 return false;
 
-            Vector3 f = cam.transform.forward;
-            f.y = 0f;
-            if (f.sqrMagnitude < 0.0001f) f = Vector3.forward;
-            else f.Normalize();
-            Vector3 r = cam.transform.right;
-            r.y = 0f;
+            Vector3 up = ship.position.sqrMagnitude > 0.01f ? ship.position.normalized : Vector3.up;
+            Vector3 f = Vector3.ProjectOnPlane(cam.transform.up, up);
+            if (f.sqrMagnitude < 0.0001f)
+                f = Vector3.ProjectOnPlane(cam.transform.forward, up);
+            if (f.sqrMagnitude < 0.0001f)
+                f = cam.transform.up;
+            f.Normalize();
+            Vector3 r = Vector3.ProjectOnPlane(cam.transform.right, up);
+            if (r.sqrMagnitude < 0.0001f)
+                r = Vector3.Cross(up, f);
             r.Normalize();
             Vector3 flat = (r * d.x + f * d.y).normalized;
             worldPoint = ship.position + flat * 10f;

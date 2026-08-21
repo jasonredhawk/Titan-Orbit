@@ -75,7 +75,9 @@ namespace TitanOrbit.Game
             {
                 NetCode.MapSessionMetaCache.ApplyMapSizeToToroidalHelpers(
                     NetCode.MapSessionMetaCache.MapWidth,
-                    NetCode.MapSessionMetaCache.MapHeight);
+                    NetCode.MapSessionMetaCache.MapHeight,
+                    NetCode.MapSessionMetaCache.MapRadius);
+                SphereMapGlobeVisual.Ensure();
                 return;
             }
 
@@ -87,7 +89,9 @@ namespace TitanOrbit.Game
             if (mapQuery.TryGetSingleton<MapStateSingleton>(out var map) &&
                 ToroidalMapEcs.IsValidMapSize(map.MapWidth, map.MapHeight))
             {
-                NetCode.MapSessionMetaCache.ApplyMapSizeToToroidalHelpers(map.MapWidth, map.MapHeight);
+                NetCode.MapSessionMetaCache.ApplyMapSizeToToroidalHelpers(
+                    map.MapWidth, map.MapHeight, map.MapRadius);
+                SphereMapGlobeVisual.Ensure();
             }
             // else: size still missing — leave helpers unset; callers must skip toroidal work.
         }
@@ -123,8 +127,7 @@ namespace TitanOrbit.Game
             // a one-frame fallthrough that retile-blinks the map.
             if (ShipDisplayPose.HasLocalPose)
             {
-                var p = ShipDisplayPose.LocalPosition;
-                reference = new Vector3(p.x, 0f, p.z);
+                reference = ShipDisplayPose.LocalPosition;
                 return true;
             }
 
@@ -132,15 +135,14 @@ namespace TitanOrbit.Game
             if (!ClientJoinSettleCache.ShouldSkipShipEntityQueries &&
                 EcsGameBridge.TryGetLocalShipPosition(out var shipPos))
             {
-                reference = new Vector3(shipPos.x, 0f, shipPos.z);
+                reference = shipPos;
                 return true;
             }
 
             var cam = UnityEngine.Camera.main;
             if (cam != null && cam.isActiveAndEnabled)
             {
-                var camPos = cam.transform.position;
-                reference = new Vector3(camPos.x, 0f, camPos.z);
+                reference = cam.transform.position;
                 return true;
             }
 

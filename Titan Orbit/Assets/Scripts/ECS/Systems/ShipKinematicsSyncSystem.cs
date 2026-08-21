@@ -38,17 +38,9 @@ namespace TitanOrbit.ECS
                     continue;
                 }
 
-                // --- Capture post-collision planar velocity (including bounce) ---
+                // Constraint already projected onto the shell and flattened to the tangent.
+                // Do not zero world Y — that is a tangent axis off the equator.
                 float3 linear = velocity.ValueRO.Linear;
-                linear.y = 0f;
-
-                float yawRate = velocity.ValueRO.Angular.y;
-                velocity.ValueRW = new PhysicsVelocity
-                {
-                    Linear = linear,
-                    Angular = new float3(0f, yawRate, 0f),
-                };
-
                 kinematics.ValueRW = new ShipKinematics { Velocity = linear };
             }
         }

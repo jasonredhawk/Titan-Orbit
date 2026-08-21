@@ -26,9 +26,7 @@ namespace TitanOrbit.ECS
             {
                 var r = rpc.ValueRO;
                 float3 pos = r.Position;
-                pos.y = 0f;
                 float3 vel = r.Velocity;
-                vel.y = 0f;
 
                 PeopleTransportVfxBridge.EnqueuePose(new PeopleTransportVfxBridge.PoseUpdate
                 {

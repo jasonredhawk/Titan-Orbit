@@ -86,10 +86,8 @@ namespace TitanOrbit.Simulation
         {
             float angle = GetEvenRingSlotAngle(slotIndex, slotCount);
             float radius = GetSlotRingRadiusWorld(planetSize, planetLevel);
-            return new float3(
-                planetPosition.x + math.cos(angle) * radius,
-                FixedY,
-                planetPosition.z + math.sin(angle) * radius);
+            return planetPosition + SphericalMapEcs.OrbitOffsetWorld(
+                planetPosition, math.cos(angle) * radius, math.sin(angle) * radius);
         }
 
         /// <summary>
@@ -105,13 +103,10 @@ namespace TitanOrbit.Simulation
             float mapW,
             float mapH)
         {
-            float3 planetNear = nearPosition +
-                ToroidalMapEcs.ShortestOffsetXZ(nearPosition, planetPosition, mapW, mapH);
-            planetNear.y = FixedY;
-            float3 slot = GetSlotWorldPosition(
-                planetNear, planetSize, planetLevel, slotIndex, slotCount);
-            slot.y = FixedY;
-            return slot;
+            _ = nearPosition;
+            _ = mapW;
+            _ = mapH;
+            return GetSlotWorldPosition(planetPosition, planetSize, planetLevel, slotIndex, slotCount);
         }
 
         /// <summary>

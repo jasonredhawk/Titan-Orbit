@@ -86,14 +86,7 @@ namespace TitanOrbit.ECS
             // Planet copy on the same tile as the moon so planet→moon is the short outward ray.
             float3 planetNear = moonPos + ToroidalMapEcs.ShortestOffsetXZ(
                 moonPos, planetXform.Position, mapW, mapH);
-            planetNear.y = 0f;
-            float3 outward = moonPos - planetNear;
-            outward.y = 0f;
-            float outwardLen = math.length(outward);
-            if (outwardLen < 1e-4f)
-                outward = new float3(1f, 0f, 0f);
-            else
-                outward /= outwardLen;
+            float3 outward = SphericalMapEcs.UnitTangent(moonPos, moonPos - planetNear);
 
             float shipRadius = BodyCollisionMath.GetShipHullRadiusWorld(transform.Scale);
             float exitPad = GemEconomyConstants.MoonTakeoffExitPadWorld;
@@ -114,16 +107,19 @@ namespace TitanOrbit.ECS
 
             float radius = math.lerp(startRadius, exitRadius, eased);
             float3 pos = moonPos + outward * radius;
-            pos.y = 0f;
+            float shellR = SphericalMapEcs.BurstSafeRadius(mapW, mapH, pos);
+            if (SphericalMapEcs.IsValidRadius(shellR))
+                pos = SphericalMapEcs.ProjectToSphere(pos, shellR);
             transform.Position = pos;
-            transform.Rotation = quaternion.LookRotationSafe(outward, math.up());
+            transform.Rotation = SphericalMapEcs.LookRotationOnSurface(pos, outward);
 
-            float3 moonVel = PlanetOrbitMath.GetMoonOrbitalVelocity(
+            float3 moonVel = PlanetOrbitMath.GetMoonOrbitalVelocityWorld(
+                planetXform.Position,
                 planetSize,
                 planet.PlanetLevel,
                 planet.PlanetId,
                 elapsedSeconds);
-            moonVel.y = 0f;
+            moonVel = SphericalMapEcs.FlattenToTangent(moonVel, pos);
             float radialSpeed = math.max(takeoffSpeed, (exitRadius - startRadius) / duration);
             physicsVelocity = new PhysicsVelocity
             {

@@ -154,17 +154,15 @@ namespace TitanOrbit.Simulation
             // --- Toroidal relative position (muzzle → target, shortest wrap) ---
             // [TITAN-ORBIT] ShortestOffsetXZ returns the vector you walk on the torus —
             // never use targetPos - muzzle on a wrapping map.
-            float3 relative = ToroidalMapEcs.ShortestOffsetXZ(muzzle, targetPos, mapW, mapH);
-            relative.y = 0f;
+            float3 relative = SphericalMapEcs.FlattenToTangent(
+                ToroidalMapEcs.ShortestOffsetXZ(muzzle, targetPos, mapW, mapH), muzzle);
 
             float distSq = math.lengthsq(relative);
             if (distSq < MinDirectionSq)
                 return false;
 
-            // --- Planar velocity (Y is not part of Titan Orbit flight) ---
             float scale = math.max(0f, velocityLeadScale);
-            float3 vel = targetVel * scale;
-            vel.y = 0f;
+            float3 vel = SphericalMapEcs.FlattenToTangent(targetVel * scale, muzzle);
 
             // [TITAN-ORBIT] Identical clamp to combat spawn — never aim with a different floor.
             float speed = math.max(MinBulletSpeed, bulletSpeed);
@@ -179,8 +177,7 @@ namespace TitanOrbit.Simulation
             // Working in offset space avoids wrapping bugs from targetPos + vel*t on a torus.
             // Velocity is NOT rotated for the torus — world XZ velocity is already planar;
             // only the position offset uses the shortest wrap.
-            float3 aimOffset = relative + vel * leadT;
-            aimOffset.y = 0f;
+            float3 aimOffset = SphericalMapEcs.FlattenToTangent(relative + vel * leadT, muzzle);
 
             // If lead collapsed (rare numerical edge), aim at current position.
             if (math.lengthsq(aimOffset) < MinDirectionSq)
@@ -326,7 +323,6 @@ namespace TitanOrbit.Simulation
             out float3 aimPoint)
         {
             aimPoint = targetPos;
-            aimPoint.y = PlanetaryDefenseMath.FixedY;
 
             if (!TryComputeFireSolution(
                     muzzle, targetPos, targetVel, bulletSpeed, mapW, mapH,
@@ -334,11 +330,10 @@ namespace TitanOrbit.Simulation
                     out _, out _, out float interceptDistance))
                 return false;
 
-            // Reconstruct aim point along the same offset used for fireDir.
-            float3 relative = ToroidalMapEcs.ShortestOffsetXZ(muzzle, targetPos, mapW, mapH);
-            relative.y = 0f;
-            float3 vel = targetVel * math.max(0f, velocityLeadScale);
-            vel.y = 0f;
+            float3 relative = SphericalMapEcs.FlattenToTangent(
+                ToroidalMapEcs.ShortestOffsetXZ(muzzle, targetPos, mapW, mapH), muzzle);
+            float3 vel = SphericalMapEcs.FlattenToTangent(
+                targetVel * math.max(0f, velocityLeadScale), muzzle);
             float speed = math.max(MinBulletSpeed, bulletSpeed);
             float maxLead = ComputeMaxLeadSeconds(speed, engageRange);
             float leadT = math.clamp(SolveInterceptTime(relative, vel, speed), 0f, maxLead);
@@ -347,7 +342,6 @@ namespace TitanOrbit.Simulation
                 aimOffset = relative;
 
             aimPoint = muzzle + aimOffset;
-            aimPoint.y = PlanetaryDefenseMath.FixedY;
             _ = interceptDistance;
             return true;
         }

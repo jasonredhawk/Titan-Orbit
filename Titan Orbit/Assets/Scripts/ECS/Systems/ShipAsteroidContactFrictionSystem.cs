@@ -182,7 +182,6 @@ namespace TitanOrbit.ECS
                 float3 normal = collisionEvent.Normal;
                 if (!normalFromOtherToShip)
                     normal = -normal;
-                normal.y = 0f;
                 if (math.lengthsq(normal) < 1e-8f)
                     return;
                 normal = math.normalize(normal);

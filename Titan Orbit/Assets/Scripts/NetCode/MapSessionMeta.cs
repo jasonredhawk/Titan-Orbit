@@ -39,11 +39,14 @@ namespace TitanOrbit.NetCode
         /// <summary>[TITAN-ORBIT] Asteroids.</summary>
         public int AsteroidCount;
 
-        /// <summary>[TITAN-ORBIT] Rolled toroidal map width (world units).</summary>
+        /// <summary>[TITAN-ORBIT] Designer linear map size (square side, world units).</summary>
         public float MapWidth;
 
-        /// <summary>[TITAN-ORBIT] Rolled toroidal map height (world units).</summary>
+        /// <summary>[TITAN-ORBIT] Designer linear map size (square — same as width).</summary>
         public float MapHeight;
+
+        /// <summary>[TITAN-ORBIT] Playable sphere radius. Surface area matches MapWidth².</summary>
+        public float MapRadius;
 
         /// <summary>
         /// [TITAN-ORBIT] Match seed used for <see cref="MapLayoutBlueprint"/> (BlueprintSeed).
@@ -130,11 +133,14 @@ namespace TitanOrbit.NetCode
         /// <summary>Server live ship count at last recipe send.</summary>
         public static int LiveShipCount { get; private set; }
 
-        /// <summary>Rolled map width from the server (0 until meta arrives).</summary>
+        /// <summary>Rolled designer map size from the server (0 until meta arrives).</summary>
         public static float MapWidth { get; private set; }
 
-        /// <summary>Rolled map height from the server (0 until meta arrives).</summary>
+        /// <summary>Rolled designer map size from the server (0 until meta arrives).</summary>
         public static float MapHeight { get; private set; }
+
+        /// <summary>Playable sphere radius from the server (0 until meta arrives).</summary>
+        public static float MapRadius { get; private set; }
 
         /// <summary>True when MapWidth/Height look like a real rolled map (not missing).</summary>
         public static bool HasMapSize => MapWidth >= 100f && MapHeight >= 100f;
@@ -201,6 +207,9 @@ namespace TitanOrbit.NetCode
                 AsteroidCount = mapState.AsteroidCount,
                 MapWidth = mapState.MapWidth,
                 MapHeight = mapState.MapHeight,
+                MapRadius = mapState.MapRadius > 0f
+                    ? mapState.MapRadius
+                    : SphericalMapEcs.RadiusFromMapAxes(mapState.MapWidth, mapState.MapHeight),
                 MatchSeed = seed,
                 HasFullRecipe = 1,
                 RecipeConfig = config,
@@ -254,12 +263,16 @@ namespace TitanOrbit.NetCode
                 MapWidth = rpc.MapWidth;
             if (rpc.MapHeight > 0f)
                 MapHeight = rpc.MapHeight;
+            if (rpc.MapRadius > 0f)
+                MapRadius = rpc.MapRadius;
+            else if (HasMapSize)
+                MapRadius = SphericalMapEcs.RadiusFromMapAxes(MapWidth, MapHeight);
 
             HasMeta = LoadingTotalSteps > 0 || TeamCount > 0 || NeutralPlanetCount > 0 ||
                       AsteroidCount > 0 || HasMapSize;
 
             if (HasMapSize)
-                ApplyMapSizeToToroidalHelpers(MapWidth, MapHeight);
+                ApplyMapSizeToToroidalHelpers(MapWidth, MapHeight, MapRadius);
 
             // --- Seed hydrate recipe ---
             bool full = rpc.HasFullRecipe != 0 && rpc.MatchSeed != 0;
@@ -298,15 +311,24 @@ namespace TitanOrbit.NetCode
         }
 
         /// <summary>
-        /// Writes width/height into both ECS and Vector3 toroidal static caches.
+        /// Writes designer size and radius into sphere + compatibility static caches.
         /// </summary>
         public static void ApplyMapSizeToToroidalHelpers(float width, float height)
         {
-            if (!ToroidalMapEcs.IsValidMapSize(width, height))
+            ApplyMapSizeToToroidalHelpers(width, height, 0f);
+        }
+
+        /// <summary>
+        /// Writes designer size and an explicit radius into sphere + compatibility caches.
+        /// </summary>
+        public static void ApplyMapSizeToToroidalHelpers(float width, float height, float radius)
+        {
+            if (!SphericalMapEcs.IsValidMapSize(width, height))
                 return;
 
             ToroidalMapEcs.SetMapSize(width, height);
-            ToroidalMap.SetMapSize(width, height);
+            if (SphericalMapEcs.IsValidRadius(radius))
+                SphericalMapEcs.SetMapSizeAndRadius(math.max(width, height), radius);
         }
 
         /// <summary>Clears latched meta when disconnecting / returning to menu.</summary>
@@ -321,7 +343,9 @@ namespace TitanOrbit.NetCode
             LiveShipCount = 0;
             MapWidth = 0f;
             MapHeight = 0f;
+            MapRadius = 0f;
             LastClientRecipeRequestRealtime = -999f;
+            SphericalMapEcs.ClearMapSize();
             ToroidalMapEcs.ClearMapSize();
             ClientMapHydrateCache.Clear();
             JoinWorldReadyCache.Clear();

@@ -61,16 +61,20 @@ namespace TitanOrbit.ECS
     }
 
     /// <summary>
-    /// [NETCODE] Toroidal map dimensions and async loading progress during map generation.
+    /// [NETCODE] Sphere-surface map dimensions and async loading progress during map generation.
     /// Ghost-serialized so clients know world bounds and loading screen state.
+    /// MapWidth/MapHeight remain the designer linear size (square). MapRadius is the shell.
     /// </summary>
     public struct MapStateSingleton : IComponentData
     {
-        /// <summary>[TITAN-ORBIT] Toroidal map width in world units.</summary>
+        /// <summary>[TITAN-ORBIT] Designer linear map size (square side) in world units.</summary>
         [GhostField] public float MapWidth;
 
-        /// <summary>[TITAN-ORBIT] Toroidal map height in world units.</summary>
+        /// <summary>[TITAN-ORBIT] Designer linear map size (square — same as width).</summary>
         [GhostField] public float MapHeight;
+
+        /// <summary>[TITAN-ORBIT] Playable sphere radius. Surface area matches MapWidth².</summary>
+        [GhostField] public float MapRadius;
 
         /// <summary>[TITAN-ORBIT] Seed used for this match layout (debug/replay).</summary>
         [GhostField] public int BlueprintSeed;
@@ -109,7 +113,7 @@ namespace TitanOrbit.ECS
         /// <summary>[TITAN-ORBIT] Entity kind byte (planet, asteroid, home, etc.).</summary>
         [GhostField] public byte EntityKind;
 
-        /// <summary>[ECS/DOTS] Toroidal world position at spawn.</summary>
+        /// <summary>[ECS/DOTS] World position on the sphere shell at spawn.</summary>
         [GhostField] public float3 Position;
 
         /// <summary>[TITAN-ORBIT] Initial team ownership for tinting.</summary>

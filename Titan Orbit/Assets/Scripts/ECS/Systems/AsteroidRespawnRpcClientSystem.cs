@@ -1,3 +1,4 @@
+using TitanOrbit.Generation;
 using Unity.Collections;
 using Unity.Entities;
 using Unity.Mathematics;
@@ -85,8 +86,7 @@ namespace TitanOrbit.ECS
             for (int i = 0; i < pending.Length; i++)
             {
                 var p = pending[i];
-                float3 pos = p.Position;
-                pos.y = 0f;
+                float3 pos = SphericalMapEcs.ProjectToSphere(p.Position);
                 if (!ClientLocalAsteroidCombatSync.TryApplyAsteroidRespawn(
                     em, prefab, pos, p.Scale, p.GemValue, p.MaxHealth, p.Size))
                 {

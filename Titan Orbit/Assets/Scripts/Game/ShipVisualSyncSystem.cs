@@ -415,9 +415,12 @@ namespace TitanOrbit.Game
             }
 
             // --- Reconcile pop / large gap: coast then capped soft correct ---
-            float3 coasted = _smoothPos + simVel * dt;
+            float3 coasted;
+            if (SphericalMapEcs.TryGetRadius(out float shellR))
+                SphericalMapEcs.StepOnSphere(_smoothPos, simVel, dt, shellR, out coasted, out _);
+            else
+                coasted = _smoothPos + simVel * dt;
             float3 err = simPos - coasted;
-            err.y = 0f;
             float t = 1f - math.exp(-CruiseCorrectSharpness * math.max(0f, dt));
             float3 pull = err * t;
             float pullLen = math.length(pull);
@@ -426,7 +429,8 @@ namespace TitanOrbit.Game
                 pull *= pullCap / pullLen;
 
             _smoothPos = coasted + pull;
-            _smoothPos.y = simPos.y;
+            if (SphericalMapEcs.IsValidRadius(shellR))
+                _smoothPos = SphericalMapEcs.ProjectToSphere(_smoothPos, shellR);
             _smoothRot = math.slerp(_smoothRot, simRot, 1f - math.exp(-DisplayRotationSharpness * dt));
         }
 

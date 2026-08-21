@@ -543,17 +543,10 @@ namespace TitanOrbit.ECS
                 return;
 
             float3 localFwd = math.mul(mount.LocalRotation, new float3(0f, 0f, 1f));
-            localFwd.y = 0f;
             if (math.lengthsq(localFwd) < 0.0001f)
                 localFwd = new float3(0f, 0f, 1f);
-            else
-                localFwd = math.normalize(localFwd);
-            fireForward = math.rotate(transform.Rotation, localFwd);
-            fireForward.y = 0f;
-            if (math.lengthsq(fireForward) < 0.0001f)
-                fireForward = new float3(0f, 0f, 1f);
-            else
-                fireForward = math.normalize(fireForward);
+            fireForward = SphericalMapEcs.UnitTangent(
+                transform.Position, math.rotate(transform.Rotation, localFwd));
             float ecsScale = math.max(0.25f, transform.Scale);
             float3 presentationLocal = mount.LocalPosition
                 * (BodyCollisionMath.ShipPresentationScale * ecsScale);

@@ -785,10 +785,8 @@ namespace TitanOrbit.ECS
         {
             var lt = state.EntityManager.GetComponentData<LocalTransform>(asteroid);
             float3 pos = lt.Position;
-            pos.y = 0f;
 
             float3 n = normalShipFromOther;
-            n.y = 0f;
             if (math.lengthsq(n) < 1e-8f)
                 n = new float3(0f, 0f, 1f);
             else

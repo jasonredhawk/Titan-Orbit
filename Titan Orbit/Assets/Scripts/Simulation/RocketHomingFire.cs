@@ -1,4 +1,5 @@
 using TitanOrbit.Data;
+using TitanOrbit.Generation;
 using Unity.Mathematics;
 
 namespace TitanOrbit.Simulation
@@ -46,11 +47,7 @@ namespace TitanOrbit.Simulation
                 ? stats.acquireRange
                 : RocketCatalog.DefaultAcquireRange;
 
-            fireForward.y = 0f;
-            if (math.lengthsq(fireForward) < 0.0001f)
-                fireForward = new float3(0f, 0f, 1f);
-            else
-                fireForward = math.normalize(fireForward);
+            fireForward = SphericalMapEcs.UnitTangent(plan.Origin, fireForward);
 
             // --- Same velocity as ShipRocketFireSystem: catalog speed, no ship carry ---
             float speed = stats.speed > 0.01f ? stats.speed : 16f;

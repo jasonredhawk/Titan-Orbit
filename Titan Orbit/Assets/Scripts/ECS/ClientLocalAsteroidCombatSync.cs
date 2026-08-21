@@ -302,7 +302,7 @@ namespace TitanOrbit.ECS
             if (ClientJoinSettleCache.ShouldSkipMapBodyQueries)
                 return false;
 
-            position.y = 0f;
+            position = SphericalMapEcs.ProjectToSphere(position);
             DestroyCulledZombiesAtPose(em, position);
 
             // --- Already hydrated (duplicate RPC / retry after a successful spawn) ---
@@ -329,7 +329,7 @@ namespace TitanOrbit.ECS
         /// </summary>
         public static void QueueUnmatchedDestroy(float3 position, float scaleHint)
         {
-            position.y = 0f;
+            position = SphericalMapEcs.ProjectToSphere(position);
             for (int i = 0; i < UnmatchedDestroys.Count; i++)
             {
                 float3 existing = UnmatchedDestroys[i].Position;
@@ -397,7 +397,7 @@ namespace TitanOrbit.ECS
             float maxHealth,
             float size)
         {
-            position.y = 0f;
+            position = SphericalMapEcs.ProjectToSphere(position);
             for (int i = 0; i < UnmatchedRespawns.Count; i++)
             {
                 float3 existing = UnmatchedRespawns[i].Position;
@@ -470,7 +470,7 @@ namespace TitanOrbit.ECS
             float mapW = 0f;
             float mapH = 0f;
             bool haveMap = ToroidalMapEcs.TryGetMapSize(out mapW, out mapH);
-            position.y = 0f;
+            position = SphericalMapEcs.ProjectToSphere(position);
 
             int count = 0;
             var matched = new NativeList<Entity>(8, Allocator.Temp);
@@ -484,7 +484,7 @@ namespace TitanOrbit.ECS
 
                 var lt = em.GetComponentData<LocalTransform>(e);
                 float3 pos = lt.Position;
-                pos.y = 0f;
+                pos = SphericalMapEcs.ProjectToSphere(pos);
                 float dist = haveMap
                     ? ToroidalMapEcs.ToroidalDistance(position, pos, mapW, mapH)
                     : math.distance(position, pos);
@@ -516,7 +516,7 @@ namespace TitanOrbit.ECS
             float mapW = 0f;
             float mapH = 0f;
             bool haveMap = ToroidalMapEcs.TryGetMapSize(out mapW, out mapH);
-            position.y = 0f;
+            position = SphericalMapEcs.ProjectToSphere(position);
 
             for (int i = 0; i < RegistryScratch.Count; i++)
             {
@@ -528,7 +528,7 @@ namespace TitanOrbit.ECS
 
                 var lt = em.GetComponentData<LocalTransform>(e);
                 float3 pos = lt.Position;
-                pos.y = 0f;
+                pos = SphericalMapEcs.ProjectToSphere(pos);
                 float dist = haveMap
                     ? ToroidalMapEcs.ToroidalDistance(position, pos, mapW, mapH)
                     : math.distance(position, pos);
@@ -580,7 +580,7 @@ namespace TitanOrbit.ECS
             float mapW = 0f;
             float mapH = 0f;
             bool haveMap = ToroidalMapEcs.TryGetMapSize(out mapW, out mapH);
-            position.y = 0f;
+            position = SphericalMapEcs.ProjectToSphere(position);
 
             float hintRadius = scaleHint > 0.01f ? MatchRadiusForScale(scaleHint) : 0f;
             float bestLiveDist = float.MaxValue;
@@ -600,7 +600,7 @@ namespace TitanOrbit.ECS
 
                 var lt = em.GetComponentData<LocalTransform>(e);
                 float3 pos = lt.Position;
-                pos.y = 0f;
+                pos = SphericalMapEcs.ProjectToSphere(pos);
                 float dist = haveMap
                     ? ToroidalMapEcs.ToroidalDistance(position, pos, mapW, mapH)
                     : math.distance(position, pos);
@@ -673,7 +673,7 @@ namespace TitanOrbit.ECS
             float mapW = 0f;
             float mapH = 0f;
             bool haveMap = ToroidalMapEcs.TryGetMapSize(out mapW, out mapH);
-            worldPos.y = 0f;
+            worldPos = SphericalMapEcs.ProjectToSphere(worldPos);
 
             float bestError = float.MaxValue;
             Entity bestEntity = Entity.Null;
@@ -699,7 +699,7 @@ namespace TitanOrbit.ECS
 
                 var lt = em.GetComponentData<LocalTransform>(e);
                 float3 pos = lt.Position;
-                pos.y = 0f;
+                pos = SphericalMapEcs.ProjectToSphere(pos);
                 float dist = haveMap
                     ? ToroidalMapEcs.ToroidalDistance(worldPos, pos, mapW, mapH)
                     : math.distance(worldPos, pos);
@@ -752,7 +752,7 @@ namespace TitanOrbit.ECS
             float mapW = 0f;
             float mapH = 0f;
             bool haveMap = ToroidalMapEcs.TryGetMapSize(out mapW, out mapH);
-            worldPos.y = 0f;
+            worldPos = SphericalMapEcs.ProjectToSphere(worldPos);
 
             float bestError = float.MaxValue;
             Entity bestEntity = Entity.Null;
@@ -772,7 +772,7 @@ namespace TitanOrbit.ECS
 
                 var lt = em.GetComponentData<LocalTransform>(e);
                 float3 pos = lt.Position;
-                pos.y = 0f;
+                pos = SphericalMapEcs.ProjectToSphere(pos);
                 float dist = haveMap
                     ? ToroidalMapEcs.ToroidalDistance(worldPos, pos, mapW, mapH)
                     : math.distance(worldPos, pos);

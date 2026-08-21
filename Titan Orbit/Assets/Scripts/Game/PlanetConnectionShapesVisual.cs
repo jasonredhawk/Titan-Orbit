@@ -95,24 +95,36 @@ namespace TitanOrbit.Game
             var edges = PlanetConnectionGraphCache.CurrentEdges;
             int triCount = triangles?.Count ?? 0;
             int edgeCount = edges?.Count ?? 0;
+            // #region agent log
+            if (Time.unscaledTime >= AgentDebugNdjson.NextGraph)
+            {
+                AgentDebugNdjson.NextGraph = Time.unscaledTime + 0.5f;
+                AgentDebugNdjson.Write(
+                    "H5",
+                    "PlanetConnectionShapesVisual.cs:status",
+                    "connections-status",
+                    "{\"graphTris\":" + triCount +
+                    ",\"graphEdges\":" + edgeCount +
+                    ",\"cacheTris\":" + _worldCache.Count +
+                    ",\"cacheEdges\":" + _edgeCache.Count +
+                    ",\"rev\":" + PlanetConnectionGraphCache.ClientPublishRevision +
+                    "}");
+            }
+            // #endregion
             if (triCount == 0 && edgeCount == 0)
                 return;
 
-            // Planet centers are fixed — rebuild draw cache only when graph topology publishes.
             int revision = PlanetConnectionGraphCache.ClientPublishRevision;
-            if (revision != _lastGraphRevision)
+            bool cacheEmpty = _worldCache.Count == 0 && _edgeCache.Count == 0;
+            if (revision != _lastGraphRevision || cacheEmpty)
             {
                 RebuildWorldCache();
-                _lastGraphRevision = revision;
+                if (_worldCache.Count > 0 || _edgeCache.Count > 0)
+                    _lastGraphRevision = revision;
             }
 
             if (_worldCache.Count == 0 && _edgeCache.Count == 0)
                 return;
-
-            World world = EcsGameBridge.GetVisualizationWorld();
-            if (world == null || !world.IsCreated)
-                return;
-            var em = world.EntityManager;
 
             using (Draw.Command(cam))
             {
@@ -120,10 +132,9 @@ namespace TitanOrbit.Game
                 Draw.ThicknessSpace = ThicknessSpace.Meters;
                 Draw.BlendMode = ShapesBlendMode.Transparent;
 
-                Vector3 referencePos = ResolveDisplayReference(cam, em);
+                Vector3 referencePos = cam.transform.position;
                 if (!ToroidalMap.TryGetMapSize(out float mapW, out float mapH))
                     return;
-                float edgeY = triangleHeight + edgeHeightAboveFill;
 
                 // --- Fills only (borders come from the edge pass — never TriangleBorder) ---
                 for (int i = 0; i < _worldCache.Count; i++)
@@ -132,10 +143,27 @@ namespace TitanOrbit.Game
                     Vector3 a = ToroidalMap.GetDisplayPosition(tri.Anchor, referencePos);
                     Vector3 b = a + tri.OffsetB;
                     Vector3 c = a + tri.OffsetC;
-                    a.y = triangleHeight;
-                    b.y = triangleHeight;
-                    c.y = triangleHeight;
-                    DrawTriangleFillWithWraps(a, b, c, mapW, mapH, tri.Fill);
+                    Vector3 lift = (Vector3)SphericalMapEcs.LocalUp((float3)((a + b + c) * (1f / 3f))) * 0.35f;
+                    DrawTriangleFillWithWraps(a + lift, b + lift, c + lift, mapW, mapH, tri.Fill);
+
+                    // #region agent log
+                    if (i == 0 && Time.unscaledTime >= AgentDebugNdjson.NextGraph)
+                    {
+                        AgentDebugNdjson.NextGraph = Time.unscaledTime + 0.5f;
+                        AgentDebugNdjson.Write(
+                            "H5",
+                            "PlanetConnectionShapesVisual.cs:draw",
+                            "connections",
+                            "{\"tris\":" + _worldCache.Count +
+                            ",\"edges\":" + _edgeCache.Count +
+                            ",\"graphTris\":" + triCount +
+                            ",\"graphEdges\":" + edgeCount +
+                            ",\"forcedY\":" + triangleHeight.ToString("F2") +
+                            ",\"anchorY\":" + tri.Anchor.y.ToString("F2") +
+                            ",\"drawAy\":" + (a + lift).y.ToString("F2") +
+                            "}");
+                    }
+                    // #endregion
                 }
 
                 // --- Every graph edge as a shortest chord ---
@@ -148,9 +176,7 @@ namespace TitanOrbit.Game
                     var edge = _edgeCache[i];
                     Vector3 a = ToroidalMap.GetDisplayPosition(edge.Anchor, referencePos);
                     Vector3 b = a + edge.OffsetB;
-                    a.y = edgeY;
-                    b.y = edgeY;
-                    DrawEdgeWithWraps(a, b, mapW, mapH, edge.Color);
+                    DrawGeodesicEdge(a, b, edge.Color);
                 }
             }
         }
@@ -169,10 +195,13 @@ namespace TitanOrbit.Game
                 return;
 
             World world = EcsGameBridge.GetVisualizationWorld();
-            if (world == null || !world.IsCreated)
-                return;
-            var em = world.EntityManager;
-            var visualizer = EcsWorldVisualizer.Active;
+            EntityManager em = default;
+            EcsWorldVisualizer visualizer = null;
+            if (world != null && world.IsCreated)
+            {
+                em = world.EntityManager;
+                visualizer = EcsWorldVisualizer.Active;
+            }
 
             // --- Short-embeddable fills (graph already filtered non-embeddable cliques) ---
             for (int i = 0; i < triCount; i++)
@@ -223,6 +252,24 @@ namespace TitanOrbit.Game
                     Color = new Color(baseColor.r, baseColor.g, baseColor.b, triangleBorderAlpha),
                 });
             }
+
+            // #region agent log
+            if (Time.unscaledTime >= AgentDebugNdjson.NextGraph)
+            {
+                AgentDebugNdjson.NextGraph = Time.unscaledTime + 0.5f;
+                float ay = _edgeCache.Count > 0 ? _edgeCache[0].Anchor.y : 0f;
+                AgentDebugNdjson.Write(
+                    "H5",
+                    "PlanetConnectionShapesVisual.cs:cache",
+                    "connections-cache",
+                    "{\"tris\":" + _worldCache.Count +
+                    ",\"edges\":" + _edgeCache.Count +
+                    ",\"graphTris\":" + triCount +
+                    ",\"graphEdges\":" + edgeCount +
+                    ",\"anchorY\":" + ay.ToString("F2") +
+                    "}");
+            }
+            // #endregion
         }
 
         /// <summary>
@@ -247,9 +294,9 @@ namespace TitanOrbit.Game
                 cPos = default;
                 return false;
             }
-            float3 a = new float3(aCanon.x, 0f, aCanon.z);
-            float3 b = new float3(bCanon.x, 0f, bCanon.z);
-            float3 c = new float3(cCanon.x, 0f, cCanon.z);
+            float3 a = (float3)aCanon;
+            float3 b = (float3)bCanon;
+            float3 c = (float3)cCanon;
 
             if (PlanetConnectionGraphLogic.IsShortEmbeddableTriangle(a, b, c, mapW, mapH))
             {
@@ -310,21 +357,34 @@ namespace TitanOrbit.Game
             // matching chart(PQ) to Shortest(P,Q) — same criterion as graph logic.
             float3 offP = ToroidalMapEcs.ShortestOffsetXZ(anchor, p, mapW, mapH);
             float3 offQ = ToroidalMapEcs.ShortestOffsetXZ(anchor, q, mapW, mapH);
-            float2 P = new float2(offP.x, offP.z);
-            float2 Q = new float2(offQ.x, offQ.z);
-            if (math.abs(P.x * Q.y - P.y * Q.x) < 1e-3f)
-                return false;
-
-            float3 shortQP = ToroidalMapEcs.ShortestOffsetXZ(q, p, mapW, mapH);
-            float2 chartQP = P - Q;
-            float2 geodesicQP = new float2(shortQP.x, shortQP.z);
-            if (math.lengthsq(chartQP - geodesicQP) > 0.25f)
+            if (math.lengthsq(math.cross(offP, offQ)) < 1e-4f)
                 return false;
 
             outAnchor = anchorCanon;
             outB = pCanon;
             outC = qCanon;
             return true;
+        }
+
+        void DrawGeodesicEdge(Vector3 a, Vector3 b, Color color)
+        {
+            if (!SphericalMapEcs.TryGetRadius(out float radius) || radius < 1f)
+            {
+                Draw.Line(a, b, triangleBorderThickness, LineEndCap.None, color);
+                return;
+            }
+
+            float chord = Vector3.Distance(a, b);
+            int steps = Mathf.Clamp(Mathf.CeilToInt(chord / 14f), 1, 16);
+            Vector3 prev = a + (Vector3)SphericalMapEcs.LocalUp((float3)a) * 0.35f;
+            for (int i = 1; i <= steps; i++)
+            {
+                float t = i / (float)steps;
+                float3 p = SphericalMapEcs.SphericalLerp((float3)a, (float3)b, t, radius);
+                Vector3 world = (Vector3)p + (Vector3)SphericalMapEcs.LocalUp(p) * 0.35f;
+                Draw.Line(prev, world, triangleBorderThickness, LineEndCap.None, color);
+                prev = world;
+            }
         }
 
         /// <summary>
@@ -335,22 +395,8 @@ namespace TitanOrbit.Game
             Vector3 a, Vector3 b, Vector3 c, float mapW, float mapH, Color fillColor)
         {
             Draw.Triangle(a, b, c, fillColor);
-
-            if (!NeedsWrapCopies(a, b, c, mapW, mapH))
-                return;
-
-            Vector3[] offsets =
-            {
-                new Vector3(mapW, 0f, 0f),
-                new Vector3(-mapW, 0f, 0f),
-                new Vector3(0f, 0f, mapH),
-                new Vector3(0f, 0f, -mapH),
-            };
-            for (int i = 0; i < offsets.Length; i++)
-            {
-                Vector3 off = offsets[i];
-                Draw.Triangle(a + off, b + off, c + off, fillColor);
-            }
+            _ = mapW;
+            _ = mapH;
         }
 
         /// <summary>
@@ -464,15 +510,14 @@ namespace TitanOrbit.Game
             if (planetId == 0)
                 return false;
 
-            if (visualizer == null ||
-                !visualizer.TryGetPlanetPoseByPlanetId(
-                    em, planetId, out float3 planetPos, out _, out _))
+            float3 planetPos = default;
+            bool gotPose = visualizer != null &&
+                visualizer.TryGetPlanetPoseByPlanetId(em, planetId, out planetPos, out _, out _);
+            if (!gotPose &&
+                !EcsGameBridge.TryGetPlanetPoseByPlanetId(planetId, out planetPos, out _, out _))
                 return false;
 
-            planetPos.y = 0f;
-            Vector3 raw = new Vector3(planetPos.x, 0f, planetPos.z);
-            planetCanonical = ToroidalMap.WrapPosition(raw);
-            planetCanonical.y = 0f;
+            planetCanonical = (Vector3)SphericalMapEcs.ProjectToSphere(planetPos);
             return true;
         }
 

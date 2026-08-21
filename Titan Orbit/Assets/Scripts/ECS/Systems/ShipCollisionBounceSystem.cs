@@ -1,4 +1,5 @@
 using TitanOrbit.Data;
+using TitanOrbit.Generation;
 using TitanOrbit.Simulation;
 using Unity.Burst;
 using Unity.Collections;
@@ -48,6 +49,7 @@ namespace TitanOrbit.ECS
         const byte KindShip = 1;
         const byte KindPlanet = 2;
         const byte KindMoon = 3;
+        const byte KindUnknown = 4;
 
         /// <summary>Require physics simulation + world for collision events.</summary>
         public void OnCreate(ref SystemState state)
@@ -95,6 +97,11 @@ namespace TitanOrbit.ECS
                 Moons = moonLookup,
             }.Schedule(SystemAPI.GetSingleton<SimulationSingleton>(), state.Dependency);
             state.Dependency.Complete();
+
+            // #region agent log
+            if (pairs.Length > 0)
+                LogWallContacts(pairs, SystemAPI.GetComponentLookup<LocalTransform>(true));
+            // #endregion
 
             if (pairs.Length == 0)
                 return;
@@ -144,6 +151,8 @@ namespace TitanOrbit.ECS
                     if (plowed)
                         megaUnconstrained.Add(pair.EntityA);
                 }
+                else if (pair.Kind == KindUnknown)
+                    continue;
                 else if (pair.Kind == KindPlanet)
                 {
                     if (IsTakingOffMoon(pair.EntityA, moonDockLookup))
@@ -201,8 +210,13 @@ namespace TitanOrbit.ECS
 
                     var snap = snapshotLookup[ship];
                     var lt = transformLookup[ship];
-                    float3 pos = snap.Position + snap.Linear * fixedDt;
-                    pos.y = 0f;
+                    SphericalMapEcs.StepOnSphere(
+                        snap.Position,
+                        snap.Linear,
+                        fixedDt,
+                        SphericalMapEcs.BurstSafeRadius(snap.Position),
+                        out float3 pos,
+                        out _);
                     lt.Position = pos;
                     transformLookup[ship] = lt;
                 }
@@ -419,6 +433,70 @@ namespace TitanOrbit.ECS
             working[ship] = vShip;
         }
 
+        // #region agent log
+        static double s_NextWallLog;
+
+        static void LogWallContacts(NativeList<BouncePair> pairs, ComponentLookup<LocalTransform> transforms)
+        {
+            double now = System.DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() / 1000.0;
+            if (now < s_NextWallLog)
+                return;
+            s_NextWallLog = now + 0.2;
+
+            int asteroids = 0, planets = 0, moons = 0, ships = 0, unknown = 0;
+            float otherLen = 0f, otherY = 0f, shipLen = 0f, shipY = 0f;
+            int firstKind = -1;
+            for (int i = 0; i < pairs.Length; i++)
+            {
+                BouncePair p = pairs[i];
+                if (p.Kind == KindAsteroid) asteroids++;
+                else if (p.Kind == KindPlanet) planets++;
+                else if (p.Kind == KindMoon) moons++;
+                else if (p.Kind == KindShip) ships++;
+                else unknown++;
+                if (i == 0)
+                {
+                    firstKind = p.Kind;
+                    if (transforms.HasComponent(p.EntityA))
+                    {
+                        float3 sp = transforms[p.EntityA].Position;
+                        shipLen = math.length(sp);
+                        shipY = sp.y;
+                    }
+                    if (transforms.HasComponent(p.EntityB))
+                    {
+                        float3 op = transforms[p.EntityB].Position;
+                        otherLen = math.length(op);
+                        otherY = op.y;
+                    }
+                }
+            }
+
+            try
+            {
+                long ts = System.DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+                string json =
+                    "{\"sessionId\":\"07b7b6\",\"hypothesisId\":\"H6\",\"location\":\"ShipCollisionBounceSystem\",\"message\":\"ship-contact\",\"data\":{\"n\":"
+                    + pairs.Length
+                    + ",\"ast\":" + asteroids
+                    + ",\"plt\":" + planets
+                    + ",\"moon\":" + moons
+                    + ",\"ship\":" + ships
+                    + ",\"unk\":" + unknown
+                    + ",\"kind0\":" + firstKind
+                    + ",\"shipR\":" + shipLen.ToString("F2", System.Globalization.CultureInfo.InvariantCulture)
+                    + ",\"shipY\":" + shipY.ToString("F2", System.Globalization.CultureInfo.InvariantCulture)
+                    + ",\"othR\":" + otherLen.ToString("F2", System.Globalization.CultureInfo.InvariantCulture)
+                    + ",\"othY\":" + otherY.ToString("F2", System.Globalization.CultureInfo.InvariantCulture)
+                    + "},\"timestamp\":" + ts + "}\n";
+                System.IO.File.AppendAllText(@"c:\Users\jason\Documents\repo\Titan-Orbit\debug-07b7b6.log", json);
+            }
+            catch
+            {
+            }
+        }
+        // #endregion
+
         /// <summary>
         /// Classifies PhysX collision events into bounce pairs. Ship is always EntityA in the
         /// stored pair; NormalAFromB points from the other body toward the ship (or from B→A
@@ -439,7 +517,6 @@ namespace TitanOrbit.ECS
                 Entity a = collisionEvent.EntityA;
                 Entity b = collisionEvent.EntityB;
                 float3 normalAFromB = collisionEvent.Normal;
-                normalAFromB.y = 0f;
                 if (math.lengthsq(normalAFromB) > 1e-8f)
                     normalAFromB = math.normalize(normalAFromB);
                 else
@@ -491,7 +568,7 @@ namespace TitanOrbit.ECS
                 else if (Moons.HasComponent(other))
                     kind = KindMoon;
                 else
-                    return;
+                    kind = KindUnknown;
 
                 Pairs.Add(new BouncePair
                 {

@@ -579,7 +579,8 @@ namespace TitanOrbit.UI
             float homeMul = state.IsHomePlanet ? 1.5f : 1f;
             moonAnchor.MoonVisualSize = PlanetGemMoonMath.ComputeVisualUniformScale(planetAnchor.BodySize, homeMul) *
                                         planetAnchor.BodySize;
-            var offset = PlanetGemMoonMath.GetMoonOrbitOffset(
+            var offset = PlanetGemMoonMath.GetMoonOrbitOffsetWorld(
+                lt.Position,
                 planetAnchor.BodySize,
                 state.PlanetLevel,
                 state.IsHomePlanet,

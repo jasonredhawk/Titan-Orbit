@@ -1,4 +1,5 @@
 using TitanOrbit.Core;
+using TitanOrbit.Generation;
 using TitanOrbit.Simulation;
 using Unity.Collections;
 using Unity.Entities;
@@ -227,7 +228,7 @@ namespace TitanOrbit.ECS
             PlanetOrbitMath.GetRingRadiiWorld(
                 planetSize, planetLevel, out _, out _, out float centerWorld);
             if (centerWorld < 0.01f)
-                return planetPos + new float3(HomeSpawnOffsetX, 0f, 0f);
+                return planetPos + SphericalMapEcs.OrbitOffsetWorld(planetPos, HomeSpawnOffsetX, 0f);
 
             // --- Live moon angle on that ring ---
             // [TITAN-ORBIT] θ = phase − ω t — identical formula to ShipMoonDockSystem zone center.
@@ -271,9 +272,8 @@ namespace TitanOrbit.ECS
                 theta = moonTheta + minDeltaTheta + u;
             }
 
-            // --- World position on XZ (Y stays at planet height) ---
-            // [TITAN-ORBIT] Leave spawn unbounded — do not ToroidalMapEcs.Wrap the hull.
-            return planetPos + new float3(math.cos(theta), 0f, math.sin(theta)) * centerWorld;
+            float3 local = new float3(math.cos(theta), 0f, math.sin(theta)) * centerWorld;
+            return planetPos + SphericalMapEcs.OrbitOffsetWorld(planetPos, local.x, local.z);
         }
 
         /// <summary>

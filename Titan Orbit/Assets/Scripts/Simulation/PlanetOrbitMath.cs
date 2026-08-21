@@ -182,6 +182,20 @@ namespace TitanOrbit.Simulation
             return new float3(math.cos(theta), 0f, math.sin(theta)) * centerWorld;
         }
 
+        /// <summary>
+        /// World-space orbit offset in the planet's local tangent frame (radial = planet up).
+        /// </summary>
+        public static float3 GetShipOrbitRingOffsetWorld(
+            float3 planetPosition,
+            float planetSize,
+            int planetLevel,
+            float phaseOffsetRadians,
+            double elapsedSeconds)
+        {
+            float3 local = GetShipOrbitRingOffset(planetSize, planetLevel, phaseOffsetRadians, elapsedSeconds);
+            return SphericalMapEcs.OrbitOffsetWorld(planetPosition, local.x, local.z);
+        }
+
         /// <summary>Deterministic phase offset per planet so moons do not stack on the same angle.</summary>
         public static float GetShipOrbitPhaseOffset(int planetId)
         {
@@ -200,7 +214,8 @@ namespace TitanOrbit.Simulation
         {
             _ = isHomePlanet;
             float phase = GetShipOrbitPhaseOffset(planetId);
-            return planetPosition + GetShipOrbitRingOffset(planetSize, planetLevel, phase, elapsedSeconds);
+            return planetPosition + GetShipOrbitRingOffsetWorld(
+                planetPosition, planetSize, planetLevel, phase, elapsedSeconds);
         }
 
         /// <summary>
@@ -230,6 +245,18 @@ namespace TitanOrbit.Simulation
             return new float3(math.sin(theta), 0f, -math.cos(theta)) * speed;
         }
 
+        /// <summary>Moon orbital velocity in the planet's local tangent frame.</summary>
+        public static float3 GetMoonOrbitalVelocityWorld(
+            float3 planetPosition,
+            float planetSize,
+            int planetLevel,
+            int planetId,
+            double elapsedSeconds)
+        {
+            float3 local = GetMoonOrbitalVelocity(planetSize, planetLevel, planetId, elapsedSeconds);
+            return SphericalMapEcs.OrbitOffsetWorld(planetPosition, local.x, local.z);
+        }
+
         /// <summary>
         /// Moon world position on the map tile nearest <paramref name="nearPosition"/>.
         /// Unwraps the planet first, then applies orbit offset (matches gem-moon visuals and toroidal display).
@@ -244,12 +271,10 @@ namespace TitanOrbit.Simulation
             float mapW,
             float mapH)
         {
-            float3 planetNear = nearPosition + ToroidalMapEcs.ShortestOffsetXZ(nearPosition, planetPosition, mapW, mapH);
-            planetNear.y = 0f;
-            float phase = GetShipOrbitPhaseOffset(planetId);
-            float3 moon = planetNear + GetShipOrbitRingOffset(planetSize, planetLevel, phase, elapsedSeconds);
-            moon.y = 0f;
-            return moon;
+            _ = nearPosition;
+            _ = mapW;
+            _ = mapH;
+            return GetMoonWorldPosition(planetPosition, planetSize, planetLevel, planetId, elapsedSeconds);
         }
 
         /// <summary>
@@ -312,9 +337,11 @@ namespace TitanOrbit.Simulation
             // --- Clockwise tangent from shortest planet→ship offset ---
             // [TITAN-ORBIT] ShortestOffsetXZ(planet, ship) is the radial vector on the torus.
             float3 toShip = ToroidalMapEcs.ShortestOffsetXZ(planetPos, shipPos, mapWidth, mapHeight);
-            float3 radial = math.normalize(new float3(toShip.x, 0f, toShip.z));
-            // Perpendicular on XZ: (x,z) → (z, -x) is clockwise when looking down +Y.
-            float3 tangent = new float3(radial.z, 0f, -radial.x);
+            if (math.lengthsq(toShip) < 1e-8f)
+                return;
+            float3 radial = math.normalize(toShip);
+            // Clockwise when looking along planet local up (matches old XZ: cross(+Y, radial)).
+            float3 tangent = math.normalize(math.cross(SphericalMapEcs.LocalUp(planetPos), radial));
 
             // --- Same ring speed as the gem moon on this planet ---
             // [TITAN-ORBIT] GetOrbitRingSpeed is the single source of truth for this ring radius.

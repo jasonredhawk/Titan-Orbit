@@ -50,10 +50,11 @@ namespace TitanOrbit.ECS
                 if (shipState.ValueRO.IsDead || shipState.ValueRO.AwaitingTeamSelection)
                     continue;
 
-                float3 lin = velocity.ValueRO.Linear;
-                lin.y = 0f;
-                snapshot.ValueRW.Linear = lin;
+                // Keep the full tangent velocity. Zeroing world Y was a leftover XZ-plane
+                // restraint and deleted north/south motion on the sphere.
+                snapshot.ValueRW.Linear = velocity.ValueRO.Linear;
                 snapshot.ValueRW.Position = transform.ValueRO.Position;
+                snapshot.ValueRW.Rotation = transform.ValueRO.Rotation;
             }
         }
     }

@@ -201,33 +201,12 @@ namespace TitanOrbit.Simulation
             float mapW,
             float mapH)
         {
-            // --- Fix AB as the shortest lift with A at the origin ---
+            float radius = SphericalMapEcs.RadiusFromMapAxes(mapW, mapH);
             float2 a0 = float2.zero;
-            float3 offB = ToroidalMapEcs.ShortestOffsetXZ(a, b, mapW, mapH);
-            float2 b0 = new float2(offB.x, offB.z);
-
-            // --- CD as a short segment; try every neighboring tile relative to A ---
-            // [TITAN-ORBIT] cBase is one lift of C near A; dDelta is always the shortest C→D.
-            // Shifting (cBase, cBase+dDelta) by (±mapW, ±mapH) covers every way CD can sit
-            // next to AB on the torus without enumerating lifts of AB itself.
-            float3 offC = ToroidalMapEcs.ShortestOffsetXZ(a, c, mapW, mapH);
-            float3 offCD = ToroidalMapEcs.ShortestOffsetXZ(c, d, mapW, mapH);
-            float2 cBase = new float2(offC.x, offC.z);
-            float2 dDelta = new float2(offCD.x, offCD.z);
-
-            for (int ox = -1; ox <= 1; ox++)
-            {
-                for (int oz = -1; oz <= 1; oz++)
-                {
-                    float2 c0 = cBase + new float2(ox * mapW, oz * mapH);
-                    float2 d0 = c0 + dDelta;
-                    // Proper cross OR collinear interior overlap — both are illegal on the map.
-                    if (SegmentsConflict2D(a0, b0, c0, d0))
-                        return true;
-                }
-            }
-
-            return false;
+            float2 b0 = SphericalMapEcs.TangentChartXY(a, b, radius);
+            float2 c0 = SphericalMapEcs.TangentChartXY(a, c, radius);
+            float2 d0 = SphericalMapEcs.TangentChartXY(a, d, radius);
+            return SegmentsConflict2D(a0, b0, c0, d0);
         }
 
         /// <summary>
@@ -319,13 +298,11 @@ namespace TitanOrbit.Simulation
         {
             // --- Unwrap into local XZ with anchor at origin (ShortestOffset — seam-safe) ---
             // [TITAN-ORBIT] Ship may be many map-widths away; verts stay in [-half, half).
+            float radius = SphericalMapEcs.RadiusFromMapAxes(mapW, mapH);
             float2 a = float2.zero;
-            float3 offB = ToroidalMapEcs.ShortestOffsetXZ(anchor, vertexB, mapW, mapH);
-            float3 offC = ToroidalMapEcs.ShortestOffsetXZ(anchor, vertexC, mapW, mapH);
-            float3 offP = ToroidalMapEcs.ShortestOffsetXZ(anchor, worldPos, mapW, mapH);
-            float2 b = new float2(offB.x, offB.z);
-            float2 c = new float2(offC.x, offC.z);
-            float2 p = new float2(offP.x, offP.z);
+            float2 b = SphericalMapEcs.TangentChartXY(anchor, vertexB, radius);
+            float2 c = SphericalMapEcs.TangentChartXY(anchor, vertexC, radius);
+            float2 p = SphericalMapEcs.TangentChartXY(anchor, worldPos, radius);
 
             float area = Cross(b - a, c - a);
             if (math.abs(area) < 1e-8f)
@@ -778,22 +755,18 @@ namespace TitanOrbit.Simulation
             float mapW,
             float mapH)
         {
-            float3 offP = ToroidalMapEcs.ShortestOffsetXZ(anchor, p, mapW, mapH);
-            float3 offQ = ToroidalMapEcs.ShortestOffsetXZ(anchor, q, mapW, mapH);
-            float2 P = new float2(offP.x, offP.z);
-            float2 Q = new float2(offQ.x, offQ.z);
+            float radius = SphericalMapEcs.RadiusFromMapAxes(mapW, mapH);
+            float2 P = SphericalMapEcs.TangentChartXY(anchor, p, radius);
+            float2 Q = SphericalMapEcs.TangentChartXY(anchor, q, radius);
 
-            // Degenerate (collinear / zero area) — not a fillable territory triangle.
             const float areaEps = 1e-3f;
             if (math.abs(Cross(P, Q)) < areaEps)
                 return false;
 
-            // Chart vector Q→P must equal the shortest geodesic Q→P on the torus.
-            float3 shortQP = ToroidalMapEcs.ShortestOffsetXZ(q, p, mapW, mapH);
-            float2 chartQP = P - Q;
-            float2 geodesicQP = new float2(shortQP.x, shortQP.z);
+            float chartLen = math.length(P - Q);
+            float geoLen = SphericalMapEcs.GeodesicDistance(q, p, radius);
             const float matchEps = 0.5f;
-            return math.lengthsq(chartQP - geodesicQP) <= matchEps * matchEps;
+            return math.abs(chartLen - geoLen) <= matchEps;
         }
 
         /// <summary>

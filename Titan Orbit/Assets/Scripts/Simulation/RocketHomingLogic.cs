@@ -51,13 +51,12 @@ namespace TitanOrbit.Simulation
             // --- Desired heading on the torus ---
             // [TITAN-ORBIT] Shortest offset so a lock across the seam does not aim the long way.
             float3 toTarget = ToroidalMapEcs.ShortestOffsetXZ(position, targetPos, mapW, mapH);
-            toTarget.y = 0f;
+            toTarget = SphericalMapEcs.FlattenToTangent(toTarget, position);
             if (math.lengthsq(toTarget) < 0.0001f)
                 return false;
 
             float3 desiredDir = math.normalize(toTarget);
-            float3 currentDir = velocity / speed;
-            currentDir.y = 0f;
+            float3 currentDir = SphericalMapEcs.FlattenToTangent(velocity / speed, position);
             if (math.lengthsq(currentDir) < 0.0001f)
                 currentDir = desiredDir;
             else
@@ -86,8 +85,7 @@ namespace TitanOrbit.Simulation
                 newDir = math.normalize(math.mul(step, currentDir));
             }
 
-            velocity = newDir * speed;
-            velocity.y = 0f;
+            velocity = SphericalMapEcs.FlattenToTangent(newDir * speed, position);
             return true;
         }
 

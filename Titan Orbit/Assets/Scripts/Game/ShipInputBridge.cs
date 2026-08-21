@@ -5,6 +5,7 @@ using TitanOrbit.Shared;
 using Unity.Entities;
 using TitanOrbit.Data;
 using TitanOrbit.ECS;
+using TitanOrbit.Generation;
 using TitanOrbit.Input;
 using Unity.Mathematics;
 using Unity.NetCode;
@@ -111,25 +112,50 @@ namespace TitanOrbit.Game
             // [TITAN-ORBIT] Turret control aims from the pad pose (hull is stowed/hidden).
             bool turretControl = PlanetaryDefenseTurretClientState.IsControlling;
 
-            if (cam != null && _input.TryGetMouseWorldPosition(cam, out Vector3 aimWorld))
+            Vector3 shipPos = Vector3.zero;
+            if (turretControl && PlanetaryDefenseTurretClientState.HasPadWorldPosition)
+                shipPos = PlanetaryDefenseTurretClientState.PadWorldPosition;
+            else if (ShipDisplayPose.HasLocalPose)
+                shipPos = ShipDisplayPose.LocalPosition;
+            else if (!EcsGameBridge.TryGetLocalShipPosition(out shipPos))
+                shipPos = Vector3.zero;
+
+            // Tangent plane at the hull — sphere-surface hits collapse to ~5u at the poles
+            // (camera looks along -radial) and the ship steers in circles around the pinch.
+            if (cam != null && _input.TryGetMouseWorldPosition(cam, shipPos, out Vector3 aimWorld))
             {
-                Vector3 shipPos = Vector3.zero;
-                if (turretControl && PlanetaryDefenseTurretClientState.HasPadWorldPosition)
-                    shipPos = PlanetaryDefenseTurretClientState.PadWorldPosition;
-                else if (ShipDisplayPose.HasLocalPose)
-                    shipPos = ShipDisplayPose.LocalPosition;
-                else if (!EcsGameBridge.TryGetLocalShipPosition(out shipPos))
-                    shipPos = Vector3.zero;
                 Vector3 toAim = aimWorld - shipPos;
-                toAim.y = 0f;
-                if (toAim.sqrMagnitude > 0.001f)
+                Vector3 tangent = Vector3.ProjectOnPlane(toAim, (Vector3)SphericalMapEcs.LocalUp((float3)shipPos));
+                if (tangent.sqrMagnitude > 0.001f)
                 {
-                    // Unit direction for hull yaw; distance so MEGA barrels can
-                    // converge on the cursor instead of firing parallel.
-                    aimDistance = toAim.magnitude;
-                    Vector3 dir = toAim / aimDistance;
-                    aimDir = new float2(dir.x, dir.z);
+                    // Tangent-chart encoding — world XZ dropped the north/south axis on the sphere.
+                    aimDistance = tangent.magnitude;
+                    quaternion shipRot = ShipDisplayPose.HasLocalPose
+                        ? (quaternion)ShipDisplayPose.LocalRotation
+                        : quaternion.identity;
+                    aimDir = SphericalMapEcs.EncodeTangentDir((float3)shipPos, shipRot, (float3)tangent);
                 }
+
+                // #region agent log
+                if (Time.unscaledTime >= AgentDebugNdjson.NextAim)
+                {
+                    AgentDebugNdjson.NextAim = Time.unscaledTime + 0.25f;
+                    float3 up = SphericalMapEcs.LocalUp((float3)shipPos);
+                    AgentDebugNdjson.Write(
+                        "H12",
+                        "ShipInputBridge.cs:aim",
+                        "mouse-aim",
+                        "{\"hitY\":" + aimWorld.y.ToString("F2") +
+                        ",\"tanSq\":" + tangent.sqrMagnitude.ToString("F4") +
+                        ",\"aimX\":" + aimDir.x.ToString("F3") +
+                        ",\"aimY\":" + aimDir.y.ToString("F3") +
+                        ",\"aimDist\":" + aimDistance.ToString("F2") +
+                        ",\"upy\":" + up.y.ToString("F3") +
+                        ",\"aimMode\":\"tan\"" +
+                        ",\"thrust\":" + (_input.MoveForwardPressed ? "true" : "false") +
+                        "}");
+                }
+                // #endregion
             }
 
             // While controlling a turret, RMB thrust is the exit signal (server ejects).

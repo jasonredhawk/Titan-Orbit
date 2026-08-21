@@ -63,8 +63,9 @@ namespace TitanOrbit.ECS
             {
                 var b = Bullets[i];
                 float3 start = b.Position;
-                BulletFlight.GetStep(start, b.Velocity, Dt, out float3 end, out int substeps);
-                float stepDistance = math.distance(start, end);
+                BulletFlight.GetStep(start, b.Velocity, Dt, out float3 end, out float3 velOnShell, out int substeps);
+                float stepDistance = SphericalMapEcs.GeodesicDistance(
+                    start, end, SphericalMapEcs.BurstSafeRadius(start));
                 StepFrom[i] = start;
                 StepTo[i] = end;
 
@@ -105,6 +106,7 @@ namespace TitanOrbit.ECS
                 }
 
                 b.Position = end;
+                b.Velocity = velOnShell;
                 Bullets[i] = b;
                 Outcomes[i] = OutcomeFly;
             }

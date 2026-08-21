@@ -57,8 +57,21 @@ namespace TitanOrbit.Camera
         private float scrollOffsetX;
         private float scrollOffsetZ;
 
+        /// <summary>
+        /// Sphere-surface map uses the globe mesh for space art. The old XZ scrolling
+        /// quad fights that camera and is parked until a sphere-aware parallax exists.
+        /// </summary>
+        public const bool DisabledForSphereMap = true;
+
         private void Awake()
         {
+            if (DisabledForSphereMap)
+            {
+                DisableScrollingQuad();
+                enabled = false;
+                return;
+            }
+
             // --- Unity lifecycle ---
             ResolveTargetCamera();
             if (targetCamera == null)
@@ -72,6 +85,13 @@ namespace TitanOrbit.Camera
 
         private void OnEnable()
         {
+            if (DisabledForSphereMap)
+            {
+                DisableScrollingQuad();
+                enabled = false;
+                return;
+            }
+
             // --- Unity lifecycle ---
             if (targetCamera == null)
                 ResolveTargetCamera();
@@ -148,8 +168,23 @@ namespace TitanOrbit.Camera
             meshRenderer.receiveShadows = false;
         }
 
+        void DisableScrollingQuad()
+        {
+            if (meshRenderer != null)
+                meshRenderer.enabled = false;
+            if (backgroundQuadTransform != null)
+                backgroundQuadTransform.gameObject.SetActive(false);
+
+            var existing = transform.Find("SpaceBackgroundQuad");
+            if (existing != null)
+                existing.gameObject.SetActive(false);
+        }
+
         private void LateUpdate()
         {
+            if (DisabledForSphereMap)
+                return;
+
             // --- Per-frame refresh ---
             ResolveTargetCamera();
             if (targetCamera == null) return;
@@ -251,6 +286,9 @@ namespace TitanOrbit.Camera
         /// </summary>
         public void SetTemporarilyHidden(bool hidden)
         {
+            if (DisabledForSphereMap)
+                return;
+
             // --- SetTemporarilyHidden ---
             if (meshRenderer == null)
                 EnsureBackgroundQuad();

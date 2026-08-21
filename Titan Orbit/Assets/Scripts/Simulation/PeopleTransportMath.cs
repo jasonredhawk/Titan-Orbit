@@ -74,8 +74,6 @@ namespace TitanOrbit.Simulation
             float mapW,
             float mapH)
         {
-            myPos.y = 0f;
-            targetPos.y = 0f;
             float3 toTarget = ToroidalMapEcs.ToroidalDirection(myPos, targetPos, mapW, mapH);
             float dist = ToroidalMapEcs.ToroidalDistance(myPos, targetPos, mapW, mapH);
             float closeSpeed = cruiseSpeed * MagnetCloseRangeSpeedRatio;
@@ -111,13 +109,11 @@ namespace TitanOrbit.Simulation
         public static float3 GetPlanetSurfaceToward(float3 planetCenter, float planetSize, float3 fromWorldPos, float mapW, float mapH)
         {
             // --- Compute value ---
-            float3 fromPos = fromWorldPos;
-            fromPos.y = 0f;
-            float3 toCore = ToroidalMapEcs.ToroidalDirection(fromPos, planetCenter, mapW, mapH);
+            float3 toCore = ToroidalMapEcs.ToroidalDirection(fromWorldPos, planetCenter, mapW, mapH);
             float surfaceWorld = math.max(0.25f, planetSize) * 0.5f;
             float3 surface = planetCenter - toCore * surfaceWorld;
-            surface.y = 0f;
-            return surface;
+            float radius = SphericalMapEcs.RadiusFromMapAxes(mapW, mapH);
+            return SphericalMapEcs.ProjectToSphere(surface, radius);
         }
 
         public static float3 GetPlanetSurfaceSpawnToward(float3 planetCenter, float planetSize, float3 towardWorldPos, float mapW, float mapH)
@@ -127,21 +123,19 @@ namespace TitanOrbit.Simulation
             float3 outward = ToroidalMapEcs.ToroidalDirection(planetCenter, surface, mapW, mapH);
             float nudge = math.max(SurfaceSpawnOutwardNudge, planetSize * 0.045f);
             surface += outward * nudge;
-            surface.y = 0f;
-            return surface;
+            float radius = SphericalMapEcs.RadiusFromMapAxes(mapW, mapH);
+            return SphericalMapEcs.ProjectToSphere(surface, radius);
         }
 
         public static float3 GetShipMagnetTarget(float3 shipCenter, float shipRadius, float3 fromWorldPos, float mapW, float mapH)
         {
             // --- Compute value ---
-            float3 fromPos = fromWorldPos;
-            fromPos.y = 0f;
-            float3 toCenter = ToroidalMapEcs.ToroidalDirection(fromPos, shipCenter, mapW, mapH);
+            float3 toCenter = ToroidalMapEcs.ToroidalDirection(fromWorldPos, shipCenter, mapW, mapH);
             float hullRadius = math.max(0.2f, shipRadius);
             float inset = math.clamp(hullRadius * ShipHullMagnetInset, 0.05f, 0.45f);
             float3 hullPoint = shipCenter - toCenter * math.max(0.2f, hullRadius - inset);
-            hullPoint.y = 0f;
-            return hullPoint;
+            float radius = SphericalMapEcs.RadiusFromMapAxes(mapW, mapH);
+            return SphericalMapEcs.ProjectToSphere(hullPoint, radius);
         }
 
         /// <summary>
@@ -172,8 +166,8 @@ namespace TitanOrbit.Simulation
             // Clear the visual hull so the float reads as leaving the planetward side, not the cockpit.
             float nudge = math.max(0.2f, hullRadius * 0.55f);
             float3 spawn = shipCenter + towardPlanet * (hullRadius + nudge);
-            spawn.y = 0f;
-            return spawn;
+            float radius = SphericalMapEcs.RadiusFromMapAxes(mapW, mapH);
+            return SphericalMapEcs.ProjectToSphere(spawn, radius);
         }
 
         public static bool CanDeliverLoadToShip(float3 projectilePos, float3 shipCenter, float shipRadius, float mapW, float mapH)

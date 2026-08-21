@@ -58,6 +58,7 @@ namespace TitanOrbit.ECS
         public byte Outcome;
         public float3 HitPoint;
         public float3 NewPos;
+        public float3 NewVelocity;
         public float NewTraveled;
         public float NewLifetime;
     }
@@ -135,7 +136,7 @@ namespace TitanOrbit.ECS
             {
                 var req = Requests[i];
                 float lifetime = req.RemainingLifetime - req.Dt;
-                BulletFlight.GetStep(req.Position, req.Velocity, req.Dt, out float3 end, out int substeps);
+                BulletFlight.GetStep(req.Position, req.Velocity, req.Dt, out float3 end, out float3 velOnShell, out int substeps);
                 if (substeps > MaxSubsteps)
                     substeps = MaxSubsteps;
 
@@ -166,6 +167,7 @@ namespace TitanOrbit.ECS
                         Outcome = CosmeticSweepResult.Hit,
                         HitPoint = hitPoint,
                         NewPos = hitPoint,
+                        NewVelocity = velOnShell,
                         NewTraveled = traveled,
                         NewLifetime = lifetime,
                     };
@@ -179,6 +181,7 @@ namespace TitanOrbit.ECS
                         Outcome = CosmeticSweepResult.Expire,
                         HitPoint = end,
                         NewPos = end,
+                        NewVelocity = velOnShell,
                         NewTraveled = traveled,
                         NewLifetime = lifetime,
                     };
@@ -190,6 +193,7 @@ namespace TitanOrbit.ECS
                     Outcome = CosmeticSweepResult.Fly,
                     HitPoint = end,
                     NewPos = end,
+                    NewVelocity = velOnShell,
                     NewTraveled = traveled,
                     NewLifetime = lifetime,
                 };

@@ -89,6 +89,9 @@ namespace TitanOrbit.ECS
         /// </summary>
         public void OnUpdate(ref SystemState state)
         {
+            // Sphere-surface map: PhysX sees real neighbors. Seam resolve is gone.
+            return;
+
             // --- Client late-join safety (map-body gathers) ---
             // [TITAN-ORBIT] RequireForUpdate<ShipTag> means this system first runs when the
             // TeamChoice ship Instantiates — Settling is already OFF (JoinSettleCompleted).

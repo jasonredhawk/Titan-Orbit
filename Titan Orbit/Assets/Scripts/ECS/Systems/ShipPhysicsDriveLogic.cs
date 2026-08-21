@@ -260,8 +260,8 @@ namespace TitanOrbit.ECS
             // auto-guns (MegaShipAutoFireSystem); the hull keeps flying the last facing.
             if (!(isMegaShip && input.Overdrive))
             {
-                AimWorldPoint(in transform.Position, in transform.Rotation, in input.AimPlanarDir, out float2 aimWorldXz);
-                TryRotateTowardAim(ref transform, in aimWorldXz, rotationSpeed, dt);
+                AimWorldPoint(in transform.Position, in transform.Rotation, in input.AimPlanarDir, out float3 aimWorld);
+                TryRotateTowardAim(ref transform, in aimWorld, rotationSpeed, dt);
             }
 
             // --- Orbit ring detection (toroidal) ---
@@ -342,8 +342,7 @@ namespace TitanOrbit.ECS
             }
 
             // --- Start from post-collision velocity (Unity Physics may have bounced us last tick) ---
-            float3 vel = physicsVelocity.Linear;
-            vel.y = 0f;
+            float3 vel = SphericalMapEcs.FlattenToTangent(physicsVelocity.Linear, transform.Position);
 
             float3 orbitDesiredVel = float3.zero;
             if (useOrbit)
@@ -362,15 +361,16 @@ namespace TitanOrbit.ECS
                     mapH,
                     out orbitDesiredVel,
                     out float alignRate);
-                orbitDesiredVel.y = 0f;
+                orbitDesiredVel = SphericalMapEcs.FlattenToTangent(orbitDesiredVel, transform.Position);
                 float t = math.saturate(alignRate * dt);
                 vel = math.lerp(vel, orbitDesiredVel, t);
-                vel.y = 0f;
+                vel = SphericalMapEcs.FlattenToTangent(vel, transform.Position);
             }
             else
             {
                 ApplyThrustCoastAndBrakes(
                     ref vel,
+                    transform.Position,
                     in transform.Rotation,
                     thrust,
                     maxSpeed,
@@ -380,6 +380,9 @@ namespace TitanOrbit.ECS
                     !input.DisableSpaceBrakes,
                     dt,
                     hardCapToMaxSpeed: !overdriveActive);
+
+                if (!input.Thrust && math.lengthsq(vel) < 0.0064f)
+                    vel = float3.zero;
 
                 ApplyRecoilDecay(ref vel, maxSpeed, movementMass, motor.RecoilDecayPerSecond, dt);
             }
@@ -406,7 +409,7 @@ namespace TitanOrbit.ECS
             // LocalTransform with AABB sphere radii — compound hulls over-estimate and shove.
             RejectInwardAsteroidVelocity(ref vel, in asteroidContact);
 
-            vel.y = 0f;
+            vel = SphericalMapEcs.FlattenToTangent(vel, transform.Position);
             physicsVelocity = new PhysicsVelocity
             {
                 Linear = vel,
@@ -491,7 +494,6 @@ namespace TitanOrbit.ECS
                 return;
 
             float3 n = asteroidContact.OutwardNormal;
-            n.y = 0f;
             if (math.lengthsq(n) < 1e-8f)
                 return;
             n = math.normalize(n);
@@ -502,7 +504,6 @@ namespace TitanOrbit.ECS
                 return;
 
             vel -= n * vn;
-            vel.y = 0f;
         }
 
         /// <summary>
@@ -518,6 +519,7 @@ namespace TitanOrbit.ECS
         /// </param>
         static void ApplyThrustCoastAndBrakes(
             ref float3 vel,
+            float3 shipPos,
             in quaternion rotation,
             float acceleration,
             float maxSpeed,
@@ -533,11 +535,17 @@ namespace TitanOrbit.ECS
 
             if (thrust)
             {
-                float3 fwd = math.mul(rotation, new float3(0f, 0f, 1f));
-                fwd.y = 0f;
+                float3 facing = math.mul(rotation, new float3(0f, 0f, 1f));
+                float3 fwd = SphericalMapEcs.FlattenToTangent(facing, shipPos);
+                if (math.lengthsq(fwd) < 1e-8f)
+                    fwd = SphericalMapEcs.FlattenToTangent(vel, shipPos);
+                if (math.lengthsq(fwd) < 1e-8f)
+                    fwd = SphericalMapEcs.OrthonormalTangent(SphericalMapEcs.LocalUp(shipPos));
+                else
+                    fwd = math.normalize(fwd);
                 if (math.lengthsq(fwd) > 0.01f)
                 {
-                    float3 moveDirection = math.normalize(fwd);
+                    float3 moveDirection = fwd;
                     float speed = math.length(vel);
                     float3 accel;
                     if (speed < maxSpeed)
@@ -571,8 +579,6 @@ namespace TitanOrbit.ECS
             }
             // else: DisableSpaceBrakes → frictionless coast (keep velocity; no CoastFriction).
             // PlayerInputHandler documents this as "float endlessly" when SpaceBrakesEnabled is false.
-
-            vel.y = 0f;
 
             float mag = math.length(vel);
 
@@ -735,7 +741,6 @@ namespace TitanOrbit.ECS
 
             // --- Surface contact direction (preserve approach side on the XZ plane) ---
             float3 offset = ToroidalMapEcs.ShortestOffsetXZ(moonPos, transform.Position, mapW, mapH);
-            offset.y = 0f;
             float offsetLen = math.length(offset);
             if (offsetLen < 1e-4f)
                 offset = new float3(1f, 0f, 0f);
@@ -749,16 +754,18 @@ namespace TitanOrbit.ECS
             float shipRadius = BodyCollisionMath.GetShipHullRadiusWorld(transform.Scale);
             float contactRadius = math.max(0.05f, snapshot.MoonBodyRadiusWorld + shipRadius);
             float3 attachPos = moonPos + offset * contactRadius;
-            attachPos.y = 0f;
+            float shellR = SphericalMapEcs.BurstSafeRadius(mapW, mapH, attachPos);
+            if (SphericalMapEcs.IsValidRadius(shellR))
+                attachPos = SphericalMapEcs.ProjectToSphere(attachPos, shellR);
             transform.Position = attachPos;
 
             // --- Match moon velocity so Physics does not leave the moon behind this tick ---
-            float3 moonVel = PlanetOrbitMath.GetMoonOrbitalVelocity(
+            float3 moonVel = PlanetOrbitMath.GetMoonOrbitalVelocityWorld(
+                planetXform.Position,
                 planetSize,
                 planet.PlanetLevel,
                 planet.PlanetId,
                 elapsedSeconds);
-            moonVel.y = 0f;
             physicsVelocity = new PhysicsVelocity
             {
                 Linear = moonVel,
@@ -772,24 +779,18 @@ namespace TitanOrbit.ECS
         /// </summary>
         static void TryRotateTowardAim(
             ref LocalTransform transform,
-            in float2 aimWorldXz,
+            in float3 aimWorld,
             float rotationSpeedDeg,
             float dt)
         {
             float3 shipPos = transform.Position;
-            float3 aimPoint = new float3(aimWorldXz.x, shipPos.y, aimWorldXz.y);
-            float3 directionToAim = aimPoint - shipPos;
-            directionToAim.y = 0f;
+            float3 directionToAim = SphericalMapEcs.FlattenToTangent(aimWorld - shipPos, shipPos);
             if (math.lengthsq(directionToAim) <= 0.001f)
                 return;
 
-            directionToAim = math.normalize(directionToAim);
-            quaternion targetRotation = quaternion.LookRotationSafe(directionToAim, math.up());
             float maxRadians = math.radians(math.max(0f, rotationSpeedDeg) * dt);
-            float angle = math.angle(transform.Rotation, targetRotation);
-            transform.Rotation = angle <= maxRadians
-                ? targetRotation
-                : math.slerp(transform.Rotation, targetRotation, maxRadians / math.max(angle, 1e-6f));
+            transform.Rotation = SphericalMapEcs.YawTowardOnSurface(
+                shipPos, transform.Rotation, directionToAim, maxRadians);
         }
 
         /// <summary>
@@ -819,23 +820,26 @@ namespace TitanOrbit.ECS
             in float3 shipPos,
             in quaternion rot,
             in float2 aimPlanarDir,
-            out float2 aimWorldXz)
+            out float3 aimWorld)
         {
+            float3 dir;
             if (math.lengthsq(aimPlanarDir) > 0.01f)
             {
-                float2 dir = math.normalize(aimPlanarDir);
-                aimWorldXz = shipPos.xz + dir * 100f;
-                return;
+                dir = SphericalMapEcs.DecodeTangentDir(shipPos, rot, aimPlanarDir);
+            }
+            else
+            {
+                dir = math.mul(rot, new float3(0f, 0f, 1f));
+                dir = SphericalMapEcs.FlattenToTangent(dir, shipPos);
             }
 
-            float3 forward = math.mul(rot, new float3(0f, 0f, 1f));
-            forward.y = 0f;
-            if (math.lengthsq(forward) < 0.0001f)
-                forward = new float3(0f, 0f, 1f);
+            if (math.lengthsq(dir) < 0.0001f)
+                dir = SphericalMapEcs.OrthonormalTangent(SphericalMapEcs.LocalUp(shipPos));
             else
-                forward = math.normalize(forward);
+                dir = math.normalize(dir);
 
-            aimWorldXz = shipPos.xz + forward.xz * 100f;
+            float radius = SphericalMapEcs.BurstSafeRadius(shipPos);
+            aimWorld = SphericalMapEcs.ProjectToSphere(shipPos + dir * 100f, radius);
         }
     }
 }

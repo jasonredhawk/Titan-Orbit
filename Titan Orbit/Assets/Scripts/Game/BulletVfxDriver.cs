@@ -344,7 +344,8 @@ namespace TitanOrbit.Game
                     // --- Gun / drone / PD: variable-dt dead reckon (already a straight line) ---
                     float3 prevPos = t.LogicalPos;
                     t.RemainingLifetime -= dt;
-                    BulletFlight.GetStep(prevPos, t.Velocity, dt, out float3 nextPos, out int substeps);
+                    BulletFlight.GetStep(prevPos, t.Velocity, dt, out float3 nextPos, out float3 velOnShell, out int substeps);
+                    t.Velocity = velOnShell;
                     float step = math.distance(prevPos, nextPos);
                     t.Traveled += step;
 
@@ -388,9 +389,6 @@ namespace TitanOrbit.Game
                     displayVel = t.Velocity;
                 }
 
-                // --- Display pose ---
-                // Keep mount-height Y — unwrap helpers are XZ-only; restore after.
-                float mountY = displayLogical.y;
                 int stableKey = unchecked((int)t.Sequence) ^ (t.OwnerNetworkId * 397);
                 Vector3 displayPos = ResolveTracerDisplayPosition(
                     ref t, displayLogical, hasRef, reference, stableKey, dt,
@@ -399,12 +397,12 @@ namespace TitanOrbit.Game
                 if ((displayPos - prevDisplay).sqrMagnitude > 40f * 40f)
                     ResetTrail(in t);
 
-                displayPos.y = ResolveTracerFlightDisplayY(t.SpawnPos.y, t.Traveled);
-                if (BulletCosmeticHitQuery.TryGetMegaFlightLiftY(displayLogical, out float megaY, out float lift))
-                    displayPos.y = math.lerp(displayPos.y, megaY, lift);
                 t.Go.transform.position = displayPos;
                 if (math.lengthsq(displayVel) > 0.0001f)
-                    t.Go.transform.rotation = Quaternion.LookRotation(((Vector3)displayVel).normalized, Vector3.up);
+                {
+                    Vector3 up = (Vector3)SphericalMapEcs.LocalUp((float3)displayLogical);
+                    t.Go.transform.rotation = Quaternion.LookRotation(((Vector3)displayVel).normalized, up);
+                }
 
                 if (t.Stretch != null)
                 {
@@ -1390,6 +1388,7 @@ namespace TitanOrbit.Game
                     }
 
                     t.LogicalPos = outcome.NewPos;
+                    t.Velocity = outcome.NewVelocity;
                     t.Traveled = outcome.NewTraveled;
                     t.RemainingLifetime = outcome.NewLifetime;
                     _tracers[i] = t;

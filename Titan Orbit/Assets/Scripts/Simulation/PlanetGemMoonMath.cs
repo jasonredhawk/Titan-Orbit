@@ -228,5 +228,22 @@ namespace TitanOrbit.Simulation
             float phase = PlanetOrbitMath.GetShipOrbitPhaseOffset(planetId);
             return PlanetOrbitMath.GetShipOrbitRingOffset(planetSize, planetLevel, phase, elapsedSeconds);
         }
+
+        /// <summary>
+        /// Moon offset in the planet's local tangent frame (sits on the sphere with the planet).
+        /// </summary>
+        public static float3 GetMoonOrbitOffsetWorld(
+            float3 planetPosition,
+            float planetSize,
+            int planetLevel,
+            bool isHomePlanet,
+            int planetId,
+            double elapsedSeconds)
+        {
+            _ = isHomePlanet;
+            float phase = PlanetOrbitMath.GetShipOrbitPhaseOffset(planetId);
+            return PlanetOrbitMath.GetShipOrbitRingOffsetWorld(
+                planetPosition, planetSize, planetLevel, phase, elapsedSeconds);
+        }
     }
 }

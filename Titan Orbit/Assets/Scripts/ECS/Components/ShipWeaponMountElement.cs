@@ -1,3 +1,4 @@
+using TitanOrbit.Generation;
 using TitanOrbit.Simulation;
 using Unity.Burst;
 using Unity.Entities;
@@ -125,42 +126,26 @@ namespace TitanOrbit.ECS
             fireOrigin = float3.zero;
             fireForward = new float3(0f, 0f, 1f);
 
-            // --- Local mount forward, flattened to XZ plane ---
-            // [TITAN-ORBIT] Top-down shooter — ignore vertical aim component.
             float3 localFwd = math.mul(mount.LocalRotation, new float3(0f, 0f, 1f));
-            localFwd.y = 0f;
             if (math.lengthsq(localFwd) < 0.0001f)
                 localFwd = new float3(0f, 0f, 1f);
             else
                 localFwd = math.normalize(localFwd);
 
-            // --- Prefab-local → presentation world (match hybrid hull + wing beams) ---
-            // [TITAN-ORBIT] Chassis Weapon children bake at full prefab size (e.g. localX ±4.28).
-            // Hybrid ship proxies draw at ShipPresentationScale (~0.155). Without this multiply,
-            // server bullets spawned ~4u beside the visible hull while client tracers used live
-            // GO muzzles on the scaled mesh — player had to aim ~20° off to land hits.
             float ecsScale = math.max(0.25f, shipTransform.Scale);
             float3 presentationLocal =
                 mount.LocalPosition * (BodyCollisionMath.ShipPresentationScale * ecsScale);
             fireOrigin = shipTransform.Position + math.rotate(shipTransform.Rotation, presentationLocal);
 
-            // --- Hull-relative cannon forward ---
-            // [TITAN-ORBIT] Legacy Starship convention: hullRot * flatten(Inverse(hullRot) * weaponWorldForward)
-            float3 cannonFwd = math.rotate(shipTransform.Rotation, localFwd);
-            cannonFwd.y = 0f;
-            if (math.lengthsq(cannonFwd) < 0.0001f)
-                cannonFwd = math.rotate(shipTransform.Rotation, new float3(0f, 0f, 1f));
-            cannonFwd = math.normalize(cannonFwd);
+            float3 cannonFwd = SphericalMapEcs.UnitTangent(
+                fireOrigin, math.rotate(shipTransform.Rotation, localFwd));
 
-            // --- Apply authored yaw offset for angled cannons ---
             float angleRad = math.radians(mount.DirectionAngleDeg);
-            float3 cannonRight = math.normalize(math.cross(new float3(0f, 1f, 0f), cannonFwd));
-            fireForward = math.normalize(cannonFwd * math.cos(angleRad) + cannonRight * math.sin(angleRad));
-            fireForward.y = 0f;
-            if (math.lengthsq(fireForward) < 0.0001f)
-                return false;
-            fireForward = math.normalize(fireForward);
-            return true;
+            float3 up = SphericalMapEcs.LocalUp(fireOrigin);
+            float3 cannonRight = math.normalizesafe(math.cross(up, cannonFwd), new float3(1f, 0f, 0f));
+            fireForward = SphericalMapEcs.UnitTangent(
+                fireOrigin, cannonFwd * math.cos(angleRad) + cannonRight * math.sin(angleRad));
+            return math.lengthsq(fireForward) > 0.0001f;
         }
     }
 }

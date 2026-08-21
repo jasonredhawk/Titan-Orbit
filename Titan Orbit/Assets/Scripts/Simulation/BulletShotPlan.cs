@@ -1,3 +1,4 @@
+using TitanOrbit.Generation;
 using Unity.Mathematics;
 
 namespace TitanOrbit.Simulation
@@ -90,14 +91,13 @@ namespace TitanOrbit.Simulation
                 referenceSpeed,
                 categoryUpgradeScale);
 
-            fireForward.y = 0f;
+            fireForward = SphericalMapEcs.FlattenToTangent(fireForward, fireOrigin);
             if (math.lengthsq(fireForward) < 0.0001f)
-                fireForward = new float3(0f, 0f, 1f);
+                fireForward = SphericalMapEcs.OrthonormalTangent(SphericalMapEcs.LocalUp(fireOrigin));
             else
                 fireForward = math.normalize(fireForward);
 
-            float3 vel = shipVel;
-            vel.y = 0f;
+            float3 vel = SphericalMapEcs.FlattenToTangent(shipVel, fireOrigin);
             vel = fireForward * math.max(1f, bulletSpeed) + vel;
 
             return new BulletShotPlan

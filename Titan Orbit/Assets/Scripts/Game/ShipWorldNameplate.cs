@@ -3,6 +3,8 @@ using System.Text;
 using TitanOrbit.Core;
 using TitanOrbit.Data;
 using TitanOrbit.ECS;
+using TitanOrbit.Generation;
+using Unity.Mathematics;
 using TMPro;
 using UnityEngine;
 using UnityEngine.Rendering;
@@ -448,6 +450,10 @@ namespace TitanOrbit.Game
             RefreshCachedHullFootprintIfGrown();
 
             Vector3 worldPos;
+            var cam = CameraFollowEcs.GameplayCamera();
+            Vector3 towardCamera = cam != null ? -cam.transform.forward : (Vector3)SphericalMapEcs.LocalUp((float3)transform.position);
+            Vector3 screenDown = cam != null ? -cam.transform.up : Vector3.forward;
+
             if (_isMega)
             {
                 float lift = Mathf.Clamp(
@@ -456,8 +462,7 @@ namespace TitanOrbit.Game
                     MaxHeightWorld);
 
                 Vector3 centerWorld = transform.TransformPoint(_cachedLocalCenter);
-                worldPos = centerWorld;
-                worldPos.y = centerWorld.y + lift + HeightAbovePlane;
+                worldPos = centerWorld + towardCamera * (lift + HeightAbovePlane);
             }
             else
             {
@@ -466,17 +471,50 @@ namespace TitanOrbit.Game
                     0.1f,
                     MaxClearanceWorld);
 
-                // Anchor from XZ hull center (not raw pivot) so yaw keeps the plate under the ship.
                 Vector3 localCenter = _cachedLocalCenter;
                 localCenter.y = 0f;
                 Vector3 centerWorld = transform.TransformPoint(localCenter);
-                worldPos = centerWorld + ScreenBelowWorld * clearance;
-                worldPos.y = centerWorld.y + HeightAbovePlane;
+                worldPos = centerWorld + screenDown * clearance + towardCamera * HeightAbovePlane;
             }
 
-            // [TITAN-ORBIT] World rotation — plate stays upright while the hull turns.
-            _labelRoot.SetPositionAndRotation(worldPos, Quaternion.Euler(-90f, 0f, 0f));
-            _labelRoot.localScale = new Vector3(LabelWorldScale, -LabelWorldScale, LabelWorldScale);
+            Quaternion billboard = cam != null
+                ? cam.transform.rotation * Quaternion.Euler(0f, 180f, 0f)
+                : SphericalMap.BillboardFacingCamera(cam, worldPos);
+            _labelRoot.SetPositionAndRotation(worldPos, billboard);
+            _labelRoot.localScale = new Vector3(LabelWorldScale, LabelWorldScale, LabelWorldScale);
+            for (int i = 0; i < _labelRoot.childCount; i++)
+            {
+                Transform child = _labelRoot.GetChild(i);
+                if (Quaternion.Angle(child.localRotation, Quaternion.Euler(-90f, 0f, 0f)) < 8f)
+                    child.localRotation = Quaternion.identity;
+            }
+
+            // #region agent log
+            if (Time.unscaledTime >= AgentDebugNdjson.NextPlate)
+            {
+                AgentDebugNdjson.NextPlate = Time.unscaledTime + 0.25f;
+                Vector3 toCam = cam != null ? cam.transform.position - worldPos : Vector3.zero;
+                Vector3 camUp = cam != null ? cam.transform.up : Vector3.zero;
+                float parallel = cam != null && toCam.sqrMagnitude > 1e-8f && camUp.sqrMagnitude > 1e-8f
+                    ? Mathf.Abs(Vector3.Dot(toCam.normalized, camUp.normalized))
+                    : -1f;
+                float fwdDot = toCam.sqrMagnitude > 1e-8f
+                    ? Vector3.Dot(_labelRoot.forward, toCam.normalized)
+                    : 0f;
+                AgentDebugNdjson.Write(
+                    "H4",
+                    "ShipWorldNameplate.cs:billboard",
+                    "nameplate",
+                    "{\"camNull\":" + (cam == null ? "true" : "false") +
+                    ",\"fwdDotToCam\":" + fwdDot.ToString("F3") +
+                    ",\"scaleY\":" + _labelRoot.localScale.y.ToString("F2") +
+                    ",\"parallel\":" + parallel.ToString("F3") +
+                    ",\"isMain\":" + (cam != null && cam == Camera.main ? "true" : "false") +
+                    ",\"child0eulX\":" + (_labelRoot.childCount > 0 ? _labelRoot.GetChild(0).localEulerAngles.x.ToString("F1") : "-1") +
+                    ",\"upDotCam\":" + (cam != null ? Vector3.Dot(_labelRoot.up, cam.transform.up).ToString("F3") : "-1") +
+                    "}");
+            }
+            // #endregion
         }
 
         /// <summary>
@@ -999,8 +1037,8 @@ namespace TitanOrbit.Game
         {
             var go = new GameObject(name);
             go.transform.SetParent(null, false);
-            go.transform.rotation = Quaternion.Euler(-90f, 0f, 0f);
-            go.transform.localScale = new Vector3(LabelWorldScale, -LabelWorldScale, LabelWorldScale);
+            go.transform.rotation = Quaternion.identity;
+            go.transform.localScale = new Vector3(LabelWorldScale, LabelWorldScale, LabelWorldScale);
             return go.transform;
         }
 

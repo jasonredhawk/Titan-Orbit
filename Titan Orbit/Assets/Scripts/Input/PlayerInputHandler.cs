@@ -382,7 +382,7 @@ namespace TitanOrbit.Input
         }
 
         /// <summary>
-        /// Unprojects a valid pointer onto the Y=0 play plane for ship aim.
+        /// Unprojects a valid pointer onto the local tangent plane for ship aim.
         /// Returns false when there is no usable camera/pointer — callers should keep prior aim
         /// (zero AimPlanarDir → motor uses current forward; see ShipPhysicsDriveLogic.AimWorldPoint).
         ///
@@ -394,7 +394,20 @@ namespace TitanOrbit.Input
         /// <param name="cam">Gameplay camera (must have a finite transform / projection).</param>
         /// <param name="worldPos">Hit point on the ground plane when true; undefined when false.</param>
         /// <returns>True when <paramref name="worldPos"/> is a usable aim point.</returns>
-        public bool TryGetMouseWorldPosition(UnityEngine.Camera cam, out Vector3 worldPos)
+        public bool TryGetMouseWorldPosition(UnityEngine.Camera cam, out Vector3 worldPos) =>
+            TryGetMouseWorldPosition(cam, default, hasPlanePoint: false, out worldPos);
+
+        /// <summary>
+        /// Same as <see cref="TryGetMouseWorldPosition(UnityEngine.Camera, out Vector3)"/> but
+        /// intersects the tangent plane at <paramref name="planePoint"/> (the ship) so pole
+        /// aim does not collapse onto a nearby sphere-surface hit.
+        /// </summary>
+        public bool TryGetMouseWorldPosition(
+            UnityEngine.Camera cam, Vector3 planePoint, out Vector3 worldPos) =>
+            TryGetMouseWorldPosition(cam, planePoint, hasPlanePoint: true, out worldPos);
+
+        bool TryGetMouseWorldPosition(
+            UnityEngine.Camera cam, Vector3 planePoint, bool hasPlanePoint, out Vector3 worldPos)
         {
             worldPos = default;
 
@@ -417,30 +430,37 @@ namespace TitanOrbit.Input
                 }
 
                 if (mobile.TryGetAimScreenPosition(cam, out Vector2 aimScreen) &&
-                    TryScreenToPlayPlane(cam, aimScreen, out worldPos))
+                    TryScreenToPlayPlane(cam, aimScreen, planePoint, hasPlanePoint, out worldPos))
                     return true;
 
                 if (mobile.JoystickDeflectedBeyondDeadZone())
                 {
-                    // Aim along camera-relative stick on the XZ plane (no screen unproject needed).
+                    // Aim along camera-relative stick on the local tangent (cam right / cam up).
                     Vector2 joy = mobile.JoystickInput;
-                    Vector3 f = cam.transform.forward;
-                    f.y = 0f;
+                    Vector3 up = hasPlanePoint && planePoint.sqrMagnitude > 0.01f
+                        ? planePoint.normalized
+                        : (cam.transform.position.sqrMagnitude > 0.01f
+                            ? cam.transform.position.normalized
+                            : Vector3.up);
+                    Vector3 f = Vector3.ProjectOnPlane(cam.transform.up, up);
                     if (f.sqrMagnitude < 0.0001f)
-                        f = Vector3.forward;
-                    else
-                        f.Normalize();
-                    Vector3 r = cam.transform.right;
-                    r.y = 0f;
+                        f = Vector3.ProjectOnPlane(cam.transform.forward, up);
+                    if (f.sqrMagnitude < 0.0001f)
+                        f = cam.transform.up;
+                    f.Normalize();
+                    Vector3 r = Vector3.ProjectOnPlane(cam.transform.right, up);
+                    if (r.sqrMagnitude < 0.0001f)
+                        r = Vector3.Cross(up, f);
                     r.Normalize();
                     Vector3 flat = (r * joy.x + f * joy.y).normalized;
-                    worldPos = transform.position + flat * 10f;
+                    Vector3 origin = hasPlanePoint ? planePoint : transform.position;
+                    worldPos = origin + flat * 10f;
                     return true;
                 }
 
                 // Editor / hybrid: mouse aim while touch HUD is forced on.
                 if (TryReadFiniteMouseScreenPosition(out Vector2 hybridMouse) &&
-                    TryScreenToPlayPlane(cam, hybridMouse, out worldPos))
+                    TryScreenToPlayPlane(cam, hybridMouse, planePoint, hasPlanePoint, out worldPos))
                     return true;
 
                 return false;
@@ -450,7 +470,7 @@ namespace TitanOrbit.Input
             if (!TryReadFiniteMouseScreenPosition(out Vector2 mousePos))
                 return false;
 
-            return TryScreenToPlayPlane(cam, mousePos, out worldPos);
+            return TryScreenToPlayPlane(cam, mousePos, planePoint, hasPlanePoint, out worldPos);
         }
 
         /// <summary>
@@ -474,27 +494,44 @@ namespace TitanOrbit.Input
         }
 
         /// <summary>
-        /// Casts a screen-pixel ray onto the Y=0 play plane (top-down flight ground).
+        /// Casts a screen-pixel ray onto the local tangent plane (not the curved shell).
+        /// Sphere-surface hits collapse at the poles when the camera looks along -radial.
         /// Never calls ScreenPointToRay with non-finite screen coords.
         /// </summary>
-        /// <param name="cam">Camera that owns the pixel space.</param>
-        /// <param name="screenPos">Pixel position (origin bottom-left in Input System space).</param>
-        /// <param name="worldPos">Intersection with Y=0 when the ray hits the plane.</param>
-        /// <returns>True when the ray hits the ground plane.</returns>
-        static bool TryScreenToPlayPlane(UnityEngine.Camera cam, Vector2 screenPos, out Vector3 worldPos)
+        static bool TryScreenToPlayPlane(
+            UnityEngine.Camera cam,
+            Vector2 screenPos,
+            Vector3 planePoint,
+            bool hasPlanePoint,
+            out Vector3 worldPos)
         {
             worldPos = default;
             if (!IsFiniteVec2(screenPos))
                 return false;
 
-            // [UNITY] ScreenPointToRay logs "out of view frustum" if x/y are NaN — guard above.
             Ray ray = cam.ScreenPointToRay(new Vector3(screenPos.x, screenPos.y, 0f));
-            Plane plane = new Plane(Vector3.up, Vector3.zero);
-            if (!plane.Raycast(ray, out float distance))
-                return false;
+            Vector3 point = hasPlanePoint && planePoint.sqrMagnitude > 0.01f
+                ? planePoint
+                : EstimateShellPointUnderCamera(cam);
+            if (TitanOrbit.Generation.SphericalMap.TryRaycastTangentPlane(
+                    ray.origin, ray.direction, point, out worldPos))
+                return IsFiniteVec3(worldPos);
 
-            worldPos = ray.GetPoint(distance);
-            return IsFiniteVec3(worldPos);
+            if (TitanOrbit.Generation.SphericalMap.TryRaycastNear(ray.origin, ray.direction, out worldPos))
+                return IsFiniteVec3(worldPos);
+
+            return false;
+        }
+
+        static Vector3 EstimateShellPointUnderCamera(UnityEngine.Camera cam)
+        {
+            Vector3 p = cam.transform.position;
+            if (p.sqrMagnitude < 0.01f)
+                return Vector3.zero;
+            Vector3 radial = p.normalized;
+            if (TitanOrbit.Generation.SphericalMap.TryGetRadius(out float mapR) && mapR > 1f)
+                return radial * mapR;
+            return radial * Mathf.Max(1f, p.magnitude - 10f);
         }
 
         /// <summary>[STANDARD] True when both components are real numbers (not NaN / Infinity).</summary>

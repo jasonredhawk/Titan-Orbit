@@ -95,7 +95,7 @@ namespace TitanOrbit.Game
             {
                 float maxDistSq = MaxDrawDistance * MaxDrawDistance;
                 Vector3 delta = _planetRoot.position - cam.transform.position;
-                if ((delta.x * delta.x + delta.z * delta.z) > maxDistSq)
+                if (delta.sqrMagnitude > maxDistSq)
                     return;
             }
 
@@ -110,8 +110,7 @@ namespace TitanOrbit.Game
             if (drawOrbitZoneFill)
             {
                 Quaternion flatXZ = Quaternion.Euler(-90f, 0f, 0f);
-                // World-space drop (not planet-local) so every planet matches turret-pad discs.
-                Vector3 offsetBelow = new Vector3(0f, -orbitZoneHeightBelowPlanet, 0f);
+                Vector3 offsetBelow = -_planetRoot.up * orbitZoneHeightBelowPlanet;
                 Matrix4x4 zoneMatrix = Matrix4x4.Translate(offsetBelow) * planetMatrix * Matrix4x4.Rotate(flatXZ);
                 // Occupied tint is published by PlanetOrbitRingOccupancySystem from ghosted
                 // ShipOrbitState (any locked-in player ship). Several teams cycle ~1s each.

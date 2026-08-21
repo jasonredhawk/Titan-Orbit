@@ -236,9 +236,7 @@ namespace TitanOrbit.ECS
             {
                 if (liveStates[i].IsDestroyed)
                     continue;
-                float3 p = liveXf[i].Position;
-                p.y = 0f;
-                livePos.Add(p);
+                livePos.Add(liveXf[i].Position);
             }
 
             rpc.MatchSeed = seed;
@@ -251,7 +249,6 @@ namespace TitanOrbit.ECS
                     continue;
 
                 float3 want = bodies[i].Position;
-                want.y = 0f;
                 bool alive = false;
                 for (int p = 0; p < livePos.Length; p++)
                 {

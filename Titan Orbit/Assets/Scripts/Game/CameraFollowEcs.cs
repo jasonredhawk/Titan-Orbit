@@ -1,5 +1,6 @@
 using TitanOrbit.Data;
 using TitanOrbit.ECS;
+using TitanOrbit.Generation;
 using TitanOrbit.Shared;
 using Unity.Entities;
 using Unity.Mathematics;
@@ -133,10 +134,21 @@ namespace TitanOrbit.Game
         /// <summary>[UNITY] Cached Camera on this GameObject (may be null if misconfigured).</summary>
         UnityEngine.Camera cam;
 
+        /// <summary>Gameplay follow camera (not Camera.main, which can be a menu / UI camera).</summary>
+        public UnityEngine.Camera FollowCamera => cam != null ? cam : GetComponent<UnityEngine.Camera>();
+
+        public static UnityEngine.Camera GameplayCamera()
+        {
+            if (Instance != null && Instance.FollowCamera != null)
+                return Instance.FollowCamera;
+            return UnityEngine.Camera.main;
+        }
+
         /// <summary>
         /// Current smoothed look-ahead on XZ (Y always 0). Applied on top of the ship position each frame.
         /// </summary>
         Vector3 _lookAheadCurrent;
+        Vector3 _lastCamUp;
 
         /// <summary>[UNITY] Velocity term for SmoothDamp on look-ahead (do not edit in Inspector).</summary>
         Vector3 _lookAheadSmoothVelocity;
@@ -220,8 +232,7 @@ namespace TitanOrbit.Game
 
             ApplyLensFromSettings();
 
-            // [TITAN-ORBIT] Top-down: pitch 90° so +Y is "out of the screen," XZ is the play plane.
-            transform.rotation = Quaternion.Euler(90f, 0f, 0f);
+            // Radial-up seed until the first LateUpdate has a ship on the shell.
         }
 
         void OnDisable()
@@ -360,14 +371,57 @@ namespace TitanOrbit.Game
             }
             // else: backlog — keep _lookAheadCurrent / velocity as-is.
 
-            // Force Y=0 so look-ahead never lifts/drops the camera (height owns Y).
-            _lookAheadCurrent.y = 0f;
+            Vector3 up = (Vector3)SphericalMapEcs.LocalUp((float3)shipPos);
+            _lookAheadCurrent = Vector3.ProjectOnPlane(_lookAheadCurrent, up);
 
             // --- Compose final camera pose ---
-            // [TITAN-ORBIT] Ship XZ is hard-locked to presentation (NetCode owns flight feel).
-            // Only look-ahead + height use SmoothDamp — that is framing, not a second chase of the hull.
-            transform.position = shipPos + _lookAheadCurrent + new Vector3(0f, _currentHeight, 0f);
-            transform.rotation = Quaternion.Euler(90f, 0f, 0f);
+            // Ship is hard-locked to presentation. Height is along local up (away from sphere center).
+            // Look-ahead stays in the tangent plane.
+            transform.position = shipPos + _lookAheadCurrent + up * _currentHeight;
+            Vector3 camForward = -up;
+            Vector3 camUp = Vector3.ProjectOnPlane(
+                _lastCamUp.sqrMagnitude > 0.01f
+                    ? _lastCamUp
+                    : ResolvePlanarVelocity(shipPos, dt),
+                up);
+            if (camUp.sqrMagnitude < 1e-6f)
+                camUp = (Vector3)SphericalMapEcs.OrthonormalTangent((float3)up);
+            else
+                camUp.Normalize();
+            _lastCamUp = camUp;
+            transform.rotation = Quaternion.LookRotation(camForward, camUp);
+
+            // #region agent log
+            if (Time.unscaledTime >= AgentDebugNdjson.NextShip)
+            {
+                AgentDebugNdjson.NextShip = Time.unscaledTime + 0.25f;
+                Vector3 vel = ResolvePlanarVelocity(shipPos, dt);
+                float velY = 0f;
+                if (EcsGameBridge.TryGetLocalShipVelocity(out var ecsVel))
+                    velY = ecsVel.y;
+                float lat = Mathf.Asin(Mathf.Clamp(up.y, -1f, 1f)) * Mathf.Rad2Deg;
+                bool radiusOk = SphericalMapEcs.TryGetRadius(out float cachedR);
+                AgentDebugNdjson.Write(
+                    "H13",
+                    "CameraFollowEcs.cs:pose",
+                    "ship-cam",
+                    "{\"sx\":" + shipPos.x.ToString("F2") +
+                    ",\"sy\":" + shipPos.y.ToString("F2") +
+                    ",\"sz\":" + shipPos.z.ToString("F2") +
+                    ",\"r\":" + shipPos.magnitude.ToString("F2") +
+                    ",\"lat\":" + lat.ToString("F1") +
+                    ",\"upy\":" + up.y.ToString("F3") +
+                    ",\"spd\":" + vel.magnitude.ToString("F3") +
+                    ",\"velY\":" + velY.ToString("F3") +
+                    ",\"hintFlip\":" + (Mathf.Abs(up.y) >= 0.95f ? "true" : "false") +
+                    ",\"fwdDotUp\":" + Vector3.Dot(camForward.normalized, camUp.normalized).ToString("F3") +
+                    ",\"radiusOk\":" + (radiusOk ? "true" : "false") +
+                    ",\"cachedR\":" + cachedR.ToString("F2") +
+                    "}");
+            }
+            // #endregion
+
+            SphereMapGlobeVisual.Ensure();
 
             _lastShipPos = shipPos;
             _hasLastShipPos = true;
@@ -479,7 +533,7 @@ namespace TitanOrbit.Game
             // during ShouldSkipShipEntityQueries (Join Team Instantiates) — that is intentional.
             if (EcsGameBridge.TryGetLocalShipVelocity(out var ecsVel))
             {
-                return new Vector3(ecsVel.x, 0f, ecsVel.z);
+                return Vector3.ProjectOnPlane((Vector3)ecsVel, (Vector3)SphericalMapEcs.LocalUp((float3)shipPos));
             }
 
             // --- Fallback: presentation pose delta ---
@@ -487,7 +541,7 @@ namespace TitanOrbit.Game
             if (_hasLastShipPos && dt > 1e-5f)
             {
                 Vector3 delta = shipPos - _lastShipPos;
-                return new Vector3(delta.x, 0f, delta.z) / dt;
+                return Vector3.ProjectOnPlane(delta, (Vector3)SphericalMapEcs.LocalUp((float3)shipPos)) / dt;
             }
 
             return Vector3.zero;
@@ -632,4 +686,35 @@ namespace TitanOrbit.Game
             return EcsGameBridge.TryGetLocalShipPosition(out targetPos);
         }
     }
+
+    // #region agent log
+    static class AgentDebugNdjson
+    {
+        const string LogPath = @"c:\Users\jason\Documents\repo\Titan-Orbit\debug-07b7b6.log";
+        static readonly object Gate = new object();
+        public static float NextShip;
+        public static float NextAim;
+        public static float NextPlate;
+        public static float NextGraph;
+
+        public static void Write(string hyp, string loc, string msg, string dataJson)
+        {
+            try
+            {
+                long ts = System.DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+                string line =
+                    "{\"sessionId\":\"07b7b6\",\"hypothesisId\":\"" + hyp +
+                    "\",\"location\":\"" + loc +
+                    "\",\"message\":\"" + msg +
+                    "\",\"data\":" + dataJson +
+                    ",\"timestamp\":" + ts + "}\n";
+                lock (Gate)
+                    System.IO.File.AppendAllText(LogPath, line);
+            }
+            catch
+            {
+            }
+        }
+    }
+    // #endregion
 }

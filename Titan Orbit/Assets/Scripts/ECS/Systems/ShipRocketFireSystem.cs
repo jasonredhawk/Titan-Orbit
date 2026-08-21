@@ -113,12 +113,8 @@ namespace TitanOrbit.ECS
                 loadout.ValueRW.NextRocketFireTime = serverElapsed + stats.fireCooldown;
 
                 // --- Spawn a Rockets-bank homing bullet from the hull nose ---
-                float3 fireForward = math.forward(transform.ValueRO.Rotation);
-                fireForward.y = 0f;
-                if (math.lengthsq(fireForward) < 0.0001f)
-                    fireForward = new float3(0f, 0f, 1f);
-                else
-                    fireForward = math.normalize(fireForward);
+                float3 fireForward = SphericalMapEcs.UnitTangent(
+                    transform.ValueRO.Position, math.forward(transform.ValueRO.Rotation));
 
                 float3 fireOrigin = transform.ValueRO.Position;
                 fireOrigin.y = transform.ValueRO.Position.y;

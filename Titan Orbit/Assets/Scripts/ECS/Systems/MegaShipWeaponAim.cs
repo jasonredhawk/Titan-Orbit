@@ -173,14 +173,15 @@ namespace TitanOrbit.ECS
             out float3 aimPoint)
         {
             aimPoint = hull.Position;
-            float3 mouseDir = new float3(input.AimPlanarDir.x, 0f, input.AimPlanarDir.y);
-            float dist = input.AimDistance;
-            if (math.lengthsq(mouseDir) < 0.01f || dist <= 0.05f)
+            if (math.lengthsq(input.AimPlanarDir) < 0.01f || input.AimDistance <= 0.05f)
                 return false;
 
-            mouseDir = math.normalize(mouseDir);
-            aimPoint = hull.Position + mouseDir * dist;
-            aimPoint.y = hull.Position.y;
+            float3 mouseDir = TitanOrbit.Generation.SphericalMapEcs.DecodeTangentDir(
+                hull.Position, hull.Rotation, input.AimPlanarDir);
+            float dist = input.AimDistance;
+            float radius = TitanOrbit.Generation.SphericalMapEcs.BurstSafeRadius(hull.Position);
+            aimPoint = TitanOrbit.Generation.SphericalMapEcs.ProjectToSphere(
+                hull.Position + mouseDir * dist, radius);
             return true;
         }
 
@@ -203,7 +204,6 @@ namespace TitanOrbit.ECS
                 if (!ShipWeaponPose.TryResolve(hull, mount, out float3 muzzle, out _))
                     muzzle = hull.Position;
                 float3 offset = ToroidalMapEcs.ShortestOffsetXZ(muzzle, aimPoint, mapW, mapH);
-                offset.y = 0f;
                 float len = math.length(offset);
                 if (len < 0.05f)
                     return false;
@@ -211,10 +211,9 @@ namespace TitanOrbit.ECS
                 return true;
             }
 
-            float3 mouseDir = new float3(input.AimPlanarDir.x, 0f, input.AimPlanarDir.y);
-            if (math.lengthsq(mouseDir) < 0.01f)
+            if (math.lengthsq(input.AimPlanarDir) < 0.01f)
                 return false;
-            worldDir = math.normalize(mouseDir);
+            worldDir = SphericalMapEcs.DecodeTangentDir(hull.Position, hull.Rotation, input.AimPlanarDir);
             return true;
         }
 

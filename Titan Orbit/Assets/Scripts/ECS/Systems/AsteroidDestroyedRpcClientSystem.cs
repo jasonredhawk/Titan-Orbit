@@ -1,3 +1,4 @@
+using TitanOrbit.Generation;
 using Unity.Collections;
 using Unity.Entities;
 using Unity.Mathematics;
@@ -81,8 +82,7 @@ namespace TitanOrbit.ECS
             for (int i = 0; i < pending.Length; i++)
             {
                 var p = pending[i];
-                float3 pos = p.Position;
-                pos.y = 0f;
+                float3 pos = SphericalMapEcs.ProjectToSphere(p.Position);
                 int culled = ClientLocalAsteroidCombatSync.SoftDestroyLocalAsteroidsNear(em, pos, p.Scale);
                 // Join skip / registry lag: keep the pose until a later tick finds the rock.
                 if (culled <= 0)

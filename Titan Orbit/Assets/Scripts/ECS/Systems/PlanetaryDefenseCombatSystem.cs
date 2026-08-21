@@ -193,7 +193,6 @@ namespace TitanOrbit.ECS
 
                     float3 muzzle = PlanetaryDefenseMath.GetSlotWorldPosition(
                         planetPos, planetSize, planet.PlanetLevel, i, slotCount);
-                    muzzle.y = PlanetaryDefenseMath.FixedY;
 
                     // [TITAN-ORBIT] Absolute world range from the pad (default 20 at Lv1, +4/level after).
                     // Independent of planet size — ships use 30 base + 4/level so equal-level
@@ -333,25 +332,17 @@ namespace TitanOrbit.ECS
 
                 var shipXf = EntityManager.GetComponentData<LocalTransform>(e);
                 float3 pos = MegaShipCombatAim.GetAimPoint(EntityManager, e, shipXf);
-                pos.y = PlanetaryDefenseMath.FixedY;
 
                 float3 fromMuzzle = ToroidalMapEcs.ShortestOffsetXZ(muzzle, pos, mapW, mapH);
-                float muzzleDistSq = math.lengthsq(new float3(fromMuzzle.x, 0f, fromMuzzle.z));
+                float muzzleDistSq = math.lengthsq(fromMuzzle);
                 if (muzzleDistSq > engageRangeSq || muzzleDistSq >= bestMuzzleDistSq)
                     continue;
 
                 bestMuzzleDistSq = muzzleDistSq;
                 targetPos = pos;
-                // [NETCODE] ShipKinematics — ghosted copy of PhysicsVelocity.Linear after
-                // ShipKinematicsSyncSystem (PredictedFixedStep, OrderLast). Combat runs later
-                // in SimulationSystemGroup, so this is the post-physics velocity for this tick.
                 targetVel = float3.zero;
                 if (EntityManager.HasComponent<ShipKinematics>(e))
-                {
-                    float3 vel = EntityManager.GetComponentData<ShipKinematics>(e).Velocity;
-                    vel.y = 0f;
-                    targetVel = vel;
-                }
+                    targetVel = EntityManager.GetComponentData<ShipKinematics>(e).Velocity;
 
                 found = true;
             }
@@ -368,20 +359,15 @@ namespace TitanOrbit.ECS
                     continue;
 
                 float3 pos = EntityManager.GetComponentData<LocalTransform>(e).Position;
-                pos.y = PlanetaryDefenseMath.FixedY;
 
                 float3 fromMuzzle = ToroidalMapEcs.ShortestOffsetXZ(muzzle, pos, mapW, mapH);
-                float muzzleDistSq = math.lengthsq(new float3(fromMuzzle.x, 0f, fromMuzzle.z));
+                float muzzleDistSq = math.lengthsq(fromMuzzle);
                 if (muzzleDistSq > engageRangeSq || muzzleDistSq >= bestMuzzleDistSq)
                     continue;
 
                 bestMuzzleDistSq = muzzleDistSq;
                 targetPos = pos;
-                // [TITAN-ORBIT] Transports are not ships — velocity lives on PeopleTransportState
-                // (magnet steer writes it each server tick). Zero here was why landing pods were missed.
-                float3 vel = t.Velocity;
-                vel.y = 0f;
-                targetVel = vel;
+                targetVel = t.Velocity;
                 found = true;
             }
 

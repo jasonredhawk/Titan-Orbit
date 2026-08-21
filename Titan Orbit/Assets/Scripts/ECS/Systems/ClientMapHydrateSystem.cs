@@ -138,7 +138,11 @@ namespace TitanOrbit.ECS
                 if (ToroidalMapEcs.IsValidMapSize(_rolled.MapWidth, _rolled.MapHeight))
                 {
                     ToroidalMapEcs.SetMapSize(_rolled.MapWidth, _rolled.MapHeight);
-                    ToroidalMap.SetMapSize(_rolled.MapWidth, _rolled.MapHeight);
+                    float radius = _rolled.MapRadius > 0f
+                        ? _rolled.MapRadius
+                        : SphericalMapEcs.RadiusFromMapAxes(_rolled.MapWidth, _rolled.MapHeight);
+                    SphericalMapEcs.SetMapSizeAndRadius(
+                        math.max(_rolled.MapWidth, _rolled.MapHeight), radius);
                 }
 
                 Debug.Log(

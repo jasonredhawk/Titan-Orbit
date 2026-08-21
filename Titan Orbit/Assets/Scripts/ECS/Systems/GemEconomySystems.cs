@@ -1123,7 +1123,8 @@ namespace TitanOrbit.ECS
                     continue;
 
                 float3 pos = dead.Position;
-                pos.y = 0f;
+                if (SphericalMapEcs.TryGetRadius(out float shellR))
+                    pos = SphericalMapEcs.ProjectToSphere(pos, shellR);
                 float remaining = dead.RemainingGems;
                 float rpcScale = dead.Scale;
                 if (rpcScale <= AsteroidDeathPhysics.CulledTransformScale + 0.001f)

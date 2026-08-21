@@ -74,18 +74,13 @@ namespace TitanOrbit.Simulation
             float massB,
             float restitution)
         {
-            // --- Flatten to the play plane ---
-            // [TITAN-ORBIT] Flight is XZ-only; ignore Y so bounce never lifts the hull.
             float3 n = normalAFromB;
-            n.y = 0f;
             if (math.lengthsq(n) < 1e-8f)
                 return 0f;
             n = math.normalize(n);
 
             float3 vA = velocityA;
             float3 vB = velocityB;
-            vA.y = 0f;
-            vB.y = 0f;
 
             // Relative velocity of A as seen from B, projected onto the separation normal.
             // Negative ⇒ A is approaching B along n ⇒ we need a separating impulse.
@@ -121,7 +116,6 @@ namespace TitanOrbit.Simulation
             float restitution)
         {
             float3 n = normalAFromB;
-            n.y = 0f;
             if (math.lengthsq(n) < 1e-8f)
                 return false;
             n = math.normalize(n);
@@ -133,12 +127,8 @@ namespace TitanOrbit.Simulation
             float mA = math.max(MinCollisionMass, massA);
             float mB = math.max(MinCollisionMass, massB);
 
-            // --- Energy transfer along the normal ---
-            // [STANDARD] ΔvA = +(J/mA)·n, ΔvB = −(J/mB)·n (equal-and-opposite momentum).
             float3 vA = velocityA;
             float3 vB = velocityB;
-            vA.y = 0f;
-            vB.y = 0f;
             vA += (J / mA) * n;
             vB -= (J / mB) * n;
             velocityA = vA;
@@ -194,13 +184,11 @@ namespace TitanOrbit.Simulation
             float restitution)
         {
             float3 n = normalShipFromBody;
-            n.y = 0f;
             if (math.lengthsq(n) < 1e-8f)
                 return false;
             n = math.normalize(n);
 
             float3 vel = shipVelocity;
-            vel.y = 0f;
             float vn = math.dot(vel, n);
             if (vn >= 0f)
                 return false;

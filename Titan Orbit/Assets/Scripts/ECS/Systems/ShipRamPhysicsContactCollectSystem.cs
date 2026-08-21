@@ -111,20 +111,13 @@ namespace TitanOrbit.ECS
             public void Execute(CollisionEvent collisionEvent)
             {
                 float3 normalAFromB = collisionEvent.Normal;
-                normalAFromB.y = 0f;
                 if (math.lengthsq(normalAFromB) > 1e-8f)
                     normalAFromB = math.normalize(normalAFromB);
                 else
                     normalAFromB = new float3(0f, 0f, 1f);
 
-                // --- Closing speed from pre-collision velocity (no CalculateDetails) ---
-                // [PHYSICS] Event normal is B → A. Closing when A moves toward B (against the normal).
-                // Prefer ShipPreCollisionVelocity (post-drive, pre-solve) so the first ram impact
-                // still sees approach speed after the inelastic PhysX solve has killed relative n-vel.
                 float3 vA = LinearOf(collisionEvent.EntityA);
                 float3 vB = LinearOf(collisionEvent.EntityB);
-                vA.y = 0f;
-                vB.y = 0f;
                 float closing = math.max(0f, -math.dot(vA - vB, normalAFromB));
 
                 Pairs.Add(new RawPair

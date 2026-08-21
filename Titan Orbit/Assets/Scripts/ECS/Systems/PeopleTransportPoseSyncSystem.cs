@@ -33,7 +33,6 @@ namespace TitanOrbit.ECS
                     continue;
 
                 float3 pos = transform.ValueRO.Position;
-                pos.y = 0f;
                 PeopleTransportNetNotify.SendPose(
                     ref ecb, t.Sequence, pos, t.Velocity, PeopleTransportPoseStatus.Active);
             }

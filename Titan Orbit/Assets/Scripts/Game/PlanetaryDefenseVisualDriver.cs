@@ -578,13 +578,18 @@ namespace TitanOrbit.Game
 
                     float3 slotWorld = PlanetaryDefenseMath.GetSlotWorldPosition(
                         planetDisplay, planetSize, planet.PlanetLevel, i, slotCount);
-                    slotWorld.y = planetDisplay.y + PresentationLiftY;
+                    float3 planetUp = SphericalMapEcs.LocalUp(planetDisplay);
+                    slotWorld += planetUp * PresentationLiftY;
 
                     Vector3 local = planetProxy.transform.InverseTransformPoint(
                         new Vector3(slotWorld.x, slotWorld.y, slotWorld.z));
 
                     vis.SlotRoot.localPosition = local;
-                    vis.SlotRoot.localRotation = Quaternion.identity;
+                    float3 outward = SphericalMapEcs.FlattenToTangent(
+                        slotWorld - planetDisplay, planetDisplay);
+                    vis.SlotRoot.rotation = math.lengthsq(outward) > 1e-6f
+                        ? Quaternion.LookRotation((Vector3)math.normalize(outward), (Vector3)planetUp)
+                        : SphericalMap.SurfaceSitRotation((Vector3)slotWorld);
                     vis.SlotRoot.localScale = Vector3.one;
 
                     // --- Soft pad zone (idle blue, team color while a friendly deposits) ---
@@ -659,10 +664,8 @@ namespace TitanOrbit.Game
                             // in this pad’s engage range, ease toward the lead aim point instead
                             // (same PlanetaryDefenseAimMath as server fire direction).
                             // Player-occupied pads aim from the occupant ship's ShipInput instead.
-                            Vector3 outwardFlat = new Vector3(
-                                slotWorld.x - planetDisplay.x,
-                                0f,
-                                slotWorld.z - planetDisplay.z);
+                            Vector3 outwardFlat = (Vector3)SphericalMapEcs.FlattenToTangent(
+                                slotWorld - planetDisplay, planetDisplay);
                             Vector3 aimFlat = outwardFlat;
                             float bulletSpeed = math.max(1f, levelStats.bulletSpeed);
                             if (slot.OccupiedByNetworkId != 0)
@@ -678,16 +681,13 @@ namespace TitanOrbit.Game
                                     mapW, mapH, out float3 targetPos, out float3 targetVel))
                             {
                                 float3 muzzle = (float3)vis.TurretInstance.transform.position;
-                                muzzle.y = PlanetaryDefenseMath.FixedY;
-                                // [HYBRID] Presentation lead — does not drive sim; matches server
-                                // combat (same per-level bulletSpeed + engageRange + lead scale).
                                 if (PlanetaryDefenseAimMath.TryComputeFireDirection(
                                         muzzle, targetPos, targetVel, bulletSpeed, mapW, mapH,
                                         engageFromTurret,
                                         PlanetaryDefenseAimMath.ShipVelocityLeadScale,
                                         out float3 fireDir))
                                 {
-                                    aimFlat = new Vector3(fireDir.x, 0f, fireDir.z);
+                                    aimFlat = (Vector3)SphericalMapEcs.FlattenToTangent(fireDir, muzzle);
                                 }
                             }
 
@@ -860,8 +860,9 @@ namespace TitanOrbit.Game
 
             // --- Orientation once (cheap); layout + ForceMeshUpdate only when copy dirty ---
             float s = InfoTextWorldScale;
-            vis.InfoRoot.localRotation = Quaternion.Euler(-90f, 0f, 0f);
-            vis.InfoRoot.localScale = new Vector3(s, -s, s);
+            vis.InfoRoot.rotation = SphericalMap.BillboardFacingCamera(
+                CameraFollowEcs.GameplayCamera(), vis.InfoRoot.position);
+            vis.InfoRoot.localScale = new Vector3(s, s, s);
 
             if (needsLayout)
             {
@@ -965,7 +966,12 @@ namespace TitanOrbit.Game
                 ? vis.TurretYawRotation
                 : Quaternion.identity;
             if (aimFlat.sqrMagnitude > 0.0001f)
-                wantYaw = Quaternion.LookRotation(aimFlat.normalized, Vector3.up);
+            {
+                Vector3 aimUp = vis.SlotRoot != null
+                    ? vis.SlotRoot.up
+                    : Vector3.up;
+                wantYaw = Quaternion.LookRotation(aimFlat.normalized, aimUp);
+            }
 
             // Seed on first active frame so we do not inherit an identity→want snap spike.
             if (!vis.TurretYawInitialized)
@@ -1544,8 +1550,8 @@ namespace TitanOrbit.Game
             infoGo.transform.SetParent(vis.SlotRoot, false);
             // Same flat orientation as planet/moon labels — UpdateInfoPlate refreshes pose each frame.
             float s = InfoTextWorldScale;
-            infoGo.transform.localRotation = Quaternion.Euler(-90f, 0f, 0f);
-            infoGo.transform.localScale = new Vector3(s, -s, s);
+            infoGo.transform.localRotation = Quaternion.identity;
+            infoGo.transform.localScale = new Vector3(s, s, s);
             vis.InfoRoot = infoGo.transform;
 
             vis.LevelText = CreateLabelLine(infoGo.transform, "Level", EmptyPadPlaceholder, LevelFontSize, FontStyles.Bold);
@@ -1753,7 +1759,6 @@ namespace TitanOrbit.Game
                     shipPos = snap.Position;
                 else
                     continue;
-                shipPos.y = PlanetaryDefenseMath.FixedY;
 
                 if (!TryFindClosestDepositSlotForShip(
                         em, ship.Team, shipPos, planarSpeed, mapW, mapH,
@@ -1904,22 +1909,16 @@ namespace TitanOrbit.Game
                     continue;
 
                 float3 pos = snap.Position;
-                pos.y = PlanetaryDefenseMath.FixedY;
                 float3 d = ToroidalMapEcs.ShortestOffsetXZ(muzzleDisplay, pos, mapW, mapH);
-                float distSq = math.lengthsq(new float3(d.x, 0f, d.z));
+                float distSq = math.lengthsq(d);
                 if (distSq > bestDistSq)
                     continue;
 
                 bestDistSq = distSq;
                 targetPos = pos;
-                // [NETCODE] Ghosted kinematics — same field the server combat system reads.
                 targetVel = float3.zero;
                 if (em.HasComponent<ShipKinematics>(shipEntity))
-                {
-                    float3 vel = em.GetComponentData<ShipKinematics>(shipEntity).Velocity;
-                    vel.y = 0f;
-                    targetVel = vel;
-                }
+                    targetVel = em.GetComponentData<ShipKinematics>(shipEntity).Velocity;
 
                 found = true;
             }
@@ -1938,16 +1937,14 @@ namespace TitanOrbit.Game
                         continue;
 
                     float3 pos = sample.DisplayPos;
-                    pos.y = PlanetaryDefenseMath.FixedY;
                     float3 d = ToroidalMapEcs.ShortestOffsetXZ(muzzleDisplay, pos, mapW, mapH);
-                    float distSq = math.lengthsq(new float3(d.x, 0f, d.z));
+                    float distSq = math.lengthsq(d);
                     if (distSq > bestDistSq)
                         continue;
 
                     bestDistSq = distSq;
                     targetPos = pos;
                     targetVel = sample.Velocity;
-                    targetVel.y = 0f;
                     found = true;
                 }
             }

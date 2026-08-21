@@ -1,3 +1,4 @@
+using Unity.Mathematics;
 using UnityEngine;
 using UnityEngine.UI;
 using UnityEngine.EventSystems;
@@ -265,19 +266,36 @@ namespace TitanOrbit.UI
         /// </summary>
         private static void GetToroidalDelta(Vector3 from, Vector3 to, out float dx, out float dz)
         {
-            // --- Periodic shortest-path delta (matches ToroidalMap / ToroidalMapEcs) ---
-            // Missing map size → Euclidean delta (caller should prefer skipping when unset).
-            dx = to.x - from.x;
-            dz = to.z - from.z;
-            if (!ToroidalMap.TryGetMapSize(out float mapW, out float mapH))
+            if (!SphericalMap.TryGetRadius(out float radius))
+            {
+                var off = ToroidalMap.ShortestWorldOffsetXZ(from, to);
+                dx = off.x;
+                dz = off.z;
                 return;
-            dx -= mapW * Mathf.Round(dx / mapW);
-            dz -= mapH * Mathf.Round(dz / mapH);
+            }
+
+            var cam = CameraFollowEcs.GameplayCamera();
+            if (cam != null)
+            {
+                float2 aligned = SphericalMapEcs.TangentChartAligned(
+                    (float3)from, (float3)to, radius,
+                    (float3)cam.transform.right, (float3)cam.transform.up);
+                dx = aligned.x;
+                dz = aligned.y;
+                return;
+            }
+
+            float2 chart = SphericalMapEcs.TangentChartXY((float3)from, (float3)to, radius);
+            dx = chart.x;
+            dz = chart.y;
         }
 
         /// <summary>Half-diagonal of the toroidal map — circle radius that fits every world point around the player.</summary>
         private float GetFullMapToroidalRadius()
         {
+            if (SphericalMap.TryGetRadius(out float radius))
+                return radius * Mathf.PI;
+
             float w = ToroidalMap.GetMapWidth();
             float h = ToroidalMap.GetMapHeight();
             if (w > 1f && h > 1f)

@@ -1,5 +1,6 @@
 using TitanOrbit.Core;
 using TitanOrbit.ECS;
+using TitanOrbit.Generation;
 using TitanOrbit.Simulation;
 using Unity.Mathematics;
 using UnityEngine;
@@ -265,11 +266,11 @@ namespace TitanOrbit.Game
             // <c>EcsWorldVisualizer</c>. Offset with the shared ring formula so the moon, orbit
             // ring, and planet stay glued. Independent GetMoonWorldPositionNear (no hysteresis)
             // used to jump a full map width while the planet lagged — stepped orbit across seams.
-            var offset = PlanetGemMoonMath.GetMoonOrbitOffset(
+            var offset = PlanetGemMoonMath.GetMoonOrbitOffsetWorld(
+                (Unity.Mathematics.float3)transform.position,
                 _planetSize, _planetLevel, _isHome, _planetId, elapsed);
             _moonRoot.position = transform.position + new Vector3(offset.x, offset.y, offset.z);
-
-            _moonRoot.rotation = Quaternion.identity;
+            _moonRoot.rotation = SphericalMap.SurfaceSitRotation(_moonRoot.position);
             float3 spinAxisLocal = PlanetOrbitMath.GetLevelBandsSpinAxisLocal();
             Vector3 spinAxisWorld = transform.TransformDirection(new Vector3(spinAxisLocal.x, spinAxisLocal.y, spinAxisLocal.z));
             _moonSpinVisual.Rotate(spinAxisWorld, SpinSpeed * Time.deltaTime, Space.World);
