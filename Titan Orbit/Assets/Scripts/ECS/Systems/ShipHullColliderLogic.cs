@@ -210,13 +210,12 @@ namespace TitanOrbit.ECS
 
         static Material CreateHullMaterial()
         {
-            // [PHYSICS] CollideRaiseCollisionEvents — ship↔asteroid / ship↔ship contacts stream
-            // into ICollisionEventsJob for ramming damage (OR'd with the other body's flags).
+            // [TITAN-ORBIT] PhysX owns ship↔world. Restitution 0 — bounce system owns rock/planet
+            // energy. Ship↔ship is the hull-sphere resolve, not this material.
             var material = Material.Default;
             material.CollisionResponse = CollisionResponsePolicy.CollideRaiseCollisionEvents;
-            // [TITAN-ORBIT] Restitution 0 — custom mass-aware bounce owns normal response.
             material.Restitution = 0f;
-            material.Friction = 0.05f;
+            material.Friction = 0f;
             return material;
         }
 

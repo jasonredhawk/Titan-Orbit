@@ -27,14 +27,15 @@ namespace TitanOrbit.ECS
             if (state.World.IsClient() && ClientJoinSettleCache.ShouldSkipShipSimulation)
                 return;
 
-            foreach (var (velocity, kinematics, shipState) in SystemAPI
-                         .Query<RefRW<PhysicsVelocity>, RefRW<ShipKinematics>, RefRO<ShipState>>()
+            foreach (var (velocity, kinematics, shipState, input) in SystemAPI
+                         .Query<RefRW<PhysicsVelocity>, RefRW<ShipKinematics>, RefRO<ShipState>,
+                             RefRO<ShipInput>>()
                          .WithAll<ShipTag, Simulate>())
             {
                 if (shipState.ValueRO.IsDead || shipState.ValueRO.AwaitingTeamSelection)
                 {
                     velocity.ValueRW = PhysicsVelocity.Zero;
-                    kinematics.ValueRW = new ShipKinematics { Velocity = float3.zero };
+                    kinematics.ValueRW = new ShipKinematics { Velocity = float3.zero, ThrustHeld = 0 };
                     continue;
                 }
 
@@ -49,7 +50,11 @@ namespace TitanOrbit.ECS
                     Angular = new float3(0f, yawRate, 0f),
                 };
 
-                kinematics.ValueRW = new ShipKinematics { Velocity = linear };
+                kinematics.ValueRW = new ShipKinematics
+                {
+                    Velocity = linear,
+                    ThrustHeld = input.ValueRO.Thrust ? (byte)1 : (byte)0,
+                };
             }
         }
     }

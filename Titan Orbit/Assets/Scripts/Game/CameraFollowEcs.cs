@@ -1,5 +1,6 @@
 using TitanOrbit.Data;
 using TitanOrbit.ECS;
+using TitanOrbit.Generation;
 using TitanOrbit.Shared;
 using Unity.Entities;
 using Unity.Mathematics;
@@ -286,6 +287,14 @@ namespace TitanOrbit.Game
 
             RefreshMegaHullFraming(ref shipPos, isMoonDockOverride);
 
+            // --- Wrap: ship jumped a cell — keep look-ahead relative, do not chase across the map ---
+            if (_initialized && _hasLastShipPos &&
+                ToroidalMapEcs.TryGetMapSize(out float camW, out float camH) &&
+                ToroidalMapEcs.CrossedSeam(_lastShipPos, shipPos, camW, camH))
+            {
+                _lookAheadSmoothVelocity = Vector3.zero;
+            }
+
             // --- Seed SmoothDamp state on first lock ---
             // Without this, the first frame would ease from (0,0,0) and the camera would fly in from origin.
             if (!_initialized)
@@ -487,6 +496,12 @@ namespace TitanOrbit.Game
             if (_hasLastShipPos && dt > 1e-5f)
             {
                 Vector3 delta = shipPos - _lastShipPos;
+                if (ToroidalMapEcs.TryGetMapSize(out float velW, out float velH))
+                {
+                    float3 shortDelta = ToroidalMapEcs.ShortestOffsetXZ(_lastShipPos, shipPos, velW, velH);
+                    delta = new Vector3(shortDelta.x, 0f, shortDelta.z);
+                }
+
                 return new Vector3(delta.x, 0f, delta.z) / dt;
             }
 

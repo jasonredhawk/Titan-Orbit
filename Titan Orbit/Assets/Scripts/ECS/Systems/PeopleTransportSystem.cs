@@ -27,14 +27,14 @@ namespace TitanOrbit.ECS
         public const float DefaultShipHullRadius = 1f;
 
         /// <summary>
-        /// Locks Y to the flat map plane. Positions stay unbounded (ships do not wrap);
-        /// delivery/range still use toroidal distance helpers.
+        /// Locks Y to the flat map plane and wraps XZ into the canonical cell.
+        /// Delivery/range still use toroidal distance helpers.
         /// </summary>
         public static void WriteTransform(ref LocalTransform transform, float3 position, float mapW, float mapH)
         {
-            _ = mapW;
-            _ = mapH;
             position.y = 0f;
+            if (ToroidalMapEcs.IsValidMapSize(mapW, mapH))
+                position = ToroidalMapEcs.Wrap(position, mapW, mapH);
             transform.Position = position;
         }
 

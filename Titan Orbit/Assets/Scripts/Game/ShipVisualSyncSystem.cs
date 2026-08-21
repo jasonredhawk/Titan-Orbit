@@ -16,7 +16,8 @@ namespace TitanOrbit.Game
     /// Publishes NetCode presentation-phase ship poses once per frame for camera, hybrid leftovers,
     /// and parallax. Remotes use NetCode interpolation as-is.
     /// <para>
-    /// [TITAN-ORBIT] Local ship does <b>not</b> wrap — it flies unbound; camera follows that pose.
+    /// [TITAN-ORBIT] Local ship wraps in sim; this system coasts with
+    /// <see cref="ToroidalMapEcs.LerpWrapped"/> so display never lerps across the map.
     /// World bodies reposition individually via <see cref="ToroidalDisplay"/> relative to this ship.
     /// Soft-track on NetCode storms; H73 cruise for reconcile pops. Death→alive hard-snaps to
     /// the home orbit ring so the hull does not crawl across the map. While the hull is grinding an
@@ -255,11 +256,19 @@ namespace TitanOrbit.Game
                 return;
 
             var lt = EntityManager.GetComponentData<LocalTransform>(localShip);
-            // --- Unbounded sim pose — ship never wraps; camera follows this ---
-            // [TITAN-ORBIT] Continuum re-unwrap for seam moon-dock is owned by
-            // ShipMoonDockVisualApplier takeoff — not here every frame (fought soft-track / lag).
+            // --- Wrapped sim pose — camera follows this; other bodies retile around it ---
             float3 targetPos = lt.Position;
             quaternion targetRot = lt.Rotation;
+            bool crossedSeam = false;
+            if (_smoothInitialized &&
+                ToroidalMapEcs.TryGetMapSize(out float wrapW, out float wrapH) &&
+                ToroidalMapEcs.CrossedSeam(_smoothPos, targetPos, wrapW, wrapH))
+            {
+                // Snap display onto the new cell along the short path, then force world tiles.
+                _smoothPos = targetPos;
+                crossedSeam = true;
+                ToroidalDisplay.NotifyReferenceWrapped();
+            }
 
             // --- Read command age for catch-up hold ---
             float commandAge = 0f;
@@ -318,13 +327,18 @@ namespace TitanOrbit.Game
             bool justRespawned = _localShipWasDead && !isDead;
             _localShipWasDead = isDead;
 
-            float displayErr = _smoothInitialized ? math.distance(_smoothPos, targetPos) : 0f;
+            float displayErr = 0f;
+            if (_smoothInitialized && ToroidalMapEcs.TryGetMapSize(out float errW, out float errH))
+                displayErr = ToroidalMapEcs.ToroidalDistance(_smoothPos, targetPos, errW, errH);
+            else if (_smoothInitialized)
+                displayErr = math.distance(_smoothPos, targetPos);
             bool hardSnap = TitanOrbitDebugFlags.IsolateDisableShipSoftTrack
                             || grindRawFollow
                             || !_smoothInitialized
                             || shipChanged
                             || isDead
                             || justRespawned
+                            || crossedSeam
                             || displayErr > DisplayRespawnSnapDistance;
 
             // --- Step display state ---
@@ -401,6 +415,8 @@ namespace TitanOrbit.Game
         {
             float expected = math.max(math.length(simVel) * math.max(0f, dt), 0.02f);
             float dist = math.distance(_smoothPos, simPos);
+            if (ToroidalMapEcs.TryGetMapSize(out float cruiseW, out float cruiseH))
+                dist = ToroidalMapEcs.ToroidalDistance(_smoothPos, simPos, cruiseW, cruiseH);
             float minNibble = postGrindCoast ? PostGrindCoastNibble : CruiseMinRawFollowDistance;
             float rawFollowSlop = math.max(expected * CruiseRawFollowSlopRatio, minNibble);
 
@@ -414,10 +430,15 @@ namespace TitanOrbit.Game
                 return;
             }
 
-            // --- Reconcile pop / large gap: coast then capped soft correct ---
+            // --- Reconcile pop / large gap: coast then capped soft correct (wrap-aware) ---
             float3 coasted = _smoothPos + simVel * dt;
             float3 err = simPos - coasted;
             err.y = 0f;
+            if (ToroidalMapEcs.TryGetMapSize(out float pullW, out float pullH))
+            {
+                coasted = ToroidalMapEcs.Wrap(coasted, pullW, pullH);
+                err = ToroidalMapEcs.ShortestOffsetXZ(coasted, simPos, pullW, pullH);
+            }
             float t = 1f - math.exp(-CruiseCorrectSharpness * math.max(0f, dt));
             float3 pull = err * t;
             float pullLen = math.length(pull);
@@ -427,6 +448,8 @@ namespace TitanOrbit.Game
 
             _smoothPos = coasted + pull;
             _smoothPos.y = simPos.y;
+            if (ToroidalMapEcs.TryGetMapSize(out float snapW, out float snapH))
+                _smoothPos = ToroidalMapEcs.Wrap(_smoothPos, snapW, snapH);
             _smoothRot = math.slerp(_smoothRot, simRot, 1f - math.exp(-DisplayRotationSharpness * dt));
         }
 
@@ -486,12 +509,16 @@ namespace TitanOrbit.Game
         void StepDisplayToward(float3 targetPos, quaternion targetRot, float dt, float maxSpeed)
         {
             float3 delta = targetPos - _smoothPos;
+            if (ToroidalMapEcs.TryGetMapSize(out float towardW, out float towardH))
+                delta = ToroidalMapEcs.ShortestOffsetXZ(_smoothPos, targetPos, towardW, towardH);
             float dist = math.length(delta);
             float maxStep = math.max(0f, maxSpeed) * math.max(0f, dt);
             if (dist <= maxStep || dist < 1e-5f)
                 _smoothPos = targetPos;
             else
                 _smoothPos += delta * (maxStep / dist);
+            if (ToroidalMapEcs.TryGetMapSize(out float wrapTowardW, out float wrapTowardH))
+                _smoothPos = ToroidalMapEcs.Wrap(_smoothPos, wrapTowardW, wrapTowardH);
 
             float rotT = dist > 1e-5f ? math.saturate(maxStep / dist) : 1f;
             _smoothRot = math.slerp(_smoothRot, targetRot, math.max(rotT, 1f - math.exp(-DisplayRotationSharpness * dt)));

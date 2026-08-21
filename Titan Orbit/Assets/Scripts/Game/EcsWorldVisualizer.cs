@@ -1751,9 +1751,9 @@ namespace TitanOrbit.Game
             localShipEntity != Entity.Null && entity == localShipEntity;
 
         /// <summary>
-        /// [TITAN-ORBIT] Local ship stays at its real (unbounded) pose. Every other body picks its
+        /// [TITAN-ORBIT] Local ship uses its wrapped pose. Every other body picks its
         /// own nearest map-tile copy relative to that ship, with per-entity hysteresis so planets
-        /// and asteroids reposition individually — not as one global blink when crossing a seam.
+        /// and asteroids reposition individually. A wrap frame clears tiles (force nearest).
         /// The planet the local ship is orbiting / moon-docked on uses a tight hysteresis margin
         /// so the ring follows across seams without ForceNearest midpoint flicker.
         /// </summary>

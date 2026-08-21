@@ -41,7 +41,7 @@ namespace TitanOrbit.ECS
     /// </para>
     /// MEGA hulls skip this pass (plow asteroids — no grip, no inward motor reject).
     /// Pipeline: Drive → Snapshot → PhysicsSimulation → Export → Bounce → Friction/Contact (this) →
-    /// Toroidal → Planar → Kinematics.
+    /// Planar → Kinematics.
     /// </summary>
     // [PHYSICS] AfterPhysicsSystemGroup sits after ExportPhysicsWorld inside PhysicsSystemGroup.
     // Do NOT UpdateAfter(PhysicsSimulationGroup) alone — that window forbids ECS velocity writes.
@@ -49,11 +49,10 @@ namespace TitanOrbit.ECS
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation | WorldSystemFilterFlags.ClientSimulation)]
     public partial struct ShipAsteroidContactFrictionSystem : ISystem
     {
-        /// <summary>Require physics simulation + world for collision events.</summary>
+        /// <summary>Need at least one ship; events are optional.</summary>
         public void OnCreate(ref SystemState state)
         {
-            state.RequireForUpdate<SimulationSingleton>();
-            state.RequireForUpdate<PhysicsWorldSingleton>();
+            state.RequireForUpdate<ShipTag>();
         }
 
         /// <summary>
@@ -80,6 +79,16 @@ namespace TitanOrbit.ECS
                 contact.ValueRW = default;
             }
 
+            if (!SystemAPI.TryGetSingleton(out SimulationSingleton simSingleton))
+                return;
+
+            var events = new NativeList<CollisionEvent>(16, state.WorldUpdateAllocator);
+            if (!PhysicsCollisionEventStream.TryCopyEvents(simSingleton, events))
+            {
+                events.Dispose();
+                return;
+            }
+
             // --- Designer slider (0 = skip tangential bleed only) ---
             var settings = AsteroidSettingsCache.ResolveOrDefault();
             settings.ClampValues();
@@ -89,9 +98,6 @@ namespace TitanOrbit.ECS
             if (dt <= 0f)
                 dt = 1f / 60f;
 
-            // --- Collision-event job (no full asteroid entity gather) ---
-            // [PHYSICS] ICollisionEventsJob is still valid in AfterPhysicsSystemGroup (same as
-            // Unity's DisplayCollisionEventsSystem). Writing Velocities here is legal post-Export.
             var shipLookup = SystemAPI.GetComponentLookup<ShipTag>(true);
             var asteroidLookup = SystemAPI.GetComponentLookup<AsteroidTag>(true);
             var asteroidStateLookup = SystemAPI.GetComponentLookup<AsteroidState>(true);
@@ -99,22 +105,33 @@ namespace TitanOrbit.ECS
             var culledLookup = SystemAPI.GetComponentLookup<AsteroidClientCulledTag>(true);
             var velocityLookup = SystemAPI.GetComponentLookup<PhysicsVelocity>(false);
             var contactLookup = SystemAPI.GetComponentLookup<ShipAsteroidContactState>(false);
+            var seen = new NativeHashSet<long>(16, Allocator.Temp);
 
-            state.Dependency = new ApplyAsteroidFrictionJob
+            for (int i = 0; i < events.Length; i++)
             {
-                Ships = shipLookup,
-                Asteroids = asteroidLookup,
-                AsteroidStates = asteroidStateLookup,
-                Megas = megaLookup,
-                Culled = culledLookup,
-                Velocities = velocityLookup,
-                Contacts = contactLookup,
-                Friction = friction,
-                DeltaTime = dt,
-            }.Schedule(SystemAPI.GetSingleton<SimulationSingleton>(), state.Dependency);
+                CollisionEvent ev = events[i];
+                Entity a = ev.EntityA;
+                Entity b = ev.EntityB;
+                bool aShip = shipLookup.HasComponent(a);
+                bool bRock = asteroidLookup.HasComponent(b);
+                bool bShip = shipLookup.HasComponent(b);
+                bool aRock = asteroidLookup.HasComponent(a);
+                if (!((aShip && bRock) || (bShip && aRock)))
+                    continue;
 
-            // Need velocities + contact state written before OrderLast / next drive tick.
-            state.Dependency.Complete();
+                Entity ship = aShip ? a : b;
+                Entity rock = aShip ? b : a;
+                long key = ((long)ship.Index << 32) ^ (uint)rock.Index;
+                if (!seen.Add(key))
+                    continue;
+
+                ApplyAsteroidFrictionEvent(
+                    ev, shipLookup, asteroidLookup, asteroidStateLookup, megaLookup,
+                    culledLookup, velocityLookup, contactLookup, friction, dt);
+            }
+
+            seen.Dispose();
+            events.Dispose();
         }
 
         /// <summary>
@@ -122,91 +139,80 @@ namespace TitanOrbit.ECS
         /// records the outward XZ normal for next-tick motor reject and (when friction &gt; 0)
         /// damps tangential slide via <see cref="AsteroidColliderMaterialLogic"/>.
         /// </summary>
-        [BurstCompile]
-        struct ApplyAsteroidFrictionJob : ICollisionEventsJob
+        static void ApplyAsteroidFrictionEvent(
+            in CollisionEvent collisionEvent,
+            ComponentLookup<ShipTag> ships,
+            ComponentLookup<AsteroidTag> asteroids,
+            ComponentLookup<AsteroidState> asteroidStates,
+            ComponentLookup<MegaShipState> megas,
+            ComponentLookup<AsteroidClientCulledTag> culled,
+            ComponentLookup<PhysicsVelocity> velocities,
+            ComponentLookup<ShipAsteroidContactState> contacts,
+            float friction,
+            float deltaTime)
         {
-            [ReadOnly] public ComponentLookup<ShipTag> Ships;
-            [ReadOnly] public ComponentLookup<AsteroidTag> Asteroids;
-            [ReadOnly] public ComponentLookup<AsteroidState> AsteroidStates;
-            [ReadOnly] public ComponentLookup<MegaShipState> Megas;
-            [ReadOnly] public ComponentLookup<AsteroidClientCulledTag> Culled;
-            public ComponentLookup<PhysicsVelocity> Velocities;
-            public ComponentLookup<ShipAsteroidContactState> Contacts;
-            public float Friction;
-            public float DeltaTime;
+            Entity a = collisionEvent.EntityA;
+            Entity b = collisionEvent.EntityB;
 
-            /// <summary>One solver contact pair this tick.</summary>
-            public void Execute(CollisionEvent collisionEvent)
+            Entity ship = Entity.Null;
+            Entity other = Entity.Null;
+            bool normalFromOtherToShip = true;
+
+            if (ships.HasComponent(a) && asteroids.HasComponent(b))
             {
-                Entity ship = Entity.Null;
-                Entity other = Entity.Null;
-                bool normalFromOtherToShip = true;
-
-                if (Ships.HasComponent(collisionEvent.EntityA) &&
-                    Asteroids.HasComponent(collisionEvent.EntityB))
-                {
-                    ship = collisionEvent.EntityA;
-                    other = collisionEvent.EntityB;
-                    // Normal is from B → A in Unity Physics collision events.
-                    normalFromOtherToShip = true;
-                }
-                else if (Ships.HasComponent(collisionEvent.EntityB) &&
-                         Asteroids.HasComponent(collisionEvent.EntityA))
-                {
-                    ship = collisionEvent.EntityB;
-                    other = collisionEvent.EntityA;
-                    normalFromOtherToShip = false;
-                }
-                else
-                {
-                    return;
-                }
-
-                if (other == Entity.Null)
-                    return;
-
-                // MEGAs plow asteroids — no grip and no motor inward-reject (would park the hull).
-                if (Megas.HasComponent(ship) && Megas[ship].IsMega)
-                    return;
-
-                // Phantom hull: mesh already hid / Health=0 but PhysX still raised a contact.
-                if (Culled.HasComponent(other))
-                    return;
-                if (AsteroidStates.HasComponent(other))
-                {
-                    var rock = AsteroidStates[other];
-                    if (rock.IsDestroyed || !(rock.Health > 0.01f))
-                        return;
-                }
-
-                float3 normal = collisionEvent.Normal;
-                if (!normalFromOtherToShip)
-                    normal = -normal;
-                normal.y = 0f;
-                if (math.lengthsq(normal) < 1e-8f)
-                    return;
-                normal = math.normalize(normal);
-
-                // --- Contact cache for next drive tick (inward motor reject) ---
-                if (Contacts.HasComponent(ship))
-                {
-                    Contacts[ship] = new ShipAsteroidContactState
-                    {
-                        InContact = 1,
-                        OutwardNormal = normal,
-                    };
-                }
-
-                // --- Tangential grip (optional; Friction 0 still keeps contact reject) ---
-                if (Friction <= 0f || !Velocities.HasComponent(ship))
-                    return;
-
-                var vel = Velocities[ship];
-                float3 lin = AsteroidColliderMaterialLogic.ApplyTangentialFriction(
-                    vel.Linear, normal, Friction, DeltaTime);
-                vel.Linear = lin;
-                Velocities[ship] = vel;
+                ship = a;
+                other = b;
+                normalFromOtherToShip = true;
             }
+            else if (ships.HasComponent(b) && asteroids.HasComponent(a))
+            {
+                ship = b;
+                other = a;
+                normalFromOtherToShip = false;
+            }
+            else
+            {
+                return;
+            }
+
+            if (megas.HasComponent(ship) && megas[ship].IsMega)
+                return;
+
+            if (culled.HasComponent(other))
+                return;
+            if (asteroidStates.HasComponent(other))
+            {
+                var rock = asteroidStates[other];
+                if (rock.IsDestroyed || !(rock.Health > 0.01f))
+                    return;
+            }
+
+            float3 normal = collisionEvent.Normal;
+            if (!normalFromOtherToShip)
+                normal = -normal;
+            normal.y = 0f;
+            if (math.lengthsq(normal) < 1e-8f)
+                return;
+            normal = math.normalize(normal);
+
+            if (contacts.HasComponent(ship))
+            {
+                contacts[ship] = new ShipAsteroidContactState
+                {
+                    InContact = 1,
+                    OutwardNormal = normal,
+                };
+            }
+
+            if (friction <= 0f || !velocities.HasComponent(ship))
+                return;
+
+            var vel = velocities[ship];
+            float3 lin = AsteroidColliderMaterialLogic.ApplyTangentialFriction(
+                vel.Linear, normal, friction, deltaTime);
+            vel.Linear = lin;
+            velocities[ship] = vel;
         }
+
     }
 }

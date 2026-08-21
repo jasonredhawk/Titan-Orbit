@@ -115,7 +115,7 @@ namespace TitanOrbit.ECS
             float radius = math.lerp(startRadius, exitRadius, eased);
             float3 pos = moonPos + outward * radius;
             pos.y = 0f;
-            transform.Position = pos;
+            transform.Position = ToroidalMapEcs.Wrap(pos, mapW, mapH);
             transform.Rotation = quaternion.LookRotationSafe(outward, math.up());
 
             float3 moonVel = PlanetOrbitMath.GetMoonOrbitalVelocity(

@@ -14,8 +14,8 @@ namespace TitanOrbit.ECS
     /// <summary>
     /// After Unity Physics exports contacts, applies mass-aware normal bounce from
     /// <see cref="ShipCollisionImpulseLogic"/> using pre-physics velocity snapshots.
-    /// Owns ship↔asteroid (finite virtual rock mass), ship↔ship (energy transfer), and
-    /// ship↔planet/moon (infinite-mass wall) so PhysX material restitution can stay 0.
+    /// Owns ship↔asteroid (finite virtual rock mass) and ship↔planet/moon (infinite-mass
+    /// wall). Ship↔ship is <see cref="ShipShipHullContactSystem"/> (PhysX does not pair ships).
     /// MEGA hulls plow asteroids: restore pre-collision motion (no bounce) so a field does
     /// not slow the ship. MEGA vs planet also restores pose — the covering sphere must not
     /// park the hull outside a small planet's orbit ring; capped keep-out runs after this.
@@ -26,7 +26,7 @@ namespace TitanOrbit.ECS
     /// <see cref="ShipAsteroidContactFrictionSystem"/> which runs after this system.
     /// </para>
     /// Pipeline: Drive → Snapshot → PhysicsSimulation → Export → Bounce (this) → Friction →
-    /// Toroidal → Planar → Kinematics.
+    /// Planar → Kinematics.
     /// </summary>
     [UpdateInGroup(typeof(AfterPhysicsSystemGroup))]
     [UpdateBefore(typeof(ShipAsteroidContactFrictionSystem))]
@@ -49,11 +49,10 @@ namespace TitanOrbit.ECS
         const byte KindPlanet = 2;
         const byte KindMoon = 3;
 
-        /// <summary>Require physics simulation + world for collision events.</summary>
+        /// <summary>Need at least one ship; collision events are optional.</summary>
         public void OnCreate(ref SystemState state)
         {
-            state.RequireForUpdate<SimulationSingleton>();
-            state.RequireForUpdate<PhysicsWorldSingleton>();
+            state.RequireForUpdate<ShipTag>();
         }
 
         /// <summary>
@@ -69,6 +68,15 @@ namespace TitanOrbit.ECS
             if (state.World.IsClient() && ClientJoinSettleCache.ShouldSkipShipSimulation)
                 return;
 
+            if (!SystemAPI.TryGetSingleton(out SimulationSingleton simSingleton))
+            {
+                foreach (var contact in SystemAPI
+                             .Query<RefRW<ShipShipContactState>>()
+                             .WithAll<ShipTag, Simulate>())
+                    contact.ValueRW = default;
+                return;
+            }
+
             float fixedDt = SystemAPI.Time.DeltaTime;
             if (fixedDt <= 0f)
                 fixedDt = 1f / 60f;
@@ -79,22 +87,41 @@ namespace TitanOrbit.ECS
             float asteroidMassPerSize = settings.CollisionMassPerSize;
             float asteroidRestitution = settings.BounceRestitution;
 
-            // --- Collect pairs (Burst job) ---
+            // --- Collect pairs on the main thread (never ICollisionEventsJob) ---
+            // Burst NativeStream.ForEachCount NREs on a disposed-but-IsCreated predicted stream.
+            var events = new NativeList<CollisionEvent>(32, state.WorldUpdateAllocator);
+            if (!PhysicsCollisionEventStream.TryCopyEvents(simSingleton, events))
+            {
+                events.Dispose();
+                foreach (var contact in SystemAPI
+                             .Query<RefRW<ShipShipContactState>>()
+                             .WithAll<ShipTag, Simulate>())
+                    contact.ValueRW = default;
+                return;
+            }
+
             var pairs = new NativeList<BouncePair>(32, state.WorldUpdateAllocator);
+            // Compound hulls raise one event per child collider. One impulse per entity pair.
+            var seenPairs = new NativeHashSet<long>(32, Allocator.Temp);
             var shipLookup = SystemAPI.GetComponentLookup<ShipTag>(true);
             var asteroidLookup = SystemAPI.GetComponentLookup<AsteroidTag>(true);
             var planetLookup = SystemAPI.GetComponentLookup<PlanetTag>(true);
             var moonLookup = SystemAPI.GetComponentLookup<PlanetGemMoonColliderTag>(true);
-
-            state.Dependency = new CollectBouncePairsJob
+            for (int i = 0; i < events.Length; i++)
             {
-                Pairs = pairs,
-                Ships = shipLookup,
-                Asteroids = asteroidLookup,
-                Planets = planetLookup,
-                Moons = moonLookup,
-            }.Schedule(SystemAPI.GetSingleton<SimulationSingleton>(), state.Dependency);
-            state.Dependency.Complete();
+                TryAddBouncePair(
+                    events[i], pairs, seenPairs, shipLookup, asteroidLookup, planetLookup, moonLookup);
+            }
+
+            seenPairs.Dispose();
+
+            events.Dispose();
+
+            // Keep ship↔ship contact zero so drive never glues hulls (PhysX owns those pairs).
+            foreach (var contact in SystemAPI
+                         .Query<RefRW<ShipShipContactState>>()
+                         .WithAll<ShipTag, Simulate>())
+                contact.ValueRW = default;
 
             if (pairs.Length == 0)
                 return;
@@ -108,6 +135,8 @@ namespace TitanOrbit.ECS
             var asteroidStateLookup = SystemAPI.GetComponentLookup<AsteroidState>(true);
             var culledLookup = SystemAPI.GetComponentLookup<AsteroidClientCulledTag>(true);
             var velocityLookup = SystemAPI.GetComponentLookup<PhysicsVelocity>(false);
+            var simulateLookup = SystemAPI.GetComponentLookup<Simulate>(true);
+            bool clientWorld = state.World.IsClient();
 
             // Working velocities start from the pre-collision snapshot so multiple contacts
             // in one tick accumulate correctly without reading PhysX's inelastic result.
@@ -120,19 +149,14 @@ namespace TitanOrbit.ECS
             var megaUnconstrained = new NativeHashSet<Entity>(math.max(8, pairs.Length), Allocator.Temp);
             var megaKeepPhysX = new NativeHashSet<Entity>(math.max(8, pairs.Length), Allocator.Temp);
 
-            // --- Deduplicate ship↔ship pairs (A,B) and (B,A) ---
-            var seenShipPairs = new NativeHashSet<long>(pairs.Length, Allocator.Temp);
-
             for (int i = 0; i < pairs.Length; i++)
             {
                 BouncePair pair = pairs[i];
 
                 if (pair.Kind == KindShip)
                 {
-                    long key = PackEntityPairKey(pair.EntityA, pair.EntityB);
-                    if (!seenShipPairs.Add(key))
-                        continue;
-                    ApplyShipVsShip(pair, ref working, snapshotLookup, motorLookup, shipStateLookup, megaLookup);
+                    // Unity Physics already resolved this pair (hull restitution). A second
+                    // snapshot impulse + inward motor reject is what made rams jitter / glue.
                     megaKeepPhysX.Add(pair.EntityA);
                     megaKeepPhysX.Add(pair.EntityB);
                 }
@@ -180,6 +204,11 @@ namespace TitanOrbit.ECS
                 Entity e = written[i];
                 if (!velocityLookup.HasComponent(e))
                     continue;
+                // Interpolated remotes are not in predicted PhysX — do not poke their velocity
+                // if a stale event somehow lists them (owner prediction writes the local hull).
+                if (clientWorld &&
+                    !(simulateLookup.HasComponent(e) && simulateLookup.IsComponentEnabled(e)))
+                    continue;
                 var pv = velocityLookup[e];
                 pv.Linear = working[e];
                 velocityLookup[e] = pv;
@@ -224,6 +253,14 @@ namespace TitanOrbit.ECS
                         continue;
                     if (!megaLookup.HasComponent(pair.EntityA) || !megaLookup[pair.EntityA].IsMega)
                         continue;
+                    if (asteroidStateLookup.HasComponent(pair.EntityB))
+                    {
+                        var rock = asteroidStateLookup[pair.EntityB];
+                        if (rock.IsDestroyed || !(rock.Health > 0.01f))
+                            continue;
+                    }
+                    if (culledLookup.HasComponent(pair.EntityB))
+                        continue;
                     seenPlowRocks.Add(pair.EntityB);
                 }
 
@@ -244,7 +281,6 @@ namespace TitanOrbit.ECS
 
             written.Dispose();
             working.Dispose();
-            seenShipPairs.Dispose();
             megaUnconstrained.Dispose();
             megaKeepPhysX.Dispose();
         }
@@ -321,35 +357,6 @@ namespace TitanOrbit.ECS
             return mass;
         }
 
-        static void ApplyShipVsShip(
-            BouncePair pair,
-            ref NativeHashMap<Entity, float3> working,
-            ComponentLookup<ShipPreCollisionVelocity> snapshots,
-            ComponentLookup<ShipMotorConfig> motors,
-            ComponentLookup<ShipState> shipStates,
-            ComponentLookup<MegaShipState> megas)
-        {
-            Entity a = pair.EntityA;
-            Entity b = pair.EntityB;
-            if (!shipStates.HasComponent(a) || !shipStates.HasComponent(b))
-                return;
-            if (shipStates[a].IsDead || shipStates[b].IsDead)
-                return;
-
-            float3 vA = GetWorkingOrSnapshot(a, ref working, snapshots);
-            float3 vB = GetWorkingOrSnapshot(b, ref working, snapshots);
-            float mA = GetShipCollisionMass(a, motors, shipStates, megas);
-            float mB = GetShipCollisionMass(b, motors, shipStates, megas);
-
-            if (!ShipCollisionImpulseLogic.ApplyTwoBodyImpulse(
-                    ref vA, ref vB, pair.NormalAFromB, mA, mB,
-                    ShipCollisionImpulseLogic.DefaultShipShipRestitution))
-                return;
-
-            working[a] = vA;
-            working[b] = vB;
-        }
-
         /// <summary>
         /// Mass-aware bounce off one asteroid. Skips dead / client-culled rocks so a leftover
         /// PhysX contact after the mesh hid cannot keep shoving the hull.
@@ -420,87 +427,85 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// Classifies PhysX collision events into bounce pairs. Ship is always EntityA in the
-        /// stored pair; NormalAFromB points from the other body toward the ship (or from B→A
-        /// for ship↔ship using the event's native orientation).
+        /// Classifies one PhysX collision event into a bounce pair. Ship is always EntityA;
+        /// NormalAFromB points from the other body toward the ship (or from B→A for ship↔ship).
         /// </summary>
-        [BurstCompile]
-        struct CollectBouncePairsJob : ICollisionEventsJob
+        static void TryAddBouncePair(
+            in CollisionEvent collisionEvent,
+            NativeList<BouncePair> pairs,
+            NativeHashSet<long> seenPairs,
+            ComponentLookup<ShipTag> ships,
+            ComponentLookup<AsteroidTag> asteroids,
+            ComponentLookup<PlanetTag> planets,
+            ComponentLookup<PlanetGemMoonColliderTag> moons)
         {
-            public NativeList<BouncePair> Pairs;
-            [ReadOnly] public ComponentLookup<ShipTag> Ships;
-            [ReadOnly] public ComponentLookup<AsteroidTag> Asteroids;
-            [ReadOnly] public ComponentLookup<PlanetTag> Planets;
-            [ReadOnly] public ComponentLookup<PlanetGemMoonColliderTag> Moons;
+            Entity a = collisionEvent.EntityA;
+            Entity b = collisionEvent.EntityB;
+            float3 normalAFromB = collisionEvent.Normal;
+            normalAFromB.y = 0f;
+            if (math.lengthsq(normalAFromB) > 1e-8f)
+                normalAFromB = math.normalize(normalAFromB);
+            else
+                normalAFromB = new float3(0f, 0f, 1f);
 
-            /// <summary>One solver contact pair this tick.</summary>
-            public void Execute(CollisionEvent collisionEvent)
+            bool aShip = ships.HasComponent(a);
+            bool bShip = ships.HasComponent(b);
+
+            if (aShip && bShip)
             {
-                Entity a = collisionEvent.EntityA;
-                Entity b = collisionEvent.EntityB;
-                float3 normalAFromB = collisionEvent.Normal;
-                normalAFromB.y = 0f;
-                if (math.lengthsq(normalAFromB) > 1e-8f)
-                    normalAFromB = math.normalize(normalAFromB);
-                else
-                    normalAFromB = new float3(0f, 0f, 1f);
-
-                bool aShip = Ships.HasComponent(a);
-                bool bShip = Ships.HasComponent(b);
-
-                // --- Ship ↔ ship ---
-                if (aShip && bShip)
-                {
-                    Pairs.Add(new BouncePair
-                    {
-                        EntityA = a,
-                        EntityB = b,
-                        NormalAFromB = normalAFromB,
-                        Kind = KindShip,
-                    });
+                if (!seenPairs.Add(PackEntityPairKey(a, b)))
                     return;
-                }
-
-                // --- Ship ↔ asteroid / planet / moon ---
-                Entity ship;
-                Entity other;
-                float3 normalShipFromOther;
-                if (aShip)
+                pairs.Add(new BouncePair
                 {
-                    ship = a;
-                    other = b;
-                    normalShipFromOther = normalAFromB;
-                }
-                else if (bShip)
-                {
-                    ship = b;
-                    other = a;
-                    // Event normal is A←B; flip so it points from other toward ship.
-                    normalShipFromOther = -normalAFromB;
-                }
-                else
-                {
-                    return;
-                }
-
-                byte kind;
-                if (Asteroids.HasComponent(other))
-                    kind = KindAsteroid;
-                else if (Planets.HasComponent(other))
-                    kind = KindPlanet;
-                else if (Moons.HasComponent(other))
-                    kind = KindMoon;
-                else
-                    return;
-
-                Pairs.Add(new BouncePair
-                {
-                    EntityA = ship,
-                    EntityB = other,
-                    NormalAFromB = normalShipFromOther,
-                    Kind = kind,
+                    EntityA = a,
+                    EntityB = b,
+                    NormalAFromB = normalAFromB,
+                    Kind = KindShip,
                 });
+                return;
             }
+
+            Entity ship;
+            Entity other;
+            float3 normalShipFromOther;
+            if (aShip)
+            {
+                ship = a;
+                other = b;
+                normalShipFromOther = normalAFromB;
+            }
+            else if (bShip)
+            {
+                ship = b;
+                other = a;
+                normalShipFromOther = -normalAFromB;
+            }
+            else
+            {
+                return;
+            }
+
+            byte kind;
+            if (asteroids.HasComponent(other))
+                kind = KindAsteroid;
+            else if (planets.HasComponent(other))
+                kind = KindPlanet;
+            else if (moons.HasComponent(other))
+                kind = KindMoon;
+            else
+                return;
+
+            if (!seenPairs.Add(PackEntityPairKey(ship, other)))
+                return;
+
+            pairs.Add(new BouncePair
+            {
+                EntityA = ship,
+                EntityB = other,
+                NormalAFromB = normalShipFromOther,
+                Kind = kind,
+            });
         }
+
     }
 }

@@ -1,4 +1,5 @@
 using TitanOrbit.Core;
+using TitanOrbit.Generation;
 using TitanOrbit.Simulation;
 using Unity.Collections;
 using Unity.Entities;
@@ -212,7 +213,7 @@ namespace TitanOrbit.ECS
         /// <param name="isHomePlanet">True for homeworlds (larger moon → larger dock zone).</param>
         /// <param name="elapsedSeconds">Shared ServerTick orbit clock for the live moon angle.</param>
         /// <param name="randomSeed">Per-spawn seed so successive respawns land at different angles.</param>
-        /// <returns>Unbounded world spawn on the ring (do not Wrap — ships fly unbounded).</returns>
+        /// <returns>Canonical-cell world spawn on the ring (wrapped).</returns>
         public static float3 PickOrbitRingSpawnOutsideMoon(
             float3 planetPos,
             float planetSize,
@@ -271,9 +272,10 @@ namespace TitanOrbit.ECS
                 theta = moonTheta + minDeltaTheta + u;
             }
 
-            // --- World position on XZ (Y stays at planet height) ---
-            // [TITAN-ORBIT] Leave spawn unbounded — do not ToroidalMapEcs.Wrap the hull.
-            return planetPos + new float3(math.cos(theta), 0f, math.sin(theta)) * centerWorld;
+            // --- World position on XZ (Y stays at planet height), then wrap into the cell ---
+            float3 spawn = planetPos + new float3(math.cos(theta), 0f, math.sin(theta)) * centerWorld;
+            spawn.y = planetPos.y;
+            return ToroidalMapEcs.Wrap(spawn);
         }
 
         /// <summary>

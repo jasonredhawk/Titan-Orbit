@@ -28,6 +28,9 @@ namespace TitanOrbit.ECS
         /// <summary>Shared zero-filter sphere — never mutate bake-shared asteroid blobs.</summary>
         static BlobAssetReference<Collider> s_noCollide;
 
+        /// <summary>Dead-rock registry walk once per render frame, not every predicted resim.</summary>
+        int _lastDeadScanFrame;
+
         /// <summary>
         /// No RequireForUpdate on CulledTag — we must also catch dead rocks that were never tagged.
         /// </summary>
@@ -52,21 +55,31 @@ namespace TitanOrbit.ECS
             var em = state.EntityManager;
 
             // --- Catch dead rocks that still look solid (match miss / GO-only hide) ---
-            ClientLocalAsteroidCombatSync.CullDeadAsteroidsStillSolid(em);
+            // PredictedFixedStep resims several times per frame; the registry walk is O(rocks).
+            // Profiler: this system was 2.2ms and then PhysicsInitialize rebuilt (3.5ms).
+            int frame = UnityEngine.Time.frameCount;
+            if (_lastDeadScanFrame != frame)
+            {
+                _lastDeadScanFrame = frame;
+                ClientLocalAsteroidCombatSync.CullDeadAsteroidsStillSolid(em);
+            }
 
             // --- Drop hulls from the static physics world (blob-swap is not enough) ---
             // [PHYSICS] RemoveComponent forces BuildPhysicsWorld to rebuild static bodies.
             // Do this before PhysicsSystemGroup this predicted step.
             var stripEcb = new EntityCommandBuffer(Allocator.Temp);
+            int stripped = 0;
             foreach (var (_, entity) in SystemAPI
                          .Query<RefRO<PhysicsCollider>>()
                          .WithAll<AsteroidClientCulledTag>()
                          .WithEntityAccess())
             {
                 stripEcb.RemoveComponent<PhysicsCollider>(entity);
+                stripped++;
             }
 
-            stripEcb.Playback(em);
+            if (stripped > 0)
+                stripEcb.Playback(em);
             stripEcb.Dispose();
 
             // --- Keep scale squashed if a collider is restored this tick before strip ---

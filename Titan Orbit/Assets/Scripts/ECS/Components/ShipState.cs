@@ -389,12 +389,20 @@ namespace TitanOrbit.ECS
     /// <summary>
     /// Gameplay-readable velocity mirror of physics linear velocity. Ghost-serialized for
     /// remote interpolation and HUD. Synced by <see cref="ShipKinematicsSyncSystem"/> after physics.
+    /// <see cref="ThrustHeld"/> is local-only (not a GhostField) — adding it to the snapshot
+    /// broke StarshipGhost decode (146 vs 149 bits) until every client rebaked.
     /// </summary>
     public struct ShipKinematics : IComponentData
     {
         /// <summary>[ECS/DOTS] Linear velocity; quantized for network bandwidth.</summary>
         [GhostField(Quantization = 1000)]
         public float3 Velocity;
+
+        /// <summary>
+        /// 1 while this world's predicted owner holds thrust. Not networked — remotes stay 0.
+        /// Presentation uses Local Host <see cref="ShipInput"/> instead of bounce speed.
+        /// </summary>
+        public byte ThrustHeld;
     }
 
     /// <summary>[ECS/DOTS] Marker — entity is a player or AI starship (used in queries across all ship systems).</summary>

@@ -50,7 +50,9 @@ Starblast uses **hand-written 2D math** (velocity, friction, simple primitives) 
 
 **Titan Orbit motor contract (not “ban all Physics”):**
 - **Drive** = shared Burst-safe math → writes `PhysicsVelocity` / yaw (`ShipPhysicsDriveLogic`).
-- **Integrate / collide** = Unity Physics in `PhysicsSystemGroup` (position + hull collisions).
+- **Integrate + collide** = Unity Physics in `PhysicsSystemGroup` for ship↔world. Bounce/friction/asteroid ram use collision events (`ShipCollisionBounceSystem`).
+- **Ship↔ship** = `ShipShipHullContactSystem` (two hull spheres). Do not also PhysX-pair ships — remotes are interpolated and will stack.
+- **Wrap** = off (`ToroidalMapEcs.TopologyEnabled` is false). Do not add a wrap step.
 - **Do not** add `Rigidbody` / PhysX GameObject forces, or a second NGO-style tick loop, for predicted flight.
 
 ```csharp
@@ -74,7 +76,7 @@ One smoothing owner. Do not double-smooth.
 | Tick / fixed dt | NetCode predicted fixed step (~60 Hz); not variable `Time.deltaTime` for motor |
 | Local prediction | `ShipClientPredictedPhysicsDriveSystem` + shared `ShipPhysicsDriveLogic` |
 | Server authority | `ShipPhysicsDriveSystem` (same math) |
-| Remotes | Ghost interpolation — buffer + Lerp/Slerp in presentation |
+| Remotes | Ghost interpolation (presentation pose) — sphere resolve writes the local hull only |
 | Reconciliation | NetCode rollback/resim + prediction smoothing — not a hand-rolled NGO circular buffer as the primary path |
 | Visuals | Presentation pose / cache → camera & hull render — **no** custom `Update` MoveTowards toward sim for the owner |
 

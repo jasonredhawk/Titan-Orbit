@@ -6,16 +6,13 @@ using Unity.Physics;
 namespace TitanOrbit.ECS
 {
     /// <summary>
-    /// Shared ship↔world hull resolve on the toroidal map. Unity Physics only sees absolute
-    /// <see cref="Unity.Transforms.LocalTransform"/> positions, so after the local ship flies past a
-    /// map edge the nearest displayed planet/asteroid can sit next to the hull while the sim bodies
-    /// are still ~one map width apart — Euclidean contacts miss. This math uses
-    /// <see cref="ToroidalMapEcs.ShortestOffsetXZ"/> (same idea as <see cref="BulletCollision"/>)
-    /// so bounce still works across seams. Called from <see cref="ShipToroidalWorldCollisionSystem"/>
-    /// on both server and predicted client — never move shared planet transforms for one client's display.
+    /// One torus hull-collision path (Starblast model). Uses
+    /// <see cref="ToroidalMapEcs.ShortestOffsetXZ"/> for every ship↔world and ship↔ship pair —
+    /// same-tile and seams. PhysX integrates ship position only; it does not bounce hulls.
+    /// Called from <see cref="ShipToroidalWorldCollisionSystem"/> on server and predicted client.
     /// <para>
     /// Asteroids use <see cref="ShipCollisionImpulseLogic"/> with virtual mass (rocks stay static).
-    /// Planets / moons keep infinite-mass wall reflect. Ship↔ship seam pairs use two-body impulse.
+    /// Planets / moons keep infinite-mass wall reflect. Ship↔ship is this two-body path.
     /// </para>
     /// </summary>
     public static class ShipToroidalWorldCollisionLogic
@@ -27,10 +24,10 @@ namespace TitanOrbit.ECS
         public const float WorldRestitution = ShipCollisionImpulseLogic.DefaultInfiniteMassRestitution;
 
         /// <summary>
-        /// If the raw XZ delta and the toroidal shortest offset differ, the pair is on different
-        /// map tiles and Unity Physics will not generate a contact.
+        /// Extra ship↔ship sphere slack so elongated chassis still catch on purpose rams.
+        /// Applied only to ship↔ship (not planet/asteroid keep-out).
         /// </summary>
-        const float DifferentTileEpsilonSq = 0.01f;
+        public const float ShipShipRadiusSlack = 1.1f;
 
         /// <summary>
         /// Effective ship hull radius for sphere vs sphere tests. Prefers the baked
@@ -59,25 +56,21 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// True when Euclidean XZ separation differs from the toroidal shortest path — i.e. a wrap
-        /// tile is involved and Unity Physics will not bounce this pair.
+        /// True when Euclidean XZ separation differs from the toroidal shortest path — a wrap
+        /// tile is involved. Delegates to <see cref="ToroidalMapEcs.CrossedSeam"/>.
         /// </summary>
-        /// <param name="shipPos">Ship sim position (may be unbounded).</param>
+        /// <param name="shipPos">Ship sim position (wrapped or not).</param>
         /// <param name="bodyPos">Planet / asteroid / moon sim position.</param>
         /// <param name="mapW">Toroidal map width.</param>
         /// <param name="mapH">Toroidal map height.</param>
         public static bool NeedsToroidalResolve(float3 shipPos, float3 bodyPos, float mapW, float mapH)
         {
-            float3 raw = bodyPos - shipPos;
-            raw.y = 0f;
-            float3 shortest = ToroidalMapEcs.ShortestOffsetXZ(shipPos, bodyPos, mapW, mapH);
-            return math.lengthsq(raw - shortest) > DifferentTileEpsilonSq;
+            return ToroidalMapEcs.CrossedSeam(shipPos, bodyPos, mapW, mapH);
         }
 
         /// <summary>
-        /// Cross-seam overlap test with no depenetration or bounce. MEGA asteroid plow uses this
-        /// so the hull can queue ram damage without being shoved off its flight path.
-        /// Same-tile pairs stay false — PhysX + bounce own those contacts.
+        /// Sphere overlap on the torus with no depenetration or bounce. MEGA asteroid plow uses
+        /// this so the hull can queue ram damage without being shoved off its flight path.
         /// </summary>
         /// <param name="shipPos">Ship sim position (may be unbounded).</param>
         /// <param name="shipVel">Ship linear velocity (closing speed only).</param>
@@ -88,7 +81,7 @@ namespace TitanOrbit.ECS
         /// <param name="mapH">Map height.</param>
         /// <param name="normalShipFromBody">Unit XZ normal from the body toward the ship.</param>
         /// <param name="closingSpeed">Approach speed along that normal (0 if separating).</param>
-        /// <returns>True when the pair is on different tiles and overlapping.</returns>
+        /// <returns>True when the spheres overlap on the torus.</returns>
         public static bool TryGetCrossSeamWorldSphereOverlap(
             float3 shipPos,
             float3 shipVel,
@@ -102,8 +95,6 @@ namespace TitanOrbit.ECS
         {
             normalShipFromBody = new float3(0f, 0f, 1f);
             closingSpeed = 0f;
-            if (!NeedsToroidalResolve(shipPos, bodyPos, mapW, mapH))
-                return false;
 
             float3 offset = ToroidalMapEcs.ShortestOffsetXZ(shipPos, bodyPos, mapW, mapH);
             float dist = math.length(offset);
@@ -119,10 +110,9 @@ namespace TitanOrbit.ECS
 
         /// <summary>
         /// If the ship overlaps the world sphere on the torus, push the ship out and bounce velocity.
-        /// No-op when the pair is on the same tile (Unity Physics + bounce/friction + drive contact
-        /// reject own that contact) or not overlapping.
-        /// Pass <paramref name="bodyMass"/> &gt; 0 with <paramref name="shipMass"/> for asteroids
-        /// (virtual mass, rock stays put); leave bodyMass ≤ 0 for infinite-mass planets.
+        /// Same-tile and seams share this path. Pass <paramref name="bodyMass"/> &gt; 0 with
+        /// <paramref name="shipMass"/> for asteroids (virtual mass, rock stays put); leave
+        /// bodyMass ≤ 0 for infinite-mass planets.
         /// </summary>
         /// <param name="shipPos">Ship position — written when depenetrating.</param>
         /// <param name="shipVel">Ship linear velocity — written when reflecting.</param>
@@ -141,8 +131,7 @@ namespace TitanOrbit.ECS
         /// Virtual asteroid mass (&gt; 0). ≤ 0 ⇒ infinite-mass wall (planets).
         /// </param>
         /// <param name="resolveSameTile">
-        /// When true, also depenetrate Euclidean (same-tile) pairs. MEGA vs planet uses this
-        /// after PhysX planet shove is undone, so a covering sphere can be capped at the orbit ring.
+        /// Unused (all tiles resolve). Kept so MEGA vs planet callers still compile.
         /// </param>
         /// <param name="maxKeepOut">
         /// When &gt; 0, cap <c>shipRadius + bodyRadius</c> so the ship center can still reach this
@@ -165,15 +154,8 @@ namespace TitanOrbit.ECS
             bool resolveSameTile = false,
             float maxKeepOut = 0f)
         {
-            // --- Same tile: leave to Unity Physics + bounce/friction + drive inward-reject ---
-            // [TITAN-ORBIT] Avoids double-bounce near the origin where Euclidean contacts already work.
-            // Progressive grind dig-in is stopped by ShipAsteroidContactState (motor cannot push into
-            // the rock). Do NOT sphere-push from AABB radii — compound hulls over-estimate and shove.
-            // MEGA vs planet opts in (resolveSameTile) with an orbit-ring keep-out cap.
-            if (!resolveSameTile && !NeedsToroidalResolve(shipPos, bodyPos, mapW, mapH))
-                return false;
-
-            // --- Toroidal separation (ship → body) ---
+            // --- Toroidal separation (ship → body) — same tile or seam ---
+            _ = resolveSameTile;
             float3 offset = ToroidalMapEcs.ShortestOffsetXZ(shipPos, bodyPos, mapW, mapH);
             float dist = math.length(offset);
             float minDist = math.max(0.01f, shipRadius + bodyRadius);
@@ -185,7 +167,7 @@ namespace TitanOrbit.ECS
             // --- Separation normal: from body toward ship ---
             float3 normal = ComputeSeparationNormal(offset, dist, shipVel);
 
-            // --- Depenetrate ship in unbounded sim space ---
+            // --- Depenetrate along the shortest path (caller wraps after this system) ---
             float penetration = minDist - dist;
             shipPos += normal * penetration;
             shipPos.y = 0f;
@@ -214,21 +196,25 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// Cross-seam ship↔ship sphere resolve with two-body mass-aware impulse.
-        /// Same-tile pairs are left to PhysX + <c>ShipCollisionBounceSystem</c>.
-        /// Both ships depenetrate along the shared normal (mass-weighted split).
+        /// Ship↔ship sphere resolve with two-body mass-aware impulse (same-tile and seams).
+        /// A always gets the mass-weighted local share so predicted client and server write
+        /// the same Δpose / Δvel for that hull. When <paramref name="writePositionB"/> is
+        /// false (interpolated remote), B is left alone and A takes the full penetration.
         /// </summary>
         /// <param name="posA">Ship A position — written when depenetrating.</param>
         /// <param name="velA">Ship A linear velocity — written on bounce.</param>
-        /// <param name="radiusA">Ship A hull radius.</param>
+        /// <param name="radiusA">Ship A hull radius (already slack-scaled by the caller).</param>
         /// <param name="massA">Ship A collision mass.</param>
-        /// <param name="posB">Ship B position — written when depenetrating.</param>
-        /// <param name="velB">Ship B linear velocity — written on bounce.</param>
-        /// <param name="radiusB">Ship B hull radius.</param>
+        /// <param name="posB">Ship B position — written when depenetrating and <paramref name="writePositionB"/>.</param>
+        /// <param name="velB">Ship B linear velocity — written on bounce (caller may discard).</param>
+        /// <param name="radiusB">Ship B hull radius (already slack-scaled by the caller).</param>
         /// <param name="massB">Ship B collision mass.</param>
         /// <param name="mapW">Map width.</param>
         /// <param name="mapH">Map height.</param>
         /// <param name="restitution">Bounce coefficient (typically ship–ship default).</param>
+        /// <param name="writePositionB">False when B is interpolated — never write remotes.</param>
+        /// <param name="normalAFromB">Unit XZ normal from B toward A.</param>
+        /// <param name="closingSpeed">Pre-impulse approach speed along that normal.</param>
         /// <returns>True when a penetration was resolved this call.</returns>
         public static bool TryResolveShipVsShip(
             ref float3 posA,
@@ -241,12 +227,15 @@ namespace TitanOrbit.ECS
             float massB,
             float mapW,
             float mapH,
-            float restitution)
+            float restitution,
+            bool writePositionB,
+            out float3 normalAFromB,
+            out float closingSpeed)
         {
-            if (!NeedsToroidalResolve(posA, posB, mapW, mapH))
-                return false;
+            normalAFromB = new float3(1f, 0f, 0f);
+            closingSpeed = 0f;
 
-            // Offset from A toward B along the shortest toroidal path.
+            // Offset from A toward B along the shortest toroidal path (same-tile or seam).
             float3 offsetAToB = ToroidalMapEcs.ShortestOffsetXZ(posA, posB, mapW, mapH);
             float dist = math.length(offsetAToB);
             float minDist = math.max(0.01f, radiusA + radiusB);
@@ -254,14 +243,11 @@ namespace TitanOrbit.ECS
                 return false;
 
             // Normal from B toward A (matches ApplyTwoBodyImpulse / collision-event convention).
-            float3 normalAFromB;
             if (dist < 1e-5f)
             {
                 float3 planarRel = new float3(velA.x - velB.x, 0f, velA.z - velB.z);
                 if (math.lengthsq(planarRel) > 1e-6f)
                     normalAFromB = -math.normalize(planarRel);
-                else
-                    normalAFromB = new float3(1f, 0f, 0f);
             }
             else
             {
@@ -269,17 +255,32 @@ namespace TitanOrbit.ECS
                 normalAFromB = -offsetAToB / dist;
             }
 
-            // --- Mass-weighted depenetration (heavier ship moves less) ---
+            float3 vA = velA;
+            float3 vB = velB;
+            vA.y = 0f;
+            vB.y = 0f;
+            closingSpeed = math.max(0f, -math.dot(vA - vB, normalAFromB));
+
             float mA = math.max(ShipCollisionImpulseLogic.MinCollisionMass, massA);
             float mB = math.max(ShipCollisionImpulseLogic.MinCollisionMass, massB);
             float penetration = minDist - dist;
             float invSum = 1f / (mA + mB);
-            posA += normalAFromB * (penetration * mB * invSum);
-            posB -= normalAFromB * (penetration * mA * invSum);
-            posA.y = 0f;
-            posB.y = 0f;
 
-            // --- Energy transfer ---
+            if (writePositionB)
+            {
+                posA += normalAFromB * (penetration * mB * invSum);
+                posB -= normalAFromB * (penetration * mA * invSum);
+                posB.y = 0f;
+            }
+            else
+            {
+                // B is a frozen interpolated remote — A must take the full gap or they stay
+                // overlapping (half-share + unmoved B is the "ships stack" bug).
+                posA += normalAFromB * penetration;
+            }
+            posA.y = 0f;
+
+            // --- Energy transfer (caller discards velB when B is interpolated) ---
             ShipCollisionImpulseLogic.ApplyTwoBodyImpulse(
                 ref velA, ref velB, normalAFromB, mA, mB, restitution);
             return true;

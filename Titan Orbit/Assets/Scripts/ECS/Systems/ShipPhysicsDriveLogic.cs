@@ -31,9 +31,9 @@ namespace TitanOrbit.ECS
     /// while the mouse moves) so unoccupied auto-guns can fire at the cursor.
     /// Live subtractive mass tax (<see cref="ShipMobilityResolution"/>) converts untaxed motor
     /// baselines into MaxSpeed / accel / turn from current gems/people + ComponentSize.
-    /// While <see cref="ShipAsteroidContactState"/> reports contact from the previous physics
-    /// step, inward velocity into the rock is removed so continuous thrust cannot dig the hull in
-    /// (position shove from AABB spheres was tried and rejected — compound hulls over-estimate).
+    /// While <see cref="ShipAsteroidContactState"/> reports contact from the previous
+    /// physics step, inward velocity is removed so continuous thrust cannot dig into a rock.
+    /// Ship↔ship does not use this reject — Unity Physics owns those pairs.
     /// Paired with <see cref="ShipPhysicsDriveSystem"/> and
     /// <see cref="ShipClientPredictedPhysicsDriveSystem"/>.
     /// </summary>
@@ -100,6 +100,7 @@ namespace TitanOrbit.ECS
             ref ShipOrbitState orbitState,
             ref ShipTerritoryBoostLatch territoryLatch,
             in ShipAsteroidContactState asteroidContact,
+            in ShipShipContactState shipContact,
             in NativeArray<PlanetMotorSnapshot> planets,
             float dt,
             float mapW,
@@ -405,6 +406,7 @@ namespace TitanOrbit.ECS
             // the into-rock component so slide / bounce remnant / orbit still work. Do NOT push
             // LocalTransform with AABB sphere radii — compound hulls over-estimate and shove.
             RejectInwardAsteroidVelocity(ref vel, in asteroidContact);
+            RejectInwardShipVelocity(ref vel, in shipContact);
 
             vel.y = 0f;
             physicsVelocity = new PhysicsVelocity
@@ -487,16 +489,35 @@ namespace TitanOrbit.ECS
             ref float3 vel,
             in ShipAsteroidContactState asteroidContact)
         {
-            if (asteroidContact.InContact == 0)
+            RejectInwardContactVelocity(ref vel, asteroidContact.InContact, asteroidContact.OutwardNormal);
+        }
+
+        /// <summary>
+        /// Same inward reject as asteroids, for the last ship↔ship contact normal.
+        /// </summary>
+        public static void RejectInwardShipVelocity(
+            ref float3 vel,
+            in ShipShipContactState shipContact)
+        {
+            RejectInwardContactVelocity(ref vel, shipContact.InContact, shipContact.OutwardNormal);
+        }
+
+        /// <summary>
+        /// Zeros the component of <paramref name="vel"/> into the contact (negative along outward).
+        /// Tangential slide and separating speed stay.
+        /// </summary>
+        static void RejectInwardContactVelocity(ref float3 vel, byte inContact, float3 outwardNormal)
+        {
+            if (inContact == 0)
                 return;
 
-            float3 n = asteroidContact.OutwardNormal;
+            float3 n = outwardNormal;
             n.y = 0f;
             if (math.lengthsq(n) < 1e-8f)
                 return;
             n = math.normalize(n);
 
-            // Negative vn = moving into the rock (opposite the outward normal).
+            // Negative vn = moving into the other body (opposite the outward normal).
             float vn = math.dot(vel, n);
             if (vn >= 0f)
                 return;
@@ -750,7 +771,7 @@ namespace TitanOrbit.ECS
             float contactRadius = math.max(0.05f, snapshot.MoonBodyRadiusWorld + shipRadius);
             float3 attachPos = moonPos + offset * contactRadius;
             attachPos.y = 0f;
-            transform.Position = attachPos;
+            transform.Position = ToroidalMapEcs.Wrap(attachPos, mapW, mapH);
 
             // --- Match moon velocity so Physics does not leave the moon behind this tick ---
             float3 moonVel = PlanetOrbitMath.GetMoonOrbitalVelocity(

@@ -104,7 +104,7 @@ namespace TitanOrbit.ECS
                     continue;
                 }
 
-                b.Position = end;
+                b.Position = ToroidalMapEcs.Wrap(end, MapW, MapH);
                 Bullets[i] = b;
                 Outcomes[i] = OutcomeFly;
             }

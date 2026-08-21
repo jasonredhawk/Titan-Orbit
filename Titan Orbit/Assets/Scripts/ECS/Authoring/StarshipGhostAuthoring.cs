@@ -96,6 +96,8 @@ namespace TitanOrbit.ECS.Authoring
                 AddComponent(entity, new ShipPreCollisionVelocity());
                 // [TITAN-ORBIT] Previous-tick asteroid contact normal for motor inward-reject (not ghosted).
                 AddComponent(entity, new ShipAsteroidContactState());
+                // [TITAN-ORBIT] Previous-tick ship↔ship normal (kept zero — PhysX owns ship pairs).
+                AddComponent(entity, new ShipShipContactState());
                 AddComponent(entity, new ShipWeaponConfig
                 {
                     FireRate = authoring.FireRate,
@@ -161,14 +163,12 @@ namespace TitanOrbit.ECS.Authoring
             void BakeShipPhysicsBody(Entity shipEntity, float mass)
             {
                 float radius = BodyCollisionMath.GetShipHullRadiusWorld(1f);
-                // [PHYSICS] Raise collision events so server ramming can see real hull contacts
-                // (not proximity). Combined with world materials via flag OR.
+                // [TITAN-ORBIT] PhysX owns ship↔world. Restitution 0 — bounce events apply
+                // asteroid/planet energy. Ship↔ship is the hull-sphere resolve, not this material.
                 var material = Unity.Physics.Material.Default;
                 material.CollisionResponse = Unity.Physics.CollisionResponsePolicy.CollideRaiseCollisionEvents;
-                // [TITAN-ORBIT] Restitution 0 — ShipCollisionImpulseLogic owns bounce (mass-aware).
-                // PhysX still depenetrates and raises collision events for the custom impulse pass.
                 material.Restitution = 0f;
-                material.Friction = 0.05f;
+                material.Friction = 0f;
 
                 var collider = Unity.Physics.SphereCollider.Create(
                     new SphereGeometry { Center = float3.zero, Radius = radius },
@@ -181,6 +181,12 @@ namespace TitanOrbit.ECS.Authoring
 
                 var physicsMass = PhysicsMass.CreateDynamic(collider.Value.MassProperties, math.max(0.5f, mass));
                 AddComponent(shipEntity, physicsMass);
+                // Client marks interpolated remotes kinematic; server stays dynamic (IsKinematic 0).
+                AddComponent(shipEntity, new PhysicsMassOverride
+                {
+                    IsKinematic = 0,
+                    SetVelocityToZero = 0,
+                });
                 AddComponent(shipEntity, new PhysicsGravityFactor { Value = 0f });
                 AddComponent(shipEntity, new PhysicsDamping { Linear = 0.15f, Angular = 2f });
             }

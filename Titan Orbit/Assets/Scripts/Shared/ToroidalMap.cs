@@ -71,7 +71,7 @@ namespace TitanOrbit.Generation
         /// </summary>
         public static Vector3 GetDisplayPosition(Vector3 logicalPos, Vector3 cameraPos)
         {
-            if (!HasValidMapSize)
+            if (!ToroidalMapEcs.TopologyEnabled || !HasValidMapSize)
                 return logicalPos;
 
             // --- Same integer-tile formula as ToroidalMapEcs.GetDisplayPosition ---
@@ -94,8 +94,12 @@ namespace TitanOrbit.Generation
             ref int tileM,
             float switchMarginFraction = 0.35f)
         {
-            if (!HasValidMapSize)
+            if (!ToroidalMapEcs.TopologyEnabled || !HasValidMapSize)
+            {
+                tileK = 0;
+                tileM = 0;
                 return logicalPos;
+            }
 
             // --- Candidate tile ---
             float dx = referencePos.x - logicalPos.x;
@@ -144,7 +148,7 @@ namespace TitanOrbit.Generation
         /// </summary>
         public static Vector3 WrapPosition(Vector3 position)
         {
-            if (!HasValidMapSize)
+            if (!ToroidalMapEcs.TopologyEnabled || !HasValidMapSize)
                 return position;
 
             // --- [UNITY] Mathf.Repeat maps into [0, length); then recenter ---
@@ -165,7 +169,7 @@ namespace TitanOrbit.Generation
         {
             float dx = worldB.x - worldA.x;
             float dz = worldB.z - worldA.z;
-            if (!HasValidMapSize)
+            if (!ToroidalMapEcs.TopologyEnabled || !HasValidMapSize)
                 return new Vector3(dx, 0f, dz);
 
             // --- Periodic delta ---
@@ -201,7 +205,7 @@ namespace TitanOrbit.Generation
         {
             float dx = toCanonical.x - fromCanonical.x;
             float dz = toCanonical.z - fromCanonical.z;
-            if (!HasValidMapSize)
+            if (!ToroidalMapEcs.TopologyEnabled || !HasValidMapSize)
                 return new Vector2(dx, dz);
 
             // --- Clamp-style wrap (equivalent to round-subtract when |delta| is within one map) ---

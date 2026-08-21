@@ -307,6 +307,7 @@ namespace TitanOrbit.ECS
             float linearDamping = settings.LinearDamping;
             float angularDamping = settings.AngularDamping;
             float stopSpeed = settings.StopSpeedThreshold;
+            bool haveGemMap = ToroidalMapEcs.TryGetMapSize(out float gemMapW, out float gemMapH);
 
             foreach (var (kinematics, transform, entity) in SystemAPI
                          .Query<RefRW<GemKinematics>, RefRW<LocalTransform>>()
@@ -340,9 +341,11 @@ namespace TitanOrbit.ECS
                 float3 ang = GemExplosionMath.IntegrateAngularVelocity(
                     kin.AngularVelocity, angularDamping, dt);
 
-                // --- Integrate in unbounded space (same as ships); toroidal math is for reach only ---
+                // --- Integrate then wrap into the canonical cell (Starblast model) ---
                 var lt = transform.ValueRO;
                 lt.Position += vel * dt;
+                if (haveGemMap)
+                    lt.Position = ToroidalMapEcs.Wrap(lt.Position, gemMapW, gemMapH);
                 if (math.lengthsq(ang) > 0.0001f)
                 {
                     // AngularVelocity is rad/s — quaternion integrate in world space.

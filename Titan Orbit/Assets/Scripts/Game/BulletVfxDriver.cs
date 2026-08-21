@@ -151,6 +151,15 @@ namespace TitanOrbit.Game
         /// </summary>
         const int MaxSpawnsPerFrame = 3;
 
+        /// <summary>
+        /// Ram/grind HitRpc Instantiates the ship's bullet impact. A queued dump of those
+        /// (Profiler: PlasmaMuzzleFlashYellow 60ms / BlueShockwaveImpact 8ms) tanks FPS.
+        /// </summary>
+        const float RamImpactVfxMinInterval = 0.2f;
+
+        /// <summary>Merge nearby ram flashes so one grind contact is one boom.</summary>
+        const float RamImpactVfxMergeRadiusSq = 64f;
+
         /// <summary>How long a predicted Sequence suppresses a duplicate HitRpc impact.</summary>
         const float PredictedHitTtlSeconds = 2f;
 
@@ -200,6 +209,8 @@ namespace TitanOrbit.Game
         bool _hasLastObserverHull;
         /// <summary>Increments per anticipation CreateTracer so FIFO adopt survives RemoveAtSwap.</summary>
         int _nextAnticipationOrder;
+        float _lastRamImpactVfxTime = -999f;
+        float3 _lastRamImpactVfxPos;
 
         /// <summary>[UNITY] Attach to session manager when the scene loads.</summary>
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
@@ -735,8 +746,18 @@ namespace TitanOrbit.Game
                     var ramTeam = (TeamId)hit.OwnerTeam;
                     int ramBank = math.max(0, hit.BankIndex);
                     float ramScale = hit.ScaleMultiplier > 0f ? hit.ScaleMultiplier : 1f;
-                    BulletImpactAttach.PlayAtLogicalPoint(
-                        hit.HitPosition, _bank, ramBank, ramTeam, hit.Damage, ramScale);
+                    bool ramKill = hit.AsteroidHealthAfter >= 0f && hit.AsteroidHealthAfter <= 0.01f;
+                    float now = UnityEngine.Time.unscaledTime;
+                    float3 delta = hit.HitPosition - _lastRamImpactVfxPos;
+                    delta.y = 0f;
+                    bool sameSpot = math.lengthsq(delta) <= RamImpactVfxMergeRadiusSq;
+                    if (ramKill || !sameSpot || now - _lastRamImpactVfxTime >= RamImpactVfxMinInterval)
+                    {
+                        BulletImpactAttach.PlayAtLogicalPoint(
+                            hit.HitPosition, _bank, ramBank, ramTeam, hit.Damage, ramScale);
+                        _lastRamImpactVfxTime = now;
+                        _lastRamImpactVfxPos = hit.HitPosition;
+                    }
 
                     var ramSynth = new Tracer { OwnerNetworkId = 0, IsAnticipation = false };
                     TryShowHitRpcFloats(

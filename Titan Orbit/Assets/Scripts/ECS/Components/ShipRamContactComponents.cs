@@ -5,7 +5,8 @@ namespace TitanOrbit.ECS
 {
     /// <summary>
     /// Server-only singleton tag for the frame's pending ramming contacts queue.
-    /// Filled by Physics collision events and cross-seam toroidal asteroid resolves; consumed by
+    /// Filled by Physics collision events (asteroids / ships) and server wrap-seam
+    /// resolves; consumed by
     /// <see cref="ShipRammingCollisionDamageSystem"/>.
     /// </summary>
     public struct RamContactQueueTag : IComponentData { }

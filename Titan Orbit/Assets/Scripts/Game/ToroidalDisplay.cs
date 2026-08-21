@@ -10,25 +10,22 @@ using UnityEngine;
 namespace TitanOrbit.Game
 {
     /// <summary>
-    /// Client toroidal display for ECS presentation proxies — classic “ship flies forever” model.
+    /// Client toroidal display for ECS presentation proxies — Starblast wrap model.
     /// <para>
-    /// [TITAN-ORBIT] How this is supposed to feel (matches the old ToroidalRenderer / d63ea6fd era):
+    /// The local ship wraps in sim; camera and display wrap with it in the same frame.
+    /// Other bodies each pick their nearest map-tile copy relative to that wrapped ship.
+    /// On a wrap frame, <see cref="NotifyReferenceWrapped"/> clears tile memory so every body
+    /// picks nearest immediately (no hysteresis delay / blink).
     /// </para>
-    /// <list type="bullet">
-    /// <item>The <b>local ship does not wrap or teleport</b>. It keeps flying in world space past the
-    /// map edge; the camera follows that local hull.</item>
-    /// <item>Planets, asteroids, remotes, etc. each pick their own nearest map-tile copy relative to
-    /// the local ship — <b>individually</b>, not as one global map snap.</item>
-    /// <item>Gameplay still uses <see cref="ToroidalMapEcs.ToroidalDistance"/> / ShortestOffset so
-    /// combat and docking work across seams. Remotes appear via the same per-entity display offset.</item>
-    /// </list>
-    /// Do not wrap local <c>LocalTransform</c> at the seam — that makes every body retile at once (the blink).
     /// [HYBRID] Render only — never writes ECS sim.
     /// </summary>
     public static class ToroidalDisplay
     {
         /// <summary>Per-entity display tile (k, m). Each body switches on its own when another tile is clearly closer.</summary>
         static readonly Dictionary<Entity, (int k, int m)> s_EntityTiles = new();
+
+        /// <summary>Last logical pose per entity — used to detect a wrap and drop hysteresis.</summary>
+        static readonly Dictionary<Entity, float3> s_LastLogical = new();
 
         /// <summary>Keyed tiles when the caller has a stable int id (planet id) instead of an Entity.</summary>
         static readonly Dictionary<int, (int k, int m)> s_KeyedTiles = new();
@@ -57,6 +54,7 @@ namespace TitanOrbit.Game
             _ = reason;
             s_EntityTiles.Clear();
             s_KeyedTiles.Clear();
+            s_LastLogical.Clear();
             s_TileSwitchesThisFrame = 0;
         }
 
@@ -112,7 +110,7 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Local ship world position (unbounded). Prefer <see cref="ShipDisplayPose"/> (always safe),
+        /// Local ship world position (wrapped presentation pose). Prefer <see cref="ShipDisplayPose"/> (always safe),
         /// then live ECS when ship queries are allowed, then camera.
         /// </summary>
         public static bool TryGetReferencePosition(out Vector3 reference)
@@ -198,6 +196,12 @@ namespace TitanOrbit.Game
             // Missing map period → leave logical pose (never invent a tile period).
             if (!ToroidalMapEcs.HasValidMapSize)
                 return logicalPosition;
+
+            // --- Remote / body wrapped: drop hysteresis so we do not lerp across the map ---
+            if (s_LastLogical.TryGetValue(entity, out var lastLogical) &&
+                ToroidalMapEcs.CrossedSeam(lastLogical, logicalPosition, ToroidalMapEcs.MapWidth, ToroidalMapEcs.MapHeight))
+                tile = (int.MinValue, int.MinValue);
+            s_LastLogical[entity] = new float3(logicalPosition.x, logicalPosition.y, logicalPosition.z);
 
             int tileK = tile.k;
             int tileM = tile.m;
@@ -295,7 +299,20 @@ namespace TitanOrbit.Game
             return ToDisplayPosition(logicalPosition, reference);
         }
 
-        public static void RemoveEntity(Entity entity) => s_EntityTiles.Remove(entity);
+        /// <summary>
+        /// Local ship just wrapped. Clear per-body tile memory so the next sample is nearest-tile
+        /// (atomic retile with the camera — no hysteresis hold on the old cell).
+        /// </summary>
+        public static void NotifyReferenceWrapped()
+        {
+            ResetSession("ToroidalDisplay.NotifyReferenceWrapped");
+        }
+
+        public static void RemoveEntity(Entity entity)
+        {
+            s_EntityTiles.Remove(entity);
+            s_LastLogical.Remove(entity);
+        }
 
         public static void PruneStale(HashSet<Entity> alive)
         {
@@ -310,7 +327,10 @@ namespace TitanOrbit.Game
             }
 
             for (int i = 0; i < remove.Count; i++)
+            {
                 s_EntityTiles.Remove(remove[i]);
+                s_LastLogical.Remove(remove[i]);
+            }
         }
 
         public static bool IsLocalPlayerShip(EntityManager em, Entity entity)

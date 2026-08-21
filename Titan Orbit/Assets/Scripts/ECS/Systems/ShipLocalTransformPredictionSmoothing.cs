@@ -1,4 +1,5 @@
 using System;
+using TitanOrbit.Generation;
 using Unity.Burst;
 using Unity.Collections.LowLevel.Unsafe;
 using Unity.Mathematics;
@@ -47,7 +48,12 @@ namespace TitanOrbit.ECS
             _ = userData;
 
             // current = corrected after resim; previous = pose before reconcile this tick.
-            current.Position = math.lerp(previous.Position, current.Position, PositionBlend);
+            // [TITAN-ORBIT] Wrap-aware XZ so a seam reconcile does not lerp across the map.
+            if (ToroidalMapEcs.TryGetMapSize(out float w, out float h))
+                current.Position = ToroidalMapEcs.LerpWrapped(
+                    previous.Position, current.Position, PositionBlend, w, h);
+            else
+                current.Position = math.lerp(previous.Position, current.Position, PositionBlend);
             current.Rotation = math.slerp(previous.Rotation, current.Rotation, RotationBlend);
         }
     }

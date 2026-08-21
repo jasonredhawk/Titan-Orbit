@@ -3,6 +3,7 @@ using TitanOrbit.Simulation;
 using Unity.Burst;
 using Unity.Collections;
 using Unity.Entities;
+using Unity.Mathematics;
 using Unity.NetCode;
 using Unity.Physics;
 using Unity.Transforms;
@@ -94,6 +95,8 @@ namespace TitanOrbit.ECS
                 return;
             }
 
+            // Ship↔ship inward reject is unused (PhysX owns those pairs). This Execute stays at
+            // 13 component params. A 14th Ref / Entity / ComponentLookup Burst-NRE'd Player 2.
             ShipPhysicsDriveLogic.Step(
                 input.ValueRO,
                 motor.ValueRO,
@@ -105,6 +108,7 @@ namespace TitanOrbit.ECS
                 ref orbitState.ValueRW,
                 ref territoryLatch.ValueRW,
                 asteroidContact.ValueRO,
+                default,
                 in Planets,
                 Dt,
                 MapW,

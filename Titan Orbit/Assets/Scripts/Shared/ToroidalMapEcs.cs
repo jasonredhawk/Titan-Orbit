@@ -3,13 +3,9 @@ using Unity.Mathematics;
 namespace TitanOrbit.Generation
 {
     /// <summary>
-    /// Pac-Man (toroidal) XZ map math for ECS simulation and presentation.
-    /// Logical positions live in a centered rectangle
-    /// <c>[-MapWidth/2, MapWidth/2) × [-MapHeight/2, MapHeight/2)</c>; flying off one edge
-    /// wraps to the opposite edge. Distance and direction use the shortest path on that torus
-    /// so combat, docking, mining, and beams work across seams. Display helpers pick the
-    /// nearest map-tile copy of a logical point relative to a reference (usually the local ship)
-    /// so GameObject proxies do not jump a full map width when the owner wraps.
+    /// XZ map math for ECS simulation and presentation.
+    /// <see cref="TopologyEnabled"/> is currently <c>false</c>: wrap, shortest-path, and
+    /// display tiling are Euclidean no-ops. Helpers stay so a torus can return later.
     /// Map size is set from <see cref="TitanOrbit.ECS.MapStateSingleton"/> at match bootstrap
     /// or from <c>MapSessionMetaRpc</c> on dedicated clients — never invented as a silent default.
     /// Burst-safe: pure static math, no managed allocations.
@@ -17,8 +13,14 @@ namespace TitanOrbit.Generation
     public static class ToroidalMapEcs
     {
         /// <summary>
-        /// Smallest side length we treat as a real rolled map (world units).
-        /// Below this, size is considered missing — callers must skip toroidal math, not invent a period.
+        /// When false, the map is a finite Euclidean rectangle: <see cref="Wrap"/> is identity,
+        /// offsets are raw XZ, and display helpers return the logical position.
+        /// </summary>
+        public const bool TopologyEnabled = false;
+
+        /// <summary>
+        /// Smallest side length we treat as a real map (world units).
+        /// Below this, size is considered missing — callers must skip size-dependent work.
         /// </summary>
         public const float MinValidMapSize = 100f;
 
@@ -132,6 +134,9 @@ namespace TitanOrbit.Generation
         /// </summary>
         public static float3 Wrap(float3 position, float mapWidth, float mapHeight)
         {
+            if (!TopologyEnabled)
+                return position;
+
             // --- Shift into [0, size), modulo, shift back to centered [-half, half) ---
             // [STANDARD] fmod can return negative for negative inputs; we re-add size when needed.
             float halfW = mapWidth * 0.5f;
@@ -168,6 +173,9 @@ namespace TitanOrbit.Generation
         /// </summary>
         public static float3 ShortestOffsetXZ(float3 from, float3 to, float mapWidth, float mapHeight)
         {
+            if (!TopologyEnabled)
+                return new float3(to.x - from.x, 0f, to.z - from.z);
+
             // --- Divide-by-zero guard only (do not invent a playable 1000 / 100 period) ---
             float w = math.max(1e-3f, mapWidth);
             float h = math.max(1e-3f, mapHeight);
@@ -203,12 +211,59 @@ namespace TitanOrbit.Generation
         }
 
         /// <summary>
+        /// True when the Euclidean XZ delta disagrees with the toroidal shortest path —
+        /// the pair sits on different map tiles (a wrap is involved).
+        /// </summary>
+        /// <param name="a">First world position.</param>
+        /// <param name="b">Second world position.</param>
+        /// <param name="mapWidth">Rolled map width.</param>
+        /// <param name="mapHeight">Rolled map height.</param>
+        public static bool CrossedSeam(float3 a, float3 b, float mapWidth, float mapHeight)
+        {
+            if (!TopologyEnabled)
+                return false;
+
+            float3 raw = b - a;
+            raw.y = 0f;
+            float3 shortest = ShortestOffsetXZ(a, b, mapWidth, mapHeight);
+            return math.lengthsq(raw - shortest) > 0.01f;
+        }
+
+        /// <summary>
+        /// Interpolate XZ along the shortest toroidal path, then wrap into the canonical cell.
+        /// Use this instead of <c>math.lerp</c> on positions that can cross a map edge.
+        /// Y is taken from a Euclidean lerp (flight stays planar).
+        /// </summary>
+        /// <param name="from">Start pose (need not be wrapped).</param>
+        /// <param name="to">End pose (need not be wrapped).</param>
+        /// <param name="t">Blend 0–1.</param>
+        /// <param name="mapWidth">Rolled map width.</param>
+        /// <param name="mapHeight">Rolled map height.</param>
+        public static float3 LerpWrapped(float3 from, float3 to, float t, float mapWidth, float mapHeight)
+        {
+            if (!TopologyEnabled)
+            {
+                float3 p = math.lerp(from, to, math.saturate(t));
+                p.y = math.lerp(from.y, to.y, math.saturate(t));
+                return p;
+            }
+
+            float3 offset = ShortestOffsetXZ(from, to, mapWidth, mapHeight);
+            float3 blended = from + offset * math.saturate(t);
+            blended.y = math.lerp(from.y, to.y, t);
+            return Wrap(blended, mapWidth, mapHeight);
+        }
+
+        /// <summary>
         /// Nearest toroidal copy of <paramref name="logicalPos"/> relative to <paramref name="referencePos"/>.
-        /// Uses integer tile indices so the local ship may fly arbitrarily far (many map widths);
+        /// Uses integer tile indices so a wrapped ship still works as the reference;
         /// each body independently picks the copy nearest that ship.
         /// </summary>
         public static float3 GetDisplayPosition(float3 logicalPos, float3 referencePos, float mapWidth, float mapHeight)
         {
+            if (!TopologyEnabled)
+                return logicalPos;
+
             // --- k,m = how many map tiles to shift logical so it sits near the (possibly unbounded) ship ---
             float dx = referencePos.x - logicalPos.x;
             float dz = referencePos.z - logicalPos.z;
@@ -241,6 +296,13 @@ namespace TitanOrbit.Generation
             float mapHeight,
             float switchMarginFraction = 0.35f)
         {
+            if (!TopologyEnabled)
+            {
+                tileK = 0;
+                tileM = 0;
+                return logicalPos;
+            }
+
             // --- Candidate tile from continuous nearest-copy ---
             float dx = referencePos.x - logicalPos.x;
             float dz = referencePos.z - logicalPos.z;

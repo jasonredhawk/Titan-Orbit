@@ -835,6 +835,11 @@ namespace TitanOrbit.ECS
             if (!em.HasComponent<AsteroidTag>(asteroid))
                 return;
 
+            // Already torn down this kill — do not rebuild the physics world again.
+            if (em.HasComponent<AsteroidClientCulledTag>(asteroid) &&
+                !em.HasComponent<PhysicsCollider>(asteroid))
+                return;
+
             // --- Authoritative dead state ---
             if (em.HasComponent<AsteroidState>(asteroid))
             {

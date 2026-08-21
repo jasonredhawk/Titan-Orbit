@@ -1,63 +1,29 @@
 ---
-description: Toroidal (wraparound) map invariants — shortest-path sim, unbounded ship, per-body display tiles
+description: Finite Euclidean XZ map — wrap is off; Unity Physics owns hull contacts
 alwaysApply: true
 ---
 
-# Titan Orbit — Toroidal map
+# Titan Orbit — Map (Euclidean, wrap off)
 
-The playable map is a **torus on XZ**: leaving one edge wraps to the opposite. Ships **do not teleport** at seams; presentation and gameplay use different math. Paired: `ToroidalMapEcs`, `ToroidalDisplay`, ship-simulation rule. Deep dive: `Docs/TITAN-ORBIT-COMPLETE-COURSE.md` §11.4.
+The playable map is a **finite XZ rectangle**. `ToroidalMapEcs.TopologyEnabled` is **false**: wrap, shortest-path, and display tiling are no-ops. Helpers stay so topology can return later. Paired: `ToroidalMapEcs`, ship-simulation rule. Course: `Docs/TITAN-ORBIT-COMPLETE-COURSE.md` §11.4.
 
----
+## Live facts
 
-## Two layers (do not mix)
-
-| Layer | Behavior | API |
-|-------|----------|-----|
-| **Sim / gameplay** | Ships fly **unbounded** (no wrap of owner hull). Distances, docking, orbit, combat, beams, transports use **shortest path on the torus**. | `ToroidalMapEcs.ShortestOffsetXZ`, `ToroidalDistance`, `ToroidalDirection` |
-| **Presentation** | Local ship stays put in world space; each planet/asteroid/remote picks its own nearest **map-tile copy** (+ hysteresis). | `ToroidalMapEcs.GetDisplayPosition*`, `ToroidalDisplay` |
+- **Sim** — PhysX integrates `PhysicsVelocity` → `LocalTransform`. Do not wrap movers.
+- **Gameplay** — Call `ToroidalMapEcs.ShortestOffsetXZ` / `ToroidalDistance` (they are Euclidean while the flag is off). Read `mapW` / `mapH` from `MapStateSingleton`.
+- **Collision** — Unity Physics owns ship↔world (planets, rocks, walls). Ship↔ship is `ShipShipHullContactSystem` (two hull spheres). `ShipToroidalWorldCollision*` stays disabled.
+- **Edges** — static PhysX wall boxes at `±W/2`, `±H/2`. Not wrap.
+- **Client remotes** — interpolated ghosts are not predicted PhysX bodies. The sphere resolve writes the predicted hull only (full depenetrate against the remote you see).
 
 ```csharp
-// ❌ BAD — Euclidean distance across the seam (misses / false “far”)
-float d = math.distance(ship.xz, planet.xz);
-
-// ✅ GOOD — toroidal shortest path
-float d = ToroidalMapEcs.ToroidalDistance(ship, planet, mapW, mapH);
-
-// ❌ BAD — wrap local ship LocalTransform at edge (global blink / retile storm)
-transform.Position = ToroidalMapEcs.Wrap(transform.Position);
-
-// ✅ GOOD — leave ship unbounded; retile *other* bodies for display only
-displayPos = ToroidalMapEcs.GetDisplayPosition(logicalPos, localShipPos, mapW, mapH);
+// Ship↔world: PhysX + ShipCollisionBounceSystem (events)
+// Ship↔ship: ShipShipHullContactSystem (two spheres) — remotes are not in predicted PhysX
+// ❌ BAD — GameObject Rigidbody second tick for predicted flight
 ```
-
-`Wrap` exists for canonicalization when needed — **not** the ship flight path.
-
----
-
-## Feature checklist (orbit, dock, transports, combat)
-
-Any new range / target / spawn / magnet / orbit / unload logic must:
-
-- [ ] Read `mapW` / `mapH` from `MapStateSingleton` (or `ToroidalMapEcs` after bootstrap)
-- [ ] Use **toroidal** distance/offset/direction — never raw `distance` on XZ for gameplay
-- [ ] Place moons / surface spawns with **near-tile** helpers (`GetMoonWorldPositionNear`, surface-toward that uses shortest offset)
-- [ ] Keep presentation on `ToroidalDisplay` / display helpers — do not drive sim from display tiles
-- [ ] Cross-seam hull contact: prefer `ShipToroidalWorldCollision*` patterns, not assuming PhysX sees both sides
-
-**Orbit ring / people transport:** ring membership = `PlanetOrbitMath.IsInOrbitRing(ToroidalDistance(...), inner, outer)`. Tangents use `ShortestOffsetXZ(planet → ship)` so clockwise orbit works across seams.
-
----
-
-## Forbidden
-
-- Euclidean-only gameplay ranges on a wrapped map
-- Wrapping the **local** predicted ship transform to “fix” the seam
-- One global map snap that retiles every body when the owner crosses an edge
-- Hard-coded map size ignoring `MapStateSingleton` / session meta
 
 ## Agent checklist
 
-- [ ] Gameplay math is toroidal
-- [ ] Ship sim stays unbounded
-- [ ] Display is per-body nearest tile (+ hysteresis where used)
-- [ ] New systems document mapW/mapH sources in comments
+- [ ] Do not re-enable wrap or `ShipToroidalWorldCollisionSystem` unless topology is turned back on
+- [ ] Do not add a GameObject `Rigidbody` second tick for predicted flight
+- [ ] New pose writes do not need `Wrap` while the flag is off
+- [ ] Map size still comes from `MapStateSingleton` / session meta (walls, generation)

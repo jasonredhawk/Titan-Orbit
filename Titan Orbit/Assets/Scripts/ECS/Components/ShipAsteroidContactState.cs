@@ -4,13 +4,13 @@ using Unity.Entities;
 namespace TitanOrbit.ECS
 {
     /// <summary>
-    /// Per-ship cache of the latest same-tile ship↔asteroid contact normal from Unity Physics
-    /// collision events. Written after Export by <see cref="ShipAsteroidContactFrictionSystem"/>;
-    /// read on the <b>next</b> fixed step by <see cref="ShipPhysicsDriveLogic"/> so the motor
-    /// cannot re-accelerate into the rock (progressive grind penetration).
+    /// Per-ship cache of the latest ship↔asteroid contact normal from the torus resolve.
+    /// Written by <see cref="ShipToroidalWorldCollisionSystem"/>; read on the <b>next</b>
+    /// fixed step by <see cref="ShipPhysicsDriveLogic"/> so the motor cannot re-accelerate
+    /// into the rock (progressive grind penetration).
     /// <para>
     /// [TITAN-ORBIT] Not ghosted — local predicted / server sim only. Cleared every physics tick
-    /// before events run; stays zero when the hull is free of asteroid contacts.
+    /// before resolve; stays zero when the hull is free of asteroid contacts.
     /// </para>
     /// </summary>
     public struct ShipAsteroidContactState : IComponentData

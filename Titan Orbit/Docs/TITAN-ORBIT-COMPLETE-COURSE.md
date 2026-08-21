@@ -103,7 +103,7 @@
 - [11.1 TeamManagementSystem](#111-teammanagementsystem)
 - [11.2 Rejoin flow](#112-rejoin-flow)
 - [11.3 Map generation algorithm](#113-map-generation-algorithm)
-- [11.4 Toroidal map naming vs reality](#114-toroidal-map-naming-vs-reality)
+- [11.4 Map (Euclidean, wrap off)](#114-map-euclidean-wrap-off)
 
 ### Volume 12 — UI and player flow
 - [12.1 NceGameFlowController state machine](#121-ncegameflowcontroller-state-machine)
@@ -1449,13 +1449,15 @@ Returning players may have existing ship on server:
 
 **`MapGenerationSystem`** — one spawn per tick until queue empty, updates loading progress on `MapStateSingleton`.
 
-## 11.4 Toroidal map (ship flies forever)
+## 11.4 Map (Euclidean, wrap off)
 
-**Gameplay math** — `ShortestOffsetXZ` / `ToroidalDistance` / `ToroidalDirection` use the shortest path on the torus (combat, docking, mining, beams). `Wrap` exists but ships do **not** teleport at the edge.
+**Wrap is off.** `ToroidalMapEcs.TopologyEnabled` is false: `Wrap` is identity, `ShortestOffsetXZ` / `ToroidalDistance` are Euclidean XZ, and display helpers return the logical position. Helpers remain so a torus can return later.
 
-**Sim movers** — the local ship (and other free movers) keep flying in unbounded world space past the map edge. No post-physics ship wrap.
+**Sim** — Drive writes `PhysicsVelocity`. Unity Physics integrates **and** owns hull contacts (ship↔world, server ship↔ship). `ShipCollisionBounceSystem` / friction / ram consume collision events. Static wall boxes sit at the map edges. `ShipWrapSystem` and `ShipToroidalWorldCollision*` are disabled.
 
-**Presentation** — `ToroidalDisplay` + `EcsWorldVisualizer.GetVisualPosition`: local ship stays put; each planet/asteroid/remote independently picks its nearest map-tile copy relative to that ship (per-entity hysteresis). Bodies reposition one-by-one — not a global blink. Minimap uses shortest-path delta.
+**Client remotes** — interpolated ghosts are not predicted PhysX bodies. Local-vs-remote hull contact is a thin predicted-only resolve (no world gather).
+
+**Presentation** — no tile copies while topology is off. Camera follows the presentation pose in the same Euclidean space.
 
 ---
 

@@ -122,7 +122,7 @@ namespace TitanOrbit.ECS
         /// <param name="team">Assigned team, or None on failure.</param>
         /// <param name="success">True when team assign + ship Instantiates succeeded.</param>
         /// <param name="message">Rejection text for lobby UI (empty on success).</param>
-        /// <param name="spawnPos">Unbounded home-ring spawn written to the ship LocalTransform.</param>
+        /// <param name="spawnPos">Canonical-cell home-ring spawn written to the ship LocalTransform.</param>
         /// <param name="hasSpawnPos">True when <paramref name="spawnPos"/> is the server spawn.</param>
         static void SendTeamChoiceResult(
             EntityCommandBuffer ecb,

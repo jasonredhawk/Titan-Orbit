@@ -203,6 +203,24 @@ namespace TitanOrbit.ECS
                          .WithEntityAccess())
                 ecb.AddComponent(entity, new ShipAsteroidContactState());
 
+            // --- Ship↔ship contact cache (kept zero — PhysX owns ship pairs) ---
+            foreach (var (_, entity) in SystemAPI.Query<RefRO<ShipTag>>()
+                         .WithNone<ShipShipContactState>()
+                         .WithEntityAccess())
+                ecb.AddComponent(entity, new ShipShipContactState());
+
+            // --- Kinematic override for interpolated remotes (client writes IsKinematic) ---
+            foreach (var (_, entity) in SystemAPI.Query<RefRO<ShipTag>>()
+                         .WithNone<PhysicsMassOverride>()
+                         .WithEntityAccess())
+            {
+                ecb.AddComponent(entity, new PhysicsMassOverride
+                {
+                    IsKinematic = 0,
+                    SetVelocityToZero = 0,
+                });
+            }
+
             // --- Match stats (ghosted) + combat attribution (server-only) ---
             // [NETCODE] Prefer baking ShipMatchStats on the ghost prefab. This ensure path covers
             // older SubScenes; if the component was never registered as a ghost field on the prefab,

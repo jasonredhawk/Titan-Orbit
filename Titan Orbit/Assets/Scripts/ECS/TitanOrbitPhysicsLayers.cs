@@ -4,19 +4,18 @@ namespace TitanOrbit.ECS
 {
     /// <summary>
     /// Collision layer bit masks and pre-built <see cref="CollisionFilter"/> values for Unity Physics.
-    /// Baked onto ghost prefabs in *GhostAuthoring bakers. Ships bounce off ships and world bodies
-    /// (planets/asteroids) only when they share the same map tile (Euclidean contacts). Across
-    /// toroidal seams, <see cref="ShipToroidalWorldCollisionSystem"/> resolves ship↔world bounce
-    /// with shortest-path math so presentation unwrap and sim contacts stay aligned. Gems and
-    /// people-transports are scripted movers with world collision only — see ship-simulation rule.
+    /// Baked onto ghost prefabs in *GhostAuthoring bakers. Ships are dynamic bodies: PhysX
+    /// integrates <c>PhysicsVelocity</c> and owns ship↔world (planets, rocks, walls).
+    /// Ship↔ship is a cheap hull-sphere resolve — remotes are interpolated, not predicted
+    /// PhysX bodies, so PhysX ship pairs look like they pass through each other.
+    /// Gems and people-transports stay scripted movers with world collision only.
     /// </summary>
     public static class TitanOrbitPhysicsLayers
     {
-        // --- Type members ---
         /// <summary>Layer bit — player and AI ships (dynamic bodies).</summary>
         public const uint Ships = 1u << 0;
 
-        /// <summary>Layer bit — planets and asteroids (static bodies).</summary>
+        /// <summary>Layer bit — planets, asteroids, and map-edge walls (static bodies).</summary>
         public const uint World = 1u << 1;
 
         /// <summary>Layer bit — gem pickups (scripted motion, world collision only).</summary>
@@ -26,24 +25,24 @@ namespace TitanOrbit.ECS
         public const uint Transports = 1u << 3;
 
         /// <summary>
-        /// [TITAN-ORBIT] Ship hull filter — collides with other ships and world static geometry only.
-        /// Used by <c>StarshipGhostAuthoring</c> baker.
+        /// Ship hull filter — PhysX pairs with world only. Ship↔ship is
+        /// <c>ShipShipHullContactSystem</c> (two spheres). Used by baker and hull rebuild.
         /// </summary>
         public static readonly CollisionFilter Ship = new CollisionFilter
         {
             BelongsTo = Ships,
-            CollidesWith = Ships | World,
+            CollidesWith = World,
             GroupIndex = 0,
         };
 
         /// <summary>
-        /// Planet and asteroid static bodies — ships, gems, and transports may collide with world.
-        /// Used by <c>PlanetGhostAuthoring</c> and <c>AsteroidGhostAuthoring</c>.
+        /// Planet, asteroid, and edge-wall static bodies. Ships bounce here; gems and
+        /// transports still collide with world. Used by planet/asteroid bakers and wall ensure.
         /// </summary>
         public static readonly CollisionFilter WorldStatic = new CollisionFilter
         {
             BelongsTo = World,
-            CollidesWith = Ships | World | Gems | Transports,
+            CollidesWith = World | Ships | Gems | Transports,
             GroupIndex = 0,
         };
 

@@ -4,8 +4,9 @@ namespace TitanOrbit.Simulation
 {
     /// <summary>
     /// Shared 1D contact-impulse math for ship bounce. Owns normal energy transfer so
-    /// mass and closing speed produce the correct rebound — Unity Physics only depenetrates
-    /// (material restitution is 0) and raises collision events.
+    /// mass and closing speed produce the correct rebound. Ship↔ship uses
+    /// <see cref="DefaultShipShipRestitution"/> in <c>ShipShipHullContactSystem</c>.
+    /// Asteroid / planet bounce still uses this math (rocks are static).
     /// <para>
     /// Used by same-tile <c>ShipCollisionBounceSystem</c> and cross-seam
     /// <c>ShipToroidalWorldCollisionLogic</c> so predicted client and server stay in lockstep.
