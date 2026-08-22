@@ -89,7 +89,9 @@ namespace TitanOrbit.ECS
 
                 // --- Drop at the hull (flight-plane Y). Friendly ships do not trigger. ---
                 float3 pos = transform.ValueRO.Position;
-                pos.y = transform.ValueRO.Position.y;
+                pos.y = 0f;
+                if (ToroidalMapEcs.HasValidMapSize)
+                    pos = ToroidalMapEcs.Wrap(pos);
 
                 var mines = state.EntityManager.GetBuffer<DeployedMineElement>(entity);
                 mines.Add(new DeployedMineElement

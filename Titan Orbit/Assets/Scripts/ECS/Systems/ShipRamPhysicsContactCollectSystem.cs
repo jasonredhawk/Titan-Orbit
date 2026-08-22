@@ -16,7 +16,7 @@ namespace TitanOrbit.ECS
     /// <para>
     /// [PHYSICS] Ship colliders use <c>CollideRaiseCollisionEvents</c> so ship↔world and
     /// ship↔ship contacts appear here. Flybys with no collider contact produce no events.
-    /// Cross-seam asteroid hits are added later by <see cref="ShipToroidalWorldCollisionSystem"/>.
+    /// Movers wrap onto the canonical chart so these Euclidean contacts cover the playable map.
     /// </para>
     /// <para>
     /// [TITAN-ORBIT] Closing speed comes from <see cref="PhysicsVelocity"/> along the contact

@@ -14,7 +14,7 @@ namespace TitanOrbit.ECS
     /// <list type="number">
     /// <item>
     /// Clears then writes <see cref="ShipAsteroidContactState"/> so the next drive tick can
-    /// reject inward motor velocity (stops progressive grind dig-in under continuous thrust).
+    /// reject inward motor velocity into asteroids (ship↔ship is Unity Physics only).
     /// </item>
     /// <item>
     /// Bleeds ship tangential (slide) velocity using <see cref="AsteroidSettings.Friction"/>.

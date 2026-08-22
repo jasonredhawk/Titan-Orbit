@@ -172,7 +172,8 @@ namespace TitanOrbit.ECS
             return !applied.ChassisId.Equals(chassisKey)
                 || applied.AppliedShipLevel != ship.ShipLevel
                 || applied.AppliedBranchIndex != branchIndex
-                || applied.AppliedAttributeSum != attributeSum;
+                || applied.AppliedAttributeSum != attributeSum
+                || applied.AppliedHullMaterialRevision != ShipHullColliderLogic.HullMaterialRevision;
         }
 
         /// <summary>
@@ -227,6 +228,7 @@ namespace TitanOrbit.ECS
                 AppliedShipLevel = ship.ShipLevel,
                 AppliedBranchIndex = branchIndex,
                 AppliedAttributeSum = attributeSum,
+                AppliedHullMaterialRevision = ShipHullColliderLogic.HullMaterialRevision,
             };
 
             if (em.HasComponent<ShipHullColliderState>(entity))

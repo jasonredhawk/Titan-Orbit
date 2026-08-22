@@ -35,6 +35,11 @@ namespace TitanOrbit.ECS
         /// 0 on older hulls so the next catalog pass rebuilds from each part's authored colliders.
         /// </summary>
         public int AppliedMegaColliderRevision;
+        /// <summary>
+        /// Last <see cref="ShipHullColliderLogic.HullMaterialRevision"/> baked into this hull.
+        /// Bump the constant when restitution/friction changes so live ships rebuild.
+        /// </summary>
+        public int AppliedHullMaterialRevision;
     }
 
     /// <summary>
@@ -48,12 +53,18 @@ namespace TitanOrbit.ECS
 
     /// <summary>
     /// Builds Unity Physics compound colliders from chassis prefab colliders (per-component
-    /// Box/Mesh/etc.) and applies them to ship ghost entities. Visual proxies intentionally strip
-    /// colliders — authoritative hull shape lives only on the ECS entity.
+    /// Box/Mesh/etc.) and applies them to ship ghost entities. Visual proxies keep those
+    /// UnityEngine colliders disabled for Inspector gizmos; the live hull is this ECS blob.
     /// </summary>
     public static class ShipHullColliderLogic
     {
         static readonly Material HullMaterial = CreateHullMaterial();
+
+        /// <summary>
+        /// Bump when <see cref="CreateHullMaterial"/> restitution/friction changes so
+        /// <see cref="ShipHullColliderSyncSystem"/> rebuilds existing compounds.
+        /// </summary>
+        public const int HullMaterialRevision = 2;
 
         /// <summary>
         /// Replaces the ship's physics collider with a compound built from the chassis prefab.
@@ -208,15 +219,20 @@ namespace TitanOrbit.ECS
             }
         }
 
-        static Material CreateHullMaterial()
+        /// <summary>
+        /// Unity Physics hull material. Ship↔ship bounce is the solver (restitution / friction),
+        /// not a post-pass impulse. Collision events still fire for ramming damage.
+        /// Asteroid materials keep restitution 0 so custom rock bounce is unchanged
+        /// (GeometricMean with this value is still 0).
+        /// </summary>
+        public static Material CreateHullMaterial()
         {
-            // [PHYSICS] CollideRaiseCollisionEvents — ship↔asteroid / ship↔ship contacts stream
-            // into ICollisionEventsJob for ramming damage (OR'd with the other body's flags).
             var material = Material.Default;
             material.CollisionResponse = CollisionResponsePolicy.CollideRaiseCollisionEvents;
-            // [TITAN-ORBIT] Restitution 0 — custom mass-aware bounce owns normal response.
-            material.Restitution = 0f;
-            material.Friction = 0.05f;
+            material.Restitution = 0.55f;
+            material.Friction = 0.45f;
+            material.RestitutionCombinePolicy = Material.CombinePolicy.GeometricMean;
+            material.FrictionCombinePolicy = Material.CombinePolicy.Maximum;
             return material;
         }
 
@@ -237,26 +253,23 @@ namespace TitanOrbit.ECS
 
             try
             {
-                Transform root;
-                bool needsGrow = ShipStatApplyLogic.SumAttributeLevels(attrs) > 0;
-                if (needsGrow)
+                // Nested StarSparrow Collider / Collider2 boxes are stripped on the prefab
+                // asset until Instantiate — same reason MEGA always clones. Walking the
+                // asset left regular ships on the tiny ghost sphere.
+                instance = Object.Instantiate(chassisPrefab);
+                instance.SetActive(false);
+                instance.transform.SetPositionAndRotation(Vector3.zero, Quaternion.identity);
+                instance.transform.localScale = Vector3.one;
+                Transform root = instance.transform;
+
+                if (ShipStatApplyLogic.SumAttributeLevels(attrs) > 0)
                 {
-                    // Clone only when attribute grow must mutate localScale.
-                    instance = Object.Instantiate(chassisPrefab);
-                    instance.transform.SetPositionAndRotation(Vector3.zero, Quaternion.identity);
-                    instance.transform.localScale = Vector3.one;
-                    root = instance.transform;
                     string prefix = ResolveFamilyPrefix(chassisPrefab, familyPrefix);
                     ShipComponentAttributeScaleLogic.ApplyToHierarchy(
                         root,
                         prefix,
                         attrs,
                         territoryMovementMult: 1f);
-                }
-                else
-                {
-                    // Authored size — walk the prefab asset. Do not clone every hull sync.
-                    root = chassisPrefab.transform;
                 }
 
                 foreach (var collider in root.GetComponentsInChildren<UnityEngine.Collider>(true))

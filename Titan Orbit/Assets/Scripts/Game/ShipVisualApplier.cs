@@ -9,12 +9,11 @@ namespace TitanOrbit.Game
     /// <summary>
     /// Instantiates ship-family chassis prefabs as render-only GameObject proxies and applies
     /// team-colored materials. Called by EcsWorldVisualizer when spawning or respawning ship visuals.
-    /// Strips Rigidbodies and NetCode MonoBehaviour components so the proxy cannot affect
-    /// simulation — authoritative hull colliders are built on the ECS ghost by
-    /// <see cref="ShipHullColliderLogic"/> from the same chassis prefab.
-    /// Regular ships also destroy UnityEngine colliders. MEGA proxies keep each module's
-    /// authored Collider / Collider2 / … components (disabled) so they stay visible in the
-    /// Inspector during Play Mode.
+    /// Strips Rigidbodies and NetCode MonoBehaviour components so the proxy cannot run a
+    /// second GameObject physics world. Authoritative hulls are Unity.Physics
+    /// <c>PhysicsCollider</c> + <c>PhysicsVelocity</c> on the ECS ghost (that pair is the
+    /// rigidbody). Authored Box/Capsule colliders stay on the proxy, disabled, so they
+    /// remain visible in the Inspector — same as MEGA module boxes.
     /// <para>
     /// Prefers an exact chassis id from <see cref="PlanetShipFamilyConfig"/> (level + branch ladder)
     /// so moon-orbit upgrade-tree clicks load the hull that was selected, not a generic level placeholder.
@@ -96,7 +95,7 @@ namespace TitanOrbit.Game
             // --- Instantiate proxy ---
             instance = Object.Instantiate(prefab);
             instance.name = prefab.name + "Proxy";
-            StripPhysicsAndNetworking(instance, keepColliders: IsMegaVisual(chassisId, prefab));
+            StripPhysicsAndNetworking(instance, keepColliders: true);
             ApplyTeamMaterials(family, instance, team);
             return true;
         }
@@ -135,8 +134,8 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// [TITAN-ORBIT] Proxy must not participate in physics or NetCode — ECS ghost is authoritative.
-        /// MEGA hulls keep authored part colliders (disabled) for Editor inspection.
+        /// [TITAN-ORBIT] Proxy must not participate in GameObject PhysX or NetCode.
+        /// Keep authored colliders (disabled) so the Inspector still shows the hull boxes.
         /// </summary>
         public static void StripPhysicsAndNetworking(GameObject root)
         {
@@ -148,7 +147,8 @@ namespace TitanOrbit.Game
         /// </summary>
         /// <param name="keepColliders">
         /// When true, leave UnityEngine colliders on the hierarchy and disable them instead of
-        /// Destroy — used for MEGA module boxes so they still show in the Inspector.
+        /// Destroy so they still show in the Inspector. Do not add a Rigidbody — that would
+        /// create a second physics world that fights ECS.
         /// </param>
         public static void StripPhysicsAndNetworking(GameObject root, bool keepColliders)
         {
@@ -178,24 +178,5 @@ namespace TitanOrbit.Game
             }
         }
 
-        /// <summary>True when this proxy is a MEGA catalog hull (keep module colliders).</summary>
-        static bool IsMegaVisual(string chassisId, GameObject prefab)
-        {
-            if (MegaShipCatalog.IsMegaChassisId(chassisId))
-                return true;
-
-            var catalog = MegaShipCatalog.Load();
-            if (catalog?.entries == null || prefab == null)
-                return false;
-
-            for (int i = 0; i < catalog.entries.Count; i++)
-            {
-                var entry = catalog.entries[i];
-                if (entry != null && entry.prefab == prefab)
-                    return true;
-            }
-
-            return false;
-        }
     }
 }

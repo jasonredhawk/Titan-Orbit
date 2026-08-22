@@ -299,7 +299,7 @@ namespace TitanOrbit.ECS
     [UpdateAfter(typeof(MiningSystem))]
     public partial struct GemMotionSystem : ISystem
     {
-        /// <summary>Integrates velocity + tumble with PhysX-like damping (unbounded XZ).</summary>
+        /// <summary>Integrates velocity + tumble with PhysX-like damping, then wraps XZ.</summary>
         public void OnUpdate(ref SystemState state)
         {
             float dt = SystemAPI.Time.DeltaTime;
@@ -340,9 +340,11 @@ namespace TitanOrbit.ECS
                 float3 ang = GemExplosionMath.IntegrateAngularVelocity(
                     kin.AngularVelocity, angularDamping, dt);
 
-                // --- Integrate in unbounded space (same as ships); toroidal math is for reach only ---
+                // --- Integrate then wrap onto the canonical chart ---
                 var lt = transform.ValueRO;
                 lt.Position += vel * dt;
+                if (ToroidalMapEcs.HasValidMapSize)
+                    lt.Position = ToroidalMapEcs.Wrap(lt.Position);
                 if (math.lengthsq(ang) > 0.0001f)
                 {
                     // AngularVelocity is rad/s — quaternion integrate in world space.

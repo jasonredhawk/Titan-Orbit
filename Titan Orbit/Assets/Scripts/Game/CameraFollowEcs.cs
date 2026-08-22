@@ -1,5 +1,6 @@
 using TitanOrbit.Data;
 using TitanOrbit.ECS;
+using TitanOrbit.Generation;
 using TitanOrbit.Shared;
 using Unity.Entities;
 using Unity.Mathematics;
@@ -14,6 +15,8 @@ namespace TitanOrbit.Game
     /// [HYBRID] Reads <see cref="ShipDisplayPose"/> (filled by <see cref="ShipVisualSyncSystem"/>),
     /// never drives ship sim. Client only; execution order 67001 so it runs after presentation sync.
     /// <para>
+    /// When the ship wraps, this camera jumps the same delta the same frame and draws a short
+    /// fade (<see cref="MapWrapTransition"/>) so the world pop is a beat, not a streak.
     /// [TITAN-ORBIT] Framing knobs live on a <see cref="CameraFollowSettings"/> ScriptableObject.
     /// Each <see cref="ShipFamilyDefinition"/> can point at its own profile; this component watches
     /// the local ship's ghosted <c>ShipFamilyConfigIndex</c> and calls <see cref="SetSettings"/> when
@@ -228,6 +231,23 @@ namespace TitanOrbit.Game
         {
             if (Instance == this)
                 Instance = null;
+            MapWrapTransition.Reset();
+        }
+
+        /// <summary>
+        /// [UNITY] Fullscreen fade while the local ship wraps. Hides the world pop for
+        /// <see cref="MapWrapTransition.DurationSeconds"/>.
+        /// </summary>
+        void OnGUI()
+        {
+            float fade = MapWrapTransition.Fade01;
+            if (fade <= 0.01f)
+                return;
+
+            var prev = GUI.color;
+            GUI.color = new Color(0f, 0f, 0f, fade * MapWrapTransition.PeakAlpha);
+            GUI.DrawTexture(new Rect(0f, 0f, Screen.width, Screen.height), Texture2D.whiteTexture);
+            GUI.color = prev;
         }
 
 #if UNITY_EDITOR
@@ -280,6 +300,17 @@ namespace TitanOrbit.Game
             float dt = Time.deltaTime;
             if (dt <= 0f)
                 return;
+
+            MapWrapTransition.Tick(dt);
+
+            // --- Same-frame wrap: snap velocity sample so look-ahead does not spike ---
+            // Camera hard-locks to ship XZ, so the hull stays on-screen; the world pops.
+            if (_hasLastShipPos && ToroidalMap.IsWrapJump(_lastShipPos, shipPos))
+            {
+                MapWrapTransition.NotifyWrap();
+                _lastShipPos = shipPos;
+                _lookAheadSmoothVelocity = Vector3.zero;
+            }
 
             var profile = Settings;
             profile.ClampValues();

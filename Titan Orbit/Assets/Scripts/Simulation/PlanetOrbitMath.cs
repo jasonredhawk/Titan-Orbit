@@ -6,7 +6,7 @@ namespace TitanOrbit.Simulation
     /// <summary>
     /// Planet orbit ring geometry for ship passive orbit, gem-moon placement, and decorative level bands.
     /// Ring membership and <see cref="BuildOrbitMotorParams"/> use toroidal distance/offset so
-    /// wraparound seams stay correct while ships fly unbounded (see titan-orbit-toroidal-map rule).
+    /// wraparound seams stay correct after movers wrap (see titan-orbit-toroidal-map rule).
     /// <para>
     /// [TITAN-ORBIT] <see cref="GetOrbitRingSpeed"/> is the single tangential speed for a planet's
     /// ring — ships (passive motor) and gem moons (analytic offset) both use it so they co-orbit.
@@ -275,7 +275,7 @@ namespace TitanOrbit.Simulation
         /// Radial spring is stronger near the inner/outer lips so coasting ships stay in the zone;
         /// thrust still cancels this motor entirely (player can always leave).
         /// </summary>
-        /// <param name="shipPos">Ship world position (may be unbounded — do not Wrap).</param>
+        /// <param name="shipPos">Ship world position (canonical wrap; still use toroidal range).</param>
         /// <param name="planetPos">Planet logical world position.</param>
         /// <param name="planetSize">Planet uniform scale (world radius proxy).</param>
         /// <param name="planetLevel">Planet level (ring radii currently ignore level; kept for API stability).</param>
@@ -299,8 +299,7 @@ namespace TitanOrbit.Simulation
             alignRate = 0f;
 
             // --- Toroidal distance into the annulus ---
-            // [TITAN-ORBIT] Never use Euclidean distance here — ships fly unbounded; planets stay in
-            // canonical tiles; seams must use shortest path (see titan-orbit-toroidal-map rule).
+            // [TITAN-ORBIT] Never use Euclidean distance here — a planet on +X still owns a ship on −X.
             float dist = ToroidalMapEcs.ToroidalDistance(shipPos, planetPos, mapWidth, mapHeight);
             if (dist < 0.01f)
                 return;

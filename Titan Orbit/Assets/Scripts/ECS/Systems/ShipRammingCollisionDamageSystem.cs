@@ -13,8 +13,7 @@ namespace TitanOrbit.ECS
 {
     /// <summary>
     /// Server-authoritative ramming damage from <b>real collisions only</b>:
-    /// PhysX collision-event pairs (same-tile) plus cross-seam asteroid
-    /// penetrations queued by <see cref="ShipToroidalWorldCollisionSystem"/>.
+    /// PhysX collision-event pairs after movers wrap onto the canonical chart.
     /// No proximity skin — flying past an asteroid does not chip hull.
     /// <para>
     /// [TITAN-ORBIT] Damage uses mobility <c>totalMass</c> and after-tax motion:
@@ -38,7 +37,7 @@ namespace TitanOrbit.ECS
     /// </para>
     /// </summary>
     [UpdateInGroup(typeof(PredictedFixedStepSimulationSystemGroup), OrderLast = true)]
-    [UpdateAfter(typeof(ShipToroidalWorldCollisionSystem))]
+    [UpdateAfter(typeof(ShipCanonicalWrapSystem))]
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation)]
     public partial struct ShipRammingCollisionDamageSystem : ISystem
     {

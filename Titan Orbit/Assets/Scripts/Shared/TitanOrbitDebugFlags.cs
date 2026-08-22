@@ -103,5 +103,12 @@ namespace TitanOrbit
 
         /// <summary>Skip local gem burst presentation on asteroid kill.</summary>
         public static bool IsolateDisableGemBurst;
+
+        /// <summary>
+        /// Temporary wrap-test overlay: cyan rectangle on the world map and minimap at
+        /// <c>±MapWidth/2</c> / <c>±MapHeight/2</c>. Default on for seam playtest; turn off
+        /// from GameManager when done.
+        /// </summary>
+        public static bool ShowMapSeamLines = true;
     }
 }

@@ -22,9 +22,21 @@ namespace TitanOrbit.Simulation
     {
         /// <summary>
         /// Default ship↔ship bounce (0 = sticky merge along the normal, 1 = perfectly elastic).
-        /// Tuned softer than a billiard ball so rams feel weighty without launching ships.
+        /// High enough that rams rebound like solid hulls instead of merging.
         /// </summary>
-        public const float DefaultShipShipRestitution = 0.4f;
+        public const float DefaultShipShipRestitution = 0.75f;
+
+        /// <summary>
+        /// When hulls are still overlapping after the solver, force at least this relative
+        /// normal speed (world units/sec) so they pop apart instead of resting inside each other.
+        /// </summary>
+        public const float MinShipShipSeparatingSpeed = 6f;
+
+        /// <summary>
+        /// Extra gap written on top of the measured penetration so the next physics step
+        /// does not immediately re-generate a deep overlap.
+        /// </summary>
+        public const float ShipShipDepenetrationSkin = 0.06f;
 
         /// <summary>
         /// Default bounce when hitting an infinite-mass wall (planets / moons).
@@ -210,6 +222,135 @@ namespace TitanOrbit.Simulation
             vel -= n * vn * (1f + e);
             shipVelocity = vel;
             return true;
+        }
+
+        /// <summary>
+        /// Infinite-mass wall that is itself moving (interpolated remote hull). Reflects
+        /// <paramref name="shipVelocity"/> in the wall's rest frame, then adds the wall
+        /// velocity back so a ramming remote still knocks the local ship aside.
+        /// </summary>
+        public static bool ApplyMovingWallImpulse(
+            ref float3 shipVelocity,
+            float3 wallVelocity,
+            float3 normalShipFromWall,
+            float restitution)
+        {
+            float3 relative = shipVelocity - wallVelocity;
+            relative.y = 0f;
+            if (!ApplyInfiniteMassWallImpulse(ref relative, normalShipFromWall, restitution))
+                return false;
+
+            float3 wall = wallVelocity;
+            wall.y = 0f;
+            shipVelocity = relative + wall;
+            shipVelocity.y = 0f;
+            return true;
+        }
+
+        /// <summary>
+        /// Two-body bounce, then a minimum separating speed so overlapping hulls cannot
+        /// rest with ~0 relative normal velocity (the overlap-and-stick case).
+        /// </summary>
+        public static bool ApplyTwoBodyImpulseWithMinSeparation(
+            ref float3 velocityA,
+            ref float3 velocityB,
+            float3 normalAFromB,
+            float massA,
+            float massB,
+            float restitution,
+            float minSeparatingSpeed)
+        {
+            bool bounced = ApplyTwoBodyImpulse(
+                ref velocityA, ref velocityB, normalAFromB, massA, massB, restitution);
+            bool separated = EnsureMinSeparatingSpeed(
+                ref velocityA, ref velocityB, normalAFromB, massA, massB, minSeparatingSpeed);
+            return bounced || separated;
+        }
+
+        /// <summary>
+        /// If A is not moving away from B along <paramref name="normalAFromB"/> fast enough,
+        /// add equal-and-opposite Δv (mass-weighted) to reach <paramref name="minSeparatingSpeed"/>.
+        /// </summary>
+        public static bool EnsureMinSeparatingSpeed(
+            ref float3 velocityA,
+            ref float3 velocityB,
+            float3 normalAFromB,
+            float massA,
+            float massB,
+            float minSeparatingSpeed)
+        {
+            float3 n = normalAFromB;
+            n.y = 0f;
+            if (math.lengthsq(n) < 1e-8f)
+                return false;
+            n = math.normalize(n);
+
+            float3 vA = velocityA;
+            float3 vB = velocityB;
+            vA.y = 0f;
+            vB.y = 0f;
+
+            float minSep = math.max(0f, minSeparatingSpeed);
+            float vnRel = math.dot(vA - vB, n);
+            if (vnRel >= minSep)
+                return false;
+
+            float need = minSep - vnRel;
+            float mA = math.max(MinCollisionMass, massA);
+            float mB = math.max(MinCollisionMass, massB);
+            float invSum = 1f / (mA + mB);
+            vA += n * (need * mB * invSum);
+            vB -= n * (need * mA * invSum);
+            velocityA = vA;
+            velocityB = vB;
+            return true;
+        }
+
+        /// <summary>
+        /// Pushes overlapping hulls apart along the contact normal. When both may move,
+        /// the heavier ship travels less. When only one may move (predicted local vs an
+        /// interpolated remote), that ship takes the full penetration plus skin.
+        /// </summary>
+        public static void ApplyMassWeightedDepenetration(
+            ref float3 posA,
+            ref float3 posB,
+            float3 normalAFromB,
+            float penetration,
+            float massA,
+            float massB,
+            bool moveA,
+            bool moveB)
+        {
+            if (penetration <= 0f || (!moveA && !moveB))
+                return;
+
+            float3 n = normalAFromB;
+            n.y = 0f;
+            if (math.lengthsq(n) < 1e-8f)
+                n = new float3(1f, 0f, 0f);
+            else
+                n = math.normalize(n);
+
+            float depth = penetration + ShipShipDepenetrationSkin;
+            if (moveA && moveB)
+            {
+                float mA = math.max(MinCollisionMass, massA);
+                float mB = math.max(MinCollisionMass, massB);
+                float invSum = 1f / (mA + mB);
+                posA += n * (depth * mB * invSum);
+                posB -= n * (depth * mA * invSum);
+            }
+            else if (moveA)
+            {
+                posA += n * depth;
+            }
+            else
+            {
+                posB -= n * depth;
+            }
+
+            posA.y = 0f;
+            posB.y = 0f;
         }
     }
 }

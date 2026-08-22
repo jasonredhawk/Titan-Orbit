@@ -12,10 +12,10 @@ using Unity.Transforms;
 namespace TitanOrbit.ECS
 {
     /// <summary>
-    /// After Unity Physics exports contacts, applies mass-aware normal bounce from
-    /// <see cref="ShipCollisionImpulseLogic"/> using pre-physics velocity snapshots.
-    /// Owns ship↔asteroid (finite virtual rock mass), ship↔ship (energy transfer), and
-    /// ship↔planet/moon (infinite-mass wall) so PhysX material restitution can stay 0.
+    /// After Unity Physics exports contacts, applies mass-aware bounce from
+    /// <see cref="ShipCollisionImpulseLogic"/> for asteroids (virtual rock mass) and
+    /// planets/moons (infinite-mass wall). Ship↔ship is left to the Unity Physics solver
+    /// (hull restitution / friction on the real <see cref="PhysicsCollider"/>).
     /// MEGA hulls plow asteroids: restore pre-collision motion (no bounce) so a field does
     /// not slow the ship. MEGA vs planet also restores pose — the covering sphere must not
     /// park the hull outside a small planet's orbit ring; capped keep-out runs after this.
@@ -26,7 +26,7 @@ namespace TitanOrbit.ECS
     /// <see cref="ShipAsteroidContactFrictionSystem"/> which runs after this system.
     /// </para>
     /// Pipeline: Drive → Snapshot → PhysicsSimulation → Export → Bounce (this) → Friction →
-    /// Toroidal → Planar → Kinematics.
+    /// Wrap → Planar → Kinematics.
     /// </summary>
     [UpdateInGroup(typeof(AfterPhysicsSystemGroup))]
     [UpdateBefore(typeof(ShipAsteroidContactFrictionSystem))]
@@ -132,7 +132,8 @@ namespace TitanOrbit.ECS
                     long key = PackEntityPairKey(pair.EntityA, pair.EntityB);
                     if (!seenShipPairs.Add(key))
                         continue;
-                    ApplyShipVsShip(pair, ref working, snapshotLookup, motorLookup, shipStateLookup, megaLookup);
+                    // Unity Physics already bounced these hulls. Do not rewrite velocity
+                    // (that felt like a magnet). Keep MEGA plow from undoing the solver pose.
                     megaKeepPhysX.Add(pair.EntityA);
                     megaKeepPhysX.Add(pair.EntityB);
                 }
@@ -319,35 +320,6 @@ namespace TitanOrbit.ECS
             if (megas.HasComponent(ship) && megas[ship].IsMega)
                 mass = math.max(mass, MegaShipCatalog.MinHullCollisionMass);
             return mass;
-        }
-
-        static void ApplyShipVsShip(
-            BouncePair pair,
-            ref NativeHashMap<Entity, float3> working,
-            ComponentLookup<ShipPreCollisionVelocity> snapshots,
-            ComponentLookup<ShipMotorConfig> motors,
-            ComponentLookup<ShipState> shipStates,
-            ComponentLookup<MegaShipState> megas)
-        {
-            Entity a = pair.EntityA;
-            Entity b = pair.EntityB;
-            if (!shipStates.HasComponent(a) || !shipStates.HasComponent(b))
-                return;
-            if (shipStates[a].IsDead || shipStates[b].IsDead)
-                return;
-
-            float3 vA = GetWorkingOrSnapshot(a, ref working, snapshots);
-            float3 vB = GetWorkingOrSnapshot(b, ref working, snapshots);
-            float mA = GetShipCollisionMass(a, motors, shipStates, megas);
-            float mB = GetShipCollisionMass(b, motors, shipStates, megas);
-
-            if (!ShipCollisionImpulseLogic.ApplyTwoBodyImpulse(
-                    ref vA, ref vB, pair.NormalAFromB, mA, mB,
-                    ShipCollisionImpulseLogic.DefaultShipShipRestitution))
-                return;
-
-            working[a] = vA;
-            working[b] = vB;
         }
 
         /// <summary>

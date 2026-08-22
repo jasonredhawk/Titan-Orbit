@@ -976,7 +976,7 @@ Before motor:
 Before motor — orbit detection:
 
 - Scan `PlanetMotorSnapshot` array
-- Toroidal distance to planet center (see Volume 11.4 — name legacy, math is Euclidean XZ)
+- Toroidal distance to planet center (see Volume 11.4 — `ToroidalDistance` / `ShortestOffsetXZ`)
 - `PlanetOrbitMath.IsInOrbitRing`
 - If in ring and not thrusting/firing → `UseOrbit`
 
@@ -1449,13 +1449,15 @@ Returning players may have existing ship on server:
 
 **`MapGenerationSystem`** — one spawn per tick until queue empty, updates loading progress on `MapStateSingleton`.
 
-## 11.4 Toroidal map (ship flies forever)
+## 11.4 Toroidal map (canonical wrap)
 
-**Gameplay math** — `ShortestOffsetXZ` / `ToroidalDistance` / `ToroidalDirection` use the shortest path on the torus (combat, docking, mining, beams). `Wrap` exists but ships do **not** teleport at the edge.
+**Sim movers** — after Unity.Physics integrates, ships, bullets, gems, rockets, and transports wrap into `[-MapWidth/2, MapWidth/2) × [-MapHeight/2, MapHeight/2)` via `ToroidalMapEcs.Wrap`. One entity and one collider per body — no tiled visual or collider copies. Display follows that wrapped pose. Camera applies the same ±map delta the same frame (short fade/warp); interpolators snap instead of lerping across the map.
 
-**Sim movers** — the local ship (and other free movers) keep flying in unbounded world space past the map edge. No post-physics ship wrap.
+**Gameplay math** — `ShortestOffsetXZ` / `ToroidalDistance` / `ToroidalDirection` still use the shortest path on the torus (combat, docking, mining, beams, orbit). A planet on the +X edge still owns a ship that wrapped to −X.
 
-**Presentation** — `ToroidalDisplay` + `EcsWorldVisualizer.GetVisualPosition`: local ship stays put; each planet/asteroid/remote independently picks its nearest map-tile copy relative to that ship (per-entity hysteresis). Bodies reposition one-by-one — not a global blink. Minimap uses shortest-path delta.
+**Hull contacts** — Unity.Physics on the canonical chart. Cross-seam sphere-resolve (`ShipToroidalWorldCollision*`) is retired; wrap-into-solid depenetrates against the real `PhysicsCollider`.
+
+**Playtest gates** — orbit a planet on the seam; ram a rock on the seam; two ships meet across the edge; MEGA plow; tractor/beams; minimap; late-join (do not re-enable TransformSystemGroup / skip-query gates).
 
 ---
 

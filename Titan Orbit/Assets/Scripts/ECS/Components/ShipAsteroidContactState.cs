@@ -10,7 +10,8 @@ namespace TitanOrbit.ECS
     /// cannot re-accelerate into the rock (progressive grind penetration).
     /// <para>
     /// [TITAN-ORBIT] Not ghosted — local predicted / server sim only. Cleared every physics tick
-    /// before events run; stays zero when the hull is free of asteroid contacts.
+    /// before events run; stays zero when the hull is free of asteroid contacts. Ship↔ship
+    /// contacts are owned by Unity Physics (hull restitution) and are not stored here.
     /// </para>
     /// </summary>
     public struct ShipAsteroidContactState : IComponentData

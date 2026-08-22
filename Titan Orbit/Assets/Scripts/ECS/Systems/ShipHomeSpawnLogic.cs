@@ -1,4 +1,5 @@
 using TitanOrbit.Core;
+using TitanOrbit.Generation;
 using TitanOrbit.Simulation;
 using Unity.Collections;
 using Unity.Entities;
@@ -271,9 +272,11 @@ namespace TitanOrbit.ECS
                 theta = moonTheta + minDeltaTheta + u;
             }
 
-            // --- World position on XZ (Y stays at planet height) ---
-            // [TITAN-ORBIT] Leave spawn unbounded — do not ToroidalMapEcs.Wrap the hull.
-            return planetPos + new float3(math.cos(theta), 0f, math.sin(theta)) * centerWorld;
+            // --- World position on XZ (Y stays at planet height), then wrap ---
+            float3 spawn = planetPos + new float3(math.cos(theta), 0f, math.sin(theta)) * centerWorld;
+            if (ToroidalMapEcs.HasValidMapSize)
+                spawn = ToroidalMapEcs.Wrap(spawn);
+            return spawn;
         }
 
         /// <summary>

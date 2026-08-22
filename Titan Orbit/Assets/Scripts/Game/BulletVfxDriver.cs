@@ -371,6 +371,8 @@ namespace TitanOrbit.Game
                     }
 
                     t.LogicalPos = cosmeticHit ? hitPoint : nextPos;
+                    if (!cosmeticHit && ToroidalMapEcs.HasValidMapSize)
+                        t.LogicalPos = ToroidalMapEcs.Wrap(t.LogicalPos);
                     if (cosmeticHit)
                     {
                         ApplyPredictedHit(i, in t, hitPoint);
@@ -556,7 +558,7 @@ namespace TitanOrbit.Game
                     TrySteerHomingTracer(ref t, tickDt);
 
                 float3 prevPos = t.LogicalPos;
-                t.LogicalPos += t.Velocity * tickDt;
+                float3 nextPos = prevPos + t.Velocity * tickDt;
                 t.Traveled += math.length(t.Velocity) * tickDt;
                 t.Age += tickDt;
                 t.RemainingLifetime -= tickDt;
@@ -565,18 +567,23 @@ namespace TitanOrbit.Game
 
                 if (canPredictHits &&
                     TryPredictCosmeticHit(
-                        in t, prevPos, t.LogicalPos,
+                        in t, prevPos, nextPos,
                         out hitPoint,
                         out _,
                         out _,
                         out _,
                         out _))
                 {
+                    t.LogicalPos = hitPoint;
                     hit = true;
                     displayLogical = t.LogicalPos;
                     displayVel = t.Velocity;
                     return false;
                 }
+
+                t.LogicalPos = ToroidalMapEcs.HasValidMapSize
+                    ? ToroidalMapEcs.Wrap(nextPos)
+                    : nextPos;
 
                 if (t.RemainingLifetime <= 0f || t.Traveled >= math.max(0.5f, t.MaxDistance))
                 {
@@ -1389,7 +1396,9 @@ namespace TitanOrbit.Game
                         continue;
                     }
 
-                    t.LogicalPos = outcome.NewPos;
+                    t.LogicalPos = ToroidalMapEcs.HasValidMapSize
+                        ? ToroidalMapEcs.Wrap(outcome.NewPos)
+                        : outcome.NewPos;
                     t.Traveled = outcome.NewTraveled;
                     t.RemainingLifetime = outcome.NewLifetime;
                     _tracers[i] = t;

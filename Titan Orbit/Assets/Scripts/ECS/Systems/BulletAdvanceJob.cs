@@ -104,7 +104,12 @@ namespace TitanOrbit.ECS
                     continue;
                 }
 
-                b.Position = end;
+                // --- Canonical wrap after the short Euclidean step ---
+                // [TITAN-ORBIT] Hit tests used [start, end] before wrap so the segment stays
+                // a few units long. Storing the wrapped pose keeps the next tick on the chart.
+                b.Position = ToroidalMapEcs.IsValidMapSize(MapW, MapH)
+                    ? ToroidalMapEcs.Wrap(end, MapW, MapH)
+                    : end;
                 Bullets[i] = b;
                 Outcomes[i] = OutcomeFly;
             }

@@ -6,13 +6,8 @@ using Unity.Physics;
 namespace TitanOrbit.ECS
 {
     /// <summary>
-    /// Shared ship↔world hull resolve on the toroidal map. Unity Physics only sees absolute
-    /// <see cref="Unity.Transforms.LocalTransform"/> positions, so after the local ship flies past a
-    /// map edge the nearest displayed planet/asteroid can sit next to the hull while the sim bodies
-    /// are still ~one map width apart — Euclidean contacts miss. This math uses
-    /// <see cref="ToroidalMapEcs.ShortestOffsetXZ"/> (same idea as <see cref="BulletCollision"/>)
-    /// so bounce still works across seams. Called from <see cref="ShipToroidalWorldCollisionSystem"/>
-    /// on both server and predicted client — never move shared planet transforms for one client's display.
+    /// Retired seam sphere-resolve helpers. Canonical wrap + Unity.Physics own hull contacts.
+    /// <see cref="GetShipCollisionRadiusWorld"/> is still used for MEGA aim radius.
     /// <para>
     /// Asteroids use <see cref="ShipCollisionImpulseLogic"/> with virtual mass (rocks stay static).
     /// Planets / moons keep infinite-mass wall reflect. Ship↔ship seam pairs use two-body impulse.

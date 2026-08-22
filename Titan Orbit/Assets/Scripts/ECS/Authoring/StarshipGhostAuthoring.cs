@@ -163,12 +163,7 @@ namespace TitanOrbit.ECS.Authoring
                 float radius = BodyCollisionMath.GetShipHullRadiusWorld(1f);
                 // [PHYSICS] Raise collision events so server ramming can see real hull contacts
                 // (not proximity). Combined with world materials via flag OR.
-                var material = Unity.Physics.Material.Default;
-                material.CollisionResponse = Unity.Physics.CollisionResponsePolicy.CollideRaiseCollisionEvents;
-                // [TITAN-ORBIT] Restitution 0 — ShipCollisionImpulseLogic owns bounce (mass-aware).
-                // PhysX still depenetrates and raises collision events for the custom impulse pass.
-                material.Restitution = 0f;
-                material.Friction = 0.05f;
+                var material = ShipHullColliderLogic.CreateHullMaterial();
 
                 var collider = Unity.Physics.SphereCollider.Create(
                     new SphereGeometry { Center = float3.zero, Radius = radius },

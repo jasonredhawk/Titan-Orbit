@@ -568,6 +568,27 @@ namespace TitanOrbit.UI
                     connectionsUI.transform.SetParent(connectionsParent, false);
                 connectionsUI.transform.SetAsLastSibling();
             }
+
+            // Temporary wrap-test rectangle (cyan seams). Same parent so the circular Mask clips it.
+            var seamUI = GetComponentInChildren<MinimapSeamDebugUI>(true);
+            if (seamUI == null)
+            {
+                GameObject seamObj = new GameObject("MinimapSeamDebugUI");
+                seamObj.transform.SetParent(connectionsParent, false);
+                seamObj.transform.SetAsLastSibling();
+                var seamRt = seamObj.AddComponent<RectTransform>();
+                seamRt.anchorMin = Vector2.zero;
+                seamRt.anchorMax = Vector2.one;
+                seamRt.offsetMin = Vector2.zero;
+                seamRt.offsetMax = Vector2.zero;
+                seamUI = seamObj.AddComponent<MinimapSeamDebugUI>();
+            }
+            else
+            {
+                if (connectionsParent != null && seamUI.transform.parent != connectionsParent)
+                    seamUI.transform.SetParent(connectionsParent, false);
+                seamUI.transform.SetAsLastSibling();
+            }
         }
         
         private void SetupMarkerMenu()

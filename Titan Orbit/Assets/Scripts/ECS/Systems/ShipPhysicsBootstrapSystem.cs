@@ -23,15 +23,13 @@ namespace TitanOrbit.ECS
             if (SystemAPI.HasSingleton<PhysicsStep>())
             {
                 var step = SystemAPI.GetSingleton<PhysicsStep>();
-                step.Gravity = float3.zero;
-                // [PHYSICS] Extra solver iterations help fast ships hit static asteroid colliders.
-                step.SolverIterationCount = math.max(step.SolverIterationCount, 8);
+                ApplyShipCollisionStepTuning(ref step);
                 SystemAPI.SetSingleton(step);
             }
             else
             {
                 var singleton = PhysicsStep.Default;
-                singleton.Gravity = float3.zero;
+                ApplyShipCollisionStepTuning(ref singleton);
                 var stepEntity = state.EntityManager.CreateEntity();
                 state.EntityManager.AddComponentData(stepEntity, singleton);
             }
@@ -49,6 +47,20 @@ namespace TitanOrbit.ECS
             }
 
             _applied = true;
+        }
+
+        /// <summary>
+        /// Zero gravity, more solver iterations, and contact stabilization so compound
+        /// ship hulls depenetrate instead of merging. Restitution stays 0 — bounce is
+        /// <see cref="TitanOrbit.Simulation.ShipCollisionImpulseLogic"/>.
+        /// </summary>
+        static void ApplyShipCollisionStepTuning(ref PhysicsStep step)
+        {
+            step.Gravity = float3.zero;
+            step.SolverIterationCount = math.max(step.SolverIterationCount, 12);
+            var stabilization = step.SolverStabilizationHeuristicSettings;
+            stabilization.EnableSolverStabilization = true;
+            step.SolverStabilizationHeuristicSettings = stabilization;
         }
     }
 }

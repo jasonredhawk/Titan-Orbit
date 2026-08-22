@@ -16,8 +16,8 @@ namespace TitanOrbit.Game
     /// Publishes NetCode presentation-phase ship poses once per frame for camera, hybrid leftovers,
     /// and parallax. Remotes use NetCode interpolation as-is.
     /// <para>
-    /// [TITAN-ORBIT] Local ship does <b>not</b> wrap — it flies unbound; camera follows that pose.
-    /// World bodies reposition individually via <see cref="ToroidalDisplay"/> relative to this ship.
+    /// [TITAN-ORBIT] Local ship wraps onto the canonical chart; camera follows that pose.
+    /// A ±map-size jump hard-snaps display (no long lerp / H73 coast across the rectangle).
     /// Soft-track on NetCode storms; H73 cruise for reconcile pops. Death→alive hard-snaps to
     /// the home orbit ring so the hull does not crawl across the map. While the hull is grinding an
     /// asteroid, display raw-follows sim (0-speed bounce nibbles used to coast and step the map).
@@ -255,9 +255,7 @@ namespace TitanOrbit.Game
                 return;
 
             var lt = EntityManager.GetComponentData<LocalTransform>(localShip);
-            // --- Unbounded sim pose — ship never wraps; camera follows this ---
-            // [TITAN-ORBIT] Continuum re-unwrap for seam moon-dock is owned by
-            // ShipMoonDockVisualApplier takeoff — not here every frame (fought soft-track / lag).
+            // --- Canonical wrapped sim pose — camera follows this ---
             float3 targetPos = lt.Position;
             quaternion targetRot = lt.Rotation;
 
@@ -319,12 +317,16 @@ namespace TitanOrbit.Game
             _localShipWasDead = isDead;
 
             float displayErr = _smoothInitialized ? math.distance(_smoothPos, targetPos) : 0f;
+            bool wrapJump = _smoothInitialized && ToroidalMapEcs.IsWrapJump(_smoothPos, targetPos);
+            if (wrapJump)
+                MapWrapTransition.NotifyWrap();
             bool hardSnap = TitanOrbitDebugFlags.IsolateDisableShipSoftTrack
                             || grindRawFollow
                             || !_smoothInitialized
                             || shipChanged
                             || isDead
                             || justRespawned
+                            || wrapJump
                             || displayErr > DisplayRespawnSnapDistance;
 
             // --- Step display state ---

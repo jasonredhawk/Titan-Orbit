@@ -236,6 +236,9 @@ namespace TitanOrbit.ECS
                 && applied.AppliedMegaColliderRevision != MegaShipCatalog.HullColliderRevision)
                 return true;
 
+            if (applied.AppliedHullMaterialRevision != ShipHullColliderLogic.HullMaterialRevision)
+                return true;
+
             return false;
         }
 
@@ -420,6 +423,7 @@ namespace TitanOrbit.ECS
                 AppliedBranchIndex = branchIndex,
                 AppliedAttributeSum = attributeSum,
                 AppliedMegaColliderRevision = isMega ? MegaShipCatalog.HullColliderRevision : 0,
+                AppliedHullMaterialRevision = ShipHullColliderLogic.HullMaterialRevision,
             };
 
             if (em.HasComponent<ShipHullColliderState>(entity))

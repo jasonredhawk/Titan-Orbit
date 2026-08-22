@@ -9,9 +9,9 @@ namespace TitanOrbit.Simulation
     /// (cosmetic tracers). Ships can out-turn a rocket because yaw is clamped per tick —
     /// same idea as <c>ShipPhysicsDriveLogic.TryRotateTowardAim</c>.
     /// <para>
-    /// Distances and aim use the torus shortest path on XZ. Flight stays unbounded
-    /// (velocity is never wrapped). Acquire / retarget is the caller's job; this type
-    /// only steers the current velocity toward a point.
+    /// Distances and aim use the torus shortest path on XZ. Velocity is never wrapped
+    /// (the bullet / tracer wrap their position after the step). Acquire / retarget is
+    /// the caller's job; this type only steers the current velocity toward a point.
     /// </para>
     /// </summary>
     public static class RocketHomingLogic
@@ -21,7 +21,7 @@ namespace TitanOrbit.Simulation
         /// <paramref name="turnSpeedDeg"/> × <paramref name="dt"/> degrees. Speed is preserved
         /// (catalog flight speed, not a new acceleration).
         /// </summary>
-        /// <param name="position">Current rocket position (logical / unbounded XZ).</param>
+        /// <param name="position">Current rocket position (canonical / wrapped XZ).</param>
         /// <param name="velocity">Current planar velocity (updated in place).</param>
         /// <param name="targetPos">Lock point (enemy ship or turret).</param>
         /// <param name="turnSpeedDeg">Max yaw rate in degrees per second.</param>

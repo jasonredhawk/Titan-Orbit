@@ -477,6 +477,7 @@ namespace TitanOrbit.Game
             // --- Territory triangle world drawer (Shapes) ---
             // [HYBRID] Reads PlanetConnectionGraphCache — no map-body ECS gathers.
             PlanetConnectionShapesVisual.EnsureExists();
+            MapSeamDebugVisual.EnsureExists();
         }
 
         /// <summary>[UNITY] Unsubscribe to avoid leaks when the visualizer is destroyed.</summary>
@@ -1596,8 +1597,8 @@ namespace TitanOrbit.Game
 
         /// <summary>
         /// Applies NetCode presentation pose to the GameObject proxy. No extra lerp on the local owner —
-        /// prediction + GhostPredictionSmoothing own sim feel; proxies are render shells only.
-        /// Remotes use toroidal display unwrap so they appear near the local ship across a seam.
+        /// prediction owns sim feel; proxies are render shells only. Remotes use the wrapped
+        /// chart; a wrap jump snaps so ghost interpolation does not streak across the map.
         /// </summary>
         void ApplyShipProxyTransform(
             Entity entity,
@@ -1607,13 +1608,9 @@ namespace TitanOrbit.Game
             Transform go,
             float scale)
         {
-            // --- Local = unbounded sim; remote = hysteresis tile near local ship ---
-            // [TITAN-ORBIT] Do not Wrap the local hull. Continuum re-unwrap lives only in the
-            // moon-dock takeoff cinematic (ShipMoonDockVisualApplier) — running it every frame
-            // fought soft-track and added presentation lag.
-            Vector3 pos = isLocalPlayerShip
-                ? (Vector3)lt.Position
-                : GetVisualPosition(entity, em, lt.Position);
+            Vector3 pos = lt.Position;
+            if (!isLocalPlayerShip)
+                pos = ResolveRemoteWrappedPose(em, entity, go.position, lt.Position);
             Quaternion rot = lt.Rotation;
             go.SetPositionAndRotation(pos, rot);
             go.localScale = Vector3.one * scale;
@@ -1622,6 +1619,50 @@ namespace TitanOrbit.Game
                 ShipDisplayPose.SetLocalPose(pos, rot);
 
             MegaShipWeaponVisualSync.Apply(em, entity, go.gameObject);
+        }
+
+        /// <summary>
+        /// Remote ghosts interpolate <see cref="LocalTransform"/> in Euclidean space. A wrap
+        /// snapshot ( +edge → −edge ) would lerp across the whole map. Snap when the jump is
+        /// a wrap, or when interpolated motion fights velocity near an edge.
+        /// </summary>
+        static Vector3 ResolveRemoteWrappedPose(
+            EntityManager em,
+            Entity entity,
+            Vector3 previousDisplay,
+            float3 interpolated)
+        {
+            Vector3 raw = interpolated;
+            if (!ToroidalMapEcs.HasValidMapSize)
+                return raw;
+
+            if (ToroidalMapEcs.IsWrapJump(previousDisplay, raw))
+                return raw;
+
+            if (!em.HasComponent<ShipKinematics>(entity))
+                return raw;
+
+            float3 vel = em.GetComponentData<ShipKinematics>(entity).Velocity;
+            float speedSq = math.lengthsq(new float3(vel.x, 0f, vel.z));
+            if (speedSq < 4f)
+                return raw;
+
+            float3 delta = new float3(raw.x - previousDisplay.x, 0f, raw.z - previousDisplay.z);
+            if (math.lengthsq(delta) < 1f)
+                return raw;
+
+            float3 planarVel = math.normalize(new float3(vel.x, 0f, vel.z));
+            float3 planarDelta = math.normalize(delta);
+            bool opposing = math.dot(planarVel, planarDelta) < -0.25f;
+            float halfW = ToroidalMapEcs.MapWidth * 0.5f;
+            float halfH = ToroidalMapEcs.MapHeight * 0.5f;
+            bool nearEdge = math.abs(previousDisplay.x) > halfW * 0.8f ||
+                            math.abs(previousDisplay.z) > halfH * 0.8f;
+            if (!opposing || !nearEdge)
+                return raw;
+
+            float3 predicted = (float3)previousDisplay + vel * UnityEngine.Time.deltaTime;
+            return ToroidalMapEcs.Wrap(predicted);
         }
 
         /// <summary>
@@ -1751,52 +1792,23 @@ namespace TitanOrbit.Game
             localShipEntity != Entity.Null && entity == localShipEntity;
 
         /// <summary>
-        /// [TITAN-ORBIT] Local ship stays at its real (unbounded) pose. Every other body picks its
-        /// own nearest map-tile copy relative to that ship, with per-entity hysteresis so planets
-        /// and asteroids reposition individually — not as one global blink when crossing a seam.
-        /// The planet the local ship is orbiting / moon-docked on uses a tight hysteresis margin
-        /// so the ring follows across seams without ForceNearest midpoint flicker.
+        /// World pose for a proxy. Movers wrap in sim, so display equals logical
+        /// <see cref="LocalTransform"/> — no per-body tile offset.
         /// </summary>
-        /// <param name="forceLogical">When true, skip display unwrap (rare debug / special cases).</param>
+        /// <param name="forceLogical">Unused; kept so call sites do not need a compile break.</param>
         Vector3 GetVisualPosition(Entity entity, EntityManager em, float3 logicalPos, bool forceLogical = false)
         {
-            if (forceLogical || ToroidalDisplay.IsLocalPlayerShip(em, entity))
-                return logicalPos;
-
-            if (!_hasToroidalReference && !ToroidalDisplay.TryGetReferencePosition(out _toroidalReference))
-                return logicalPos;
-
-            _hasToroidalReference = true;
-            if (ShouldForceNearestPlanetTile(em, entity))
-            {
-                int planetId = em.HasComponent<PlanetState>(entity)
-                    ? em.GetComponentData<PlanetState>(entity).PlanetId
-                    : 0;
-                return ToroidalDisplay.ToDisplayPositionForOrbitPlanet(
-                    entity, planetId, logicalPos, _toroidalReference);
-            }
-
-            return ToroidalDisplay.ToDisplayPositionWithHysteresis(entity, logicalPos, _toroidalReference);
+            _ = entity;
+            _ = em;
+            _ = forceLogical;
+            return logicalPos;
         }
 
-        /// <summary>Per-entity tile unwrap when EntityManager is not needed for local-ship checks.</summary>
+        /// <summary>World pose for a proxy (logical = wrapped sim).</summary>
         Vector3 GetVisualPosition(Entity entity, float3 logicalPos)
         {
-            if (!_hasToroidalReference && !ToroidalDisplay.TryGetReferencePosition(out _toroidalReference))
-                return logicalPos;
-
-            _hasToroidalReference = true;
-
-            // --- Orbit / dock planet: tight hysteresis via cached planet visual key ---
-            if (_forceNearestPlanetId != 0 &&
-                _proxyPlanetVisuals.TryGetValue(entity, out var planetKey) &&
-                planetKey.PlanetId == _forceNearestPlanetId)
-            {
-                return ToroidalDisplay.ToDisplayPositionForOrbitPlanet(
-                    entity, _forceNearestPlanetId, logicalPos, _toroidalReference);
-            }
-
-            return ToroidalDisplay.ToDisplayPositionWithHysteresis(entity, logicalPos, _toroidalReference);
+            _ = entity;
+            return logicalPos;
         }
 
         /// <summary>
