@@ -3,7 +3,6 @@ using TitanOrbit.Core;
 using TitanOrbit.ECS;
 using TitanOrbit.Game;
 using TitanOrbit.Generation;
-using TitanOrbit.Simulation;
 using Unity.Entities;
 using Unity.Mathematics;
 using UnityEngine;
@@ -15,14 +14,10 @@ namespace TitanOrbit.UI
     /// UGUI mesh drawer for minimap territory fills and sticky edges (planet-center vertices).
     /// Uses <see cref="OnPopulateMesh"/> so geometry always renders under the circular Mask —
     /// no dependency on Shapes <c>ImmediateModePanel</c> registration.
-    /// When expanded, draws a 3×3 toroidal tile of each fill/edge so seam-crossing links still
-    /// read next to planet blips on both sides of the wrap (same shortest-path chart as blips).
     /// Client presentation only.
     /// <para>
-    /// [TITAN-ORBIT] Every visible line is a shortest-path graph edge — never a Euclidean triangle
-    /// opposite side. Fills pick the short-embeddable corner nearest the player at mesh time so
-    /// compact minimap does not drop the fill when a fixed anchor sits off-circle. Borders come
-    /// from the full edge list (nearer endpoint as anchor).
+    /// Local faces are the same short geodesics the world fill / PIT use, sampled densely
+    /// and projected onto the radar. Continent-spanning chords use short rim stubs.
     /// </para>
     /// </summary>
     [RequireComponent(typeof(RectTransform))]
@@ -66,17 +61,13 @@ namespace TitanOrbit.UI
         MinimapController _minimap;
         readonly List<CachedWorldTriangle> _worldCache = new List<CachedWorldTriangle>(16);
         readonly List<CachedWorldEdge> _edgeCache = new List<CachedWorldEdge>(16);
+        readonly List<Vector2> _scratchRing = new List<Vector2>(96);
+        readonly List<Vector2> _scratchArc = new List<Vector2>(32);
         int _lastGraphRevision = -1;
         int _lastDrawnCount = -1;
         Vector3 _lastPlayerPos;
         float _lastRadius = -1f;
         bool _lastExpanded;
-
-        /// <summary>Scratch X offsets for 3×3 toroidal tile copies (reused each mesh rebuild).</summary>
-        readonly float[] _wrapsX = new float[9];
-
-        /// <summary>Scratch Z offsets for 3×3 toroidal tile copies (reused each mesh rebuild).</summary>
-        readonly float[] _wrapsZ = new float[9];
 
         /// <summary>[UNITY] Disable raycasts; assign 1×1 white texture for UI mesh tinting.</summary>
         protected override void Awake()
@@ -207,11 +198,6 @@ namespace TitanOrbit.UI
 
         /// <summary>
         /// [UNITY] Projects cached world triangles / edges into panel space (cheap — no ECS).
-        /// <para>
-        /// Compact minimap: each fill uses the short-embeddable corner <b>nearest the player</b>
-        /// so the triangle stays on-screen with its edges. Expanded: same chart plus 3×3 tile
-        /// copies in panel space for seam blips.
-        /// </para>
         /// </summary>
         protected override void OnPopulateMesh(VertexHelper vh)
         {
@@ -230,193 +216,231 @@ namespace TitanOrbit.UI
             float radius = Mathf.Max(1f, _minimap.MinimapRadius);
             float displayHalf = _minimap.DisplaySize * 0.5f;
             float scale = displayHalf / radius;
-            if (!ToroidalMap.TryGetMapSize(out float mapW, out float mapH))
+            if (!ToroidalMap.HasValidMapSize)
                 return;
 
-            // --- 3×3 tile copies when showing (near) the full map ---
-            // [TITAN-ORBIT] Compact minimap: primary tile only (Scripts hitch if we always 9×).
-            bool needWrapCopies = _minimap.IsExpanded ||
-                                  radius >= 0.45f * Mathf.Min(mapW, mapH);
-            int wrapCount = needWrapCopies ? 9 : 1;
-            // (0,0) first, then 8 neighbors — reuse instance scratch (no per-mesh alloc).
-            _wrapsX[0] = 0f;
-            _wrapsZ[0] = 0f;
-            if (needWrapCopies)
-            {
-                int wi = 1;
-                for (int ox = -1; ox <= 1; ox++)
-                {
-                    for (int oz = -1; oz <= 1; oz++)
-                    {
-                        if (ox == 0 && oz == 0)
-                            continue;
-                        _wrapsX[wi] = ox * mapW;
-                        _wrapsZ[wi] = oz * mapH;
-                        wi++;
-                    }
-                }
-            }
+            Vector2 center = rect.center;
+            float half = Mathf.Min(rect.width, rect.height) * 0.5f;
+            float innerR = half * 0.28f;
+            float outerR = half * 0.96f;
+            float maxChord = half * 0.72f;
+            float maxJump = half * 0.42f;
+            bool haveRadius = SphericalMap.TryGetRadius(out float mapR) && mapR > 1f;
 
             for (int i = 0; i < _worldCache.Count; i++)
             {
                 var tri = _worldCache[i];
-                // Nearest short-embeddable corner → fill stays with local edges on compact view.
-                if (!TryPickNearestEmbedChart(
-                        playerPos, tri.PosA, tri.PosB, tri.PosC, mapW, mapH,
-                        out Vector3 anchor, out Vector3 offsetB, out Vector3 offsetC))
+                if (!TryProject(playerPos, scale, rect, tri.PosA, out Vector2 pa) ||
+                    !TryProject(playerPos, scale, rect, tri.PosB, out Vector2 pb) ||
+                    !TryProject(playerPos, scale, rect, tri.PosC, out Vector2 pc))
                     continue;
 
-                _minimap.GetToroidalDeltaForMinimap(playerPos, anchor, out float baseDx, out float baseDz);
+                if (!AnyNearPanel(rect, pa, pb, pc))
+                    continue;
+                if (IsContinentSpan(pa, pb, maxChord) ||
+                    IsContinentSpan(pb, pc, maxChord) ||
+                    IsContinentSpan(pc, pa, maxChord))
+                    continue;
 
-                for (int w = 0; w < wrapCount; w++)
-                {
-                    float ax = baseDx + _wrapsX[w];
-                    float az = baseDz + _wrapsZ[w];
-                    Vector2 pa = rect.center + new Vector2(ax * scale, az * scale);
-                    Vector2 pb = pa + new Vector2(offsetB.x * scale, offsetB.z * scale);
-                    Vector2 pc = pa + new Vector2(offsetC.x * scale, offsetC.z * scale);
-
-                    if (!AnyNearPanel(rect, pa, pb, pc))
-                        continue;
-
+                if (haveRadius)
+                    AddGeodesicFill(vh, playerPos, scale, rect, mapR, tri, pa, pb, pc, maxJump);
+                else
                     AddTriangle(vh, pa, pb, pc, tri.Fill);
-                }
             }
 
             for (int i = 0; i < _edgeCache.Count; i++)
             {
                 var edge = _edgeCache[i];
-                // Nearer endpoint as anchor — same reason as triangle chart pick.
-                Vector3 anchor = edge.PosA;
-                Vector3 other = edge.PosB;
-                if (ToroidalMap.ToroidalDistance(playerPos, edge.PosB) <
-                    ToroidalMap.ToroidalDistance(playerPos, edge.PosA))
+                if (!TryProject(playerPos, scale, rect, edge.PosA, out Vector2 pa) ||
+                    !TryProject(playerPos, scale, rect, edge.PosB, out Vector2 pb))
+                    continue;
+
+                if (IsContinentSpan(pa, pb, maxChord))
                 {
-                    anchor = edge.PosB;
-                    other = edge.PosA;
+                    DrawRimStubsIfShorter(vh, pa, pb, center, outerR, edge.Color);
+                    continue;
                 }
 
-                Vector3 offsetB = ToroidalMap.ShortestWorldOffsetXZ(anchor, other);
-                _minimap.GetToroidalDeltaForMinimap(playerPos, anchor, out float baseDx, out float baseDz);
-
-                for (int w = 0; w < wrapCount; w++)
-                {
-                    float ax = baseDx + _wrapsX[w];
-                    float az = baseDz + _wrapsZ[w];
-                    Vector2 pa = rect.center + new Vector2(ax * scale, az * scale);
-                    Vector2 pb = pa + new Vector2(offsetB.x * scale, offsetB.z * scale);
-
-                    if (!AnyNearPanel(rect, pa, pb, pa))
-                        continue;
-
+                if (haveRadius)
+                    DrawGeodesicLine(vh, playerPos, scale, rect, mapR, edge.PosA, edge.PosB,
+                        pa, pb, edge.Color, center, innerR, maxJump);
+                else
                     AddLineQuad(vh, pa, pb, edge.Color, BorderThickness);
-                }
             }
+        }
+
+        /// <summary>True when the 2D blip chord is a wrap / far-side span, not a local cluster.</summary>
+        static bool IsContinentSpan(Vector2 a, Vector2 b, float maxChord)
+        {
+            return (a - b).sqrMagnitude > maxChord * maxChord;
         }
 
         /// <summary>
-        /// Among short-embeddable corner charts, picks the one whose anchor is nearest the player
-        /// (toroidal distance). Keeps compact-minimap fills from vanishing when a fixed id-order
-        /// anchor sits outside the circle while a nearby edge still draws.
+        /// Rim stubs only when each stub is shorter than the actual planet-to-planet chart span.
+        /// A stub longer than that pair is the wrong path and is dropped.
         /// </summary>
-        static bool TryPickNearestEmbedChart(
-            Vector3 playerPos,
-            Vector3 posA,
-            Vector3 posB,
-            Vector3 posC,
-            float mapW,
-            float mapH,
-            out Vector3 anchor,
-            out Vector3 offsetB,
-            out Vector3 offsetC)
+        static void DrawRimStubsIfShorter(
+            VertexHelper vh, Vector2 pa, Vector2 pb, Vector2 center, float outerR, Color color)
         {
-            anchor = default;
-            offsetB = default;
-            offsetC = default;
-
-            float3 a = new float3(posA.x, 0f, posA.z);
-            float3 b = new float3(posB.x, 0f, posB.z);
-            float3 c = new float3(posC.x, 0f, posC.z);
-
-            float bestDist = float.MaxValue;
-            bool found = false;
-
-            // Try each corner as chart origin; keep the nearest valid short-embed.
-            TryConsiderEmbedCorner(playerPos, posA, posB, posC, a, b, c, mapW, mapH,
-                ref bestDist, ref found, ref anchor, ref offsetB, ref offsetC);
-            TryConsiderEmbedCorner(playerPos, posB, posA, posC, b, a, c, mapW, mapH,
-                ref bestDist, ref found, ref anchor, ref offsetB, ref offsetC);
-            TryConsiderEmbedCorner(playerPos, posC, posA, posB, c, a, b, mapW, mapH,
-                ref bestDist, ref found, ref anchor, ref offsetB, ref offsetC);
-
-            if (found)
-                return true;
-
-            // Fallback: nearest corner even if embed check is strict (published tris should embed).
-            float dA = ToroidalMap.ToroidalDistance(playerPos, posA);
-            float dB = ToroidalMap.ToroidalDistance(playerPos, posB);
-            float dC = ToroidalMap.ToroidalDistance(playerPos, posC);
-            if (dA <= dB && dA <= dC)
-            {
-                anchor = posA;
-                offsetB = ToroidalMap.ShortestWorldOffsetXZ(posA, posB);
-                offsetC = ToroidalMap.ShortestWorldOffsetXZ(posA, posC);
-            }
-            else if (dB <= dA && dB <= dC)
-            {
-                anchor = posB;
-                offsetB = ToroidalMap.ShortestWorldOffsetXZ(posB, posA);
-                offsetC = ToroidalMap.ShortestWorldOffsetXZ(posB, posC);
-            }
-            else
-            {
-                anchor = posC;
-                offsetB = ToroidalMap.ShortestWorldOffsetXZ(posC, posA);
-                offsetC = ToroidalMap.ShortestWorldOffsetXZ(posC, posB);
-            }
-
-            return true;
+            float chord = Vector2.Distance(pa, pb);
+            Vector2 ra = RadialRim(pa, center, outerR);
+            Vector2 rb = RadialRim(pb, center, outerR);
+            if (Vector2.Distance(pa, ra) + 1f < chord)
+                AddLineQuad(vh, pa, ra, color, BorderThickness);
+            if (Vector2.Distance(pb, rb) + 1f < chord)
+                AddLineQuad(vh, pb, rb, color, BorderThickness);
         }
 
-        /// <summary>Updates the best chart if this corner short-embeds and is nearer the player.</summary>
-        static void TryConsiderEmbedCorner(
-            Vector3 playerPos,
-            Vector3 anchorCanon,
-            Vector3 pCanon,
-            Vector3 qCanon,
-            float3 anchor,
-            float3 p,
-            float3 q,
-            float mapW,
-            float mapH,
-            ref float bestDist,
-            ref bool found,
-            ref Vector3 outAnchor,
-            ref Vector3 outOffsetB,
-            ref Vector3 outOffsetC)
+        static Vector2 RadialRim(Vector2 p, Vector2 center, float outerR)
         {
-            float3 offP = ToroidalMapEcs.ShortestOffsetXZ(anchor, p, mapW, mapH);
-            float3 offQ = ToroidalMapEcs.ShortestOffsetXZ(anchor, q, mapW, mapH);
-            float2 P = new float2(offP.x, offP.z);
-            float2 Q = new float2(offQ.x, offQ.z);
-            if (math.abs(P.x * Q.y - P.y * Q.x) < 1e-3f)
-                return;
+            Vector2 d = p - center;
+            float len = d.magnitude;
+            if (len < 1e-3f)
+                return center + new Vector2(outerR, 0f);
+            return center + d * (outerR / len);
+        }
 
-            float3 shortQP = ToroidalMapEcs.ShortestOffsetXZ(q, p, mapW, mapH);
-            float2 chartQP = P - Q;
-            float2 geodesicQP = new float2(shortQP.x, shortQP.z);
-            if (math.lengthsq(chartQP - geodesicQP) > 0.25f)
-                return;
+        void AddGeodesicFill(
+            VertexHelper vh,
+            Vector3 playerPos,
+            float scale,
+            Rect rect,
+            float mapR,
+            in CachedWorldTriangle tri,
+            Vector2 pa,
+            Vector2 pb,
+            Vector2 pc,
+            float maxJump)
+        {
+            _scratchRing.Clear();
+            AppendGeodesicChart(playerPos, scale, rect, mapR, tri.PosA, tri.PosB, pa, pb, _scratchRing, true, maxJump);
+            AppendGeodesicChart(playerPos, scale, rect, mapR, tri.PosB, tri.PosC, pb, pc, _scratchRing, false, maxJump);
+            AppendGeodesicChart(playerPos, scale, rect, mapR, tri.PosC, tri.PosA, pc, pa, _scratchRing, false, maxJump);
 
-            float dist = ToroidalMap.ToroidalDistance(playerPos, anchorCanon);
-            if (found && dist >= bestDist)
-                return;
+            Vector3 midWorld = (Vector3)SphericalMapEcs.ProjectToSphere(
+                ((float3)tri.PosA + (float3)tri.PosB + (float3)tri.PosC) * (1f / 3f), mapR);
+            TryProject(playerPos, scale, rect, midWorld, out Vector2 mid);
+            if (!PointInTri2D(mid, pa, pb, pc))
+                mid = (pa + pb + pc) / 3f;
 
-            found = true;
-            bestDist = dist;
-            outAnchor = anchorCanon;
-            outOffsetB = new Vector3(offP.x, 0f, offP.z);
-            outOffsetC = new Vector3(offQ.x, 0f, offQ.z);
+            FanRing(vh, mid, tri.Fill);
+        }
+
+        void DrawGeodesicLine(
+            VertexHelper vh,
+            Vector3 playerPos,
+            float scale,
+            Rect rect,
+            float mapR,
+            Vector3 wa,
+            Vector3 wb,
+            Vector2 pa,
+            Vector2 pb,
+            Color color,
+            Vector2 center,
+            float innerR,
+            float maxJump)
+        {
+            _scratchArc.Clear();
+            AppendGeodesicChart(playerPos, scale, rect, mapR, wa, wb, pa, pb, _scratchArc, true, maxJump);
+            for (int i = 1; i < _scratchArc.Count; i++)
+            {
+                Vector2 prev = _scratchArc[i - 1];
+                Vector2 cur = _scratchArc[i];
+                if (!SegmentCrossesInnerDisk(prev, cur, center, innerR))
+                    AddLineQuad(vh, prev, cur, color, BorderThickness);
+            }
+        }
+
+        void AppendGeodesicChart(
+            Vector3 playerPos,
+            float scale,
+            Rect rect,
+            float mapR,
+            Vector3 a,
+            Vector3 b,
+            Vector2 ca,
+            Vector2 cb,
+            List<Vector2> dest,
+            bool includeStart,
+            float maxJump)
+        {
+            if (includeStart)
+                dest.Add(ca);
+
+            float arc = SphericalMap.GeodesicDistance(a, b);
+            int steps = Mathf.Clamp(Mathf.CeilToInt(arc / 8f), 8, 28);
+            Vector2 prev = ca;
+            float jump2 = maxJump * maxJump;
+            for (int i = 1; i <= steps; i++)
+            {
+                float t = i / (float)steps;
+                Vector3 p = (Vector3)SphericalMapEcs.SphericalLerp((float3)a, (float3)b, t, mapR);
+                if (!TryProject(playerPos, scale, rect, p, out Vector2 cur))
+                    continue;
+                if ((cur - prev).sqrMagnitude > jump2)
+                    continue;
+                dest.Add(cur);
+                prev = cur;
+            }
+
+            if ((prev - cb).sqrMagnitude > 0.25f && (cb - prev).sqrMagnitude <= jump2)
+                dest.Add(cb);
+        }
+
+        void FanRing(VertexHelper vh, Vector2 mid, Color fill)
+        {
+            int n = _scratchRing.Count;
+            if (n < 3)
+                return;
+            if ((_scratchRing[0] - _scratchRing[n - 1]).sqrMagnitude < 4f)
+            {
+                _scratchRing.RemoveAt(n - 1);
+                n = _scratchRing.Count;
+                if (n < 3)
+                    return;
+            }
+
+            for (int i = 0; i < n; i++)
+                AddTriangle(vh, mid, _scratchRing[i], _scratchRing[(i + 1) % n], fill);
+        }
+
+        static bool PointInTri2D(Vector2 p, Vector2 a, Vector2 b, Vector2 c)
+        {
+            float d1 = Cross(p, a, b);
+            float d2 = Cross(p, b, c);
+            float d3 = Cross(p, c, a);
+            bool hasNeg = d1 < 0f || d2 < 0f || d3 < 0f;
+            bool hasPos = d1 > 0f || d2 > 0f || d3 > 0f;
+            return !(hasNeg && hasPos);
+        }
+
+        static float Cross(Vector2 p, Vector2 a, Vector2 b)
+        {
+            return (p.x - b.x) * (a.y - b.y) - (a.x - b.x) * (p.y - b.y);
+        }
+
+        static bool SegmentCrossesInnerDisk(Vector2 a, Vector2 b, Vector2 center, float innerR)
+        {
+            float r2 = innerR * innerR;
+            if ((a - center).sqrMagnitude <= r2 || (b - center).sqrMagnitude <= r2)
+                return false;
+
+            Vector2 ab = b - a;
+            float ab2 = ab.sqrMagnitude;
+            if (ab2 < 1e-6f)
+                return false;
+
+            float t = Mathf.Clamp01(Vector2.Dot(center - a, ab) / ab2);
+            Vector2 closest = a + ab * t;
+            return (closest - center).sqrMagnitude < r2;
+        }
+
+        bool TryProject(Vector3 playerPos, float scale, Rect rect, Vector3 world, out Vector2 panel)
+        {
+            _minimap.GetToroidalDeltaForMinimap(playerPos, world, out float dx, out float dz);
+            panel = rect.center + new Vector2(dx * scale, dz * scale);
+            return true;
         }
 
         /// <summary>True if any vertex is within a generous margin of the panel rect (incl. off-edge wraps).</summary>

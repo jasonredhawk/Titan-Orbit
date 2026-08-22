@@ -251,9 +251,7 @@ namespace TitanOrbit.ECS
             float mapW,
             float mapH)
         {
-            float3 center = transform.Position;
-            center.y = 0f;
-            center = ToroidalMapEcs.Wrap(center, mapW, mapH);
+            float3 center = ToroidalMapEcs.Wrap(transform.Position, mapW, mapH);
             return new PlanetConnectionGraphLogic.PlanetInput
             {
                 PlanetId = planet.PlanetId,
@@ -324,9 +322,7 @@ namespace TitanOrbit.ECS
             for (int i = 0; i < snaps.Length; i++)
             {
                 var s = snaps[i];
-                float3 center = s.Transform.Position;
-                center.y = 0f;
-                center = ToroidalMapEcs.Wrap(center, mapW, mapH);
+                float3 center = ToroidalMapEcs.Wrap(s.Transform.Position, mapW, mapH);
 
                 // [TITAN-ORBIT] Read override before Resolve (Resolve clears it when ghost catches up).
                 bool hasOverride = PlanetConnectionGraphCache.TryGetClientOwnershipOverride(

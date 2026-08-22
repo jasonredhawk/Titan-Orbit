@@ -134,28 +134,11 @@ namespace TitanOrbit.Game
                         ? (quaternion)ShipDisplayPose.LocalRotation
                         : quaternion.identity;
                     aimDir = SphericalMapEcs.EncodeTangentDir((float3)shipPos, shipRot, (float3)tangent);
+                    // Cursor on the look-ahead / hull is not a turn command — keep facing so the
+                    // camera lead cannot yaw-hunt the ship left and right.
+                    if (aimDir.x > 0.978f && math.abs(aimDir.y) < 0.21f)
+                        aimDir = float2.zero;
                 }
-
-                // #region agent log
-                if (Time.unscaledTime >= AgentDebugNdjson.NextAim)
-                {
-                    AgentDebugNdjson.NextAim = Time.unscaledTime + 0.25f;
-                    float3 up = SphericalMapEcs.LocalUp((float3)shipPos);
-                    AgentDebugNdjson.Write(
-                        "H12",
-                        "ShipInputBridge.cs:aim",
-                        "mouse-aim",
-                        "{\"hitY\":" + aimWorld.y.ToString("F2") +
-                        ",\"tanSq\":" + tangent.sqrMagnitude.ToString("F4") +
-                        ",\"aimX\":" + aimDir.x.ToString("F3") +
-                        ",\"aimY\":" + aimDir.y.ToString("F3") +
-                        ",\"aimDist\":" + aimDistance.ToString("F2") +
-                        ",\"upy\":" + up.y.ToString("F3") +
-                        ",\"aimMode\":\"tan\"" +
-                        ",\"thrust\":" + (_input.MoveForwardPressed ? "true" : "false") +
-                        "}");
-                }
-                // #endregion
             }
 
             // While controlling a turret, RMB thrust is the exit signal (server ejects).

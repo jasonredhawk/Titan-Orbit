@@ -8,17 +8,13 @@ using UnityEngine;
 namespace TitanOrbit.Simulation
 {
     /// <summary>
-    /// Pure toroidal planet-connection graph math for same-team territory.
+    /// Sphere-surface planet-connection graph math for same-team territory.
     /// <para>
-    /// [TITAN-ORBIT] One global planar graph on <b>planet centers</b>: <b>no two lines ever cross</b>,
-    /// whether friendly or enemy (proper intersections <b>and</b> collinear overlaps). Sticky history
-    /// wins — whoever created an edge first keeps it (<see cref="Edge.CreationSequence"/>); a later
-    /// team blocked by that segment cannot add the conflicting line. After sticky seed + resolve +
-    /// greedy pack, a final strip pass guarantees planarity. Territory fills publish only for
-    /// <b>short-embeddable facial</b> 3-cliques (all three sides are shortest geodesics in one chart,
-    /// and no other same-team planet sits inside) so drawers never invent a long opposite-side chord
-    /// and never stack overlapping fills when an interior capture subdivides a larger triangle.
-    /// Lone edges are visual-only; bonuses need a filled embeddable face.
+    /// [TITAN-ORBIT] One global non-crossing graph on <b>planet centers</b>: geodesics must not
+    /// properly intersect (friendly or enemy). Sticky history wins — whoever created an edge first
+    /// keeps it (<see cref="Edge.CreationSequence"/>). Fills publish for facial 3-cliques whose
+    /// three short geodesics form a non-degenerate spherical triangle (no interior teammate).
+    /// Lone edges are visual-only; bonuses need a filled face.
     /// </para>
     /// Point-in-triangle tests short-embed charts (same geodesic disk the fill draws), not a
     /// VertexA-only Euclidean unwrap that can disagree across seams.
@@ -60,7 +56,7 @@ namespace TitanOrbit.Simulation
             public int PlanetLevel;
 
             /// <summary>
-            /// Planet-core XZ in canonical toroidal space (Y ignored) for nearest-neighbor edges.
+            /// Planet-core position on the playable shell.
             /// [TITAN-ORBIT] Uses planet centers — not gem moons — so sticky non-crossing topology
             /// stays stable as moons orbit (moons would constantly invalidate crossings).
             /// </summary>
@@ -202,11 +198,7 @@ namespace TitanOrbit.Simulation
             float mapH)
         {
             float radius = SphericalMapEcs.RadiusFromMapAxes(mapW, mapH);
-            float2 a0 = float2.zero;
-            float2 b0 = SphericalMapEcs.TangentChartXY(a, b, radius);
-            float2 c0 = SphericalMapEcs.TangentChartXY(a, c, radius);
-            float2 d0 = SphericalMapEcs.TangentChartXY(a, d, radius);
-            return SegmentsConflict2D(a0, b0, c0, d0);
+            return GeodesicSegmentsConflict(a, b, c, d, radius);
         }
 
         /// <summary>
@@ -226,9 +218,8 @@ namespace TitanOrbit.Simulation
             float mapW,
             float mapH)
         {
-            return TryShortEmbedFromAnchor(a, b, c, mapW, mapH) ||
-                   TryShortEmbedFromAnchor(b, a, c, mapW, mapH) ||
-                   TryShortEmbedFromAnchor(c, a, b, mapW, mapH);
+            float radius = SphericalMapEcs.RadiusFromMapAxes(mapW, mapH);
+            return IsFillableSphericalTriangle(a, b, c, radius);
         }
 
         /// <summary>
@@ -261,58 +252,44 @@ namespace TitanOrbit.Simulation
             // Published triangles are graph-gated as short-embeddable from at least one corner.
             // Testing all valid charts keeps membership identical to the geodesic disk the player sees.
             // No VertexA-only fallback: that chart can use a long opposite side and disagree with the tint.
-            return PointInShortEmbedChart(worldPos, vertexA, vertexB, vertexC, mapW, mapH) ||
-                   PointInShortEmbedChart(worldPos, vertexB, vertexA, vertexC, mapW, mapH) ||
-                   PointInShortEmbedChart(worldPos, vertexC, vertexA, vertexB, mapW, mapH);
+            return PointInSphericalTriangle(worldPos, vertexA, vertexB, vertexC);
         }
 
         /// <summary>
-        /// True when <paramref name="worldPos"/> is inside the Euclidean triangle formed by
-        /// shortest offsets from <paramref name="anchor"/> to <paramref name="p"/> / <paramref name="q"/>,
-        /// and that chart is a short embedding (opposite side ≈ toroidal Shortest).
+        /// Inside the smaller spherical triangle ABC (half-spaces of planes OAB / OBC / OCA).
         /// </summary>
-        static bool PointInShortEmbedChart(
-            float3 worldPos,
-            float3 anchor,
-            float3 p,
-            float3 q,
-            float mapW,
-            float mapH)
+        static bool PointInSphericalTriangle(float3 p, float3 a, float3 b, float3 c)
         {
-            if (!TryShortEmbedFromAnchor(anchor, p, q, mapW, mapH))
+            float3 nAB = math.cross(a, b);
+            float3 nBC = math.cross(b, c);
+            float3 nCA = math.cross(c, a);
+            if (math.lengthsq(nAB) < 1e-12f || math.lengthsq(nBC) < 1e-12f || math.lengthsq(nCA) < 1e-12f)
                 return false;
-            return PointInAnchorChart(worldPos, anchor, p, q, mapW, mapH);
+
+            if (math.dot(nAB, c) < 0f) nAB = -nAB;
+            if (math.dot(nBC, a) < 0f) nBC = -nBC;
+            if (math.dot(nCA, b) < 0f) nCA = -nCA;
+
+            const float eps = -1e-5f;
+            return math.dot(nAB, p) >= eps && math.dot(nBC, p) >= eps && math.dot(nCA, p) >= eps;
         }
 
         /// <summary>
-        /// Barycentric point-in-triangle in the A-anchored shortest-offset chart on the torus.
-        /// Does not require the chart to be short-embeddable (caller decides).
+        /// Three short geodesics form a fillable face: non-degenerate and no edge near a hemisphere.
+        /// The old torus test (chart(BC) ≈ |B−C|) rejected almost every sphere triangle.
         /// </summary>
-        static bool PointInAnchorChart(
-            float3 worldPos,
-            float3 anchor,
-            float3 vertexB,
-            float3 vertexC,
-            float mapW,
-            float mapH)
+        static bool IsFillableSphericalTriangle(float3 a, float3 b, float3 c, float radius)
         {
-            // --- Unwrap into local XZ with anchor at origin (ShortestOffset — seam-safe) ---
-            // [TITAN-ORBIT] Ship may be many map-widths away; verts stay in [-half, half).
-            float radius = SphericalMapEcs.RadiusFromMapAxes(mapW, mapH);
-            float2 a = float2.zero;
-            float2 b = SphericalMapEcs.TangentChartXY(anchor, vertexB, radius);
-            float2 c = SphericalMapEcs.TangentChartXY(anchor, vertexC, radius);
-            float2 p = SphericalMapEcs.TangentChartXY(anchor, worldPos, radius);
-
-            float area = Cross(b - a, c - a);
-            if (math.abs(area) < 1e-8f)
+            float3 na = SphericalMapEcs.LocalUp(a);
+            float3 nb = SphericalMapEcs.LocalUp(b);
+            float3 nc = SphericalMapEcs.LocalUp(c);
+            if (math.abs(math.dot(na, math.cross(nb, nc))) < 1e-5f)
                 return false;
 
-            float s = Cross(p - a, c - a) / area;
-            float t = Cross(b - a, p - a) / area;
-            float u = 1f - s - t;
-            const float eps = -0.0001f;
-            return s >= eps && t >= eps && u >= eps;
+            float lim = radius * 0.92f * math.PI;
+            return SphericalMapEcs.GeodesicDistance(a, b, radius) < lim &&
+                   SphericalMapEcs.GeodesicDistance(b, c, radius) < lim &&
+                   SphericalMapEcs.GeodesicDistance(c, a, radius) < lim;
         }
 
         /// <summary>
@@ -663,110 +640,44 @@ namespace TitanOrbit.Simulation
         // Sticky rebuild helpers
         // -------------------------------------------------------------------------
 
-        /// <summary>2D cross product (x*y components) for barycentric / orientation tests.</summary>
-        static float Cross(float2 a, float2 b) => a.x * b.y - a.y * b.x;
-
         /// <summary>
-        /// True when two segments conflict in R2: proper intersection <b>or</b> collinear interior
-        /// overlap. Shared endpoints alone are not a conflict (T-junction / path).
+        /// True when short geodesic segments AB and CD properly intersect or overlap on the shell.
+        /// Shared endpoints are not a conflict. Tangent-chart chords produced false crosses.
         /// </summary>
-        static bool SegmentsConflict2D(float2 a, float2 b, float2 c, float2 d)
+        static bool GeodesicSegmentsConflict(float3 a, float3 b, float3 c, float3 d, float radius)
         {
-            if (SegmentsCrossProper2D(a, b, c, d))
-                return true;
-            return SegmentsOverlapCollinear2D(a, b, c, d);
-        }
-
-        /// <summary>
-        /// Proper segment intersection in R2 (not merely touching at an endpoint).
-        /// Collinear cases are handled separately by <see cref="SegmentsOverlapCollinear2D"/>.
-        /// </summary>
-        static bool SegmentsCrossProper2D(float2 a, float2 b, float2 c, float2 d)
-        {
-            // --- Shared / nearly-shared endpoints → not a proper cross ---
-            const float eps = 1e-4f;
-            if (math.distancesq(a, c) < eps * eps || math.distancesq(a, d) < eps * eps ||
-                math.distancesq(b, c) < eps * eps || math.distancesq(b, d) < eps * eps)
+            float3 n1 = math.cross(a, b);
+            float3 n2 = math.cross(c, d);
+            if (math.lengthsq(n1) < 1e-12f || math.lengthsq(n2) < 1e-12f)
                 return false;
 
-            float o1 = Orient(a, b, c);
-            float o2 = Orient(a, b, d);
-            float o3 = Orient(c, d, a);
-            float o4 = Orient(c, d, b);
+            float3 line = math.cross(n1, n2);
+            if (math.lengthsq(line) < 1e-12f)
+                return ShortArcsOverlapOnGreatCircle(a, b, c, d, radius);
 
-            // Strict opposite orientations on both segments.
-            return (o1 * o2 < 0f) && (o3 * o4 < 0f);
+            return (PointOnShortArcInterior(a, b, line, radius) && PointOnShortArcInterior(c, d, line, radius)) ||
+                   (PointOnShortArcInterior(a, b, -line, radius) && PointOnShortArcInterior(c, d, -line, radius));
         }
 
-        /// <summary>
-        /// True when AB and CD are (nearly) collinear and their interiors overlap on the line.
-        /// Endpoint-only touch (T-junction / shared vertex) returns false.
-        /// </summary>
-        static bool SegmentsOverlapCollinear2D(float2 a, float2 b, float2 c, float2 d)
+        static bool ShortArcsOverlapOnGreatCircle(float3 a, float3 b, float3 c, float3 d, float radius)
         {
-            const float orientEps = 1e-3f;
-            float o1 = Orient(a, b, c);
-            float o2 = Orient(a, b, d);
-            float o3 = Orient(c, d, a);
-            float o4 = Orient(c, d, b);
-            if (math.abs(o1) > orientEps || math.abs(o2) > orientEps ||
-                math.abs(o3) > orientEps || math.abs(o4) > orientEps)
-                return false;
-
-            // --- Project onto the dominant axis of AB ---
-            float2 ab = b - a;
-            bool useX = math.abs(ab.x) >= math.abs(ab.y);
-            float a0 = useX ? a.x : a.y;
-            float b0 = useX ? b.x : b.y;
-            float c0 = useX ? c.x : c.y;
-            float d0 = useX ? d.x : d.y;
-            if (a0 > b0)
-            {
-                float tmp = a0;
-                a0 = b0;
-                b0 = tmp;
-            }
-
-            if (c0 > d0)
-            {
-                float tmp = c0;
-                c0 = d0;
-                d0 = tmp;
-            }
-
-            // Strict interior overlap (touching only at an endpoint is allowed).
-            const float overlapEps = 1e-3f;
-            float left = math.max(a0, c0);
-            float right = math.min(b0, d0);
-            return right - left > overlapEps;
+            return (PointOnShortArcInterior(a, b, c, radius) || PointOnShortArcInterior(a, b, d, radius)) ||
+                   (PointOnShortArcInterior(c, d, a, radius) || PointOnShortArcInterior(c, d, b, radius));
         }
 
-        /// <summary>Signed area orientation of triangle (a,b,c) in XZ plane.</summary>
-        static float Orient(float2 a, float2 b, float2 c) => Cross(b - a, c - a);
-
-        /// <summary>
-        /// True when shortest geodesics AB, AC, BC all match the A-anchored Euclidean triangle
-        /// (chart BC ≈ Shortest(B,C)) and the triangle has non-zero area.
-        /// </summary>
-        static bool TryShortEmbedFromAnchor(
-            float3 anchor,
-            float3 p,
-            float3 q,
-            float mapW,
-            float mapH)
+        /// <summary>True when <paramref name="p"/> lies in the interior of short arc AB.</summary>
+        static bool PointOnShortArcInterior(float3 a, float3 b, float3 p, float radius)
         {
-            float radius = SphericalMapEcs.RadiusFromMapAxes(mapW, mapH);
-            float2 P = SphericalMapEcs.TangentChartXY(anchor, p, radius);
-            float2 Q = SphericalMapEcs.TangentChartXY(anchor, q, radius);
-
-            const float areaEps = 1e-3f;
-            if (math.abs(Cross(P, Q)) < areaEps)
+            float3 na = SphericalMapEcs.LocalUp(a);
+            float3 nb = SphericalMapEcs.LocalUp(b);
+            float3 np = SphericalMapEcs.LocalUp(p);
+            float ab = math.acos(math.clamp(math.dot(na, nb), -1f, 1f));
+            float ap = math.acos(math.clamp(math.dot(na, np), -1f, 1f));
+            float pb = math.acos(math.clamp(math.dot(np, nb), -1f, 1f));
+            const float endEps = 0.008f;
+            if (ap < endEps || pb < endEps)
                 return false;
-
-            float chartLen = math.length(P - Q);
-            float geoLen = SphericalMapEcs.GeodesicDistance(q, p, radius);
-            const float matchEps = 0.5f;
-            return math.abs(chartLen - geoLen) <= matchEps;
+            return math.abs(ap + pb - ab) <= 0.012f;
         }
 
         /// <summary>

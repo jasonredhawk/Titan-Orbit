@@ -477,9 +477,12 @@ namespace TitanOrbit.Game
                 worldPos = centerWorld + screenDown * clearance + towardCamera * HeightAbovePlane;
             }
 
+            // TMP / Sprite-renderer plates are readable on -Z (same as a world Canvas).
+            // cam * yaw180 pointed +Z at the camera, so the Game view read the back face
+            // (Redhawk / Lv / # all mirrored). Match the gameplay camera instead.
             Quaternion billboard = cam != null
-                ? cam.transform.rotation * Quaternion.Euler(0f, 180f, 0f)
-                : SphericalMap.BillboardFacingCamera(cam, worldPos);
+                ? cam.transform.rotation
+                : Quaternion.identity;
             _labelRoot.SetPositionAndRotation(worldPos, billboard);
             _labelRoot.localScale = new Vector3(LabelWorldScale, LabelWorldScale, LabelWorldScale);
             for (int i = 0; i < _labelRoot.childCount; i++)
@@ -488,33 +491,6 @@ namespace TitanOrbit.Game
                 if (Quaternion.Angle(child.localRotation, Quaternion.Euler(-90f, 0f, 0f)) < 8f)
                     child.localRotation = Quaternion.identity;
             }
-
-            // #region agent log
-            if (Time.unscaledTime >= AgentDebugNdjson.NextPlate)
-            {
-                AgentDebugNdjson.NextPlate = Time.unscaledTime + 0.25f;
-                Vector3 toCam = cam != null ? cam.transform.position - worldPos : Vector3.zero;
-                Vector3 camUp = cam != null ? cam.transform.up : Vector3.zero;
-                float parallel = cam != null && toCam.sqrMagnitude > 1e-8f && camUp.sqrMagnitude > 1e-8f
-                    ? Mathf.Abs(Vector3.Dot(toCam.normalized, camUp.normalized))
-                    : -1f;
-                float fwdDot = toCam.sqrMagnitude > 1e-8f
-                    ? Vector3.Dot(_labelRoot.forward, toCam.normalized)
-                    : 0f;
-                AgentDebugNdjson.Write(
-                    "H4",
-                    "ShipWorldNameplate.cs:billboard",
-                    "nameplate",
-                    "{\"camNull\":" + (cam == null ? "true" : "false") +
-                    ",\"fwdDotToCam\":" + fwdDot.ToString("F3") +
-                    ",\"scaleY\":" + _labelRoot.localScale.y.ToString("F2") +
-                    ",\"parallel\":" + parallel.ToString("F3") +
-                    ",\"isMain\":" + (cam != null && cam == Camera.main ? "true" : "false") +
-                    ",\"child0eulX\":" + (_labelRoot.childCount > 0 ? _labelRoot.GetChild(0).localEulerAngles.x.ToString("F1") : "-1") +
-                    ",\"upDotCam\":" + (cam != null ? Vector3.Dot(_labelRoot.up, cam.transform.up).ToString("F3") : "-1") +
-                    "}");
-            }
-            // #endregion
         }
 
         /// <summary>

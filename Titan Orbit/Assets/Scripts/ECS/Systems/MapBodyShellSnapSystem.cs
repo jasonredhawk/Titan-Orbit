@@ -55,62 +55,6 @@ namespace TitanOrbit.ECS
                     continue;
                 transform.ValueRW.Position = SphericalMapEcs.ProjectToSphere(pos, radius);
             }
-
-            // #region agent log
-#if UNITY_EDITOR
-            {
-                int offPlanets = 0, planetCount = 0, offAsteroids = 0, asteroidCount = 0;
-                float minR = float.MaxValue, maxR = 0f;
-                foreach (var transform in SystemAPI.Query<RefRO<LocalTransform>>().WithAll<PlanetTag>())
-                {
-                    planetCount++;
-                    float len = math.length(transform.ValueRO.Position);
-                    minR = math.min(minR, len);
-                    maxR = math.max(maxR, len);
-                    if (math.abs(len - radius) > MaxRadiusError)
-                        offPlanets++;
-                }
-
-                foreach (var transform in SystemAPI.Query<RefRO<LocalTransform>>().WithAll<AsteroidTag>())
-                {
-                    asteroidCount++;
-                    float len = math.length(transform.ValueRO.Position);
-                    minR = math.min(minR, len);
-                    maxR = math.max(maxR, len);
-                    if (math.abs(len - radius) > MaxRadiusError)
-                        offAsteroids++;
-                }
-
-                double now = System.DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() / 1000.0;
-                if (now >= s_NextSnapLog)
-                {
-                    s_NextSnapLog = now + 0.5;
-                    try
-                    {
-                        long ts = System.DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-                        string json =
-                            "{\"sessionId\":\"07b7b6\",\"hypothesisId\":\"H7\",\"location\":\"MapBodyShellSnapSystem\",\"message\":\"shell-census\",\"data\":{\"r\":"
-                            + radius.ToString("F2", System.Globalization.CultureInfo.InvariantCulture)
-                            + ",\"planets\":" + planetCount
-                            + ",\"offP\":" + offPlanets
-                            + ",\"roids\":" + asteroidCount
-                            + ",\"offA\":" + offAsteroids
-                            + ",\"minR\":" + (minR < float.MaxValue ? minR : 0f).ToString("F2", System.Globalization.CultureInfo.InvariantCulture)
-                            + ",\"maxR\":" + maxR.ToString("F2", System.Globalization.CultureInfo.InvariantCulture)
-                            + "},\"timestamp\":" + ts + "}\n";
-                        System.IO.File.AppendAllText(@"c:\Users\jason\Documents\repo\Titan-Orbit\debug-07b7b6.log", json);
-                    }
-                    catch
-                    {
-                    }
-                }
-            }
-#endif
-            // #endregion
         }
-
-#if UNITY_EDITOR
-        static double s_NextSnapLog;
-#endif
     }
 }

@@ -15,6 +15,11 @@ namespace TitanOrbit.Input
     public class MobileInputHandler : MonoBehaviour, IPointerDownHandler, IPointerUpHandler, IDragHandler
     {
         public static MobileInputHandler Instance { get; private set; }
+
+        /// <summary>Same-frame cache used only when <see cref="Instance"/> is missing.</summary>
+        static MobileInputHandler s_ResolveCache;
+        static int s_ResolveCacheFrame = -1;
+
         /// <summary>When true, anchor steering runs in the editor (see <see cref="TitanOrbit.UI.MobileControls"/> Force Mobile).</summary>
         public static bool ForceTouchSteer { get; private set; }
 
@@ -80,17 +85,29 @@ namespace TitanOrbit.Input
 
         public static MobileInputHandler Resolve()
         {
-            // --- Resolve value ---
-            if (Instance != null && Instance.isActiveAndEnabled && Instance.touchUiActive)
-                return Instance;
+            // Desktop: the singleton exists with touchUiActive=false. Do not FindObjectsByType
+            // every call — PlayerInputHandler.Update + TryGetMouseWorldPosition (ShipInputBridge)
+            // were each spending ~2.4ms on that scan (Profiler frames 23955–25954).
+            if (Instance != null)
+                return Instance.isActiveAndEnabled && Instance.touchUiActive ? Instance : null;
+
+            // Singleton missing (load order). Scan once this frame, then reuse.
+            if (s_ResolveCacheFrame == Time.frameCount)
+                return s_ResolveCache;
+
+            s_ResolveCacheFrame = Time.frameCount;
+            s_ResolveCache = null;
             var handlers = Object.FindObjectsByType<MobileInputHandler>(FindObjectsInactive.Include, FindObjectsSortMode.None);
             for (int i = 0; i < handlers.Length; i++)
             {
                 MobileInputHandler h = handlers[i];
                 if (h != null && h.isActiveAndEnabled && h.touchUiActive)
-                    return h;
+                {
+                    s_ResolveCache = h;
+                    break;
+                }
             }
-            return null;
+            return s_ResolveCache;
         }
 
         private void Awake()

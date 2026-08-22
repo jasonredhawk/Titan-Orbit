@@ -2,8 +2,6 @@ using Shapes;
 using TitanOrbit.Core;
 using TitanOrbit.ECS;
 using TitanOrbit.Game;
-using TitanOrbit.Generation;
-using TitanOrbit.Simulation;
 using Unity.Entities;
 using UnityEngine;
 
@@ -94,6 +92,10 @@ namespace TitanOrbit.UI
             if (_minimap == null)
                 return;
 
+            // UGUI drawer is the live path — do not paint a second geodesic copy on top.
+            if (_minimap.GetComponentInChildren<MinimapConnectionsUI>(true) != null)
+                return;
+
             var triangles = PlanetConnectionGraphCache.CurrentTriangles;
             var edges = PlanetConnectionGraphCache.CurrentEdges;
             int triCount = triangles?.Count ?? 0;
@@ -109,13 +111,13 @@ namespace TitanOrbit.UI
 
             Vector3 playerPos = _minimap.PlayerPosition;
             float radius = Mathf.Max(1f, _minimap.MinimapRadius);
-            float displayHalf = _minimap.DisplaySize * 0.5f;
-            float scaleX = displayHalf / radius;
-            float scaleZ = displayHalf / radius;
 
             Draw.ResetAllDrawStates();
             Draw.ThicknessSpace = ThicknessSpace.Pixels;
             Draw.LineGeometry = LineGeometry.Flat2D;
+
+            Vector2 center = rect.center;
+            float innerR = Mathf.Min(rect.width, rect.height) * 0.18f;
 
             for (int i = 0; i < triCount; i++)
             {
@@ -128,38 +130,20 @@ namespace TitanOrbit.UI
                         em, visualizer, tri.PlanetIdC, out Vector3 cCanon))
                     continue;
 
-                int idA = tri.PlanetIdA, idB = tri.PlanetIdB, idC = tri.PlanetIdC;
-                Vector3 anchor = aCanon, bPos = bCanon, cPos = cCanon;
-                if (idB <= idA && idB <= idC)
-                {
-                    anchor = bCanon;
-                    bPos = aCanon;
-                    cPos = cCanon;
-                }
-                else if (idC <= idA && idC <= idB)
-                {
-                    anchor = cCanon;
-                    bPos = aCanon;
-                    cPos = bCanon;
-                }
-
-                Vector3 bOff = ToroidalMap.ShortestWorldOffsetXZ(anchor, bPos);
-                Vector3 cOff = ToroidalMap.ShortestWorldOffsetXZ(anchor, cPos);
-
-                if (!TryProjectWorldToMinimap(rect, playerPos, radius, anchor, out Vector2 pa))
+                if (!TryProjectWorldToMinimap(rect, playerPos, radius, aCanon, out Vector2 pa) ||
+                    !TryProjectWorldToMinimap(rect, playerPos, radius, bCanon, out Vector2 pb) ||
+                    !TryProjectWorldToMinimap(rect, playerPos, radius, cCanon, out Vector2 pc))
                     continue;
 
-                Vector2 pb = pa + new Vector2(bOff.x * scaleX, bOff.z * scaleZ);
-                Vector2 pc = pa + new Vector2(cOff.x * scaleX, cOff.z * scaleZ);
+                if (SegmentCrossesInnerDisk(pa, pb, center, innerR) ||
+                    SegmentCrossesInnerDisk(pb, pc, center, innerR) ||
+                    SegmentCrossesInnerDisk(pc, pa, center, innerR))
+                    continue;
 
                 Color baseColor = tri.Team.ToColor();
-                Color fillColor = new Color(baseColor.r, baseColor.g, baseColor.b, triangleAlpha);
-
-                // Fill only — borders come from shortest graph edges below.
-                Draw.Triangle(pa, pb, pc, fillColor);
+                Draw.Triangle(pa, pb, pc, new Color(baseColor.r, baseColor.g, baseColor.b, triangleAlpha));
             }
 
-            // Every graph edge as a shortest line (triangle sides included).
             for (int i = 0; i < edgeCount; i++)
             {
                 var edge = edges[i];
@@ -169,22 +153,15 @@ namespace TitanOrbit.UI
                         em, visualizer, edge.PlanetIdB, out Vector3 bCanon))
                     continue;
 
-                Vector3 anchor = aCanon;
-                Vector3 other = bCanon;
-                if (edge.PlanetIdB < edge.PlanetIdA)
-                {
-                    anchor = bCanon;
-                    other = aCanon;
-                }
-
-                Vector3 bOff = ToroidalMap.ShortestWorldOffsetXZ(anchor, other);
-                if (!TryProjectWorldToMinimap(rect, playerPos, radius, anchor, out Vector2 pa))
+                if (!TryProjectWorldToMinimap(rect, playerPos, radius, aCanon, out Vector2 pa) ||
+                    !TryProjectWorldToMinimap(rect, playerPos, radius, bCanon, out Vector2 pb))
+                    continue;
+                if (SegmentCrossesInnerDisk(pa, pb, center, innerR))
                     continue;
 
-                Vector2 pb = pa + new Vector2(bOff.x * scaleX, bOff.z * scaleZ);
                 Color baseColor = edge.Team.ToColor();
-                Color lineColor = new Color(baseColor.r, baseColor.g, baseColor.b, triangleBorderAlpha);
-                Draw.Line(pa, pb, triangleBorderThickness, lineColor);
+                Draw.Line(pa, pb, triangleBorderThickness,
+                    new Color(baseColor.r, baseColor.g, baseColor.b, triangleBorderAlpha));
             }
         }
 
@@ -198,14 +175,28 @@ namespace TitanOrbit.UI
             if (_minimap == null || radius <= 0.001f)
                 return false;
 
-            Vector3 playerCanonical = ToroidalMap.WrapPosition(playerPos);
-            Vector3 worldCanonical = ToroidalMap.WrapPosition(worldPos);
-            _minimap.GetToroidalDeltaForMinimap(playerCanonical, worldCanonical, out float dx, out float dz);
+            _minimap.GetToroidalDeltaForMinimap(playerPos, worldPos, out float dx, out float dz);
 
             float displayHalf = _minimap.DisplaySize * 0.5f;
             Vector2 offset = new Vector2((dx / radius) * displayHalf, (dz / radius) * displayHalf);
             panelPos = rect.center + offset;
             return true;
+        }
+
+        static bool SegmentCrossesInnerDisk(Vector2 a, Vector2 b, Vector2 center, float innerR)
+        {
+            float r2 = innerR * innerR;
+            if ((a - center).sqrMagnitude <= r2 || (b - center).sqrMagnitude <= r2)
+                return false;
+
+            Vector2 ab = b - a;
+            float ab2 = ab.sqrMagnitude;
+            if (ab2 < 1e-6f)
+                return false;
+
+            float t = Mathf.Clamp01(Vector2.Dot(center - a, ab) / ab2);
+            Vector2 closest = a + ab * t;
+            return (closest - center).sqrMagnitude < r2;
         }
     }
 }

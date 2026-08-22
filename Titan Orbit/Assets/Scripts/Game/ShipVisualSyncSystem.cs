@@ -416,11 +416,14 @@ namespace TitanOrbit.Game
 
             // --- Reconcile pop / large gap: coast then capped soft correct ---
             float3 coasted;
-            if (SphericalMapEcs.TryGetRadius(out float shellR))
+            bool onShell = SphericalMapEcs.TryGetRadius(out float shellR);
+            if (onShell)
                 SphericalMapEcs.StepOnSphere(_smoothPos, simVel, dt, shellR, out coasted, out _);
             else
                 coasted = _smoothPos + simVel * dt;
-            float3 err = simPos - coasted;
+            float3 err = onShell
+                ? SphericalMapEcs.GeodesicOffset(coasted, simPos, shellR)
+                : simPos - coasted;
             float t = 1f - math.exp(-CruiseCorrectSharpness * math.max(0f, dt));
             float3 pull = err * t;
             float pullLen = math.length(pull);
@@ -429,7 +432,7 @@ namespace TitanOrbit.Game
                 pull *= pullCap / pullLen;
 
             _smoothPos = coasted + pull;
-            if (SphericalMapEcs.IsValidRadius(shellR))
+            if (onShell)
                 _smoothPos = SphericalMapEcs.ProjectToSphere(_smoothPos, shellR);
             _smoothRot = math.slerp(_smoothRot, simRot, 1f - math.exp(-DisplayRotationSharpness * dt));
         }
@@ -489,13 +492,28 @@ namespace TitanOrbit.Game
         /// </summary>
         void StepDisplayToward(float3 targetPos, quaternion targetRot, float dt, float maxSpeed)
         {
-            float3 delta = targetPos - _smoothPos;
-            float dist = math.length(delta);
             float maxStep = math.max(0f, maxSpeed) * math.max(0f, dt);
-            if (dist <= maxStep || dist < 1e-5f)
-                _smoothPos = targetPos;
+            float dist;
+            float3 delta;
+            if (SphericalMapEcs.TryGetRadius(out float shellR))
+            {
+                dist = SphericalMapEcs.GeodesicDistance(_smoothPos, targetPos, shellR);
+                delta = SphericalMapEcs.GeodesicOffset(_smoothPos, targetPos, shellR);
+                if (dist <= maxStep || dist < 1e-5f)
+                    _smoothPos = targetPos;
+                else
+                    _smoothPos = SphericalMapEcs.ProjectToSphere(
+                        _smoothPos + delta * (maxStep / dist), shellR);
+            }
             else
-                _smoothPos += delta * (maxStep / dist);
+            {
+                delta = targetPos - _smoothPos;
+                dist = math.length(delta);
+                if (dist <= maxStep || dist < 1e-5f)
+                    _smoothPos = targetPos;
+                else
+                    _smoothPos += delta * (maxStep / dist);
+            }
 
             float rotT = dist > 1e-5f ? math.saturate(maxStep / dist) : 1f;
             _smoothRot = math.slerp(_smoothRot, targetRot, math.max(rotT, 1f - math.exp(-DisplayRotationSharpness * dt)));

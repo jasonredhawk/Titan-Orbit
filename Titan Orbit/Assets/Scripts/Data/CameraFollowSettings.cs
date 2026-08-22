@@ -79,25 +79,21 @@ namespace TitanOrbit.Data
         }
 
         /// <summary>
-        /// Maps planar velocity to a desired look-ahead offset on XZ.
+        /// Maps tangent velocity to a desired look-ahead offset (same direction as travel).
         /// Zero below <see cref="lookAheadMinSpeed"/>; scales up to <see cref="lookAheadDistance"/>
         /// as speed approaches <see cref="lookAheadReferenceSpeed"/>.
         /// </summary>
-        /// <param name="planarVelocity">Ship velocity with Y forced to 0.</param>
-        /// <returns>Desired world-space look-ahead (Y always 0).</returns>
+        /// <param name="planarVelocity">Ship velocity flattened onto the local tangent (not world XZ).</param>
+        /// <returns>Desired world-space look-ahead along travel.</returns>
         public Vector3 ComputeDesiredLookAhead(Vector3 planarVelocity)
         {
             float speed = planarVelocity.magnitude;
             if (speed < lookAheadMinSpeed || lookAheadDistance <= 0f)
                 return Vector3.zero;
 
-            // Normalize direction of travel; scale by how close we are to the reference speed.
             float refSpeed = Mathf.Max(0.01f, lookAheadReferenceSpeed);
             float t = Mathf.Clamp01(speed / refSpeed);
-            Vector3 dir = planarVelocity / speed;
-            Vector3 offset = dir * (lookAheadDistance * t);
-            offset.y = 0f;
-            return offset;
+            return (planarVelocity / speed) * (lookAheadDistance * t);
         }
 
         /// <summary>

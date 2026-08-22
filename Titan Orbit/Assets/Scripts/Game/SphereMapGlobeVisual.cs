@@ -12,11 +12,11 @@ namespace TitanOrbit.Game
     public sealed class SphereMapGlobeVisual : MonoBehaviour
     {
         /// <summary>
-        /// Visual globe sits well inside the playable shell so planet meshes (radius up to
-        /// ~half of LocalTransform.Scale) are not clipped by the art sphere.
+        /// Visual globe sits just inside the playable shell. Largest planets use scale 18
+        /// (Unity sphere mesh radius 9). Inset a hair past that so planet meshes are not
+        /// clipped, without leaving a hole that shows the far-side territory lines.
         /// </summary>
-        const float InsetFraction = 0.22f;
-        const float MinWorldInset = 40f;
+        const float InsetWorld = 10f;
         const string GlobeName = "SphereMapGlobe";
 
         static SphereMapGlobeVisual s_Instance;
@@ -111,9 +111,9 @@ namespace TitanOrbit.Game
             if (_renderer != null)
                 _renderer.enabled = true;
 
-            float visual = radius - Mathf.Max(MinWorldInset, radius * InsetFraction);
+            float visual = radius - InsetWorld;
             if (visual < SphericalMapEcs.MinValidRadius)
-                visual = radius * 0.7f;
+                visual = radius * 0.92f;
 
             if (Mathf.Abs(visual - _appliedVisual) < 0.05f)
                 return;

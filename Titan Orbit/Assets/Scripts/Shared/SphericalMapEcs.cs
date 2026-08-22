@@ -30,10 +30,6 @@ namespace TitanOrbit.Generation
         // <see cref="RadiusFromMapAxes"/> or <see cref="BurstSafeRadius"/> (BC1040).
         static float s_MapSize;
         static float s_Radius;
-#if UNITY_EDITOR
-        static float s_LoggedMapSize;
-        static float s_LoggedRadius;
-#endif
 
         /// <summary>Designer linear map size (old square side). 0 until <see cref="SetMapSize(float)"/>.</summary>
         public static float MapSize => s_MapSize;
@@ -101,33 +97,6 @@ namespace TitanOrbit.Generation
             s_MapSize = mapSize;
             s_Radius = radius;
             SphericalMap.SetMapSize(s_MapSize);
-            // #region agent log
-#if UNITY_EDITOR
-            if (math.abs(mapSize - s_LoggedMapSize) > 0.01f || math.abs(radius - s_LoggedRadius) > 0.01f)
-            {
-                s_LoggedMapSize = mapSize;
-                s_LoggedRadius = radius;
-                try
-                {
-                    long ts = System.DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-                    string json =
-                        "{\"sessionId\":\"07b7b6\",\"hypothesisId\":\"H1\",\"location\":\"SphericalMapEcs.SetMapSizeAndRadius\",\"message\":\"radius-latched\",\"data\":{\"mapSize\":"
-                        + mapSize.ToString(System.Globalization.CultureInfo.InvariantCulture)
-                        + ",\"radius\":"
-                        + radius.ToString(System.Globalization.CultureInfo.InvariantCulture)
-                        + ",\"cachedR\":"
-                        + s_Radius.ToString(System.Globalization.CultureInfo.InvariantCulture)
-                        + "},\"timestamp\":" + ts + "}\n";
-                    System.IO.File.AppendAllText(
-                        @"c:\Users\jason\Documents\repo\Titan-Orbit\debug-07b7b6.log",
-                        json);
-                }
-                catch
-                {
-                }
-            }
-#endif
-            // #endregion
         }
 
         /// <summary>Clears cached size when leaving a match.</summary>
@@ -496,6 +465,30 @@ namespace TitanOrbit.Generation
 
             float3 dir = (math.sin((1f - t) * omega) * a + math.sin(t * omega) * b) / so;
             return dir * r;
+        }
+
+        /// <summary>
+        /// Great-circle interpolation along the <b>long</b> way from <paramref name="from"/> to
+        /// <paramref name="to"/> (the complement of <see cref="SphericalLerp"/>).
+        /// </summary>
+        public static float3 SphericalLerpLong(float3 from, float3 to, float t, float radius)
+        {
+            float r = math.max(1e-3f, radius);
+            float3 a = math.normalizesafe(from, new float3(0f, 1f, 0f));
+            float3 b = math.normalizesafe(to, a);
+            float dt = math.clamp(math.dot(a, b), -1f, 1f);
+            float omega = math.acos(dt);
+            float longOmega = (math.PI * 2f) - omega;
+            if (longOmega < 1e-4f)
+                return ProjectToSphere(from, r);
+
+            float3 axis = math.cross(a, b);
+            if (math.lengthsq(axis) < 1e-10f)
+                axis = OrthonormalTangent(a);
+            else
+                axis = math.normalize(axis);
+
+            return math.mul(quaternion.AxisAngle(-axis, t * longOmega), a) * r;
         }
 
         /// <summary>

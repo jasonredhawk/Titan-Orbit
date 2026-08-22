@@ -145,7 +145,7 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Current smoothed look-ahead on XZ (Y always 0). Applied on top of the ship position each frame.
+        /// Current smoothed look-ahead on the local tangent. Applied on top of the ship position each frame.
         /// </summary>
         Vector3 _lookAheadCurrent;
         Vector3 _lastCamUp;
@@ -164,6 +164,7 @@ namespace TitanOrbit.Game
 
         /// <summary>Previous frame ship position — used to estimate planar velocity when ECS velocity is unavailable.</summary>
         Vector3 _lastShipPos;
+        Vector3 _lastShipUp;
 
         /// <summary>True once <see cref="_lastShipPos"/> has a valid sample.</summary>
         bool _hasLastShipPos;
@@ -307,6 +308,13 @@ namespace TitanOrbit.Game
                 _lookAheadSmoothVelocity = Vector3.zero;
                 _heightSmoothVelocity = 0f;
                 _lastShipPos = shipPos;
+                _lastShipUp = (Vector3)SphericalMapEcs.LocalUp((float3)shipPos);
+                Vector3 seedUp = Vector3.ProjectOnPlane(Vector3.forward, _lastShipUp);
+                if (seedUp.sqrMagnitude < 0.04f)
+                    seedUp = Vector3.ProjectOnPlane(Vector3.right, _lastShipUp);
+                _lastCamUp = seedUp.sqrMagnitude > 1e-6f
+                    ? seedUp.normalized
+                    : (Vector3)SphericalMapEcs.OrthonormalTangent((float3)_lastShipUp);
                 _hasLastShipPos = true;
                 _initialized = true;
             }
@@ -341,15 +349,28 @@ namespace TitanOrbit.Game
                 Mathf.Infinity,
                 dt);
 
-            // --- Look-ahead from planar velocity ---
+            // --- Look-ahead from tangent velocity ---
             // Moon-dock cinematic keeps a hard hull lock: no lead (spinning on the surface would yank framing).
             // [TITAN-ORBIT] During ship/gem Instantiates, velocity reads fail and pose-delta is near-zero
             // (soft-track) — SmoothDamp toward zero then back out feels like zoom. Freeze lead instead.
+            Vector3 up = (Vector3)SphericalMapEcs.LocalUp((float3)shipPos);
+            if (_lastShipUp.sqrMagnitude > 0.01f && Vector3.Dot(_lastShipUp, up) < 0.9999f)
+            {
+                // Carry last lead / camera heading with the radial so SmoothDamp is not a Euclidean chord.
+                Quaternion radialStep = Quaternion.FromToRotation(_lastShipUp, up);
+                _lookAheadCurrent = radialStep * _lookAheadCurrent;
+                _lookAheadSmoothVelocity = radialStep * _lookAheadSmoothVelocity;
+                if (_lastCamUp.sqrMagnitude > 0.01f)
+                    _lastCamUp = radialStep * _lastCamUp;
+            }
+
+            _lookAheadCurrent = Vector3.ProjectOnPlane(_lookAheadCurrent, up);
             bool freezeLookAhead = ClientJoinSettleCache.ShouldSkipShipEntityQueries;
             if (!isMoonDockOverride && !freezeLookAhead)
             {
                 Vector3 planarVel = ResolvePlanarVelocity(shipPos, dt);
-                Vector3 desiredLookAhead = profile.ComputeDesiredLookAhead(planarVel);
+                Vector3 desiredLookAhead = Vector3.ProjectOnPlane(
+                    profile.ComputeDesiredLookAhead(planarVel), up);
                 _lookAheadCurrent = Vector3.SmoothDamp(
                     _lookAheadCurrent,
                     desiredLookAhead,
@@ -371,19 +392,22 @@ namespace TitanOrbit.Game
             }
             // else: backlog — keep _lookAheadCurrent / velocity as-is.
 
-            Vector3 up = (Vector3)SphericalMapEcs.LocalUp((float3)shipPos);
             _lookAheadCurrent = Vector3.ProjectOnPlane(_lookAheadCurrent, up);
 
             // --- Compose final camera pose ---
-            // Ship is hard-locked to presentation. Height is along local up (away from sphere center).
-            // Look-ahead stays in the tangent plane.
+            // Look down the radial. Camera "up" is parallel-transported — the ship yaws under a
+            // fixed frame (Starblast). Re-projecting world-forward every frame snaps 90° at the
+            // ±Z meridians and 180° over the poles. Do not align to travel heading.
             transform.position = shipPos + _lookAheadCurrent + up * _currentHeight;
             Vector3 camForward = -up;
-            Vector3 camUp = Vector3.ProjectOnPlane(
-                _lastCamUp.sqrMagnitude > 0.01f
-                    ? _lastCamUp
-                    : ResolvePlanarVelocity(shipPos, dt),
-                up);
+            Vector3 camUp = Vector3.ProjectOnPlane(_lastCamUp, up);
+            if (camUp.sqrMagnitude < 1e-6f)
+            {
+                camUp = Vector3.ProjectOnPlane(Vector3.forward, up);
+                if (camUp.sqrMagnitude < 0.04f)
+                    camUp = Vector3.ProjectOnPlane(Vector3.right, up);
+            }
+
             if (camUp.sqrMagnitude < 1e-6f)
                 camUp = (Vector3)SphericalMapEcs.OrthonormalTangent((float3)up);
             else
@@ -391,39 +415,10 @@ namespace TitanOrbit.Game
             _lastCamUp = camUp;
             transform.rotation = Quaternion.LookRotation(camForward, camUp);
 
-            // #region agent log
-            if (Time.unscaledTime >= AgentDebugNdjson.NextShip)
-            {
-                AgentDebugNdjson.NextShip = Time.unscaledTime + 0.25f;
-                Vector3 vel = ResolvePlanarVelocity(shipPos, dt);
-                float velY = 0f;
-                if (EcsGameBridge.TryGetLocalShipVelocity(out var ecsVel))
-                    velY = ecsVel.y;
-                float lat = Mathf.Asin(Mathf.Clamp(up.y, -1f, 1f)) * Mathf.Rad2Deg;
-                bool radiusOk = SphericalMapEcs.TryGetRadius(out float cachedR);
-                AgentDebugNdjson.Write(
-                    "H13",
-                    "CameraFollowEcs.cs:pose",
-                    "ship-cam",
-                    "{\"sx\":" + shipPos.x.ToString("F2") +
-                    ",\"sy\":" + shipPos.y.ToString("F2") +
-                    ",\"sz\":" + shipPos.z.ToString("F2") +
-                    ",\"r\":" + shipPos.magnitude.ToString("F2") +
-                    ",\"lat\":" + lat.ToString("F1") +
-                    ",\"upy\":" + up.y.ToString("F3") +
-                    ",\"spd\":" + vel.magnitude.ToString("F3") +
-                    ",\"velY\":" + velY.ToString("F3") +
-                    ",\"hintFlip\":" + (Mathf.Abs(up.y) >= 0.95f ? "true" : "false") +
-                    ",\"fwdDotUp\":" + Vector3.Dot(camForward.normalized, camUp.normalized).ToString("F3") +
-                    ",\"radiusOk\":" + (radiusOk ? "true" : "false") +
-                    ",\"cachedR\":" + cachedR.ToString("F2") +
-                    "}");
-            }
-            // #endregion
-
             SphereMapGlobeVisual.Ensure();
 
             _lastShipPos = shipPos;
+            _lastShipUp = up;
             _hasLastShipPos = true;
         }
 
@@ -686,35 +681,4 @@ namespace TitanOrbit.Game
             return EcsGameBridge.TryGetLocalShipPosition(out targetPos);
         }
     }
-
-    // #region agent log
-    static class AgentDebugNdjson
-    {
-        const string LogPath = @"c:\Users\jason\Documents\repo\Titan-Orbit\debug-07b7b6.log";
-        static readonly object Gate = new object();
-        public static float NextShip;
-        public static float NextAim;
-        public static float NextPlate;
-        public static float NextGraph;
-
-        public static void Write(string hyp, string loc, string msg, string dataJson)
-        {
-            try
-            {
-                long ts = System.DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-                string line =
-                    "{\"sessionId\":\"07b7b6\",\"hypothesisId\":\"" + hyp +
-                    "\",\"location\":\"" + loc +
-                    "\",\"message\":\"" + msg +
-                    "\",\"data\":" + dataJson +
-                    ",\"timestamp\":" + ts + "}\n";
-                lock (Gate)
-                    System.IO.File.AppendAllText(LogPath, line);
-            }
-            catch
-            {
-            }
-        }
-    }
-    // #endregion
 }
