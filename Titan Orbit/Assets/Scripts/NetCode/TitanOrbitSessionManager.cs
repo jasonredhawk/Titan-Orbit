@@ -14,12 +14,8 @@ using Unity.Entities;
 using Unity.NetCode;
 using Unity.Networking.Transport;
 using Unity.Scenes;
-using Unity.Networking.Transport.Relay;
-using Unity.Services.Authentication;
 using Unity.Services.Lobbies;
 using Unity.Services.Lobbies.Models;
-using Unity.Services.Relay;
-using Unity.Services.Relay.Models;
 using UnityEngine;
 
 namespace TitanOrbit.NetCode
@@ -27,7 +23,7 @@ namespace TitanOrbit.NetCode
     /// <summary>
     /// [NETCODE] Session orchestration MonoBehaviour — replaces legacy NGO NetworkGameManager and
     /// DedicatedMatchServerBootstrap. Owns client/server world lifecycle: local LAN play, MPPM
-    /// multi-editor testing, Unity Relay + Lobby dedicated join, headless dedicated boot, and
+    /// multi-editor testing, UGS Lobby + direct dedicated join, headless dedicated boot, and
     /// gameplay RPC helpers (team pick, rejoin). DontDestroyOnLoad singleton accessed via Instance.
     /// Paired with TitanOrbitBootstrap, TitanOrbitDedicatedServerAutoBoot, and lobby services.
     /// </summary>
@@ -50,10 +46,13 @@ namespace TitanOrbit.NetCode
         /// <summary>[NETCODE] Active Unity Lobby id after dedicated join (empty when local only).</summary>
         string _activeLobbyId;
 
-        /// <summary>[NETCODE] Last Relay join code attempted — compare with Docker "Dedicated server live. Relay=" log.</summary>
-        string _lastRelayJoinCodeAttempt;
+        /// <summary>[NETCODE] Last dedicated host endpoint attempted (ip:port).</summary>
+        string _lastDedicatedEndpointAttempt;
 
-        /// <summary>[UNITY] Coroutine watching client connect to dedicated Relay host.</summary>
+        /// <summary>Set while a dedicated UDP/WSS join is in progress or connected.</summary>
+        static string s_DedicatedHostEndpoint;
+
+        /// <summary>[UNITY] Coroutine watching client connect to the dedicated host.</summary>
         Coroutine _connectWatch;
 
         /// <summary>[UNITY] MPPM additional editor instance LAN connect coroutine.</summary>
@@ -79,15 +78,15 @@ namespace TitanOrbit.NetCode
         /// <summary>[NETCODE] Active lobby id for leave/refresh operations.</summary>
         public string CurrentLobbyId => _activeLobbyId;
 
-        /// <summary>[NETCODE] True while editor/client is connected (or connecting) to remote dedicated host via Relay.</summary>
+        /// <summary>[NETCODE] True while editor/client is connected (or connecting) to a remote dedicated host.</summary>
         public static bool IsDedicatedOnlineClient { get; private set; }
 
-        /// <summary>[NETCODE] Dedicated Relay join started but NetCode has not reached in-game yet.</summary>
+        /// <summary>[NETCODE] Dedicated join started but NetCode has not reached in-game yet.</summary>
         public static bool IsDedicatedJoinConnecting =>
             IsDedicatedOnlineClient && Instance != null && !Instance.IsInGame;
 
         /// <summary>
-        /// Dedicated Relay join, or Local Host boot coroutine still running.
+        /// Dedicated join, or Local Host boot coroutine still running.
         /// Keeps the loading overlay up before NetworkId / recipe exist.
         /// </summary>
         public static bool IsJoinConnecting =>
@@ -245,7 +244,7 @@ namespace TitanOrbit.NetCode
             if (server == null || !server.IsCreated)
                 return;
 
-            Debug.Log("[TitanOrbitSessionManager] Disposing local ServerWorld for dedicated Relay join (client-only).");
+            Debug.Log("[TitanOrbitSessionManager] Disposing local ServerWorld for dedicated join (client-only).");
 
             // [NETCODE] World.Dispose removes it from the player loop and clears bootstrap ServerWorld.
             server.Dispose();
@@ -272,7 +271,7 @@ namespace TitanOrbit.NetCode
             // while this process is a dedicated online / Relay client.
             if (IsDedicatedOnlineClient || TitanOrbitRelayState.HasClientRelay)
             {
-                Debug.LogWarning("[TitanOrbitSessionManager] Skipped ServerWorld recreate — dedicated Relay client active.");
+                Debug.LogWarning("[TitanOrbitSessionManager] Skipped ServerWorld recreate — dedicated online client active.");
                 return;
             }
 
@@ -685,7 +684,7 @@ namespace TitanOrbit.NetCode
         }
 
         /// <summary>
-        /// [NETCODE] Quick-join latest browsable dedicated lobby via Unity Lobby + Relay.
+        /// [NETCODE] Quick-join latest browsable dedicated lobby via Unity Lobby + direct UDP/WSS.
         /// </summary>
         /// <returns>True if join coroutine started successfully.</returns>
         public async Task<bool> QuickJoinDedicatedAsync()
@@ -839,14 +838,14 @@ namespace TitanOrbit.NetCode
         }
 
         /// <summary>
-        /// Dedicated Relay clients must not treat a stale loopback connection as in-game.
+        /// Dedicated online clients must not treat a leftover Local Host / loopback connection as in-game.
         /// </summary>
         public static bool IsClientGameplayReady(World world)
         {
             if (!IsClientConnectionReady(world))
                 return false;
 
-            if (IsDedicatedOnlineClient && !TitanOrbitRelayState.TryGetClientRelay(out _))
+            if (IsDedicatedOnlineClient && string.IsNullOrEmpty(s_DedicatedHostEndpoint))
                 return false;
 
             return true;
@@ -905,7 +904,7 @@ namespace TitanOrbit.NetCode
 
             for (int attempt = 1; attempt <= maxAttempts; attempt++)
             {
-                Task<DedicatedServerPrep> prepTask = PrepareDedicatedRelayAsync(_serverConfig);
+                Task<DedicatedServerPrep> prepTask = PrepareDedicatedHostAsync(_serverConfig);
                 while (!prepTask.IsCompleted)
                 {
                     TickServerWorld();
@@ -915,12 +914,12 @@ namespace TitanOrbit.NetCode
                 if (!prepTask.IsFaulted && prepTask.Result != null)
                 {
                     var prep = prepTask.Result;
-                    TitanOrbitRelayState.SetServerRelay(prep.Relay);
+                    TitanOrbitRelayState.Clear();
 
                     var serverWorld = ClientServerBootstrap.ServerWorld;
                     if (serverWorld == null || !serverWorld.IsCreated)
                     {
-                        Debug.LogWarning("[TitanOrbitSessionManager] Server world lost after relay prep; retrying.");
+                        Debug.LogWarning("[TitanOrbitSessionManager] Server world lost after host prep; retrying.");
                     }
                     else
                     {
@@ -951,21 +950,13 @@ namespace TitanOrbit.NetCode
 
                         if (!IsServerWorldListening(serverWorld))
                         {
-                            Debug.LogWarning("[TitanOrbitSessionManager] Relay listen not confirmed — publishing UGS lobby anyway.");
-                            if (TitanOrbitRelayState.TryGetServerRelay(out var relay))
-                                LogServerRelayListenDiagnostics(serverWorld, relay, listenOk: false);
+                            Debug.LogWarning("[TitanOrbitSessionManager] UDP listen not confirmed — publishing UGS lobby anyway.");
+                            LogServerListenDiagnostics(serverWorld, serverPort, listenOk: false);
                         }
 
                         RequestGoInGame(serverWorld);
 
-                        Task<Lobby> lobbyTask = CreateDedicatedLobbyAsync(
-                            prep.JoinCode,
-                            prep.RelayProtocol,
-                            prep.CreatedAtEpochSeconds,
-                            prep.MaxPlayers,
-                            prep.ServerListenAddress,
-                            prep.IsLatest,
-                            prep.HostAllocationId);
+                        Task<Lobby> lobbyTask = CreateDedicatedLobbyAsync(prep);
                         while (!lobbyTask.IsCompleted)
                         {
                             TickServerWorld(serverWorld);
@@ -989,9 +980,10 @@ namespace TitanOrbit.NetCode
                             DedicatedServerFileLog.Append(
                                 "lobby",
                                 "Dedicated server live lobby=" + prep.Lobby.Id + " name=" + (prep.Lobby.Name ?? "") +
-                                " relay=" + prep.JoinCode + " listening=" + IsServerWorldListening(serverWorld));
-                            Debug.Log("[TitanOrbitSessionManager] Dedicated server live. Relay=" + prep.JoinCode +
-                                      " protocol=" + prep.RelayProtocol + " Lobby=" + prep.Lobby.Id +
+                                " host=" + prep.HostAddress + ":" + prep.HostPort +
+                                " listening=" + IsServerWorldListening(serverWorld));
+                            Debug.Log("[TitanOrbitSessionManager] Dedicated server live. Host=" +
+                                      prep.HostAddress + ":" + prep.HostPort + " Lobby=" + prep.Lobby.Id +
                                       " name=" + prep.Lobby.Name +
                                       " listening=" + IsServerWorldListening(serverWorld));
                             StartCoroutine(MaintainDedicatedServerGoInGame());
@@ -1007,7 +999,7 @@ namespace TitanOrbit.NetCode
                 else
                 {
                     Debug.LogWarning("[TitanOrbitSessionManager] Dedicated boot attempt " + attempt + "/" + maxAttempts +
-                                     " failed (UGS/Relay/Lobby).");
+                                     " failed (UGS/Lobby or missing public address).");
                 }
 
                 if (attempt >= maxAttempts)
@@ -1084,59 +1076,60 @@ namespace TitanOrbit.NetCode
 
         sealed class DedicatedServerPrep
         {
-            public RelayServerData Relay;
-            public string JoinCode;
-            public string HostAllocationId;
             public Lobby Lobby;
             public long CreatedAtEpochSeconds;
             public bool IsLatest;
             public int MaxPlayers;
-            public string RelayProtocol;
+            public string HostAddress;
+            public ushort HostPort;
             public string ServerListenAddress;
         }
 
-        async Task<DedicatedServerPrep> PrepareDedicatedRelayAsync(TitanOrbitServerCommandLine config)
+        async Task<DedicatedServerPrep> PrepareDedicatedHostAsync(TitanOrbitServerCommandLine config)
         {
             try
             {
                 if (!await UnityGameServicesBootstrap.EnsureGuestSessionForOnlineAsync())
                 {
-                    DedicatedServerFileLog.Append("boot", "PrepareDedicatedRelay failed: UGS guest session not ready.");
-                    Debug.LogError("[TitanOrbitSessionManager] PrepareDedicatedRelay failed: UGS not ready. project=" +
+                    DedicatedServerFileLog.Append("boot", "PrepareDedicatedHost failed: UGS guest session not ready.");
+                    Debug.LogError("[TitanOrbitSessionManager] PrepareDedicatedHost failed: UGS not ready. project=" +
                                    (Application.cloudProjectId ?? "(none)"));
                     return null;
                 }
 
+                if (string.IsNullOrWhiteSpace(config.PublicAddress))
+                {
+                    DedicatedServerFileLog.Append("boot",
+                        "PrepareDedicatedHost failed: no public address. Set --publicAddress= or TITANORBIT_PUBLIC_ADDRESS.");
+                    Debug.LogError("[TitanOrbitSessionManager] Dedicated host needs a public IP. " +
+                                   "Pass --publicAddress= or TITANORBIT_PUBLIC_ADDRESS (GCE wrapper sets this from metadata).");
+                    return null;
+                }
+
                 int cap = Mathf.Max(2, config.MaxPlayers);
-                Allocation allocation = await RelayService.Instance.CreateAllocationAsync(Mathf.Max(1, cap - 1));
-                string joinCode = await RelayService.Instance.GetJoinCodeAsync(allocation.AllocationId);
-                string protocol = TitanOrbitRelayUtility.HostConnectionTypeForPlatform(
-                    TitanOrbitServerCommandLine.SanitizeRelayProtocol(config.RelayProtocol));
                 long createdAt = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
-                DedicatedServerFileLog.Append("boot", "Relay allocation ok joinCode=" + joinCode + " cap=" + cap +
-                                                  " protocol=" + protocol);
+                DedicatedServerFileLog.Append("boot", "Direct host ok address=" + config.PublicAddress +
+                                                  " port=" + config.PublicPort + " cap=" + cap);
                 return new DedicatedServerPrep
                 {
-                    Relay = TitanOrbitRelayUtility.FromAllocation(allocation, protocol),
-                    JoinCode = joinCode,
-                    HostAllocationId = allocation.AllocationId.ToString(),
                     CreatedAtEpochSeconds = createdAt,
                     IsLatest = config.IsLatest,
                     MaxPlayers = cap,
-                    RelayProtocol = protocol,
+                    HostAddress = config.PublicAddress.Trim(),
+                    HostPort = config.PublicPort,
                     ServerListenAddress = config.ServerListenAddress,
                 };
             }
             catch (Exception ex)
             {
-                DedicatedServerFileLog.Append("boot", "PrepareDedicatedRelay exception", ex);
-                Debug.LogError("[TitanOrbitSessionManager] PrepareDedicatedRelay failed: " + ex.Message);
+                DedicatedServerFileLog.Append("boot", "PrepareDedicatedHost exception", ex);
+                Debug.LogError("[TitanOrbitSessionManager] PrepareDedicatedHost failed: " + ex.Message);
                 return null;
             }
         }
 
         /// <summary>
-        /// Tears down the current UGS lobby + Relay listen and publishes a fresh empty match on the
+        /// Tears down the current UGS lobby + UDP listen and publishes a fresh empty match on the
         /// same ServerWorld. Hard-gated: refuses when any NetCode player is still connected so an
         /// in-progress conquest map cannot be wiped by idle/self-heal/heartbeat paths.
         /// </summary>
@@ -1163,16 +1156,16 @@ namespace TitanOrbit.NetCode
             }
 
             _recreateDedicatedMatchInProgress = true;
-            // [TITAN-ORBIT] Pause hang watchdog — Relay/UGS awaits can stall Update stamps.
+            // [TITAN-ORBIT] Pause hang watchdog — UGS awaits can stall Update stamps.
             TitanOrbitDedicatedServerHost.SetHangWatchdogPaused(true);
             string oldLobbyId = _activeLobbyId;
             bool publishAsLatest = forceIsLatest || config.IsLatest;
             try
             {
-                var prep = await PrepareDedicatedRelayAsync(config);
+                var prep = await PrepareDedicatedHostAsync(config);
                 if (prep == null)
                 {
-                    DedicatedServerFileLog.Append("lobby", "Match recreate FAILED: PrepareDedicatedRelay returned null");
+                    DedicatedServerFileLog.Append("lobby", "Match recreate FAILED: PrepareDedicatedHost returned null");
                     return null;
                 }
 
@@ -1185,7 +1178,7 @@ namespace TitanOrbit.NetCode
                     return null;
                 }
 
-                TitanOrbitRelayState.SetServerRelay(prep.Relay);
+                TitanOrbitRelayState.Clear();
                 await ClearNetworkConnectionsAsync(serverWorld);
                 // [TITAN-ORBIT] New lobby on the same ServerWorld must not keep orphan ships —
                 // NetCode reuses low NetworkIds, which falsely offered "rescue my ship" to new joiners.
@@ -1201,17 +1194,10 @@ namespace TitanOrbit.NetCode
                 }
 
                 if (!IsServerWorldListening(serverWorld))
-                    Debug.LogWarning("[TitanOrbitSessionManager] Recreate: relay listen not confirmed; publishing lobby anyway.");
+                    Debug.LogWarning("[TitanOrbitSessionManager] Recreate: UDP listen not confirmed; publishing lobby anyway.");
 
                 RequestGoInGame(serverWorld);
-                prep.Lobby = await CreateDedicatedLobbyAsync(
-                    prep.JoinCode,
-                    prep.RelayProtocol,
-                    prep.CreatedAtEpochSeconds,
-                    prep.MaxPlayers,
-                    prep.ServerListenAddress,
-                    publishAsLatest,
-                    prep.HostAllocationId);
+                prep.Lobby = await CreateDedicatedLobbyAsync(prep);
                 if (prep.Lobby == null)
                 {
                     // [TITAN-ORBIT] Old lobby still open — do not close it after a failed create.
@@ -1249,7 +1235,7 @@ namespace TitanOrbit.NetCode
                     " name=" + (prep.Lobby.Name ?? "") +
                     " isLatest=" + publishAsLatest +
                     " closedOld=" + oldLobbyId +
-                    " relay=" + prep.JoinCode);
+                    " host=" + prep.HostAddress + ":" + prep.HostPort);
                 Debug.Log("[TitanOrbitSessionManager] Match recreated: " + prep.Lobby.Id + " isLatest=" + publishAsLatest);
                 return new DedicatedMatchRecreateResult
                 {
@@ -1562,8 +1548,8 @@ namespace TitanOrbit.NetCode
         }
 
         /// <summary>
-        /// [NETCODE] Join a specific dedicated lobby by id: validate heartbeat, fetch Relay join code,
-        /// reset client driver, connect via Relay, start ClientConnectWatch coroutine.
+        /// [NETCODE] Join a specific dedicated lobby by id: validate heartbeat, read host IP:port,
+        /// reset client driver, connect UDP/WSS, start ClientConnectWatch coroutine.
         /// </summary>
         /// <param name="lobbyId">Unity Lobby id from browse UI.</param>
         public async Task<bool> JoinDedicatedLobbyAsync(string lobbyId)
@@ -1577,7 +1563,7 @@ namespace TitanOrbit.NetCode
                     return false;
 
                 await TitanOrbitLobbyService.TryLeaveAllJoinedLobbiesAsync("before_dedicated_join");
-                await PrepareClientForDedicatedRelayJoinAsync();
+                await PrepareClientForDedicatedJoinAsync();
 
                 string previousLobbyId = _activeLobbyId;
                 Lobby lobby = await TitanOrbitLobbyService.JoinDedicatedLobbyByIdAsync(lobbyId, previousLobbyId);
@@ -1596,7 +1582,6 @@ namespace TitanOrbit.NetCode
                     return false;
                 }
 
-                // Member-only relay code — refresh after join so we never use a stale query snapshot.
                 lobby = await LobbyService.Instance.GetLobbyAsync(lobby.Id);
                 if (lobby == null)
                 {
@@ -1615,38 +1600,17 @@ namespace TitanOrbit.NetCode
                     return false;
                 }
 
-                if (!lobby.Data.TryGetValue(TitanOrbitLobbyService.LobbyRelayCodeKey, out var relayData) ||
-                    string.IsNullOrWhiteSpace(relayData?.Value))
+                if (!TitanOrbitLobbyService.TryGetHostEndpoint(lobby, out string hostAddress, out ushort hostPort))
                 {
-                    Debug.LogError("[TitanOrbitSessionManager] Lobby missing relay join code.");
-                    LastStatusMessage = "Lobby is missing relay data.";
+                    Debug.LogError("[TitanOrbitSessionManager] Lobby missing HostAddress/HostPort.");
+                    LastStatusMessage = "This match has no host address — the dedicated server needs a rebuild.";
                     return false;
                 }
 
-                string joinCode = relayData.Value;
-                _lastRelayJoinCodeAttempt = joinCode;
-                string hostProtocol = lobby.Data.TryGetValue(TitanOrbitLobbyService.LobbyRelayProtocolKey, out var proto)
-                    ? TitanOrbitRelayUtility.SanitizeRelayProtocolForRelaySdk(proto.Value)
-                    : TitanOrbitRelayUtility.ClientConnectionTypeForPlatform();
-                // Platform-valid client endpoint on the same allocation (wss on WebGL, dtls otherwise).
-                string clientProtocol = TitanOrbitRelayUtility.ClientConnectionTypeForPlatform();
-
-                Debug.Log("[TitanOrbitSessionManager] Joining Relay lobby=" + lobby.Id + " code=" + joinCode +
-                          " hostProtocol=" + hostProtocol + " clientProtocol=" + clientProtocol);
-                JoinAllocation joinAllocation = await RelayService.Instance.JoinAllocationAsync(joinCode);
-                var clientRelay = TitanOrbitRelayUtility.FromJoinAllocation(joinAllocation, clientProtocol);
-                if (!TitanOrbitRelayUtility.IsRelayEndpointValid(clientRelay))
-                {
-                    Debug.LogError("[TitanOrbitSessionManager] Relay endpoint invalid for clientProtocol=" + clientProtocol);
-                    LastStatusMessage = "Relay connection data invalid — tap Refresh, then join again.";
-                    return false;
-                }
-
-                await TitanOrbitLobbyService.TryUpdatePlayerRelayAllocationAsync(
-                    lobby.Id, joinAllocation.AllocationId.ToString());
-
-                TitanOrbitRelayState.SetClientRelay(clientRelay);
-                await EnsureClientReadyForRelayDriverResetAsync();
+                _lastDedicatedEndpointAttempt = hostAddress + ":" + hostPort;
+                s_DedicatedHostEndpoint = _lastDedicatedEndpointAttempt;
+                TitanOrbitRelayState.Clear();
+                await EnsureClientReadyForDedicatedDriverResetAsync();
                 ResetClientDriverIfNeeded();
 
                 var clientWorld = ClientServerBootstrap.ClientWorld;
@@ -1657,7 +1621,14 @@ namespace TitanOrbit.NetCode
                     return false;
                 }
 
-                ConnectRelayClient(clientWorld);
+                Debug.Log("[TitanOrbitSessionManager] Connecting to dedicated host " +
+                          hostAddress + ":" + hostPort + " lobby=" + lobby.Id);
+                if (!ConnectDedicatedClient(clientWorld, hostAddress, hostPort))
+                {
+                    LastStatusMessage = "Could not parse host address " + hostAddress + ":" + hostPort + ".";
+                    return false;
+                }
+
                 for (int i = 0; i < 30; i++)
                 {
                     TickClientWorld(clientWorld);
@@ -1666,7 +1637,8 @@ namespace TitanOrbit.NetCode
 
                 _activeLobbyId = lobby.Id;
                 LastStatusMessage = "Connecting to " + (lobby.Name ?? "match") + "...";
-                Debug.Log("[TitanOrbitSessionManager] Joining dedicated lobby " + lobby.Id + " via Relay.");
+                Debug.Log("[TitanOrbitSessionManager] Joining dedicated lobby " + lobby.Id +
+                          " at " + _lastDedicatedEndpointAttempt + ".");
                 _connectWatch = StartCoroutine(ClientConnectWatch(60f, dedicatedJoin: true));
                 return true;
             }
@@ -1674,16 +1646,10 @@ namespace TitanOrbit.NetCode
             {
                 IsDedicatedOnlineClient = false;
                 IsInGame = false;
+                s_DedicatedHostEndpoint = null;
+                _lastDedicatedEndpointAttempt = null;
                 var msg = ex.Message ?? string.Empty;
-                if (msg.IndexOf("join code not found", StringComparison.OrdinalIgnoreCase) >= 0)
-                {
-                    LastStatusMessage = "Server offline or restarted — tap Refresh, then join again or Request match.";
-                    if (!string.IsNullOrWhiteSpace(lobbyId))
-                        await TitanOrbitLobbyService.TryRemovePlayerFromLobbyAsync(lobbyId, "stale_relay");
-                }
-                else
-                    LastStatusMessage = "Join failed: " + msg;
-
+                LastStatusMessage = "Join failed: " + msg;
                 Debug.LogError("[TitanOrbitSessionManager] Join failed: " + msg);
                 return false;
             }
@@ -1691,7 +1657,7 @@ namespace TitanOrbit.NetCode
 
         /// <summary>
         /// Disconnects this client and returns UI to the Main Menu.
-        /// Called from the Escape command overlay. Dedicated Relay clients leave the lobby
+        /// Called from the Escape command overlay. Dedicated online clients leave the lobby
         /// and reset the driver; a local host also parks ServerWorld so the leftover match
         /// does not keep simulating on the menu. Does not run on a headless dedicated server.
         /// </summary>
@@ -1724,7 +1690,7 @@ namespace TitanOrbit.NetCode
 
                 if (dedicated)
                 {
-                    // ResetDedicatedClientSessionAsync clears Relay, NetworkStreamInGame, and connections.
+                    // ResetDedicatedClientSessionAsync clears NetworkStreamInGame and connections.
                     await ResetDedicatedClientSessionAsync("Returned to main menu.");
                     _activeLobbyId = null;
                     await TitanOrbitLobbyService.TryLeaveAllJoinedLobbiesAsync("return_to_menu");
@@ -1787,6 +1753,8 @@ namespace TitanOrbit.NetCode
             }
 
             TitanOrbitRelayState.Clear();
+            s_DedicatedHostEndpoint = null;
+            _lastDedicatedEndpointAttempt = null;
             ResetClientDriverIfNeeded();
 
             if (!string.IsNullOrEmpty(reason))
@@ -1796,7 +1764,7 @@ namespace TitanOrbit.NetCode
             }
         }
 
-        async Task PrepareClientForDedicatedRelayJoinAsync()
+        async Task PrepareClientForDedicatedJoinAsync()
         {
             IsDedicatedOnlineClient = true;
             IsInGame = false;
@@ -1809,7 +1777,7 @@ namespace TitanOrbit.NetCode
             QualitySettings.vSyncCount = 1;
 
             await SuspendLocalServerForDedicatedClientAsync();
-            await EnsureClientReadyForRelayDriverResetAsync();
+            await EnsureClientReadyForDedicatedDriverResetAsync();
             TitanOrbitRelayState.Clear();
         }
 
@@ -1821,14 +1789,14 @@ namespace TitanOrbit.NetCode
 
             StopCoroutine(_mppmLanConnectCoroutine);
             _mppmLanConnectCoroutine = null;
-            Debug.Log("[TitanOrbitSessionManager] Stopped MPPM LAN auto-connect before dedicated Relay join.");
+            Debug.Log("[TitanOrbitSessionManager] Stopped MPPM LAN auto-connect before dedicated join.");
         }
 
         /// <summary>
         /// Disconnect leftover LAN/loopback connections and wait until NetworkStreamConnection entities are gone.
-        /// Required before NetworkStreamDriver.ResetDriverStore / Relay Connect.
+        /// Required before NetworkStreamDriver.ResetDriverStore / Connect.
         /// </summary>
-        async Task EnsureClientReadyForRelayDriverResetAsync()
+        async Task EnsureClientReadyForDedicatedDriverResetAsync()
         {
             var clientWorld = ClientServerBootstrap.ClientWorld;
             if (clientWorld == null || !clientWorld.IsCreated)
@@ -1850,11 +1818,11 @@ namespace TitanOrbit.NetCode
             int remaining = clientWorld.EntityManager.CreateEntityQuery(typeof(NetworkStreamConnection)).CalculateEntityCount();
             if (remaining > 0)
                 Debug.LogWarning("[TitanOrbitSessionManager] " + remaining +
-                                 " NetworkStreamConnection(s) still present before Relay driver reset.");
+                                 " NetworkStreamConnection(s) still present before dedicated driver reset.");
         }
 
         /// <summary>
-        /// Clears local connections, then disposes Editor ServerWorld so Relay join is client-only.
+        /// Clears local connections, then disposes Editor ServerWorld so dedicated join is client-only.
         /// </summary>
         static async Task SuspendLocalServerForDedicatedClientAsync()
         {
@@ -1894,28 +1862,26 @@ namespace TitanOrbit.NetCode
             }
         }
 
-        async Task<Lobby> CreateDedicatedLobbyAsync(
-            string joinCode,
-            string protocol,
-            long createdAt,
-            int cap,
-            string serverListenAddress,
-            bool isLatest,
-            string hostAllocationId)
+        async Task<Lobby> CreateDedicatedLobbyAsync(DedicatedServerPrep prep)
         {
             await TitanOrbitLobbyService.AcquireLobbyApiGateAsync();
             try
             {
-                string playerId = AuthenticationService.Instance.PlayerId;
+                long createdAt = prep.CreatedAtEpochSeconds;
+                int cap = prep.MaxPlayers;
+                bool isLatest = prep.IsLatest;
+                string serverListenAddress = string.IsNullOrWhiteSpace(prep.ServerListenAddress)
+                    ? "0.0.0.0"
+                    : prep.ServerListenAddress;
                 var lobbyData = new Dictionary<string, DataObject>
                 {
-                    { TitanOrbitLobbyService.LobbyRelayCodeKey, new DataObject(DataObject.VisibilityOptions.Member, joinCode) },
+                    { TitanOrbitLobbyService.LobbyHostAddressKey, new DataObject(DataObject.VisibilityOptions.Public, prep.HostAddress) },
+                    { TitanOrbitLobbyService.LobbyHostPortKey, new DataObject(DataObject.VisibilityOptions.Public, prep.HostPort.ToString(CultureInfo.InvariantCulture)) },
                     { TitanOrbitLobbyService.LobbyGameNameKey, new DataObject(DataObject.VisibilityOptions.Public, TitanOrbitLobbyService.LobbyGameNameValue, DataObject.IndexOptions.S1) },
                     { TitanOrbitLobbyService.LobbyIsOpenKey, new DataObject(DataObject.VisibilityOptions.Public, "1", DataObject.IndexOptions.N1) },
                     { TitanOrbitLobbyService.LobbyIsLatestKey, new DataObject(DataObject.VisibilityOptions.Public, isLatest ? "1" : "0", DataObject.IndexOptions.N2) },
                     { TitanOrbitLobbyService.LobbyCreatedAtEpochKey, new DataObject(DataObject.VisibilityOptions.Public, createdAt.ToString(CultureInfo.InvariantCulture), DataObject.IndexOptions.N3) },
                     { TitanOrbitLobbyService.LobbyServerAliveEpochKey, new DataObject(DataObject.VisibilityOptions.Public, createdAt.ToString(CultureInfo.InvariantCulture)) },
-                    { TitanOrbitLobbyService.LobbyRelayProtocolKey, new DataObject(DataObject.VisibilityOptions.Public, protocol) },
                     { TitanOrbitLobbyService.LobbyServerListenAddressKey, new DataObject(DataObject.VisibilityOptions.Public, serverListenAddress) },
                     { TitanOrbitLobbyService.LobbyActivePlayersKey, new DataObject(DataObject.VisibilityOptions.Public, "0", DataObject.IndexOptions.N4) },
                 };
@@ -1937,9 +1903,6 @@ namespace TitanOrbit.NetCode
                     IsPrivate = false,
                     Data = lobbyData
                 };
-
-                if (!string.IsNullOrEmpty(playerId) && !string.IsNullOrWhiteSpace(hostAllocationId))
-                    createOptions.Player = new Player(id: playerId, allocationId: hostAllocationId);
 
                 return await LobbyService.Instance.CreateLobbyAsync(
                     GameNames.GetRandomRoomName(),
@@ -2185,11 +2148,11 @@ namespace TitanOrbit.NetCode
                     {
                         LastStatusMessage =
                             "Could not reach dedicated server — tap Refresh, join the Latest lobby only, " +
-                            "and confirm Docker logs show the same Relay code.";
-                        Debug.LogError("[TitanOrbitSessionManager] Client stuck on pending Relay connection (no NetworkId). " +
-                                       "Relay join code=" + (_lastRelayJoinCodeAttempt ?? "(none)") +
+                            "and confirm the host IP:port is reachable (UDP 7777 on GCE).";
+                        Debug.LogError("[TitanOrbitSessionManager] Client stuck on pending dedicated connection (no NetworkId). " +
+                                       "host=" + (_lastDedicatedEndpointAttempt ?? "(none)") +
                                        " lobby=" + (_activeLobbyId ?? "(none)") +
-                                       ". Compare Relay= in Docker logs; stop stale containers/GCE servers.");
+                                       ". Compare Host= in dedicated server logs; confirm UDP firewall.");
                         LogClientConnectDiagnostics(client);
                         StartCoroutine(ResetDedicatedClientSessionAfterTimeoutCoroutine());
                         yield break;
@@ -2200,8 +2163,8 @@ namespace TitanOrbit.NetCode
                         IsInGame = true;
                         LastStatusMessage = dedicatedJoin ? "Connected — choose a team." : LastStatusMessage;
                         Debug.Log("[TitanOrbitSessionManager] Client in-game" +
-                                  (dedicatedJoin ? " (dedicated Relay)." : ".") +
-                                  " relay=" + TitanOrbitRelayState.TryGetClientRelay(out _));
+                                  (dedicatedJoin ? " (dedicated host)." : ".") +
+                                  " host=" + (s_DedicatedHostEndpoint ?? "(none)"));
                         yield break;
                     }
                 }
@@ -2233,7 +2196,7 @@ namespace TitanOrbit.NetCode
             int inGame = em.CreateEntityQuery(typeof(NetworkStreamInGame)).CalculateEntityCount();
             Debug.Log("[TitanOrbitSessionManager] Client connect diag: connections=" + connections +
                       " withNetworkId=" + withNetworkId + " inGame=" + inGame +
-                      " relay=" + TitanOrbitRelayState.TryGetClientRelay(out _));
+                      " host=" + (s_DedicatedHostEndpoint ?? "(none)"));
         }
 
         /// <summary>Resets client worlds and UI after dedicated connect timeout.</summary>
@@ -2320,34 +2283,20 @@ namespace TitanOrbit.NetCode
         static void ListenServer(World world, ushort port)
         {
             var driver = world.EntityManager.CreateEntityQuery(typeof(NetworkStreamDriver)).GetSingletonRW<NetworkStreamDriver>();
-            if (TitanOrbitRelayState.TryGetServerRelay(out var relay))
+            if (!IsServerWorldListening(world))
             {
-                if (!TitanOrbitRelayUtility.IsRelayEndpointValid(relay))
-                {
-                    Debug.LogError("[TitanOrbitSessionManager] Cannot listen: Relay endpoint invalid.");
-                    DedicatedServerFileLog.Append("netcode", "Relay listen skipped — endpoint invalid.");
-                    return;
-                }
-
-                // UTP Relay host: bind AnyIpv4 (relay params are on the driver), not relay.Endpoint.
-                // See com.unity.transport RelayPing PingServerBehaviour.
-                bool listenOk = driver.ValueRW.Listen(NetworkEndpoint.AnyIpv4);
-                LogServerRelayListenDiagnostics(world, relay, listenOk);
+                bool listenOk = driver.ValueRW.Listen(NetworkEndpoint.AnyIpv4.WithPort(port));
                 if (!listenOk)
                 {
-                    Debug.LogError("[TitanOrbitSessionManager] Relay Listen(AnyIpv4) failed. relayEndpoint=" + relay.Endpoint);
-                    DedicatedServerFileLog.Append("netcode", "Relay Listen(AnyIpv4) failed relayEndpoint=" + relay.Endpoint);
+                    Debug.LogError("[TitanOrbitSessionManager] UDP Listen failed on port " + port + ".");
+                    DedicatedServerFileLog.Append("netcode", "UDP Listen failed port=" + port);
                 }
-            }
-            else if (!IsServerWorldListening(world))
-            {
-                driver.ValueRW.Listen(NetworkEndpoint.AnyIpv4.WithPort(port));
             }
 
             TickServerWorld(world);
         }
 
-        static void LogServerRelayListenDiagnostics(World world, RelayServerData relay, bool listenOk)
+        static void LogServerListenDiagnostics(World world, ushort port, bool listenOk)
         {
             if (world == null || !world.IsCreated)
                 return;
@@ -2364,8 +2313,7 @@ namespace TitanOrbit.NetCode
                     listeningDrivers++;
             }
 
-            string line = "Relay listen bind=AnyIpv4 ok=" + listenOk +
-                          " relayEndpoint=" + relay.Endpoint +
+            string line = "UDP listen port=" + port + " ok=" + listenOk +
                           " drivers=" + (store.LastDriver - store.FirstDriver) +
                           " listeningDrivers=" + listeningDrivers;
             DedicatedServerFileLog.Append("netcode", line);
@@ -2420,15 +2368,22 @@ namespace TitanOrbit.NetCode
             driver.ValueRW.Connect(em, endpoint);
         }
 
-        static void ConnectRelayClient(World world)
+        static bool ConnectDedicatedClient(World world, string address, ushort port)
         {
-            if (!TitanOrbitRelayState.TryGetClientRelay(out var relay))
-                return;
             var em = world.EntityManager;
             if (em.CreateEntityQuery(typeof(NetworkStreamConnection)).CalculateEntityCount() > 0)
-                return;
+                return true;
+
+            NetworkEndpoint endpoint = NetworkEndpoint.Parse(address, port);
+            if (!endpoint.IsValid)
+            {
+                Debug.LogError("[TitanOrbitSessionManager] Invalid dedicated endpoint " + address + ":" + port);
+                return false;
+            }
+
             var driver = em.CreateEntityQuery(typeof(NetworkStreamDriver)).GetSingletonRW<NetworkStreamDriver>();
-            driver.ValueRW.Connect(world.EntityManager, relay.Endpoint);
+            driver.ValueRW.Connect(em, endpoint);
+            return true;
         }
 
         static void ResetServerDriverIfNeeded()

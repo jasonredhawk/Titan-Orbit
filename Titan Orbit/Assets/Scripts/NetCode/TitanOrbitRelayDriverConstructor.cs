@@ -1,76 +1,36 @@
 using Unity.Entities;
 using Unity.NetCode;
-using Unity.Networking.Transport;
-using Unity.Networking.Transport.Relay;
 
 namespace TitanOrbit.NetCode
 {
     /// <summary>
-    /// [NETCODE] Custom network driver factory for Unity Transport + Relay. Implements
-    /// INetworkStreamDriverConstructor so NetCode picks Relay endpoints from
-    /// <see cref="TitanOrbitRelayState"/> instead of raw LAN sockets. Dedicated server uses
-    /// UDP-only Relay listen (no IPC) so remote clients reach the host allocation. Paired with
-    /// <see cref="TitanOrbitRelayUtility"/> for queue sizing and connection types.
+    /// [NETCODE] Network driver factory. Dedicated matches use a normal UDP (or WebGL
+    /// WebSocket) socket to the server's public IP:port. Local Host still uses NetCode's
+    /// default IPC + UDP layout. Unity Relay is not used.
     /// </summary>
     public struct TitanOrbitRelayDriverConstructor : INetworkStreamDriverConstructor
     {
-        /// <summary>
-        /// Registers client driver — Relay when join allocation is set, else default LAN/WebSocket.
-        /// </summary>
+        /// <summary>Registers the client driver (UDP, or WebSocket on WebGL).</summary>
         public void CreateClientDriver(World world, ref NetworkDriverStore driverStore, NetDebug netDebug)
         {
-            if (TitanOrbitRelayState.TryGetClientRelay(out var relay))
-            {
-                // --- Relay join path ---
-                var settings = TitanOrbitRelayUtility.ApplyRelayFriendlyNetworkSettings(
-                    DefaultDriverBuilder.GetNetworkClientSettings());
-                settings = settings.WithRelayParameters(ref relay);
-                // Pair with TitanOrbitRelayUtility.ClientConnectionTypeForPlatform: MPS 2.2
-                // ToRelayServerData is wss-only whenever UNITY_WEBGL is defined (incl. Editor).
-#if UNITY_WEBGL
-                DefaultDriverBuilder.RegisterClientWebSocketDriver(world, ref driverStore, netDebug, settings);
-#else
-                DefaultDriverBuilder.RegisterClientUdpDriver(world, ref driverStore, netDebug, settings);
-#endif
-                return;
-            }
-
-            // --- Local / direct connect ---
             DefaultDriverBuilder.RegisterClientDriver(world, ref driverStore, netDebug,
                 DefaultDriverBuilder.GetNetworkClientSettings());
         }
 
         /// <summary>
-        /// Registers server driver — Relay listen when host allocation is set. Dedicated headless
-        /// binds Relay UDP only (IPC + Relay caused missed remote connections).
+        /// Registers the server driver. Dedicated / headless is UDP-only (no IPC).
+        /// Editor Local Host keeps IPC + UDP so the in-process client can use zero-latency IPC.
         /// </summary>
         public void CreateServerDriver(World world, ref NetworkDriverStore driverStore, NetDebug netDebug)
         {
-            if (TitanOrbitRelayState.TryGetServerRelay(out var relay))
+            if (IsDedicatedServerOnlyProcess())
             {
-                var settings = TitanOrbitRelayUtility.ApplyRelayFriendlyNetworkSettings(
-                    DefaultDriverBuilder.GetNetworkServerSettings());
-                settings = settings.WithRelayParameters(ref relay);
-
-                // [TITAN-ORBIT] Headless dedicated: relay UDP only — no IPC alongside Relay.
-                // WebGL / Editor-with-WebGL-target: wss (SDK rejects dtls). Linux UNITY_SERVER stays UDP.
-                if (IsDedicatedServerOnlyProcess())
-                {
 #if UNITY_WEBGL
-                    DefaultDriverBuilder.RegisterServerWebSocketDriver(world, ref driverStore, netDebug, settings);
+                DefaultDriverBuilder.RegisterServerWebSocketDriver(
+                    world, ref driverStore, netDebug, DefaultDriverBuilder.GetNetworkServerSettings());
 #else
-                    DefaultDriverBuilder.RegisterServerUdpDriver(world, ref driverStore, netDebug, settings);
-#endif
-                    return;
-                }
-
-                // Editor host: IPC for local client + Relay for remote.
-                DefaultDriverBuilder.RegisterServerIpcDriver(world, ref driverStore, netDebug,
-                    DefaultDriverBuilder.GetNetworkServerSettings());
-#if UNITY_WEBGL
-                DefaultDriverBuilder.RegisterServerWebSocketDriver(world, ref driverStore, netDebug, settings);
-#else
-                DefaultDriverBuilder.RegisterServerUdpDriver(world, ref driverStore, netDebug, settings);
+                DefaultDriverBuilder.RegisterServerUdpDriver(
+                    world, ref driverStore, netDebug, DefaultDriverBuilder.GetNetworkServerSettings());
 #endif
                 return;
             }

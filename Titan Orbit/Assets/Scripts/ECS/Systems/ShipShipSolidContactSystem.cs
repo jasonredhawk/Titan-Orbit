@@ -14,18 +14,21 @@ namespace TitanOrbit.ECS
     /// <list type="number">
     /// <item>
     /// Sweeps this ship's hull from the pre-physics snapshot to the exported pose
-    /// (continuous collision). If the sweep hits another ship, rewind to the contact
-    /// and bounce the remaining closing speed.
+    /// (you ram them).
     /// </item>
     /// <item>
-    /// If hulls are still overlapping (<c>Distance &lt; 0</c> only — not "nearby"), slide
-    /// this ship out along the contact normal. No min separating speed, no extra
-    /// proximity skin (that felt like magnets).
+    /// Client: sweeps each interpolated remote's hull along its ghosted
+    /// <see cref="ShipKinematics"/> (they ram you). A parked-static solver miss
+    /// plus a full overlap snap every interpolation tick is what made incoming
+    /// rams look jerky.
+    /// </item>
+    /// <item>
+    /// Overlap-only (<c>Distance &lt; 0</c>) depenetrate. Remotes are moving walls
+    /// (impulse only while closing). Server splits penetration when both simulate.
     /// </item>
     /// </list>
-    /// Client: interpolated remotes have no <see cref="PhysicsVelocity"/>
-    /// (predicted-only ghost variant); only the predicted local hull is moved.
-    /// Server: both simulated hulls may move (each takes half the penetration).
+    /// Sets <see cref="ShipAsteroidContactState.InContact"/> so local display raw-follows
+    /// during the hit (coast vs ram snaps was a second jerk).
     /// <para>
     /// [TITAN-ORBIT] Predicted sim — skip with
     /// <see cref="ClientJoinSettleCache.ShouldSkipShipSimulation"/>. Presentation ship
@@ -43,6 +46,15 @@ namespace TitanOrbit.ECS
         const float SweepMotionEpsilonSq = 1e-6f;
         /// <summary>Ignore Fraction 0 (already overlapping — that is the distance pass).</summary>
         const float SweepMinFraction = 0.01f;
+
+        struct RemoteHull
+        {
+            public Entity Entity;
+            public float3 Position;
+            public quaternion Rotation;
+            public float3 Velocity;
+            public BlobAssetReference<Unity.Physics.Collider> Collider;
+        }
 
         /// <summary>Need exported physics world + a ship hull to query against.</summary>
         public void OnCreate(ref SystemState state)
@@ -73,9 +85,18 @@ namespace TitanOrbit.ECS
             var velocityLookup = SystemAPI.GetComponentLookup<PhysicsVelocity>(false);
             var kinematicsLookup = SystemAPI.GetComponentLookup<ShipKinematics>(true);
             var snapshotLookup = SystemAPI.GetComponentLookup<ShipPreCollisionVelocity>(true);
+            var contactLookup = SystemAPI.GetComponentLookup<ShipAsteroidContactState>(false);
 
             bool client = state.World.IsClient();
             var predictedLookup = SystemAPI.GetComponentLookup<PredictedGhost>(true);
+
+            float dt = SystemAPI.Time.DeltaTime;
+            if (dt <= 0f)
+                dt = 1f / 60f;
+
+            var remotes = new NativeList<RemoteHull>(8, Allocator.Temp);
+            if (client)
+                CollectInterpolatedRemotes(ref state, ref remotes);
 
             foreach (var (transform, physicsCollider, physicsVelocity, shipState, shipEntity) in SystemAPI
                          .Query<RefRW<LocalTransform>, RefRO<PhysicsCollider>, RefRW<PhysicsVelocity>,
@@ -94,6 +115,7 @@ namespace TitanOrbit.ECS
                 float3 vel = physicsVelocity.ValueRO.Linear;
                 vel.y = 0f;
                 bool wrote = false;
+                float3 contactNormal = float3.zero;
 
                 if (snapshotLookup.HasComponent(shipEntity))
                 {
@@ -103,6 +125,7 @@ namespace TitanOrbit.ECS
                         snapshotLookup[shipEntity].Position,
                         ref lt,
                         ref vel,
+                        ref contactNormal,
                         collisionWorld,
                         shipLookup,
                         shipStateLookup,
@@ -110,11 +133,25 @@ namespace TitanOrbit.ECS
                         velocityLookup);
                 }
 
+                if (client && remotes.Length > 0 && !wrote)
+                {
+                    wrote |= TryIncomingRemoteSweeps(
+                        shipEntity,
+                        dt,
+                        remotes,
+                        ref lt,
+                        ref vel,
+                        ref contactNormal,
+                        collisionWorld);
+                }
+
                 wrote |= TryOverlapDepenetrate(
                     shipEntity,
                     physicsCollider.ValueRO.Value,
+                    dt,
                     ref lt,
                     ref vel,
+                    ref contactNormal,
                     collisionWorld,
                     shipLookup,
                     shipStateLookup,
@@ -133,6 +170,48 @@ namespace TitanOrbit.ECS
                     Linear = vel,
                     Angular = float3.zero,
                 };
+
+                if (contactLookup.HasComponent(shipEntity))
+                {
+                    contactLookup[shipEntity] = new ShipAsteroidContactState
+                    {
+                        InContact = 1,
+                        OutwardNormal = contactNormal,
+                    };
+                }
+            }
+
+            remotes.Dispose();
+        }
+
+        /// <summary>
+        /// Interpolated remotes have no <see cref="PhysicsVelocity"/>. Their ghosted
+        /// kinematics is the only incoming-ram velocity the local hull can see.
+        /// </summary>
+        void CollectInterpolatedRemotes(ref SystemState state, ref NativeList<RemoteHull> remotes)
+        {
+            foreach (var (transform, collider, kinematics, shipState, entity) in SystemAPI
+                         .Query<RefRO<LocalTransform>, RefRO<PhysicsCollider>, RefRO<ShipKinematics>,
+                             RefRO<ShipState>>()
+                         .WithAll<ShipTag>()
+                         .WithNone<PhysicsVelocity, PredictedGhost, GhostOwnerIsLocal>()
+                         .WithEntityAccess())
+            {
+                if (shipState.ValueRO.IsDead || shipState.ValueRO.AwaitingTeamSelection)
+                    continue;
+                if (!collider.ValueRO.Value.IsCreated)
+                    continue;
+
+                float3 vel = kinematics.ValueRO.Velocity;
+                vel.y = 0f;
+                remotes.Add(new RemoteHull
+                {
+                    Entity = entity,
+                    Position = transform.ValueRO.Position,
+                    Rotation = transform.ValueRO.Rotation,
+                    Velocity = vel,
+                    Collider = collider.ValueRO.Value,
+                });
             }
         }
 
@@ -146,6 +225,7 @@ namespace TitanOrbit.ECS
             float3 from,
             ref LocalTransform transform,
             ref float3 velocity,
+            ref float3 contactNormal,
             in CollisionWorld collisionWorld,
             ComponentLookup<ShipTag> ships,
             ComponentLookup<ShipState> shipStates,
@@ -188,22 +268,92 @@ namespace TitanOrbit.ECS
             if (bestFraction >= 1f)
                 return false;
 
-            float3 n = best.SurfaceNormal;
-            n.y = 0f;
-            if (math.lengthsq(n) < 1e-8f)
-                n = to - from;
-            n.y = 0f;
+            float3 n = PlanarNormal(best.SurfaceNormal, to - from);
             if (math.lengthsq(n) < 1e-8f)
                 return false;
-            n = math.normalize(n);
 
             float3 pos = from + (to - from) * math.max(0f, bestFraction);
             pos += n * ContactSkin;
             pos.y = 0f;
             transform.Position = pos;
+            contactNormal = n;
 
             BounceOffOther(ref velocity, best.Entity, n, kinematics, velocities);
             return true;
+        }
+
+        /// <summary>
+        /// Remote hull swept along ghosted velocity into the local predicted ship.
+        /// Local sweep misses this because the local hull may not have moved.
+        /// </summary>
+        static bool TryIncomingRemoteSweeps(
+            Entity local,
+            float dt,
+            NativeList<RemoteHull> remotes,
+            ref LocalTransform transform,
+            ref float3 velocity,
+            ref float3 contactNormal,
+            in CollisionWorld collisionWorld)
+        {
+            for (int i = 0; i < remotes.Length; i++)
+            {
+                RemoteHull remote = remotes[i];
+                if (remote.Entity == local)
+                    continue;
+
+                float3 to = remote.Position;
+                to.y = 0f;
+                float3 from = to - remote.Velocity * dt;
+                from.y = 0f;
+                if (math.distancesq(from, to) < SweepMotionEpsilonSq)
+                    continue;
+
+                var input = new ColliderCastInput(remote.Collider, from, to, remote.Rotation);
+                var hits = new NativeList<ColliderCastHit>(8, Allocator.Temp);
+                bool any = collisionWorld.CastCollider(input, ref hits);
+                if (!any)
+                {
+                    hits.Dispose();
+                    continue;
+                }
+
+                float bestFraction = 2f;
+                ColliderCastHit best = default;
+                for (int h = 0; h < hits.Length; h++)
+                {
+                    ColliderCastHit hit = hits[h];
+                    if (hit.Entity != local)
+                        continue;
+                    if (hit.Fraction < SweepMinFraction || hit.Fraction >= 1f || hit.Fraction >= bestFraction)
+                        continue;
+                    bestFraction = hit.Fraction;
+                    best = hit;
+                }
+
+                hits.Dispose();
+                if (bestFraction >= 1f)
+                    continue;
+
+                // Cast is the remote: surface normal points out of the local hull.
+                float3 n = PlanarNormal(best.SurfaceNormal, transform.Position - to);
+                if (math.lengthsq(n) < 1e-8f)
+                    continue;
+
+                float3 pos = transform.Position;
+                pos += n * ContactSkin;
+                pos.y = 0f;
+                transform.Position = pos;
+                contactNormal = n;
+
+                ShipCollisionImpulseLogic.ApplyMovingWallImpulse(
+                    ref velocity,
+                    remote.Velocity,
+                    n,
+                    0.55f);
+                return true;
+            }
+
+            return false;
         }
 
         /// <summary>
@@ -212,8 +362,10 @@ namespace TitanOrbit.ECS
         static bool TryOverlapDepenetrate(
             Entity self,
             BlobAssetReference<Unity.Physics.Collider> collider,
+            float dt,
             ref LocalTransform transform,
             ref float3 velocity,
+            ref float3 contactNormal,
             in CollisionWorld collisionWorld,
             ComponentLookup<ShipTag> ships,
             ComponentLookup<ShipState> shipStates,
@@ -256,20 +408,35 @@ namespace TitanOrbit.ECS
             if (deepest >= -OverlapEpsilon)
                 return false;
 
-            float3 n = best.SurfaceNormal;
-            n.y = 0f;
+            float3 n = PlanarNormal(best.SurfaceNormal, new float3(1f, 0f, 0f));
             if (math.lengthsq(n) < 1e-8f)
-                n = new float3(1f, 0f, 0f);
-            else
-                n = math.normalize(n);
+                return false;
 
-            bool otherMoves = simulate.HasComponent(best.Entity) &&
+            bool otherIsRemote = !velocities.HasComponent(best.Entity);
+            bool otherMoves = !otherIsRemote &&
+                              simulate.HasComponent(best.Entity) &&
                               simulate.IsComponentEnabled(best.Entity);
             float share = otherMoves ? 0.5f : 1f;
+
+            float3 otherVel = float3.zero;
+            if (kinematics.HasComponent(best.Entity))
+                otherVel = kinematics[best.Entity].Velocity;
+            otherVel.y = 0f;
+
+            float penetration = -best.Distance;
+            float push = penetration * share + ContactSkin;
+            if (otherIsRemote)
+            {
+                // Do not teleport the full interpolation step; ride their incoming motion.
+                float incoming = math.max(0f, -math.dot(otherVel, n)) * dt;
+                push = math.min(push, math.max(incoming + ContactSkin, ContactSkin));
+            }
+
             float3 pos = transform.Position;
-            pos += n * ((-best.Distance) * share + ContactSkin);
+            pos += n * push;
             pos.y = 0f;
             transform.Position = pos;
+            contactNormal = n;
 
             BounceOffOther(ref velocity, best.Entity, n, kinematics, velocities);
             return true;
@@ -299,6 +466,21 @@ namespace TitanOrbit.ECS
                 otherVel,
                 normalSelfFromOther,
                 0.55f);
+        }
+
+        static float3 PlanarNormal(float3 raw, float3 fallback)
+        {
+            float3 n = raw;
+            n.y = 0f;
+            if (math.lengthsq(n) < 1e-8f)
+            {
+                n = fallback;
+                n.y = 0f;
+            }
+
+            if (math.lengthsq(n) < 1e-8f)
+                return float3.zero;
+            return math.normalize(n);
         }
     }
 }

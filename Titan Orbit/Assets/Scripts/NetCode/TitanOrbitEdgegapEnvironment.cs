@@ -5,8 +5,7 @@ namespace TitanOrbit.NetCode
 {
     /// <summary>
     /// Reads Edgegap deployment environment variables injected at container start (ARBITRIUM_*).
-    /// Titan Orbit clients still join via UGS Lobby + Unity Relay — not direct IP:port — but Edgegap
-    /// port metadata and deployment IDs are useful for logs, rotation diagnostics, and future matchmaking.
+    /// Clients join the advertised public IP:port from UGS Lobby (no Unity Relay).
     /// Consumed from <see cref="TitanOrbitServerCommandLine.Parse"/>.
     /// </summary>
     public static class TitanOrbitEdgegapEnvironment
@@ -25,6 +24,26 @@ namespace TitanOrbit.NetCode
             if (string.IsNullOrWhiteSpace(internalPort))
                 return null;
             if (!int.TryParse(internalPort.Trim(), out int parsedPort))
+                return null;
+            if (parsedPort < 1 || parsedPort > 65535)
+                return null;
+            return (ushort)parsedPort;
+        }
+
+        /// <summary>Edgegap public IPv4 when <c>ARBITRIUM_PUBLIC_IP</c> is set.</summary>
+        public static string TryGetPublicIp()
+        {
+            string ip = Environment.GetEnvironmentVariable("ARBITRIUM_PUBLIC_IP");
+            return string.IsNullOrWhiteSpace(ip) ? null : ip.Trim();
+        }
+
+        /// <summary>Edgegap external gameport when <c>ARBITRIUM_PORT_GAMEPORT_EXTERNAL</c> is set.</summary>
+        public static ushort? TryGetGameportExternal()
+        {
+            string externalPort = Environment.GetEnvironmentVariable("ARBITRIUM_PORT_GAMEPORT_EXTERNAL");
+            if (string.IsNullOrWhiteSpace(externalPort))
+                return null;
+            if (!int.TryParse(externalPort.Trim(), out int parsedPort))
                 return null;
             if (parsedPort < 1 || parsedPort > 65535)
                 return null;
@@ -52,7 +71,7 @@ namespace TitanOrbit.NetCode
 
             Diagnostics.DedicatedServerFileLog.Append("edgegap", summary);
             Debug.Log("[TitanOrbitEdgegapEnvironment] " + summary +
-                      " (clients use UGS Lobby + Relay — not direct connect to external port).");
+                      " (clients connect to publicIp:gameportExternal — no Unity Relay).");
         }
     }
 }

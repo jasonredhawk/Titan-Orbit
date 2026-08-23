@@ -6,7 +6,7 @@ namespace TitanOrbit.NetCode
     /// <summary>
     /// Headless dedicated server launch parameters parsed from command line (GCE systemd, Edgegap Docker,
     /// local testing). Consumed by <see cref="TitanOrbitDedicatedServerAutoBoot"/> and lobby registration.
-    /// Defaults match production deploy; override via --maxPlayers=, --serverPort=, --relayProtocol=, etc.
+    /// Defaults match production deploy; override via --maxPlayers=, --serverPort=, --publicAddress=, etc.
     /// When running on Edgegap, <see cref="TitanOrbitEdgegapEnvironment"/> may override port from ARBITRIUM_* env.
     /// </summary>
     public sealed class TitanOrbitServerCommandLine
@@ -64,7 +64,10 @@ namespace TitanOrbit.NetCode
 
         public int MaxPlayers { get; private set; } = DefaultMaxPlayers;
         public ushort ServerPort { get; private set; } = DefaultServerPort;
-        public string RelayProtocol { get; private set; } = "dtls";
+        /// <summary>Public IPv4 clients connect to (Edgegap / GCE / --publicAddress). Not the bind address.</summary>
+        public string PublicAddress { get; private set; }
+        /// <summary>Public UDP/WSS port clients connect to (defaults to <see cref="ServerPort"/>).</summary>
+        public ushort PublicPort { get; private set; } = DefaultServerPort;
         public string ServerListenAddress { get; private set; } = "0.0.0.0";
         public bool IsLatest { get; private set; } = true;
         public int EmptyMatchRecreateSeconds { get; private set; } = DefaultEmptyMatchRecreateSeconds;
@@ -110,8 +113,16 @@ namespace TitanOrbit.NetCode
             var config = new TitanOrbitServerCommandLine();
             config.MaxPlayers = Mathf.Max(2, GetArgInt("maxPlayers", DefaultMaxPlayers));
             config.ServerPort = (ushort)Mathf.Clamp(GetArgInt("serverPort", DefaultServerPort), 1, 65535);
-            config.RelayProtocol = SanitizeRelayProtocol(GetArgString("relayProtocol", "dtls"));
             config.ServerListenAddress = GetArgString("serverListenAddress", "0.0.0.0");
+            config.PublicAddress = ResolvePublicAddress(config.ServerListenAddress);
+            int publicPortArg = GetArgInt("publicPort", 0);
+            ushort? edgegapExternal = TitanOrbitEdgegapEnvironment.TryGetGameportExternal();
+            if (publicPortArg >= 1 && publicPortArg <= 65535)
+                config.PublicPort = (ushort)publicPortArg;
+            else if (edgegapExternal.HasValue)
+                config.PublicPort = edgegapExternal.Value;
+            else
+                config.PublicPort = config.ServerPort;
             config.IsLatest = GetArgBool("isLatest", true);
             config.EmptyMatchRecreateSeconds = Mathf.Max(60, GetArgInt("emptyMatchRecreateSeconds", DefaultEmptyMatchRecreateSeconds));
             config.AgeThresholdSeconds = Mathf.Max(60, GetArgInt("ageThresholdSeconds", DefaultAgeThresholdSeconds));
@@ -163,21 +174,36 @@ namespace TitanOrbit.NetCode
         }
 
         /// <summary>
-        /// MPS 2.0 Relay: legacy CLI/lobby <c>udp</c> is hosted and joined as <c>dtls</c> (matches NGO
-        /// <c>DedicatedMatchServerBootstrap.SanitizeRelayProtocolForSdk</c>).
+        /// Client-facing host IP: --publicAddress, TITANORBIT_PUBLIC_ADDRESS, Edgegap
+        /// <c>ARBITRIUM_PUBLIC_IP</c>, or a unicast --serverListenAddress.
         /// </summary>
-        public static string SanitizeRelayProtocol(string raw)
+        static string ResolvePublicAddress(string listenAddress)
         {
-            // --- SanitizeRelayProtocol ---
-            if (string.IsNullOrWhiteSpace(raw))
-                return "dtls";
+            string cli = GetArgString("publicAddress", null);
+            if (!string.IsNullOrWhiteSpace(cli))
+                return cli.Trim();
 
-            string x = raw.Trim().ToLowerInvariant();
-            if (x == "wss")
-                return "wss";
-            if (x == "udp" || x == "dtls")
-                return "dtls";
-            return "dtls";
+            string env = Environment.GetEnvironmentVariable("TITANORBIT_PUBLIC_ADDRESS");
+            if (!string.IsNullOrWhiteSpace(env))
+                return env.Trim();
+
+            string edgegap = TitanOrbitEdgegapEnvironment.TryGetPublicIp();
+            if (!string.IsNullOrWhiteSpace(edgegap))
+                return edgegap;
+
+            if (IsUnicastListenAddress(listenAddress))
+                return listenAddress.Trim();
+
+            return null;
+        }
+
+        /// <summary>True when listen address is a real client-reachable unicast (not 0.0.0.0 / *).</summary>
+        public static bool IsUnicastListenAddress(string address)
+        {
+            if (string.IsNullOrWhiteSpace(address))
+                return false;
+            string a = address.Trim();
+            return a != "0.0.0.0" && a != "*" && a != "::" && a != "[::]";
         }
 
         static int GetArgInt(string name, int defaultValue)

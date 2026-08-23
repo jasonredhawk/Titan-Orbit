@@ -880,7 +880,10 @@ namespace TitanOrbit.NetCode
                     "--titanOrbitDedicated=1 " +
                     $"--maxPlayers={_config.MaxPlayers} " +
                     $"--serverPort={derivedPort} " +
-                    $"--relayProtocol={_config.RelayProtocol} " +
+                    $"--publicPort={derivedPort} " +
+                    (string.IsNullOrWhiteSpace(_config.PublicAddress)
+                        ? ""
+                        : $"--publicAddress={_config.PublicAddress} ") +
                     $"--serverListenAddress={_config.ServerListenAddress} " +
                     $"--emptyMatchRecreateSeconds={_config.EmptyMatchRecreateSeconds} " +
                     $"--ageThresholdSeconds={_config.AgeThresholdSeconds} " +

@@ -61,6 +61,10 @@ namespace TitanOrbit.ECS
             step.CollisionTolerance = math.max(step.CollisionTolerance, 0.15f);
             step.MaxDynamicDepenetrationVelocity = math.max(step.MaxDynamicDepenetrationVelocity, 25f);
             step.SynchronizeCollisionWorld = 1;
+            // Interpolated remotes are static (no PhysicsVelocity). Incremental static
+            // BVH keeps their GhostUpdate pose in the collision world so incoming rams
+            // hit the hull you see, not last frame's parked tree.
+            step.IncrementalStaticBroadphase = true;
             var stabilization = step.SolverStabilizationHeuristicSettings;
             stabilization.EnableSolverStabilization = true;
             step.SolverStabilizationHeuristicSettings = stabilization;

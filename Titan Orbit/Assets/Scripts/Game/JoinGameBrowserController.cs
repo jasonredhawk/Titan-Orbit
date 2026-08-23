@@ -13,7 +13,7 @@ namespace TitanOrbit.Game
 {
     /// <summary>
     /// [HYBRID] Join Game screen — programmatic UGUI overlay listing Unity Gaming Services (UGS) dedicated
-    /// lobbies and connecting the client via Relay. Opened from <see cref="NceGameFlowController"/> main menu.
+    /// lobbies and connecting the client to the dedicated host IP:port. Opened from <see cref="NceGameFlowController"/> main menu.
     /// Client only; dedicated server builds have no canvas.
     /// Layout matches the Main Menu look: transparent backdrop over SpaceBackground, Titan Orbit logo,
     /// then Refresh / Quick join latest, then the lobby list.
@@ -996,7 +996,7 @@ namespace TitanOrbit.Game
                 }
 
                 // --- Hand off to Loading Map ---
-                // [TITAN-ORBIT] Leave Join Game before Relay connect finishes so the lobby list
+                // [TITAN-ORBIT] Leave Join Game before dedicated connect finishes so the lobby list
                 // is not visible under the loading overlay (RefreshUi also dismisses as backup).
                 DismissForLoading();
                 SetStatus("Connecting to match...");
