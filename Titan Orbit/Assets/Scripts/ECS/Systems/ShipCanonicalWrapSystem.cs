@@ -66,11 +66,16 @@ namespace TitanOrbit.ECS
             if (canQueryPhysics)
                 collisionWorld = physicsWorld.CollisionWorld;
 
+            bool client = state.World.IsClient();
+            var predictedLookup = SystemAPI.GetComponentLookup<PredictedGhost>(true);
+
             foreach (var (transform, physicsCollider, shipState, shipEntity) in SystemAPI
                          .Query<RefRW<LocalTransform>, RefRO<PhysicsCollider>, RefRO<ShipState>>()
                          .WithAll<ShipTag, Simulate>()
                          .WithEntityAccess())
             {
+                if (client && !predictedLookup.HasComponent(shipEntity))
+                    continue;
                 if (shipState.ValueRO.IsDead || shipState.ValueRO.AwaitingTeamSelection)
                     continue;
 

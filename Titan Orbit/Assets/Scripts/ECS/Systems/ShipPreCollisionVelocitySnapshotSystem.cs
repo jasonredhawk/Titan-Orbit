@@ -54,6 +54,7 @@ namespace TitanOrbit.ECS
                 lin.y = 0f;
                 snapshot.ValueRW.Linear = lin;
                 snapshot.ValueRW.Position = transform.ValueRO.Position;
+                snapshot.ValueRW.Rotation = transform.ValueRO.Rotation;
             }
         }
     }

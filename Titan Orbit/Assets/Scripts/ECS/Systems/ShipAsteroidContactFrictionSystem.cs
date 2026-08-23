@@ -41,7 +41,7 @@ namespace TitanOrbit.ECS
     /// </para>
     /// MEGA hulls skip this pass (plow asteroids — no grip, no inward motor reject).
     /// Pipeline: Drive → Snapshot → PhysicsSimulation → Export → Bounce → Friction/Contact (this) →
-    /// Toroidal → Planar → Kinematics.
+    /// SolidContact → Wrap → Planar → Kinematics.
     /// </summary>
     // [PHYSICS] AfterPhysicsSystemGroup sits after ExportPhysicsWorld inside PhysicsSystemGroup.
     // Do NOT UpdateAfter(PhysicsSimulationGroup) alone — that window forbids ECS velocity writes.

@@ -61,10 +61,10 @@ namespace TitanOrbit.ECS
         static readonly Material HullMaterial = CreateHullMaterial();
 
         /// <summary>
-        /// Bump when <see cref="CreateHullMaterial"/> restitution/friction changes so
+        /// Bump when hull material or solid envelope bake changes so
         /// <see cref="ShipHullColliderSyncSystem"/> rebuilds existing compounds.
         /// </summary>
-        public const int HullMaterialRevision = 2;
+        public const int HullMaterialRevision = 3;
 
         /// <summary>
         /// Replaces the ship's physics collider with a compound built from the chassis prefab.
@@ -198,6 +198,8 @@ namespace TitanOrbit.ECS
                 if (instances.Count == 0)
                     return false;
 
+                AppendSolidHullEnvelope(instances);
+
                 if (instances.Count == 1)
                 {
                     compound = instances[0].Collider;
@@ -292,6 +294,8 @@ namespace TitanOrbit.ECS
 
                 if (instances.Count == 0)
                     return false;
+
+                AppendSolidHullEnvelope(instances);
 
                 if (instances.Count == 1)
                 {
@@ -456,6 +460,57 @@ namespace TitanOrbit.ECS
                     CompoundFromChild = RigidTransform.identity,
                 });
             }
+        }
+
+        /// <summary>
+        /// One padded AABB box covering every authored part. StarSparrow hulls are many
+        /// small boxes with gaps; discrete physics tunnels through those holes. This
+        /// envelope is the gameplay solid — part boxes stay for visual-fit contacts.
+        /// Pad is a few centimeters so it is not a proximity field.
+        /// </summary>
+        static void AppendSolidHullEnvelope(List<CompoundCollider.ColliderBlobInstance> instances)
+        {
+            if (instances == null || instances.Count == 0)
+                return;
+
+            const float envelopePadXz = 0.04f;
+            Aabb hull = Aabb.Empty;
+            bool any = false;
+            for (int i = 0; i < instances.Count; i++)
+            {
+                var inst = instances[i];
+                if (!inst.Collider.IsCreated)
+                    continue;
+
+                hull.Include(inst.Collider.Value.CalculateAabb(inst.CompoundFromChild));
+                any = true;
+            }
+
+            if (!any || !hull.IsValid)
+                return;
+
+            float3 size = hull.Extents;
+            size.x = math.max(size.x + envelopePadXz, 0.15f);
+            size.z = math.max(size.z + envelopePadXz, 0.15f);
+            size.y = math.max(size.y, 0.1f);
+
+            var blob = Unity.Physics.BoxCollider.Create(
+                new BoxGeometry
+                {
+                    Center = hull.Center,
+                    Size = size,
+                    Orientation = quaternion.identity,
+                },
+                TitanOrbitPhysicsLayers.Ship,
+                HullMaterial);
+            if (!blob.IsCreated)
+                return;
+
+            instances.Add(new CompoundCollider.ColliderBlobInstance
+            {
+                Collider = blob,
+                CompoundFromChild = RigidTransform.identity,
+            });
         }
 
         static bool TryCreateChildCollider(

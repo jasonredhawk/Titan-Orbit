@@ -50,14 +50,17 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// Zero gravity, more solver iterations, and contact stabilization so compound
-        /// ship hulls depenetrate instead of merging. Restitution stays 0 — bounce is
-        /// <see cref="TitanOrbit.Simulation.ShipCollisionImpulseLogic"/>.
+        /// Zero gravity, more solver iterations, contact slop, and faster dynamic
+        /// depenetration so compound hulls bounce (hull restitution 0.55) instead of
+        /// tunneling through each other at cruise speed.
         /// </summary>
         static void ApplyShipCollisionStepTuning(ref PhysicsStep step)
         {
             step.Gravity = float3.zero;
             step.SolverIterationCount = math.max(step.SolverIterationCount, 12);
+            step.CollisionTolerance = math.max(step.CollisionTolerance, 0.15f);
+            step.MaxDynamicDepenetrationVelocity = math.max(step.MaxDynamicDepenetrationVelocity, 25f);
+            step.SynchronizeCollisionWorld = 1;
             var stabilization = step.SolverStabilizationHeuristicSettings;
             stabilization.EnableSolverStabilization = true;
             step.SolverStabilizationHeuristicSettings = stabilization;
