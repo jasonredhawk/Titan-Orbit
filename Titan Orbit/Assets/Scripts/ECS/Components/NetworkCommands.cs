@@ -491,7 +491,9 @@ namespace TitanOrbit.ECS
 
         /// <summary>
         /// Shooter NetworkId for orphan-tracer reconcile when Sequence was never bound.
-        /// 0 on ram/grind (Sequence 0).
+        /// On Sequence-0 ship rams this is the <b>victim</b> GhostOwner so floats bind
+        /// to the damaged hull instead of surface-fitting two overlapping ships.
+        /// 0 on asteroid ram/grind.
         /// </summary>
         public int OwnerNetworkId;
 

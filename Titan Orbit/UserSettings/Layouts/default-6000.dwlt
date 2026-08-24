@@ -19,7 +19,7 @@ MonoBehaviour:
     width: 2560
     height: 1349
   m_ShowMode: 4
-  m_Title: Game
+  m_Title: Multiplayer Play Mode
   m_RootView: {fileID: 2}
   m_MinSize: {x: 875, y: 300}
   m_MaxSize: {x: 10000, y: 10000}
@@ -235,7 +235,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 1
   m_Script: {fileID: 12006, guid: 0000000000000000e000000000000000, type: 0}
-  m_Name: GameView
+  m_Name: MultiplayerWindow
   m_EditorClassIdentifier: 
   m_Children: []
   m_Position:
@@ -244,16 +244,16 @@ MonoBehaviour:
     y: 0
     width: 1652
     height: 862
-  m_MinSize: {x: 52, y: 76}
+  m_MinSize: {x: 277, y: 426}
   m_MaxSize: {x: 4002, y: 4026}
-  m_ActualView: {fileID: 16}
+  m_ActualView: {fileID: 20}
   m_Panes:
   - {fileID: 19}
   - {fileID: 20}
   - {fileID: 21}
   - {fileID: 16}
-  m_Selected: 3
-  m_LastSelected: 0
+  m_Selected: 1
+  m_LastSelected: 3
 --- !u!114 &11
 MonoBehaviour:
   m_ObjectHideFlags: 52
@@ -264,7 +264,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 1
   m_Script: {fileID: 12006, guid: 0000000000000000e000000000000000, type: 0}
-  m_Name: ConsoleWindow
+  m_Name: ProfilerWindow
   m_EditorClassIdentifier: 
   m_Children: []
   m_Position:
@@ -273,15 +273,15 @@ MonoBehaviour:
     y: 862
     width: 1983
     height: 431
-  m_MinSize: {x: 101, y: 126}
+  m_MinSize: {x: 901, y: 242}
   m_MaxSize: {x: 4001, y: 4026}
-  m_ActualView: {fileID: 23}
+  m_ActualView: {fileID: 24}
   m_Panes:
   - {fileID: 22}
   - {fileID: 23}
   - {fileID: 24}
-  m_Selected: 1
-  m_LastSelected: 2
+  m_Selected: 2
+  m_LastSelected: 1
 --- !u!114 &12
 MonoBehaviour:
   m_ObjectHideFlags: 52
@@ -665,8 +665,8 @@ MonoBehaviour:
     m_TextWithWhitespace: "Game\u200B"
   m_Pos:
     serializedVersion: 2
-    x: 332
-    y: 24
+    x: 331
+    y: 79
     width: 1650
     height: 836
   m_SerializedDataModeController:
@@ -1523,9 +1523,9 @@ MonoBehaviour:
     m_TextWithWhitespace: "Multiplayer Play Mode\u200B"
   m_Pos:
     serializedVersion: 2
-    x: 449
-    y: 79
-    width: 1465
+    x: 332
+    y: 24
+    width: 1650
     height: 836
   m_SerializedDataModeController:
     m_DataMode: 0
@@ -1561,9 +1561,9 @@ MonoBehaviour:
     m_TextWithWhitespace: "Play Mode Scenarios\u200B"
   m_Pos:
     serializedVersion: 2
-    x: 449
+    x: 331
     y: 79
-    width: 1465
+    width: 1650
     height: 836
   m_SerializedDataModeController:
     m_DataMode: 0
@@ -1651,7 +1651,10 @@ MonoBehaviour:
       m_Data: 329800
     m_ExpandedIDs:
     - m_Data: 0
-    - m_Data: 82054
+    - m_Data: 82050
+    - m_Data: 99824
+    - m_Data: 99826
+    - m_Data: 99828
     - m_Data: 99830
     - m_Data: 99832
     - m_Data: 99834
@@ -1668,9 +1671,6 @@ MonoBehaviour:
     - m_Data: 99856
     - m_Data: 99858
     - m_Data: 99860
-    - m_Data: 99862
-    - m_Data: 99864
-    - m_Data: 99866
     m_RenameOverlay:
       m_UserAcceptedRename: 0
       m_Name: 
@@ -1704,7 +1704,10 @@ MonoBehaviour:
       m_Data: 0
     m_ExpandedIDs:
     - m_Data: 0
-    - m_Data: 82054
+    - m_Data: 82050
+    - m_Data: 99824
+    - m_Data: 99826
+    - m_Data: 99828
     - m_Data: 99830
     - m_Data: 99832
     - m_Data: 99834
@@ -1721,9 +1724,6 @@ MonoBehaviour:
     - m_Data: 99856
     - m_Data: 99858
     - m_Data: 99860
-    - m_Data: 99862
-    - m_Data: 99864
-    - m_Data: 99866
     m_RenameOverlay:
       m_UserAcceptedRename: 0
       m_Name: 
@@ -1834,7 +1834,7 @@ MonoBehaviour:
   m_Pos:
     serializedVersion: 2
     x: 0
-    y: 886
+    y: 941
     width: 1982
     height: 405
   m_SerializedDataModeController:
@@ -1872,7 +1872,7 @@ MonoBehaviour:
   m_Pos:
     serializedVersion: 2
     x: 0
-    y: 941
+    y: 886
     width: 1982
     height: 405
   m_SerializedDataModeController:
@@ -1913,7 +1913,7 @@ MonoBehaviour:
   - rid: 8738513097020408081
   - rid: 8738513097020408082
   - rid: 8738513097020408083
-  m_CallstackRecordMode: 1
+  m_CallstackRecordMode: 7
   m_ClearOnPlay: 1
   references:
     version: 2
@@ -1926,7 +1926,7 @@ MonoBehaviour:
         m_PaneScroll: {x: 0, y: 0}
         m_ViewType: 1
         updateViewLive: 0
-        m_CurrentFrameIndex: -1
+        m_CurrentFrameIndex: 2875
         m_HierarchyOverruledThreadFromSelection: 0
         m_ProfilerViewFilteringOptions: 1
         m_FrameDataHierarchyView:
@@ -2953,7 +2953,7 @@ MonoBehaviour:
     m_ControlHash: -371814159
     m_PrefName: Preview_InspectorPreview
   m_LastInspectedObjectEntityId:
-    m_Data: 85298
+    m_Data: 85304
   m_LastVerticalScrollValue: 0
   m_GlobalObjectId: 
   m_InspectorMode: 0

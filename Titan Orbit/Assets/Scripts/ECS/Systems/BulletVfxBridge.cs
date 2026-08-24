@@ -64,7 +64,10 @@ namespace TitanOrbit.ECS
             public float3 HitPosition;
             public float Damage;
             public byte OwnerTeam;
-            /// <summary>Shooter NetworkId — orphan anticipation reconcile when Sequence is unbound.</summary>
+            /// <summary>
+            /// Shooter NetworkId for orphan anticipation. On Sequence-0 ship rams this is
+            /// the victim GhostOwner so floats bind to that hull.
+            /// </summary>
             public int OwnerNetworkId;
             /// <summary>Firing mount (−1 unknown). Prefer this over nearest-tracer fallback.</summary>
             public int MountIndex;

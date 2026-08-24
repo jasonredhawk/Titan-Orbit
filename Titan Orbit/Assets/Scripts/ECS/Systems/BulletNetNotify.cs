@@ -169,7 +169,9 @@ namespace TitanOrbit.ECS
             byte ownerTeam,
             int bankIndex,
             float scaleMultiplier,
-            float asteroidHealthAfter)
+            float asteroidHealthAfter,
+            int ownerNetworkId = 0,
+            int mountIndex = 0)
         {
             // --- Flatten to the play plane ---
             // [TITAN-ORBIT] Combat and display are XZ; Y is unused on the torus.
@@ -183,6 +185,8 @@ namespace TitanOrbit.ECS
                 HitPosition = hitPosition,
                 Damage = damage,
                 OwnerTeam = ownerTeam,
+                OwnerNetworkId = ownerNetworkId,
+                MountIndex = mountIndex,
                 BankIndex = safeBank,
                 ScaleMultiplier = safeScale,
                 AsteroidHealthAfter = asteroidHealthAfter,
@@ -211,6 +215,8 @@ namespace TitanOrbit.ECS
                 PlanetaryDefensePlanetId = 0,
                 PlanetaryDefenseSlotIndex = 0,
                 PlanetaryDefenseHealthAfter = -1f,
+                OwnerNetworkId = ownerNetworkId,
+                MountIndex = mountIndex,
             });
             ecb.AddComponent(rpcEntity, new SendRpcCommandRequest { TargetConnection = Entity.Null });
         }
@@ -218,16 +224,18 @@ namespace TitanOrbit.ECS
         /// <summary>
         /// [TITAN-ORBIT] Ship↔ship ram / grind feedback on the same <see cref="BulletHitRpc"/>
         /// wire as asteroid rams. <c>Sequence = 0</c> (no tracer).
-        /// <c>AsteroidHealthAfter = -1</c> routes clients to the ship-hull float path
-        /// (explosion + damage numbers). Owner team is 0 so same-team rams still show floats
-        /// (the heal filter treats matching teams as friendly bullets).
+        /// <c>AsteroidHealthAfter = -1</c> routes clients to the ship-hull float path.
+        /// <c>OwnerNetworkId</c> / <c>MountIndex</c> are the two victim GhostOwners
+        /// (one explosion, both floats). Owner team is 0 so same-team rams still show floats.
         /// </summary>
         public static void SendRamShipHit(
             ref EntityCommandBuffer ecb,
             float3 hitPosition,
             float damage,
             int bankIndex,
-            float scaleMultiplier)
+            float scaleMultiplier,
+            int victimNetworkId,
+            int otherVictimNetworkId = 0)
         {
             SendRamAsteroidHit(
                 ref ecb,
@@ -236,7 +244,9 @@ namespace TitanOrbit.ECS
                 ownerTeam: 0,
                 bankIndex,
                 scaleMultiplier,
-                asteroidHealthAfter: -1f);
+                asteroidHealthAfter: -1f,
+                ownerNetworkId: victimNetworkId,
+                mountIndex: otherVictimNetworkId);
         }
     }
 }

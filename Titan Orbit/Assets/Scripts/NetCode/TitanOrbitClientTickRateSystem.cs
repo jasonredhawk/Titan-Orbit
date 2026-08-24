@@ -1,3 +1,4 @@
+using TitanOrbit.ECS;
 using Unity.Entities;
 using Unity.NetCode;
 
@@ -118,8 +119,15 @@ namespace TitanOrbit.NetCode
 
             sharedTickRate.SimulationTickRate = TitanOrbitServerTickRateSystem.SimulationHz;
             sharedTickRate.NetworkTickRate = TitanOrbitServerTickRateSystem.NetworkHz;
-            // [TITAN-ORBIT] Always allow join catch-up (basics34). Do not cruise-cap MaxSteps (H59 rejected).
-            sharedTickRate.MaxSimulationStepsPerFrame = TitanOrbitServerTickRateSystem.ClientMaxStepsPerFrame;
+            // [TITAN-ORBIT] Join still uses 8 (basics34 cmdAge climb). After settle, 3 — e2d7d2
+            // ship-ram logs: predBatch hit 8 and dtMs 70–100 on Player 2 (H59 “don’t cruise-cap”
+            // was wrong; SimulationStepBatchSize did hit MaxSteps during contact).
+            bool joinCatchUp = ClientJoinSettleCache.Settling
+                               || ClientJoinSettleCache.ShouldSkipShipSimulation;
+            int maxSteps = joinCatchUp
+                ? TitanOrbitServerTickRateSystem.ClientMaxStepsPerFrame
+                : TitanOrbitServerTickRateSystem.ClientCruiseMaxStepsPerFrame;
+            sharedTickRate.MaxSimulationStepsPerFrame = maxSteps;
             sharedTickRate.MaxSimulationStepBatchSize = 1;
             sharedTickRate.PredictedFixedStepSimulationTickRatio = 1;
             // [NETCODE] TargetFrameRateMode is a server pacing knob. Auto matches package defaults

@@ -70,8 +70,9 @@ namespace TitanOrbit.ECS.Editor
                 go.AddComponent<LinkedEntityGroupAuthoring>();
 
             // [NETCODE] Ships need ownership for command targeting. DefaultGhostMode is
-            // Predicted (not OwnerPredicted) so every client simulates every hull —
-            // interpolated remotes are kinematic and ship↔ship rams fail.
+            // Predicted (not OwnerPredicted) with SupportedGhostModes All so
+            // ShipClientPredictionSwitchSystem can interpolate remotes on each client.
+            // OwnerPredicted cannot be switched on demand.
             var ghost = go.AddComponent<GhostAuthoringComponent>();
             ghost.HasOwner = true;
             ghost.SupportAutoCommandTarget = true;

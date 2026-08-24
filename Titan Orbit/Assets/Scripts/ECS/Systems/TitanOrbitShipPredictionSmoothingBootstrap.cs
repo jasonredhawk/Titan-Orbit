@@ -6,9 +6,9 @@ namespace TitanOrbit.ECS
     /// <summary>
     /// One-shot client bootstrap for NetCode <see cref="GhostPredictionSmoothing"/>.
     /// <para>
-    /// [TITAN-ORBIT] Do <b>not</b> register LocalTransform smoothing — it fought
-    /// <c>ShipVisualSyncSystem</c> display coast and looked like blurry jitter (worse on P2).
-    /// Display-only velocity chase owns local presentation; remotes keep NetCode interpolation.
+    /// e2d7d2: registering LocalTransform smoothing (switch-v3) did not stop stutter — both
+    /// players still reported hitchy motion, matching the earlier P2 blurry-jitter result.
+    /// Leave unregistered. Display owns presentation (<c>ShipVisualSyncSystem</c>).
     /// </para>
     /// World: ClientSimulation. Group: InitializationSystemGroup (last).
     /// </summary>
@@ -16,12 +16,10 @@ namespace TitanOrbit.ECS
     [UpdateInGroup(typeof(InitializationSystemGroup), OrderLast = true)]
     public partial struct TitanOrbitShipPredictionSmoothingBootstrap : ISystem
     {
-        /// <summary>True after we successfully register (or decide we cannot).</summary>
+        /// <summary>True after we decide once.</summary>
         bool _done;
 
-        /// <summary>
-        /// Confirms we leave GhostPredictionSmoothing unregistered once the NetCode singleton exists.
-        /// </summary>
+        /// <summary>Confirms GhostPredictionSmoothing stays unregistered.</summary>
         public void OnUpdate(ref SystemState state)
         {
             if (_done)
@@ -30,14 +28,9 @@ namespace TitanOrbit.ECS
                 return;
             }
 
-            // [TITAN-ORBIT] Registering GhostPredictionSmoothing (blend 0.92) while
-            // ShipVisualSyncSystem also smooths display caused blurry micro-jitter on the local
-            // predicted ship (P2 especially). Remotes stay on NetCode interpolation only.
-            // Display-only velocity chase owns presentation; leave LocalTransform unsmoothed.
             _done = true;
             state.Enabled = false;
 
-            // Keep singleton lookup so we do not spin if NetCode creates it late.
             if (!SystemAPI.TryGetSingletonRW<GhostPredictionSmoothing>(out _))
                 return;
         }
