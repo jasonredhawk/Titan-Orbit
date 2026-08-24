@@ -98,9 +98,11 @@ namespace TitanOrbit.Game
             if (triCount == 0 && edgeCount == 0)
                 return;
 
-            // Planet centers are fixed — rebuild draw cache only when graph topology publishes.
-            int revision = PlanetConnectionGraphCache.ClientPublishRevision;
-            if (revision != _lastGraphRevision)
+            // Planet centers are fixed — rebuild when topology publishes, or retry while
+            // verts are still missing (hybrid proxies / published centers arrive a frame later).
+            int revision = PlanetConnectionGraphCache.PresentationRevision;
+            bool cacheEmpty = _worldCache.Count == 0 && _edgeCache.Count == 0;
+            if (revision != _lastGraphRevision || (cacheEmpty && triCount + edgeCount > 0))
             {
                 RebuildWorldCache();
                 _lastGraphRevision = revision;
@@ -110,9 +112,9 @@ namespace TitanOrbit.Game
                 return;
 
             World world = EcsGameBridge.GetVisualizationWorld();
-            if (world == null || !world.IsCreated)
-                return;
-            var em = world.EntityManager;
+            EntityManager em = default;
+            if (world != null && world.IsCreated)
+                em = world.EntityManager;
 
             using (Draw.Command(cam))
             {
@@ -121,7 +123,7 @@ namespace TitanOrbit.Game
                 Draw.BlendMode = ShapesBlendMode.Transparent;
 
                 Vector3 referencePos = ResolveDisplayReference(cam, em);
-                if (!ToroidalMap.TryGetMapSize(out float mapW, out float mapH))
+                if (!TryResolvePresentationMapSize(out float mapW, out float mapH))
                     return;
                 float edgeY = triangleHeight + edgeHeightAboveFill;
 
@@ -169,10 +171,13 @@ namespace TitanOrbit.Game
                 return;
 
             World world = EcsGameBridge.GetVisualizationWorld();
-            if (world == null || !world.IsCreated)
-                return;
-            var em = world.EntityManager;
-            var visualizer = EcsWorldVisualizer.Active;
+            EntityManager em = default;
+            EcsWorldVisualizer visualizer = null;
+            if (world != null && world.IsCreated)
+            {
+                em = world.EntityManager;
+                visualizer = EcsWorldVisualizer.Active;
+            }
 
             // --- Short-embeddable fills (graph already filtered non-embeddable cliques) ---
             for (int i = 0; i < triCount; i++)
@@ -240,7 +245,7 @@ namespace TitanOrbit.Game
             out Vector3 bPos,
             out Vector3 cPos)
         {
-            if (!ToroidalMap.TryGetMapSize(out float mapW, out float mapH))
+            if (!TryResolvePresentationMapSize(out float mapW, out float mapH))
             {
                 anchor = default;
                 bPos = default;
@@ -450,6 +455,34 @@ namespace TitanOrbit.Game
             return camPos;
         }
 
+        /// <summary>GO map size, else ECS singleton — never invent a 1000×1000 period.</summary>
+        static bool TryResolvePresentationMapSize(out float mapW, out float mapH)
+        {
+            if (ToroidalMap.TryGetMapSize(out mapW, out mapH))
+                return true;
+            return ToroidalMapEcs.TryGetMapSize(out mapW, out mapH);
+        }
+
+        /// <summary>Wraps XZ into the canonical rectangle when either map cache is set.</summary>
+        static Vector3 WrapCanonical(Vector3 raw)
+        {
+            raw.y = 0f;
+            if (ToroidalMap.HasValidMapSize)
+            {
+                raw = ToroidalMap.WrapPosition(raw);
+                raw.y = 0f;
+                return raw;
+            }
+
+            if (ToroidalMapEcs.TryGetMapSize(out float mapW, out float mapH))
+            {
+                float3 p = ToroidalMapEcs.Wrap(new float3(raw.x, 0f, raw.z), mapW, mapH);
+                return new Vector3(p.x, 0f, p.z);
+            }
+
+            return raw;
+        }
+
         /// <summary>
         /// Planet core XZ wrapped into canonical toroidal space (Y forced to 0).
         /// Uses hybrid visualizer planet pose (quarantine-safe) when available.
@@ -464,15 +497,20 @@ namespace TitanOrbit.Game
             if (planetId == 0)
                 return false;
 
-            if (visualizer == null ||
-                !visualizer.TryGetPlanetPoseByPlanetId(
-                    em, planetId, out float3 planetPos, out _, out _))
+            float3 planetPos;
+            if (visualizer != null &&
+                visualizer.TryGetPlanetPoseByPlanetId(
+                    em, planetId, out planetPos, out _, out _))
+            {
+                planetCanonical = WrapCanonical(new Vector3(planetPos.x, 0f, planetPos.z));
+                return true;
+            }
+
+            // Graph publish already has centers — do not require hybrid planet GOs.
+            if (!PlanetConnectionGraphCache.TryGetPublishedPlanetCenter(planetId, out planetPos))
                 return false;
 
-            planetPos.y = 0f;
-            Vector3 raw = new Vector3(planetPos.x, 0f, planetPos.z);
-            planetCanonical = ToroidalMap.WrapPosition(raw);
-            planetCanonical.y = 0f;
+            planetCanonical = WrapCanonical(new Vector3(planetPos.x, 0f, planetPos.z));
             return true;
         }
 

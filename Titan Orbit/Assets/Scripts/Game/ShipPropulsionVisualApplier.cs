@@ -13,10 +13,11 @@ namespace TitanOrbit.Game
 {
     /// <summary>
     /// Client-side engine and thruster jet VFX on ship GameObject proxies (ported from legacy Starship).
-    /// Thruster flames follow the <b>held thrust button</b> on the local hull, not hull speed.
+    /// Thruster flames follow the <b>held thrust button</b>, not hull speed.
     /// Local owner reads <see cref="ShipPendingInput"/> (written every Unity Update). Remotes
-    /// cannot see owner <see cref="IInputComponentData"/> commands — they use server
-    /// <see cref="ShipInput"/> on Local Host, else ghosted <see cref="ShipKinematics"/> speed.
+    /// cannot see owner <see cref="IInputComponentData"/> commands — they use Local Host
+    /// server <see cref="ShipInput"/>, else ghosted <see cref="ShipInput.Thrust"/>.
+    /// Do not add a new ShipState ghost bool for this — it desyncs StarshipGhost (548 vs 549 bits).
     /// Does not drive simulation.
     /// Attached by <see cref="EcsWorldVisualizer"/> when spawning ship hull proxies.
     /// Cosmetic smoothing of particle emission is intentional — never applied to ship transform position.
@@ -444,10 +445,10 @@ namespace TitanOrbit.Game
         /// <summary>
         /// Whether this ship should show thrust jets right now.
         /// Local owner: <see cref="ShipPendingInput"/>. Remotes: Local Host server input,
-        /// else ghosted <see cref="ShipInput.Thrust"/>, else <see cref="ShipKinematics"/> speed.
+        /// else ghosted <see cref="ShipInput.Thrust"/> (never hull speed — a ram is not a button).
         /// </summary>
         /// <param name="em">Visualization world entity manager for this proxy's ship.</param>
-        /// <returns>True while the thrust control is held (local) or the remote hull is thrusting / moving.</returns>
+        /// <returns>True while the thrust control is held (local) or the remote reports Thrust.</returns>
         bool ResolveThrustHeld(EntityManager em)
         {
             // --- Local owner: prefer pending input (Unity Update button state) ---
@@ -465,11 +466,8 @@ namespace TitanOrbit.Game
             if (TryReadLocalHostRemoteThrust(em, out bool hostThrust))
                 return hostThrust;
 
-            if (em.HasComponent<ShipInput>(_shipEntity) &&
-                em.GetComponentData<ShipInput>(_shipEntity).Thrust)
-                return true;
-
-            return IsRemoteMovingFromKinematics(em);
+            return em.HasComponent<ShipInput>(_shipEntity) &&
+                   em.GetComponentData<ShipInput>(_shipEntity).Thrust;
         }
 
         /// <summary>
@@ -526,19 +524,8 @@ namespace TitanOrbit.Game
             return false;
         }
 
-        /// <summary>True when ghosted planar speed says this remote hull is underway.</summary>
-        bool IsRemoteMovingFromKinematics(EntityManager em)
-        {
-            if (!em.HasComponent<ShipKinematics>(_shipEntity))
-                return false;
-
-            float3 vel = em.GetComponentData<ShipKinematics>(_shipEntity).Velocity;
-            vel.y = 0f;
-            return math.length(vel) >= EngineSpeedThreshold;
-        }
-
         /// <summary>
-        /// True only for this machine's predicted hull — remotes must use ghosted <see cref="ShipInput"/>.
+        /// True only for this machine's predicted hull — remotes must not read local pending input.
         /// </summary>
         bool IsLocalOwnerProxy(EntityManager em)
         {

@@ -116,10 +116,13 @@ namespace TitanOrbit.ECS
             owners.Dispose();
 
             // --- Path 3: NetCode GhostOwnerIsLocal tag (fallback) ---
+            // Enableable: the component exists on remotes too. Only the enabled bit is local.
             var localOwned = _shipLocalOwnerQuery.ToEntityArray(Allocator.Temp);
             for (int i = 0; i < localOwned.Length; i++)
             {
                 Entity entity = localOwned[i];
+                if (!state.EntityManager.IsComponentEnabled<GhostOwnerIsLocal>(entity))
+                    continue;
                 if (!state.EntityManager.HasComponent<LocalPlayerShipTag>(entity))
                     ecb.AddComponent<LocalPlayerShipTag>(entity);
             }

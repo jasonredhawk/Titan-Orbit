@@ -24,7 +24,8 @@ namespace TitanOrbit.ECS
     /// <summary>
     /// Dual-sided managed snapshot of the planet-connection graph.
     /// Server and client each publish into their own lists so listen-server cannot race.
-    /// Presentation (Shapes / minimap / thruster scale) always reads the <see cref="PlanetConnectionGraphSide.Client"/> side.
+    /// Presentation (Shapes / minimap / thruster scale) prefers the client side, then
+    /// falls back to the server lists on Local Host while the client publish is still empty.
     /// <para>
     /// Runtime planet-center triangle verts are baked at <see cref="PublishServer"/> /
     /// <see cref="PublishClient"/> from the same <see cref="PlanetConnectionGraphLogic.PlanetInput"/>
@@ -52,6 +53,8 @@ namespace TitanOrbit.ECS
             public readonly List<PlanetConnectionGraphLogic.RuntimeTriangle> RuntimeCache;
             public NativeArray<PlanetConnectionGraphLogic.RuntimeTriangle> RuntimeNative;
             public double RuntimeCacheStamp = -999.0;
+            /// <summary>PlanetId → canonical center from the last publish (drawer fallback).</summary>
+            public readonly Dictionary<int, float3> PlanetCenters;
 
             /// <summary>
             /// Next sticky <see cref="PlanetConnectionGraphLogic.Edge.CreationSequence"/> for this side.
@@ -65,6 +68,7 @@ namespace TitanOrbit.ECS
                 HomeLevelByTeam = new int[6];
                 RuntimeCache = new List<PlanetConnectionGraphLogic.RuntimeTriangle>(triCap);
                 RuntimeNative = default;
+                PlanetCenters = new Dictionary<int, float3>(32);
                 NextEdgeSequence = 1;
             }
 
@@ -75,6 +79,7 @@ namespace TitanOrbit.ECS
                 Triangles.Clear();
                 RuntimeCache.Clear();
                 RuntimeCacheStamp = -999.0;
+                PlanetCenters.Clear();
                 NextEdgeSequence = 1;
                 DisposeRuntimeNative();
                 for (int i = 0; i < HomeLevelByTeam.Length; i++)
@@ -137,11 +142,27 @@ namespace TitanOrbit.ECS
         /// <summary>Revision bumped on each Server publish — territory rebuilds when this changes.</summary>
         public static int ServerPublishRevision { get; private set; }
 
-        /// <summary>Presentation triangles (client side). Empty until client graph system publishes.</summary>
-        public static IReadOnlyList<PlanetConnectionGraphLogic.Triangle> CurrentTriangles => Client.Triangles;
+        /// <summary>
+        /// Drawers watch this. Local Host can show server topology before the client side
+        /// publishes — <see cref="ClientPublishRevision"/> alone left those frames stuck empty.
+        /// </summary>
+        public static int PresentationRevision =>
+            ClientPublishRevision + ServerPublishRevision;
 
-        /// <summary>Presentation edges (client side), including lone visual-only links.</summary>
-        public static IReadOnlyList<PlanetConnectionGraphLogic.Edge> CurrentEdges => Client.Edges;
+        /// <summary>True when the client side has any published edges or triangles.</summary>
+        static bool ClientHasPresentationTopology =>
+            Client.Triangles.Count > 0 || Client.Edges.Count > 0;
+
+        /// <summary>
+        /// Presentation triangles. Prefer the client publish; Local Host falls back to the
+        /// server list when the client side is still empty (drawers used to show nothing).
+        /// </summary>
+        public static IReadOnlyList<PlanetConnectionGraphLogic.Triangle> CurrentTriangles =>
+            ClientHasPresentationTopology ? Client.Triangles : Server.Triangles;
+
+        /// <summary>Presentation edges. Same client-then-server fallback as <see cref="CurrentTriangles"/>.</summary>
+        public static IReadOnlyList<PlanetConnectionGraphLogic.Edge> CurrentEdges =>
+            ClientHasPresentationTopology ? Client.Edges : Server.Edges;
 
         /// <summary>
         /// Next sticky edge creation sequence on the client side (seeded into rebuild, updated on publish).
@@ -361,12 +382,48 @@ namespace TitanOrbit.ECS
             // TransformQuarantine a partial registry used to leave RuntimeCache short while hybrid
             // drawers still showed fills → FriendlyTerritoryMovementMultiplier always returned 1.
             BakeRuntimeCacheFromPlanetInputs(side, planets);
+            StorePlanetCenters(side, planets);
 
             if (isClient)
                 ClientPublishRevision++;
             else
                 ServerPublishRevision++;
         }
+
+        /// <summary>Caches PlanetId → center from the same inputs used to rebuild topology.</summary>
+        static void StorePlanetCenters(
+            Side side,
+            in NativeArray<PlanetConnectionGraphLogic.PlanetInput> planets)
+        {
+            side.PlanetCenters.Clear();
+            if (!planets.IsCreated)
+                return;
+
+            for (int i = 0; i < planets.Length; i++)
+            {
+                var p = planets[i];
+                if (p.PlanetId == 0)
+                    continue;
+                side.PlanetCenters[p.PlanetId] = p.Position;
+            }
+        }
+
+        /// <summary>
+        /// Canonical planet center from the last graph publish. Used when hybrid planet
+        /// proxies are missing so world / minimap lines can still draw.
+        /// </summary>
+        public static bool TryGetPublishedPlanetCenter(int planetId, out float3 position)
+        {
+            position = default;
+            if (planetId == 0)
+                return false;
+            if (Client.PlanetCenters.TryGetValue(planetId, out position))
+                return true;
+            return Server.PlanetCenters.TryGetValue(planetId, out position);
+        }
+
+        /// <summary>Forces the client graph system to rebuild on its next eligible tick.</summary>
+        public static void RequestClientRebuild() => s_ClientRebuildRequested = true;
 
         /// <summary>
         /// Builds complete runtime triangles from PlanetInput centers already used for topology.

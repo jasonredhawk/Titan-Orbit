@@ -101,7 +101,7 @@ namespace TitanOrbit.UI
         /// </summary>
         void LateUpdate()
         {
-            int revision = PlanetConnectionGraphCache.ClientPublishRevision;
+            int revision = PlanetConnectionGraphCache.PresentationRevision;
             int triCount = PlanetConnectionGraphCache.CurrentTriangles?.Count ?? 0;
             int edgeCount = PlanetConnectionGraphCache.CurrentEdges?.Count ?? 0;
             int count = triCount + edgeCount;
@@ -109,7 +109,9 @@ namespace TitanOrbit.UI
             bool vertsRebuilt = false;
 
             // Planet centers are fixed — only rebuild world verts when topology publishes.
-            if (topologyChanged)
+            // Retry while topology exists but verts are still unresolved.
+            bool cacheEmpty = _worldCache.Count == 0 && _edgeCache.Count == 0;
+            if (topologyChanged || (cacheEmpty && count > 0))
             {
                 RebuildWorldCache();
                 _lastGraphRevision = revision;
@@ -158,10 +160,13 @@ namespace TitanOrbit.UI
                 return;
 
             World world = EcsGameBridge.GetVisualizationWorld();
-            if (world == null || !world.IsCreated)
-                return;
-            var em = world.EntityManager;
-            var visualizer = EcsWorldVisualizer.Active;
+            EntityManager em = default;
+            EcsWorldVisualizer visualizer = null;
+            if (world != null && world.IsCreated)
+            {
+                em = world.EntityManager;
+                visualizer = EcsWorldVisualizer.Active;
+            }
 
             // --- Store canonical corners; draw-time picks the chart nearest the player ---
             for (int i = 0; i < triCount; i++)
@@ -230,7 +235,8 @@ namespace TitanOrbit.UI
             float radius = Mathf.Max(1f, _minimap.MinimapRadius);
             float displayHalf = _minimap.DisplaySize * 0.5f;
             float scale = displayHalf / radius;
-            if (!ToroidalMap.TryGetMapSize(out float mapW, out float mapH))
+            if (!ToroidalMap.TryGetMapSize(out float mapW, out float mapH) &&
+                !ToroidalMapEcs.TryGetMapSize(out mapW, out mapH))
                 return;
 
             // --- 3×3 tile copies when showing (near) the full map ---

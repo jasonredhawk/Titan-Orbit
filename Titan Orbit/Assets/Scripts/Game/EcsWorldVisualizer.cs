@@ -922,7 +922,7 @@ namespace TitanOrbit.Game
                 viewerTeam = em.GetComponentData<ShipState>(localShip).Team;
             }
 
-            int graphRevision = PlanetConnectionGraphCache.ClientPublishRevision;
+            int graphRevision = PlanetConnectionGraphCache.PresentationRevision;
             if (graphRevision != _lastAsteroidTintGraphRevision ||
                 viewerTeam != _lastAsteroidTintViewerTeam)
             {
