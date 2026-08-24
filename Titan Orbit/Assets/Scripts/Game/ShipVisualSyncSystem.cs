@@ -14,7 +14,8 @@ namespace TitanOrbit.Game
 {
     /// <summary>
     /// Publishes NetCode presentation-phase ship poses once per frame for camera, hybrid leftovers,
-    /// and parallax. Remotes use NetCode interpolation as-is.
+    /// and parallax. Ships are Predicted — remotes publish predicted <see cref="LocalTransform"/>.
+    /// Map bodies stay interpolated (other systems).
     /// <para>
     /// [TITAN-ORBIT] Local ship wraps onto the canonical chart; camera follows that pose.
     /// A ±map-size jump hard-snaps display (no long lerp / H73 coast across the rectangle).
@@ -267,10 +268,6 @@ namespace TitanOrbit.Game
             bool catchingUp = math.abs(commandAge) > CommandAgeHoldThreshold;
             float dt = math.min(math.max(0f, UnityEngine.Time.unscaledDeltaTime), MaxSmoothDeltaTime);
 
-            float3 simVel = float3.zero;
-            if (EntityManager.HasComponent<ShipKinematics>(localShip))
-                simVel = EntityManager.GetComponentData<ShipKinematics>(localShip).Velocity;
-
             bool shipChanged = _smoothInitialized && _smoothShipEntity != Entity.Null && localShip != _smoothShipEntity;
             _smoothShipEntity = localShip;
             if (shipChanged)
@@ -304,7 +301,6 @@ namespace TitanOrbit.Game
                     _postGrindCoastFrames--;
             }
             bool grindRawFollow = asteroidContact || _postGrindRawFrames > 0;
-            bool postGrindCoast = !grindRawFollow && _postGrindCoastFrames > 0;
 
             // --- Death / respawn edge ---
             // [TITAN-ORBIT] Server teleports LocalTransform to the home orbit ring. Display
@@ -342,13 +338,17 @@ namespace TitanOrbit.Game
                 _smoothRot = targetRot;
                 _smoothInitialized = true;
             }
-            else if (catchingUp || displayErr > 2f)
+            else if (catchingUp)
             {
+                // Join / snapshot-debt storms only — do not coast healthy predicted frames.
                 StepDisplayToward(targetPos, targetRot, dt, CatchUpDisplayMaxSpeed);
             }
             else
             {
-                StepCruiseRawOrCoast(targetPos, targetRot, simVel, dt, postGrindCoast);
+                // [NETCODE] Predicted pose is the display pose. Extra cruise lerp fought
+                // reconcile after remotes became Predicted (same PhysX solve both worlds).
+                _smoothPos = targetPos;
+                _smoothRot = targetRot;
             }
 
             // --- Publish pose for camera / hybrid / EG LocalToWorld ---

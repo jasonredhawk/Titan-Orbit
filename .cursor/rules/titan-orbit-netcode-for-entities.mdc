@@ -1,0 +1,160 @@
+---
+description: Unity Netcode for Entities 6.6 — dedicated-server standard practice (worlds, ghosts, prediction, RPCs)
+alwaysApply: true
+---
+
+# Titan Orbit — Netcode for Entities (standard practice)
+
+Stack is **Netcode for Entities 6.6** (NCE / DOTS), **not** Netcode for GameObjects (NGO).
+Docs: https://docs.unity3d.com/Packages/com.unity.netcode@6.6/manual/index.html
+
+This project is a **dedicated server**: the server world is the only simulation authority. Clients gather input, predict ships that must collide, interpolate map bodies, and render. Do not add listen-server / host-authoritative / NGO patterns.
+
+Paired: `titan-orbit-ship-simulation.mdc` (flight feel), `titan-orbit-headless-server-rebuild.mdc` (when to rebuild).
+
+---
+
+## 1. Worlds — tag every system
+
+NCE runs isolated ECS worlds. A system with no filter is created in **both** client and server `SimulationSystemGroup`. Always declare the world.
+
+| Flag | Use |
+|------|-----|
+| `WorldSystemFilterFlags.ServerSimulation` | Authoritative sim, validation, spawning, economy |
+| `WorldSystemFilterFlags.ClientSimulation` | Input gather, prediction wiring, interpolation, presentation |
+| Both (`Server \| Client`) | Shared predicted gameplay (same code, both worlds) |
+| `ThinClientSimulation` | Only if the system must run on MPPM thin clients |
+
+`[UpdateInGroup(typeof(GhostInputSystemGroup))]` already implies client. `PresentationSystemGroup` exists on clients only — never put render/audio/HUD in the server world.
+
+```csharp
+// ❌ BAD — runs on dedicated server (no GPU / no local player)
+public partial struct ShipVfxSystem : ISystem { }
+
+// ✅ GOOD — client presentation only
+[WorldSystemFilter(WorldSystemFilterFlags.ClientSimulation)]
+[UpdateInGroup(typeof(PresentationSystemGroup))]
+public partial struct ShipVfxSystem : ISystem { }
+
+// ✅ GOOD — predicted gameplay, written once, runs on both
+[WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation | WorldSystemFilterFlags.ClientSimulation)]
+[UpdateInGroup(typeof(PredictedSimulationSystemGroup))]
+public partial struct ShipMotorSystem : ISystem { }
+```
+
+---
+
+## 2. Ghosts — replicate state, not events
+
+Replicated entities are **ghosts**. Bake a `GhostAuthoringComponent` on the prefab. Mark replicated fields with `[GhostField]`. Use `GhostComponentVariation` / quantization when you need a smaller wire format without changing the gameplay type.
+
+| Ghost | `GhostAuthoring` | Why |
+|-------|------------------|-----|
+| Player ships (local **and** remotes) | `HasOwner`, `SupportAutoCommandTarget`, **Predicted** (`SupportedGhostModes = All`) | Hulls that must collide stay dynamic on every client. Interpolated remotes are kinematic — NCE zeros `PhysicsVelocity` and rams fail. `OwnerPredicted` cannot be prediction-switched. |
+| Map bodies (planets / asteroids / gems) | **Interpolated** | Snapshot pose only; ships do not two-body-push them this tick |
+| Short-lived movers | Interpolated + **Dynamic** optimize | Pose must keep sending |
+
+Do **not** treat remote ships as interpolated moving walls plus a custom sweep. Official path: predict both hulls, let Unity.Physics in `PredictedFixedStepSimulationSystemGroup` solve the contact. Use prediction switching later only if ship count blows CPU (`DefaultGhostMode` must not stay `OwnerPredicted`).
+
+Server sets `GhostOwner.NetworkId` to the owning `NetworkId`. Clients test ownership with `GhostOwnerIsLocal` (not a hand-rolled id check).
+
+```csharp
+// ❌ BAD — replicate derived / visual-only data every tick
+[GhostField] public float3 MeshDisplayPosition;
+
+// ✅ GOOD — replicate authoritative sim state; derive presentation on the client
+[GhostField] public int Population;
+[GhostField(Quantization = 1000)] public float CurrentGems;
+```
+
+Do not invent a second snapshot protocol. Do not send `LocalTransform` every frame as an RPC.
+
+---
+
+## 3. Input and prediction
+
+Tick-based prediction — not client-sent positions.
+
+1. **Gather** (client only) in `GhostInputSystemGroup`. Write an `IInputComponentData` on the owned ghost (`GhostOwnerIsLocal`). Use `InputEvent` for one-shots (`GetKeyDown`).
+2. **Process** (client + server, same code) in `PredictedSimulationSystemGroup`. Physics-coupled motors go in `PredictedFixedStepSimulationSystemGroup` (NCE moves `PhysicsSystemGroup` there).
+3. Predicted queries include `.WithAll<PredictedGhost, Simulate>()`. `Simulate` is how NCE skips ghosts that already have a newer snapshot (partial snapshots).
+4. Use `NetworkTime` / prediction `TimeData`. Never poll `UnityEngine.Input` inside the prediction loop. Server **must not** overwrite received commands.
+
+```csharp
+[UpdateInGroup(typeof(GhostInputSystemGroup))]
+[WorldSystemFilter(WorldSystemFilterFlags.ClientSimulation)]
+public partial struct GatherShipInputSystem : ISystem { /* write IInputComponentData */ }
+
+[UpdateInGroup(typeof(PredictedFixedStepSimulationSystemGroup))]
+[WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation | WorldSystemFilterFlags.ClientSimulation)]
+public partial struct DriveShipSystem : ISystem
+{
+    public void OnUpdate(ref SystemState state)
+    {
+        foreach (var (transform, input) in
+                 SystemAPI.Query<RefRW<LocalTransform>, RefRO<ShipInput>>()
+                     .WithAll<PredictedGhost, Simulate>())
+        {
+            // same motor math on client (predict) and server (authoritative)
+        }
+    }
+}
+```
+
+In this repo: `ShipInput` (`IInputComponentData`), gather via `ShipInputApplySystem`, shared motor `ShipPhysicsDriveLogic`.
+
+One-shot predicted VFX/spawns: gate with `NetworkTime.IsFirstTimeFullyPredictingTick` so rollback does not replay them.
+
+---
+
+## 4. RPCs — one-off, reliable, not state
+
+Use `IRpcCommand` for join/team/chat/purchases/map-flow — not for per-tick pose or health.
+
+- Client: create entity with the command + `SendRpcCommandRequest` (target is the server).
+- Server: query `ReceiveRpcCommandRequest`, apply, **destroy** the request entity.
+- Server → one client: set `SendRpcCommandRequest.TargetConnection`. `Entity.Null` broadcasts.
+- RPCs are reliable and not tick-aligned. Late joiners will **not** see past RPCs — persistent facts belong on ghosts.
+
+```csharp
+// ❌ BAD — movement as an RPC
+public struct SetShipPositionRpc : IRpcCommand { public float3 Position; }
+
+// ✅ GOOD — one-off command; result lives on a ghost field
+public struct RequestTeamCommand : IRpcCommand { public int TeamId; }
+```
+
+In this repo: `NetworkCommands.cs`.
+
+---
+
+## 5. Dedicated server and testing
+
+- **Authority:** server simulates each tick once. Client prediction is a forecast; the server snapshot wins.
+- **Headless:** `UNITY_SERVER` has no `PresentationSystemGroup`. Do not `#if !UNITY_SERVER` gameplay that the server must also run.
+- **Tick rate:** `ClientServerTickRate` on the server (`SimulationTickRate`, `NetworkTickRate`). Do not drive predicted motors from `Time.deltaTime`.
+- **Test:** Multiplayer Play Mode (MPPM) in Editor. Deployed GCE/Linux binaries only change after a dedicated server rebuild (see headless-rebuild rule).
+- **Thin clients** are input-only soak tools — they are not a second gameplay architecture.
+
+---
+
+## Forbidden (leave the standard path)
+
+- NGO `NetworkBehaviour` / `NetworkVariable` / client-authoritative transforms
+- Custom UDP/WebSocket gameplay protocols alongside NCE ghosts
+- GameObject `Rigidbody` / PhysX as a second predicted motor
+- Client-only “corrections” that the server will not simulate (god-mode speed, fake hits)
+- Systems that run predicted state **and** presentation without a world filter
+
+---
+
+## Agent checklist
+
+- [ ] `WorldSystemFilter` (or a group that implies one) on every new system
+- [ ] Continuous state → ghost `[GhostField]`; one-off → `IRpcCommand`
+- [ ] Ships that collide: Predicted + `IInputComponentData` + `GhostOwnerIsLocal` for the owner (gather only)
+- [ ] Map bodies: Interpolated; presentation reads interpolated pose. Predicted ships read predicted pose
+- [ ] Predicted writes in `PredictedSimulationSystemGroup` / `PredictedFixedStep…`; gather in `GhostInputSystemGroup`
+- [ ] Shared predicted logic is identical on client and server
+- [ ] Predicted queries use `PredictedGhost` + `Simulate`
+- [ ] No NGO APIs, no per-frame position RPCs, no server presentation systems

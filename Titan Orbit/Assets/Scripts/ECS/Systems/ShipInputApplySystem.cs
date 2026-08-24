@@ -4,7 +4,7 @@ using Unity.NetCode;
 
 namespace TitanOrbit.ECS
 {
-    // Pipeline: ShipInputApplySystem → ShipClientPredictedPhysicsDriveSystem → PhysicsSystemGroup → …
+    // Pipeline: ShipInputApplySystem → ShipPhysicsDriveSystem → PhysicsSystemGroup → …
     /// <summary>
     /// Copies the latest player input from <see cref="ShipPendingInput"/> onto the local ship
     /// ghost during <see cref="GhostInputSystemGroup"/> — before prediction runs this tick.

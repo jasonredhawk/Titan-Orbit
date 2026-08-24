@@ -4,10 +4,11 @@ namespace TitanOrbit.ECS
 {
     /// <summary>
     /// [LEGACY] Server-world only: clears <see cref="BulletSpawnEventElement"/> after sim writes them.
+    /// Lives in <see cref="SimulationSystemGroup"/> — dedicated server has no presentation group.
     /// Client cosmetic tracers are owned by <see cref="Game.BulletVfxDriver"/> via
     /// <see cref="BulletSpawnRpc"/> / <see cref="BulletVfxBridge"/> — not ECS tracer entities.
     /// </summary>
-    [UpdateInGroup(typeof(PresentationSystemGroup))]
+    [UpdateInGroup(typeof(SimulationSystemGroup))]
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation)]
     public partial struct BulletPresentationSystem : ISystem
     {
@@ -37,7 +38,7 @@ namespace TitanOrbit.ECS
     /// Impact VFX comes from server <see cref="BulletHitRpc"/> via <see cref="BulletVfxDriver"/>.
     /// Kept as an empty server stub so asmdef / type references stay stable.
     /// </summary>
-    [UpdateInGroup(typeof(PresentationSystemGroup))]
+    [UpdateInGroup(typeof(SimulationSystemGroup))]
     [UpdateAfter(typeof(BulletPresentationSystem))]
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation)]
     public partial struct BulletTracerUpdateSystem : ISystem

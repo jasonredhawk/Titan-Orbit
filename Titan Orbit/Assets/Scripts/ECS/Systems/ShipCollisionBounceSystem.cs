@@ -26,7 +26,8 @@ namespace TitanOrbit.ECS
     /// <see cref="ShipAsteroidContactFrictionSystem"/> which runs after this system.
     /// </para>
     /// Pipeline: Drive → Snapshot → PhysicsSimulation → Export → Bounce (this) → Friction →
-    /// SolidContact → Wrap → Planar → Kinematics.
+    /// Wrap → Planar → Kinematics. Ship↔ship InContact is set here so the next drive
+    /// tick rejects inward thrust (both worlds — remotes are Predicted, not interpolated).
     /// </summary>
     [UpdateInGroup(typeof(AfterPhysicsSystemGroup))]
     [UpdateBefore(typeof(ShipAsteroidContactFrictionSystem))]
@@ -108,6 +109,7 @@ namespace TitanOrbit.ECS
             var asteroidStateLookup = SystemAPI.GetComponentLookup<AsteroidState>(true);
             var culledLookup = SystemAPI.GetComponentLookup<AsteroidClientCulledTag>(true);
             var velocityLookup = SystemAPI.GetComponentLookup<PhysicsVelocity>(false);
+            var contactLookup = SystemAPI.GetComponentLookup<ShipAsteroidContactState>(false);
 
             // Working velocities start from the pre-collision snapshot so multiple contacts
             // in one tick accumulate correctly without reading PhysX's inelastic result.
@@ -136,6 +138,10 @@ namespace TitanOrbit.ECS
                     // (that felt like a magnet). Keep MEGA plow from undoing the solver pose.
                     megaKeepPhysX.Add(pair.EntityA);
                     megaKeepPhysX.Add(pair.EntityB);
+                    // Next drive tick: reject inward thrust while grinding. Both worlds —
+                    // remotes are Predicted so this no longer fights interpolated display.
+                    MarkShipShipContact(pair.EntityA, pair.NormalAFromB, contactLookup);
+                    MarkShipShipContact(pair.EntityB, -pair.NormalAFromB, contactLookup);
                 }
                 else if (pair.Kind == KindAsteroid)
                 {
@@ -248,6 +254,30 @@ namespace TitanOrbit.ECS
             seenShipPairs.Dispose();
             megaUnconstrained.Dispose();
             megaKeepPhysX.Dispose();
+        }
+
+        /// <summary>
+        /// Marks a predicted ship as in hull contact so the next drive tick rejects
+        /// inward thrust. Same flag asteroids use — not ghosted, recomputed both worlds.
+        /// </summary>
+        static void MarkShipShipContact(
+            Entity ship,
+            float3 outwardNormal,
+            ComponentLookup<ShipAsteroidContactState> contact)
+        {
+            if (!contact.HasComponent(ship))
+                return;
+            float3 n = outwardNormal;
+            n.y = 0f;
+            if (math.lengthsq(n) < 1e-8f)
+                n = new float3(0f, 0f, 1f);
+            else
+                n = math.normalize(n);
+            contact[ship] = new ShipAsteroidContactState
+            {
+                InContact = 1,
+                OutwardNormal = n,
+            };
         }
 
         /// <summary>

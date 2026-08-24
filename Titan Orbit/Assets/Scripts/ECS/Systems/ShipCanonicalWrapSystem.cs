@@ -74,6 +74,8 @@ namespace TitanOrbit.ECS
                          .WithAll<ShipTag, Simulate>()
                          .WithEntityAccess())
             {
+                // PredictedGhost is not IEnableable — remotes lack the component entirely
+                // (DisableOnInterpolatedClient). GhostOwnerIsLocal is the enable-bit tag.
                 if (client && !predictedLookup.HasComponent(shipEntity))
                     continue;
                 if (shipState.ValueRO.IsDead || shipState.ValueRO.AwaitingTeamSelection)

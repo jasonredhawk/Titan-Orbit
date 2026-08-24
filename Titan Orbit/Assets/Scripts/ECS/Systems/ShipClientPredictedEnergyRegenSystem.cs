@@ -17,7 +17,7 @@ namespace TitanOrbit.ECS
     /// </para>
     /// </summary>
     [UpdateInGroup(typeof(PredictedFixedStepSimulationSystemGroup), OrderFirst = true)]
-    [UpdateBefore(typeof(ShipClientPredictedPhysicsDriveSystem))]
+    [UpdateBefore(typeof(ShipPhysicsDriveSystem))]
     [WorldSystemFilter(WorldSystemFilterFlags.ClientSimulation)]
     public partial struct ShipClientPredictedEnergyRegenSystem : ISystem
     {

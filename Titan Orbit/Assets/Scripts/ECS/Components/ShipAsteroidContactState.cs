@@ -9,10 +9,10 @@ namespace TitanOrbit.ECS
     /// read on the <b>next</b> fixed step by <see cref="ShipPhysicsDriveLogic"/> so the motor
     /// cannot re-accelerate into the rock (progressive grind penetration).
     /// <para>
-    /// [TITAN-ORBIT] Not ghosted — local predicted / server sim only. Cleared every physics tick
-    /// before events run. Asteroid events and <see cref="ShipShipSolidContactSystem"/> both
-    /// set <see cref="InContact"/> so drive rejects inward thrust and local display raw-follows
-    /// (coast vs ram snaps looks jerky).
+    /// [TITAN-ORBIT] Not ghosted — recomputed on both worlds. Cleared every physics tick
+    /// before events run. Asteroid events always set <see cref="InContact"/>.
+    /// <see cref="ShipCollisionBounceSystem"/> also sets it for ship↔ship so drive rejects
+    /// inward thrust while grinding. Remotes are Predicted, so both worlds write the same flag.
     /// </para>
     /// </summary>
     public struct ShipAsteroidContactState : IComponentData

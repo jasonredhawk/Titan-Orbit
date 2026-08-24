@@ -6,11 +6,18 @@ namespace TitanOrbit.ECS
 {
     /// <summary>
     /// Owner client input for predicted ship movement and combat. Implements
-    /// <see cref="IInputComponentData"/> — NetCode serializes this from client to server each tick
-    /// and applies it to predicted ghosts on the client during <see cref="GhostInputSystemGroup"/>.
-    /// Filled by <see cref="Game.ShipInputBridge"/> on the client. Paired with
+    /// <see cref="IInputComponentData"/> — NetCode serializes this from the owner client to the
+    /// server each tick and copies the matching tick onto the ghost before prediction.
+    /// <para>
+    /// [NETCODE] <see cref="GhostPrefabType.AllPredicted"/> keeps this component on every
+    /// predicted ship (local and remotes). <see cref="GhostFieldAttribute"/> values also
+    /// snapshot to other clients so remote motors can replay the same commands during
+    /// rollback. Without that, remotes predict from velocity only and rams disagree.
+    /// </para>
+    /// Filled by <see cref="Game.ShipInputBridge"/> on the owner client. Paired with
     /// <see cref="ShipInputApplySystem"/> which copies pending input onto the local ghost.
     /// </summary>
+    [GhostComponent(PrefabType = GhostPrefabType.AllPredicted)]
     public struct ShipInput : IInputComponentData
     {
         // --- Type members ---
