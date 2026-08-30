@@ -35,7 +35,8 @@ namespace TitanOrbit.ECS
     /// While <see cref="ShipAsteroidContactState"/> reports contact from the previous physics
     /// step, inward velocity into the rock is removed so continuous thrust cannot dig the hull in
     /// (position shove from AABB spheres was tried and rejected — compound hulls over-estimate).
-    /// Paired with <see cref="ShipPhysicsDriveSystem"/> (same job on server and client).
+    /// Paired with <see cref="ShipPhysicsDriveSystem"/> and
+    /// <see cref="ShipClientPredictedPhysicsDriveSystem"/>.
     /// </summary>
     public static class ShipPhysicsDriveLogic
     {

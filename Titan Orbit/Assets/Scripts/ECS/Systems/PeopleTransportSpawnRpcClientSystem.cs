@@ -8,8 +8,7 @@ namespace TitanOrbit.ECS
     /// <summary>
     /// Client: receives <see cref="PeopleTransportSpawnRpc"/> and feeds
     /// <see cref="PeopleTransportVfxBridge"/> for <c>PeopleTransportVfxDriver</c> GameObjects.
-    /// In-flight pose is dead-reckoned from this spawn's velocity. End-of-life still
-    /// arrives via <see cref="PeopleTransportPoseRpcClientSystem"/> (Consumed / Destroyed).
+    /// Pose / combat positions arrive separately via <see cref="PeopleTransportPoseRpcClientSystem"/>.
     /// Does not create ECS presentation entities — hybrid GO VFX is owned by the MonoBehaviour driver.
     /// World: ClientSimulation. Group: SimulationSystemGroup.
     /// </summary>

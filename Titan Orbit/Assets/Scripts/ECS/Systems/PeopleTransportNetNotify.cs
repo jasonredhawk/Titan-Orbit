@@ -9,15 +9,14 @@ namespace TitanOrbit.ECS
     /// Server → client notify helpers for people-transport VFX.
     /// <para>
     /// Server entities stay non-ghost (bullet / delivery authority). Clients never Instantiates a
-    /// PeopleTransportGhost (GhostSpawn flood). VFX dead-reckons from spawn RPC velocity.
-    /// <see cref="PeopleTransportPoseRpc"/> is end-of-life only (Consumed / Destroyed).
+    /// PeopleTransportGhost — they mirror <see cref="PeopleTransportPoseRpc"/> onto hybrid GOs.
     /// </para>
     /// </summary>
     public static class PeopleTransportNetNotify
     {
         /// <summary>
-        /// Broadcasts Consumed / Destroyed (one-off) and mirrors it into the host VFX bridge
-        /// when a ClientWorld exists in-process. Do not call this every tick.
+        /// Broadcasts an Active pose (or Consumed / Destroyed end) and mirrors it into the host
+        /// VFX bridge when a ClientWorld exists in-process.
         /// </summary>
         public static void SendPose(
             ref EntityCommandBuffer ecb,

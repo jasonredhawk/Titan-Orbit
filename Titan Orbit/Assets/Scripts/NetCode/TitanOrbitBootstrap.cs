@@ -29,7 +29,7 @@ namespace TitanOrbit.NetCode
             // [NETCODE] Do not set Application.targetFrameRate on dedicated server here — Sleep mode
             // (ClientServerTickRate.Auto → Sleep under UNITY_SERVER) owns it via AdjustTargetFrameRate.
             // Pinning 60 fights that loop and spams NetcodeServerRateManager sleep-mode warnings.
-            // [NETCODE] Custom UDP/IPC driver — dedicated hosts listen on a public IP:port.
+            // [NETCODE] Custom UDP driver — supports Unity Relay and direct LAN sockets.
             NetworkStreamReceiveSystem.DriverConstructor = new TitanOrbitRelayDriverConstructor();
 
             // --- Auto-connect port ---
@@ -89,7 +89,7 @@ namespace TitanOrbit.NetCode
             else
             {
                 // [TITAN-ORBIT] Standalone client (Windows / WebGL / Android) — ClientWorld only.
-                // Join game → dedicated host. Do NOT CreateDefaultClientServerWorlds() (that auto-hosts).
+                // Join game → Relay. Do NOT CreateDefaultClientServerWorlds() (that auto-hosts).
 #if UNITY_WEBGL && !UNITY_EDITOR
                 // [TITAN-ORBIT] WebGL needs a filtered ClientWorld — stock CreateClientWorld OOBs
                 // during system OnCreate / first Update (Chrome 2026-08-09 / 2026-08-10).
@@ -97,7 +97,7 @@ namespace TitanOrbit.NetCode
 #else
                 CreateClientWorld("ClientWorld");
 #endif
-                Debug.Log("[TitanOrbitBootstrap] Player client: ClientWorld only. AutoConnectPort=0 (Join game / dedicated host).");
+                Debug.Log("[TitanOrbitBootstrap] Player client: ClientWorld only. AutoConnectPort=0 (Join game / Relay).");
             }
 
             return true;

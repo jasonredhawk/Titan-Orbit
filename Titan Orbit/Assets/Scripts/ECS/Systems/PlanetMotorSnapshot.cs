@@ -57,7 +57,7 @@ namespace TitanOrbit.ECS
         /// [TITAN-ORBIT] Uses planet <c>ToEntityArray</c> — safe on the <b>server</b> only.
         /// On clients under <see cref="ClientJoinSettleCache.TransformQuarantine"/> this gather
         /// Crash!!! — use <see cref="CollectFromClientRegistry"/> instead
-        /// (see <see cref="ShipPhysicsDriveSystem"/>).
+        /// (see <see cref="ShipClientPredictedPhysicsDriveSystem"/>).
         /// </para>
         /// </summary>
         /// <param name="state">System state used only for EntityManager access.</param>

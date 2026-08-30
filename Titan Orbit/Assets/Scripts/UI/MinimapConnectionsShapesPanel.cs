@@ -102,13 +102,10 @@ namespace TitanOrbit.UI
                 return;
 
             World world = EcsGameBridge.GetVisualizationWorld();
-            EntityManager em = default;
-            EcsWorldVisualizer visualizer = null;
-            if (world != null && world.IsCreated)
-            {
-                em = world.EntityManager;
-                visualizer = EcsWorldVisualizer.Active;
-            }
+            if (world == null || !world.IsCreated)
+                return;
+            var em = world.EntityManager;
+            var visualizer = EcsWorldVisualizer.Active;
 
             Vector3 playerPos = _minimap.PlayerPosition;
             float radius = Mathf.Max(1f, _minimap.MinimapRadius);

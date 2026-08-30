@@ -422,13 +422,9 @@ namespace TitanOrbit.UI
             anchor.IsDead = ship.IsDead;
             anchor.AwaitingTeamSelection = ship.AwaitingTeamSelection;
             // [TITAN-ORBIT] No local blip until Join Team / resume confirms.
-            // GhostOwnerIsLocal exists on every OwnerPredicted ship — only the enable bit
-            // is this machine's hull. HasComponent alone marked remotes local (P2 minimap
-            // locked onto P1 and never moved).
-            bool ghostOwnerLocal = em.HasComponent<GhostOwnerIsLocal>(entity) &&
-                                   em.IsComponentEnabled<GhostOwnerIsLocal>(entity);
             anchor.IsLocalPlayer = !ClientTeamFlowState.ShouldSuppressLocalPlayerControl() &&
-                                   (em.HasComponent<LocalPlayerShipTag>(entity) || ghostOwnerLocal);
+                                   (em.HasComponent<LocalPlayerShipTag>(entity) ||
+                                    em.HasComponent<GhostOwnerIsLocal>(entity));
             anchor.BodySize = math.max(0.25f, lt.Scale);
 
             // --- Chassis ladder (minimap scales the regular-ship Cross from ShipLevel; MEGA stays a triangle) ---

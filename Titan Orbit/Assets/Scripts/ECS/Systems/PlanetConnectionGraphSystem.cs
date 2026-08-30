@@ -163,8 +163,6 @@ namespace TitanOrbit.ECS
             // Baking verts here means motor PIT matches drawn fills without waiting on Collect.
             PlanetConnectionGraphCache.PublishServer(
                 edges, triangles, homeLevels, nextSequence, planetInputs.AsArray());
-            if (dirty)
-                PlanetConnectionGraphCache.RequestClientRebuild();
 
             // --- Reset then stack corner pop/growth bonuses (triangles only) ---
             foreach (var growth in SystemAPI.Query<RefRW<PlanetGrowthState>>().WithAll<PlanetTag>())
@@ -316,15 +314,11 @@ namespace TitanOrbit.ECS
             if (!ToroidalMapEcs.ResolveMapSize(preferredW, preferredH, out float mapW, out float mapH))
                 return;
 
-            // --- Planet snapshots (centers, not moons) ---
-            // Registry first (Instantiates-safe). Full gather only when map-body queries are allowed.
+            // --- Quarantine-safe planet snapshots (centers, not moons) ---
             NativeList<PlanetMotorSnapshot> snaps =
-                PlanetMotorSnapshotCollection.CollectFromClientRegistry(ref state, Allocator.Temp);
-            if (snaps.Length == 0 && !ClientJoinSettleCache.ShouldSkipMapBodyQueries)
-            {
-                snaps.Dispose();
-                snaps = PlanetMotorSnapshotCollection.Collect(ref state, Allocator.Temp);
-            }
+                ClientJoinSettleCache.TransformQuarantine
+                    ? PlanetMotorSnapshotCollection.CollectFromClientRegistry(ref state, Allocator.Temp)
+                    : PlanetMotorSnapshotCollection.Collect(ref state, Allocator.Temp);
 
             var inputs = new NativeList<PlanetConnectionGraphLogic.PlanetInput>(snaps.Length, Allocator.Temp);
             for (int i = 0; i < snaps.Length; i++)
@@ -351,16 +345,6 @@ namespace TitanOrbit.ECS
                     Position = center,
                     IsHomePlanet = s.Planet.IsHomePlanet,
                 });
-            }
-
-            // Empty collect must not wipe a good graph (registry / query miss for one tick).
-            if (inputs.Length == 0 &&
-                PlanetConnectionGraphCache.CurrentTriangles.Count +
-                PlanetConnectionGraphCache.CurrentEdges.Count > 0)
-            {
-                inputs.Dispose();
-                snaps.Dispose();
-                return;
             }
 
             uint fingerprint = ComputeClientFingerprint(inputs.AsArray());

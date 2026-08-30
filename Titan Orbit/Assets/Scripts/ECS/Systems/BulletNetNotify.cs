@@ -214,29 +214,5 @@ namespace TitanOrbit.ECS
             });
             ecb.AddComponent(rpcEntity, new SendRpcCommandRequest { TargetConnection = Entity.Null });
         }
-
-        /// <summary>
-        /// [TITAN-ORBIT] Ship↔ship ram / grind feedback on the same <see cref="BulletHitRpc"/>
-        /// wire as asteroid rams. <c>Sequence = 0</c> (no tracer).
-        /// <c>AsteroidHealthAfter = -1</c> routes clients to the ship-hull float path
-        /// (explosion + damage numbers). Owner team is 0 so same-team rams still show floats
-        /// (the heal filter treats matching teams as friendly bullets).
-        /// </summary>
-        public static void SendRamShipHit(
-            ref EntityCommandBuffer ecb,
-            float3 hitPosition,
-            float damage,
-            int bankIndex,
-            float scaleMultiplier)
-        {
-            SendRamAsteroidHit(
-                ref ecb,
-                hitPosition,
-                damage,
-                ownerTeam: 0,
-                bankIndex,
-                scaleMultiplier,
-                asteroidHealthAfter: -1f);
-        }
     }
 }

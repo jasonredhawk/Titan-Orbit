@@ -16,15 +16,7 @@ done
 EXE=./TitanOrbitServer.x86_64
 [ -x "$EXE" ] || EXE=./TitanOrbitServer
 [ -x "$EXE" ] || { echo "FATAL: no TitanOrbitServer binary in $BASE" >&2; exit 1; }
-# Advertise this VM's public IPv4 so clients connect UDP directly (no Unity Relay).
-if [ -z "${TITANORBIT_PUBLIC_ADDRESS:-}" ]; then
-  META_IP=$(curl -s -m 2 -H "Metadata-Flavor: Google" \
-    http://metadata.google.internal/computeMetadata/v1/instance/network-interfaces/0/access-configs/0/external-ip || true)
-  if [ -n "${META_IP:-}" ]; then
-    export TITANORBIT_PUBLIC_ADDRESS="$META_IP"
-  fi
-fi
-echo "TITANORBIT_START exe=$EXE pid=$$ user=$(id -un) cwd=$(pwd) publicAddress=${TITANORBIT_PUBLIC_ADDRESS:-unset}" >&2
+echo "TITANORBIT_START exe=$EXE pid=$$ user=$(id -un) cwd=$(pwd)" >&2
 set +e
 "$EXE" "$@" -logFile /dev/stdout
 rc=$?

@@ -78,13 +78,11 @@ namespace TitanOrbit.Game
             s_LastGraphRevision = -1;
         }
 
-        /// <summary>Rebuilds when topology publishes, or retries while verts are still missing.</summary>
+        /// <summary>Rebuilds only when Client graph revision changes (planet centers are fixed).</summary>
         static void EnsureFresh()
         {
-            int revision = PlanetConnectionGraphCache.PresentationRevision;
-            int triCount = PlanetConnectionGraphCache.CurrentTriangles?.Count ?? 0;
-            bool vertsMissing = s_Managed.Count == 0 && triCount > 0;
-            if (revision == s_LastGraphRevision && s_Native.IsCreated && !vertsMissing)
+            int revision = PlanetConnectionGraphCache.ClientPublishRevision;
+            if (revision == s_LastGraphRevision && s_Native.IsCreated)
                 return;
 
             Rebuild();
@@ -107,13 +105,14 @@ namespace TitanOrbit.Game
             }
 
             World world = EcsGameBridge.GetVisualizationWorld();
-            EntityManager em = default;
-            EcsWorldVisualizer visualizer = null;
-            if (world != null && world.IsCreated)
+            if (world == null || !world.IsCreated)
             {
-                em = world.EntityManager;
-                visualizer = EcsWorldVisualizer.Active;
+                SyncNativeFromManaged();
+                return;
             }
+
+            var em = world.EntityManager;
+            var visualizer = EcsWorldVisualizer.Active;
 
             for (int i = 0; i < triangles.Count; i++)
             {

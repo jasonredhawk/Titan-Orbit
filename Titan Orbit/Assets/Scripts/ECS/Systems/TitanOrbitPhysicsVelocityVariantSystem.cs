@@ -7,9 +7,9 @@ using Unity.Physics;
 namespace TitanOrbit.ECS
 {
     /// <summary>
-    /// Predicted ships (local and remotes) keep <see cref="PhysicsVelocity"/>. Interpolated
-    /// map ghosts must not — Unity's default variant puts it on <see cref="GhostPrefabType.All"/>,
-    /// so <c>ExportPhysicsWorld</c> overwrites GhostUpdate pose every rollback tick.
+    /// Predicted / server ships keep <see cref="PhysicsVelocity"/>. Interpolated remotes
+    /// must not — Unity's default variant puts it on <see cref="GhostPrefabType.All"/>, so
+    /// <c>ExportPhysicsWorld</c> overwrites GhostUpdate pose every rollback tick (yaw worst).
     /// </summary>
     [GhostComponentVariation(typeof(PhysicsVelocity), "Predicted ships only")]
     [GhostComponent(PrefabType = GhostPrefabType.AllPredicted, SendTypeOptimization = GhostSendType.OnlyPredictedClients)]
@@ -24,7 +24,7 @@ namespace TitanOrbit.ECS
 
     /// <summary>
     /// Registers <see cref="PhysicsVelocityPredictedOnlyVariant"/> as the default so
-    /// interpolated map ghosts never bake <see cref="PhysicsVelocity"/>. Takes precedence
+    /// interpolated remotes never bake <see cref="PhysicsVelocity"/>. Takes precedence
     /// over NetCode's <c>PhysicsDefaultVariantSystem</c> (that one uses TrySet).
     /// </summary>
     public sealed partial class TitanOrbitPhysicsVelocityVariantSystem : DefaultVariantSystemBase
