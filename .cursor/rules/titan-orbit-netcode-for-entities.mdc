@@ -50,11 +50,11 @@ Replicated entities are **ghosts**. Bake a `GhostAuthoringComponent` on the pref
 
 | Ghost | `GhostAuthoring` | Why |
 |-------|------------------|-----|
-| Player ships | `HasOwner`, `SupportAutoCommandTarget`, **Predicted** (`SupportedGhostModes = All`) | Local hull stays Predicted. Clients switch remotes via `GhostPredictionSwitchingQueues` (`ShipClientPredictionSwitchSystem`): nearest in ram range Predicted (same timeline), others Interpolated. Server remains two-body authority. Do not bake `OwnerPredicted` (cannot switch). |
+| Player ships (local **and** remotes) | `HasOwner`, `SupportAutoCommandTarget`, **Predicted** (`SupportedGhostModes = All`) | Hulls that must collide stay dynamic on every client. Interpolated remotes are kinematic — NCE zeros `PhysicsVelocity` and rams fail. `OwnerPredicted` cannot be prediction-switched. |
 | Map bodies (planets / asteroids / gems) | **Interpolated** | Snapshot pose only; ships do not two-body-push them this tick |
 | Short-lived movers | Interpolated + **Dynamic** optimize | Pose must keep sending |
 
-Do **not** predict every remote hull and do **not** add a custom interpolated-remote sweep. Official NCE path: predict the local ship plus ghosts it is colliding with (`ShipClientPredictionSwitchSystem` radius + cap); interpolate the rest. Predicted vs interpolated live on different timelines (~2× ping) — that mix feels choppy on ram. Server predicts every hull and owns two-body knockback. Predicting all remotes forced an 8-step catch-up spiral (`DefaultGhostMode` must not be `OwnerPredicted`).
+Do **not** treat remote ships as interpolated moving walls plus a custom sweep. Official path: predict both hulls, let Unity.Physics in `PredictedFixedStepSimulationSystemGroup` solve the contact. Use prediction switching later only if ship count blows CPU (`DefaultGhostMode` must not stay `OwnerPredicted`).
 
 Server sets `GhostOwner.NetworkId` to the owning `NetworkId`. Clients test ownership with `GhostOwnerIsLocal` (not a hand-rolled id check).
 
@@ -152,7 +152,7 @@ In this repo: `NetworkCommands.cs`.
 
 - [ ] `WorldSystemFilter` (or a group that implies one) on every new system
 - [ ] Continuous state → ghost `[GhostField]`; one-off → `IRpcCommand`
-- [ ] Ships that collide: Predicted default + `SupportedGhostModes = All`; client switches remotes to Interpolated; `IInputComponentData` + `GhostOwnerIsLocal` for the owner (gather only)
+- [ ] Ships that collide: Predicted + `IInputComponentData` + `GhostOwnerIsLocal` for the owner (gather only)
 - [ ] Map bodies: Interpolated; presentation reads interpolated pose. Predicted ships read predicted pose
 - [ ] Predicted writes in `PredictedSimulationSystemGroup` / `PredictedFixedStep…`; gather in `GhostInputSystemGroup`
 - [ ] Shared predicted logic is identical on client and server

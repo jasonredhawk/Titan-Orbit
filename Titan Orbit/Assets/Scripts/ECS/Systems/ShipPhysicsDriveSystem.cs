@@ -18,9 +18,9 @@ namespace TitanOrbit.ECS
     /// <para>
     /// [NETCODE] Official NCE practice: write the motor once and run it inside
     /// <see cref="PredictedFixedStepSimulationSystemGroup"/> on Server + Client. Ships are
-    /// Predicted by default (not OwnerPredicted). The server steps every hull; each client
-    /// keeps only the local ship Predicted (`ShipClientPredictionSwitchSystem`) so remotes
-    /// do not run this motor. Queries still use <see cref="PredictedGhost"/> + <see cref="Simulate"/>.
+    /// Predicted (not OwnerPredicted remotes), so every hull with
+    /// <see cref="PredictedGhost"/> + <see cref="Simulate"/> steps here — including remotes
+    /// whose <see cref="ShipInput"/> was snapshotted from the owner.
     /// </para>
     /// Client join-settle skip stays (<see cref="ClientJoinSettleCache.ShouldSkipShipSimulation"/>).
     /// Under TransformQuarantine the client collects planets from the Instantiates registry

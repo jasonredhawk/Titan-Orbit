@@ -85,19 +85,6 @@ namespace TitanOrbit.NetCode
             // frame's ServerTickFraction < 1. basics13 (package partials) confirmed: simBatch~5,
             // spikes 13.5%. Force a full tick fraction on Local Host IPC (basics11 best).
             netTimeData.subPredictTargetTick = 1f;
-
-            // [NETCODE] e2d7d2: pulling predictTarget back to snap+1 left interpolateTarget
-            // ahead of ServerTick (predWin -80..-168). Interpolated remotes then extrapolate
-            // and their yaw fights. Pin interp two ticks behind the same snapshot.
-            NetworkTick idealInterp = snap;
-            uint interpDelay = 2;
-            if (SystemAPI.TryGetSingleton<ClientTickRate>(out var ctr) && ctr.InterpolationTimeNetTicks > 0)
-                interpDelay = ctr.InterpolationTimeNetTicks;
-            if (interpDelay > 0)
-                idealInterp.Subtract(interpDelay);
-            netTimeData.interpolateTargetTick = idealInterp;
-            netTimeData.subInterpolateTargetTick = 0f;
-            netTimeData.currentInterpolationFrames = interpDelay;
         }
     }
 }

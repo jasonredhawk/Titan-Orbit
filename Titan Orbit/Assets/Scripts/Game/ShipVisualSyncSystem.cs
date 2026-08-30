@@ -345,8 +345,8 @@ namespace TitanOrbit.Game
             }
             else
             {
-                // [NETCODE] Predicted pose is the display pose. H73 coast (switch-v5) never
-                // fired (coast:0 / dispErr:0) and remotes were still jittery — reverted.
+                // [NETCODE] Predicted pose is the display pose. Extra cruise lerp fought
+                // reconcile after remotes became Predicted (same PhysX solve both worlds).
                 _smoothPos = targetPos;
                 _smoothRot = targetRot;
             }
@@ -399,7 +399,7 @@ namespace TitanOrbit.Game
         /// True for a short window after asteroid contact: use the tiny nibble floor so hitch-sized
         /// 0.22–0.30u sim steps coast instead of snapping (the 0.45 grind floor would snap them).
         /// </param>
-        bool StepCruiseRawOrCoast(float3 simPos, quaternion simRot, float3 simVel, float dt, bool postGrindCoast = false)
+        void StepCruiseRawOrCoast(float3 simPos, quaternion simRot, float3 simVel, float dt, bool postGrindCoast = false)
         {
             float expected = math.max(math.length(simVel) * math.max(0f, dt), 0.02f);
             float dist = math.distance(_smoothPos, simPos);
@@ -413,7 +413,7 @@ namespace TitanOrbit.Game
             {
                 _smoothPos = simPos;
                 _smoothRot = simRot;
-                return false;
+                return;
             }
 
             // --- Reconcile pop / large gap: coast then capped soft correct ---
@@ -430,7 +430,6 @@ namespace TitanOrbit.Game
             _smoothPos = coasted + pull;
             _smoothPos.y = simPos.y;
             _smoothRot = math.slerp(_smoothRot, simRot, 1f - math.exp(-DisplayRotationSharpness * dt));
-            return true;
         }
 
         /// <summary>

@@ -49,14 +49,6 @@ namespace TitanOrbit.NetCode
         public const int ClientMaxStepsPerFrame = 8;
 
         /// <summary>
-        /// After join settle: cap predicted catch-up. Debug e2d7d2 ship-ram logs showed
-        /// Player 2 hitting this 8-step budget (predBatch=8, cBounceTicks=17–22, dtMs=70–100)
-        /// while bounce/ram/viz stayed cheap — contact divergence spiraled into 8 physics worlds
-        /// per render frame. 3 keeps 60 Hz sim at 20 FPS without the 8-step hitch.
-        /// </summary>
-        public const int ClientCruiseMaxStepsPerFrame = 3;
-
-        /// <summary>
         /// Server MaxSteps for this process: Editor Local Host → 2; otherwise dedicated → 4.
         /// </summary>
         public static int MaxStepsPerFrame => ResolveServerMaxSteps();
