@@ -18,12 +18,13 @@ ExecStartPre=+/bin/bash -c 'chown -R jason:jason /home/jason/titanorbit-server/T
 ExecStartPre=+/bin/bash -c 'chmod -R a+rX /home/jason/titanorbit-server/TitanOrbitLinux1 || true'
 ExecStartPre=+/bin/bash -c 'for f in /home/jason/titanorbit-server/TitanOrbitLinux1/TitanOrbitServer /home/jason/titanorbit-server/TitanOrbitLinux1/TitanOrbitServer.x86_64; do [ -f "$f" ] && chmod 755 "$f" || true; done'
 ExecStartPre=+/bin/bash -c 'BASE=/home/jason/titanorbit-server/TitanOrbitLinux1; fail=0; check(){ SZ=$(stat -c%s "$1" 2>/dev/null||echo 0); if [ "$SZ" -lt "$2" ]; then echo "FATAL: $1 is ${SZ} bytes (need >= $2). Redeploy Linux build (quit Unity before tar)." >&2; fail=1; else echo "OK $1 ${SZ} bytes" >&2; fi; }; check "$BASE/GameAssembly.so" 10000000; check "$BASE/UnityPlayer.so" 5000000; check "$BASE/TitanOrbitServer_Data/il2cpp_data/Metadata/global-metadata.dat" 1000000; [ "$fail" -eq 0 ] || exit 1'
-ExecStartPre=+/bin/bash -c 'W=/home/jason/titanorbit-server/TitanOrbitLinux1/run_titanorbit_server.sh; [ -x "$W" ] || { echo "FATAL: missing $W — reinstall unit (install_unit_remote.ps1) or redeploy with upload_linux_build_to_gce_openssh.ps1" >&2; exit 1; }'
+ExecStartPre=+/bin/bash -c 'W=/home/jason/titanorbit-server/TitanOrbitLinux1/run_titanorbit_server.sh; [ -f "$W" ] || { echo "FATAL: missing $W — reinstall unit (install_unit_remote.ps1) or redeploy with upload_linux_build_to_gce_openssh.ps1" >&2; exit 1; }; sed -i "s/\r$//" "$W"; chmod 755 "$W"'
 # Logs: journalctl -u titanorbit-server -f  (Unity -logFile /dev/stdout via wrapper)
 #   tail -f .../Player.log  (may be empty when using stdout wrapper)
 # Clients connect UDP to the VM public IP:7777 (wrapper sets TITANORBIT_PUBLIC_ADDRESS from GCE metadata).
 # VPC must allow udp:7777 from 0.0.0.0/0 (or your player CIDR).
-ExecStart=/home/jason/titanorbit-server/TitanOrbitLinux1/run_titanorbit_server.sh -batchmode -nographics --titanOrbitDedicated=1 --maxPlayers=60 --serverPort=7777 --serverListenAddress=0.0.0.0 --isLatest=1 --emptyMatchRecreateSeconds=1800 --staleLobbyRecreateSeconds=120 --waitNetworkManagerSeconds=180 --serverExecutablePath=/home/jason/titanorbit-server/TitanOrbitLinux1/TitanOrbitServer
+# No -nographics: that flag forces NullGfxDevice PresentAndWait on a Dedicated Server build.
+ExecStart=/home/jason/titanorbit-server/TitanOrbitLinux1/run_titanorbit_server.sh -batchmode --titanOrbitDedicated=1 --maxPlayers=60 --serverPort=7777 --serverListenAddress=0.0.0.0 --isLatest=1 --emptyMatchRecreateSeconds=0 --ageThresholdSeconds=86400 --staleLobbyRecreateSeconds=120 --waitNetworkManagerSeconds=180 --serverExecutablePath=/home/jason/titanorbit-server/TitanOrbitLinux1/TitanOrbitServer
 # [TITAN-ORBIT] on-failure (not always):
 # - Exit 0 = empty recycle handoff succeeded (sibling already published IsLatest). Do NOT restart
 #   or you get two Unity processes and blow RAM on an 8 GiB VM.

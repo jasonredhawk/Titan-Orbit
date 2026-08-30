@@ -26,9 +26,9 @@ namespace TitanOrbit.NetCode
         {
             // [UNITY] Keep sim ticking when the game window loses focus (host + dedicated server).
             Application.runInBackground = true;
-            // [NETCODE] Do not set Application.targetFrameRate on dedicated server here — Sleep mode
-            // (ClientServerTickRate.Auto → Sleep under UNITY_SERVER) owns it via AdjustTargetFrameRate.
-            // Pinning 60 fights that loop and spams NetcodeServerRateManager sleep-mode warnings.
+#if UNITY_SERVER
+            TitanOrbitSessionManager.ApplyDedicatedServerFramePace();
+#endif
             // [NETCODE] Custom UDP/IPC driver — dedicated hosts listen on a public IP:port.
             NetworkStreamReceiveSystem.DriverConstructor = new TitanOrbitRelayDriverConstructor();
 

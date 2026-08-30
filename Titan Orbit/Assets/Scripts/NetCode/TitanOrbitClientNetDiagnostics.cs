@@ -90,10 +90,14 @@ namespace TitanOrbit.NetCode
             float rttMs = ack.EstimatedRTT;
             float jitterMs = ack.DeviationRTT;
             float commandAge = ack.ServerCommandAge / 256f;
+            var loss = ack.SnapshotPacketLoss;
             float snapshotSpacingTicks = timeData.avgDeltaSimTicks;
             float snapshotSpacingMs = timeData.avgPacketInterArrival;
             float estimateAgeTicks = timeData.latestSnapshotAge / 256f;
             float clientFps = 1f / Mathf.Max(0.0001f, Time.smoothDeltaTime);
+            int simHz = 0;
+            if (em.CreateEntityQuery(typeof(ClientServerTickRate)).TryGetSingleton<ClientServerTickRate>(out var tickRate))
+                simHz = tickRate.SimulationTickRate;
             int rollbacks = _rollbackWarningsSinceLastLog;
             _rollbackWarningsSinceLastLog = 0;
 
@@ -118,6 +122,30 @@ namespace TitanOrbit.NetCode
 
             Debug.Log(line);
             DedicatedServerFileLog.Append("netdiag-client", line);
+
+            // #region agent log
+            AgentDebugNdjson.Write(
+                "A",
+                "TitanOrbitClientNetDiagnostics.cs:TryLogSummary",
+                "client netdiag",
+                "{\"rttMs\":" + rttMs.ToString("F1") +
+                ",\"jitterMs\":" + jitterMs.ToString("F1") +
+                ",\"cmdAge\":" + commandAge.ToString("F2") +
+                ",\"snapTicks\":" + snapshotSpacingTicks.ToString("F2") +
+                ",\"snapMs\":" + snapshotSpacingMs.ToString("F1") +
+                ",\"estErr\":" + estimateAgeTicks.ToString("F2") +
+                ",\"fps\":" + clientFps.ToString("F1") +
+                ",\"simHz\":" + simHz +
+                ",\"hasRelay\":" + (TitanOrbitRelayState.HasClientRelay ? "true" : "false") +
+                ",\"dedicatedOnline\":" + (TitanOrbitSessionManager.IsDedicatedOnlineClient ? "true" : "false") +
+                ",\"snapRecv\":" + loss.NumPacketsReceived +
+                ",\"snapDrop\":" + loss.NumPacketsDroppedNeverArrived +
+                ",\"snapClobber\":" + loss.NumPacketsCulledAsArrivedOnSameFrame +
+                ",\"snapOOO\":" + loss.NumPacketsCulledOutOfOrder +
+                ",\"lossPct\":" + (loss.CombinedPacketLossPercent * 100.0).ToString("F1") +
+                ",\"rollbacks\":" + rollbacks +
+                ",\"likely\":\"" + likely.Replace("\"", "'") + "\"}");
+            // #endregion
         }
 
         /// <summary>

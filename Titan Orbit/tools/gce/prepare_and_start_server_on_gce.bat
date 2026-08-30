@@ -49,7 +49,7 @@ echo.
 echo Starting server in foreground (press Ctrl+C to stop)...
 echo Logs also written to %REMOTE_DIR%/Player.log (tail in another SSH session if this looks quiet).
 echo Executable: %EXE_NAME%
-call gcloud --project %PROJECT_ID% compute ssh %INSTANCE_TARGET% %USE_IAP% --zone %ZONE% --strict-host-key-checking=no --quiet --command "bash -lc 'cd %REMOTE_DIR% && if [ -f ./TitanOrbitServer.x86_64 ]; then EXE=TitanOrbitServer.x86_64; elif [ -f ./TitanOrbitServer ]; then EXE=TitanOrbitServer; elif [ %EXE_NAME%x != x ] && [ -f ./%EXE_NAME% ]; then EXE=%EXE_NAME%; else EXE=$(ls *.x86_64 2>/dev/null | head -n1); fi; if [ -z \"$EXE\" ] || [ ! -f ./$EXE ]; then echo No server binary found in %REMOTE_DIR%; ls -la; exit 1; fi; echo Using executable: $EXE; ./$EXE -batchmode -nographics -logFile ./Player.log --maxPlayers=60 --serverPort=7777 --serverListenAddress=0.0.0.0 --isLatest=1'"
+call gcloud --project %PROJECT_ID% compute ssh %INSTANCE_TARGET% %USE_IAP% --zone %ZONE% --strict-host-key-checking=no --quiet --command "bash -lc 'cd %REMOTE_DIR% && if [ -f ./TitanOrbitServer.x86_64 ]; then EXE=TitanOrbitServer.x86_64; elif [ -f ./TitanOrbitServer ]; then EXE=TitanOrbitServer; elif [ %EXE_NAME%x != x ] && [ -f ./%EXE_NAME% ]; then EXE=%EXE_NAME%; else EXE=$(ls *.x86_64 2>/dev/null | head -n1); fi; if [ -z \"$EXE\" ] || [ ! -f ./$EXE ]; then echo No server binary found in %REMOTE_DIR%; ls -la; exit 1; fi; echo Using executable: $EXE; ./$EXE -batchmode -logFile ./Player.log --maxPlayers=60 --serverPort=7777 --serverListenAddress=0.0.0.0 --isLatest=1'"
 
 exit /b %errorlevel%
 

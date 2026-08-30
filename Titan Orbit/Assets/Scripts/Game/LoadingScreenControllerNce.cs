@@ -173,6 +173,15 @@ namespace TitanOrbit.Game
             loading.Show();
         }
 
+        /// <summary>Hides the overlay if a controller exists (including inactive).</summary>
+        public static void HideExisting()
+        {
+            var loading = Object.FindFirstObjectByType<LoadingScreenControllerNce>(FindObjectsInactive.Include);
+            if (loading == null)
+                return;
+            loading.Hide();
+        }
+
         /// <summary>[UNITY] Build UI once, start hidden.</summary>
         void Awake()
         {

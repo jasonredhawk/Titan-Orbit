@@ -1,4 +1,5 @@
 using TitanOrbit.Core;
+using TitanOrbit.Diagnostics;
 using TitanOrbit.Generation;
 using Unity.Entities;
 using Unity.Mathematics;
@@ -44,6 +45,8 @@ namespace TitanOrbit.ECS
         public const float DropRadius = 10f;
 
         /// <summary>Need the official NCE switch queues and an in-game connection.</summary>
+        static double s_NextAgentLogRealtime;
+
         public void OnCreate(ref SystemState state)
         {
             state.RequireForUpdate<GhostPredictionSwitchingQueues>();
@@ -95,6 +98,20 @@ namespace TitanOrbit.ECS
                 return;
 
             float3 localPos = state.EntityManager.GetComponentData<LocalTransform>(localShip).Position;
+
+            // #region agent log
+            if (UnityEngine.Time.realtimeSinceStartupAsDouble >= s_NextAgentLogRealtime)
+            {
+                s_NextAgentLogRealtime = UnityEngine.Time.realtimeSinceStartupAsDouble + 2.0;
+                bool localPredicted = state.EntityManager.HasComponent<PredictedGhost>(localShip);
+                AgentDebugNdjson.Write(
+                    "C",
+                    "ShipClientPredictionSwitchSystem.cs:OnUpdate",
+                    "prediction switch",
+                    "{\"localPredicted\":" + (localPredicted ? "true" : "false") +
+                    ",\"localShip\":" + localShip.Index + "}");
+            }
+            // #endregion
             bool torus = ToroidalMapEcs.TryGetMapSize(out float mapW, out float mapH);
 
             Entity nearest = Entity.Null;

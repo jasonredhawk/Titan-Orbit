@@ -1,4 +1,5 @@
 using TitanOrbit.Core;
+using TitanOrbit.Diagnostics;
 using Unity.Entities;
 using Unity.NetCode;
 
@@ -30,6 +31,8 @@ namespace TitanOrbit.ECS
         /// Write pending keyboard/mouse onto the owner ghost, then clear one-shot latches
         /// (CycleBullet) so the next Unity frame does not re-send the same B press forever.
         /// </summary>
+        static double s_NextAgentLogRealtime;
+
         public void OnUpdate(ref SystemState state)
         {
             // --- System OnUpdate ---
@@ -43,6 +46,20 @@ namespace TitanOrbit.ECS
                 return;
 
             var cmd = ShipPendingInput.Latest;
+
+            // #region agent log
+            if (UnityEngine.Time.realtimeSinceStartupAsDouble >= s_NextAgentLogRealtime)
+            {
+                s_NextAgentLogRealtime = UnityEngine.Time.realtimeSinceStartupAsDouble + 2.0;
+                AgentDebugNdjson.Write(
+                    "B",
+                    "ShipInputApplySystem.cs:OnUpdate",
+                    "input apply",
+                    "{\"thrust\":" + (cmd.Thrust ? "true" : "false") +
+                    ",\"skipSim\":" + (ClientJoinSettleCache.ShouldSkipShipSimulation ? "true" : "false") +
+                    ",\"skipQueries\":" + (ClientJoinSettleCache.ShouldSkipShipEntityQueries ? "true" : "false") + "}");
+            }
+            // #endregion
 
             // --- Map Instantiates trickle: write seeded hull only (no ship Query) ---
             // [TITAN-ORBIT] ShouldSkipShipEntityQueries stays true while placeholders drain;

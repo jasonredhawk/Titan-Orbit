@@ -1,5 +1,7 @@
 using System;
+using System.Threading.Tasks;
 using UnityEngine;
+using UnityEngine.Networking;
 
 namespace TitanOrbit.NetCode
 {
@@ -15,16 +17,17 @@ namespace TitanOrbit.NetCode
         public const int DefaultMaxPlayers = 60;
         public const ushort DefaultServerPort = 7777;
         /// <summary>
-        /// Idle empty timeout: after the last player leaves (zero NetCode connections), wait this
-        /// long before in-process match recreate. Occupied matches never use this clock.
+        /// Idle empty timeout. <c>0</c> = keep the empty match running and listed (funnel policy).
+        /// Occupied matches never use this clock.
         /// </summary>
-        public const int DefaultEmptyMatchRecreateSeconds = 30 * 60;
+        public const int DefaultEmptyMatchRecreateSeconds = 0;
 
         /// <summary>
         /// Age rotation: when IsLatest and players are present (not full), spawn a successor as the
-        /// new IsLatest after this many seconds. The occupied lobby is demoted but stays open.
+        /// new IsLatest after this many seconds. Default 24h so one match fills before a sibling
+        /// is opened. Occupied lobby is demoted but stays open.
         /// </summary>
-        public const int DefaultAgeThresholdSeconds = 30 * 60;
+        public const int DefaultAgeThresholdSeconds = 24 * 60 * 60;
 
         /// <summary>When our lobby is closed or heartbeat-stale and empty, recreate after this many seconds (faster than empty idle refresh).</summary>
         public const int DefaultStaleLobbyRecreateSeconds = 120;
@@ -124,7 +127,9 @@ namespace TitanOrbit.NetCode
             else
                 config.PublicPort = config.ServerPort;
             config.IsLatest = GetArgBool("isLatest", true);
-            config.EmptyMatchRecreateSeconds = Mathf.Max(60, GetArgInt("emptyMatchRecreateSeconds", DefaultEmptyMatchRecreateSeconds));
+            int emptyRecreate = GetArgInt("emptyMatchRecreateSeconds", DefaultEmptyMatchRecreateSeconds);
+            // [TITAN-ORBIT] 0 = never recycle an empty listed match (players join whenever they want).
+            config.EmptyMatchRecreateSeconds = emptyRecreate <= 0 ? 0 : Mathf.Max(60, emptyRecreate);
             config.AgeThresholdSeconds = Mathf.Max(60, GetArgInt("ageThresholdSeconds", DefaultAgeThresholdSeconds));
             config.StaleLobbyRecreateSeconds = Mathf.Max(30, GetArgInt("staleLobbyRecreateSeconds", DefaultStaleLobbyRecreateSeconds));
             // [TITAN-ORBIT] 0 = unlimited in-process empty recreates (not recommended for 24/7 hosts).
@@ -174,27 +179,85 @@ namespace TitanOrbit.NetCode
         }
 
         /// <summary>
+        /// Fills <see cref="PublicAddress"/> if still empty (GCS extract often starts the raw
+        /// player without the wrapper env). Returns the source used for logging.
+        /// </summary>
+        public async Task<string> EnsurePublicAddressAsync()
+        {
+            if (!string.IsNullOrWhiteSpace(PublicAddress))
+                return "already-set";
+
+            string resolved = ResolvePublicAddress(ServerListenAddress, out string source);
+            if (string.IsNullOrWhiteSpace(resolved))
+            {
+                resolved = await TryGetGceMetadataPublicIpAsync();
+                source = string.IsNullOrWhiteSpace(resolved) ? "none" : "gce-metadata";
+            }
+
+            PublicAddress = resolved;
+            return source;
+        }
+
+        /// <summary>
         /// Client-facing host IP: --publicAddress, TITANORBIT_PUBLIC_ADDRESS, Edgegap
         /// <c>ARBITRIUM_PUBLIC_IP</c>, or a unicast --serverListenAddress.
         /// </summary>
         static string ResolvePublicAddress(string listenAddress)
         {
+            return ResolvePublicAddress(listenAddress, out _);
+        }
+
+        static string ResolvePublicAddress(string listenAddress, out string source)
+        {
             string cli = GetArgString("publicAddress", null);
             if (!string.IsNullOrWhiteSpace(cli))
+            {
+                source = "cli";
                 return cli.Trim();
+            }
 
             string env = Environment.GetEnvironmentVariable("TITANORBIT_PUBLIC_ADDRESS");
             if (!string.IsNullOrWhiteSpace(env))
+            {
+                source = "env";
                 return env.Trim();
+            }
 
             string edgegap = TitanOrbitEdgegapEnvironment.TryGetPublicIp();
             if (!string.IsNullOrWhiteSpace(edgegap))
+            {
+                source = "edgegap";
                 return edgegap;
+            }
 
             if (IsUnicastListenAddress(listenAddress))
+            {
+                source = "listen";
                 return listenAddress.Trim();
+            }
 
+            source = "none";
             return null;
+        }
+
+        /// <summary>GCE instance public IPv4 from the metadata server (no wrapper required).</summary>
+        static async Task<string> TryGetGceMetadataPublicIpAsync()
+        {
+            const string url =
+                "http://metadata.google.internal/computeMetadata/v1/instance/network-interfaces/0/access-configs/0/external-ip";
+            using var req = UnityWebRequest.Get(url);
+            req.SetRequestHeader("Metadata-Flavor", "Google");
+            req.timeout = 2;
+            var op = req.SendWebRequest();
+            while (!op.isDone)
+                await Task.Yield();
+            if (req.result != UnityWebRequest.Result.Success)
+                return null;
+            string ip = req.downloadHandler != null ? req.downloadHandler.text : null;
+            if (string.IsNullOrWhiteSpace(ip))
+                return null;
+            ip = ip.Trim();
+            return IsUnicastListenAddress(ip) ? ip : null;
         }
 
         /// <summary>True when listen address is a real client-reachable unicast (not 0.0.0.0 / *).</summary>

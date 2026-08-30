@@ -340,13 +340,10 @@ namespace TitanOrbit.Game
             }
             else if (catchingUp)
             {
-                // Join / snapshot-debt storms only — do not coast healthy predicted frames.
                 StepDisplayToward(targetPos, targetRot, dt, CatchUpDisplayMaxSpeed);
             }
             else
             {
-                // [NETCODE] Predicted pose is the display pose. H73 coast (switch-v5) never
-                // fired (coast:0 / dispErr:0) and remotes were still jittery — reverted.
                 _smoothPos = targetPos;
                 _smoothRot = targetRot;
             }

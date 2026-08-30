@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Threading;
 using System.Threading.Tasks;
+using TitanOrbit.Diagnostics;
 using TitanOrbit.Services;
 using Unity.Services.Authentication;
 using Unity.Services.Core;
@@ -52,10 +53,98 @@ namespace TitanOrbit.NetCode
         public const string LobbyMapWidthKey = "MapWidth";
         /// <summary>[TITAN-ORBIT] Rolled toroidal map height in world units (Join Game / browse).</summary>
         public const string LobbyMapHeightKey = "MapHeight";
+        /// <summary>
+        /// Bake-time dedicated-server id (<see cref="TitanOrbitBuildStamp.Id"/>).
+        /// Missing on GCE binaries older than this field — Join Game treats that as "old deploy".
+        /// </summary>
+        public const string LobbyServerBuildKey = "ServerBuild";
+        /// <summary>
+        /// Legacy key — do not publish. UGS allows 20 Data keys; map meta already uses the cap.
+        /// Sim Hz is packed onto <see cref="LobbyServerBuildKey"/> as <c>stamp@Hz</c>.
+        /// </summary>
+        public const string LobbyServerSimHzKey = "ServerHz";
         public const string LobbyMatchRequestGameName = "TitanOrbitMatchRequest";
         public const string LobbyMatchRequestEpochKey = "RequestedAt";
-        public const int DedicatedLobbyStaleSeconds = 45;
-        public const int DedicatedLobbyJoinMaxHeartbeatAgeSeconds = 45;
+        /// <summary>
+        /// Legacy Relay-era cutoff. Browse/join no longer hide on <c>ServerAliveAt</c> age —
+        /// UGS listing plus HostAddress/HostPort is the access check (direct UDP).
+        /// </summary>
+        public const int DedicatedLobbyStaleSeconds = 180;
+        public const int DedicatedLobbyJoinMaxHeartbeatAgeSeconds = 180;
+        /// <summary>UGS Create/UpdateLobby hard cap. Exceeding it returns 400 and Join Game stays empty.</summary>
+        public const int UgsMaxLobbyDataKeys = 20;
+
+        /// <summary>
+        /// Packs bake id + optional sim Hz into the existing <see cref="LobbyServerBuildKey"/> slot.
+        /// UGS allows 20 Data keys; a separate ServerHz key made heartbeat UpdateLobby fail.
+        /// </summary>
+        public static string FormatServerBuildLobbyValue()
+        {
+            string id = TitanOrbitBuildStamp.Id;
+            int hz = TitanOrbitServerSimulationDiagnosticsSystem.LastEffectiveSimHz;
+            if (hz <= 0 || string.IsNullOrEmpty(id))
+                return id;
+            return id + "@" + hz.ToString(CultureInfo.InvariantCulture);
+        }
+
+        /// <summary>Splits <c>stamp@60</c> back into bake id and Hz. Hz is -1 when unpublished.</summary>
+        public static void ParseServerBuildLobbyValue(string raw, out string buildId, out int simHz)
+        {
+            buildId = null;
+            simHz = -1;
+            if (string.IsNullOrWhiteSpace(raw))
+                return;
+
+            raw = raw.Trim();
+            int at = raw.LastIndexOf('@');
+            if (at > 0 && at < raw.Length - 1 &&
+                int.TryParse(raw.Substring(at + 1), NumberStyles.Integer, CultureInfo.InvariantCulture, out int hz))
+            {
+                buildId = raw.Substring(0, at);
+                simHz = hz;
+                return;
+            }
+
+            buildId = raw;
+        }
+
+        /// <summary>
+        /// Drops lowest-priority keys until <see cref="UgsMaxLobbyDataKeys"/>.
+        /// Call immediately before CreateLobby / UpdateLobby so a 21st key cannot blank Join Game.
+        /// </summary>
+        public static void TrimLobbyDataToUgsCap(Dictionary<string, DataObject> data, string context)
+        {
+            if (data == null || data.Count <= UgsMaxLobbyDataKeys)
+                return;
+
+            // Cosmetic / countdown first; keep host + browse identity + team cards.
+            string[] dropOrder =
+            {
+                LobbyServerSimHzKey,
+                LobbyMapLoadingStepsKey,
+                LobbyIdleKillAtEpochKey,
+                LobbyMapWidthKey,
+                LobbyMapHeightKey,
+            };
+
+            var dropped = new List<string>();
+            for (int i = 0; i < dropOrder.Length && data.Count > UgsMaxLobbyDataKeys; i++)
+            {
+                if (data.Remove(dropOrder[i]))
+                    dropped.Add(dropOrder[i]);
+            }
+
+            if (data.Count > UgsMaxLobbyDataKeys)
+            {
+                Debug.LogError("[TitanOrbitLobbyService] " + context +
+                    " still has " + data.Count + " Data keys after trim (UGS max " + UgsMaxLobbyDataKeys +
+                    "): " + string.Join(",", data.Keys));
+                return;
+            }
+
+            Debug.LogWarning("[TitanOrbitLobbyService] " + context + " trimmed lobby Data (" +
+                string.Join(",", dropped) + ") to stay at " + UgsMaxLobbyDataKeys + " keys.");
+        }
 
         static readonly SemaphoreSlim LobbyApiGate = new SemaphoreSlim(1, 1);
         static readonly SemaphoreSlim OpenLobbyRefreshGate = new SemaphoreSlim(1, 1);
@@ -90,6 +179,8 @@ namespace TitanOrbit.NetCode
             public bool IsLatest;
             public long CreatedAtEpochSeconds;
             public bool IsDedicatedServer;
+            public string HostAddress;
+            public ushort HostPort;
             public long ServerAliveAtEpochSeconds;
             public int ActivePlayers = -1;
 
@@ -134,6 +225,17 @@ namespace TitanOrbit.NetCode
             /// [TITAN-ORBIT] Rolled map height (world units), rounded; -1 if server has not published yet.
             /// </summary>
             public int MapHeight = -1;
+
+            /// <summary>
+            /// Dedicated-server bake id from <see cref="LobbyServerBuildKey"/>.
+            /// Empty when the live GCE process predates this field.
+            /// </summary>
+            public string ServerBuildId;
+
+            /// <summary>
+            /// Dedicated effective sim Hz packed onto <see cref="LobbyServerBuildKey"/>. -1 when unpublished.
+            /// </summary>
+            public int ServerSimHz = -1;
         }
 
         public static async Task<List<LobbySummary>> QueryJoinableDedicatedLobbiesAsync(
@@ -223,13 +325,14 @@ namespace TitanOrbit.NetCode
                 return false;
             }
 
-            if (IsDedicatedLobbySummaryStale(l))
+            if (string.IsNullOrWhiteSpace(l.HostAddress))
             {
-                long age = DateTimeOffset.UtcNow.ToUnixTimeSeconds() - l.ServerAliveAtEpochSeconds;
-                rejectReason = "stale heartbeat (" + age + "s old, limit " + DedicatedLobbyStaleSeconds + "s)";
+                rejectReason = "no host address";
                 return false;
             }
 
+            // [TITAN-ORBIT] Do not hide on ServerAliveAt age. UpdateLobby can fail (UGS 20-key cap)
+            // while SendHeartbeatPing keeps the lobby listed and the dedicated UDP port is still up.
             return true;
         }
 
@@ -246,6 +349,16 @@ namespace TitanOrbit.NetCode
 
                 Debug.Log("[TitanOrbitLobbyService] Browsable filter rejected \"" + (l.Name ?? l.LobbyId) +
                           "\": " + (reason ?? "unknown"));
+                // #region agent log
+                AgentDebugNdjson.Write(
+                    "L",
+                    "TitanOrbitLobbyService.cs:LogBrowsableFilterRejections",
+                    "lobby filtered",
+                    "{\"name\":\"" + (l.Name ?? "").Replace("\"", "") +
+                    "\",\"reason\":\"" + (reason ?? "unknown").Replace("\"", "") +
+                    "\",\"aliveAt\":" + l.ServerAliveAtEpochSeconds +
+                    ",\"isLatest\":" + (l.IsLatest ? "true" : "false") + "}");
+                // #endregion
             }
         }
 
@@ -262,6 +375,16 @@ namespace TitanOrbit.NetCode
                 hint = " — lobbies exist but were filtered (see Browsable filter rejected lines)";
             Debug.Log("[TitanOrbitLobbyService] Query " + label + " raw=" + rawCount + " filtered=" + filteredCount +
                       " kind=" + detail + " project=" + (Application.cloudProjectId ?? "(none)") + hint);
+            // #region agent log
+            AgentDebugNdjson.Write(
+                "L",
+                "TitanOrbitLobbyService.cs:LogQueryDiagnostics",
+                "lobby query",
+                "{\"label\":\"" + label.Replace("\"", "") +
+                "\",\"raw\":" + rawCount +
+                ",\"filtered\":" + filteredCount +
+                ",\"kind\":\"" + LastOpenLobbyQueryKind + "\"}");
+            // #endregion
         }
 
         public static async Task<List<LobbySummary>> QueryOpenLobbiesAsync(
@@ -300,7 +423,7 @@ namespace TitanOrbit.NetCode
             for (int i = 0; i < lobbies.Count; i++)
             {
                 LobbySummary l = lobbies[i];
-                if (l == null || !l.IsDedicatedServer || !l.IsOpen || !l.IsLatest || IsDedicatedLobbySummaryStale(l))
+                if (l == null || !l.IsDedicatedServer || !l.IsOpen || !l.IsLatest)
                     continue;
                 joinable.Add(l);
             }
@@ -309,7 +432,7 @@ namespace TitanOrbit.NetCode
         }
 
         /// <summary>
-        /// [NETCODE] True when UGS lists at least one open, latest, fresh dedicated lobby clients can join.
+        /// [NETCODE] True when UGS lists at least one open, latest dedicated lobby with a host endpoint.
         /// Used by dedicated server self-heal and match-request watchdog.
         /// </summary>
         public static async Task<bool> QueryAnyJoinableLatestDedicatedLobbyExistsAsync()
@@ -381,12 +504,6 @@ namespace TitanOrbit.NetCode
                 !string.Equals(io.Value, "1", StringComparison.Ordinal))
             {
                 rejectReason = "lobby is closed";
-                return false;
-            }
-
-            if (IsDedicatedLobbyStale(lobby))
-            {
-                rejectReason = "server heartbeat is stale";
                 return false;
             }
 
@@ -897,6 +1014,8 @@ namespace TitanOrbit.NetCode
                 IsOpen = true,
                 IsLatest = false,
                 IsDedicatedServer = isDedicatedServerLobby,
+                HostAddress = null,
+                HostPort = 0,
                 CreatedAtEpochSeconds = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
                 ActivePlayers = activePlayersFromServer,
                 MapLoadingSteps = -1,
@@ -907,8 +1026,16 @@ namespace TitanOrbit.NetCode
                 MapTeamPlayerCounts = null,
                 MapMaxPlayersPerTeam = -1,
                 MapWidth = -1,
-                MapHeight = -1
+                MapHeight = -1,
+                ServerBuildId = null,
+                ServerSimHz = -1
             };
+
+            if (TryGetHostEndpoint(lobby, out string hostAddress, out ushort hostPort))
+            {
+                summary.HostAddress = hostAddress;
+                summary.HostPort = hostPort;
+            }
 
             if (lobby.Data == null)
                 return summary;
@@ -924,6 +1051,12 @@ namespace TitanOrbit.NetCode
             // [TITAN-ORBIT] Width/height are published as whole numbers (rounded world units).
             summary.MapWidth = TryParseLobbyInt(lobby.Data, LobbyMapWidthKey, -1);
             summary.MapHeight = TryParseLobbyInt(lobby.Data, LobbyMapHeightKey, -1);
+            ParseServerBuildLobbyValue(
+                TryParseLobbyString(lobby.Data, LobbyServerBuildKey),
+                out summary.ServerBuildId,
+                out int hzFromBuild);
+            int hzFromLegacyKey = TryParseLobbyInt(lobby.Data, LobbyServerSimHzKey, -1);
+            summary.ServerSimHz = hzFromBuild >= 0 ? hzFromBuild : hzFromLegacyKey;
 
             if (lobby.Data.TryGetValue(LobbyIsOpenKey, out DataObject isOpenObj))
                 summary.IsOpen = string.Equals(isOpenObj?.Value, "1", StringComparison.Ordinal);
@@ -955,15 +1088,6 @@ namespace TitanOrbit.NetCode
             return summary;
         }
 
-        static bool IsDedicatedLobbyStale(Lobby lobby)
-        {
-            // --- IsDedicatedLobbyStale ---
-            if (lobby?.Data == null || !lobby.Data.ContainsKey(LobbyServerListenAddressKey))
-                return false;
-            return TryGetDedicatedLobbyHeartbeatAgeSeconds(lobby, out long ageSeconds) &&
-                   ageSeconds > DedicatedLobbyStaleSeconds;
-        }
-
         public static bool TryGetDedicatedLobbyHeartbeatAgeSeconds(Lobby lobby, out long ageSeconds)
         {
             // --- Attempt resolution ---
@@ -988,18 +1112,13 @@ namespace TitanOrbit.NetCode
             return ageSeconds > maxAgeSeconds;
         }
 
-        static bool IsDedicatedLobbySummaryStale(LobbySummary summary)
+        static string TryParseLobbyString(Dictionary<string, DataObject> data, string key)
         {
-            // --- IsDedicatedLobbySummaryStale ---
-            if (summary == null || !summary.IsDedicatedServer)
-                return false;
-
-            // Align with join validation: missing heartbeat means the listing is not joinable.
-            if (summary.ServerAliveAtEpochSeconds <= 0)
-                return true;
-
-            long nowEpoch = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
-            return nowEpoch - summary.ServerAliveAtEpochSeconds > DedicatedLobbyStaleSeconds;
+            if (data == null || string.IsNullOrEmpty(key))
+                return null;
+            if (!data.TryGetValue(key, out DataObject obj) || obj == null)
+                return null;
+            return string.IsNullOrWhiteSpace(obj.Value) ? null : obj.Value.Trim();
         }
 
         /// <summary>

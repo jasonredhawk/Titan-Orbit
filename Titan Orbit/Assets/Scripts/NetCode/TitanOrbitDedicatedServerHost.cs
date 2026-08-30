@@ -132,6 +132,8 @@ namespace TitanOrbit.NetCode
             killAtEpochSeconds = 0;
             if (s_Instance == null || s_Instance._config == null || !s_Instance._emptySinceUtc.HasValue)
                 return false;
+            if (s_Instance._config.EmptyMatchRecreateSeconds <= 0)
+                return false;
 
             // [TITAN-ORBIT] _emptySinceUtc is cleared whenever playerCount > 0 (TrackEmptyMatchTime).
             DateTime emptyUtc = DateTime.SpecifyKind(s_Instance._emptySinceUtc.Value, DateTimeKind.Utc);
@@ -270,7 +272,8 @@ namespace TitanOrbit.NetCode
                         long ageSeconds = nowEpoch - _createdAtEpochSeconds;
 
                         if (!IsRecreateInProgress() && playerCount == 0 && _emptySinceUtc.HasValue &&
-                            !string.IsNullOrWhiteSpace(lobbyId))
+                            !string.IsNullOrWhiteSpace(lobbyId) &&
+                            _config.EmptyMatchRecreateSeconds > 0)
                         {
                             double emptySeconds = (DateTime.UtcNow - _emptySinceUtc.Value).TotalSeconds;
                             if (emptySeconds >= _config.EmptyMatchRecreateSeconds)
@@ -836,17 +839,18 @@ namespace TitanOrbit.NetCode
                 return;
             }
 
-            // First sample at zero players: start EmptyMatchRecreateSeconds countdown from now.
-            // [TITAN-ORBIT] Also wipe orphan ships immediately so a mid-idle joiner is not offered
+            // First sample at zero players: start empty clock (recreate only if EmptyMatchRecreateSeconds > 0).
+            // [TITAN-ORBIT] Wipe orphan ships immediately so a mid-idle joiner is not offered
             // the previous player's hull via NetworkId reuse. Map planets stay.
             if (!_emptySinceUtc.HasValue)
             {
                 _emptySinceUtc = DateTime.UtcNow;
+                int recreateAfter = _config != null ? _config.EmptyMatchRecreateSeconds : -1;
                 DedicatedServerFileLog.Append("idle",
-                    "Empty match countdown started (last player left) lobby=" + _activeLobbyId +
-                    " recreateAfterSeconds=" + (_config != null ? _config.EmptyMatchRecreateSeconds : -1));
-                Debug.Log("[TitanOrbitDedicatedServerHost] Last player left — empty-idle countdown started (" +
-                          (_config != null ? _config.EmptyMatchRecreateSeconds : -1) + "s).");
+                    "Last player left lobby=" + _activeLobbyId +
+                    " recreateAfterSeconds=" + recreateAfter);
+                Debug.Log("[TitanOrbitDedicatedServerHost] Last player left — match stays listed" +
+                          (recreateAfter > 0 ? " (empty recreate in " + recreateAfter + "s)." : "."));
                 if (TitanOrbitSessionManager.Instance != null)
                     TitanOrbitSessionManager.Instance.WipeOrphanPlayerShipsAndResetRosters();
             }

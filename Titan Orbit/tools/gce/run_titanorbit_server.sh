@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # systemd wrapper: log IL2CPP sizes, run player with Unity log on stdout (journal / serial console).
 set -u
-# Headless GCE VMs have no display; avoid SDL/GPU init failures on some Unity Linux players.
-export SDL_VIDEODRIVER="${SDL_VIDEODRIVER:-dummy}"
-export DISPLAY="${DISPLAY:-}"
+# Dedicated Server (UNITY_SERVER) has no graphics module. SDL dummy + Unity -nographics
+# still created NullGfxDevice and PresentAndWait (~850 ms/frame, wallSim≈5 Hz, 100% of
+# one core on an empty match). Do not set SDL_VIDEODRIVER=dummy.
 BASE="${TITANORBIT_SERVER_DIR:-/home/jason/titanorbit-server/TitanOrbitLinux1}"
 cd "$BASE" || { echo "FATAL: cannot cd to $BASE" >&2; exit 1; }
 for f in GameAssembly.so UnityPlayer.so TitanOrbitServer_Data/il2cpp_data/Metadata/global-metadata.dat; do

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.Text;
 using UnityEditor;
 using UnityEditor.Build;
 using UnityEditor.Build.Reporting;
@@ -294,33 +295,37 @@ namespace TitanOrbit.Editor.Build
         }
 
         /// <summary>
-        /// Ensures a scripting define is present for the WebGL named build target.
-        /// Used to strip editor-only packages (e.g. App UI) from the browser player.
+        /// Adds a scripting define on a named build target if missing (App UI strip, etc.).
         /// </summary>
-        /// <param name="define">Define symbol to add if missing (e.g. <c>APP_UI_EDITOR_ONLY</c>).</param>
-        static void EnsureWebGlScriptingDefine(string define)
+        static void EnsureNamedBuildTargetScriptingDefine(NamedBuildTarget namedTarget, string define)
         {
-            // --- Read current WebGL defines ---
-            // [UNITY] NamedBuildTarget.WebGL — same store as ProjectSettings scriptingDefineSymbols.WebGL.
-            string current = PlayerSettings.GetScriptingDefineSymbols(NamedBuildTarget.WebGL);
+            string current = PlayerSettings.GetScriptingDefineSymbols(namedTarget);
             if (string.IsNullOrEmpty(current))
             {
-                PlayerSettings.SetScriptingDefineSymbols(NamedBuildTarget.WebGL, define);
-                Debug.Log("[TitanOrbitBuild] WebGL scripting defines → " + define);
+                PlayerSettings.SetScriptingDefineSymbols(namedTarget, define);
+                Debug.Log("[TitanOrbitBuild] " + namedTarget + " scripting defines → " + define);
                 return;
             }
 
-            // --- Already present? ---
             foreach (string part in current.Split(';'))
             {
                 if (string.Equals(part.Trim(), define, StringComparison.Ordinal))
                     return;
             }
 
-            // --- Append ---
             string next = current.TrimEnd(';') + ";" + define;
-            PlayerSettings.SetScriptingDefineSymbols(NamedBuildTarget.WebGL, next);
-            Debug.Log("[TitanOrbitBuild] WebGL scripting defines → " + next);
+            PlayerSettings.SetScriptingDefineSymbols(namedTarget, next);
+            Debug.Log("[TitanOrbitBuild] " + namedTarget + " scripting defines → " + next);
+        }
+
+        /// <summary>
+        /// Ensures a scripting define is present for the WebGL named build target.
+        /// Used to strip editor-only packages (e.g. App UI) from the browser player.
+        /// </summary>
+        /// <param name="define">Define symbol to add if missing (e.g. <c>APP_UI_EDITOR_ONLY</c>).</param>
+        static void EnsureWebGlScriptingDefine(string define)
+        {
+            EnsureNamedBuildTargetScriptingDefine(NamedBuildTarget.WebGL, define);
         }
 
 
@@ -675,7 +680,37 @@ namespace TitanOrbit.Editor.Build
             bool ok = ExecuteLinuxDedicatedServerBuild(outputBasePath, label, nextStepDocPath);
             if (ok && deployToGceAfterSuccess)
                 StartGceDeployFromEditorBuildFolder(Path.GetDirectoryName(outputBasePath) ?? outputBasePath);
+            if (ok && !exitEditorWhenDone)
+                RestoreWindowsPlayerForEditorPlayMode();
             ExitEditorIfRequested(exitEditorWhenDone, exitCode: ok ? 0 : 1);
+        }
+
+        /// <summary>
+        /// Linux Dedicated Server leaves <c>UNITY_SERVER</c> on and rebakes EntityScenes for the
+        /// server. Editor Play Mode then hangs on the loading bar (planet proxies stay 0/N).
+        /// </summary>
+        [MenuItem("TitanOrbit/Build/Switch Editor to Windows Player (Play Mode)", false, 80)]
+        public static void RestoreWindowsPlayerForEditorPlayMode()
+        {
+            if (IsWindowsClientPlayerActiveTarget())
+            {
+                Debug.Log("[TitanOrbitBuild] Editor is already Windows Player — Play Mode is safe.");
+                return;
+            }
+
+            Debug.Log(
+                "[TitanOrbitBuild] Switching Editor to Windows Player so Play Mode is not stuck " +
+                "on a Linux Dedicated Server bake (loading bar / missing planet proxies).");
+            EditorUserBuildSettings.standaloneBuildSubtarget = StandaloneBuildSubtarget.Player;
+            bool switched = EditorUserBuildSettings.SwitchActiveBuildTarget(
+                NamedBuildTarget.Standalone,
+                BuildTarget.StandaloneWindows64);
+            if (!switched)
+            {
+                Debug.LogError(
+                    "[TitanOrbitBuild] Could not switch to Windows Player. " +
+                    "File → Build Profiles → Windows → Player → Switch Platform.");
+            }
         }
 
         /// <summary>
@@ -823,6 +858,8 @@ namespace TitanOrbit.Editor.Build
             bool ok = ExecuteLinuxDedicatedServerBuild(pending.outputBasePath, pending.label, pending.nextStepDocPath);
             if (ok && deployToGceAfterSuccess)
                 StartGceDeployFromEditorBuildFolder(Path.GetDirectoryName(pending.outputBasePath) ?? pending.outputBasePath);
+            if (ok && !exitEditorWhenDone)
+                RestoreWindowsPlayerForEditorPlayMode();
             ExitEditorIfRequested(exitEditorWhenDone, exitCode: ok ? 0 : 1);
         }
 
@@ -840,7 +877,17 @@ namespace TitanOrbit.Editor.Build
             // GCE Debian images often fail to load MonoBleedingEdge native libs ("Unable to load mono library" / exit 1).
             // Dedicated Server player target supports IL2CPP — no Mono .so chain on the VM/container.
             PlayerSettings.SetScriptingBackend(NamedBuildTarget.Server, ScriptingImplementation.IL2CPP);
+            // Standalone/WebGL already define this. Server did not — GCE 2026-08-30 still ran
+            // AppUI.InitializeInPlayer, failed libgtk-3 / AppUINativePlugin, and burned ~650 ms/frame
+            // (wallSim≈6 Hz, client snapSpacing=4 / cmdAge≈−14).
+            EnsureNamedBuildTargetScriptingDefine(NamedBuildTarget.Server, "APP_UI_EDITOR_ONLY");
             Debug.Log("[TitanOrbitBuild] Dedicated Server scripting backend set to IL2CPP for this Linux server build (" + label + ").");
+
+            string buildStamp = StampLinuxServerBuildId();
+
+            // Incremental IL2CPP can relink GameAssembly.so with a new timestamp while reusing
+            // stale C++ objects — GCE then keeps the old 50 ms/frame lock after a "successful" rebuild.
+            InvalidateLinuxServerIncrementalArtifacts(outputBasePath);
 
             // --- BuildPlayer ---
             var options = new BuildPlayerOptions
@@ -848,7 +895,7 @@ namespace TitanOrbit.Editor.Build
                 scenes = GetEnabledScenes(),
                 locationPathName = outputBasePath,
                 target = BuildTarget.StandaloneLinux64,
-                options = BuildOptions.EnableHeadlessMode,
+                options = BuildOptions.EnableHeadlessMode | BuildOptions.CleanBuildCache,
                 subtarget = (int)StandaloneBuildSubtarget.Server
             };
 
@@ -856,7 +903,14 @@ namespace TitanOrbit.Editor.Build
             if (report.summary.result == BuildResult.Succeeded)
             {
                 string folder = Path.GetDirectoryName(outputBasePath) ?? outputBasePath;
-                Debug.Log($"[TitanOrbitBuild] Linux server build OK ({label}). Next: {nextStepDocPath}\nOutput folder: {folder}");
+                CopyGceServerWrapperIntoBuildFolder(folder);
+                StripDedicatedServerNativePlugins(folder);
+                WriteSidecarBuildId(folder, buildStamp);
+                Debug.Log(
+                    $"[TitanOrbitBuild] Linux server build OK ({label}, clean IL2CPP). Next: {nextStepDocPath}\n" +
+                    $"Output folder: {folder}\n" +
+                    $"Build id: {buildStamp} (Join Game shows this after a successful GCE deploy).\n" +
+                    "After deploy, GCE log must contain driver=directUdpFriendly and stamp=" + buildStamp + ".");
                 return true;
             }
 
@@ -867,6 +921,160 @@ namespace TitanOrbit.Editor.Build
                 "com.unity.toolchain.win-x86_64-linux and com.unity.sdk.linux-x86_64 are in Packages/manifest.json, " +
                 "then use File → Build Profiles → Linux Dedicated Server → Switch Platform and retry.");
             return false;
+        }
+
+        /// <summary>
+        /// Copies <c>tools/gce/run_titanorbit_server.sh</c> into the Linux build folder so GCS
+        /// extract keeps the wrapper (sets TITANORBIT_PUBLIC_ADDRESS). Without it, lobby publish
+        /// waits on a missing public IP after Relay removal.
+        /// </summary>
+        static void CopyGceServerWrapperIntoBuildFolder(string buildFolder)
+        {
+            if (string.IsNullOrEmpty(buildFolder) || !Directory.Exists(buildFolder))
+                return;
+
+            string wrapperSrc = Path.GetFullPath(Path.Combine(Application.dataPath, "..", "tools", "gce",
+                "run_titanorbit_server.sh"));
+            if (!File.Exists(wrapperSrc))
+            {
+                Debug.LogWarning("[TitanOrbitBuild] GCE wrapper missing, skip copy: " + wrapperSrc);
+                return;
+            }
+
+            string dest = Path.Combine(buildFolder, "run_titanorbit_server.sh");
+            string text = File.ReadAllText(wrapperSrc).Replace("\r\n", "\n").Replace("\r", "\n");
+            File.WriteAllText(dest, text, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+            Debug.Log("[TitanOrbitBuild] Copied GCE wrapper (LF) to " + dest);
+        }
+
+        /// <summary>
+        /// App UI's GTK native plugin is still copied into Linux Dedicated Server output even
+        /// when <c>APP_UI_EDITOR_ONLY</c> strips C#. Unity then dlopens it every boot (and the
+        /// missing libgtk-3.so.0 path showed up next to 4 Hz wall sim on GCE).
+        /// </summary>
+        static void StripDedicatedServerNativePlugins(string buildFolder)
+        {
+            if (string.IsNullOrEmpty(buildFolder) || !Directory.Exists(buildFolder))
+                return;
+
+            string[] names = { "libAppUINativePlugin.so", "AppUINativePlugin.dll" };
+            foreach (string name in names)
+            {
+                string[] hits;
+                try
+                {
+                    hits = Directory.GetFiles(buildFolder, name, SearchOption.AllDirectories);
+                }
+                catch (Exception ex)
+                {
+                    Debug.LogWarning("[TitanOrbitBuild] Plugin strip scan failed: " + ex.Message);
+                    return;
+                }
+
+                foreach (string path in hits)
+                {
+                    File.Delete(path);
+                    Debug.Log("[TitanOrbitBuild] Removed headless-incompatible plugin " + path);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Writes <c>Resources/TitanOrbitBuildStamp.txt</c> before IL2CPP so the dedicated
+        /// binary and Join Game lobby can show the same id after deploy.
+        /// </summary>
+        static string StampLinuxServerBuildId()
+        {
+            // Seconds included — the old HHmm + git suffix looked identical across bakes
+            // because git HEAD does not move until you commit.
+            string stamp = DateTime.UtcNow.ToString("yyyyMMdd-HHmmss");
+            string git = TryReadGitShortHash();
+            if (!string.IsNullOrEmpty(git))
+                stamp += "-" + git;
+
+            string resourcesDir = Path.Combine(Application.dataPath, "Resources");
+            Directory.CreateDirectory(resourcesDir);
+            string assetPath = Path.Combine(resourcesDir, "TitanOrbitBuildStamp.txt");
+            File.WriteAllText(assetPath, stamp + "\n", new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+            AssetDatabase.ImportAsset("Assets/Resources/TitanOrbitBuildStamp.txt");
+            Debug.Log("[TitanOrbitBuild] Stamped dedicated server build id " + stamp);
+            return stamp;
+        }
+
+        static string TryReadGitShortHash()
+        {
+            try
+            {
+                string projectRoot = Path.GetDirectoryName(Application.dataPath);
+                var start = new ProcessStartInfo
+                {
+                    FileName = "git",
+                    Arguments = "rev-parse --short HEAD",
+                    WorkingDirectory = projectRoot,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                };
+                using var proc = Process.Start(start);
+                if (proc == null)
+                    return null;
+                string output = proc.StandardOutput.ReadToEnd().Trim();
+                proc.WaitForExit(4000);
+                if (proc.ExitCode != 0 || output.Length < 4 || output.Length > 16)
+                    return null;
+                for (int i = 0; i < output.Length; i++)
+                {
+                    char c = output[i];
+                    bool ok = (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
+                    if (!ok)
+                        return null;
+                }
+
+                return output.ToLowerInvariant();
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        static void WriteSidecarBuildId(string buildFolder, string stamp)
+        {
+            if (string.IsNullOrEmpty(buildFolder) || !Directory.Exists(buildFolder))
+                return;
+            if (string.IsNullOrWhiteSpace(stamp))
+                return;
+
+            string dest = Path.Combine(buildFolder, "BUILD_ID.txt");
+            File.WriteAllText(dest, stamp + "\n", new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+        }
+
+        /// <summary>
+        /// Deletes the previous Linux <c>GameAssembly.so</c> so IL2CPP cannot relink yesterday's
+        /// objects under a new timestamp (that is what made GCE look "rebuilt" while still at 50 ms/frame).
+        /// </summary>
+        static void InvalidateLinuxServerIncrementalArtifacts(string outputBasePath)
+        {
+            string folder = Path.GetDirectoryName(outputBasePath);
+            if (string.IsNullOrEmpty(folder) || !Directory.Exists(folder))
+                return;
+
+            string gameAssembly = Path.Combine(folder, "GameAssembly.so");
+            if (!File.Exists(gameAssembly))
+                return;
+
+            try
+            {
+                File.Delete(gameAssembly);
+                Debug.Log("[TitanOrbitBuild] Deleted previous GameAssembly.so — forcing a full IL2CPP compile.");
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning(
+                    "[TitanOrbitBuild] Could not delete previous GameAssembly.so (close Explorer / quit Play Mode and retry).\n" +
+                    ex.Message);
+            }
         }
 
         /// <summary>

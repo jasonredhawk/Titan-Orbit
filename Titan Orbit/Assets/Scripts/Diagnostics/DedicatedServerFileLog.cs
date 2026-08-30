@@ -51,7 +51,9 @@ namespace TitanOrbit.Diagnostics
 
                 sb.AppendLine();
                 string line = sb.ToString();
+#if !UNITY_SERVER
                 Debug.Log("[DedicatedServerFileLog] " + line.TrimEnd());
+#endif
 
                 // --- Atomic append under lock ---
                 lock (Gate)

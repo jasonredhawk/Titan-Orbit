@@ -1,5 +1,6 @@
 using TitanOrbit.Core;
 using TitanOrbit.Data;
+using TitanOrbit.Diagnostics;
 using TitanOrbit.Generation;
 using TitanOrbit.Simulation;
 using Unity.Collections;
@@ -33,6 +34,8 @@ namespace TitanOrbit.ECS
     public partial struct ShipPhysicsDriveSystem : ISystem
     {
         /// <summary>Require at least one ship motor config before scheduling the drive job.</summary>
+        static double s_NextAgentLogRealtime;
+
         public void OnCreate(ref SystemState state)
         {
             state.RequireForUpdate<ShipMotorConfig>();
@@ -126,6 +129,36 @@ namespace TitanOrbit.ECS
 
                     if (foundLocalShip)
                         PlanetConnectionGraphCache.UpdateLocalOwnerTerritoryMult(localMult, moonElapsed);
+
+                    // #region agent log
+                    if (foundLocalShip &&
+                        UnityEngine.Time.realtimeSinceStartupAsDouble >= s_NextAgentLogRealtime)
+                    {
+                        s_NextAgentLogRealtime = UnityEngine.Time.realtimeSinceStartupAsDouble + 2.0;
+                        float speed = 0f;
+                        bool thrust = false;
+                        bool predicted = false;
+                        foreach (var (pv, input, entity) in SystemAPI
+                                     .Query<RefRO<PhysicsVelocity>, RefRO<ShipInput>>()
+                                     .WithAll<ShipTag, GhostOwnerIsLocal, Simulate>()
+                                     .WithEntityAccess())
+                        {
+                            speed = math.length(pv.ValueRO.Linear);
+                            thrust = input.ValueRO.Thrust;
+                            predicted = state.EntityManager.HasComponent<PredictedGhost>(entity);
+                            break;
+                        }
+
+                        AgentDebugNdjson.Write(
+                            "D",
+                            "ShipPhysicsDriveSystem.cs:OnUpdate",
+                            "local predicted motor",
+                            "{\"speed\":" + speed.ToString("F2") +
+                            ",\"thrust\":" + (thrust ? "true" : "false") +
+                            ",\"predictedGhost\":" + (predicted ? "true" : "false") +
+                            ",\"dt\":" + SystemAPI.Time.DeltaTime.ToString("F4") + "}");
+                    }
+                    // #endregion
                 }
             }
 

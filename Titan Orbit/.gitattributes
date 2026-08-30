@@ -70,6 +70,9 @@
 *.rar binary
 *.unitypackage binary
 
+# Shell on GCE must stay LF. Windows CRLF makes systemd exit 127 (env: 'bash\r').
+*.sh text eol=lf
+
 # Windows-specific files (keep CRLF)
 *.bat text eol=crlf
 *.cmd text eol=crlf

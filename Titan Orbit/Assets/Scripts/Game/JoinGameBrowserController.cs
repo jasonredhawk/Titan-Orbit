@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Text;
 using System.Threading.Tasks;
 using TitanOrbit.Core;
+using TitanOrbit.Diagnostics;
 using TitanOrbit.NetCode;
 using TitanOrbit.Services;
 using TMPro;
@@ -18,7 +19,7 @@ namespace TitanOrbit.Game
     /// Layout matches the Main Menu look: transparent backdrop over SpaceBackground, Titan Orbit logo,
     /// then Refresh / Quick join latest, then the lobby list.
     /// Each lobby row shows team cards, map extras, capacity, and its own Join button (no footer Join).
-    /// When the list is empty, a silent auto-request can still wake a dedicated match (no Request Match button).
+    /// The dedicated process publishes one IsLatest match; players join it — they do not create games.
     /// </summary>
     public class JoinGameBrowserController : MonoBehaviour
     {
@@ -47,6 +48,7 @@ namespace TitanOrbit.Game
         GameObject _lobbyRowPrefab;
         Transform _listContainer;
         TextMeshProUGUI _statusText;
+        TextMeshProUGUI _buildIdText;
         Button _refreshButton;
         Button _quickJoinButton;
 
@@ -122,6 +124,7 @@ namespace TitanOrbit.Game
                 _refreshButton = null;
                 _quickJoinButton = null;
                 _statusText = null;
+                _buildIdText = null;
                 _lobbyScroll = null;
             }
 
@@ -160,6 +163,46 @@ namespace TitanOrbit.Game
                 _screenRoot.SetActive(false);
             if (mainMenuPanel != null)
                 mainMenuPanel.SetActive(true);
+        }
+
+        void OnDestroy()
+        {
+            DestroyJoinGameOverlay();
+        }
+
+        void OnDisable()
+        {
+            if (!Application.isPlaying)
+                DestroyJoinGameOverlay();
+        }
+
+        /// <summary>Destroys the runtime overlay so exiting Play does not leave JoinGameScreen in Hierarchy.</summary>
+        void DestroyJoinGameOverlay()
+        {
+            if (_screenRoot != null)
+            {
+                Destroy(_screenRoot);
+                _screenRoot = null;
+            }
+
+            Transform host = mainMenuPanel != null
+                ? mainMenuPanel.GetComponentInParent<Canvas>()?.transform
+                : null;
+            if (host == null)
+                return;
+
+            for (int i = host.childCount - 1; i >= 0; i--)
+            {
+                Transform child = host.GetChild(i);
+                if (child != null && child.name == "JoinGameScreen")
+                    Destroy(child.gameObject);
+            }
+        }
+
+        /// <summary>Sets the Join Game status line (used after a failed dedicated map sync).</summary>
+        public void SetPublicStatus(string message)
+        {
+            SetStatus(message);
         }
 
         /// <summary>
@@ -322,6 +365,18 @@ namespace TitanOrbit.Game
             statusLe.flexibleHeight = 0f;
             ApplyContentColumnLayout(statusLe);
 
+            _buildIdText = CreateStyledLabel("JoinGameBuildId", "", contentColumn.transform,
+                14f, FontStyles.Normal, TextAlignmentOptions.Center);
+            _buildIdText.color = new Color(0.72f, 0.82f, 0.94f, 0.95f);
+            _buildIdText.enableWordWrapping = true;
+            _buildIdText.richText = true;
+            var buildLe = _buildIdText.gameObject.AddComponent<LayoutElement>();
+            buildLe.minHeight = 52f;
+            buildLe.preferredHeight = 56f;
+            buildLe.flexibleHeight = 0f;
+            ApplyContentColumnLayout(buildLe);
+            RefreshBuildIdLabel();
+
             BuildLobbyBrowserPanel(contentColumn.transform);
 
             // Keep Back above the full-screen body so it stays clickable over the logo.
@@ -478,16 +533,6 @@ namespace TitanOrbit.Game
                 }
 
                 ApplySummaries(fetched, silent);
-
-                if (fetched.Count == 0 &&
-                    kind == TitanOrbitLobbyService.OpenLobbyQueryResultKind.Ok &&
-                    !_autoRequestMatchSent &&
-                    !_requestInProgress)
-                {
-                    _autoRequestMatchSent = true;
-                    Debug.Log("[JoinGameBrowser] No lobbies listed — auto-requesting dedicated match.");
-                    _ = AutoRequestMatchOnceAsync();
-                }
             }
             finally
             {
@@ -509,7 +554,7 @@ namespace TitanOrbit.Game
             {
                 string project = Application.cloudProjectId ?? "(none)";
                 SetStatus(_cached.Count == 0
-                    ? "No dedicated matches listed (project " + project + "). Tap Refresh — a match may start automatically."
+                    ? "No dedicated match listed (project " + project + "). The server publishes games automatically — tap Refresh."
                     : "Tap Join on a match, or use Quick join latest.");
             }
         }
@@ -608,6 +653,7 @@ namespace TitanOrbit.Game
 
             Debug.Log("[JoinGameBrowser] RenderList rows=" + _cached.Count +
                       (_cached.Count > 0 ? " first=\"" + _cached[0].Name + "\"" : ""));
+            RefreshBuildIdLabel();
             RebuildLobbyListLayout();
         }
 
@@ -860,8 +906,15 @@ namespace TitanOrbit.Game
                 wrote = true;
             }
 
+            if (wrote)
+                sb.Append("   <color=#5f738a>|</color>   ");
+            if (string.IsNullOrWhiteSpace(summary.ServerBuildId))
+                sb.Append("<color=#e08a6a><b>build (old GCE — no id)</b></color>");
+            else
+                sb.Append("<color=#8fd4a8><b>build ").Append(summary.ServerBuildId).Append("</b></color>");
+
             if (!wrote)
-                sb.Append("<color=#6f8499>Waiting for map…</color>");
+                sb.Append("   <color=#6f8499>Waiting for map…</color>");
 
             sb.Append("</size>");
             return sb.ToString();
@@ -1156,6 +1209,82 @@ namespace TitanOrbit.Game
         {
             if (_statusText != null)
                 _statusText.text = message;
+            RefreshBuildIdLabel();
+        }
+
+        /// <summary>
+        /// Always-visible bake id. A missing GCE id means the live lobby process predates this field.
+        /// </summary>
+        void RefreshBuildIdLabel()
+        {
+            if (_buildIdText == null)
+                return;
+
+            string serverId = null;
+            int serverHz = -1;
+            for (int i = 0; i < _cached.Count; i++)
+            {
+                if (_cached[i] == null)
+                    continue;
+                if (_cached[i].IsLatest && !string.IsNullOrWhiteSpace(_cached[i].ServerBuildId))
+                {
+                    serverId = _cached[i].ServerBuildId;
+                    serverHz = _cached[i].ServerSimHz;
+                    break;
+                }
+
+                if (serverId == null && !string.IsNullOrWhiteSpace(_cached[i].ServerBuildId))
+                {
+                    serverId = _cached[i].ServerBuildId;
+                    serverHz = _cached[i].ServerSimHz;
+                }
+            }
+
+            string simLine = FormatServerSimHzLine(serverHz);
+
+            if (serverId == null && _cached.Count > 0)
+            {
+                _buildIdText.text =
+                    "This client: " + TitanOrbitBuildStamp.LocalLabel() +
+                    "\n<color=#e08a6a>GCE running: (not published — old binary, rebuild + deploy)</color>" +
+                    simLine;
+                return;
+            }
+
+            if (serverId == null)
+            {
+                _buildIdText.text =
+                    "This client: " + TitanOrbitBuildStamp.LocalLabel() +
+                    "\nGCE running: (no lobby listed yet)" +
+                    simLine;
+                return;
+            }
+
+            bool sameBake = TitanOrbitBuildStamp.SameBake(TitanOrbitBuildStamp.Id, serverId);
+            string gceColor = sameBake ? "#8fd4a8" : "#e08a6a";
+            string gceNote = sameBake
+                ? ""
+                : " — different bake than this Editor (deploy did not land)";
+            _buildIdText.text =
+                "This client: " + TitanOrbitBuildStamp.LocalLabel() +
+                "\n<color=" + gceColor + ">GCE running: " + TitanOrbitBuildStamp.FormatFriendly(serverId) +
+                gceNote + "</color>" +
+                simLine;
+        }
+
+        /// <summary>Sim Hz packed into lobby <c>ServerBuild</c> as <c>stamp@Hz</c>. Empty until the first sample.</summary>
+        static string FormatServerSimHzLine(int serverHz)
+        {
+            if (serverHz < 0)
+                return string.Empty;
+            if (serverHz == 0)
+                return "\nGCE sim: (measuring…)";
+            if (serverHz < 12)
+                return "\n<color=#e08a6a>GCE sim: " + serverHz +
+                       " Hz wall — live from this server (stamps can match and still snap)</color>";
+            if (serverHz < 50)
+                return "\n<color=#e0c06a>GCE sim: " + serverHz + " Hz — below 60</color>";
+            return "\n<color=#8fd4a8>GCE sim: " + serverHz + " Hz</color>";
         }
 
         static void ApplyContentColumnLayout(LayoutElement layoutElement)

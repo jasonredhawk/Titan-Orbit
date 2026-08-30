@@ -153,7 +153,7 @@ namespace TitanOrbit.NetCode
 
 #if UNITY_SERVER
         /// <summary>
-        /// Intentionally empty — do <b>not</b> manually tick ServerWorld here.
+        /// Headless: keep VSync off. Do <b>not</b> manually tick ServerWorld here.
         /// </summary>
         /// <remarks>
         /// [NETCODE] <c>ClientServerBootstrap.CreateServerWorld</c> calls
@@ -165,10 +165,30 @@ namespace TitanOrbit.NetCode
         /// Both Relay clients stuck at <c>cmdAge≈18–21</c> / hard snaps even with client MaxSteps=8.
         /// Boot coroutines may still call <see cref="TickServerWorld"/> (frame-gated).
         /// </para>
+        /// Project Quality vSync=1 plus NullGfxDevice waits a full present timeout per frame.
+        /// Re-assert vSync=0 / 60 FPS so scene or Quality reloads cannot stall sim at ~4 Hz.
         /// </remarks>
         void Update()
         {
             // Player loop owns ServerWorld — no TickServerWorld() here.
+            ApplyDedicatedServerFramePace();
+        }
+
+        /// <summary>
+        /// Headless pace: vSync off, no Unity FPS cap, default 0.1s max dt.
+        /// GCE 2026-08-30: <c>targetFrameRate=60</c> on NullGfxDevice still produced ~850 ms
+        /// frames (wallSim≈4 Hz, 100% of one core). NCE BusyWait owns 60 Hz ticks;
+        /// WaitForTargetFPS must not run. Do not raise maxDt or MaxSteps (catch-up spiral).
+        /// </summary>
+        public static void ApplyDedicatedServerFramePace()
+        {
+            Application.runInBackground = true;
+            if (QualitySettings.vSyncCount != 0)
+                QualitySettings.vSyncCount = 0;
+            if (Application.targetFrameRate != -1)
+                Application.targetFrameRate = -1;
+            if (Time.maximumDeltaTime > 0.1f)
+                Time.maximumDeltaTime = 0.1f;
         }
 #else
         /// <summary>
@@ -460,7 +480,9 @@ namespace TitanOrbit.NetCode
             }
 
             s_DedicatedBootStarted = true;
-            DedicatedServerFileLog.Append("boot", "EnsureDedicatedBootStarted -> BootDedicatedServer coroutine.");
+            DedicatedServerFileLog.Append(
+                "boot",
+                "EnsureDedicatedBootStarted -> BootDedicatedServer coroutine. stamp=" + TitanOrbitBuildStamp.Id);
             Debug.Log("[TitanOrbitSessionManager] Starting BootDedicatedServer coroutine.");
             StartCoroutine(BootDedicatedServer());
         }
@@ -1097,6 +1119,7 @@ namespace TitanOrbit.NetCode
                     return null;
                 }
 
+                string addressSource = await config.EnsurePublicAddressAsync();
                 if (string.IsNullOrWhiteSpace(config.PublicAddress))
                 {
                     DedicatedServerFileLog.Append("boot",
@@ -1109,7 +1132,17 @@ namespace TitanOrbit.NetCode
                 int cap = Mathf.Max(2, config.MaxPlayers);
                 long createdAt = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
                 DedicatedServerFileLog.Append("boot", "Direct host ok address=" + config.PublicAddress +
-                                                  " port=" + config.PublicPort + " cap=" + cap);
+                                                  " port=" + config.PublicPort + " cap=" + cap +
+                                                  " source=" + addressSource);
+                // #region agent log
+                AgentDebugNdjson.Write(
+                    "L",
+                    "TitanOrbitSessionManager.cs:PrepareDedicatedHostAsync",
+                    "public address resolved",
+                    "{\"address\":\"" + config.PublicAddress.Replace("\"", "") +
+                    "\",\"port\":" + config.PublicPort +
+                    ",\"source\":\"" + addressSource + "\"}");
+                // #endregion
                 return new DedicatedServerPrep
                 {
                     CreatedAtEpochSeconds = createdAt,
@@ -1589,17 +1622,6 @@ namespace TitanOrbit.NetCode
                     return false;
                 }
 
-                if (TitanOrbitLobbyService.IsDedicatedLobbyHeartbeatTooOld(
-                        lobby, TitanOrbitLobbyService.DedicatedLobbyJoinMaxHeartbeatAgeSeconds, out long heartbeatAge))
-                {
-                    LastStatusMessage = heartbeatAge <= 0
-                        ? "Server heartbeat missing — tap Refresh, then join again."
-                        : $"Server heartbeat is {heartbeatAge}s old — tap Refresh, then join again.";
-                    Debug.LogWarning("[TitanOrbitSessionManager] Join rejected stale heartbeat age=" + heartbeatAge);
-                    await TitanOrbitLobbyService.TryRemovePlayerFromLobbyAsync(lobby.Id, "stale_heartbeat");
-                    return false;
-                }
-
                 if (!TitanOrbitLobbyService.TryGetHostEndpoint(lobby, out string hostAddress, out ushort hostPort))
                 {
                     Debug.LogError("[TitanOrbitSessionManager] Lobby missing HostAddress/HostPort.");
@@ -1884,19 +1906,27 @@ namespace TitanOrbit.NetCode
                     { TitanOrbitLobbyService.LobbyServerAliveEpochKey, new DataObject(DataObject.VisibilityOptions.Public, createdAt.ToString(CultureInfo.InvariantCulture)) },
                     { TitanOrbitLobbyService.LobbyServerListenAddressKey, new DataObject(DataObject.VisibilityOptions.Public, serverListenAddress) },
                     { TitanOrbitLobbyService.LobbyActivePlayersKey, new DataObject(DataObject.VisibilityOptions.Public, "0", DataObject.IndexOptions.N4) },
+                    // [TITAN-ORBIT] UGS allows 20 Data keys. Map meta fills the rest on heartbeat —
+                    // do not add a 21st key (ServerHz) or UpdateLobby fails and Join Game goes empty.
+                    { TitanOrbitLobbyService.LobbyServerBuildKey, new DataObject(DataObject.VisibilityOptions.Public, TitanOrbitLobbyService.FormatServerBuildLobbyValue()) },
                 };
 
                 // [TITAN-ORBIT] Brand-new lobby is empty — publish idle-kill deadline for Join Game countdown.
                 int idleSeconds = _serverConfig != null
                     ? _serverConfig.EmptyMatchRecreateSeconds
                     : TitanOrbitServerCommandLine.DefaultEmptyMatchRecreateSeconds;
-                long idleKillAt = createdAt + Mathf.Max(60, idleSeconds);
-                lobbyData[TitanOrbitLobbyService.LobbyIdleKillAtEpochKey] = new DataObject(
-                    DataObject.VisibilityOptions.Public,
-                    idleKillAt.ToString(CultureInfo.InvariantCulture));
+                // [TITAN-ORBIT] Skip IdleKillAt when empty matches stay listed (saves a UGS Data key).
+                if (idleSeconds > 0)
+                {
+                    long idleKillAt = createdAt + Mathf.Max(60, idleSeconds);
+                    lobbyData[TitanOrbitLobbyService.LobbyIdleKillAtEpochKey] = new DataObject(
+                        DataObject.VisibilityOptions.Public,
+                        idleKillAt.ToString(CultureInfo.InvariantCulture));
+                }
 
                 // [TITAN-ORBIT] Publish map totals when generation already finished (often still rolling at create).
                 AppendMapSessionMetaLobbyData(lobbyData);
+                TitanOrbitLobbyService.TrimLobbyDataToUgsCap(lobbyData, "CreateLobby");
 
                 var createOptions = new CreateLobbyOptions
                 {
@@ -1904,10 +1934,20 @@ namespace TitanOrbit.NetCode
                     Data = lobbyData
                 };
 
-                return await LobbyService.Instance.CreateLobbyAsync(
-                    GameNames.GetRandomRoomName(),
-                    cap,
-                    createOptions);
+                try
+                {
+                    return await LobbyService.Instance.CreateLobbyAsync(
+                        GameNames.GetRandomRoomName(),
+                        cap,
+                        createOptions);
+                }
+                catch (Exception ex)
+                {
+                    string inner = ex.InnerException != null ? " | " + ex.InnerException.Message : string.Empty;
+                    Debug.LogError("[TitanOrbitSessionManager] CreateLobby failed keys=" + lobbyData.Count +
+                        " (" + string.Join(",", lobbyData.Keys) + "): " + ex.Message + inner);
+                    return null;
+                }
             }
             finally
             {
@@ -1927,7 +1967,9 @@ namespace TitanOrbit.NetCode
                     _consecutiveHeartbeatFailures = 0;
             }
 
-            var wait = new WaitForSeconds(15f);
+            // Wall clock — Join Game stale check is Unix time. WaitForSeconds + 0.1s
+            // Maximum Allowed Timestep stretched 15s of game time past the old 45s hide.
+            var wait = new WaitForSecondsRealtime(15f);
             while (true)
             {
                 if (!string.IsNullOrEmpty(_activeLobbyId))
@@ -2013,11 +2055,16 @@ namespace TitanOrbit.NetCode
                             new DataObject(
                                 DataObject.VisibilityOptions.Public,
                                 idleKillAtEpoch.ToString(CultureInfo.InvariantCulture))
+                        },
+                        {
+                            TitanOrbitLobbyService.LobbyServerBuildKey,
+                            new DataObject(DataObject.VisibilityOptions.Public, TitanOrbitLobbyService.FormatServerBuildLobbyValue())
                         }
                     };
 
                     // [TITAN-ORBIT] Keep Join Game browser map stats in sync once the map is ready.
                     AppendMapSessionMetaLobbyData(heartbeatData);
+                    TitanOrbitLobbyService.TrimLobbyDataToUgsCap(heartbeatData, "Heartbeat");
 
                     await LobbyService.Instance.SendHeartbeatPingAsync(_activeLobbyId);
                     await LobbyService.Instance.UpdateLobbyAsync(_activeLobbyId, new UpdateLobbyOptions
@@ -2383,6 +2430,16 @@ namespace TitanOrbit.NetCode
 
             var driver = em.CreateEntityQuery(typeof(NetworkStreamDriver)).GetSingletonRW<NetworkStreamDriver>();
             driver.ValueRW.Connect(em, endpoint);
+            // #region agent log
+            TitanOrbit.Diagnostics.AgentDebugNdjson.Write(
+                "R",
+                "TitanOrbitSessionManager.cs:ConnectDedicatedClient",
+                "direct udp connect",
+                "{\"address\":\"" + address.Replace("\"", "") +
+                "\",\"port\":" + port +
+                ",\"hasRelay\":" + (TitanOrbitRelayState.HasClientRelay ? "true" : "false") +
+                ",\"dedicatedOnline\":true}");
+            // #endregion
             return true;
         }
 

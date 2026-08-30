@@ -25,6 +25,13 @@ namespace TitanOrbit.NetCode
             if (!IsDedicatedServerProcess())
                 return;
 
+#if UNITY_SERVER
+            TitanOrbitSessionManager.ApplyDedicatedServerFramePace();
+            int workers = Mathf.Max(1, SystemInfo.processorCount - 1);
+            if (Unity.Jobs.LowLevel.Unsafe.JobsUtility.JobWorkerCount != workers)
+                Unity.Jobs.LowLevel.Unsafe.JobsUtility.JobWorkerCount = workers;
+#endif
+
             // --- Console markers for cloud log agents ---
             string markerLine = "[TitanOrbitDedicatedServerBootMarker] BeforeSceneLoad dedicated server detected.";
             Console.Error.WriteLine(markerLine);
@@ -39,9 +46,14 @@ namespace TitanOrbit.NetCode
                 "BeforeSceneLoad pid=" + System.Diagnostics.Process.GetCurrentProcess().Id +
                 " batchMode=" + Application.isBatchMode +
 #if UNITY_SERVER
-                " build=UNITY_SERVER" +
+                " build=UNITY_SERVER driver=directUdpFriendly stamp=" + TitanOrbitBuildStamp.Id +
 #else
-                " build=player" +
+                " build=player stamp=" + TitanOrbitBuildStamp.Id +
+#endif
+#if APP_UI_EDITOR_ONLY
+                " appUi=stripped" +
+#else
+                " appUi=LIVE" +
 #endif
                 " cmdline=" + cmd);
             Debug.Log("[TitanOrbitDedicatedServerBootMarker] Dedicated server bootstrap will run after scene load.");

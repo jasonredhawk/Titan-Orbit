@@ -1,4 +1,5 @@
 using TitanOrbit.Core;
+using TitanOrbit.Diagnostics;
 using Unity.Collections;
 using Unity.Entities;
 using Unity.NetCode;
@@ -106,6 +107,8 @@ namespace TitanOrbit.ECS
         /// <param name="state">System state for the connection query.</param>
         /// <param name="shipEntity">Local owned ship ghost.</param>
         // [ECS/DOTS] Must be instance (not static) — SystemAPI.Query needs the generated type handle.
+        static double s_NextAgentLogRealtime;
+
         void BindCommandTarget(ref SystemState state, Entity shipEntity)
         {
             // [NETCODE] CommandTarget on the client connection — packages IInputComponentData each tick.
@@ -114,6 +117,19 @@ namespace TitanOrbit.ECS
                 if (cmd.ValueRO.targetEntity != shipEntity)
                     cmd.ValueRW = new CommandTarget { targetEntity = shipEntity };
             }
+
+            // #region agent log
+            if (UnityEngine.Time.realtimeSinceStartupAsDouble >= s_NextAgentLogRealtime)
+            {
+                s_NextAgentLogRealtime = UnityEngine.Time.realtimeSinceStartupAsDouble + 2.0;
+                AgentDebugNdjson.Write(
+                    "B",
+                    "ClientCommandTargetSystem.cs:BindCommandTarget",
+                    "command target bound",
+                    "{\"shipIndex\":" + shipEntity.Index +
+                    ",\"skipQueries\":" + (ClientJoinSettleCache.ShouldSkipShipEntityQueries ? "true" : "false") + "}");
+            }
+            // #endregion
         }
 
         /// <summary>Reads this client's NetworkId from the in-game connection.</summary>

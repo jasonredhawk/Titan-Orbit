@@ -62,6 +62,15 @@ chmod -R a+rX /home/jason/titanorbit-server/TitanOrbitLinux1 2>/dev/null || true
 # Linux Dedicated Server builds may ship TitanOrbitServer (no .x86_64). Unit may still say .x86_64 from install-before-upload → 203/EXEC.
 BASE=/home/jason/titanorbit-server/TitanOrbitLinux1
 UNIT=/etc/systemd/system/titanorbit-server.service
+# Windows-packed wrapper shebang is bash\r → systemd ExecStart exit 127.
+if [ -f "$BASE/run_titanorbit_server.sh" ]; then
+  sed -i 's/\r$//' "$BASE/run_titanorbit_server.sh"
+  chmod 755 "$BASE/run_titanorbit_server.sh"
+fi
+if [ -f "$BASE/TitanOrbitServer" ] && ! grep -q $'\x7fELF' "$BASE/TitanOrbitServer" 2>/dev/null; then
+  sed -i 's/\r$//' "$BASE/TitanOrbitServer" || true
+  chmod 755 "$BASE/TitanOrbitServer" || true
+fi
 EXE=""
 if [ -f "$BASE/TitanOrbitServer.x86_64" ]; then
   EXE=TitanOrbitServer.x86_64
@@ -70,9 +79,13 @@ elif [ -f "$BASE/TitanOrbitServer" ]; then
 else
   EXE=TitanOrbitServer.x86_64
 fi
-if [ -f "$UNIT" ] && [ -n "$EXE" ]; then
-  sudo sed -i -E "s|(ExecStart=/home/jason/titanorbit-server/TitanOrbitLinux1/)[^[:space:]]+([[:space:]])|\1$EXE\2|" "$UNIT" || true
-  sudo systemctl daemon-reload || true
+# Keep ExecStart on the wrapper. Pointing at the raw player drops TITANORBIT_PUBLIC_ADDRESS
+# so the lobby never publishes after Relay removal.
+if [ -f "$UNIT" ] && [ -x "$BASE/run_titanorbit_server.sh" ]; then
+  if ! grep -q 'run_titanorbit_server.sh' "$UNIT"; then
+    sudo sed -i -E "s|(ExecStart=/home/jason/titanorbit-server/TitanOrbitLinux1/)[^[:space:]]+|\1run_titanorbit_server.sh|" "$UNIT" || true
+    sudo systemctl daemon-reload || true
+  fi
 fi
 sudo systemctl restart __SN__
 set +e

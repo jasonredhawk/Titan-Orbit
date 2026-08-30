@@ -47,9 +47,12 @@ elif [ -f "$BASE/TitanOrbitServer" ]; then
 else
   EXE=TitanOrbitServer.x86_64
 fi
-if [ -f "$UNIT" ] && [ -n "$EXE" ]; then
-  sudo sed -i -E "s|(ExecStart=/home/jason/titanorbit-server/TitanOrbitLinux1/)[^[:space:]]+([[:space:]])|\1${EXE}\2|" "$UNIT" || true
-  sudo systemctl daemon-reload || true
+# Keep ExecStart on the wrapper (public IP env). Do not point at the raw player.
+if [ -f "$UNIT" ] && [ -x "$BASE/run_titanorbit_server.sh" ]; then
+  if ! grep -q 'run_titanorbit_server.sh' "$UNIT"; then
+    sudo sed -i -E "s|(ExecStart=/home/jason/titanorbit-server/TitanOrbitLinux1/)[^[:space:]]+|\1run_titanorbit_server.sh|" "$UNIT" || true
+    sudo systemctl daemon-reload || true
+  fi
 fi
 sudo systemctl restart titanorbit-server
 sudo systemctl is-active titanorbit-server

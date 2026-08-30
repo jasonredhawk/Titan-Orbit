@@ -37,6 +37,23 @@ namespace TitanOrbit.Core
         /// </summary>
         private void ConfigurePlatform()
         {
+#if UNITY_SERVER
+            // Same contract as TitanOrbitSessionManager.ApplyDedicatedServerFramePace (Core cannot
+            // reference NetCode). Uncapped player loop — NCE BusyWait paces 60 Hz ticks.
+            Application.runInBackground = true;
+            QualitySettings.vSyncCount = 0;
+            Application.targetFrameRate = -1;
+            if (Time.maximumDeltaTime > 0.1f)
+                Time.maximumDeltaTime = 0.1f;
+            return;
+#endif
+            if (Application.isBatchMode)
+            {
+                Application.targetFrameRate = 60;
+                QualitySettings.vSyncCount = 0;
+                return;
+            }
+
             // --- Mobile ---
             if (Application.isMobilePlatform)
             {

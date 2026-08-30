@@ -73,5 +73,14 @@ if [[ "${SZ}" -lt 1000000 ]]; then
   exit 1
 fi
 
+# Windows tar can ship CRLF scripts. systemd then exits 127 (env: 'bash\r').
+if [ -f "${TARGET}/run_titanorbit_server.sh" ]; then
+  sed -i 's/\r$//' "${TARGET}/run_titanorbit_server.sh"
+  chmod 755 "${TARGET}/run_titanorbit_server.sh"
+fi
+if [ -f "${TARGET}/TitanOrbitServer" ] && ! grep -q $'\x7fELF' "${TARGET}/TitanOrbitServer" 2>/dev/null; then
+  sed -i 's/\r$//' "${TARGET}/TitanOrbitServer" || true
+fi
+
 echo "== Extract OK under ${TARGET}"
 ls -la "${TARGET}" | head -n 20

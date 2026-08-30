@@ -108,6 +108,13 @@ namespace TitanOrbit.Game
         /// <summary>Seconds to wait for TeamChoiceResult before clearing spawn-wait and retrying.</summary>
         const float TeamPickResultTimeoutSeconds = 8f;
 
+        /// <summary>
+        /// Dedicated join reached NetCode InGame but map hydrate never completed (zombie lobby /
+        /// stalled ~4 Hz server). Abort back to Join Game instead of sitting on 89%.
+        /// </summary>
+        const float DedicatedMapLoadAbortSeconds = 45f;
+        bool _abortingStuckDedicatedJoin;
+
         /// <summary>Max automatic retries after a TeamChoiceResult timeout (then re-enable manual pick).</summary>
         const int TeamPickMaxAutoRetries = 2;
 
@@ -389,10 +396,39 @@ namespace TitanOrbit.Game
             _connectedAt = -1f;
             _dedicatedConnectedAt = -1f;
             _mppmConnectedSince = -1f;
+            _abortingStuckDedicatedJoin = false;
             if (_joinBrowser != null)
                 _joinBrowser.ClearLoadingHandoff();
             _statusMessage = "Returned to main menu.";
             PushStatusToUi();
+        }
+
+        IEnumerator AbortStuckDedicatedJoin()
+        {
+            Debug.LogWarning("[NceGameFlow] Dedicated map load stalled after " +
+                             DedicatedMapLoadAbortSeconds + "s — returning to Join Game.");
+            if (TitanOrbitSessionManager.Instance != null)
+            {
+                Task leave = TitanOrbitSessionManager.Instance.ReturnToMainMenuAsync();
+                while (!leave.IsCompleted)
+                    yield return null;
+            }
+
+            _holdLoadingOverlay = false;
+            _abortingStuckDedicatedJoin = false;
+            _dedicatedConnectedAt = -1f;
+            if (_loadingScreen != null)
+                _loadingScreen.Hide();
+            else
+                LoadingScreenControllerNce.HideExisting();
+
+            if (_joinBrowser != null)
+            {
+                _joinBrowser.ClearLoadingHandoff();
+                _joinBrowser.Show();
+                _joinBrowser.SetPublicStatus(
+                    "Could not sync that match — the dedicated server may be stalled. Tap Refresh.");
+            }
         }
 
         async System.Threading.Tasks.Task PrimeGuestSessionAndPrefetchLobbiesAsync()
@@ -1030,6 +1066,19 @@ namespace TitanOrbit.Game
                 _dedicatedConnectedAt = -1f;
 
             bool mapLoaded = connected && IsMapReadyForTeamSelection();
+
+            if (!_abortingStuckDedicatedJoin &&
+                TitanOrbitSessionManager.IsDedicatedOnlineClient &&
+                connected &&
+                !mapLoaded &&
+                !ClientTeamFlowState.TeamChoiceConfirmed &&
+                !ClientTeamFlowState.HasRequestedTeamPick &&
+                _dedicatedConnectedAt >= 0f &&
+                Time.time - _dedicatedConnectedAt >= DedicatedMapLoadAbortSeconds)
+            {
+                _abortingStuckDedicatedJoin = true;
+                StartCoroutine(AbortStuckDedicatedJoin());
+            }
 
             ShipState rejoinShipState = default;
             bool hasRejoinableShip = connected &&

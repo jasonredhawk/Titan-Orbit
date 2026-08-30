@@ -142,6 +142,13 @@ function New-TitanOrbitLinuxServerArchive {
         throw 'Local IL2CPP source integrity check failed'
     }
     Force-MaterializeIl2CppMetadata -Root $Root
+    $wrapperInTree = Join-Path $Root 'run_titanorbit_server.sh'
+    if (Test-Path -LiteralPath $wrapperInTree) {
+        $wt = [System.IO.File]::ReadAllText($wrapperInTree) -replace "`r`n", "`n" -replace "`r", "`n"
+        $utf8 = New-Object System.Text.UTF8Encoding $false
+        [System.IO.File]::WriteAllText($wrapperInTree, $wt, $utf8)
+        Write-Host '  normalized run_titanorbit_server.sh to LF (avoids systemd exit 127)'
+    }
     for ($i = 1; $i -le $Attempts; $i++) {
         if (Test-Path -LiteralPath $OutPath) {
             Remove-Item -LiteralPath $OutPath -Force -ErrorAction SilentlyContinue
