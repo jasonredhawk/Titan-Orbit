@@ -559,6 +559,7 @@ namespace TitanOrbit.Editor.Build
         /// <c>deploy_server_gce.bat freeDisk useGcs</c> against a staging copy of the output.
         /// Prefer this over <c>build_and_deploy_server_gce.bat</c> when Unity is already open —
         /// batchmode must close/reopen the project and is much slower.
+        /// Leaves the Editor on Linux Dedicated Server so the next publish skips another platform switch.
         /// </summary>
         [MenuItem("TitanOrbit/Build/Headless Server (Linux — Google Cloud) + Deploy", false, 51)]
         public static void BuildHeadlessServerLinuxAndDeploy()
@@ -680,14 +681,21 @@ namespace TitanOrbit.Editor.Build
             bool ok = ExecuteLinuxDedicatedServerBuild(outputBasePath, label, nextStepDocPath);
             if (ok && deployToGceAfterSuccess)
                 StartGceDeployFromEditorBuildFolder(Path.GetDirectoryName(outputBasePath) ?? outputBasePath);
+            // [TITAN-ORBIT] Stay on Linux Dedicated Server after a successful Editor build so the
+            // next GCE / Edgegap publish does not pay for another SwitchActiveBuildTarget + reload.
+            // Play Mode on this target hangs (UNITY_SERVER EntityScenes). Switch back only via
+            // TitanOrbit → Build → Switch Editor to Windows Player (Play Mode).
             if (ok && !exitEditorWhenDone)
-                RestoreWindowsPlayerForEditorPlayMode();
+                LogEditorLeftOnLinuxDedicatedServer();
             ExitEditorIfRequested(exitEditorWhenDone, exitCode: ok ? 0 : 1);
         }
 
         /// <summary>
         /// Linux Dedicated Server leaves <c>UNITY_SERVER</c> on and rebakes EntityScenes for the
         /// server. Editor Play Mode then hangs on the loading bar (planet proxies stay 0/N).
+        /// Linux GCE / Edgegap menus leave the Editor on Linux Dedicated Server on purpose so
+        /// back-to-back headless publishes skip another platform switch — use this menu when you
+        /// need Play Mode or a Windows/WebGL client bake.
         /// </summary>
         [MenuItem("TitanOrbit/Build/Switch Editor to Windows Player (Play Mode)", false, 80)]
         public static void RestoreWindowsPlayerForEditorPlayMode()
@@ -711,6 +719,18 @@ namespace TitanOrbit.Editor.Build
                     "[TitanOrbitBuild] Could not switch to Windows Player. " +
                     "File → Build Profiles → Windows → Player → Switch Platform.");
             }
+        }
+
+        /// <summary>
+        /// Console note after an interactive Linux server build: Editor stays on Linux Dedicated
+        /// Server so the next GCE / Edgegap publish does not SwitchActiveBuildTarget again.
+        /// </summary>
+        static void LogEditorLeftOnLinuxDedicatedServer()
+        {
+            Debug.Log(
+                "[TitanOrbitBuild] Leaving Editor on Linux Dedicated Server so the next headless " +
+                "build/deploy skips another platform switch. Play Mode will hang on this target — " +
+                "use TitanOrbit → Build → Switch Editor to Windows Player (Play Mode) when you need it.");
         }
 
         /// <summary>
@@ -859,7 +879,7 @@ namespace TitanOrbit.Editor.Build
             if (ok && deployToGceAfterSuccess)
                 StartGceDeployFromEditorBuildFolder(Path.GetDirectoryName(pending.outputBasePath) ?? pending.outputBasePath);
             if (ok && !exitEditorWhenDone)
-                RestoreWindowsPlayerForEditorPlayMode();
+                LogEditorLeftOnLinuxDedicatedServer();
             ExitEditorIfRequested(exitEditorWhenDone, exitCode: ok ? 0 : 1);
         }
 

@@ -1801,6 +1801,15 @@ namespace TitanOrbit.Game
             s_ProxyPlateauCount = -1;
             s_ProxyPlateauSince = -1f;
             // [TITAN-ORBIT] Drop latched MapSessionMetaRpc so the next join does not reuse old totals.
+            // #region agent log
+            TitanOrbit.Diagnostics.TitanOrbitDebugSessionLog.Write(
+                "E",
+                "EcsGameBridge.ResetRemoteMapLoadTracking",
+                "session-cleared",
+                "{\"hadRecipe\":" + (ClientMapHydrateCache.HasFullRecipe ? "true" : "false") +
+                ",\"planets\":" + JoinWorldReadyCache.ReceivedPlanets +
+                ",\"inGame\":" + (JoinWorldReadyCache.InGameRealtime >= 0f ? "true" : "false") + "}");
+            // #endregion
             MapSessionMetaCache.Clear();
             JoinWorldReadyCache.Clear();
             ClientJoinSettleCache.Clear();

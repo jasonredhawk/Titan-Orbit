@@ -49,6 +49,13 @@ namespace TitanOrbit.Services
             TitanOrbitEntitlements.RegisterRemoveAdsProductId(removeAdsProductId);
         }
 
+#if UNITY_SERVER && !UNITY_EDITOR
+        void Start()
+        {
+            // Dedicated has no store UI. IAP UGS init raced BootDedicatedServer and could
+            // hold the guest-session gate so the lobby never published (Join Game empty).
+        }
+#else
         async void Start()
         {
             // --- Unity lifecycle ---
@@ -65,6 +72,7 @@ namespace TitanOrbit.Services
 
             InitializePurchasing();
         }
+#endif
 
         void EnsureCatalogDefaults()
         {

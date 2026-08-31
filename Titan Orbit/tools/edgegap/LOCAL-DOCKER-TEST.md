@@ -1,8 +1,9 @@
 # Test Edgegap local Docker container (Titan Orbit)
 
 Edgegap’s **Test Your Server Locally** runs your Linux headless server in Docker on your PC.  
-**Titan Orbit does not connect like Mirror/NGO** (no `localhost:7777` in the NetCode transport).  
-Gameplay uses **Unity Relay + UGS Lobby** — same as GCE or cloud Edgegap.
+Titan Orbit clients join via **UGS Lobby**, then connect with **direct UDP** to the advertised `Host=` (not Unity Relay).
+
+For local Docker the lobby must publish **`127.0.0.1:7777`**. The Edgegap plugin injects a dummy `ARBITRIUM_PUBLIC_IP=162.254.141.66` — ignore that; our boot remaps it.
 
 ---
 
@@ -11,7 +12,7 @@ Gameplay uses **Unity Relay + UGS Lobby** — same as GCE or cloud Edgegap.
 | Step | Server (Docker logs) | Client (Unity Editor) |
 |------|------------------------|------------------------|
 | 1 | Container starts, IL2CPP boot | — |
-| 2 | UGS auth + Relay + lobby published | — |
+| 2 | UGS auth + lobby published (`Host=127.0.0.1:7777`) | — |
 | 3 | `[MapGeneration] Map generated` | — |
 | 4 | — | **Join Game** → select lobby → join |
 | 5 | — | Loading / “Syncing map…” |
@@ -29,17 +30,19 @@ Gameplay uses **Unity Relay + UGS Lobby** — same as GCE or cloud Edgegap.
 1. **Tools → Edgegap Hosting**
 2. Build + containerize (see main [README.md](./README.md))
 3. Section **Test locally** → **Deploy local container**
-   - Optional run param: `-p 7777/udp` (metadata only; Relay carries gameplay)
+   - Run param **required**: `-p 7777:7777/udp` (Editor UDP-connects to localhost)
 4. Open **Docker Desktop → Containers** → select `edgegap-server-test` → **Logs**
 
 Wait until logs show **both**:
 
 ```
-[TitanOrbitSessionManager] Dedicated server live. Relay=... Lobby=...
+[TitanOrbitSessionManager] Dedicated server live. Host=127.0.0.1:7777 Lobby=...
 [MapGeneration] Map generated. Size: ...
 ```
 
-If UGS errors appear (`UGS not ready`, `PrepareDedicatedRelay failed`), the Editor client cannot join — fix Unity project link / internet first.
+If Host is `162.254.141.66:31504`, this binary is old — rebuild **Headless Server (Linux — Edgegap)** and re-containerize.
+
+If UGS errors appear (`UGS not ready`, `PrepareDedicatedHost failed`), the Editor client cannot join — fix Unity project link / internet first.
 
 ### B. Connect from Unity Editor (correct path)
 
@@ -80,32 +83,30 @@ If join works but no spawn line, the client never sent `RequestTeamCommand` — 
 | No lobbies in Join game | Docker server not live / UGS failed | Check container logs; wait for “Dedicated server live” |
 | Loading flashes, empty space, no ship | Joined but no team picked | Look for team picker overlay; click a team |
 | Stuck “Preparing teams…” | Home planets / TeamState not replicated yet | Wait 5–10s; Refresh join if needed |
-| **`Client stuck on pending Relay connection (no NetworkId)`** | Client joined Relay but server never answered NetCode handshake | See **Relay zombie connection** below |
-| “Join code not found” | Stale lobby / server restarted | Join game → Refresh; pick newest lobby |
+| **`Client stuck on pending dedicated connection (no NetworkId)`** `host=162.254.141.66:31504` | Dummy Edgegap plugin IP — UDP never reached Docker | Rebuild Linux Edgegap server; confirm logs say `Host=127.0.0.1:7777`; docker run `-p 7777:7777/udp` |
+| **`Client stuck on pending dedicated connection`** `host=127.0.0.1:7777` | UDP 7777 not published or Windows firewall | Redeploy with `-p 7777:7777/udp`; Docker logs must show `Server connections=1` |
+| Container CPU ~100% then exits | Same GCE BusyWait + struggling-recycle (fixed: Edgegap no longer quits) | Rebuild; 1 core BusyWait is expected; `wallSim` should stay listed |
+| Join Game **Server sim: ~11 Hz wall** / ships snap back | Docker used `-nographics` + `SDL_VIDEODRIVER=dummy` (NullGfx PresentAndWait ~300 ms/frame). Relay never paced ticks. | Recreate container with current `start-server.sh` (no those flags). Logs: `wallSim≈55–60Hz`. No Unity rebuild. |
 | Planets pop in slowly after load | Normal — remaining asteroid ghosts stream | Playable after team spawn; not all asteroids required |
 | Edgegap doc says connect to Docker port | Wrong for Titan Orbit | Use **Join game** only |
 
-### Relay zombie connection (`no NetworkId`)
+### Pending dedicated connection (`no NetworkId`)
 
 Unity Console shows:
 
 ```
-Client connect diag: connections=1 withNetworkId=0 inGame=0 relay=True
-Client stuck on pending Relay connection (no NetworkId).
+Client stuck on pending dedicated connection (no NetworkId). host=127.0.0.1:7777
 ```
 
-This is **not** the harmless `Setting RpcSystem.DynamicAssemblyList to true` line (Unity sample package info).
-
-**Meaning:** the Editor client reached Unity Relay, but the **dedicated server process** on the other end of that join code is not completing the NetCode connection (no `NetworkId` assigned).
+**Meaning:** the Editor reached UGS Lobby, then UDP-connect to `Host=`. The container never completed the NetCode handshake (`NetworkId`).
 
 **Fix checklist:**
 
-1. **One active server** — stop old Docker containers, GCE VMs, and other local tests. Multiple lobbies often means multiple dead Relay allocations.
-2. **Join Latest only** — in Join game, pick the row tagged **Latest** (not “Older”).
-3. **Match Relay codes** — Editor log: `Joining Relay lobby=… code=7MB8CW`. Docker log must show `Dedicated server live. Relay=7MB8CW` (same code). If they differ, you joined the wrong lobby.
-4. **Docker must show your connect** — while joining, Docker logs should print `Server connections=1 withNetworkId=1`. If Docker shows nothing, the client is not talking to that container.
-5. **Server boot OK** — Docker must show `Dedicated server live` before you join. If UGS/Relay errors appear in Docker, fix those first.
-6. **Refresh → rejoin** after redeploying the container (new Relay code every boot).
+1. **Stop GCE / other Docker servers** so you do not join the wrong `IsLatest` lobby.
+2. **Join Latest** — pick the Docker lobby; confirm Editor `host=` matches Docker `Dedicated server live. Host=`.
+3. **UDP published** — `docker ps` must show `0.0.0.0:7777->7777/udp`.
+4. **Docker must show your connect** — `Server connections=1 withNetworkId=1`. If still 0, packets never arrived.
+5. **Rebuild** if Host is still `162.254.141.66:31504`.
 
 ### Docker CLI
 

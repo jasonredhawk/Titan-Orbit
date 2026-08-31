@@ -17,6 +17,7 @@ namespace TitanOrbit.ECS
         EntityQuery _inGameQuery;
         EntityQuery _planetGhostQuery;
         EntityQuery _shipGhostQuery;
+        float _lastSnapAckLogRealtime;
 
         /// <summary>Caches InGame / planet / ship ghost queries.</summary>
         public void OnCreate(ref SystemState state)
@@ -55,6 +56,35 @@ namespace TitanOrbit.ECS
                 ghostReceived,
                 ghostInst,
                 ClientJoinSettleCache.MapProxyBuildReady);
+
+            // #region agent log
+            if (inGame && planets == 0)
+            {
+                float now = UnityEngine.Time.realtimeSinceStartup;
+                if (now - _lastSnapAckLogRealtime >= 5f)
+                {
+                    _lastSnapAckLogRealtime = now;
+                    uint snapTick = 0;
+                    ulong snapRecv = 0;
+                    if (SystemAPI.TryGetSingleton<NetworkSnapshotAck>(out var ack))
+                    {
+                        if (ack.LastReceivedSnapshotByLocal.IsValid)
+                            snapTick = ack.LastReceivedSnapshotByLocal.TickIndexForValidTick;
+                        snapRecv = ack.SnapshotPacketLoss.NumPacketsReceived;
+                    }
+
+                    TitanOrbit.Diagnostics.TitanOrbitDebugSessionLog.Write(
+                        "A",
+                        "JoinWorldReadyPublishSystem.OnUpdate",
+                        "snap-ack",
+                        "{\"planets\":" + planets +
+                        ",\"recv\":" + ghostReceived +
+                        ",\"ghostOnServer\":" + ghostServer +
+                        ",\"snapTick\":" + snapTick +
+                        ",\"snapRecv\":" + snapRecv + "}");
+                }
+            }
+            // #endregion
         }
     }
 }

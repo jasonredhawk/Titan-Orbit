@@ -1,4 +1,5 @@
 using TitanOrbit;
+using TitanOrbit.Diagnostics;
 using TitanOrbit.ECS;
 using TitanOrbit.Generation;
 using Unity.Collections;
@@ -11,16 +12,13 @@ using UnityEngine;
 namespace TitanOrbit.NetCode
 {
     /// <summary>
-    /// [NETCODE] Rebuilds <see cref="GhostRelevancy.GhostRelevancySet"/> each tick under
-    /// <see cref="GhostRelevancyMode.SetIsRelevant"/>.
+    /// [NETCODE] Official SetIsRelevant contract before <see cref="GhostSendSystem"/>.
     /// <para>
-    /// Ships and planets stay always-relevant (written into the set every tick).
-    /// Gems Instantiates only in a spatial subset: 40u around the command-target hull,
-    /// or around every live ship while that connection has no hull (late-join window).
-    /// Gems this connection is already tractoring stay relevant even outside 40u (pin)
-    /// so a mid-pull crystal cannot freeze or despawn on the scooping client.
-    /// Never all-map gems — Unity advises against tens of thousands relevant to one connection.
-    /// GhostSpawn Instantiates of that subset is required (16/frame budget).
+    /// Ships and planets are always-relevant: <see cref="GhostRelevancy.DefaultRelevancyQuery"/>
+    /// (Any Ship|Planet, Unity test shape) <b>and</b> each assigned ghost id is written into
+    /// <see cref="GhostRelevancy.GhostRelevancySet"/>. Nearby gems use the same set.
+    /// Debug  db511d: snapshots arrived empty (snapRecv climbed, GhostCountOnServer=0) when
+    /// planets were omitted from the set and only the query was used.
     /// </para>
     /// World: ServerSimulation. Group: SimulationSystemGroup, before <see cref="GhostSendSystem"/>.
     /// </summary>
@@ -29,37 +27,33 @@ namespace TitanOrbit.NetCode
     [UpdateBefore(typeof(GhostSendSystem))]
     public partial struct TitanOrbitGemGhostRelevancySystem : ISystem
     {
-        /// <summary>
-        /// Toroidal XZ radius (world units) around each ship. Wider than tractor search (~3–4.5)
-        /// so a burst gem does not pop out of existence at the beam edge. 40 ≈ hear-range band.
-        /// </summary>
         public const float RelevancyRadius = 40f;
-
-        /// <summary>How often we print [GemRelevancy] live vs inserted counts (seconds).</summary>
         const float RelevancyLogIntervalSeconds = 5f;
 
-        EntityQuery _alwaysRelevantQuery;
+        EntityQuery _defaultRelevantQuery;
+        EntityQuery _alwaysGhostQuery;
+        EntityQuery _planetTagQuery;
+        EntityQuery _planetGhostQuery;
         EntityQuery _gemQuery;
         EntityQuery _connectionQuery;
         EntityQuery _shipQuery;
         double _lastRelevancyLogElapsed;
 
-        /// <summary>Caches always-relevant, gem, ship, and in-game connection queries.</summary>
         public void OnCreate(ref SystemState state)
         {
             state.RequireForUpdate<GhostRelevancy>();
-            _alwaysRelevantQuery = state.GetEntityQuery(new EntityQueryDesc
-            {
-                Any = new[]
-                {
-                    ComponentType.ReadOnly<ShipTag>(),
-                    ComponentType.ReadOnly<PlanetTag>(),
-                },
-                All = new[]
-                {
-                    ComponentType.ReadOnly<GhostInstance>(),
-                },
-            });
+            // Unity RelevancyTests shape: EntityQueryBuilder.WithAny, built for this world.
+            _defaultRelevantQuery = new EntityQueryBuilder(Allocator.Temp)
+                .WithAny<ShipTag, PlanetTag>()
+                .Build(ref state);
+            _alwaysGhostQuery = new EntityQueryBuilder(Allocator.Temp)
+                .WithAny<ShipTag, PlanetTag>()
+                .WithAll<GhostInstance>()
+                .Build(ref state);
+            _planetTagQuery = state.GetEntityQuery(ComponentType.ReadOnly<PlanetTag>());
+            _planetGhostQuery = state.GetEntityQuery(
+                ComponentType.ReadOnly<PlanetTag>(),
+                ComponentType.ReadOnly<GhostInstance>());
             _gemQuery = state.GetEntityQuery(
                 ComponentType.ReadOnly<GemTag>(),
                 ComponentType.ReadOnly<LocalTransform>(),
@@ -74,24 +68,34 @@ namespace TitanOrbit.NetCode
                 ComponentType.ReadOnly<GhostInstance>());
         }
 
-        /// <summary>
-        /// Rebuilds the relevancy set: ships/planets for every connection, plus nearby gems
-        /// from the spatial hash and tractor-pinned gems for the scooping connection.
-        /// </summary>
         public void OnUpdate(ref SystemState state)
         {
             ref var relevancy = ref SystemAPI.GetSingletonRW<GhostRelevancy>().ValueRW;
+            relevancy.GhostRelevancyMode = GhostRelevancyMode.SetIsRelevant;
+            relevancy.DefaultRelevancyQuery = _defaultRelevantQuery;
+
             var set = relevancy.GhostRelevancySet;
             set.Clear();
 
+            double now = SystemAPI.Time.ElapsedTime;
             int connCount = _connectionQuery.CalculateEntityCount();
+            int alwaysCount = _defaultRelevantQuery.CalculateEntityCount();
             if (connCount <= 0)
+            {
+                LogIfDue(ref state, now, 0, 0, 0, alwaysCount, 0, 0, 0, 0);
                 return;
+            }
 
             var connEntities = _connectionQuery.ToEntityArray(Allocator.Temp);
             var connIds = _connectionQuery.ToComponentDataArray<NetworkId>(Allocator.Temp);
-            var alwaysGhosts = _alwaysRelevantQuery.ToComponentDataArray<GhostInstance>(Allocator.Temp);
-            int alwaysCount = alwaysGhosts.Length;
+            var alwaysGhosts = _alwaysGhostQuery.ToComponentDataArray<GhostInstance>(Allocator.Temp);
+            int alwaysGhostCount = alwaysGhosts.Length;
+            int alwaysIds = 0;
+            for (int i = 0; i < alwaysGhostCount; i++)
+            {
+                if (alwaysGhosts[i].ghostId != 0)
+                    alwaysIds++;
+            }
 
             bool haveMap = SystemAPI.TryGetSingleton<MapStateSingleton>(out var mapState) &&
                            ToroidalMapEcs.IsValidMapSize(mapState.MapWidth, mapState.MapHeight);
@@ -104,7 +108,11 @@ namespace TitanOrbit.NetCode
             NativeArray<GhostInstance> gemGhosts = default;
             NativeArray<GemMotionState> gemMotions = default;
             GemSpatialHash hash = default;
-            if (gemCount > 0 && haveMap)
+            var em = state.EntityManager;
+            NativeArray<LocalTransform> shipTransforms = default;
+            int shipCount = _shipQuery.CalculateEntityCount();
+            bool needGemHash = gemCount > 0 && haveMap && shipCount > 0;
+            if (needGemHash)
             {
                 gemEntities = _gemQuery.ToEntityArray(Allocator.Temp);
                 gemTransforms = _gemQuery.ToComponentDataArray<LocalTransform>(Allocator.Temp);
@@ -114,15 +122,13 @@ namespace TitanOrbit.NetCode
                     gemEntities, gemTransforms, gemGhosts, gemMotions, mapW, mapH, Allocator.Temp);
             }
 
-            var em = state.EntityManager;
-            NativeArray<LocalTransform> shipTransforms = default;
-            int shipCount = _shipQuery.CalculateEntityCount();
             if (shipCount > 0)
                 shipTransforms = _shipQuery.ToComponentDataArray<LocalTransform>(Allocator.Temp);
 
             var nearby = new NativeList<int>(64, Allocator.Temp);
             var seenScratch = new NativeHashSet<int>(64, Allocator.Temp);
             int gemInserts = 0;
+            int alwaysInserts = 0;
 
             for (int ci = 0; ci < connCount; ci++)
             {
@@ -130,13 +136,13 @@ namespace TitanOrbit.NetCode
                 if (connectionId <= 0)
                     continue;
 
-                // --- Always-relevant: ships / planets ---
-                for (int ai = 0; ai < alwaysCount; ai++)
+                for (int ai = 0; ai < alwaysGhostCount; ai++)
                 {
                     int ghostId = alwaysGhosts[ai].ghostId;
                     if (ghostId == 0)
                         continue;
-                    set.TryAdd(new RelevantGhostForConnection(connectionId, ghostId), 1);
+                    if (set.TryAdd(new RelevantGhostForConnection(connectionId, ghostId), 1))
+                        alwaysInserts++;
                 }
 
                 if (!hash.IsCreated || gemCount <= 0)
@@ -165,7 +171,6 @@ namespace TitanOrbit.NetCode
                 }
                 else
                 {
-                    // --- Join window: gems near any live ship, still not all-map ---
                     for (int s = 0; s < shipCount; s++)
                     {
                         hash.GatherNearby(
@@ -187,16 +192,17 @@ namespace TitanOrbit.NetCode
                 }
             }
 
-            double now = SystemAPI.Time.ElapsedTime;
-            if (gemCount > 0 && now - _lastRelevancyLogElapsed >= RelevancyLogIntervalSeconds)
-            {
-                _lastRelevancyLogElapsed = now;
-                Debug.Log(
-                    "[GemRelevancy] live=" + gemCount +
-                    " gemInsertsThisTick=" + gemInserts +
-                    " connections=" + connCount +
-                    " (spatial + tractor pin, not all-map)");
-            }
+            LogIfDue(
+                ref state,
+                now,
+                gemCount,
+                gemInserts,
+                connCount,
+                alwaysCount,
+                shipCount,
+                alwaysInserts,
+                alwaysIds,
+                set.Count());
 
             nearby.Dispose();
             seenScratch.Dispose();
@@ -215,6 +221,154 @@ namespace TitanOrbit.NetCode
                 gemMotions.Dispose();
             if (shipTransforms.IsCreated)
                 shipTransforms.Dispose();
+        }
+
+        void LogIfDue(
+            ref SystemState state,
+            double now,
+            int gemCount,
+            int gemInserts,
+            int connCount,
+            int alwaysCount,
+            int shipCount,
+            int alwaysInserts,
+            int alwaysIds,
+            int setCount)
+        {
+            if (now - _lastRelevancyLogElapsed < RelevancyLogIntervalSeconds)
+                return;
+
+            _lastRelevancyLogElapsed = now;
+            int planetTags = _planetTagQuery.CalculateEntityCount();
+            int planetGhosts = _planetGhostQuery.CalculateEntityCount();
+            int planetIds = 0;
+            if (planetGhosts > 0)
+            {
+                var ghosts = _planetGhostQuery.ToComponentDataArray<GhostInstance>(Allocator.Temp);
+                for (int i = 0; i < ghosts.Length; i++)
+                {
+                    if (ghosts[i].ghostId != 0)
+                        planetIds++;
+                }
+
+                ghosts.Dispose();
+            }
+
+            int collectionPrefabs = 0;
+            if (SystemAPI.TryGetSingletonBuffer<GhostCollectionPrefab>(out var prefabs))
+                collectionPrefabs = prefabs.Length;
+
+            byte queryAssigned = _defaultRelevantQuery != default ? (byte)1 : (byte)0;
+            DedicatedServerFileLog.Append(
+                "relevancy",
+                "planetTags=" + planetTags +
+                " planetGhosts=" + planetGhosts +
+                " planetIds=" + planetIds +
+                " alwaysQuery=" + alwaysCount +
+                " alwaysIds=" + alwaysIds +
+                " alwaysInserts=" + alwaysInserts +
+                " set=" + setCount +
+                " collection=" + collectionPrefabs +
+                " conns=" + connCount);
+
+            // #region agent log
+            TitanOrbitDebugSessionLog.Write(
+                "F",
+                "TitanOrbitGemGhostRelevancySystem.LogIfDue",
+                "relevancy",
+                "{\"planetTags\":" + planetTags +
+                ",\"planetGhosts\":" + planetGhosts +
+                ",\"planetIds\":" + planetIds +
+                ",\"alwaysCount\":" + alwaysCount +
+                ",\"alwaysIds\":" + alwaysIds +
+                ",\"alwaysInserts\":" + alwaysInserts +
+                ",\"setCount\":" + setCount +
+                ",\"collection\":" + collectionPrefabs +
+                ",\"ships\":" + shipCount +
+                ",\"gems\":" + gemCount +
+                ",\"gemInserts\":" + gemInserts +
+                ",\"conns\":" + connCount + "}");
+            // #endregion
+
+            Debug.Log(
+                "[GemRelevancy] planetTags=" + planetTags +
+                " planetGhosts=" + planetGhosts +
+                " planetIds=" + planetIds +
+                " alwaysInserts=" + alwaysInserts +
+                " set=" + setCount +
+                " collection=" + collectionPrefabs +
+                " connections=" + connCount);
+
+            if (connCount <= 0)
+                return;
+
+            var rpc = new TitanOrbitGhostStreamDebugRpc
+            {
+                PlanetTags = planetTags,
+                PlanetGhosts = planetGhosts,
+                PlanetIds = planetIds,
+                AlwaysInserts = alwaysInserts,
+                SetCount = setCount,
+                CollectionPrefabs = collectionPrefabs,
+                RelevancyMode = (byte)GhostRelevancyMode.SetIsRelevant,
+                QueryAssigned = queryAssigned,
+            };
+            var conns = _connectionQuery.ToEntityArray(Allocator.Temp);
+            var ecb = new EntityCommandBuffer(Allocator.Temp);
+            for (int i = 0; i < conns.Length; i++)
+            {
+                Entity req = ecb.CreateEntity();
+                ecb.AddComponent(req, rpc);
+                ecb.AddComponent(req, new SendRpcCommandRequest { TargetConnection = conns[i] });
+            }
+
+            ecb.Playback(state.EntityManager);
+            ecb.Dispose();
+            conns.Dispose();
+        }
+    }
+
+    /// <summary>
+    /// Client: latch server relevancy diagnostics onto the debug session (RPC path already works).
+    /// World: ClientSimulation.
+    /// </summary>
+    [WorldSystemFilter(WorldSystemFilterFlags.ClientSimulation | WorldSystemFilterFlags.ThinClientSimulation)]
+    [UpdateInGroup(typeof(SimulationSystemGroup))]
+    public partial struct TitanOrbitGhostStreamDebugClientSystem : ISystem
+    {
+        public void OnUpdate(ref SystemState state)
+        {
+            var ecb = new EntityCommandBuffer(Allocator.Temp);
+            foreach (var (rpc, entity) in SystemAPI.Query<RefRO<TitanOrbitGhostStreamDebugRpc>>()
+                         .WithAll<ReceiveRpcCommandRequest>().WithEntityAccess())
+            {
+                var v = rpc.ValueRO;
+                // #region agent log
+                TitanOrbitDebugSessionLog.Write(
+                    "F",
+                    "TitanOrbitGhostStreamDebugClientSystem.OnUpdate",
+                    "server-relevancy",
+                    "{\"planetTags\":" + v.PlanetTags +
+                    ",\"planetGhosts\":" + v.PlanetGhosts +
+                    ",\"planetIds\":" + v.PlanetIds +
+                    ",\"alwaysInserts\":" + v.AlwaysInserts +
+                    ",\"setCount\":" + v.SetCount +
+                    ",\"collection\":" + v.CollectionPrefabs +
+                    ",\"mode\":" + v.RelevancyMode +
+                    ",\"queryAssigned\":" + v.QueryAssigned + "}");
+                // #endregion
+                Debug.Log(
+                    "[GhostStreamDebug] server planetTags=" + v.PlanetTags +
+                    " planetGhosts=" + v.PlanetGhosts +
+                    " planetIds=" + v.PlanetIds +
+                    " alwaysInserts=" + v.AlwaysInserts +
+                    " set=" + v.SetCount +
+                    " collection=" + v.CollectionPrefabs);
+                ecb.DestroyEntity(entity);
+            }
+
+            ecb.Playback(state.EntityManager);
+            ecb.Dispose();
         }
     }
 }

@@ -16,6 +16,8 @@ namespace TitanOrbit.NetCode
     /// Editor / LAN host: <see cref="ClientServerTickRate.FrameRateMode.Auto"/> (BusyWait).
     /// Dedicated: BusyWait plus Unity <c>targetFrameRate=60</c>. NCE Sleep on NullGfxDevice
     /// was the old 4 Hz present-wait; do not use Sleep to “fix” hitch catch-up.
+    /// <c>SendSnapshotsForCatchUpTicks</c> stays on so GhostSend still emits while the
+    /// player loop is behind (NullGfx ~12 Hz wall with MaxSteps=4).
     /// </para>
     /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation)]
@@ -104,6 +106,9 @@ namespace TitanOrbit.NetCode
             tickRate.MaxSimulationStepsPerFrame = maxSteps;
             tickRate.MaxSimulationStepBatchSize = 1;
             tickRate.PredictedFixedStepSimulationTickRatio = 1;
+            // Dedicated wall frames are often >1 tick (NullGfx ~300 ms). Default false
+            // skips GhostSend on every catch-up tick — planets and the new hull never leave.
+            tickRate.SendSnapshotsForCatchUpTicks = true;
 #if UNITY_SERVER && !UNITY_EDITOR
             // BusyWait: NCE must not Sleep. Unity targetFrameRate stays -1 (no WaitForTargetFPS).
             tickRate.TargetFrameRateMode = ClientServerTickRate.FrameRateMode.BusyWait;
@@ -126,6 +131,7 @@ namespace TitanOrbit.NetCode
                     " simHz=" + tickRate.SimulationTickRate +
                     " netHz=" + tickRate.NetworkTickRate +
                     " maxSteps=" + tickRate.MaxSimulationStepsPerFrame +
+                    " sendCatchUpSnaps=" + tickRate.SendSnapshotsForCatchUpTicks +
                     " targetFps=" + UnityEngine.Application.targetFrameRate +
                     " vSync=" + UnityEngine.QualitySettings.vSyncCount +
                     " maxDt=" + UnityEngine.Time.maximumDeltaTime.ToString("F2"));

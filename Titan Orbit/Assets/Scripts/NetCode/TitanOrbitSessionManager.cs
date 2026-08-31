@@ -1111,6 +1111,7 @@ namespace TitanOrbit.NetCode
         {
             try
             {
+                Debug.Log("[TitanOrbitSessionManager] PrepareDedicatedHost: waiting for UGS guest session…");
                 if (!await UnityGameServicesBootstrap.EnsureGuestSessionForOnlineAsync())
                 {
                     DedicatedServerFileLog.Append("boot", "PrepareDedicatedHost failed: UGS guest session not ready.");
@@ -1119,6 +1120,7 @@ namespace TitanOrbit.NetCode
                     return null;
                 }
 
+                Debug.Log("[TitanOrbitSessionManager] PrepareDedicatedHost: UGS guest session ready.");
                 string addressSource = await config.EnsurePublicAddressAsync();
                 if (string.IsNullOrWhiteSpace(config.PublicAddress))
                 {
@@ -1936,6 +1938,8 @@ namespace TitanOrbit.NetCode
 
                 try
                 {
+                    Debug.Log("[TitanOrbitSessionManager] CreateLobby keys=" + lobbyData.Count +
+                              " host=" + prep.HostAddress + ":" + prep.HostPort);
                     return await LobbyService.Instance.CreateLobbyAsync(
                         GameNames.GetRandomRoomName(),
                         cap,
@@ -1964,7 +1968,10 @@ namespace TitanOrbit.NetCode
                 while (!first.IsCompleted)
                     yield return null;
                 if (!first.IsFaulted && first.Result)
+                {
                     _consecutiveHeartbeatFailures = 0;
+                    Debug.Log("[TitanOrbitSessionManager] Lobby heartbeat ok id=" + _activeLobbyId);
+                }
             }
 
             // Wall clock — Join Game stale check is Unix time. WaitForSeconds + 0.1s
@@ -1978,10 +1985,11 @@ namespace TitanOrbit.NetCode
                     while (!heartbeat.IsCompleted)
                         yield return null;
 
-                    bool heartbeatOk = !heartbeat.IsFaulted && heartbeat.Result;
+                    bool heartbeatOk = heartbeat.IsCompleted && !heartbeat.IsFaulted && heartbeat.Result;
                     if (heartbeatOk)
                     {
                         _consecutiveHeartbeatFailures = 0;
+                        Debug.Log("[TitanOrbitSessionManager] Lobby heartbeat ok id=" + _activeLobbyId);
                     }
                     else
                     {

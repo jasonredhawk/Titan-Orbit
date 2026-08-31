@@ -800,6 +800,11 @@ namespace TitanOrbit.NetCode
             if (_config == null)
                 return false;
 
+            // Edgegap (local Docker or cloud) cannot Process.Start a sibling Unity. Recycle would
+            // demote the only lobby and Quit — that is what killed edgegap-server-test mid-join.
+            if (!TitanOrbitEdgegapEnvironment.CanSpawnSiblingProcess)
+                return false;
+
             if (DedicatedServerMemoryTelemetry.ShouldRecycleEmptyDueToRss(_config.RssRecycleMb))
             {
                 DedicatedServerMemoryTelemetry.TryReadProcessMemoryMb(out int rssMb, out _);
@@ -1152,7 +1157,18 @@ namespace TitanOrbit.NetCode
                 yield break;
             }
 
-            // --- Fallback: bridge with demoted open lobby, then cold restart (exit 1) ---
+            // --- Fallback: GCE systemd can cold-restart. Edgegap/Docker cannot spawn a sibling. ---
+            if (!TitanOrbitEdgegapEnvironment.CanSpawnSiblingProcess)
+            {
+                DedicatedServerFileLog.Append(
+                    "watchdog",
+                    "Recycle handoff FAILED reason=" + reason +
+                    " — staying alive (Edgegap/Docker cannot spawn a sibling process)");
+                Debug.LogWarning("[TitanOrbitDedicatedServerHost] Recycle aborted — Edgegap/Docker keeps this lobby.");
+                _processExitRequested = false;
+                yield break;
+            }
+
             DedicatedServerFileLog.Append(
                 "watchdog",
                 "Recycle handoff FAILED reason=" + reason +

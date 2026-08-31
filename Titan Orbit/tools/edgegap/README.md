@@ -77,23 +77,21 @@ Click **Validate** (Docker running), then **Containerize with Docker**.
 Our Dockerfile:
 
 - Uses Ubuntu 22.04 + CA certs (Unity Services HTTPS)
-- Runs `tools/edgegap/start-server.sh` with GCE-equivalent CLI flags
-- Sets `SDL_VIDEODRIVER=dummy` for headless Linux
+- Runs `tools/edgegap/start-server.sh` with GCE-equivalent CLI flags (`-batchmode` only — no `-nographics` / SDL dummy; those stall NullGfx at ~11 Hz)
 
 ### 4. Test locally (Titan Orbit — read this)
 
-Edgegap’s default docs say “connect your client to `localhost` + Docker port.” **That does not apply to Titan Orbit.**  
-We use **UGS Lobby + Unity Relay**. The Docker container is only the **headless server process**.
+Use **Join game** (UGS lobby list). The client then UDP-connects to the lobby `Host=` — for local Docker that must be `127.0.0.1:7777`.
 
 **Full walkthrough:** [LOCAL-DOCKER-TEST.md](./LOCAL-DOCKER-TEST.md)
 
 Quick version:
 
-1. **Deploy local container** in the Edgegap window (`-p 7777/udp` optional).
-2. Confirm Docker logs: `Dedicated server live. Relay=... Lobby=...` and `[MapGeneration] Map generated`.
+1. **Deploy local container** with `-p 7777:7777/udp`.
+2. Confirm Docker logs: `Dedicated server live. Host=127.0.0.1:7777 Lobby=...` and `[MapGeneration] Map generated`.
 3. Unity Editor **Play** → main menu → **Join game** → **Refresh** → join the listed lobby.
 4. After loading, **pick a team** — your ship spawns only after team selection (not on connect).
-5. Do **not** use Local play or direct `127.0.0.1:7777` transport for this test.
+5. Do **not** paste Edgegap’s dummy `162.254.141.66:31504` into the transport.
 
 Stop/delete the test container when done.
 

@@ -72,6 +72,8 @@ namespace TitanOrbit.ECS
             if (asteroid == Entity.Null || !em.Exists(asteroid))
                 return;
 
+            BulletObstacleSpatialHash.InvalidateAsteroidCache();
+
             QueueStripOnEntity(ecb, em, asteroid, squashScale);
 
             // --- Child colliders (ghost prefab LinkedEntityGroup) ---

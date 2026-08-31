@@ -95,6 +95,12 @@ namespace TitanOrbit.ECS
         EntityQuery _defensePlanetQuery;
         EntityQuery _planetSweepQuery;
 
+        /// <summary>
+        /// Last spatial-hash build cost (ms). Dedicated netdiag reads this — ProfilerRecorder is
+        /// stripped in IL2CPP release so Stopwatch is the only reliable sample.
+        /// </summary>
+        public static float LastHashBuildMs;
+
         /// <summary>Broadphase built once per tick — used by <see cref="TryResolveBulletHit"/>.</summary>
         BulletObstacleSpatialHash _obstacleHash;
         NativeList<int> _nearbyObstacles;
@@ -158,6 +164,7 @@ namespace TitanOrbit.ECS
                 _nearbySeen.Dispose();
             if (_obstacleHash.IsCreated)
                 _obstacleHash.Dispose();
+            BulletObstacleSpatialHash.DisposeAsteroidCache();
         }
 
         /// <summary>
@@ -206,10 +213,25 @@ namespace TitanOrbit.ECS
             float mapW = mapState.MapWidth;
             float mapH = mapState.MapHeight;
 
+            // Empty dedicated lobby (0 ships, 0 live rounds): do not ToEntityArray 333 asteroids
+            // four times per Unity frame. Docker/GCE 2026-08-31: that gather was ~80 ms/tick,
+            // wallSim≈12 Hz, 100% of one core, client snap-back. Combat still builds the hash.
+            if (bullets.Length == 0 && _allShipQuery.IsEmpty)
+            {
+                if (_obstacleHash.IsCreated)
+                    _obstacleHash.Dispose();
+                _obstacleHash = default;
+                LastHashBuildMs = 0f;
+                spawnEvents.Clear();
+                ecb.Dispose();
+                return;
+            }
+
             // --- Broadphase for ship / asteroid / transport sweeps ---
             // [TITAN-ORBIT] Built once from MapStateSingleton size. TryResolveBulletHit
             // queries nearby cells instead of walking every rock per bullet.
             // TempJob: IJob.Run() cannot touch Allocator.Temp containers.
+            var hashWatch = System.Diagnostics.Stopwatch.StartNew();
             _obstacleHash = BulletObstacleSpatialHash.Build(
                 state.EntityManager,
                 _allShipQuery,
@@ -218,6 +240,7 @@ namespace TitanOrbit.ECS
                 mapW,
                 mapH,
                 Allocator.TempJob);
+            LastHashBuildMs = (float)hashWatch.Elapsed.TotalMilliseconds;
             try
             {
 

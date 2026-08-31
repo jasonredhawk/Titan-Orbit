@@ -223,6 +223,12 @@ namespace TitanOrbit.ECS
             if (expectPlanets <= 0)
                 expectPlanets = MapPlanetFallback();
 
+            bool ghostTimeout = inGame &&
+                                InGameRealtime >= 0f &&
+                                Time.realtimeSinceStartup - InGameRealtime >= GhostCatchUpTimeoutSeconds;
+
+            // Planets and moons are GhostReceive Instantiates — not a loading timeout.
+            // Opening Join Team at 0/N hid the real failure (snapshots never left the server).
             PlanetsReady = expectPlanets <= 0 ||
                            ReceivedPlanets >= Mathf.CeilToInt(expectPlanets * PlanetReadyRatio);
 
@@ -231,13 +237,8 @@ namespace TitanOrbit.ECS
                          (ExpectedShips > 0 &&
                           ReceivedShips >= Mathf.CeilToInt(ExpectedShips * PlanetReadyRatio));
 
-            bool ghostTimeout = inGame &&
-                                InGameRealtime >= 0f &&
-                                Time.realtimeSinceStartup - InGameRealtime >= GhostCatchUpTimeoutSeconds;
-
             MoonsReady = expectPlanets <= 0 ||
-                         ReceivedMoonProxies >= Mathf.CeilToInt(expectPlanets * PlanetReadyRatio) ||
-                         ghostTimeout;
+                         ReceivedMoonProxies >= Mathf.CeilToInt(expectPlanets * PlanetReadyRatio);
 
             float receivedRatio = GhostCountOnServer > 0
                 ? (float)GhostCountReceived / GhostCountOnServer
@@ -299,6 +300,21 @@ namespace TitanOrbit.ECS
                 return;
             s_LastLog = line;
             Debug.Log("[JoinWorldReady] " + line);
+            // #region agent log
+            TitanOrbit.Diagnostics.TitanOrbitDebugSessionLog.Write(
+                "A",
+                "JoinWorldReadyCache.LogIfChanged",
+                "join-ready",
+                "{\"inGame\":" + (inGame ? "true" : "false") +
+                ",\"planets\":" + ReceivedPlanets +
+                ",\"expectPlanets\":" + ExpectedPlanets +
+                ",\"recv\":" + GhostCountReceived +
+                ",\"ghosts\":" + GhostCountInstantiated +
+                ",\"ghostOnServer\":" + GhostCountOnServer +
+                ",\"complete\":" + (IsComplete ? "true" : "false") +
+                ",\"ghostTimeout\":" + (ghostTimeout ? "true" : "false") +
+                ",\"planetsReady\":" + (PlanetsReady ? "true" : "false") + "}");
+            // #endregion
         }
 
         static int mathMax(int a, int b) => a > b ? a : b;

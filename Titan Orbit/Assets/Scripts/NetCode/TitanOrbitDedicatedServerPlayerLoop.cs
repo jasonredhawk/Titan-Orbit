@@ -1,5 +1,4 @@
 using System.Collections.Generic;
-using System.Text;
 using TitanOrbit.Diagnostics;
 using UnityEngine;
 using UnityEngine.LowLevel;
@@ -11,21 +10,60 @@ namespace TitanOrbit.NetCode
 {
     /// <summary>
     /// Dedicated headless: drop NullGfx present/wait from the player loop.
-    /// GCE 2026-08-30: vSync=0, targetFps=-1, App UI stripped, and the process still spent
-    /// ~850 ms/frame (wallSim≈5 Hz, 100% of one core, empty lobby). WaitForTargetFPS sampler
-    /// was 0 — the leftover is <c>PresentAndWait</c> on <c>-nographics</c> NullGfxDevice +
-    /// SDL dummy. Editor Local Host has a real display and does not hit this path.
+    /// Unity 6 names the stall <c>WaitForLastPresentationAndUpdateTime</c> (old docs said
+    /// <c>PresentAndWait</c>). Docker 2026-08-31: that leaf was still in the loop, frames
+    /// were ~300 ms, MaxSteps=4 → wallSim≈11 Hz, client ships snap back.
+    /// <para>
+    /// Do <b>not</b> strip present-wait before UGS lobby publish. The 12.39 image stripped
+    /// it at BeforeSceneLoad and <c>EnsureGuestSessionForOnlineAsync</c> never completed —
+    /// no lobby, Join Game empty. Render/UI leaves are safe at boot; present-wait is
+    /// applied after the lobby is live. Do not strip <c>BatchModeUpdate</c> (pumps HTTP
+    /// in <c>-batchmode</c>).
+    /// </para>
     /// </summary>
     public static class TitanOrbitDedicatedServerPlayerLoop
     {
-        static readonly string[] StripNameParts =
+        static readonly string[] EarlyStripNameParts =
         {
-            "PresentAndWait",
-            "WaitForTargetFPS",
             "PlayerEmitCanvasGeometry",
+            "PlayerUpdateCanvases",
             "UpdateAllRenderers",
             "UpdateAllSkinnedMeshes",
-            "DirectorRenderImage"
+            "DirectorRenderImage",
+            "UIElementsRepaintPanels",
+            "UIElementsUpdatePanels",
+            "UIElementsRenderBatchModeOffscreen",
+            "UpdateCustomRenderTextures",
+            "UpdateLightProbeProxyVolumes",
+            "EnlightenRuntimeUpdate",
+            "UpdateVideoTextures",
+            "UpdateVideo",
+            "VFXUpdate",
+            "ParticleSystemBeginUpdateAll",
+            "ParticleSystemEndUpdateAll",
+            "UpdateCameraMotionVectors",
+            "ClearIntermediateRenderers",
+            "RendererNotifyInvisible",
+            "UpdateMainGameViewRect",
+            "UpdateCanvasRectTransform",
+            "PresentationSystemGroup"
+        };
+
+        static readonly string[] PresentWaitStripNameParts =
+        {
+            // Unity 6 TimeUpdate — this is the ~300 ms NullGfx wait (not "PresentAndWait").
+            "WaitForLastPresentationAndUpdateTime",
+            "PresentAndWait",
+            "PresentBeforeUpdate",
+            "PresentAfterDraw",
+            "PlayerSendFramePostPresent",
+            "ResetFrameStatsAfterPresent",
+            "WaitForTargetFPS",
+            "FinishFrameRendering",
+            "GraphicsWarmupPreloadedShaders",
+            "EndGraphicsJobsAfterScriptUpdate",
+            "EndGraphicsJobsAfterScriptLateUpdate",
+            "GpuTimestamp"
         };
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
@@ -37,25 +75,46 @@ namespace TitanOrbit.NetCode
                 return;
 
 #if UNITY_SERVER && !UNITY_EDITOR
-            OnDemandRendering.renderFrameInterval = 50;
-            Apply();
+            OnDemandRendering.renderFrameInterval = 1000;
+            Apply("beforeScene", includePresentWait: false);
 #endif
         }
 
-        static void Apply()
+        /// <summary>
+        /// Image 13.05 stripped present-wait after CreateLobby. UnityWebRequest heartbeats then
+        /// hung, UGS expired the lobby (~30s), Join Game went empty, and wall frames stayed
+        /// ~330 ms anyway. Do not strip <c>WaitForLastPresentationAndUpdateTime</c> until
+        /// heartbeats still complete without it.
+        /// </summary>
+        public static void ApplyPresentWaitStripAfterLobby()
         {
-            var loop = PlayerLoop.GetCurrentPlayerLoop();
-            var leaves = new List<string>(64);
-            CollectLeaves(loop.subSystemList, leaves, "");
-
-            var removed = new List<string>(16);
-            loop.subSystemList = Filter(loop.subSystemList, removed, parentIsPostLate: false);
-            PlayerLoop.SetPlayerLoop(loop);
-
-            DedicatedServerFileLog.Append("pace", "playerLoopLeaves=" + string.Join(",", leaves));
             DedicatedServerFileLog.Append(
                 "pace",
-                "playerLoop removed=" + (removed.Count == 0 ? "(none)" : string.Join(",", removed)));
+                "playerLoop afterLobby skipped present-wait strip (keeps UGS heartbeat / Join Game list)");
+            Debug.Log("[TitanOrbitDedicatedServerPlayerLoop] afterLobby skipped present-wait strip " +
+                      "(UGS heartbeat must keep running)");
+        }
+
+        static void Apply(string when, bool includePresentWait)
+        {
+            var loop = PlayerLoop.GetCurrentPlayerLoop();
+            var removed = new List<string>(32);
+            loop.subSystemList = Filter(loop.subSystemList, removed, includePresentWait);
+            PlayerLoop.SetPlayerLoop(loop);
+
+            var remaining = new List<string>(64);
+            CollectLeaves(loop.subSystemList, remaining, "");
+
+            DedicatedServerFileLog.Append(
+                "pace",
+                "playerLoop " + when + " removed=" +
+                (removed.Count == 0 ? "(none)" : string.Join(",", removed)));
+            DedicatedServerFileLog.Append(
+                "pace",
+                "playerLoop " + when + " remaining=" + string.Join(",", remaining));
+            Debug.Log("[TitanOrbitDedicatedServerPlayerLoop] " + when +
+                      " presentWait=" + includePresentWait +
+                      " removed=" + removed.Count);
         }
 
         static void CollectLeaves(PlayerLoopSystem[] list, List<string> leaves, string prefix)
@@ -74,7 +133,7 @@ namespace TitanOrbit.NetCode
             }
         }
 
-        static PlayerLoopSystem[] Filter(PlayerLoopSystem[] list, List<string> removed, bool parentIsPostLate)
+        static PlayerLoopSystem[] Filter(PlayerLoopSystem[] list, List<string> removed, bool includePresentWait)
         {
             if (list == null || list.Length == 0)
                 return list;
@@ -84,29 +143,34 @@ namespace TitanOrbit.NetCode
             {
                 var sys = list[i];
                 string name = sys.type != null ? sys.type.Name : "";
-                bool isPostLate = name.IndexOf("PostLateUpdate", System.StringComparison.Ordinal) >= 0;
-                // Native PostLateUpdate children have no managed Type (GCE 175835 missed PresentAndWait).
-                if (ShouldStrip(name) || (parentIsPostLate && string.IsNullOrEmpty(name)))
+                if (ShouldStrip(name, includePresentWait))
                 {
-                    removed.Add(string.IsNullOrEmpty(name) ? "nativePostLate" : name);
+                    removed.Add(name);
                     continue;
                 }
 
                 if (sys.subSystemList != null && sys.subSystemList.Length > 0)
-                    sys.subSystemList = Filter(sys.subSystemList, removed, isPostLate || parentIsPostLate);
+                    sys.subSystemList = Filter(sys.subSystemList, removed, includePresentWait);
                 next.Add(sys);
             }
 
             return next.ToArray();
         }
 
-        static bool ShouldStrip(string typeName)
+        static bool ShouldStrip(string typeName, bool includePresentWait)
         {
             if (string.IsNullOrEmpty(typeName))
                 return false;
-            for (int i = 0; i < StripNameParts.Length; i++)
+            if (MatchesAny(typeName, EarlyStripNameParts))
+                return true;
+            return includePresentWait && MatchesAny(typeName, PresentWaitStripNameParts);
+        }
+
+        static bool MatchesAny(string typeName, string[] parts)
+        {
+            for (int i = 0; i < parts.Length; i++)
             {
-                if (typeName.IndexOf(StripNameParts[i], System.StringComparison.Ordinal) >= 0)
+                if (typeName.IndexOf(parts[i], System.StringComparison.Ordinal) >= 0)
                     return true;
             }
 

@@ -124,6 +124,17 @@ namespace TitanOrbit.ECS
             HydrateStarted = false;
             WaitingForPrefabs = false;
             SessionGeneration++;
+            // #region agent log
+            TitanOrbit.Diagnostics.TitanOrbitDebugSessionLog.Write(
+                "D",
+                "ClientMapHydrateCache.ApplyRecipe",
+                "recipe-applied",
+                "{\"full\":" + (full ? "true" : "false") +
+                ",\"seed\":" + matchSeed +
+                ",\"expectedBodies\":" + ExpectedBodies +
+                ",\"sameInFlight\":" + (sameInFlight ? "true" : "false") +
+                ",\"gen\":" + SessionGeneration + "}");
+            // #endregion
         }
 
         /// <summary>Marks that the hydrate system began Instantiates for this generation.</summary>
@@ -163,6 +174,13 @@ namespace TitanOrbit.ECS
             HydrateStarted = false;
             WaitingForPrefabs = false;
             SessionGeneration++;
+            // #region agent log
+            TitanOrbit.Diagnostics.TitanOrbitDebugSessionLog.Write(
+                "B",
+                "ClientMapHydrateCache.Clear",
+                "recipe-cleared",
+                "{\"gen\":" + SessionGeneration + "}");
+            // #endregion
         }
 
 #if UNITY_EDITOR

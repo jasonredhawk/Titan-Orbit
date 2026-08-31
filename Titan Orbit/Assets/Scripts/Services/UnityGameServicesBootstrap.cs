@@ -192,9 +192,11 @@ namespace TitanOrbit.Services
                     AuthenticationService.Instance.IsSignedIn &&
                     AuthenticationService.Instance.IsAuthorized)
                 {
+#if !UNITY_SERVER || UNITY_EDITOR
                     // Still refresh PlayerInfo so Unity-link shows after domain reload / cold start.
                     await TryFetchPlayerInfoForUiAsync(allowReplacePlayerInfo: true);
                     SyncRememberFlagFromPlayerInfo();
+#endif
 #if UNITY_WEBGL && !UNITY_EDITOR
                     await WebGlUnityPlayerAccountBrowser.TryResumeOAuthRedirectIfPresentAsync();
 #endif
@@ -203,12 +205,14 @@ namespace TitanOrbit.Services
 
                 await EnsureUnityServicesAndAnonymousAuthLockedAsync();
                 bool ok = AuthenticationService.Instance.IsSignedIn && AuthenticationService.Instance.IsAuthorized;
+#if !UNITY_SERVER || UNITY_EDITOR
                 if (ok)
                 {
                     // [UGS] Pull identities so HasUnityPlayerAccountLinked is accurate after session restore.
                     await TryFetchPlayerInfoForUiAsync(allowReplacePlayerInfo: true);
                     SyncRememberFlagFromPlayerInfo();
                 }
+#endif
 #if UNITY_WEBGL && !UNITY_EDITOR
                 if (ok)
                     await WebGlUnityPlayerAccountBrowser.TryResumeOAuthRedirectIfPresentAsync();

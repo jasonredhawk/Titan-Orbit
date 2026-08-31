@@ -19,16 +19,25 @@ if [ -z "${EXE:-}" ] || [ ! -x "$EXE" ]; then
   exit 1
 fi
 
-# Headless Linux: avoid SDL/GPU init failures inside Docker.
-export SDL_VIDEODRIVER="${SDL_VIDEODRIVER:-dummy}"
+# Dedicated Server (UNITY_SERVER) has no graphics module. Do NOT set
+# SDL_VIDEODRIVER=dummy and do NOT pass -nographics — those force NullGfxDevice
+# PresentAndWait (~300 ms/frame, wallSim≈11 Hz, ships snap back). Same lesson as
+# tools/gce/run_titanorbit_server.sh. Unset dummy if the image inherited it.
+unset SDL_VIDEODRIVER || true
 export DISPLAY="${DISPLAY:-}"
 
 # Edgegap injects ARBITRIUM_PORT_GAMEPORT_INTERNAL when the app version port is named "gameport".
 PORT="${ARBITRIUM_PORT_GAMEPORT_INTERNAL:-7777}"
 
+# Plugin "Test locally" sets ARBITRIUM_ENV_DEBUG + a dummy public IP. Clients on this PC
+# must UDP-connect to the published Docker port (default 7777), not 162.254.141.66:31504.
+if [ "${ARBITRIUM_ENV_DEBUG:-}" = "true" ] || [ "${ARBITRIUM_ENV_DEBUG:-}" = "1" ]; then
+  export TITANORBIT_PUBLIC_ADDRESS="${TITANORBIT_PUBLIC_ADDRESS:-127.0.0.1}"
+fi
+
 echo "TITANORBIT_EDGEGAP exe=$EXE port=$PORT deployment=${ARBITRIUM_REQUEST_ID:-local}" >&2
 
-exec "$EXE" -batchmode -nographics -logFile /dev/stdout \
+exec "$EXE" -batchmode -logFile /dev/stdout \
   --maxPlayers="${TITANORBIT_MAX_PLAYERS:-60}" \
   --serverPort="$PORT" \
   --serverListenAddress=0.0.0.0 \

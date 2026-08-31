@@ -62,10 +62,13 @@ namespace TitanOrbit.ECS
             step.CollisionTolerance = math.max(step.CollisionTolerance, 0.15f);
             step.MaxDynamicDepenetrationVelocity = math.max(step.MaxDynamicDepenetrationVelocity, 25f);
             step.SynchronizeCollisionWorld = 1;
-            // Interpolated map bodies (planets, seed-hydrated asteroids) are static.
-            // Incremental static BVH keeps GhostUpdate / hydrate poses in the collision
-            // world. Predicted ships are dynamic — they do not need this.
-            step.IncrementalStaticBroadphase = true;
+            // Client only: interpolated map hulls (planets / seed-hydrated asteroids) are
+            // static and must stay in the collision world as GhostUpdate moves them.
+            // Server map bodies are simulated in-place. IncrementalStaticBroadphase=true
+            // on dedicated (Docker/GCE) forced InjectTemporalCoherenceDataLastResortSystem
+            // every tick (bodies lack PhysicsTemporalCoherence*) — ~100 ms+/tick, 100% of
+            // one core, wallSim≈10 Hz on an empty lobby.
+            step.IncrementalStaticBroadphase = client;
             var stabilization = step.SolverStabilizationHeuristicSettings;
             stabilization.EnableSolverStabilization = true;
             step.SolverStabilizationHeuristicSettings = stabilization;

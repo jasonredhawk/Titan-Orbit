@@ -628,4 +628,20 @@ namespace TitanOrbit.ECS
 
     /// <summary>Server connection tag: in-flight people-transport SpawnRpcs dumped once.</summary>
     public struct PeopleTransportCatchUpSent : IComponentData { }
+
+    /// <summary>
+    /// Server → client join diagnostic: whether planet ghosts exist and have ids.
+    /// Debug session only — not gameplay state.
+    /// </summary>
+    public struct TitanOrbitGhostStreamDebugRpc : IRpcCommand
+    {
+        public int PlanetTags;
+        public int PlanetGhosts;
+        public int PlanetIds;
+        public int AlwaysInserts;
+        public int SetCount;
+        public int CollectionPrefabs;
+        public byte RelevancyMode;
+        public byte QueryAssigned;
+    }
 }

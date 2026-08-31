@@ -498,6 +498,17 @@ namespace TitanOrbit.NetCode
                          .WithAll<ReceiveRpcCommandRequest>().WithEntityAccess())
             {
                 MapSessionMetaCache.Apply(rpc.ValueRO);
+                // #region agent log
+                TitanOrbit.Diagnostics.TitanOrbitDebugSessionLog.Write(
+                    "D",
+                    "MapSessionMetaClientSystem.OnUpdate",
+                    "recipe-rpc",
+                    "{\"seed\":" + rpc.ValueRO.MatchSeed +
+                    ",\"full\":" + rpc.ValueRO.HasFullRecipe +
+                    ",\"asteroids\":" + rpc.ValueRO.AsteroidCount +
+                    ",\"livePlanets\":" + rpc.ValueRO.LivePlanetCount +
+                    ",\"teams\":" + rpc.ValueRO.TeamCount + "}");
+                // #endregion
                 Debug.Log(
                     "[MapSessionMeta] Client latched recipe seed=" + rpc.ValueRO.MatchSeed +
                     " full=" + rpc.ValueRO.HasFullRecipe +

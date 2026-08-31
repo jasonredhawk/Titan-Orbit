@@ -908,8 +908,10 @@ namespace TitanOrbit.Game
 
             if (wrote)
                 sb.Append("   <color=#5f738a>|</color>   ");
+            sb.Append(FormatLobbyHostFragment(summary));
+            sb.Append("   <color=#5f738a>|</color>   ");
             if (string.IsNullOrWhiteSpace(summary.ServerBuildId))
-                sb.Append("<color=#e08a6a><b>build (old GCE — no id)</b></color>");
+                sb.Append("<color=#e08a6a><b>build (old server — no id)</b></color>");
             else
                 sb.Append("<color=#8fd4a8><b>build ").Append(summary.ServerBuildId).Append("</b></color>");
 
@@ -1212,8 +1214,23 @@ namespace TitanOrbit.Game
             RefreshBuildIdLabel();
         }
 
+        /// <summary>Host line for the lobby footer — shows where Join actually UDP-connects.</summary>
+        static string FormatLobbyHostFragment(TitanOrbitLobbyService.LobbySummary summary)
+        {
+            if (summary == null || string.IsNullOrWhiteSpace(summary.HostAddress))
+                return "<color=#e08a6a><b>host (missing)</b></color>";
+
+            string endpoint = summary.HostAddress.Trim() + ":" + summary.HostPort;
+            bool loopback = summary.HostAddress.StartsWith("127.") ||
+                            string.Equals(summary.HostAddress, "localhost", StringComparison.OrdinalIgnoreCase);
+            bool dummyEdgegap = summary.HostAddress.StartsWith("162.254.");
+            string color = loopback ? "#8fd4a8" : dummyEdgegap ? "#e08a6a" : "#e0c06a";
+            string note = loopback ? " local Docker" : dummyEdgegap ? " DUMMY — rebuild Edgegap server" : " public (GCE/cloud)";
+            return "<color=" + color + "><b>host " + endpoint + "</b>" + note + "</color>";
+        }
+
         /// <summary>
-        /// Always-visible bake id. A missing GCE id means the live lobby process predates this field.
+        /// Always-visible bake id. A missing server id means the live lobby process predates this field.
         /// </summary>
         void RefreshBuildIdLabel()
         {
@@ -1246,7 +1263,7 @@ namespace TitanOrbit.Game
             {
                 _buildIdText.text =
                     "This client: " + TitanOrbitBuildStamp.LocalLabel() +
-                    "\n<color=#e08a6a>GCE running: (not published — old binary, rebuild + deploy)</color>" +
+                    "\n<color=#e08a6a>Server: (not published — old binary, rebuild + deploy)</color>" +
                     simLine;
                 return;
             }
@@ -1255,7 +1272,7 @@ namespace TitanOrbit.Game
             {
                 _buildIdText.text =
                     "This client: " + TitanOrbitBuildStamp.LocalLabel() +
-                    "\nGCE running: (no lobby listed yet)" +
+                    "\nServer: (no lobby listed yet)" +
                     simLine;
                 return;
             }
@@ -1267,7 +1284,7 @@ namespace TitanOrbit.Game
                 : " — different bake than this Editor (deploy did not land)";
             _buildIdText.text =
                 "This client: " + TitanOrbitBuildStamp.LocalLabel() +
-                "\n<color=" + gceColor + ">GCE running: " + TitanOrbitBuildStamp.FormatFriendly(serverId) +
+                "\n<color=" + gceColor + ">Server: " + TitanOrbitBuildStamp.FormatFriendly(serverId) +
                 gceNote + "</color>" +
                 simLine;
         }
@@ -1278,13 +1295,13 @@ namespace TitanOrbit.Game
             if (serverHz < 0)
                 return string.Empty;
             if (serverHz == 0)
-                return "\nGCE sim: (measuring…)";
+                return "\nServer sim: (measuring…)";
             if (serverHz < 12)
-                return "\n<color=#e08a6a>GCE sim: " + serverHz +
+                return "\n<color=#e08a6a>Server sim: " + serverHz +
                        " Hz wall — live from this server (stamps can match and still snap)</color>";
             if (serverHz < 50)
-                return "\n<color=#e0c06a>GCE sim: " + serverHz + " Hz — below 60</color>";
-            return "\n<color=#8fd4a8>GCE sim: " + serverHz + " Hz</color>";
+                return "\n<color=#e0c06a>Server sim: " + serverHz + " Hz — below 60</color>";
+            return "\n<color=#8fd4a8>Server sim: " + serverHz + " Hz</color>";
         }
 
         static void ApplyContentColumnLayout(LayoutElement layoutElement)

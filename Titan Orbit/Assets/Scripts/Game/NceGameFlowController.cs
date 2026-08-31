@@ -123,14 +123,8 @@ namespace TitanOrbit.Game
         /// </summary>
         float _postConfirmShipWaitAt = -1f;
 
-        /// <summary>Seconds after Confirm with no ship before recover/retry/return to team select.</summary>
+        /// <summary>Seconds between "still waiting for hull snapshot" warnings after Confirm.</summary>
         const float PostConfirmShipTimeoutSeconds = 8f;
-
-        /// <summary>How many post-Confirm ship-missing auto-retries this session.</summary>
-        int _postConfirmShipRetryCount;
-
-        /// <summary>Max automatic RequestTeam retries after Confirm+no-hull.</summary>
-        const int PostConfirmShipMaxAutoRetries = 1;
 
         /// <summary>
         /// Shown on the team panel after spawn-wait timeouts exhaust auto-retries.
@@ -391,7 +385,6 @@ namespace TitanOrbit.Game
             _teamPickRequestedAt = -1f;
             _teamPickRetryCount = 0;
             _postConfirmShipWaitAt = -1f;
-            _postConfirmShipRetryCount = 0;
             _teamPickTimeoutHint = null;
             _connectedAt = -1f;
             _dedicatedConnectedAt = -1f;
@@ -762,9 +755,8 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// [TITAN-ORBIT] After deferred Confirm, if no local hull appears, try seed recovery then
-        /// one RequestTeam retry / return to team select. Prevents endless "Spawning your ship..."
-        /// when Instantiates stay at map meta-N (debug 1af271).
+        /// After deferred Confirm, recover a late seed if GhostReceive already Instantiated.
+        /// Does not bounce back to Join Team — the server ship already exists.
         /// </summary>
         /// <param name="teamConfirmed">True after Confirm flushed.</param>
         /// <param name="hasShipLive">True when <see cref="EcsGameBridge.HasLocalPlayerShip"/> sees a hull.</param>
@@ -781,8 +773,6 @@ namespace TitanOrbit.Game
             if (!teamConfirmed || hasShipLive || hasLiveSeed || _latchedHasShipThisSession)
             {
                 _postConfirmShipWaitAt = -1f;
-                if (hasShipLive || hasLiveSeed || _latchedHasShipThisSession)
-                    _postConfirmShipRetryCount = 0;
                 return;
             }
 
@@ -807,40 +797,20 @@ namespace TitanOrbit.Game
                  LocalShipEntitySeed.HasLiveOwnedShipSeed(clientWorld.EntityManager)))
             {
                 _postConfirmShipWaitAt = -1f;
-                _postConfirmShipRetryCount = 0;
                 return;
             }
 
             if (Time.realtimeSinceStartup - _postConfirmShipWaitAt < PostConfirmShipTimeoutSeconds)
                 return;
 
-            // --- Timeout: no hull after Confirm ---
-            // [TITAN-ORBIT] Do not Clear() a seed we never saw — RequestTeam clears on retry.
-            // Clearing here wiped a same-frame seed and bounced UI back to Join Team.
-            var team = ClientTeamFlowState.LastRequestedTeam;
-            ClientTeamFlowState.ResetTeamChoiceForShipSpawnFailure();
-            _postConfirmShipWaitAt = -1f;
-            _latchedHasShipThisSession = false;
-
-            if (_postConfirmShipRetryCount < PostConfirmShipMaxAutoRetries &&
-                team != TeamId.None &&
-                TitanOrbitSessionManager.Instance != null)
-            {
-                _postConfirmShipRetryCount++;
-                Debug.LogWarning(
-                    $"[NceGameFlow] Confirm+no-hull after {PostConfirmShipTimeoutSeconds:0.#}s — " +
-                    $"auto-retry RequestTeam {team} " +
-                    $"(attempt {_postConfirmShipRetryCount}/{PostConfirmShipMaxAutoRetries}).");
-                TitanOrbitSessionManager.Instance.RequestTeam(team);
-                return;
-            }
-
-            _postConfirmShipRetryCount = 0;
-            _teamPickTimeoutHint = "Ship failed to spawn — click a team again.";
-            _statusMessage = _teamPickTimeoutHint;
-            Debug.LogError(
-                "[NceGameFlow] Local ship never Instantiated after TeamChoice Confirm. " +
-                "Returning to team select (check GhostCollection ship prefab / GhostSend).");
+            // --- Still no hull after Confirm ---
+            // TeamChoiceResult already succeeded on the server. Bouncing to Join Team and
+            // re-sending RequestTeam only acks the existing ship — the missing piece is
+            // GhostReceive. Keep the spawn overlay and wait for the snapshot.
+            _postConfirmShipWaitAt = Time.realtimeSinceStartup;
+            Debug.LogWarning(
+                "[NceGameFlow] Confirm succeeded but GhostReceive has no owner hull yet — " +
+                "waiting for the ship snapshot (not returning to team select).");
         }
 
         IEnumerator WaitAndStartLocalPlay()
@@ -1077,6 +1047,18 @@ namespace TitanOrbit.Game
                 Time.time - _dedicatedConnectedAt >= DedicatedMapLoadAbortSeconds)
             {
                 _abortingStuckDedicatedJoin = true;
+                // #region agent log
+                TitanOrbit.Diagnostics.TitanOrbitDebugSessionLog.Write(
+                    "B",
+                    "NceGameFlowController.RefreshUi",
+                    "abort-stuck-join",
+                    "{\"connectedSec\":" + (Time.time - _dedicatedConnectedAt).ToString("F1") +
+                    ",\"planets\":" + TitanOrbit.ECS.JoinWorldReadyCache.ReceivedPlanets +
+                    ",\"expectPlanets\":" + TitanOrbit.ECS.JoinWorldReadyCache.ExpectedPlanets +
+                    ",\"hasRecipe\":" + (TitanOrbit.ECS.ClientMapHydrateCache.HasFullRecipe ? "true" : "false") +
+                    ",\"hydrateDone\":" + (TitanOrbit.ECS.ClientMapHydrateCache.IsComplete ? "true" : "false") +
+                    ",\"joinComplete\":" + (TitanOrbit.ECS.JoinWorldReadyCache.IsComplete ? "true" : "false") + "}");
+                // #endregion
                 StartCoroutine(AbortStuckDedicatedJoin());
             }
 

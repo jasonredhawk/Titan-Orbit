@@ -59,6 +59,10 @@ namespace TitanOrbit.Camera
 
         private void Awake()
         {
+#if UNITY_SERVER && !UNITY_EDITOR
+            enabled = false;
+            return;
+#endif
             // --- Unity lifecycle ---
             ResolveTargetCamera();
             if (targetCamera == null)

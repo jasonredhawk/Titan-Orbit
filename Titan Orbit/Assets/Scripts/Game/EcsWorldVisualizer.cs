@@ -398,6 +398,12 @@ namespace TitanOrbit.Game
         /// </summary>
         void Awake()
         {
+            if (!TitanOrbitDedicatedServerAutoBoot.ShouldRunClientPresentation())
+            {
+                enabled = false;
+                return;
+            }
+
             // --- Resolve designer assets (editor paths; player builds use serialized refs) ---
             if (shipFamily == null)
                 shipFamily = LoadDefaultShipFamily();
@@ -467,6 +473,12 @@ namespace TitanOrbit.Game
         /// </summary>
         void OnEnable()
         {
+            if (!TitanOrbitDedicatedServerAutoBoot.ShouldRunClientPresentation())
+            {
+                enabled = false;
+                return;
+            }
+
             // --- Singleton for quarantine-safe UI ---
             // [TITAN-ORBIT] Minimap walks this instance's proxy dictionary instead of ECS gathers.
             Active = this;

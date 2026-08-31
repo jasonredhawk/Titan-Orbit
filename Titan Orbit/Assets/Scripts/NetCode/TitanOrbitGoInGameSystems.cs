@@ -113,6 +113,13 @@ namespace TitanOrbit.NetCode
                 {
                     var networkId = state.EntityManager.GetComponentData<NetworkId>(connection);
                     Debug.Log("[TitanOrbitGoInGame] Server accepted GoInGame networkId=" + networkId.Value);
+                    // #region agent log
+                    TitanOrbit.Diagnostics.TitanOrbitDebugSessionLog.Write(
+                        "A",
+                        "TitanOrbitGoInGameServerSystem.OnUpdate",
+                        "server-go-ingame",
+                        "{\"networkId\":" + networkId.Value + "}");
+                    // #endregion
                 }
 
                 if (hasMeta && !state.EntityManager.HasComponent<MapSessionMetaSent>(connection))

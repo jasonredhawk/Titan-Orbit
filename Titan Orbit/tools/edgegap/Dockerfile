@@ -21,7 +21,7 @@ RUN apt-get update && \
 COPY tools/edgegap/start-server.sh /root/start-server.sh
 RUN chmod +x /root/start-server.sh
 
-ENV SDL_VIDEODRIVER=dummy
+# Do not set SDL_VIDEODRIVER=dummy — NullGfx PresentAndWait (~300 ms/frame, ~11 Hz wall).
 ENV DISPLAY=
 
 CMD ["/root/start-server.sh"]

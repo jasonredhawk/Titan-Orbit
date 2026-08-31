@@ -170,6 +170,10 @@ namespace TitanOrbit.UI
         /// </summary>
         void Awake()
         {
+#if UNITY_SERVER && !UNITY_EDITOR
+            enabled = false;
+            return;
+#endif
             _layoutSpace = transform as RectTransform;
             if (_layoutSpace == null)
                 _layoutSpace = gameObject.AddComponent<RectTransform>();

@@ -167,6 +167,7 @@ namespace TitanOrbit.ECS
 
             Entity e = em.Instantiate(asteroidPrefab);
             em.SetComponentData(e, LocalTransform.FromPositionRotationScale(position, quaternion.identity, scale));
+            BulletObstacleSpatialHash.InvalidateAsteroidCache();
 
             // --- Surface friction from AsteroidSettings (Inspector) ---
             // Prefab bake uses defaults; replace so live Friction edits apply to new rocks.

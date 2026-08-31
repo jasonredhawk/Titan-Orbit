@@ -15,6 +15,31 @@ namespace TitanOrbit.NetCode
             !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("ARBITRIUM_REQUEST_ID"));
 
         /// <summary>
+        /// Edgegap Unity plugin <b>Test locally</b> injects dummy ARBITRIUM_* values
+        /// (<c>ARBITRIUM_ENV_DEBUG=true</c>, <c>ARBITRIUM_PUBLIC_IP=162.254.141.66</c>).
+        /// Those are not reachable from the Editor — clients must use 127.0.0.1 + published UDP.
+        /// </summary>
+        public static bool IsLocalPluginTest
+        {
+            get
+            {
+                if (!IsEdgegapDeployment)
+                    return false;
+                string debug = Environment.GetEnvironmentVariable("ARBITRIUM_ENV_DEBUG");
+                if (string.Equals(debug, "true", StringComparison.OrdinalIgnoreCase) || debug == "1")
+                    return true;
+                string tags = Environment.GetEnvironmentVariable("ARBITRIUM_DEPLOYMENT_TAGS");
+                return string.Equals(tags, "tag1,tag2", StringComparison.OrdinalIgnoreCase);
+            }
+        }
+
+        /// <summary>
+        /// Edgegap containers cannot spawn a sibling Unity process (no GCE systemd handoff).
+        /// Process-recycle must stay off or the only lobby dies.
+        /// </summary>
+        public static bool CanSpawnSiblingProcess => !IsEdgegapDeployment;
+
+        /// <summary>
         /// Returns Edgegap internal gameport when ARBITRIUM_PORT_GAMEPORT_INTERNAL is set and valid.
         /// Port name in the Edgegap app version must be <c>gameport</c> for this variable to exist.
         /// </summary>
@@ -70,6 +95,14 @@ namespace TitanOrbit.NetCode
                 " protocol=" + (protocol ?? "(none)");
 
             Diagnostics.DedicatedServerFileLog.Append("edgegap", summary);
+            if (IsLocalPluginTest)
+            {
+                Debug.Log("[TitanOrbitEdgegapEnvironment] " + summary +
+                          " LOCAL PLUGIN TEST — lobby Host will be 127.0.0.1:" + effectiveServerPort +
+                          " (ignore dummy ARBITRIUM_PUBLIC_IP; publish UDP " + effectiveServerPort + " on Docker).");
+                return;
+            }
+
             Debug.Log("[TitanOrbitEdgegapEnvironment] " + summary +
                       " (clients connect to publicIp:gameportExternal — no Unity Relay).");
         }

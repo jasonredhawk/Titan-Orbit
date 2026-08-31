@@ -1,4 +1,5 @@
 using TitanOrbit.Diagnostics;
+using TitanOrbit.ECS;
 using Unity.Entities;
 using Unity.NetCode;
 using Unity.Profiling;
@@ -109,7 +110,9 @@ namespace TitanOrbit.NetCode
                 out float avgRealtimeMs,
                 out float waitFpsMs,
                 out float physicsMs,
-                out float ghostSendMs);
+                out float ghostSendMs,
+                out float buildPhysicsMs,
+                out float stepPhysicsMs);
 
             string verdict = InterpretServerVerdict(effectiveHz, expectedHz, catchUpPercent, slowFrames, unityFrames);
 
@@ -134,6 +137,11 @@ namespace TitanOrbit.NetCode
                 " presentMs=" + waitFpsMs.ToString("F1") +
                 " waitFpsMs=" + physicsMs.ToString("F1") +
                 " ghostSendMs=" + ghostSendMs.ToString("F1") +
+                " buildPhysMs=" + buildPhysicsMs.ToString("F1") +
+                " stepPhysMs=" + stepPhysicsMs.ToString("F1") +
+                " bulletHashMs=" + TitanOrbit.ECS.BulletSimulationSystem.LastHashBuildMs.ToString("F1") +
+                " predMs=" + TitanOrbitDedicatedServerGroupTimers.LastPredictedFixedMs.ToString("F1") +
+                " ghostMs=" + TitanOrbitDedicatedServerGroupTimers.LastGhostSimMs.ToString("F1") +
                 " slowFrames(>20ms)=" + slowFrames +
                 " | Verdict: " + verdict;
 
@@ -196,9 +204,13 @@ namespace TitanOrbit.NetCode
         ProfilerRecorder _waitFps;
         ProfilerRecorder _physics;
         ProfilerRecorder _ghostSend;
+        ProfilerRecorder _buildPhysics;
+        ProfilerRecorder _stepPhysics;
         long _sumWaitFpsNs;
         long _sumPhysicsNs;
         long _sumGhostSendNs;
+        long _sumBuildPhysicsNs;
+        long _sumStepPhysicsNs;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         static void EnsureInstalled()
@@ -214,9 +226,12 @@ namespace TitanOrbit.NetCode
 
         void OnEnable()
         {
-            _waitFps = ProfilerRecorder.StartNew(ProfilerCategory.Internal, "PresentAndWait");
+            // Unity 6: the NullGfx stall is WaitForLastPresentationAndUpdateTime (PresentAndWait is gone).
+            _waitFps = ProfilerRecorder.StartNew(ProfilerCategory.Internal, "WaitForLastPresentationAndUpdateTime");
             _physics = ProfilerRecorder.StartNew(ProfilerCategory.Internal, "WaitForTargetFPS");
             _ghostSend = ProfilerRecorder.StartNew(ProfilerCategory.Scripts, "GhostSendSystem");
+            _buildPhysics = ProfilerRecorder.StartNew(ProfilerCategory.Physics, "BuildPhysicsWorld");
+            _stepPhysics = ProfilerRecorder.StartNew(ProfilerCategory.Physics, "StepPhysicsWorld");
         }
 
         void OnDisable()
@@ -227,6 +242,10 @@ namespace TitanOrbit.NetCode
                 _physics.Dispose();
             if (_ghostSend.Valid)
                 _ghostSend.Dispose();
+            if (_buildPhysics.Valid)
+                _buildPhysics.Dispose();
+            if (_stepPhysics.Valid)
+                _stepPhysics.Dispose();
         }
 
         void Update()
@@ -237,6 +256,10 @@ namespace TitanOrbit.NetCode
                 _sumPhysicsNs += _physics.LastValue;
             if (_ghostSend.Valid)
                 _sumGhostSendNs += _ghostSend.LastValue;
+            if (_buildPhysics.Valid)
+                _sumBuildPhysicsNs += _buildPhysics.LastValue;
+            if (_stepPhysics.Valid)
+                _sumStepPhysicsNs += _stepPhysics.LastValue;
 
             float now = Time.realtimeSinceStartup;
             float realtimeMs = _lastRealtime > 0f ? (now - _lastRealtime) * 1000f : 0f;
@@ -279,7 +302,9 @@ namespace TitanOrbit.NetCode
             out float avgRealtimeMs,
             out float waitFpsMs,
             out float physicsMs,
-            out float ghostSendMs)
+            out float ghostSendMs,
+            out float buildPhysicsMs,
+            out float stepPhysicsMs)
         {
             if (s_instance == null)
             {
@@ -291,6 +316,8 @@ namespace TitanOrbit.NetCode
                 waitFpsMs = 0f;
                 physicsMs = 0f;
                 ghostSendMs = 0f;
+                buildPhysicsMs = 0f;
+                stepPhysicsMs = 0f;
                 return;
             }
 
@@ -302,6 +329,8 @@ namespace TitanOrbit.NetCode
             waitFpsMs = frames > 0 ? s_instance._sumWaitFpsNs / (float)frames / 1_000_000f : 0f;
             physicsMs = frames > 0 ? s_instance._sumPhysicsNs / (float)frames / 1_000_000f : 0f;
             ghostSendMs = frames > 0 ? s_instance._sumGhostSendNs / (float)frames / 1_000_000f : 0f;
+            buildPhysicsMs = frames > 0 ? s_instance._sumBuildPhysicsNs / (float)frames / 1_000_000f : 0f;
+            stepPhysicsMs = frames > 0 ? s_instance._sumStepPhysicsNs / (float)frames / 1_000_000f : 0f;
 
             s_instance._sumDeltaMs = 0f;
             s_instance._maxDeltaMs = 0f;
@@ -312,6 +341,8 @@ namespace TitanOrbit.NetCode
             s_instance._sumWaitFpsNs = 0;
             s_instance._sumPhysicsNs = 0;
             s_instance._sumGhostSendNs = 0;
+            s_instance._sumBuildPhysicsNs = 0;
+            s_instance._sumStepPhysicsNs = 0;
         }
     }
 }

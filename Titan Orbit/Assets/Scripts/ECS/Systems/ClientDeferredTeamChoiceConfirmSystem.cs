@@ -15,9 +15,10 @@ namespace TitanOrbit.ECS
     /// deferred for the full <see cref="ClientJoinSettleCache.ArmPostTeamChoiceHold"/> countdown.
     /// </para>
     /// <para>
-    /// After the hold, wait up to <see cref="MaxHullWaitFrames"/> for the <b>real</b> owner ship
-    /// from GhostReceive (<see cref="LocalShipEntitySeed.HasLiveOwnedShipSeed"/>). Do not Instantiates
-    /// a client predicted hull — that workaround produced a visible ship that could not move.
+    /// After the hold, wait for the <b>real</b> owner ship from GhostReceive
+    /// (<see cref="LocalShipEntitySeed.HasLiveOwnedShipSeed"/>). Do not Instantiates a client
+    /// predicted hull, and do not Confirm without that hull — a timed flush bounced the
+    /// player back to Join Team while the server ship already existed.
     /// Overlay wait is the server spawn + snapshot RTT.
     /// </para>
     /// <para>
@@ -30,12 +31,6 @@ namespace TitanOrbit.ECS
     [UpdateInGroup(typeof(InitializationSystemGroup), OrderFirst = true)]
     public partial struct ClientDeferredTeamChoiceConfirmSystem : ISystem
     {
-        /// <summary>
-        /// Extra frames after Instantiates hold to wait for GhostReceive of the server ship.
-        /// ~6s at 60 Hz — covers Relay RTT + GhostSend after sitting on Join Team.
-        /// </summary>
-        public const int MaxHullWaitFrames = 360;
-
         /// <summary>Frames spent waiting for the GhostReceive hull after the hold expired.</summary>
         static int s_HullWaitFrames;
 
@@ -68,23 +63,21 @@ namespace TitanOrbit.ECS
             if (ClientJoinSettleCache.IsPostTeamChoiceHoldActive)
                 return;
 
-            // --- After hold: wait for GhostReceive owner ship (or timeout) ---
+            // --- After hold: wait for GhostReceive owner ship ---
             // [NETCODE] TeamManagementSystem Instantiates the ship on the server. GhostSend
-            // streams it (relevancy includes ShipTag; GhostConnectionPosition is set at spawn).
+            // streams it via DefaultRelevancyQuery (ShipTag) even while ghostId is still 0.
             // LocalShipEntitySeed.NotifyShipInstantiated records the client replica — no gather.
             bool hullArrived = LocalShipEntitySeed.HasLiveOwnedShipSeed(em);
-
             int instantiates = TitanOrbitJoinLoadCounters.InstantiatesSession;
 
-            if (!hullArrived && s_HullWaitFrames < MaxHullWaitFrames)
+            if (!hullArrived)
             {
                 s_HullWaitFrames++;
                 if (s_HullWaitFrames == 1 || s_HullWaitFrames % 60 == 0)
                 {
                     UnityEngine.Debug.Log(
                         "[TeamChoiceResult] Waiting for GhostReceive owner ship before Confirm " +
-                        $"(wait={s_HullWaitFrames}/{MaxHullWaitFrames}, " +
-                        $"instantiates={instantiates}).");
+                        $"(wait={s_HullWaitFrames}, instantiates={instantiates}).");
                 }
 
                 return;

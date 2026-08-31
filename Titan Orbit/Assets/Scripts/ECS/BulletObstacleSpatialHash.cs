@@ -55,6 +55,12 @@ namespace TitanOrbit.ECS
         /// <summary>Bullet-scale pad so a heavy bolt still finds its cell.</summary>
         public const float BulletPad = 0.85f;
 
+        /// <summary>Bump when a rock dies or respawns so the asteroid half of the hash rebuilds.</summary>
+        public static int AsteroidCacheGeneration;
+
+        static NativeList<BulletObstacleEntry> s_asteroidCache;
+        static int s_asteroidCacheGeneration = -1;
+
         public NativeList<BulletObstacleEntry> Entries;
 
         NativeParallelMultiHashMap<int, int> _cells;
@@ -64,11 +70,60 @@ namespace TitanOrbit.ECS
         float _mapH;
         bool _created;
 
+        /// <summary>Call from asteroid kill / respawn so the next combat tick rebuilds rock cells.</summary>
+        public static void InvalidateAsteroidCache()
+        {
+            unchecked
+            {
+                AsteroidCacheGeneration++;
+            }
+        }
+
+        /// <summary>Releases the persistent asteroid cache (system OnDestroy).</summary>
+        public static void DisposeAsteroidCache()
+        {
+            if (s_asteroidCache.IsCreated)
+                s_asteroidCache.Dispose();
+            s_asteroidCache = default;
+            s_asteroidCacheGeneration = -1;
+        }
+
         /// <summary>True after <see cref="Build"/>.</summary>
         public bool IsCreated => _created;
 
         /// <summary>How many bodies were inserted this tick.</summary>
         public int Count => Entries.IsCreated ? Entries.Length : 0;
+
+        static void EnsureAsteroidCache(EntityQuery asteroidQuery)
+        {
+            if (s_asteroidCache.IsCreated && s_asteroidCacheGeneration == AsteroidCacheGeneration)
+                return;
+
+            if (s_asteroidCache.IsCreated)
+                s_asteroidCache.Clear();
+            else
+                s_asteroidCache = new NativeList<BulletObstacleEntry>(384, Allocator.Persistent);
+
+            using var asteroids = asteroidQuery.ToEntityArray(Allocator.Temp);
+            using var asteroidXf = asteroidQuery.ToComponentDataArray<LocalTransform>(Allocator.Temp);
+            using var asteroidStates = asteroidQuery.ToComponentDataArray<AsteroidState>(Allocator.Temp);
+            for (int i = 0; i < asteroids.Length; i++)
+            {
+                var asteroid = asteroidStates[i];
+                if (asteroid.IsDestroyed || asteroid.Health <= 0f)
+                    continue;
+
+                s_asteroidCache.Add(new BulletObstacleEntry
+                {
+                    Entity = asteroids[i],
+                    Position = asteroidXf[i].Position,
+                    Radius = BulletCollision.AsteroidHitRadiusForSweep(asteroidXf[i].Scale, 1f),
+                    Kind = BulletObstacleKind.Asteroid,
+                });
+            }
+
+            s_asteroidCacheGeneration = AsteroidCacheGeneration;
+        }
 
         /// <summary>
         /// Builds the hash from the same entity sets Phase A already needs.
@@ -87,14 +142,13 @@ namespace TitanOrbit.ECS
             using var shipXf = shipQuery.ToComponentDataArray<LocalTransform>(Allocator.Temp);
             using var shipStates = shipQuery.ToComponentDataArray<ShipState>(Allocator.Temp);
             using var shipOwners = shipQuery.ToComponentDataArray<GhostOwner>(Allocator.Temp);
-            using var asteroids = asteroidQuery.ToEntityArray(Allocator.Temp);
-            using var asteroidXf = asteroidQuery.ToComponentDataArray<LocalTransform>(Allocator.Temp);
-            using var asteroidStates = asteroidQuery.ToComponentDataArray<AsteroidState>(Allocator.Temp);
+            EnsureAsteroidCache(asteroidQuery);
             using var transports = transportQuery.ToEntityArray(Allocator.Temp);
             using var transportXf = transportQuery.ToComponentDataArray<LocalTransform>(Allocator.Temp);
             using var transportStates = transportQuery.ToComponentDataArray<PeopleTransportState>(Allocator.Temp);
 
-            int n = ships.Length + asteroids.Length + transports.Length;
+            int asteroidN = s_asteroidCache.IsCreated ? s_asteroidCache.Length : 0;
+            int n = ships.Length + asteroidN + transports.Length;
             // MEGA hulls stamp many cells — oversize so the map does not resize mid-build.
             var hash = new BulletObstacleSpatialHash
             {
@@ -148,21 +202,10 @@ namespace TitanOrbit.ECS
                 });
             }
 
-            for (int i = 0; i < asteroids.Length; i++)
+            if (s_asteroidCache.IsCreated)
             {
-                var asteroid = asteroidStates[i];
-                if (asteroid.IsDestroyed || asteroid.Health <= 0f)
-                    continue;
-
-                float3 pos = asteroidXf[i].Position;
-                float radius = BulletCollision.AsteroidHitRadiusForSweep(asteroidXf[i].Scale, 1f);
-                hash.Add(new BulletObstacleEntry
-                {
-                    Entity = asteroids[i],
-                    Position = pos,
-                    Radius = radius,
-                    Kind = BulletObstacleKind.Asteroid,
-                });
+                for (int i = 0; i < s_asteroidCache.Length; i++)
+                    hash.Add(s_asteroidCache[i]);
             }
 
             for (int i = 0; i < transports.Length; i++)

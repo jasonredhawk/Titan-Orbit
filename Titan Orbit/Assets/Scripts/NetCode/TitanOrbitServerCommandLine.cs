@@ -150,6 +150,20 @@ namespace TitanOrbit.NetCode
             ushort? edgegapPort = TitanOrbitEdgegapEnvironment.TryGetGameportInternal();
             if (edgegapPort.HasValue)
                 config.ServerPort = edgegapPort.Value;
+
+            // Plugin "Test locally" injects a dummy public IP:port. Advertise loopback + the
+            // container listen port so the Editor UDP-connects to docker -p 7777:7777/udp.
+            if (TitanOrbitEdgegapEnvironment.IsLocalPluginTest)
+            {
+                bool cliAddress = !string.IsNullOrWhiteSpace(GetArgString("publicAddress", null));
+                bool envAddress = !string.IsNullOrWhiteSpace(
+                    Environment.GetEnvironmentVariable("TITANORBIT_PUBLIC_ADDRESS"));
+                if (!cliAddress && !envAddress)
+                    config.PublicAddress = "127.0.0.1";
+                if (GetArgInt("publicPort", 0) < 1)
+                    config.PublicPort = config.ServerPort;
+            }
+
             TitanOrbitEdgegapEnvironment.LogBootIfPresent(config.ServerPort);
             return config;
         }
