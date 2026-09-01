@@ -351,8 +351,8 @@ namespace TitanOrbit.ECS
     }
 
     /// <summary>
-    /// [NETCODE] Server → all clients: people-transport <b>end-of-life</b> only (Consumed / Destroyed).
-    /// In-flight pose is dead-reckoned from <see cref="PeopleTransportSpawnRpc"/> — not a per-tick RPC.
+    /// [NETCODE] Server → all clients: authoritative people-transport pose / end-of-life.
+    /// Server sim + bullets own the entity; clients only mirror this for VFX (no PeopleTransportGhost).
     /// Wire size ~32 bytes — must match Linux headless layout.
     /// </summary>
     public struct PeopleTransportPoseRpc : IRpcCommand
@@ -491,9 +491,7 @@ namespace TitanOrbit.ECS
 
         /// <summary>
         /// Shooter NetworkId for orphan-tracer reconcile when Sequence was never bound.
-        /// On Sequence-0 ship rams this is the <b>victim</b> GhostOwner so floats bind
-        /// to the damaged hull instead of surface-fitting two overlapping ships.
-        /// 0 on asteroid ram/grind.
+        /// 0 on ram/grind (Sequence 0).
         /// </summary>
         public int OwnerNetworkId;
 

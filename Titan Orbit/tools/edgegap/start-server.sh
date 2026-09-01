@@ -31,6 +31,7 @@ echo "TITANORBIT_EDGEGAP exe=$EXE port=$PORT deployment=${ARBITRIUM_REQUEST_ID:-
 exec "$EXE" -batchmode -nographics -logFile /dev/stdout \
   --maxPlayers="${TITANORBIT_MAX_PLAYERS:-60}" \
   --serverPort="$PORT" \
+  --relayProtocol="${TITANORBIT_RELAY_PROTOCOL:-dtls}" \
   --serverListenAddress=0.0.0.0 \
   --isLatest="${TITANORBIT_IS_LATEST:-1}" \
   --serverExecutablePath="$(readlink -f "$EXE" || echo "$PWD/$EXE")" \

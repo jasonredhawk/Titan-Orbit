@@ -174,7 +174,6 @@ namespace TitanOrbit.ECS
                 }
                 else
                 {
-                    PlanetConnectionGraphCache.RequestClientRebuild();
                     UnityEngine.Debug.Log(
 #if UNITY_WEBGL && !UNITY_EDITOR
                         "[JoinSettle] Settling OFF — TransformSystemGroup OFF (WebGL). " +

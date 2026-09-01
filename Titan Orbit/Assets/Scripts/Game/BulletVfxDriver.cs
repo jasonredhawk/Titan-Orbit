@@ -742,26 +742,13 @@ namespace TitanOrbit.Game
                     var ramTeam = (TeamId)hit.OwnerTeam;
                     int ramBank = math.max(0, hit.BankIndex);
                     float ramScale = hit.ScaleMultiplier > 0f ? hit.ScaleMultiplier : 1f;
-                    bool shipRam = hit.AsteroidHealthAfter < 0f && hit.PlanetaryDefensePlanetId <= 0;
-                    if (shipRam)
-                    {
-                        // Profiler (Play capture): Instantiates BlueLaserBoltImpact + SciFiLightFade
-                        // GC during ship rams. Floats only — no bullet-explosion prefab.
-                        TryShowShipFloatForHitRpc(hitPos, hit.Damage, ramTeam, hit.OwnerNetworkId);
-                        if (hit.MountIndex > 0 && hit.MountIndex != hit.OwnerNetworkId)
-                            TryShowShipFloatForHitRpc(hitPos, hit.Damage, ramTeam, hit.MountIndex);
-                    }
-                    else
-                    {
-                        BulletImpactAttach.PlayAtLogicalPoint(
-                            hit.HitPosition, _bank, ramBank, ramTeam, hit.Damage, ramScale);
-                        var ramSynth = new Tracer { OwnerNetworkId = hit.OwnerNetworkId, IsAnticipation = false };
-                        TryShowHitRpcFloats(
-                            hitPos, hit.HitPosition, hit.Damage, ramTeam,
-                            hit.AsteroidHealthAfter, hit.PlanetaryDefensePlanetId, in ramSynth,
-                            victimNetworkId: hit.OwnerNetworkId);
-                    }
+                    BulletImpactAttach.PlayAtLogicalPoint(
+                        hit.HitPosition, _bank, ramBank, ramTeam, hit.Damage, ramScale);
 
+                    var ramSynth = new Tracer { OwnerNetworkId = 0, IsAnticipation = false };
+                    TryShowHitRpcFloats(
+                        hitPos, hit.HitPosition, hit.Damage, ramTeam,
+                        hit.AsteroidHealthAfter, hit.PlanetaryDefensePlanetId, in ramSynth);
                     continue;
                 }
 
@@ -878,14 +865,13 @@ namespace TitanOrbit.Game
             TeamId ownerTeam,
             float asteroidHealthAfter,
             int planetaryDefensePlanetId,
-            in Tracer tracer,
-            int victimNetworkId = 0)
+            in Tracer tracer)
         {
             // Planetary-defense pad HP is applied in BulletHitRpcClientSystem — not a ship hull.
             if (asteroidHealthAfter < 0f)
             {
                 if (planetaryDefensePlanetId <= 0)
-                    TryShowShipFloatForHitRpc(hitDisplayPos, damage, ownerTeam, victimNetworkId);
+                    TryShowShipFloatForHitRpc(hitDisplayPos, damage, ownerTeam);
                 return;
             }
 
@@ -923,26 +909,12 @@ namespace TitanOrbit.Game
         static void TryShowShipFloatForHitRpc(
             Vector3 hitDisplayPos,
             float damage,
-            TeamId ownerTeam,
-            int victimNetworkId = 0)
+            TeamId ownerTeam)
         {
             if (damage <= 0.01f)
                 return;
-
-            Entity shipEntity = Entity.Null;
-            if (victimNetworkId > 0)
-            {
-                var world = EcsGameBridge.GetVisualizationWorld();
-                if (world == null || !world.IsCreated)
-                    return;
-                if (!BulletMuzzlePresentation.TryFindShipProxyByNetworkId(
-                        world.EntityManager, victimNetworkId, out shipEntity))
-                    return;
-            }
-            else if (!BulletCosmeticHitQuery.TryFindShipAtImpact(hitDisplayPos, out shipEntity))
-            {
+            if (!BulletCosmeticHitQuery.TryFindShipAtImpact(hitDisplayPos, out Entity shipEntity))
                 return;
-            }
 
             EcsFloatingCountPresenter.TryNotifyShipBulletHit(shipEntity, damage, ownerTeam);
         }

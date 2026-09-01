@@ -22,14 +22,7 @@ namespace TitanOrbit.ECS
     /// Bounce / PhysX still use <see cref="ShipMassLogic.ComputeRammingMass"/> elsewhere.
     /// </para>
     /// <para>
-    /// Targets: asteroids (impact + grind) and other living ships (impact + grind, both hulls),
-    /// including same-team — ram is physical, not a friendly-fire filter.
-    /// Ship↔ship uses the same products as rocks: harder closing / harder thrust = more damage.
-    /// One shared collision chip is applied to both hulls (the harder ship's product), so the
-    /// two ships take the same thud / grind — not each other's different rating × mass.
-    /// Contact-enter broadcasts one Sequence-0 <see cref="BulletHitRpc"/> for the pair
-    /// (one explosion, both hull floats). Grind does not send HitRpc — ghost Health drives
-    /// floats so 4 Hz pulses cannot hitch the remote client with obstacle-cache rebuilds.
+    /// Targets: asteroids (impact + grind) and enemy ships (impact reciprocal damage).
     /// MEGA hulls plow asteroids: first contact instantly destroys the rock and applies
     /// remaining rock Health × <see cref="MegaShipCatalog.asteroidPlowDamageMultiplier"/>
     /// (default 1) — no grind, so a field does not stall the hull.
@@ -51,14 +44,8 @@ namespace TitanOrbit.ECS
         /// <summary>Keep grind sticky this many ticks after the last real collision event.</summary>
         const byte MaxMissedTicks = 3;
 
-        /// <summary>Minimum closing speed (u/s) to fire an asteroid impact pulse on contact enter.</summary>
+        /// <summary>Minimum closing speed (u/s) to fire an impact pulse on contact enter.</summary>
         const float ImpactMinClosingSpeed = 0.35f;
-
-        /// <summary>
-        /// Ship↔ship contact-enter always chips. Soft docks can report ~0 closing after the
-        /// solver, so damage uses at least this approach speed in the rating × mass × closing product.
-        /// </summary>
-        const float ShipImpactMinClosingSpeed = 1.5f;
 
         /// <summary>Require queue + ships.</summary>
         public void OnCreate(ref SystemState state)
@@ -96,47 +83,22 @@ namespace TitanOrbit.ECS
                 state.EntityManager, now);
 
             // --- Ensure sticky buffers on ships that still lack them ---
-            // [ECS/DOTS] Allocate the ECB only when a ship is actually missing the buffer.
+            // [ECS/DOTS] WithNone so we do not allocate an ECB every grind tick for ships that
+            // already have the buffer (all of them after the first spawn).
             {
-                EntityCommandBuffer ensureEcb = default;
                 bool anyMissing = false;
+                var ensureEcb = new EntityCommandBuffer(Allocator.Temp);
                 foreach (var (_, entity) in SystemAPI.Query<RefRO<ShipTag>>()
                              .WithNone<ShipRamContactElement>()
                              .WithEntityAccess())
                 {
-                    if (!anyMissing)
-                    {
-                        ensureEcb = new EntityCommandBuffer(Allocator.Temp);
-                        anyMissing = true;
-                    }
-
                     ensureEcb.AddBuffer<ShipRamContactElement>(entity);
+                    anyMissing = true;
                 }
 
                 if (anyMissing)
-                {
                     ensureEcb.Playback(state.EntityManager);
-                    ensureEcb.Dispose();
-                }
-            }
-
-            // --- No contacts and no sticky grind: skip hashset / ECB / ship walk ---
-            // [TITAN-ORBIT] This system is OrderLast in PredictedFixedStep. Allocating every
-            // physics tick was visible as UnsafeUtility.Malloc spikes while hulls were idle
-            // and still cost during ship↔ship when the queue was only a couple of pairs.
-            if (queue.Length == 0)
-            {
-                bool anySticky = false;
-                foreach (var contacts in SystemAPI.Query<DynamicBuffer<ShipRamContactElement>>())
-                {
-                    if (contacts.Length <= 0)
-                        continue;
-                    anySticky = true;
-                    break;
-                }
-
-                if (!anySticky)
-                    return;
+                ensureEcb.Dispose();
             }
 
             // --- Mark which (ship, target) pairs collided this tick ---
@@ -290,9 +252,7 @@ namespace TitanOrbit.ECS
                 }
 
                 // --- Impact on contact enter: rating × totalMass × closingSpeed ---
-                bool fireImpact = isNewContact &&
-                    (otherIsShip || closing >= ImpactMinClosingSpeed);
-                if (fireImpact)
+                if (isNewContact && closing >= ImpactMinClosingSpeed)
                 {
                     if (!otherIsShip)
                     {
@@ -327,11 +287,9 @@ namespace TitanOrbit.ECS
                     }
                     else
                     {
-                        // Any living pair: reciprocal hull damage from each ship's ramming power.
-                        // Soft docks can report ~0 closing after the solver — floor so the thud chips.
-                        float shipClosing = math.max(closing, ShipImpactMinClosingSpeed);
+                        // Enemy ship: reciprocal hull damage from each ship's ramming power.
                         ApplyShipVsShipImpact(
-                            ref state, shipEntity, other, shipClosing, fixedDt,
+                            ref state, shipEntity, other, closing, fixedDt,
                             gemPrefab, spawnServerTime, ecb, now);
                         ship = state.EntityManager.GetComponentData<ShipState>(shipEntity);
                         // Sticky bookkeeping on the other hull too.
@@ -398,32 +356,6 @@ namespace TitanOrbit.ECS
                         state.EntityManager.SetComponentData(shipEntity, ship);
 
                         contact.NextGrindTime = now + pulse;
-                    }
-                }
-
-                // --- Ship grind: one shared 4 Hz pulse on both hulls ---
-                // Sum thrusting ships' grind products (harder thrust = more). Same number
-                // on both hulls — no extra asteroid-style self chip (that doubled the pusher).
-                if (otherIsShip &&
-                    now >= contact.NextGrindTime &&
-                    !ship.IsDead)
-                {
-                    var otherShipState = state.EntityManager.HasComponent<ShipState>(other)
-                        ? state.EntityManager.GetComponentData<ShipState>(other)
-                        : default;
-                    if (!otherShipState.IsDead)
-                    {
-                        bool aThrust = IsThrustingForRam(ref state, shipEntity);
-                        bool bThrust = IsThrustingForRam(ref state, other);
-                        if (aThrust || bThrust)
-                        {
-                            ApplyShipVsShipGrind(
-                                ref state, shipEntity, other, aThrust, bThrust,
-                                gemPrefab, spawnServerTime, ecb, now);
-                            ship = state.EntityManager.GetComponentData<ShipState>(shipEntity);
-                            contact.NextGrindTime =
-                                now + ShipComponentRammingSuggestions.GrindPulseIntervalSeconds;
-                        }
                     }
                 }
 
@@ -525,8 +457,10 @@ namespace TitanOrbit.ECS
                 var shipB = state.EntityManager.GetComponentData<ShipState>(b);
                 if (shipA.IsDead || shipB.IsDead)
                     return false;
-                if (shipA.AwaitingTeamSelection || shipB.AwaitingTeamSelection)
+                if (shipA.Team == TeamId.None || shipB.Team == TeamId.None)
                     return false;
+                if (shipA.Team == shipB.Team)
+                    return false; // friendly — bounce only, no ram damage
 
                 shipEntity = a;
                 other = b;
@@ -538,11 +472,7 @@ namespace TitanOrbit.ECS
             return false;
         }
 
-        /// <summary>
-        /// One shared impact chip on both hulls. Uses the harder ship's
-        /// <c>rating × totalMass × closing</c> so a heavier ram still hurts more, but both
-        /// players lose the same hull (before per-ship card resist).
-        /// </summary>
+        /// <summary>Reciprocal impact damage between two enemy ships (one unordered pair).</summary>
         static void ApplyShipVsShipImpact(
             ref SystemState state,
             Entity shipA,
@@ -554,208 +484,81 @@ namespace TitanOrbit.ECS
             EntityCommandBuffer ecb,
             double now)
         {
-            bool haveA = TryComputeShipImpactProduct(
-                ref state, shipA, closing, out float dmgA, out float massA);
-            bool haveB = TryComputeShipImpactProduct(
-                ref state, shipB, closing, out float dmgB, out float massB);
-            if (!haveA && !haveB)
-                return;
-
-            float shared = math.max(dmgA, dmgB);
-            if (shared <= 0.0001f)
-                return;
-
-            Entity harder = !haveB || (haveA && dmgA >= dmgB) ? shipA : shipB;
-            float harderMass = harder.Equals(shipA) ? massA : massB;
-            float impactForceN = (harderMass * closing) / math.max(1e-4f, fixedDt);
-            float intensity = ShipComponentRammingSuggestions.ComputeRamImpactGemExpulsionIntensity(
-                impactForceN, shared);
-
-            ApplySharedShipRamToHull(
-                ref state, shipA, shipB, shared, intensity,
-                gemPrefab, spawnServerTime, ecb, now);
-            ApplySharedShipRamToHull(
-                ref state, shipB, shipA, shared, intensity,
-                gemPrefab, spawnServerTime, ecb, now);
-            NotifyRamShipPair(ref state, ref ecb, harder, shipA, shipB, shared);
+            ApplyOneShipOffense(
+                ref state, shipA, shipB, closing, fixedDt, gemPrefab, spawnServerTime, ecb, now);
+            ApplyOneShipOffense(
+                ref state, shipB, shipA, closing, fixedDt, gemPrefab, spawnServerTime, ecb, now);
         }
 
-        /// <summary>
-        /// One shared grind pulse on both hulls: sum of each thrusting ship's
-        /// <c>rating × totalMass × taxedAccel × interval</c>.
-        /// </summary>
-        static void ApplyShipVsShipGrind(
+        /// <summary>Offender's ramming stats deal hull damage to the victim.</summary>
+        static void ApplyOneShipOffense(
             ref SystemState state,
-            Entity shipA,
-            Entity shipB,
-            bool aThrust,
-            bool bThrust,
-            Entity gemPrefab,
-            float spawnServerTime,
-            EntityCommandBuffer ecb,
-            double now)
-        {
-            float pulseA = 0f;
-            float pulseB = 0f;
-            float accelHint = 0f;
-            if (aThrust && TryComputeShipGrindPulse(ref state, shipA, out pulseA, out float accelA))
-                accelHint = math.max(accelHint, accelA);
-            if (bThrust && TryComputeShipGrindPulse(ref state, shipB, out pulseB, out float accelB))
-                accelHint = math.max(accelHint, accelB);
-
-            float shared = pulseA + pulseB;
-            if (shared <= 0.0001f)
-                return;
-
-            Entity harder = pulseA >= pulseB ? shipA : shipB;
-            float intensity = ShipComponentRammingSuggestions.ComputeRamGrindGemExpulsionIntensity(
-                accelHint, shared);
-
-            ApplySharedShipRamToHull(
-                ref state, shipA, shipB, shared, intensity,
-                gemPrefab, spawnServerTime, ecb, now);
-            ApplySharedShipRamToHull(
-                ref state, shipB, shipA, shared, intensity,
-                gemPrefab, spawnServerTime, ecb, now);
-        }
-
-        /// <summary>Applies the shared ram chip to one hull. No HitRpc (caller decides).</summary>
-        static void ApplySharedShipRamToHull(
-            ref SystemState state,
+            Entity offender,
             Entity victim,
-            Entity other,
-            float damage,
-            float intensity,
+            float closing,
+            float fixedDt,
             Entity gemPrefab,
             float spawnServerTime,
             EntityCommandBuffer ecb,
             double now)
         {
-            if (!state.EntityManager.HasComponent<ShipState>(victim) ||
+            if (!state.EntityManager.HasComponent<ShipState>(offender) ||
+                !state.EntityManager.HasComponent<ShipState>(victim) ||
+                !state.EntityManager.HasComponent<ShipMotorConfig>(offender) ||
                 !state.EntityManager.HasComponent<LocalTransform>(victim))
                 return;
+
             if (IsMoonDockImmune(ref state, victim))
                 return;
 
+            var offShip = state.EntityManager.GetComponentData<ShipState>(offender);
+            var offMotor = state.EntityManager.GetComponentData<ShipMotorConfig>(offender);
             var vicShip = state.EntityManager.GetComponentData<ShipState>(victim);
-            if (vicShip.IsDead)
-                return;
+
+            ResolveMobilityRamInputs(in offShip, in offMotor, out float totalMass, out _);
+            float ramPower = offMotor.RammingPower;
+            int ramBankIndex = 0;
+            if (state.EntityManager.HasComponent<ShipLoadoutState>(offender))
+                ramBankIndex = BulletBankFireResolve.ResolveFireBankIndex(
+                    state.EntityManager.GetComponentData<ShipLoadoutState>(offender));
+            ramPower *= BulletBankCombatLogic.GetRammingPowerMultiplier(ramBankIndex);
+            float ramRating = ShipComponentRammingSuggestions.ComputeDamageRatingFromFamilyPower(ramPower);
+
+            float damage = ShipComponentRammingSuggestions.ComputeImpactDamage(
+                ramRating, totalMass, closing);
+
+            float impactForceN = (totalMass * closing) / math.max(1e-4f, fixedDt);
+            float intensity = ShipComponentRammingSuggestions.ComputeRamImpactGemExpulsionIntensity(
+                impactForceN, damage);
 
             float3 vicPos = state.EntityManager.GetComponentData<LocalTransform>(victim).Position;
-            int damagerNetworkId = 0;
-            if (state.EntityManager.HasComponent<GhostOwner>(other))
-                damagerNetworkId = state.EntityManager.GetComponentData<GhostOwner>(other).NetworkId;
+            // [TITAN-ORBIT] Credit the offender as last damager for kill stats.
+            int offenderNetworkId = 0;
+            if (state.EntityManager.HasComponent<GhostOwner>(offender))
+                offenderNetworkId = state.EntityManager.GetComponentData<GhostOwner>(offender).NetworkId;
+
+            float2 ramImpulse = float2.zero;
+            if (state.EntityManager.HasComponent<LocalTransform>(offender))
+            {
+                float3 offPos = state.EntityManager.GetComponentData<LocalTransform>(offender).Position;
+                if (ToroidalMapEcs.TryGetMapSize(out float mapW, out float mapH))
+                {
+                    float3 off = ToroidalMapEcs.ShortestOffsetXZ(offPos, vicPos, mapW, mapH);
+                    ramImpulse = new float2(off.x, off.z);
+                }
+                else
+                {
+                    ramImpulse = new float2(vicPos.x - offPos.x, vicPos.z - offPos.z);
+                }
+            }
 
             ApplyShipSelfDamage(
                 ref state, ref vicShip, victim, damage, intensity,
                 gemPrefab, vicPos, spawnServerTime, ecb, now,
-                damagerNetworkId: damagerNetworkId,
-                impulseXZ: RamImpulseXz(ref state, other, vicPos),
+                damagerNetworkId: offenderNetworkId,
+                impulseXZ: ramImpulse,
                 impulsePower: damage);
             state.EntityManager.SetComponentData(victim, vicShip);
-        }
-
-        static bool TryComputeShipImpactProduct(
-            ref SystemState state,
-            Entity shipEntity,
-            float closing,
-            out float damage,
-            out float totalMass)
-        {
-            damage = 0f;
-            totalMass = 0f;
-            if (!state.EntityManager.HasComponent<ShipState>(shipEntity) ||
-                !state.EntityManager.HasComponent<ShipMotorConfig>(shipEntity))
-                return false;
-
-            var ship = state.EntityManager.GetComponentData<ShipState>(shipEntity);
-            var motor = state.EntityManager.GetComponentData<ShipMotorConfig>(shipEntity);
-            if (ship.IsDead)
-                return false;
-
-            ResolveMobilityRamInputs(in ship, in motor, out totalMass, out _);
-            float ramRating = ResolveRamRating(ref state, shipEntity, motor);
-            damage = ShipComponentRammingSuggestions.ComputeImpactDamage(ramRating, totalMass, closing);
-            return damage > 0.0001f;
-        }
-
-        static bool TryComputeShipGrindPulse(
-            ref SystemState state,
-            Entity shipEntity,
-            out float damage,
-            out float taxedAccel)
-        {
-            damage = 0f;
-            taxedAccel = 0f;
-            if (!state.EntityManager.HasComponent<ShipState>(shipEntity) ||
-                !state.EntityManager.HasComponent<ShipMotorConfig>(shipEntity))
-                return false;
-
-            var ship = state.EntityManager.GetComponentData<ShipState>(shipEntity);
-            var motor = state.EntityManager.GetComponentData<ShipMotorConfig>(shipEntity);
-            if (ship.IsDead)
-                return false;
-
-            ResolveMobilityRamInputs(in ship, in motor, out float totalMass, out taxedAccel);
-            float ramRating = ResolveRamRating(ref state, shipEntity, motor);
-            float pulse = ShipComponentRammingSuggestions.GrindPulseIntervalSeconds;
-            damage = ShipComponentRammingSuggestions.ComputeGrindDamagePerPulse(
-                ramRating, totalMass, taxedAccel, pulse);
-            return damage > 0.0001f;
-        }
-
-        /// <summary>
-        /// True when this ship is holding Thrust and can deal / take ship grind this tick.
-        /// Asteroid grind still uses the into-normal push gate; ship grind does not.
-        /// </summary>
-        static bool IsThrustingForRam(ref SystemState state, Entity shipEntity)
-        {
-            if (!state.EntityManager.HasComponent<ShipInput>(shipEntity) ||
-                !state.EntityManager.HasComponent<ShipState>(shipEntity))
-                return false;
-
-            if (!state.EntityManager.GetComponentData<ShipInput>(shipEntity).Thrust)
-                return false;
-
-            if (state.EntityManager.HasComponent<ShipTurretControlState>(shipEntity) &&
-                state.EntityManager.GetComponentData<ShipTurretControlState>(shipEntity).IsControlling)
-                return false;
-
-            if (IsMoonDockImmune(ref state, shipEntity))
-                return false;
-
-            var ship = state.EntityManager.GetComponentData<ShipState>(shipEntity);
-            return !ship.IsDead && !ship.AwaitingTeamSelection;
-        }
-
-        /// <summary>Family rammingPower × bank multiplier → damage rating (same as impact).</summary>
-        static float ResolveRamRating(ref SystemState state, Entity shipEntity, in ShipMotorConfig motor)
-        {
-            float ramPower = motor.RammingPower > 0.001f
-                ? motor.RammingPower
-                : ShipFamilyDefaultFallbackStats.CreateBaseline().rammingPower;
-            int ramBankIndex = 0;
-            if (state.EntityManager.HasComponent<ShipLoadoutState>(shipEntity))
-                ramBankIndex = BulletBankFireResolve.ResolveFireBankIndex(
-                    state.EntityManager.GetComponentData<ShipLoadoutState>(shipEntity));
-            ramPower *= BulletBankCombatLogic.GetRammingPowerMultiplier(ramBankIndex);
-            return ShipComponentRammingSuggestions.ComputeDamageRatingFromFamilyPower(ramPower);
-        }
-
-        /// <summary>Toroidal XZ from offender toward victim for death-impulse bookkeeping.</summary>
-        static float2 RamImpulseXz(ref SystemState state, Entity from, float3 toPos)
-        {
-            if (!state.EntityManager.HasComponent<LocalTransform>(from))
-                return float2.zero;
-
-            float3 fromPos = state.EntityManager.GetComponentData<LocalTransform>(from).Position;
-            if (ToroidalMapEcs.TryGetMapSize(out float mapW, out float mapH))
-            {
-                float3 off = ToroidalMapEcs.ShortestOffsetXZ(fromPos, toPos, mapW, mapH);
-                return new float2(off.x, off.z);
-            }
-
-            return new float2(toPos.x - fromPos.x, toPos.z - fromPos.z);
         }
 
         /// <summary>
@@ -968,66 +771,6 @@ namespace TitanOrbit.ECS
                 bankIndex,
                 scaleMul,
                 healthAfter);
-        }
-
-        /// <summary>
-        /// One Sequence-0 HitRpc for the pair: one explosion at the toroidal midpoint,
-        /// both victim NetworkIds so clients park the same number on each hull.
-        /// </summary>
-        static void NotifyRamShipPair(
-            ref SystemState state,
-            ref EntityCommandBuffer ecb,
-            Entity vfxSource,
-            Entity shipA,
-            Entity shipB,
-            float damage)
-        {
-            if (damage <= 0.0001f)
-                return;
-            if (!state.EntityManager.HasComponent<LocalTransform>(shipA) ||
-                !state.EntityManager.HasComponent<LocalTransform>(shipB))
-                return;
-
-            float3 posA = state.EntityManager.GetComponentData<LocalTransform>(shipA).Position;
-            float3 posB = state.EntityManager.GetComponentData<LocalTransform>(shipB).Position;
-            posA.y = 0f;
-            posB.y = 0f;
-            float3 hitPos = posA;
-            if (ToroidalMapEcs.TryGetMapSize(out float mapW, out float mapH) &&
-                ToroidalMapEcs.IsValidMapSize(mapW, mapH))
-            {
-                float3 off = ToroidalMapEcs.ShortestOffsetXZ(posA, posB, mapW, mapH);
-                hitPos = ToroidalMapEcs.Wrap(posA + off * 0.5f, mapW, mapH);
-            }
-            else
-            {
-                hitPos = (posA + posB) * 0.5f;
-            }
-
-            hitPos.y = 0f;
-
-            int bankIndex = 0;
-            if (state.EntityManager.HasComponent<ShipLoadoutState>(vfxSource))
-                bankIndex = BulletBankFireResolve.ResolveFireBankIndex(
-                    state.EntityManager.GetComponentData<ShipLoadoutState>(vfxSource));
-
-            float cannonScale = 1f;
-            if (state.EntityManager.HasComponent<ShipWeaponConfig>(vfxSource))
-            {
-                float authored = state.EntityManager.GetComponentData<ShipWeaponConfig>(vfxSource).BulletScale;
-                if (authored > 0.1f)
-                    cannonScale = authored;
-            }
-
-            float scaleMul = BulletVisualScale.ComputePerShotScale(cannonScale, damage, 0f);
-            int idA = 0;
-            int idB = 0;
-            if (state.EntityManager.HasComponent<GhostOwner>(shipA))
-                idA = state.EntityManager.GetComponentData<GhostOwner>(shipA).NetworkId;
-            if (state.EntityManager.HasComponent<GhostOwner>(shipB))
-                idB = state.EntityManager.GetComponentData<GhostOwner>(shipB).NetworkId;
-            BulletNetNotify.SendRamShipHit(
-                ref ecb, hitPos, damage, bankIndex, scaleMul, idA, idB);
         }
 
         /// <summary>

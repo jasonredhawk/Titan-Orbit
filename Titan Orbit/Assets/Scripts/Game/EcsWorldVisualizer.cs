@@ -922,7 +922,7 @@ namespace TitanOrbit.Game
                 viewerTeam = em.GetComponentData<ShipState>(localShip).Team;
             }
 
-            int graphRevision = PlanetConnectionGraphCache.PresentationRevision;
+            int graphRevision = PlanetConnectionGraphCache.ClientPublishRevision;
             if (graphRevision != _lastAsteroidTintGraphRevision ||
                 viewerTeam != _lastAsteroidTintViewerTeam)
             {
@@ -1623,7 +1623,8 @@ namespace TitanOrbit.Game
 
         /// <summary>
         /// Remote ghosts interpolate <see cref="LocalTransform"/> in Euclidean space. A wrap
-        /// snapshot ( +edge → −edge ) would lerp across the whole map — snap that jump only.
+        /// snapshot ( +edge → −edge ) would lerp across the whole map. Snap when the jump is
+        /// a wrap, or when interpolated motion fights velocity near an edge.
         /// </summary>
         static Vector3 ResolveRemoteWrappedPose(
             EntityManager em,
@@ -1635,12 +1636,33 @@ namespace TitanOrbit.Game
             if (!ToroidalMapEcs.HasValidMapSize)
                 return raw;
 
-            // Snap only on a real wrap. Do not chase ghosted velocity near an edge —
-            // that fought NetCode interpolation and made remotes yaw/slide the wrong way.
             if (ToroidalMapEcs.IsWrapJump(previousDisplay, raw))
                 return raw;
 
-            return raw;
+            if (!em.HasComponent<ShipKinematics>(entity))
+                return raw;
+
+            float3 vel = em.GetComponentData<ShipKinematics>(entity).Velocity;
+            float speedSq = math.lengthsq(new float3(vel.x, 0f, vel.z));
+            if (speedSq < 4f)
+                return raw;
+
+            float3 delta = new float3(raw.x - previousDisplay.x, 0f, raw.z - previousDisplay.z);
+            if (math.lengthsq(delta) < 1f)
+                return raw;
+
+            float3 planarVel = math.normalize(new float3(vel.x, 0f, vel.z));
+            float3 planarDelta = math.normalize(delta);
+            bool opposing = math.dot(planarVel, planarDelta) < -0.25f;
+            float halfW = ToroidalMapEcs.MapWidth * 0.5f;
+            float halfH = ToroidalMapEcs.MapHeight * 0.5f;
+            bool nearEdge = math.abs(previousDisplay.x) > halfW * 0.8f ||
+                            math.abs(previousDisplay.z) > halfH * 0.8f;
+            if (!opposing || !nearEdge)
+                return raw;
+
+            float3 predicted = (float3)previousDisplay + vel * UnityEngine.Time.deltaTime;
+            return ToroidalMapEcs.Wrap(predicted);
         }
 
         /// <summary>

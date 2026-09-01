@@ -1,0 +1,93 @@
+---
+alwaysApply: false
+---
+# Titan Orbit — Smooth networked ship flight (Starblast pillars)
+
+Smooth flight is **not** prettier lerps. It is server-authoritative sim + predictable motors + correct client presentation. Inspiration: Starblast.io’s five pillars + custom math-driven motion, adapted to **Unity NetCode for Entities** (NCE) — not Netcode for GameObjects (NGO).
+
+Paired: pure ECS (`titan-orbit-pure-ecs-dots.mdc`), comments (`titan-orbit-educational-comments.mdc`). Deep dive: `Docs/TITAN-ORBIT-MASTER-GUIDE.md` Part 8.
+
+---
+
+## The five pillars (do not break)
+
+### 1. Client-side prediction (local ship)
+- Local owner runs the **same motor/physics step** immediately — do not wait for RTT before moving.
+- Shared logic only (`ShipPhysicsDriveLogic`, mass/collider helpers) — client and server must not diverge by accident.
+- Server is authoritative; NetCode reconciles (rollback + resim / `GhostPredictionSmoothing`). **Never** drive the local hull from MonoBehaviour `Update`/`LateUpdate` with a second physics path.
+
+### 2. Entity interpolation (remote ships)
+- Remotes show the **recent past**, not the newest raw snapshot on packet arrival.
+- Use NetCode ghost interpolation / presentation buffers (Lerp/Slerp). Do not teleport remotes to every `LocalTransform` write.
+- Camera and visuals read **presentation pose**, not raw sim.
+
+### 3. High friction, low agility (predictable motors)
+- Inertia + momentum + friction. No FPS-style instant 90° facing snaps.
+- Continuous accel/decel → smaller prediction error → fewer visible corrections.
+- Motor changes must stay mathematically continuous; radical feel changes need paired client+server review.
+
+### 4. Lag compensation (projectiles / hits)
+- Server validates hits against **where targets were at fire time**, not only “now.”
+- Prefer timestamp / rewind-style checks; do not “fix” misses with client-only VFX.
+- Knockback/damage stay server-authoritative.
+
+### 5. Lightweight presentation & payloads
+- Prefer Entities Graphics / ECS presentation over heavy hybrid proxy stacks for hull motion.
+- Keep ghost fields lean; avoid main-thread stalls and GC in tick/movement loops (`GC.Alloc` = micro-stutter).
+
+---
+
+## Why sim-calculated motion (Starblast’s real secret)
+
+Starblast uses **hand-written 2D math** (velocity, friction, simple primitives) — not a full commercial physics stack as the motor — so client and server stay deterministic and cheap.
+
+| Prefer | Avoid |
+|--------|--------|
+| Shared pure-math motor (`ShipPhysicsDriveLogic`) for thrust/turn | Divergent client vs server motor branches |
+| Planar (XZ) flight with continuous curves | Twitchy snap facing / FPS locomotion |
+| Same inputs → same result on both ends | Relying on PhysX alone for predicted motor feel |
+| Presentation reads smoothed pose **once** | Extra LateUpdate lerps on top of NetCode |
+
+**Titan Orbit motor contract (not “ban all Physics”):**
+- **Drive** = shared Burst-safe math → writes `PhysicsVelocity` / yaw (`ShipPhysicsDriveLogic`).
+- **Integrate / collide** = Unity Physics in `PhysicsSystemGroup` (position + hull collisions).
+- **Do not** add `Rigidbody` / PhysX GameObject forces, or a second NGO-style tick loop, for predicted flight.
+
+```csharp
+// ❌ BAD — camera/mesh follows raw sim (stepped / fights reconciliation)
+followTarget.position = simLocalTransform.Position;
+
+// ✅ GOOD — presentation after NetCode smoothing
+followTarget.position = presentationPose.Position;
+```
+
+**Non-negotiable pipeline:**
+`sim LocalTransform → NetCode prediction/interpolation → presentation pose → render/camera`
+One smoothing owner. Do not double-smooth.
+
+---
+
+## Stack map (this repo — not the Starblast/NGO tutorial)
+
+| Concept | Titan Orbit |
+|---------|-------------|
+| Tick / fixed dt | NetCode predicted fixed step (~60 Hz); not variable `Time.deltaTime` for motor |
+| Local prediction | `ShipClientPredictedPhysicsDriveSystem` + shared `ShipPhysicsDriveLogic` |
+| Server authority | `ShipPhysicsDriveSystem` (same math) |
+| Remotes | Ghost interpolation — buffer + Lerp/Slerp in presentation |
+| Reconciliation | NetCode rollback/resim + prediction smoothing — not a hand-rolled NGO circular buffer as the primary path |
+| Visuals | Presentation pose / cache → camera & hull render — **no** custom `Update` MoveTowards toward sim for the owner |
+
+**Forbidden for flight feel work:** NGO `NetworkBehaviour` / `NetworkVariable` motor paths; JSON payloads; allocating in the tick loop; reading raw sim for local camera when presentation exists.
+
+---
+
+## Agent checklist
+
+- [ ] Local ship: shared predicted sim — not a second GO physics path
+- [ ] Remotes: interpolated presentation — not snapshot teleports
+- [ ] Motor continuous / inertial — not twitchy snaps
+- [ ] Hits: server time-aware validation where applicable
+- [ ] Display reads presentation pose once
+- [ ] No new hybrid gameplay bridge for flight
+)

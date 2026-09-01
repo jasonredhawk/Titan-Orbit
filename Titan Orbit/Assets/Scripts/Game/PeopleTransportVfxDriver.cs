@@ -15,11 +15,11 @@ namespace TitanOrbit.Game
     /// Owns people-transport GameObject VFX (load / unload) and the arrive transfer SFX.
     /// <para>
     /// Server remains authoritative: non-ghost transport entities move, take bullet hits, and
-    /// deliver people. This driver Instantiates cosmetic spheres from
-    /// <see cref="PeopleTransportSpawnRpc"/> and dead-reckons with spawn velocity.
-    /// End-of-life (Consumed / Destroyed) still arrives as a one-off
-    /// <see cref="PeopleTransportPoseRpc"/>. It does <b>not</b> independently magnet-chase a
-    /// local ship pose (that caused Windows clients to fly toward a stale orbit point).
+    /// deliver people. This driver only Instantiates cosmetic spheres and mirrors
+    /// <see cref="PeopleTransportPoseRpc"/> (same positions the server uses for combat).
+    /// Between pose RPCs the sphere dead-reckons with the last server velocity — it does
+    /// <b>not</b> independently magnet-chase a local ship pose (that caused Windows clients to
+    /// fly toward a stale orbit point).
     /// </para>
     /// <para>
     /// On <see cref="PeopleTransportPoseStatus.Consumed"/> we play the people transfer one-shot
@@ -460,7 +460,7 @@ namespace TitanOrbit.Game
                     TileK = int.MinValue,
                     TileM = int.MinValue,
                     LeavePopupShown = false,
-                    HasServerPose = true,
+                    HasServerPose = false,
                 };
 
                 // Leave: planet −N (load) or ship −N (unload). Arrive is a separate target.

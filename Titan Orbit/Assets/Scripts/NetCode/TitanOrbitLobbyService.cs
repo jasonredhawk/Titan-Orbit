@@ -16,10 +16,6 @@ namespace TitanOrbit.NetCode
     public static class TitanOrbitLobbyService
     {
         public const string LobbyRelayCodeKey = "RelayJoinCode";
-        /// <summary>Public IPv4 clients connect to (replaces Unity Relay join codes).</summary>
-        public const string LobbyHostAddressKey = "HostAddress";
-        /// <summary>Public UDP/WSS port clients connect to.</summary>
-        public const string LobbyHostPortKey = "HostPort";
         public const string LobbyGameNameKey = "GameName";
         public const string LobbyGameNameValue = "TitanOrbit";
         public const string LobbyIsOpenKey = "IsOpen";
@@ -371,12 +367,6 @@ namespace TitanOrbit.NetCode
                 return false;
             }
 
-            if (!TryGetHostEndpoint(lobby, out _, out _))
-            {
-                rejectReason = "lobby has no host address (server needs a rebuild without Unity Relay)";
-                return false;
-            }
-
             if (lobby.Data.TryGetValue(LobbyIsOpenKey, out DataObject io) && io != null &&
                 !string.Equals(io.Value, "1", StringComparison.Ordinal))
             {
@@ -398,27 +388,6 @@ namespace TitanOrbit.NetCode
             }
 
             return true;
-        }
-
-        /// <summary>Reads the advertised dedicated host IP:port from lobby data.</summary>
-        public static bool TryGetHostEndpoint(Lobby lobby, out string address, out ushort port)
-        {
-            address = null;
-            port = 0;
-            if (lobby?.Data == null)
-                return false;
-
-            if (!lobby.Data.TryGetValue(LobbyHostAddressKey, out DataObject hostObj) ||
-                string.IsNullOrWhiteSpace(hostObj?.Value))
-                return false;
-
-            address = hostObj.Value.Trim();
-            port = TitanOrbitServerCommandLine.DefaultServerPort;
-            if (lobby.Data.TryGetValue(LobbyHostPortKey, out DataObject portObj) &&
-                ushort.TryParse(portObj?.Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out ushort parsed))
-                port = parsed;
-
-            return address.Length > 0 && port > 0;
         }
 
         public static async Task<bool> RequestDedicatedMatchCreationAsync()
@@ -580,20 +549,20 @@ namespace TitanOrbit.NetCode
                     if (!IsLobbyJoinAlreadyMemberFailure(e))
                         throw;
 
-                    Debug.Log("[TitanOrbitLobbyService] Already a lobby member; using GetLobbyAsync for host endpoint.");
+                    Debug.Log("[TitanOrbitLobbyService] Already a lobby member; using GetLobbyAsync for relay details.");
                     joined = await WithLobbyApiTimeoutAsync(
                         LobbyService.Instance.GetLobbyAsync(id),
                         TimeSpan.FromSeconds(20),
                         "LobbyService.GetLobbyAsync");
                 }
 
-                // HostAddress may be omitted from query snapshots until GetLobby.
-                if (joined == null || joined.Data == null || !joined.Data.ContainsKey(LobbyHostAddressKey))
+                // RelayJoinCode is Member visibility; query responses may omit it until GetLobby.
+                if (joined == null || joined.Data == null || !joined.Data.ContainsKey(LobbyRelayCodeKey))
                 {
                     joined = await WithLobbyApiTimeoutAsync(
                         LobbyService.Instance.GetLobbyAsync(id),
                         TimeSpan.FromSeconds(20),
-                        "LobbyService.GetLobbyAsync(host_address)");
+                        "LobbyService.GetLobbyAsync(relay_code)");
                 }
 
                 return joined;

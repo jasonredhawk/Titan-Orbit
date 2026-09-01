@@ -1,17 +1,19 @@
-using TitanOrbit.ECS;
 using Unity.Entities;
 using Unity.NetCode;
 
 namespace TitanOrbit.NetCode
 {
     /// <summary>
-    /// Client tick tuning for predicted ship physics (Predicted hulls after GhostReceive).
+    /// Client tick tuning for predicted ship physics (OwnerPredicted hull after GhostReceive).
     /// Forces prediction step batch size = 1 (no merged N×dt physics) and uses a higher
     /// <see cref="ClientServerTickRate.MaxSimulationStepsPerFrame"/> than Editor Local Host server
     /// so Relay clients can repay command-age debt.
     /// <para>
-    /// [NETCODE] <see cref="ExperimentalForcedInputLatencyTicks"/> is 0 (package default).
-    /// Do not also register <c>GhostPredictionSmoothing</c> — presentation owns local display.
+    /// Experiment: <see cref="ExperimentalForcedInputLatencyTicks"/> delays local
+    /// <see cref="IInputComponentData"/> playback by one sim tick so prediction consumes
+    /// the same command the server will, instead of running one tick ahead and reconciling.
+    /// Set the constant to 0 to revert. Do not also register
+    /// <c>GhostPredictionSmoothing</c> — that blends poses and fights authority/display coast.
     /// </para>
     /// <para>
     /// basics34 (dedicated GCE): MaxSteps must stay high (8) for join catch-up.
@@ -51,7 +53,7 @@ namespace TitanOrbit.NetCode
         /// NetCode still predicts the owner hull; it just applies last tick's command this tick
         /// so the server snapshot is less likely to snap the motor.
         /// </summary>
-        public const byte ExperimentalForcedInputLatencyTicks = 0;
+        public const byte ExperimentalForcedInputLatencyTicks = 1;
 
         /// <summary>
         /// Re-applies every frame so a later handshake cannot restore merged tick batches
@@ -77,13 +79,6 @@ namespace TitanOrbit.NetCode
                 }
             }
 
-            // [NETCODE] Package defaults — do not overwrite NetworkTimeSystemData. Slack=0 is
-            // IPC Local Host only (TitanOrbitIpcLocalHostTimeSyncSystem). Socket keeps slack=2
-            // (package default). InterpolationTimeNetTicks buffers interpolated map ghosts.
-            if (!IsIpcLocalHost())
-                clientTickRate.TargetCommandSlack = 2;
-            clientTickRate.InterpolationTimeNetTicks = 2;
-            clientTickRate.InterpolationTimeMS = 0;
             // [NETCODE] One predicted physics step per tick — required for deterministic hull motion.
             clientTickRate.MaxPredictionStepBatchSizeFirstTimeTick = 1;
             clientTickRate.MaxPredictionStepBatchSizeRepeatedTick = 1;
@@ -119,15 +114,8 @@ namespace TitanOrbit.NetCode
 
             sharedTickRate.SimulationTickRate = TitanOrbitServerTickRateSystem.SimulationHz;
             sharedTickRate.NetworkTickRate = TitanOrbitServerTickRateSystem.NetworkHz;
-            // [TITAN-ORBIT] Join still uses 8 (basics34 cmdAge climb). After settle, 3 — e2d7d2
-            // ship-ram logs: predBatch hit 8 and dtMs 70–100 on Player 2 (H59 “don’t cruise-cap”
-            // was wrong; SimulationStepBatchSize did hit MaxSteps during contact).
-            bool joinCatchUp = ClientJoinSettleCache.Settling
-                               || ClientJoinSettleCache.ShouldSkipShipSimulation;
-            int maxSteps = joinCatchUp
-                ? TitanOrbitServerTickRateSystem.ClientMaxStepsPerFrame
-                : TitanOrbitServerTickRateSystem.ClientCruiseMaxStepsPerFrame;
-            sharedTickRate.MaxSimulationStepsPerFrame = maxSteps;
+            // [TITAN-ORBIT] Always allow join catch-up (basics34). Do not cruise-cap MaxSteps (H59 rejected).
+            sharedTickRate.MaxSimulationStepsPerFrame = TitanOrbitServerTickRateSystem.ClientMaxStepsPerFrame;
             sharedTickRate.MaxSimulationStepBatchSize = 1;
             sharedTickRate.PredictedFixedStepSimulationTickRatio = 1;
             // [NETCODE] TargetFrameRateMode is a server pacing knob. Auto matches package defaults
@@ -135,17 +123,6 @@ namespace TitanOrbit.NetCode
             // CrossPlatformManager targetFrameRate and triggers NetcodeServerRateManager spam.
             sharedTickRate.TargetFrameRateMode = ClientServerTickRate.FrameRateMode.Auto;
             state.EntityManager.SetComponentData(sharedTickEntity, sharedTickRate);
-        }
-
-        /// <summary>
-        /// Local Host Client+Server over IPC — slack is owned by
-        /// <see cref="TitanOrbitIpcLocalHostTimeSyncSystem"/>.
-        /// </summary>
-        static bool IsIpcLocalHost()
-        {
-            return ClientServerBootstrap.HasServerWorld &&
-                   !TitanOrbitSessionManager.IsDedicatedOnlineClient &&
-                   !TitanOrbitRelayState.HasClientRelay;
         }
     }
 }

@@ -12,16 +12,15 @@ namespace TitanOrbit.ECS
 {
     /// <summary>
     /// Burst parallel job — applies shared <see cref="ShipPhysicsDriveLogic"/> for each predicted
-    /// ship before the Unity Physics solver. [NETCODE] <see cref="PredictedGhost"/> +
-    /// <see cref="Simulate"/> is the official predicted query: every ship hull on both worlds
-    /// (ships are Predicted, not OwnerPredicted remotes).
+    /// ship before the Unity Physics solver. [NETCODE] <see cref="Simulate"/> limits client work to
+    /// owner-predicted ghosts; server runs all simulated ships.
     /// Planet snapshots + map size + territory triangles are collected once on the main thread so
     /// every ship shares the same toroidal orbit / shield / territory inputs this tick.
     /// Mass-tax weights are copied from <see cref="ShipCargoMobilitySettings"/> on the main thread
     /// (Burst cannot read ScriptableObjects).
     /// </summary>
     [BurstCompile]
-    [WithAll(typeof(ShipTag), typeof(PredictedGhost), typeof(Simulate))]
+    [WithAll(typeof(ShipTag), typeof(Simulate))]
     public partial struct ShipPhysicsDriveJob : IJobEntity
     {
         /// <summary>Fixed delta time for this prediction step.</summary>

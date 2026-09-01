@@ -474,16 +474,8 @@ namespace TitanOrbit.Game
 
         void UpdateLocalInstanceRegistration(EntityManager em)
         {
-            // GhostOwnerIsLocal is on every OwnerPredicted ship — only the enable bit
-            // is the local player. HasComponent alone let a remote moon-dock steal
-            // CameraFollowEcs (P1 followed P2 onto the moon).
-            bool ghostOwnerHas = em.HasComponent<GhostOwnerIsLocal>(_shipEntity);
-            bool ghostOwnerLocal = ghostOwnerHas &&
-                                   em.IsComponentEnabled<GhostOwnerIsLocal>(_shipEntity);
-            bool isLocal =
-                em.HasComponent<LocalPlayerShipTag>(_shipEntity) || ghostOwnerLocal;
-
-            if (isLocal)
+            if (em.HasComponent<LocalPlayerShipTag>(_shipEntity) ||
+                em.HasComponent<GhostOwnerIsLocal>(_shipEntity))
                 s_localInstance = this;
             else if (s_localInstance == this)
                 s_localInstance = null;

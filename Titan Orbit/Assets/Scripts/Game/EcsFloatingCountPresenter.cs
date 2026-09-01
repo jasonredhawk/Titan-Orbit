@@ -127,14 +127,6 @@ namespace TitanOrbit.Game
         /// </summary>
         readonly Dictionary<int, float> _shipOptimisticUntil = new Dictionary<int, float>();
 
-        /// <summary>
-        /// Same-frame HitRpc hull-loss vs ghost PollShips drop, so one ram chip cannot
-        /// float twice when RPC and snapshot arrive in different order on each client.
-        /// </summary>
-        readonly Dictionary<int, float> _hitRpcShipDamageThisFrame = new Dictionary<int, float>();
-        readonly Dictionary<int, float> _ghostShipDamageThisFrame = new Dictionary<int, float>();
-        int _presentedShipDamageFrame = -1;
-
         void OnEnable()
         {
             Active = this;
@@ -531,17 +523,13 @@ namespace TitanOrbit.Game
                     // Hull loss that was not already presented as a burn tick this frame.
                     if (healthDelta <= -0.01f)
                     {
-                        float unpresented = PresentGhostShipDamage(networkId, -healthDelta);
-                        if (unpresented >= 0.01f)
-                        {
-                            WorldFloatingCountManager.Instance.ShowOrAccumulateOnShip(
-                                networkId,
-                                anchor,
-                                FloatingCountChannel.DamageShipOrDrone,
-                                -unpresented,
-                                state.Team);
-                            TryShowShipRemainingHealth(networkId, anchor, ghostHealth);
-                        }
+                        WorldFloatingCountManager.Instance.ShowOrAccumulateOnShip(
+                            networkId,
+                            anchor,
+                            FloatingCountChannel.DamageShipOrDrone,
+                            healthDelta,
+                            state.Team);
+                        TryShowShipRemainingHealth(networkId, anchor, ghostHealth);
                     }
                     else if (healthDelta >= 1f)
                     {
@@ -735,7 +723,6 @@ namespace TitanOrbit.Game
             float scaled = CardEffectQuery.ScaleIncomingDamage(em, shipEntity, incomingDamage);
             float tracked = presenter.PeekTrackedShipHealth(networkId, state.Health);
             float hullLoss = math.min(scaled, math.max(0f, tracked));
-            hullLoss = presenter.PresentHitRpcShipDamage(networkId, hullLoss);
             if (hullLoss < 0.01f)
                 return false;
 
@@ -795,52 +782,6 @@ namespace TitanOrbit.Game
                 snap.Health = remainingHealth;
                 _ships[networkId] = snap;
             }
-        }
-
-        void EnsureShipDamagePresentationFrame()
-        {
-            int frame = Time.frameCount;
-            if (frame == _presentedShipDamageFrame)
-                return;
-            _hitRpcShipDamageThisFrame.Clear();
-            _ghostShipDamageThisFrame.Clear();
-            _presentedShipDamageFrame = frame;
-        }
-
-        /// <summary>
-        /// HitRpc chip. Always counts as a new event unless ghost PollShips already
-        /// floated this frame's hull drop (late RPC after the snapshot).
-        /// </summary>
-        float PresentHitRpcShipDamage(int networkId, float amount)
-        {
-            if (networkId <= 0 || amount < 0.01f)
-                return 0f;
-
-            EnsureShipDamagePresentationFrame();
-            _hitRpcShipDamageThisFrame.TryGetValue(networkId, out float hitSum);
-            _ghostShipDamageThisFrame.TryGetValue(networkId, out float ghostShown);
-
-            float show = amount;
-            if (ghostShown > hitSum)
-                show = math.max(0f, amount - (ghostShown - hitSum));
-
-            _hitRpcShipDamageThisFrame[networkId] = hitSum + amount;
-            return show;
-        }
-
-        /// <summary>
-        /// Ghost Health delta leftover after any HitRpc floats this frame.
-        /// </summary>
-        float PresentGhostShipDamage(int networkId, float ghostLoss)
-        {
-            if (networkId <= 0 || ghostLoss < 0.01f)
-                return 0f;
-
-            EnsureShipDamagePresentationFrame();
-            _hitRpcShipDamageThisFrame.TryGetValue(networkId, out float hitSum);
-            float show = math.max(0f, ghostLoss - hitSum);
-            _ghostShipDamageThisFrame[networkId] = ghostLoss;
-            return show;
         }
 
         /// <summary>

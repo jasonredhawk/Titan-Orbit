@@ -14,8 +14,7 @@ namespace TitanOrbit.Game
 {
     /// <summary>
     /// Publishes NetCode presentation-phase ship poses once per frame for camera, hybrid leftovers,
-    /// and parallax. Ships are Predicted — remotes publish predicted <see cref="LocalTransform"/>.
-    /// Map bodies stay interpolated (other systems).
+    /// and parallax. Remotes use NetCode interpolation as-is.
     /// <para>
     /// [TITAN-ORBIT] Local ship wraps onto the canonical chart; camera follows that pose.
     /// A ±map-size jump hard-snaps display (no long lerp / H73 coast across the rectangle).
@@ -268,6 +267,10 @@ namespace TitanOrbit.Game
             bool catchingUp = math.abs(commandAge) > CommandAgeHoldThreshold;
             float dt = math.min(math.max(0f, UnityEngine.Time.unscaledDeltaTime), MaxSmoothDeltaTime);
 
+            float3 simVel = float3.zero;
+            if (EntityManager.HasComponent<ShipKinematics>(localShip))
+                simVel = EntityManager.GetComponentData<ShipKinematics>(localShip).Velocity;
+
             bool shipChanged = _smoothInitialized && _smoothShipEntity != Entity.Null && localShip != _smoothShipEntity;
             _smoothShipEntity = localShip;
             if (shipChanged)
@@ -301,6 +304,7 @@ namespace TitanOrbit.Game
                     _postGrindCoastFrames--;
             }
             bool grindRawFollow = asteroidContact || _postGrindRawFrames > 0;
+            bool postGrindCoast = !grindRawFollow && _postGrindCoastFrames > 0;
 
             // --- Death / respawn edge ---
             // [TITAN-ORBIT] Server teleports LocalTransform to the home orbit ring. Display
@@ -338,17 +342,13 @@ namespace TitanOrbit.Game
                 _smoothRot = targetRot;
                 _smoothInitialized = true;
             }
-            else if (catchingUp)
+            else if (catchingUp || displayErr > 2f)
             {
-                // Join / snapshot-debt storms only — do not coast healthy predicted frames.
                 StepDisplayToward(targetPos, targetRot, dt, CatchUpDisplayMaxSpeed);
             }
             else
             {
-                // [NETCODE] Predicted pose is the display pose. H73 coast (switch-v5) never
-                // fired (coast:0 / dispErr:0) and remotes were still jittery — reverted.
-                _smoothPos = targetPos;
-                _smoothRot = targetRot;
+                StepCruiseRawOrCoast(targetPos, targetRot, simVel, dt, postGrindCoast);
             }
 
             // --- Publish pose for camera / hybrid / EG LocalToWorld ---
@@ -399,7 +399,7 @@ namespace TitanOrbit.Game
         /// True for a short window after asteroid contact: use the tiny nibble floor so hitch-sized
         /// 0.22–0.30u sim steps coast instead of snapping (the 0.45 grind floor would snap them).
         /// </param>
-        bool StepCruiseRawOrCoast(float3 simPos, quaternion simRot, float3 simVel, float dt, bool postGrindCoast = false)
+        void StepCruiseRawOrCoast(float3 simPos, quaternion simRot, float3 simVel, float dt, bool postGrindCoast = false)
         {
             float expected = math.max(math.length(simVel) * math.max(0f, dt), 0.02f);
             float dist = math.distance(_smoothPos, simPos);
@@ -413,7 +413,7 @@ namespace TitanOrbit.Game
             {
                 _smoothPos = simPos;
                 _smoothRot = simRot;
-                return false;
+                return;
             }
 
             // --- Reconcile pop / large gap: coast then capped soft correct ---
@@ -430,7 +430,6 @@ namespace TitanOrbit.Game
             _smoothPos = coasted + pull;
             _smoothPos.y = simPos.y;
             _smoothRot = math.slerp(_smoothRot, simRot, 1f - math.exp(-DisplayRotationSharpness * dt));
-            return true;
         }
 
         /// <summary>

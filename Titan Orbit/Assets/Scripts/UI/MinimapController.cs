@@ -1499,20 +1499,9 @@ namespace TitanOrbit.UI
 
             RefreshMapSizeLabelText();
 
-            // Prefer the current local-player anchor. Do not null PlayerPosition on a one-frame
-            // IsLocalPlayer flicker — that parks the radar at the origin and drops territory lines.
+            // Clear stale reference if player ship was destroyed
             if (playerAnchor == null)
                 playerTransform = null;
-
-            var liveSync = MinimapEcsEntitySync.Instance;
-            if (liveSync != null &&
-                liveSync.TryGetLocalPlayer(out MinimapBlipAnchor liveLocal) &&
-                liveLocal != null &&
-                liveLocal.IsLocalPlayer)
-            {
-                playerAnchor = liveLocal;
-                playerTransform = liveLocal.transform;
-            }
 
             bool needResolvePlayer = playerAnchor == null || playerTransform == null;
             if (needResolvePlayer)

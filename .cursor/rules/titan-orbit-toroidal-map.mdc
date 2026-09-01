@@ -1,0 +1,63 @@
+---
+description: Toroidal map — canonical wrap, Unity.Physics hulls, shortest-path ranges
+alwaysApply: true
+---
+
+# Titan Orbit — Toroidal map
+
+The playable map is a **torus on XZ**. Dynamic movers **wrap** into the canonical rectangle
+`[-MapWidth/2, MapWidth/2) × [-MapHeight/2, MapHeight/2)`. There is **one entity** and **one collider**
+per body — no tiled visual or collider copies. Deep dive: `Docs/TITAN-ORBIT-COMPLETE-COURSE.md` §11.4.
+
+---
+
+## Two layers (do not mix)
+
+| Layer | Behavior | API |
+|-------|----------|-----|
+| **Sim / hulls** | After Unity.Physics integrates, wrap ships, bullets, gems, rockets, transports. Display follows that wrapped pose. | `ToroidalMapEcs.Wrap` |
+| **Ranges / aim** | Orbit, dock, combat, beams, transports, minimap still use **shortest path on the torus** (a planet on +X still owns a ship that wrapped to −X). | `ShortestOffsetXZ`, `ToroidalDistance`, `ToroidalDirection` |
+
+```csharp
+// ❌ BAD — Euclidean range across opposite edges (misses / false “far”)
+float d = math.distance(ship.xz, planet.xz);
+
+// ✅ GOOD — toroidal shortest path for gameplay reach
+float d = ToroidalMapEcs.ToroidalDistance(ship, planet, mapW, mapH);
+
+// ✅ GOOD — wrap movers into the rectangle (sim = visual = collider)
+transform.Position = ToroidalMapEcs.Wrap(transform.Position, mapW, mapH);
+
+// ❌ BAD — nearest-tile display copies / hysteresis retile
+displayPos = ToroidalMapEcs.GetDisplayPosition(logicalPos, localShipPos, mapW, mapH);
+```
+
+Hull contacts are **Unity.Physics** (compound ship hulls, baked world spheres). Do not add
+`ShipToroidalWorldCollision*` sphere-resolve unless playtest re-opens a documented seam fallback.
+A wrap that lands inside a solid uses a one-tick depenetrate against the **real** `PhysicsCollider`.
+
+Camera / presentation treat a ±map-size jump as a **snap** (same-frame camera delta + short fade/warp).
+Do not lerp remotes or local display coast the long way across the map.
+
+---
+
+## Feature checklist (orbit, dock, transports, combat)
+
+- [ ] Read `mapW` / `mapH` from `MapStateSingleton` (or `ToroidalMapEcs` after bootstrap)
+- [ ] New movers wrap after physics (skip when size is unset — never invent 1000×1000)
+- [ ] Gameplay ranges use toroidal math — not raw XZ `distance`
+- [ ] Presentation follows wrapped sim — no per-body display tiles
+- [ ] No new GameObject / collider copies for wrap
+- [ ] Do not add client map-body gathers that bypass `ClientJoinSettleCache.ShouldSkipMapBodyQueries`
+
+**Orbit ring / people transport:** ring membership = `PlanetOrbitMath.IsInOrbitRing(ToroidalDistance(...), inner, outer)`.
+Tangents use `ShortestOffsetXZ(planet → ship)` so clockwise orbit works across opposite edges.
+
+---
+
+## Agent checklist
+
+- [ ] Movers wrap; display = wrapped sim
+- [ ] Hull contacts: Unity.Physics (no new fake seam spheres)
+- [ ] Gameplay ranges stay toroidal
+- [ ] New systems document mapW/mapH sources in comments
