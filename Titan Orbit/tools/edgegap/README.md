@@ -2,7 +2,7 @@
 
 Host the authoritative Linux headless server on [Edgegap](https://docs.edgegap.com/unity) instead of (or alongside) GCE.
 
-**Important:** Titan Orbit clients do **not** connect to the deployment IP/port directly. The headless process creates a **UGS Lobby + Unity Relay** allocation; WebGL and standalone clients join through the normal **Join Game** flow (same as GCE today). Edgegap runs the server **process**; Relay still carries gameplay traffic.
+**Important:** Clients use **Join Game** (UGS Lobby). Standalone/Android then UDP-connect to the lobby `HostAddress:HostPort`. WebGL still uses the WebSocket driver. Edgegap runs the dedicated process; it does not replace the lobby browser.
 
 ---
 
@@ -46,15 +46,11 @@ You do **not** need Edgegap’s “Port Verification” bootstrap scripts (those
 
 ### 2. Build the Linux server
 
-**Recommended (this repo):**
+**Recommended:** **Tools → Edgegap Hosting → Build server**
 
-**TitanOrbit → Build → Headless Server (Linux — Edgegap)**
+Output: `Builds/EdgegapServer/ServerBuild.x86_64` (+ `ServerBuild_Data/`). Delete that folder first for a clean rebuild.
 
-Output: `Builds/EdgegapServer/ServerBuild.x86_64` (+ `ServerBuild_Data/`).
-
-This uses the same IL2CPP Dedicated Server settings as the GCE build, but names the binary `ServerBuild` so it matches Edgegap’s default Dockerfile and our custom one.
-
-Alternatively, use **Build server** inside the Edgegap window (same folder if you keep defaults).
+The plugin names the binary `ServerBuild` so it matches Edgegap’s Dockerfile and ours.
 
 **Build settings checklist:**
 
@@ -136,8 +132,13 @@ Optional overrides in the Edgegap app version (custom env):
 | Variable | Default | Purpose |
 |----------|---------|---------|
 | `TITANORBIT_MAX_PLAYERS` | `60` | Lobby capacity |
-| `TITANORBIT_RELAY_PROTOCOL` | `dtls` | Relay connection type on Linux server |
-| `TITANORBIT_IS_LATEST` | `1` | First instance publishes `IsLatest=1` lobby |
+| `TITANORBIT_IS_LATEST` | `1` | First instance publishes `IsLatest=1` lobby (funnel badge) |
+| `TITANORBIT_EMPTY_MATCH_RECREATE_SECONDS` | `1800` | Recycle empty rooms after 30 min |
+| `TITANORBIT_AGE_THRESHOLD_SECONDS` | `900` | Open a successor after ~15 min when enough players are in |
+| `TITANORBIT_SOFT_FILL_MIN_PLAYERS` | `8` | Min players before age-split |
+| `TITANORBIT_MAX_CONCURRENT_GAMES` | `5` | Cap on Edgegap deployments |
+| `EDGEGAP_API_TOKEN` | (required for overflow) | Server-only token for v2 deploy |
+| `EDGEGAP_APP_NAME` / `EDGEGAP_APP_VERSION` | (required for overflow) | App identity for successor deploys |
 | `UNITY_COMMANDLINE_ARGS` | (empty) | Extra flags appended by Edgegap plugin |
 
 ---
@@ -146,7 +147,7 @@ Optional overrides in the Edgegap app version (custom env):
 
 | | GCE (existing) | Edgegap (this guide) |
 |--|----------------|----------------------|
-| Build menu | Headless Server (Linux — Google Cloud) | Headless Server (Linux — Edgegap) |
+| Build | Headless Server (Linux — Google Cloud) | **Tools → Edgegap Hosting → Build server** |
 | Output | `BuildOutput/Server/TitanOrbitLinux1/` | `Builds/EdgegapServer/` |
 | Deploy | `tools/gce/*.bat` | Edgegap plugin + Docker |
 | Client join | UGS Lobby + Relay | Same |

@@ -1,6 +1,6 @@
 # Titan Orbit — custom Edgegap Docker image.
 # Point the Edgegap plugin "Path to Dockerfile" field at: tools/edgegap/Dockerfile
-# Build path in the plugin should stay: Builds/EdgegapServer (matches TitanOrbit → Build → Headless Server (Linux — Edgegap)).
+# Build path in the plugin should stay: Builds/EdgegapServer (Tools → Edgegap Hosting → Build server).
 FROM ubuntu:22.04
 
 ARG DEBIAN_FRONTEND=noninteractive

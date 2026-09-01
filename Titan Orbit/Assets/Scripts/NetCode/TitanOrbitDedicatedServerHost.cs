@@ -292,7 +292,8 @@ namespace TitanOrbit.NetCode
                         // [TITAN-ORBIT] Age rotation — spawn a fresh IsLatest successor for new joiners.
                         // Occupied maps stay open (demoted only); see RunRotationHandoff.
                         if (_matchIsLatest && !_spawnedFromAge && playerCount > 0 &&
-                            ageSeconds >= _config.AgeThresholdSeconds && !isFull)
+                            ageSeconds >= _config.AgeThresholdSeconds && !isFull &&
+                            playerCount >= _config.SoftFillMinPlayers)
                         {
                             Debug.Log("[TitanOrbitDedicatedServerHost] Age rotation: starting handoff for " + lobbyId);
                             BeginRotationHandoff(lobbyId, "age_rotation", nextIsLatest: true);
@@ -320,6 +321,16 @@ namespace TitanOrbit.NetCode
                 {
                     string reason = pendingStaleRecreate ? "stale_lobby_recreate" : "empty_match_recreate";
                     bool isIdleEmptyRecreate = reason == "empty_match_recreate";
+
+                    // Overflow Edgegap boxes exit when empty so billing stops. The IsLatest seed
+                    // stays and recreates in-process so Join Game never goes empty.
+                    if (isIdleEmptyRecreate &&
+                        TitanOrbitEdgegapEnvironment.IsEdgegapDeployment &&
+                        !_matchIsLatest)
+                    {
+                        yield return ExitEmptyOverflowContainerCoroutine(reason);
+                        yield break;
+                    }
 
                     // [TITAN-ORBIT] Prefer process recycle over another Relay swap when already thrashing
                     // or over RSS budget (2026-07-26: recreate during STRUGGLING did not save the VM).
@@ -453,7 +464,10 @@ namespace TitanOrbit.NetCode
             bool handoffComplete = false;
             for (int attempt = 1; attempt <= MaxSpawnAttemptsPerHandoff && !handoffComplete; attempt++)
             {
-                if (!TrySpawnNextMatch(nextIsLatest))
+                Task<bool> spawnTask = SpawnNextMatchAsync(nextIsLatest);
+                while (!spawnTask.IsCompleted)
+                    yield return null;
+                if (spawnTask.IsFaulted || !spawnTask.Result)
                 {
                     Debug.LogWarning("[TitanOrbitDedicatedServerHost] SpawnNextMatch failed (attempt " + attempt + "/" +
                                      MaxSpawnAttemptsPerHandoff + ") for " + reason + ".");
@@ -862,10 +876,88 @@ namespace TitanOrbit.NetCode
         }
 
         /// <summary>
+        /// Edgegap: v2 deploy. GCE: sibling process. Honors <see cref="TitanOrbitServerCommandLine.MaxConcurrentGames"/>.
+        /// </summary>
+        async Task<bool> SpawnNextMatchAsync(bool nextIsLatest)
+        {
+            try
+            {
+                if (_config != null && _config.MaxConcurrentGames > 0)
+                {
+                    int lobbyCount = await TitanOrbitLobbyService.QueryOpenDedicatedLobbyCountAsync();
+                    if (lobbyCount >= _config.MaxConcurrentGames)
+                    {
+                        DedicatedServerFileLog.Append(
+                            "rotation",
+                            "SpawnNextMatch blocked — open lobbies=" + lobbyCount +
+                            " maxConcurrentGames=" + _config.MaxConcurrentGames);
+                        return false;
+                    }
+
+                    if (TitanOrbitEdgegapEnvironment.IsEdgegapDeployment)
+                    {
+                        int deploys = await TitanOrbitEdgegapDeployClient.TryCountActiveDeploymentsAsync();
+                        if (deploys >= _config.MaxConcurrentGames)
+                        {
+                            DedicatedServerFileLog.Append(
+                                "rotation",
+                                "SpawnNextMatch blocked — Edgegap deploys=" + deploys +
+                                " maxConcurrentGames=" + _config.MaxConcurrentGames);
+                            return false;
+                        }
+                    }
+                }
+
+                if (TitanOrbitEdgegapEnvironment.IsEdgegapDeployment)
+                {
+                    return await TitanOrbitEdgegapDeployClient.TryDeploySuccessorAsync(
+                        _config != null ? _config.PublicAddress : null,
+                        nextIsLatest);
+                }
+
+                return TrySpawnNextMatchProcess(nextIsLatest);
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning("[TitanOrbitDedicatedServerHost] SpawnNextMatchAsync failed: " + e.Message);
+                DedicatedServerFileLog.Append("rotation", "SpawnNextMatchAsync exception", e);
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Empty overflow container: close listing, ask Edgegap to stop, then quit.
+        /// Only when another IsLatest seed already exists.
+        /// </summary>
+        IEnumerator ExitEmptyOverflowContainerCoroutine(string reason)
+        {
+            DedicatedServerFileLog.Append(
+                "idle",
+                "Overflow empty exit reason=" + reason + " lobby=" + _activeLobbyId);
+            Debug.Log("[TitanOrbitDedicatedServerHost] Empty overflow container exiting — seed latest remains.");
+
+            if (TitanOrbitSessionManager.Instance != null && !string.IsNullOrWhiteSpace(_activeLobbyId))
+            {
+                Task closeTask = TitanOrbitSessionManager.Instance.CloseLobbyForNewJoinersAsync(
+                    _activeLobbyId,
+                    reason + "_overflow_exit");
+                while (!closeTask.IsCompleted)
+                    yield return null;
+            }
+
+            Task stopTask = TitanOrbitEdgegapDeployClient.TrySelfStopAsync();
+            while (!stopTask.IsCompleted)
+                yield return null;
+
+            _processExitRequested = true;
+            Application.Quit(0);
+        }
+
+        /// <summary>
         /// Launches a sibling headless process for rotation. Returns false when the executable cannot be resolved
         /// or <see cref="Process.Start"/> throws (logged for GCE diagnosis).
         /// </summary>
-        bool TrySpawnNextMatch(bool nextIsLatest)
+        bool TrySpawnNextMatchProcess(bool nextIsLatest)
         {
             // --- Attempt resolution ---
             try
@@ -896,6 +988,8 @@ namespace TitanOrbit.NetCode
                     $"--serverListenAddress={_config.ServerListenAddress} " +
                     $"--emptyMatchRecreateSeconds={_config.EmptyMatchRecreateSeconds} " +
                     $"--ageThresholdSeconds={_config.AgeThresholdSeconds} " +
+                    $"--softFillMinPlayers={_config.SoftFillMinPlayers} " +
+                    $"--maxConcurrentGames={_config.MaxConcurrentGames} " +
                     $"--staleLobbyRecreateSeconds={_config.StaleLobbyRecreateSeconds} " +
                     $"--maxInProcessEmptyRecreates={_config.MaxInProcessEmptyRecreates} " +
                     $"--mainThreadHangQuitSeconds={_config.MainThreadHangQuitSeconds} " +
@@ -1041,6 +1135,9 @@ namespace TitanOrbit.NetCode
             // [TITAN-ORBIT] 0 = unlimited in-process (legacy / debug).
             if (_config == null || _config.MaxInProcessEmptyRecreates <= 0)
                 return false;
+            // Seed Edgegap container must stay listed — in-process recreate only.
+            if (TitanOrbitEdgegapEnvironment.IsEdgegapDeployment)
+                return false;
             return _successfulEmptyInProcessRecreates >= _config.MaxInProcessEmptyRecreates;
         }
 
@@ -1105,7 +1202,10 @@ namespace TitanOrbit.NetCode
             // --- Spawn → wait → close (same pattern as age rotation, empty-only) ---
             for (int attempt = 1; attempt <= MaxSpawnAttemptsPerHandoff && !handoffComplete; attempt++)
             {
-                if (!TrySpawnNextMatch(nextIsLatest: true))
+                Task<bool> spawnTask = SpawnNextMatchAsync(nextIsLatest: true);
+                while (!spawnTask.IsCompleted)
+                    yield return null;
+                if (spawnTask.IsFaulted || !spawnTask.Result)
                 {
                     DedicatedServerFileLog.Append(
                         "watchdog",

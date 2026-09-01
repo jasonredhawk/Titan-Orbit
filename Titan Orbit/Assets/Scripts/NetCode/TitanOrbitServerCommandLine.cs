@@ -18,16 +18,26 @@ namespace TitanOrbit.NetCode
         public const ushort DefaultServerPort = 7777;
         /// <summary>
         /// Idle empty timeout. <c>0</c> = keep the empty match running and listed (funnel policy).
-        /// Occupied matches never use this clock.
+        /// Occupied matches never use this clock. Edgegap <c>start-server.sh</c> passes 1800;
+        /// GCE systemd may still override to 0.
         /// </summary>
-        public const int DefaultEmptyMatchRecreateSeconds = 0;
+        public const int DefaultEmptyMatchRecreateSeconds = 1800;
 
         /// <summary>
-        /// Age rotation: when IsLatest and players are present (not full), spawn a successor as the
-        /// new IsLatest after this many seconds. Default 24h so one match fills before a sibling
-        /// is opened. Occupied lobby is demoted but stays open.
+        /// Age rotation: when IsLatest, enough players are present, and the match is not full,
+        /// spawn a successor as the new IsLatest after this many seconds. Occupied lobby is
+        /// demoted but stays open. GCE systemd may still override to 24h.
         /// </summary>
-        public const int DefaultAgeThresholdSeconds = 24 * 60 * 60;
+        public const int DefaultAgeThresholdSeconds = 15 * 60;
+
+        /// <summary>
+        /// Minimum connected players before age rotation may open another room. Full rooms
+        /// always split. Stops a 1-player tester lobby from paying for a second Edgegap box.
+        /// </summary>
+        public const int DefaultSoftFillMinPlayers = 8;
+
+        /// <summary>Hard cap on concurrent dedicated games / Edgegap deployments.</summary>
+        public const int DefaultMaxConcurrentGames = 5;
 
         /// <summary>When our lobby is closed or heartbeat-stale and empty, recreate after this many seconds (faster than empty idle refresh).</summary>
         public const int DefaultStaleLobbyRecreateSeconds = 120;
@@ -75,6 +85,8 @@ namespace TitanOrbit.NetCode
         public bool IsLatest { get; private set; } = true;
         public int EmptyMatchRecreateSeconds { get; private set; } = DefaultEmptyMatchRecreateSeconds;
         public long AgeThresholdSeconds { get; private set; } = DefaultAgeThresholdSeconds;
+        public int SoftFillMinPlayers { get; private set; } = DefaultSoftFillMinPlayers;
+        public int MaxConcurrentGames { get; private set; } = DefaultMaxConcurrentGames;
         /// <summary>Fast recreate when our published lobby is closed or heartbeat-stale while the server is empty.</summary>
         public int StaleLobbyRecreateSeconds { get; private set; } = DefaultStaleLobbyRecreateSeconds;
 
@@ -131,6 +143,8 @@ namespace TitanOrbit.NetCode
             // [TITAN-ORBIT] 0 = never recycle an empty listed match (players join whenever they want).
             config.EmptyMatchRecreateSeconds = emptyRecreate <= 0 ? 0 : Mathf.Max(60, emptyRecreate);
             config.AgeThresholdSeconds = Mathf.Max(60, GetArgInt("ageThresholdSeconds", DefaultAgeThresholdSeconds));
+            config.SoftFillMinPlayers = Mathf.Max(1, GetArgInt("softFillMinPlayers", DefaultSoftFillMinPlayers));
+            config.MaxConcurrentGames = Mathf.Max(1, GetArgInt("maxConcurrentGames", DefaultMaxConcurrentGames));
             config.StaleLobbyRecreateSeconds = Mathf.Max(30, GetArgInt("staleLobbyRecreateSeconds", DefaultStaleLobbyRecreateSeconds));
             // [TITAN-ORBIT] 0 = unlimited in-process empty recreates (not recommended for 24/7 hosts).
             config.MaxInProcessEmptyRecreates = Mathf.Max(0, GetArgInt("maxInProcessEmptyRecreates", DefaultMaxInProcessEmptyRecreates));

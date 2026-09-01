@@ -60,17 +60,19 @@ namespace TitanOrbit.ECS
                     return;
             }
 
-            var ecb = new EntityCommandBuffer(Allocator.Temp);
-            int ensuredThisFrame = 0;
-
             // --- Shared orbit clock (once per frame) ---
             // [TITAN-ORBIT] ServerTick seconds — not World.Time.ElapsedTime (late-join desync).
             int hz = 0;
             if (SystemAPI.TryGetSingleton<ClientServerTickRate>(out var tickRate))
                 hz = tickRate.SimulationTickRate;
-            double elapsed = SystemAPI.TryGetSingleton<NetworkTime>(out var networkTime)
-                ? PlanetGemMoonOrbitClock.GetElapsedSeconds(networkTime, hz, includeTickFraction: false)
-                : state.World.Time.ElapsedTime;
+            if (!SystemAPI.TryGetSingleton<NetworkTime>(out var networkTime) ||
+                !networkTime.ServerTick.IsValid)
+                return;
+            double elapsed = PlanetGemMoonOrbitClock.GetElapsedSeconds(
+                networkTime, hz, includeTickFraction: false);
+
+            var ecb = new EntityCommandBuffer(Allocator.Temp);
+            int ensuredThisFrame = 0;
 
             foreach (var (planetState, planetTransform, entity) in SystemAPI
                          .Query<RefRO<PlanetState>, RefRO<LocalTransform>>()

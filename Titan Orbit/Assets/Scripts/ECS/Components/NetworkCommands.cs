@@ -644,4 +644,81 @@ namespace TitanOrbit.ECS
         public byte RelevancyMode;
         public byte QueryAssigned;
     }
+
+    /// <summary>
+    /// Low-rate far-ship minimap snapshot. IRpcCommand cannot carry FixedList / arrays,
+    /// so each packet holds up to <see cref="MaxBlips"/> flattened hulls (same rule as
+    /// <see cref="AsteroidOccupancyRpc"/>). Server sends several chunks per 4 Hz tick.
+    /// Each slot: networkId, xz (two signed shorts * 10), meta (team | level&lt;&lt;8 | flags&lt;&lt;16).
+    /// </summary>
+    public struct ShipMinimapBlipRpc : IRpcCommand
+    {
+        public const int MaxBlips = 8;
+        public const byte FlagDead = 1;
+        public const byte FlagMega = 2;
+
+        public byte Count;
+        public byte ChunkIndex;
+        public byte ChunkCount;
+        public uint Sequence;
+
+        public int Net0;
+        public int Xz0;
+        public int Meta0;
+        public int Net1;
+        public int Xz1;
+        public int Meta1;
+        public int Net2;
+        public int Xz2;
+        public int Meta2;
+        public int Net3;
+        public int Xz3;
+        public int Meta3;
+        public int Net4;
+        public int Xz4;
+        public int Meta4;
+        public int Net5;
+        public int Xz5;
+        public int Meta5;
+        public int Net6;
+        public int Xz6;
+        public int Meta6;
+        public int Net7;
+        public int Xz7;
+        public int Meta7;
+
+        public void SetSlot(int index, int networkId, int xz, int meta)
+        {
+            switch (index)
+            {
+                case 0: Net0 = networkId; Xz0 = xz; Meta0 = meta; break;
+                case 1: Net1 = networkId; Xz1 = xz; Meta1 = meta; break;
+                case 2: Net2 = networkId; Xz2 = xz; Meta2 = meta; break;
+                case 3: Net3 = networkId; Xz3 = xz; Meta3 = meta; break;
+                case 4: Net4 = networkId; Xz4 = xz; Meta4 = meta; break;
+                case 5: Net5 = networkId; Xz5 = xz; Meta5 = meta; break;
+                case 6: Net6 = networkId; Xz6 = xz; Meta6 = meta; break;
+                case 7: Net7 = networkId; Xz7 = xz; Meta7 = meta; break;
+            }
+        }
+
+        public bool TryGetSlot(int index, out int networkId, out int xz, out int meta)
+        {
+            networkId = 0;
+            xz = 0;
+            meta = 0;
+            switch (index)
+            {
+                case 0: networkId = Net0; xz = Xz0; meta = Meta0; return true;
+                case 1: networkId = Net1; xz = Xz1; meta = Meta1; return true;
+                case 2: networkId = Net2; xz = Xz2; meta = Meta2; return true;
+                case 3: networkId = Net3; xz = Xz3; meta = Meta3; return true;
+                case 4: networkId = Net4; xz = Xz4; meta = Meta4; return true;
+                case 5: networkId = Net5; xz = Xz5; meta = Meta5; return true;
+                case 6: networkId = Net6; xz = Xz6; meta = Meta6; return true;
+                case 7: networkId = Net7; xz = Xz7; meta = Meta7; return true;
+                default: return false;
+            }
+        }
+    }
 }

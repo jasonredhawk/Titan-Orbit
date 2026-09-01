@@ -40,7 +40,7 @@ Wait until logs show **both**:
 [MapGeneration] Map generated. Size: ...
 ```
 
-If Host is `162.254.141.66:31504`, this binary is old — rebuild **Headless Server (Linux — Edgegap)** and re-containerize.
+If Host is `162.254.141.66:31504`, this binary is old — **Tools → Edgegap Hosting → Build server**, then re-containerize.
 
 If UGS errors appear (`UGS not ready`, `PrepareDedicatedHost failed`), the Editor client cannot join — fix Unity project link / internet first.
 

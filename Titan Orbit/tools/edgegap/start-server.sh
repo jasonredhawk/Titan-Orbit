@@ -42,5 +42,9 @@ exec "$EXE" -batchmode -logFile /dev/stdout \
   --serverPort="$PORT" \
   --serverListenAddress=0.0.0.0 \
   --isLatest="${TITANORBIT_IS_LATEST:-1}" \
+  --emptyMatchRecreateSeconds="${TITANORBIT_EMPTY_MATCH_RECREATE_SECONDS:-1800}" \
+  --ageThresholdSeconds="${TITANORBIT_AGE_THRESHOLD_SECONDS:-900}" \
+  --softFillMinPlayers="${TITANORBIT_SOFT_FILL_MIN_PLAYERS:-8}" \
+  --maxConcurrentGames="${TITANORBIT_MAX_CONCURRENT_GAMES:-5}" \
   --serverExecutablePath="$(readlink -f "$EXE" || echo "$PWD/$EXE")" \
   ${UNITY_COMMANDLINE_ARGS:-}

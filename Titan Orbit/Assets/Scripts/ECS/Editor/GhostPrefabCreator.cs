@@ -176,7 +176,7 @@ namespace TitanOrbit.ECS.Editor
             ghost.OptimizationMode = GhostOptimizationMode.Static;
             ghost.RollbackPredictionOnStructuralChanges = false;
             ghost.Importance = 40;
-            ghost.MaxSendRate = 15;
+            ghost.MaxSendRate = 4;
         }
 
         /// <summary>Creates AsteroidGhost (interpolated map ghost, no owner).</summary>

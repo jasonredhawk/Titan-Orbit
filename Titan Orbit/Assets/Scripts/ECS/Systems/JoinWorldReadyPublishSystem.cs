@@ -23,9 +23,8 @@ namespace TitanOrbit.ECS
         public void OnCreate(ref SystemState state)
         {
             _inGameQuery = state.GetEntityQuery(ComponentType.ReadOnly<NetworkStreamInGame>());
-            _planetGhostQuery = state.GetEntityQuery(
-                ComponentType.ReadOnly<PlanetTag>(),
-                ComponentType.ReadOnly<GhostInstance>());
+            // Seed-hydrated planets have no GhostInstance; Docker snapshots can stay empty.
+            _planetGhostQuery = state.GetEntityQuery(ComponentType.ReadOnly<PlanetTag>());
             _shipGhostQuery = state.GetEntityQuery(
                 ComponentType.ReadOnly<ShipTag>(),
                 ComponentType.ReadOnly<GhostInstance>());

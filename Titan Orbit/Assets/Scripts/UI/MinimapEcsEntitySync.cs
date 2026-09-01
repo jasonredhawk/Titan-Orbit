@@ -37,6 +37,7 @@ namespace TitanOrbit.UI
         const float EntityCacheRefreshInterval = 6f;
 
         readonly Dictionary<Entity, MinimapBlipAnchor> _anchors = new Dictionary<Entity, MinimapBlipAnchor>();
+        readonly Dictionary<int, MinimapBlipAnchor> _farShipAnchors = new Dictionary<int, MinimapBlipAnchor>();
         readonly Dictionary<int, MinimapBlipAnchor> _gemMoonsByPlanetId = new Dictionary<int, MinimapBlipAnchor>();
         readonly List<MinimapBlipAnchor> _ships = new List<MinimapBlipAnchor>();
         readonly List<MinimapBlipAnchor> _planets = new List<MinimapBlipAnchor>();
@@ -86,6 +87,7 @@ namespace TitanOrbit.UI
 
             if (_root != null)
                 Destroy(_root.gameObject);
+            _farShipAnchors.Clear();
         }
 
         /// <summary>Per-frame minimap blip sync — rebuild or position-only update.</summary>
@@ -193,6 +195,7 @@ namespace TitanOrbit.UI
             _localPlayer = null;
 
             SyncShips(em, alive);
+            SyncFarShipBlips();
             SyncPlanets(em, alive);
             SyncAsteroids(em, alive);
 
@@ -213,6 +216,7 @@ namespace TitanOrbit.UI
 
             // Ships stay few; same ToEntityArray shape as EcsWorldVisualizer.SyncShipProxyTransforms.
             SyncShips(em, alive);
+            SyncFarShipBlips();
 
             var visualizer = EcsWorldVisualizer.Active;
             if (visualizer != null)
@@ -343,6 +347,9 @@ namespace TitanOrbit.UI
                     anchor.BodySize = math.max(0.25f, lt.Scale);
                 }
             }
+
+            SyncFarShipBlips();
+            RebuildLists();
 
             if (_localPlayer == null)
                 TryResolveLocalPlayerByNetworkId(em);
@@ -664,6 +671,93 @@ namespace TitanOrbit.UI
             _anchors.Remove(entity);
         }
 
+        /// <summary>
+        /// Far hulls that relevancy culled — pose comes from <see cref="ShipMinimapBlipCache"/>.
+        /// </summary>
+        void SyncFarShipBlips()
+        {
+            var ghostNetworkIds = new HashSet<int>();
+            foreach (var anchor in _anchors.Values)
+            {
+                if (anchor != null && anchor.Kind == MinimapBlipKind.Ship && anchor.OwnerNetworkId > 0)
+                    ghostNetworkIds.Add(anchor.OwnerNetworkId);
+            }
+
+            var keep = new HashSet<int>();
+            var blips = ShipMinimapBlipCache.Entries;
+            for (int i = 0; i < blips.Count; i++)
+            {
+                var blip = blips[i];
+                if (blip.NetworkId <= 0 || ghostNetworkIds.Contains(blip.NetworkId))
+                {
+                    if (_farShipAnchors.TryGetValue(blip.NetworkId, out var stale) && stale != null)
+                    {
+                        Destroy(stale.gameObject);
+                        _farShipAnchors.Remove(blip.NetworkId);
+                    }
+
+                    continue;
+                }
+
+                keep.Add(blip.NetworkId);
+                ApplyFarShipBlip(GetOrCreateFarShipAnchor(blip.NetworkId), blip);
+            }
+
+            var remove = new List<int>();
+            foreach (var kv in _farShipAnchors)
+            {
+                if (!keep.Contains(kv.Key))
+                    remove.Add(kv.Key);
+            }
+
+            for (int i = 0; i < remove.Count; i++)
+            {
+                if (_farShipAnchors.TryGetValue(remove[i], out var anchor) && anchor != null)
+                    Destroy(anchor.gameObject);
+                _farShipAnchors.Remove(remove[i]);
+            }
+        }
+
+        void UpdateFarShipBlipPositions()
+        {
+            foreach (var kv in _farShipAnchors)
+            {
+                if (kv.Value == null)
+                    continue;
+                if (!ShipMinimapBlipCache.TryGet(kv.Key, out var blip))
+                    continue;
+                ApplyFarShipBlip(kv.Value, blip);
+            }
+        }
+
+        static void ApplyFarShipBlip(MinimapBlipAnchor anchor, ShipMinimapBlipCache.Entry blip)
+        {
+            anchor.Kind = MinimapBlipKind.Ship;
+            anchor.Team = blip.Team;
+            anchor.IsDead = blip.IsDead;
+            anchor.IsMega = blip.IsMega;
+            anchor.IsLocalPlayer = false;
+            anchor.ShipLevel = blip.Level;
+            anchor.OwnerNetworkId = blip.NetworkId;
+            anchor.BodySize = 1f;
+            anchor.transform.position = new Vector3(blip.X, 0f, blip.Z);
+            anchor.transform.localScale = Vector3.one;
+        }
+
+        MinimapBlipAnchor GetOrCreateFarShipAnchor(int networkId)
+        {
+            if (_farShipAnchors.TryGetValue(networkId, out var existing) && existing != null)
+                return existing;
+
+            var go = new GameObject("MinimapAnchor_FarShip_" + networkId);
+            go.hideFlags = HideFlags.HideAndDontSave;
+            go.transform.SetParent(_root, false);
+            var anchor = go.AddComponent<MinimapBlipAnchor>();
+            anchor.Kind = MinimapBlipKind.Ship;
+            _farShipAnchors[networkId] = anchor;
+            return anchor;
+        }
+
         void RebuildLists()
         {
             // --- Rebuild cache ---
@@ -693,6 +787,12 @@ namespace TitanOrbit.UI
                         _asteroids.Add(anchor);
                         break;
                 }
+            }
+
+            foreach (var far in _farShipAnchors.Values)
+            {
+                if (far != null)
+                    _ships.Add(far);
             }
 
             foreach (var moon in _gemMoonsByPlanetId.Values)

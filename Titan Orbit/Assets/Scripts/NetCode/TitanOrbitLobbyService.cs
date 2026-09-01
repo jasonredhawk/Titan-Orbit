@@ -270,6 +270,24 @@ namespace TitanOrbit.NetCode
             return browsable;
         }
 
+        /// <summary>Open dedicated lobby count (latest and older) for overflow caps.</summary>
+        public static async Task<int> QueryOpenDedicatedLobbyCountAsync()
+        {
+            var raw = await QueryOpenLobbiesAsync(
+                latestOnly: false,
+                count: 50,
+                emptyStabilizationAttempt: 0,
+                maxEmptyStabilizationAttemptsOverride: 0);
+            int n = 0;
+            for (int i = 0; i < raw.Count; i++)
+            {
+                if (TryAcceptBrowsableDedicatedLobby(raw[i], out _))
+                    n++;
+            }
+
+            return n;
+        }
+
         public static List<LobbySummary> FilterBrowsableDedicatedLobbies(List<LobbySummary> lobbies)
         {
             // --- FilterBrowsableDedicatedLobbies ---
@@ -287,18 +305,13 @@ namespace TitanOrbit.NetCode
             if (lobbies.Count > 0 && list.Count == 0)
                 LogBrowsableFilterRejections(lobbies);
 
+            // Latest first so Quick Join / default highlight funnels new players; older rooms stay listed.
             list.Sort((a, b) =>
             {
                 if (a.IsLatest != b.IsLatest)
                     return b.IsLatest.CompareTo(a.IsLatest);
                 return b.CreatedAtEpochSeconds.CompareTo(a.CreatedAtEpochSeconds);
             });
-
-            // [TITAN-ORBIT] When any "Latest" dedicated lobby exists, hide older listings — they often
-            // share a stale Relay allocation and cause connections=1 withNetworkId=0 on the client.
-            var latestOnly = list.FindAll(l => l.IsLatest);
-            if (latestOnly.Count > 0)
-                list = latestOnly;
 
             return list;
         }
@@ -507,12 +520,7 @@ namespace TitanOrbit.NetCode
                 return false;
             }
 
-            if (lobby.Data.TryGetValue(LobbyIsLatestKey, out DataObject latestObj) && latestObj != null &&
-                !string.Equals(latestObj.Value, "1", StringComparison.Ordinal))
-            {
-                rejectReason = "lobby is no longer the active match";
-                return false;
-            }
+            // IsLatest is a funnel badge only — older open rooms stay joinable.
 
             return true;
         }

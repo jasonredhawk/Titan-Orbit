@@ -109,9 +109,11 @@ namespace TitanOrbit.ECS
             int hz = 0;
             if (SystemAPI.TryGetSingleton<ClientServerTickRate>(out var tickRate))
                 hz = tickRate.SimulationTickRate;
-            double moonElapsed = SystemAPI.TryGetSingleton<NetworkTime>(out var networkTime)
-                ? PlanetGemMoonOrbitClock.GetElapsedSeconds(networkTime, hz, includeTickFraction: false)
-                : SystemAPI.Time.ElapsedTime;
+            if (!SystemAPI.TryGetSingleton<NetworkTime>(out var networkTime) ||
+                !networkTime.ServerTick.IsValid)
+                return;
+            double moonElapsed = PlanetGemMoonOrbitClock.GetElapsedSeconds(
+                networkTime, hz, includeTickFraction: false);
 
             // Missing map period → skip moon shield regen geometry (never invent 1000).
             float preferredW = 0f;

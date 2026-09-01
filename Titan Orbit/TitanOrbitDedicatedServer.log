@@ -2349,3 +2349,185 @@
 2026-08-31 18:09:09Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=4.9 realtimeMs=4.9 timeScale=1.00
 2026-08-31 18:09:11Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=6.3 realtimeMs=6.7 timeScale=1.00
 2026-08-31 18:09:13Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=100.0 realtimeMs=194.0 timeScale=1.00
+2026-09-01 10:07:31Z | driver | role=server-dedicated sendQ=1024 recvQ=1024 heartbeatMs=3000 maxMsg=1400
+2026-09-01 10:07:44Z | pace | tickMode=Auto simHz=60 netHz=60 maxSteps=2 sendCatchUpSnaps=True targetFps=-1 vSync=0 maxDt=0.10
+2026-09-01 10:07:46Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=20.0 realtimeMs=0.0 timeScale=1.00
+2026-09-01 10:07:48Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=11.2 realtimeMs=11.2 timeScale=1.00
+2026-09-01 10:07:50Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=3.6 realtimeMs=3.7 timeScale=1.00
+2026-09-01 10:07:52Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=3.6 realtimeMs=3.6 timeScale=1.00
+2026-09-01 10:07:54Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=3.2 realtimeMs=3.3 timeScale=1.00
+2026-09-01 10:07:56Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=3.9 realtimeMs=3.9 timeScale=1.00
+2026-09-01 10:07:58Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=3.4 realtimeMs=3.4 timeScale=1.00
+2026-09-01 10:07:59Z | pace | tickWallMs=82.5 simHz=60 maxSteps=2
+2026-09-01 10:08:01Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=100.0 realtimeMs=1756.5 timeScale=1.00
+2026-09-01 10:08:01Z | driver | role=server-dedicated sendQ=1024 recvQ=1024 heartbeatMs=3000 maxMsg=1400
+2026-09-01 10:08:04Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=100.0 realtimeMs=2806.7 timeScale=1.00
+2026-09-01 10:08:06Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=6.0 realtimeMs=6.1 timeScale=1.00
+2026-09-01 10:08:08Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=6.7 realtimeMs=6.7 timeScale=1.00
+2026-09-01 10:08:09Z | relevancy | planetTags=25 planetGhosts=25 planetIds=0 alwaysQuery=25 alwaysIds=0 alwaysInserts=0 set=0 collection=0 conns=0
+2026-09-01 10:08:10Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=6.4 realtimeMs=6.4 timeScale=1.00
+2026-09-01 10:08:12Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=5.4 realtimeMs=5.2 timeScale=1.00
+2026-09-01 10:08:14Z | relevancy | planetTags=25 planetGhosts=25 planetIds=0 alwaysQuery=25 alwaysIds=0 alwaysInserts=0 set=0 collection=0 conns=0
+2026-09-01 10:08:14Z | netdiag-server | [NetDiagnostics/Server] effectiveSim=60.0Hz wallSim=41.5Hz (target 60) simSteps=602 catchUpTicks=28 (5%) maxSteps=2 unityFrames=4211 frameMs avg=5.2 max=100.0 realtimeMs avg=6.6 ecsPassMs=4.5 presentMs=0.0 waitFpsMs=0.0 ghostSendMs=0.0 buildPhysMs=0.0 stepPhysMs=0.0 bulletHashMs=0.0 predMs=0.3 ghostMs=0.1 slowFrames(>20ms)=24 | Verdict: SLOW — simulation below target (CPU overload or process throttled)
+2026-09-01 10:08:14Z | pace | tickWallMs=11.1 simHz=60 maxSteps=2
+2026-09-01 10:08:14Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=5.3 realtimeMs=5.2 timeScale=1.00
+2026-09-01 10:08:16Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=5.3 realtimeMs=4.8 timeScale=1.00
+2026-09-01 10:08:18Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=6.6 realtimeMs=6.7 timeScale=1.00
+2026-09-01 10:08:19Z | relevancy | planetTags=25 planetGhosts=25 planetIds=0 alwaysQuery=25 alwaysIds=0 alwaysInserts=0 set=0 collection=0 conns=0
+2026-09-01 10:08:20Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=7.0 realtimeMs=6.9 timeScale=1.00
+2026-09-01 10:08:22Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=4.8 realtimeMs=4.7 timeScale=1.00
+2026-09-01 10:08:24Z | relevancy | planetTags=25 planetGhosts=25 planetIds=0 alwaysQuery=25 alwaysIds=0 alwaysInserts=0 set=0 collection=0 conns=0
+2026-09-01 10:08:24Z | netdiag-server | [NetDiagnostics/Server] effectiveSim=60.0Hz wallSim=60.0Hz (target 60) simSteps=600 catchUpTicks=1 (0%) maxSteps=2 unityFrames=1677 frameMs avg=6.0 max=31.0 realtimeMs avg=6.0 ecsPassMs=6.3 presentMs=0.0 waitFpsMs=0.0 ghostSendMs=0.0 buildPhysMs=0.0 stepPhysMs=0.0 bulletHashMs=0.0 predMs=0.4 ghostMs=0.1 slowFrames(>20ms)=1 | Verdict: healthy
+2026-09-01 10:08:24Z | pace | tickWallMs=8.6 simHz=60 maxSteps=2
+2026-09-01 10:08:24Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=5.2 realtimeMs=5.1 timeScale=1.00
+2026-09-01 10:08:26Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=6.3 realtimeMs=5.5 timeScale=1.00
+2026-09-01 10:08:28Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=6.0 realtimeMs=5.9 timeScale=1.00
+2026-09-01 10:08:29Z | relevancy | planetTags=25 planetGhosts=25 planetIds=0 alwaysQuery=25 alwaysIds=0 alwaysInserts=0 set=0 collection=0 conns=0
+2026-09-01 10:08:30Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=5.2 realtimeMs=5.2 timeScale=1.00
+2026-09-01 10:08:32Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=7.4 realtimeMs=7.5 timeScale=1.00
+2026-09-01 10:08:34Z | relevancy | planetTags=25 planetGhosts=25 planetIds=0 alwaysQuery=25 alwaysIds=0 alwaysInserts=0 set=0 collection=0 conns=0
+2026-09-01 10:08:34Z | netdiag-server | [NetDiagnostics/Server] effectiveSim=60.0Hz wallSim=60.0Hz (target 60) simSteps=600 catchUpTicks=0 (0%) maxSteps=2 unityFrames=1566 frameMs avg=6.4 max=29.9 realtimeMs avg=6.4 ecsPassMs=5.6 presentMs=0.0 waitFpsMs=0.0 ghostSendMs=0.0 buildPhysMs=0.0 stepPhysMs=0.0 bulletHashMs=0.0 predMs=0.4 ghostMs=0.0 slowFrames(>20ms)=1 | Verdict: healthy
+2026-09-01 10:08:34Z | pace | tickWallMs=10.4 simHz=60 maxSteps=2
+2026-09-01 10:08:34Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=7.4 realtimeMs=7.5 timeScale=1.00
+2026-09-01 10:08:48Z | driver | role=server-dedicated sendQ=1024 recvQ=1024 heartbeatMs=3000 maxMsg=1400
+2026-09-01 10:08:49Z | pace | tickMode=Auto simHz=60 netHz=60 maxSteps=2 sendCatchUpSnaps=True targetFps=-1 vSync=0 maxDt=0.10
+2026-09-01 10:08:49Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=20.0 realtimeMs=0.0 timeScale=1.00
+2026-09-01 10:08:51Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=7.2 realtimeMs=7.3 timeScale=1.00
+2026-09-01 10:08:53Z | pace | tickWallMs=77.2 simHz=60 maxSteps=2
+2026-09-01 10:08:53Z | driver | role=server-dedicated sendQ=1024 recvQ=1024 heartbeatMs=3000 maxMsg=1400
+2026-09-01 10:08:53Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=100.0 realtimeMs=105.4 timeScale=1.00
+2026-09-01 10:08:55Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=100.0 realtimeMs=121.8 timeScale=1.00
+2026-09-01 10:08:57Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=100.0 realtimeMs=129.2 timeScale=1.00
+2026-09-01 10:09:00Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=100.0 realtimeMs=1639.1 timeScale=1.00
+2026-09-01 10:09:02Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=16.6 realtimeMs=16.7 timeScale=1.00
+2026-09-01 10:09:03Z | relevancy | planetTags=25 planetGhosts=25 planetIds=25 alwaysQuery=25 alwaysIds=25 alwaysInserts=25 set=26 collection=5 conns=1
+2026-09-01 10:09:04Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=22.6 realtimeMs=22.2 timeScale=1.00
+2026-09-01 10:09:06Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=20.9 realtimeMs=19.9 timeScale=1.00
+2026-09-01 10:09:07Z | relevancy | planetTags=25 planetGhosts=25 planetIds=25 alwaysQuery=25 alwaysIds=25 alwaysInserts=25 set=26 collection=5 conns=1
+2026-09-01 10:09:07Z | netdiag-server | [NetDiagnostics/Server] effectiveSim=60.0Hz wallSim=43.5Hz (target 60) simSteps=602 catchUpTicks=266 (44%) maxSteps=2 unityFrames=681 frameMs avg=17.8 max=100.0 realtimeMs avg=25.9 ecsPassMs=8.4 presentMs=0.0 waitFpsMs=0.0 ghostSendMs=0.0 buildPhysMs=0.0 stepPhysMs=0.0 bulletHashMs=0.1 predMs=0.3 ghostMs=0.0 slowFrames(>20ms)=157 | Verdict: SLOW — simulation below target (CPU overload or process throttled)
+2026-09-01 10:09:07Z | pace | tickWallMs=24.3 simHz=60 maxSteps=2
+2026-09-01 10:09:08Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=22.7 realtimeMs=22.6 timeScale=1.00
+2026-09-01 10:09:10Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=21.4 realtimeMs=21.6 timeScale=1.00
+2026-09-01 10:09:12Z | relevancy | planetTags=25 planetGhosts=25 planetIds=25 alwaysQuery=25 alwaysIds=25 alwaysInserts=25 set=26 collection=5 conns=1
+2026-09-01 10:09:12Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=24.0 realtimeMs=23.7 timeScale=1.00
+2026-09-01 10:09:14Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=19.5 realtimeMs=19.7 timeScale=1.00
+2026-09-01 10:24:08Z | driver | role=server-dedicated sendQ=1024 recvQ=1024 heartbeatMs=3000 maxMsg=1400
+2026-09-01 10:24:10Z | pace | tickMode=Auto simHz=60 netHz=60 maxSteps=2 sendCatchUpSnaps=True targetFps=-1 vSync=0 maxDt=0.10
+2026-09-01 10:24:10Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=20.0 realtimeMs=0.0 timeScale=1.00
+2026-09-01 10:24:13Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=20.0 realtimeMs=2378.7 timeScale=1.00
+2026-09-01 10:24:22Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=100.0 realtimeMs=9026.1 timeScale=1.00
+2026-09-01 10:24:32Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=100.0 realtimeMs=9252.5 timeScale=1.00
+2026-09-01 10:24:34Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=4.9 realtimeMs=4.8 timeScale=1.00
+2026-09-01 10:24:36Z | driver | role=server-dedicated sendQ=1024 recvQ=1024 heartbeatMs=3000 maxMsg=1400
+2026-09-01 10:24:36Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=6.7 realtimeMs=312.1 timeScale=1.00
+2026-09-01 10:24:37Z | driver | role=client-dedicated sendQ=1024 recvQ=1024 heartbeatMs=3000 maxMsg=1400
+2026-09-01 10:24:38Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=100.0 realtimeMs=193.5 timeScale=1.00
+2026-09-01 10:24:40Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=100.0 realtimeMs=189.8 timeScale=1.00
+2026-09-01 10:24:42Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=100.0 realtimeMs=174.1 timeScale=1.00
+2026-09-01 10:24:45Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=100.0 realtimeMs=807.9 timeScale=1.00
+2026-09-01 10:24:47Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=11.5 realtimeMs=11.6 timeScale=1.00
+2026-09-01 10:24:49Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=9.9 realtimeMs=9.9 timeScale=1.00
+2026-09-01 10:24:51Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=9.6 realtimeMs=9.8 timeScale=1.00
+2026-09-01 10:24:53Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=12.6 realtimeMs=11.9 timeScale=1.00
+2026-09-01 10:24:55Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=9.1 realtimeMs=9.1 timeScale=1.00
+2026-09-01 10:24:57Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=9.1 realtimeMs=8.8 timeScale=1.00
+2026-09-01 10:24:59Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=9.8 realtimeMs=9.5 timeScale=1.00
+2026-09-01 10:25:01Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=9.0 realtimeMs=8.9 timeScale=1.00
+2026-09-01 10:25:03Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=9.3 realtimeMs=9.1 timeScale=1.00
+2026-09-01 10:25:05Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=8.4 realtimeMs=8.5 timeScale=1.00
+2026-09-01 10:25:07Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=9.0 realtimeMs=9.1 timeScale=1.00
+2026-09-01 10:25:09Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=9.2 realtimeMs=9.0 timeScale=1.00
+2026-09-01 10:25:11Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=9.3 realtimeMs=9.0 timeScale=1.00
+2026-09-01 10:25:13Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=8.8 realtimeMs=8.8 timeScale=1.00
+2026-09-01 10:25:15Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=8.4 realtimeMs=8.4 timeScale=1.00
+2026-09-01 10:25:17Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=9.0 realtimeMs=8.7 timeScale=1.00
+2026-09-01 10:25:19Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=10.8 realtimeMs=10.7 timeScale=1.00
+2026-09-01 10:25:21Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=8.4 realtimeMs=8.4 timeScale=1.00
+2026-09-01 10:25:23Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=8.9 realtimeMs=8.8 timeScale=1.00
+2026-09-01 10:25:25Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=9.0 realtimeMs=9.2 timeScale=1.00
+2026-09-01 10:25:27Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=54.6 realtimeMs=54.6 timeScale=1.00
+2026-09-01 10:25:29Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=9.1 realtimeMs=8.9 timeScale=1.00
+2026-09-01 10:25:31Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=4.6 realtimeMs=4.7 timeScale=1.00
+2026-09-01 10:25:33Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=4.9 realtimeMs=5.0 timeScale=1.00
+2026-09-01 10:25:35Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=94.4 realtimeMs=95.2 timeScale=1.00
+2026-09-01 10:37:43Z | driver | role=server-dedicated sendQ=1024 recvQ=1024 heartbeatMs=3000 maxMsg=1400
+2026-09-01 10:37:57Z | pace | tickMode=Auto simHz=60 netHz=60 maxSteps=2 sendCatchUpSnaps=True targetFps=-1 vSync=0 maxDt=0.10
+2026-09-01 10:37:58Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=20.0 realtimeMs=0.0 timeScale=1.00
+2026-09-01 10:38:06Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=100.0 realtimeMs=5864.9 timeScale=1.00
+2026-09-01 10:38:08Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=13.4 realtimeMs=13.6 timeScale=1.00
+2026-09-01 10:38:10Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=4.7 realtimeMs=4.0 timeScale=1.00
+2026-09-01 10:38:12Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=3.9 realtimeMs=4.0 timeScale=1.00
+2026-09-01 10:38:14Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=4.1 realtimeMs=4.2 timeScale=1.00
+2026-09-01 10:38:16Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=4.9 realtimeMs=5.5 timeScale=1.00
+2026-09-01 10:38:18Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=7.3 realtimeMs=8.2 timeScale=1.00
+2026-09-01 10:38:19Z | driver | role=server-dedicated sendQ=1024 recvQ=1024 heartbeatMs=3000 maxMsg=1400
+2026-09-01 10:38:20Z | driver | role=client-dedicated sendQ=1024 recvQ=1024 heartbeatMs=3000 maxMsg=1400
+2026-09-01 10:38:20Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=7.6 realtimeMs=7.7 timeScale=1.00
+2026-09-01 10:38:22Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=100.0 realtimeMs=517.9 timeScale=1.00
+2026-09-01 10:38:24Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=100.0 realtimeMs=189.6 timeScale=1.00
+2026-09-01 10:38:26Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=100.0 realtimeMs=132.6 timeScale=1.00
+2026-09-01 10:38:28Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=100.0 realtimeMs=132.6 timeScale=1.00
+2026-09-01 10:38:30Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=13.0 realtimeMs=12.7 timeScale=1.00
+2026-09-01 10:38:32Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=12.9 realtimeMs=12.7 timeScale=1.00
+2026-09-01 10:38:34Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=8.9 realtimeMs=8.5 timeScale=1.00
+2026-09-01 10:38:36Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=10.0 realtimeMs=9.9 timeScale=1.00
+2026-09-01 10:38:38Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=9.1 realtimeMs=9.3 timeScale=1.00
+2026-09-01 10:38:40Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=8.8 realtimeMs=8.9 timeScale=1.00
+2026-09-01 10:38:42Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=10.1 realtimeMs=10.4 timeScale=1.00
+2026-09-01 10:38:44Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=10.7 realtimeMs=10.6 timeScale=1.00
+2026-09-01 10:38:46Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=12.3 realtimeMs=12.7 timeScale=1.00
+2026-09-01 10:38:48Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=10.4 realtimeMs=10.4 timeScale=1.00
+2026-09-01 10:38:50Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=9.5 realtimeMs=9.5 timeScale=1.00
+2026-09-01 10:38:52Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=10.6 realtimeMs=11.0 timeScale=1.00
+2026-09-01 10:38:54Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=14.1 realtimeMs=14.1 timeScale=1.00
+2026-09-01 10:38:56Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=10.0 realtimeMs=9.8 timeScale=1.00
+2026-09-01 10:38:58Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=9.8 realtimeMs=9.8 timeScale=1.00
+2026-09-01 10:39:00Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=10.1 realtimeMs=10.6 timeScale=1.00
+2026-09-01 10:39:02Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=10.9 realtimeMs=10.7 timeScale=1.00
+2026-09-01 10:39:04Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=9.1 realtimeMs=10.2 timeScale=1.00
+2026-09-01 10:39:06Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=9.9 realtimeMs=9.9 timeScale=1.00
+2026-09-01 10:39:08Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=10.2 realtimeMs=10.3 timeScale=1.00
+2026-09-01 10:39:10Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=10.1 realtimeMs=10.3 timeScale=1.00
+2026-09-01 10:39:12Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=11.6 realtimeMs=11.8 timeScale=1.00
+2026-09-01 10:39:14Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=9.6 realtimeMs=9.5 timeScale=1.00
+2026-09-01 10:39:16Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=9.8 realtimeMs=9.7 timeScale=1.00
+2026-09-01 10:39:18Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=9.5 realtimeMs=9.4 timeScale=1.00
+2026-09-01 10:39:20Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=11.7 realtimeMs=11.5 timeScale=1.00
+2026-09-01 10:39:22Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=10.2 realtimeMs=10.3 timeScale=1.00
+2026-09-01 10:54:24Z | driver | role=server-dedicated sendQ=1024 recvQ=1024 heartbeatMs=3000 maxMsg=1400
+2026-09-01 10:54:27Z | pace | tickMode=Auto simHz=60 netHz=60 maxSteps=2 sendCatchUpSnaps=True targetFps=-1 vSync=0 maxDt=0.10
+2026-09-01 10:54:27Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=20.0 realtimeMs=0.0 timeScale=1.00
+2026-09-01 10:54:29Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=20.0 realtimeMs=2179.6 timeScale=1.00
+2026-09-01 10:54:31Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=23.2 realtimeMs=23.2 timeScale=1.00
+2026-09-01 10:54:33Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=7.3 realtimeMs=7.1 timeScale=1.00
+2026-09-01 10:54:35Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=21.1 realtimeMs=21.2 timeScale=1.00
+2026-09-01 10:54:37Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=100.0 realtimeMs=237.5 timeScale=1.00
+2026-09-01 10:54:39Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=7.9 realtimeMs=7.7 timeScale=1.00
+2026-09-01 10:54:41Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=7.0 realtimeMs=6.9 timeScale=1.00
+2026-09-01 10:54:43Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=20.3 realtimeMs=20.3 timeScale=1.00
+2026-09-01 10:54:45Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=14.5 realtimeMs=14.6 timeScale=1.00
+2026-09-01 10:54:47Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=9.3 realtimeMs=9.4 timeScale=1.00
+2026-09-01 10:54:49Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=5.7 realtimeMs=5.7 timeScale=1.00
+2026-09-01 10:54:51Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=3.9 realtimeMs=4.0 timeScale=1.00
+2026-09-01 10:54:52Z | driver | role=server-dedicated sendQ=1024 recvQ=1024 heartbeatMs=3000 maxMsg=1400
+2026-09-01 10:54:53Z | driver | role=client-dedicated sendQ=1024 recvQ=1024 heartbeatMs=3000 maxMsg=1400
+2026-09-01 10:54:53Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=100.0 realtimeMs=268.6 timeScale=1.00
+2026-09-01 10:54:56Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=100.0 realtimeMs=3018.8 timeScale=1.00
+2026-09-01 10:54:59Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=100.0 realtimeMs=1089.1 timeScale=1.00
+2026-09-01 10:55:02Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=100.0 realtimeMs=493.6 timeScale=1.00
+2026-09-01 10:55:04Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=100.0 realtimeMs=137.8 timeScale=1.00
+2026-09-01 10:55:06Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=100.0 realtimeMs=162.8 timeScale=1.00
+2026-09-01 10:55:08Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=23.1 realtimeMs=23.3 timeScale=1.00
+2026-09-01 10:55:10Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=11.5 realtimeMs=11.5 timeScale=1.00
+2026-09-01 10:55:12Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=11.5 realtimeMs=11.6 timeScale=1.00
+2026-09-01 10:55:14Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=10.1 realtimeMs=10.2 timeScale=1.00
+2026-09-01 10:55:16Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=10.4 realtimeMs=10.3 timeScale=1.00
+2026-09-01 10:55:18Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=9.2 realtimeMs=9.3 timeScale=1.00
+2026-09-01 10:55:20Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=10.5 realtimeMs=10.6 timeScale=1.00
+2026-09-01 10:55:22Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=9.5 realtimeMs=9.3 timeScale=1.00
+2026-09-01 10:55:24Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=10.3 realtimeMs=10.2 timeScale=1.00
+2026-09-01 10:55:26Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=31.2 realtimeMs=31.2 timeScale=1.00
+2026-09-01 10:55:28Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=27.7 realtimeMs=27.5 timeScale=1.00
+2026-09-01 10:55:30Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=9.8 realtimeMs=9.7 timeScale=1.00
+2026-09-01 10:55:32Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=10.7 realtimeMs=10.5 timeScale=1.00
+2026-09-01 10:55:34Z | pace | targetFps=-1 vSync=0 maxDt=0.100 deltaMs=11.2 realtimeMs=11.3 timeScale=1.00

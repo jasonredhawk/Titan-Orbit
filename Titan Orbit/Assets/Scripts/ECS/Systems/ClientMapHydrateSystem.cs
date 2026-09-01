@@ -12,9 +12,11 @@ namespace TitanOrbit.ECS
     /// [TITAN-ORBIT] Client builds the procedural map locally from the match seed recipe.
     /// Replaces GhostSpawn Instantiates of hundreds of planet/asteroid ghosts.
     /// <para>
-    /// Pipeline: recipe latch (<see cref="ClientMapHydrateCache"/>) → budgeted asteroid
+    /// Pipeline: recipe latch (<see cref="ClientMapHydrateCache"/>) → budgeted planet + asteroid
     /// Instantiates → <see cref="ClientMapHydrateCache.IsComplete"/> →
     /// <c>TitanOrbitGoInGameClientSystem</c> adds <see cref="NetworkStreamInGame"/>.
+    /// Planets are seed-hydrated so Join Game can finish when dedicated snapshots arrive empty
+    /// (Docker / IL2CPP relevancy). Incoming planet ghosts replace the seed copy by PlanetId.
     /// </para>
     /// <para>
     /// Watches <see cref="ClientMapHydrateCache.SessionGeneration"/>. Disconnect / Play-again
@@ -39,6 +41,7 @@ namespace TitanOrbit.ECS
         NativeList<int> _neutralPlanetIds;
         int _bodyIndex;
         int _asteroidsSpawned;
+        int _planetsSpawned;
         MapGenerationLogic.RolledParameters _rolled;
 
         /// <summary>Native lists start uncreated; generation is forced to mismatch so the first tick rebuilds.</summary>
@@ -89,7 +92,7 @@ namespace TitanOrbit.ECS
             // --- Build blueprint (or rebuild if lists vanished) ---
             if (!_blueprintReady || !_bodies.IsCreated)
             {
-                if (!TryGetAsteroidPrefab(ref state, out _))
+                if (!TryGetMapPrefabs(ref state, out _, out _))
                 {
                     ClientMapHydrateCache.WaitingForPrefabs = true;
                     float now = Time.realtimeSinceStartup;
@@ -98,7 +101,7 @@ namespace TitanOrbit.ECS
                         _loggedWaitingPrefabs = true;
                         _nextPrefabWaitLogRealtime = now + 3f;
                         Debug.Log(
-                            "[ClientMapHydrate] Waiting for GamePrefabs.Asteroid on ClientWorld " +
+                            "[ClientMapHydrate] Waiting for GamePrefabs.Planet + Asteroid on ClientWorld " +
                             "(SubScene streaming). World bar stays at 0 until prefabs exist.");
                     }
 
@@ -131,6 +134,7 @@ namespace TitanOrbit.ECS
 
                 _bodyIndex = 0;
                 _asteroidsSpawned = 0;
+                _planetsSpawned = 0;
                 _blueprintReady = true;
                 ClientMapHydrateCache.WaitingForPrefabs = false;
                 ClientMapHydrateCache.MarkHydrateStarted(asteroidCount);
@@ -152,18 +156,27 @@ namespace TitanOrbit.ECS
             if (!_bodies.IsCreated)
                 return;
 
-            if (!TryGetAsteroidPrefab(ref state, out Entity asteroidPrefab))
+            if (!TryGetMapPrefabs(ref state, out Entity asteroidPrefab, out Entity planetPrefab))
             {
                 ClientMapHydrateCache.WaitingForPrefabs = true;
                 return;
             }
 
-            // --- Spawn asteroid batch (skip planet kinds — those arrive as ghosts) ---
+            // --- Spawn planet + asteroid batches (planets used to wait on ghosts; Docker
+            // snapshots can arrive empty while relevancy still reports 25 planets). ---
             int spawnedThisFrame = 0;
             while (_bodyIndex < _bodies.Length && spawnedThisFrame < BodiesPerFrame)
             {
                 var body = _bodies[_bodyIndex];
                 _bodyIndex++;
+                if (body.EntityKind == 1 || body.EntityKind == 2)
+                {
+                    ClientLocalMapBodySpawn.SpawnPlanet(em, planetPrefab, body);
+                    _planetsSpawned++;
+                    spawnedThisFrame++;
+                    continue;
+                }
+
                 if (body.EntityKind != 3)
                     continue;
 
@@ -177,28 +190,44 @@ namespace TitanOrbit.ECS
             if (_bodyIndex < _bodies.Length)
                 return;
 
+            if (_claims.IsCreated && _neutralPlanetIds.IsCreated)
+            {
+                for (int i = 0; i < _claims.Length; i++)
+                {
+                    int neutralIndex = _claims[i].NeutralLayoutIndex;
+                    if (neutralIndex < 0 || neutralIndex >= _neutralPlanetIds.Length)
+                        continue;
+                    ClientLocalMapBodySpawn.TryApplyClaim(
+                        em, _neutralPlanetIds[neutralIndex], _claims[i].Team);
+                }
+            }
+
             ClientMapHydrateCache.MarkComplete();
+            int planetsSpawned = _planetsSpawned;
             DisposeBlueprint();
             _blueprintReady = false;
 
             Debug.Log(
-                "[ClientMapHydrate] Asteroid hydrate complete built=" + ClientMapHydrateCache.BuiltBodies +
+                "[ClientMapHydrate] Hydrate complete asteroids=" + ClientMapHydrateCache.BuiltBodies +
                 "/" + ClientMapHydrateCache.ExpectedBodies +
+                " planets=" + planetsSpawned +
                 " gen=" + generation +
                 " — GoInGame may proceed.");
         }
 
         /// <summary>
-        /// Resolves the client asteroid prefab. SubScene bake can lag a few frames after connect.
+        /// Resolves planet + asteroid prefabs. SubScene bake can lag a few frames after connect.
         /// </summary>
-        bool TryGetAsteroidPrefab(ref SystemState state, out Entity asteroidPrefab)
+        bool TryGetMapPrefabs(ref SystemState state, out Entity asteroidPrefab, out Entity planetPrefab)
         {
             asteroidPrefab = Entity.Null;
+            planetPrefab = Entity.Null;
             if (!SystemAPI.TryGetSingleton<GamePrefabs>(out var prefabs))
                 return false;
-            if (prefabs.Asteroid == Entity.Null)
+            if (prefabs.Asteroid == Entity.Null || prefabs.Planet == Entity.Null)
                 return false;
             asteroidPrefab = prefabs.Asteroid;
+            planetPrefab = prefabs.Planet;
             return true;
         }
 
@@ -216,6 +245,7 @@ namespace TitanOrbit.ECS
             _neutralPlanetIds = default;
             _bodyIndex = 0;
             _asteroidsSpawned = 0;
+            _planetsSpawned = 0;
         }
     }
 }

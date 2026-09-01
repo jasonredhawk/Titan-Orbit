@@ -56,9 +56,11 @@ namespace TitanOrbit.ECS
             int hz = 0;
             if (SystemAPI.TryGetSingleton<ClientServerTickRate>(out var tickRate))
                 hz = tickRate.SimulationTickRate;
-            double elapsed = SystemAPI.TryGetSingleton<NetworkTime>(out var networkTime)
-                ? PlanetGemMoonOrbitClock.GetElapsedSeconds(networkTime, hz, includeTickFraction: false)
-                : SystemAPI.Time.ElapsedTime;
+            if (!SystemAPI.TryGetSingleton<NetworkTime>(out var networkTime) ||
+                !networkTime.ServerTick.IsValid)
+                return;
+            double elapsed = PlanetGemMoonOrbitClock.GetElapsedSeconds(
+                networkTime, hz, includeTickFraction: false);
 
             // Missing map period → skip moon dock this tick (never invent 1000).
             if (!ToroidalMapEcs.TryGetMapSize(out float mapW, out float mapH))

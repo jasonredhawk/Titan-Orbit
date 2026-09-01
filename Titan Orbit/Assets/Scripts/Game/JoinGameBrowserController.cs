@@ -19,7 +19,8 @@ namespace TitanOrbit.Game
     /// Layout matches the Main Menu look: transparent backdrop over SpaceBackground, Titan Orbit logo,
     /// then Refresh / Quick join latest, then the lobby list.
     /// Each lobby row shows team cards, map extras, capacity, and its own Join button (no footer Join).
-    /// The dedicated process publishes one IsLatest match; players join it — they do not create games.
+    /// Dedicated processes publish games; players join them — they do not create rooms.
+    /// IsLatest is a funnel badge (Quick Join prefers it); older open rooms stay listed.
     /// </summary>
     public class JoinGameBrowserController : MonoBehaviour
     {

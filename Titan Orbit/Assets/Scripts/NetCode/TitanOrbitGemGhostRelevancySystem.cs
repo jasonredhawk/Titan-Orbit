@@ -14,20 +14,21 @@ namespace TitanOrbit.NetCode
     /// <summary>
     /// [NETCODE] Official SetIsRelevant contract before <see cref="GhostSendSystem"/>.
     /// <para>
-    /// Ships and planets are always-relevant: <see cref="GhostRelevancy.DefaultRelevancyQuery"/>
-    /// (Any Ship|Planet, Unity test shape) <b>and</b> each assigned ghost id is written into
-    /// <see cref="GhostRelevancy.GhostRelevancySet"/>. Nearby gems use the same set.
+    /// Planets are always-relevant. Nearby ships (combat range) plus the owner's hull go in
+    /// <see cref="GhostRelevancy.GhostRelevancySet"/> with nearby gems. Far ships use minimap blips.
     /// Debug  db511d: snapshots arrived empty (snapRecv climbed, GhostCountOnServer=0) when
     /// planets were omitted from the set and only the query was used.
     /// </para>
-    /// World: ServerSimulation. Group: SimulationSystemGroup, before <see cref="GhostSendSystem"/>.
+    /// World: ServerSimulation. Initialization — fills the set before Simulation GhostSend.
     /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation)]
-    [UpdateInGroup(typeof(SimulationSystemGroup))]
-    [UpdateBefore(typeof(GhostSendSystem))]
+    [UpdateInGroup(typeof(InitializationSystemGroup))]
+    [UpdateAfter(typeof(TitanOrbitDynamicGhostRelevancySystem))]
     public partial struct TitanOrbitGemGhostRelevancySystem : ISystem
     {
         public const float RelevancyRadius = 40f;
+        public const float ShipRelevancyRadius = 80f;
+        public const float ShipRelevancyDropRadius = 100f;
         const float RelevancyLogIntervalSeconds = 5f;
 
         EntityQuery _defaultRelevantQuery;
@@ -37,19 +38,18 @@ namespace TitanOrbit.NetCode
         EntityQuery _gemQuery;
         EntityQuery _connectionQuery;
         EntityQuery _shipQuery;
+        NativeHashSet<ulong> _keptShipPairs;
         double _lastRelevancyLogElapsed;
 
         public void OnCreate(ref SystemState state)
         {
             state.RequireForUpdate<GhostRelevancy>();
             // Unity RelevancyTests shape: EntityQueryBuilder.WithAny, built for this world.
-            _defaultRelevantQuery = new EntityQueryBuilder(Allocator.Temp)
-                .WithAny<ShipTag, PlanetTag>()
-                .Build(ref state);
+            _defaultRelevantQuery = state.EntityManager.CreateEntityQuery(ComponentType.ReadOnly<PlanetTag>());
             _alwaysGhostQuery = new EntityQueryBuilder(Allocator.Temp)
-                .WithAny<ShipTag, PlanetTag>()
-                .WithAll<GhostInstance>()
+                .WithAll<PlanetTag, GhostInstance>()
                 .Build(ref state);
+            _keptShipPairs = new NativeHashSet<ulong>(64, Allocator.Persistent);
             _planetTagQuery = state.GetEntityQuery(ComponentType.ReadOnly<PlanetTag>());
             _planetGhostQuery = state.GetEntityQuery(
                 ComponentType.ReadOnly<PlanetTag>(),
@@ -65,7 +65,16 @@ namespace TitanOrbit.NetCode
             _shipQuery = state.GetEntityQuery(
                 ComponentType.ReadOnly<ShipTag>(),
                 ComponentType.ReadOnly<LocalTransform>(),
-                ComponentType.ReadOnly<GhostInstance>());
+                ComponentType.ReadOnly<GhostInstance>(),
+                ComponentType.ReadOnly<GhostOwner>());
+        }
+
+        public void OnDestroy(ref SystemState state)
+        {
+            if (_keptShipPairs.IsCreated)
+                _keptShipPairs.Dispose();
+            if (_defaultRelevantQuery != default)
+                _defaultRelevantQuery.Dispose();
         }
 
         public void OnUpdate(ref SystemState state)
@@ -110,6 +119,8 @@ namespace TitanOrbit.NetCode
             GemSpatialHash hash = default;
             var em = state.EntityManager;
             NativeArray<LocalTransform> shipTransforms = default;
+            NativeArray<GhostInstance> shipGhosts = default;
+            NativeArray<GhostOwner> shipOwners = default;
             int shipCount = _shipQuery.CalculateEntityCount();
             bool needGemHash = gemCount > 0 && haveMap && shipCount > 0;
             if (needGemHash)
@@ -123,12 +134,18 @@ namespace TitanOrbit.NetCode
             }
 
             if (shipCount > 0)
+            {
                 shipTransforms = _shipQuery.ToComponentDataArray<LocalTransform>(Allocator.Temp);
+                shipGhosts = _shipQuery.ToComponentDataArray<GhostInstance>(Allocator.Temp);
+                shipOwners = _shipQuery.ToComponentDataArray<GhostOwner>(Allocator.Temp);
+            }
 
             var nearby = new NativeList<int>(64, Allocator.Temp);
             var seenScratch = new NativeHashSet<int>(64, Allocator.Temp);
+            var nextKeptShips = new NativeHashSet<ulong>(math.max(64, shipCount * 2), Allocator.Temp);
             int gemInserts = 0;
             int alwaysInserts = 0;
+            int shipInserts = 0;
 
             for (int ci = 0; ci < connCount; ci++)
             {
@@ -145,9 +162,6 @@ namespace TitanOrbit.NetCode
                         alwaysInserts++;
                 }
 
-                if (!hash.IsCreated || gemCount <= 0)
-                    continue;
-
                 bool haveOwnHull = false;
                 float3 ownPos = float3.zero;
                 if (em.HasComponent<CommandTarget>(connEntities[ci]))
@@ -161,6 +175,35 @@ namespace TitanOrbit.NetCode
                         haveOwnHull = true;
                     }
                 }
+
+                for (int s = 0; s < shipCount; s++)
+                {
+                    int ghostId = shipGhosts[s].ghostId;
+                    if (ghostId == 0)
+                        continue;
+
+                    bool isOwner = shipOwners[s].NetworkId == connectionId;
+                    bool keep = isOwner;
+                    if (!keep && haveOwnHull)
+                    {
+                        float dist = haveMap
+                            ? ToroidalMapEcs.ToroidalDistance(ownPos, shipTransforms[s].Position, mapW, mapH)
+                            : math.distance(ownPos, shipTransforms[s].Position);
+                        ulong pair = PackShipPair(connectionId, ghostId);
+                        bool wasKept = _keptShipPairs.Contains(pair);
+                        keep = dist <= ShipRelevancyRadius ||
+                               (wasKept && dist <= ShipRelevancyDropRadius);
+                    }
+
+                    if (!keep)
+                        continue;
+                    if (set.TryAdd(new RelevantGhostForConnection(connectionId, ghostId), 1))
+                        shipInserts++;
+                    nextKeptShips.Add(PackShipPair(connectionId, ghostId));
+                }
+
+                if (!hash.IsCreated || gemCount <= 0)
+                    continue;
 
                 nearby.Clear();
                 seenScratch.Clear();
@@ -202,7 +245,13 @@ namespace TitanOrbit.NetCode
                 shipCount,
                 alwaysInserts,
                 alwaysIds,
-                set.Count());
+                set.Count(),
+                shipInserts);
+
+            _keptShipPairs.Clear();
+            foreach (var pair in nextKeptShips)
+                _keptShipPairs.Add(pair);
+            nextKeptShips.Dispose();
 
             nearby.Dispose();
             seenScratch.Dispose();
@@ -221,6 +270,15 @@ namespace TitanOrbit.NetCode
                 gemMotions.Dispose();
             if (shipTransforms.IsCreated)
                 shipTransforms.Dispose();
+            if (shipGhosts.IsCreated)
+                shipGhosts.Dispose();
+            if (shipOwners.IsCreated)
+                shipOwners.Dispose();
+        }
+
+        static ulong PackShipPair(int connectionId, int ghostId)
+        {
+            return ((ulong)(uint)connectionId << 32) | (uint)ghostId;
         }
 
         void LogIfDue(
@@ -233,7 +291,8 @@ namespace TitanOrbit.NetCode
             int shipCount,
             int alwaysInserts,
             int alwaysIds,
-            int setCount)
+            int setCount,
+            int shipInserts = 0)
         {
             if (now - _lastRelevancyLogElapsed < RelevancyLogIntervalSeconds)
                 return;
@@ -282,6 +341,7 @@ namespace TitanOrbit.NetCode
                 ",\"alwaysCount\":" + alwaysCount +
                 ",\"alwaysIds\":" + alwaysIds +
                 ",\"alwaysInserts\":" + alwaysInserts +
+                ",\"shipInserts\":" + shipInserts +
                 ",\"setCount\":" + setCount +
                 ",\"collection\":" + collectionPrefabs +
                 ",\"ships\":" + shipCount +
