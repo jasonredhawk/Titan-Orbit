@@ -219,6 +219,16 @@ namespace TitanOrbit.ECS
                 EntityManager.IsComponentEnabled<GhostOwnerIsLocal>(shipEntity))
                 return true;
 
+            if (LocalShipEntitySeed.TryGetOwnedShipEntityUnchecked(EntityManager, out var claimed) &&
+                claimed == shipEntity)
+                return true;
+
+            // Ownerless Instantiates during deferred Confirm — hide the grey prefab mesh.
+            if (ClientTeamFlowState.HasDeferredTeamChoiceConfirmPending &&
+                EntityManager.HasComponent<GhostOwner>(shipEntity) &&
+                EntityManager.GetComponentData<GhostOwner>(shipEntity).NetworkId <= 0)
+                return true;
+
             // --- GhostOwner.NetworkId match ---
             if (!EntityManager.HasComponent<GhostOwner>(shipEntity))
                 return false;

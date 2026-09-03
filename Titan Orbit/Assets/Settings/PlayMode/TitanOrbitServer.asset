@@ -12,7 +12,8 @@ MonoBehaviour:
   m_Script: {fileID: 15024, guid: 0000000000000000e000000000000000, type: 0}
   m_Name: TitanOrbitServer
   m_EditorClassIdentifier: UnityEditor.MultiplayerModule.dll::Unity.Multiplayer.PlayMode.Editor.ScenarioConfig
-  m_Description: 'Local two-window play: Main = Client And Server (3), Player 2 = Client (1).'
+  m_Description: 'Local two-window play: Main = Client And Server (3), Player 2 =
+    Client (1).'
   m_EnableEditors: 1
   m_MainEditorInstance:
     Name: Main Editor
@@ -24,19 +25,7 @@ MonoBehaviour:
     m_PlayerTag: 
     m_InitialScene: {fileID: 0}
     PlayerInstanceIndex: 0
-  m_EditorInstances:
-  - Name: Player 2
-    <CorrespondingNodeId>k__BackingField: Player 2|1_run
-    m_Nodes:
-    - Player 2|1_run
-    - Player 2|1_deploy
-    m_Role: 1
-    m_PlayerTag: 
-    m_InitialScene: {fileID: 0}
-    PlayerInstanceIndex: 1
-    m_AdvancedConfiguration:
-      StreamLogsToMainEditor: 0
-      LogsColor: {r: 0.3643, g: 0.581, b: 0.8679, a: 1}
+  m_EditorInstances: []
   m_LocalInstances: []
   m_RemoteInstances: []
   m_MainEditorInstanceObsolete:

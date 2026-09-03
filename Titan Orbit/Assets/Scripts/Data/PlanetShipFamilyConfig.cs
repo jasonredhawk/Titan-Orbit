@@ -47,6 +47,24 @@ namespace TitanOrbit.Data
         [Tooltip("Ordered list: index 0 = home planet family, index 1 = planet 1, etc.")]
         public List<ShipFamilyEntry> families = new List<ShipFamilyEntry>();
 
+        const string ResourcesLoadName = "PlanetShipFamilyConfig";
+
+        static PlanetShipFamilyConfig s_Cached;
+
+        /// <summary>
+        /// Single Resources load of this asset. Cached after first resolve — the asset
+        /// references every family chassis, and <c>Resources.Load</c> on dedicated walks
+        /// stripped prefabs (~10ms). Card / bank lookups were paying that every tick.
+        /// </summary>
+        public static PlanetShipFamilyConfig LoadDefault()
+        {
+            if (s_Cached != null)
+                return s_Cached;
+
+            s_Cached = Resources.Load<PlanetShipFamilyConfig>(ResourcesLoadName);
+            return s_Cached;
+        }
+
         /// <summary>
         /// Linear index into <see cref="ShipFamilyDefinition.upgradeTree"/>: sum of per-level slot counts for levels &lt; L, plus branch.
         /// Level 7 has 3 slots (MEGA); levels 1–6 have L slots each → total 24 tiers before repeating.

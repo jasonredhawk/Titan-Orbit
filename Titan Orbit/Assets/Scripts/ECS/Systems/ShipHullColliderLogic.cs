@@ -255,6 +255,11 @@ namespace TitanOrbit.ECS
 
             try
             {
+#if UNITY_SERVER && !UNITY_EDITOR
+                // Dedicated: walk the prefab asset only. Instantiates are 80–200ms and
+                // Dedicated Server Optimizations strip the clone's meshes/colliders.
+                Transform root = chassisPrefab.transform;
+#else
                 // Nested StarSparrow Collider / Collider2 boxes are stripped on the prefab
                 // asset until Instantiate — same reason MEGA always clones. Walking the
                 // asset left regular ships on the tiny ghost sphere.
@@ -263,8 +268,10 @@ namespace TitanOrbit.ECS
                 instance.transform.SetPositionAndRotation(Vector3.zero, Quaternion.identity);
                 instance.transform.localScale = Vector3.one;
                 Transform root = instance.transform;
+#endif
 
-                if (ShipStatApplyLogic.SumAttributeLevels(attrs) > 0)
+#if !UNITY_SERVER || UNITY_EDITOR
+                if (instance != null && ShipStatApplyLogic.SumAttributeLevels(attrs) > 0)
                 {
                     string prefix = ResolveFamilyPrefix(chassisPrefab, familyPrefix);
                     ShipComponentAttributeScaleLogic.ApplyToHierarchy(
@@ -273,6 +280,7 @@ namespace TitanOrbit.ECS
                         attrs,
                         territoryMovementMult: 1f);
                 }
+#endif
 
                 foreach (var collider in root.GetComponentsInChildren<UnityEngine.Collider>(true))
                 {
@@ -343,12 +351,18 @@ namespace TitanOrbit.ECS
             GameObject instance = null;
             try
             {
+                Transform root;
+#if UNITY_SERVER && !UNITY_EDITOR
+                // Dedicated: authored boxes on the prefab asset — no Instantiates.
+                root = chassisPrefab.transform;
+                applyAttributeScale = false;
+#else
                 // --- Temp hierarchy (destroyed in finally) ---
                 // [UNITY] Instantiate so we can mutate localScale without dirtying the asset prefab.
                 instance = Object.Instantiate(chassisPrefab);
                 instance.transform.SetPositionAndRotation(Vector3.zero, Quaternion.identity);
                 instance.transform.localScale = Vector3.one;
-                var root = instance.transform;
+                root = instance.transform;
 
                 // --- Bottom-bar attribute grow (same math as proxy meshes / collider bake) ---
                 if (applyAttributeScale)
@@ -360,12 +374,13 @@ namespace TitanOrbit.ECS
                         attrs,
                         territoryMovementMult: 1f);
                 }
+#endif
 
                 // --- Sum box volumes (world extents after grow) ---
                 // [UNITY] Qualify UnityEngine.BoxCollider — this file also imports Unity.Physics
                 // which has its own BoxCollider type (ambiguous otherwise).
                 float volumeSum = 0f;
-                var boxes = instance.GetComponentsInChildren<UnityEngine.BoxCollider>(true);
+                var boxes = root.GetComponentsInChildren<UnityEngine.BoxCollider>(true);
                 for (int i = 0; i < boxes.Length; i++)
                 {
                     UnityEngine.BoxCollider box = boxes[i];

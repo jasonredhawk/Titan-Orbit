@@ -84,18 +84,25 @@ namespace TitanOrbit.Data
 
         public int CategoryCount => categories != null ? categories.Count : 0;
 
+        static BulletVfxBank s_Cached;
+
         /// <summary>
         /// Loads the single Resources bank (Editor + player builds). No Data/ folder duplicate.
+        /// Cached after the first resolve — <c>Resources.Load</c> of this asset walks particle
+        /// prefabs and is ~1ms on dedicated (stripped meshes), × live PD turrets = SLOW-MO.
         /// </summary>
         public static BulletVfxBank LoadDefault()
         {
+            if (s_Cached != null)
+                return s_Cached;
+
             // --- One asset only (Resources) ---
-            var bank = Resources.Load<BulletVfxBank>(ResourcesLoadName);
+            s_Cached = Resources.Load<BulletVfxBank>(ResourcesLoadName);
 #if UNITY_EDITOR
-            if (bank == null)
-                bank = UnityEditor.AssetDatabase.LoadAssetAtPath<BulletVfxBank>(ResourcesAssetPath);
+            if (s_Cached == null)
+                s_Cached = UnityEditor.AssetDatabase.LoadAssetAtPath<BulletVfxBank>(ResourcesAssetPath);
 #endif
-            return bank;
+            return s_Cached;
         }
 
         /// <summary>

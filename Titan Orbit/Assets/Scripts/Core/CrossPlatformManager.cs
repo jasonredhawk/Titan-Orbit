@@ -37,6 +37,14 @@ namespace TitanOrbit.Core
         /// </summary>
         private void ConfigurePlatform()
         {
+#if UNITY_SERVER && !UNITY_EDITOR
+            // [TITAN-ORBIT] Project Quality vSyncCount=1. Dummy SDL / -nographics waits on that
+            // present (~2 Hz) and ships/moons crawl while the Editor client FPS stays fine.
+            QualitySettings.vSyncCount = 0;
+            Application.targetFrameRate = 60;
+            Time.maximumDeltaTime = 1f;
+            return;
+#endif
             // --- Mobile ---
             if (Application.isMobilePlatform)
             {

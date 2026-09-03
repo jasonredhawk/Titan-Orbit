@@ -6,9 +6,9 @@ using Unity.Physics;
 namespace TitanOrbit.ECS
 {
     /// <summary>
-    /// Server predicted step: drop 0-HP / IsDestroyed asteroid hulls out of Unity Physics
-    /// <b>before</b> the solver runs. Paired with <see cref="AsteroidClientCullPhysicsSystem"/>
-    /// on the client.
+    /// Server predicted step: disable 0-HP / IsDestroyed asteroid hulls
+    /// <b>before</b> the solver runs (shared no-collide blob). Paired with
+    /// <see cref="AsteroidClientCullPhysicsSystem"/> on the client.
     /// <para>
     /// [TITAN-ORBIT] Ram / bullet kill happens after physics this tick. The next tick must not
     /// still collide with a rock the client already hid (HitRpc Health=0). If
@@ -32,7 +32,7 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// Strips PhysicsCollider from every dead asteroid still in the physics world.
+        /// Swaps dead asteroid hulls to the shared no-collide blob.
         /// </summary>
         public void OnUpdate(ref SystemState state)
         {

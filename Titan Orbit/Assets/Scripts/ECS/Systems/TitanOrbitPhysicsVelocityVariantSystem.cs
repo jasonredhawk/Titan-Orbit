@@ -26,6 +26,12 @@ namespace TitanOrbit.ECS
     /// Registers <see cref="PhysicsVelocityPredictedOnlyVariant"/> as the default so
     /// interpolated remotes never bake <see cref="PhysicsVelocity"/>. Takes precedence
     /// over NetCode's <c>PhysicsDefaultVariantSystem</c> (that one uses TrySet).
+    /// <para>
+    /// Do <b>not</b> override <c>LocalTransform</c> here. A Clamp/toroidal default variant
+    /// changes the ghost collection hash — Editor client vs an already-deployed dedicated
+    /// binary then Instantiates ships with GhostOwner=0 and Team Join returns to the menu.
+    /// Wrap snaps stay in presentation (<c>ShipVisualSyncSystem</c> / remote wrap resolve).
+    /// </para>
     /// </summary>
     public sealed partial class TitanOrbitPhysicsVelocityVariantSystem : DefaultVariantSystemBase
     {

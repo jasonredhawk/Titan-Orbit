@@ -118,7 +118,7 @@ namespace TitanOrbit.ECS
         static bool TryResolveFamilyFromShipIndex(in ShipState ship, out ShipFamilyDefinition family)
         {
             family = null;
-            var config = Resources.Load<PlanetShipFamilyConfig>("PlanetShipFamilyConfig");
+            var config = PlanetShipFamilyConfig.LoadDefault();
             if (config == null || config.families == null)
                 return false;
             int idx = ship.ShipFamilyConfigIndex;

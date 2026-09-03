@@ -1,4 +1,5 @@
 using System;
+using TitanOrbit.Generation;
 using Unity.Burst;
 using Unity.Collections.LowLevel.Unsafe;
 using Unity.Mathematics;
@@ -47,7 +48,28 @@ namespace TitanOrbit.ECS
             _ = userData;
 
             // current = corrected after resim; previous = pose before reconcile this tick.
-            current.Position = math.lerp(previous.Position, current.Position, PositionBlend);
+            // Euclidean lerp across a wrap (+edge → −edge) pulls the hull through the map
+            // center — that is the dedicated snap wall. Shortest toroidal offset, then wrap.
+            if (ToroidalMapEcs.TryGetMapSize(out float mapW, out float mapH) &&
+                ToroidalMapEcs.IsWrapJump(previous.Position, current.Position, mapW, mapH))
+            {
+                current.Rotation = math.slerp(previous.Rotation, current.Rotation, RotationBlend);
+                return;
+            }
+
+            if (ToroidalMapEcs.TryGetMapSize(out mapW, out mapH))
+            {
+                float3 offset = ToroidalMapEcs.ShortestOffsetXZ(
+                    previous.Position, current.Position, mapW, mapH);
+                float3 blended = previous.Position + offset * PositionBlend;
+                blended.y = math.lerp(previous.Position.y, current.Position.y, PositionBlend);
+                current.Position = ToroidalMapEcs.Wrap(blended, mapW, mapH);
+            }
+            else
+            {
+                current.Position = math.lerp(previous.Position, current.Position, PositionBlend);
+            }
+
             current.Rotation = math.slerp(previous.Rotation, current.Rotation, RotationBlend);
         }
     }

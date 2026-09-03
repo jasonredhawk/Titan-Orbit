@@ -206,20 +206,22 @@ namespace TitanOrbit.ECS
             float mapW = mapState.MapWidth;
             float mapH = mapState.MapHeight;
 
-            // --- Broadphase for ship / asteroid / transport sweeps ---
-            // [TITAN-ORBIT] Built once from MapStateSingleton size. TryResolveBulletHit
-            // queries nearby cells instead of walking every rock per bullet.
-            // TempJob: IJob.Run() cannot touch Allocator.Temp containers.
-            _obstacleHash = BulletObstacleSpatialHash.Build(
-                state.EntityManager,
-                _allShipQuery,
-                _asteroidHashQuery,
-                _transportHashQuery,
-                mapW,
-                mapH,
-                Allocator.TempJob);
+            // Empty lobby: no live rounds and no hulls that can fire. Skip the 333-asteroid
+            // hash (main never paid this). Phase B same-frame collide builds it lazily.
+            if (bullets.Length == 0 && _allShipQuery.IsEmptyIgnoreFilter)
+            {
+                ecb.Dispose();
+                return;
+            }
+
             try
             {
+            // --- Broadphase for ship / asteroid / transport sweeps ---
+            // [TITAN-ORBIT] Built from MapStateSingleton size only when something can hit.
+            // TryResolveBulletHit queries nearby cells instead of walking every rock.
+            // TempJob: IJob.Run() cannot touch Allocator.Temp containers.
+            if (bullets.Length > 0)
+                EnsureObstacleHash(state.EntityManager, mapW, mapH);
 
             // Gem prefab for cargo spill after hull breaks (optional — damage still applies).
             Entity gemPrefab = Entity.Null;
@@ -694,6 +696,7 @@ namespace TitanOrbit.ECS
             BulletNetNotify.SendSpawn(ref ecb, spawn, mountIdx);
 
             // --- Same-frame spawn collide (substepped — MEGA sniper + shipVel can skip a rock) ---
+            EnsureObstacleHash(state.EntityManager, mapW, mapH);
             BulletFlight.GetStep(plan.Origin, plan.Velocity, dt, out float3 firstEnd, out int spawnSteps);
             float3 cursor = plan.Origin;
             bool spawnHit = false;
@@ -912,6 +915,25 @@ namespace TitanOrbit.ECS
                 if (drones.IsCreated)
                     drones.Dispose();
             }
+        }
+
+        /// <summary>
+        /// Builds the asteroid/ship/transport hash once per tick, on first use.
+        /// Empty ticks (no live bullets, no fire) never pay this — that is the
+        /// mega-ships Docker cost <c>main</c> did not have.
+        /// </summary>
+        void EnsureObstacleHash(EntityManager em, float mapW, float mapH)
+        {
+            if (_obstacleHash.IsCreated)
+                return;
+            _obstacleHash = BulletObstacleSpatialHash.Build(
+                em,
+                _allShipQuery,
+                _asteroidHashQuery,
+                _transportHashQuery,
+                mapW,
+                mapH,
+                Allocator.TempJob);
         }
 
         /// <summary>

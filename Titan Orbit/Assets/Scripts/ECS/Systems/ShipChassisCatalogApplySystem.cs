@@ -406,14 +406,22 @@ namespace TitanOrbit.ECS
                 if (isMega)
                     motorMass = math.max(motorMass, MegaShipCatalog.DefaultHullCollisionMass);
 
+                string familyPrefix = ResolveFamilyPrefix(chassisId);
+#if UNITY_SERVER && !UNITY_EDITOR
+                // Dedicated: walk prefab-asset BoxColliders (no Instantiate).
+                // MEGA still Instantiates nested modules; skip that on dedicated.
+                if (!isMega)
+                    ShipHullColliderLogic.TryApplyChassisCollider(
+                        em, entity, chassisPrefab, motorMass, attrs, familyPrefix);
+#else
                 // [TITAN-ORBIT] Bake hierarchy with same attribute scale as proxy meshes so
                 // grown wings/engines collide at their visible size (not authored-only).
-                string familyPrefix = ResolveFamilyPrefix(chassisId);
                 if (isMega)
                     ShipHullColliderLogic.TryApplyMegaPartColliders(em, entity, chassisPrefab, motorMass);
                 else
                     ShipHullColliderLogic.TryApplyChassisCollider(
                         em, entity, chassisPrefab, motorMass, attrs, familyPrefix);
+#endif
             }
 
             var hullState = new ShipHullColliderState

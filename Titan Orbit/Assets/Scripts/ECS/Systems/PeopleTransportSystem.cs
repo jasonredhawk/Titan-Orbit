@@ -95,6 +95,17 @@ namespace TitanOrbit.ECS
             float mapW = map.MapWidth;
             float mapH = map.MapHeight;
 
+            // Empty lobby: no orbiting hulls. Skip the 25-planet hashmap (main did not).
+            bool anyShip = false;
+            foreach (var _ in SystemAPI.Query<RefRO<ShipState>>().WithAll<ShipTag>())
+            {
+                anyShip = true;
+                break;
+            }
+
+            if (!anyShip)
+                return;
+
             var planetById = new NativeHashMap<int, Entity>(32, Allocator.Temp);
             var planetStateById = new NativeHashMap<int, PlanetState>(32, Allocator.Temp);
             var planetTransformById = new NativeHashMap<int, LocalTransform>(32, Allocator.Temp);

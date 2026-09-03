@@ -65,6 +65,13 @@ namespace TitanOrbit
         public static bool MegaShipsAutoFireAsteroids;
 
         /// <summary>
+        /// When true, <c>MegaShipAutoFireSystem</c> returns immediately (no auto-aim / MEGA
+        /// turret slew). Temporary Docker / hitch isolate — MEGA Fire still uses hull-forward
+        /// Phase B in <c>BulletSimulationSystem</c>. Honored on dedicated too (not a cheat).
+        /// </summary>
+        public static bool DisableMegaShipAutoFire = true;
+
+        /// <summary>
         /// When true, asteroid-destroy paths log millisecond timings (local gem burst, urgent gem
         /// proxies). Use this to find hitch frames — Console filter: <c>[AsteroidDestroy]</c>.
         /// </summary>

@@ -37,19 +37,26 @@ namespace TitanOrbit.NetCode
         /// <param name="catchUpPercent">Percent of sim steps that were catch-up ticks.</param>
         /// <param name="avgFrameMs">Average Unity frame ms in the window.</param>
         /// <param name="verdict">Plain-language verdict from netdiag.</param>
-        public static void ReportSimHealthSample(float catchUpPercent, float avgFrameMs, string verdict)
+        public static void ReportSimHealthSample(
+            float catchUpPercent,
+            float avgFrameMs,
+            string verdict,
+            float wallHz = -1f)
         {
             // --- ReportSimHealthSample ---
             _lastCatchUpPercent = catchUpPercent;
             _lastAvgFrameMs = avgFrameMs;
             _lastVerdict = verdict ?? "unknown";
 
-            bool struggling =
-                catchUpPercent >= StrugglingCatchUpPercent ||
-                avgFrameMs >= StrugglingAvgFrameMs ||
-                (!string.IsNullOrEmpty(verdict) &&
-                 (verdict.StartsWith("STRUGGLING", StringComparison.Ordinal) ||
-                  verdict.StartsWith("SLOW", StringComparison.Ordinal)));
+            // [TITAN-ORBIT] SLOW-MO is dummy-present / deltaTime clamp, not CPU overload.
+            // Treating it as struggling recycled empty Docker processes within a minute.
+            bool slowMoPacing = !string.IsNullOrEmpty(verdict) &&
+                                verdict.IndexOf("SLOW-MO", StringComparison.Ordinal) >= 0;
+
+            bool struggling = !slowMoPacing &&
+                ((wallHz >= 50f && catchUpPercent >= StrugglingCatchUpPercent) ||
+                 (!string.IsNullOrEmpty(verdict) &&
+                  verdict.StartsWith("STRUGGLING", StringComparison.Ordinal)));
 
             if (struggling)
                 _consecutiveStrugglingSamples++;

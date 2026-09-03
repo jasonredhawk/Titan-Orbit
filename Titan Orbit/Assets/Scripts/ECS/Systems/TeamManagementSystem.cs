@@ -198,6 +198,8 @@ namespace TitanOrbit.ECS
             if (success)
             {
                 // Same sequence as TeamChoiceResultClientSystem.LogResult (join-crash Instantiates hold).
+                LocalShipEntitySeed.PrepareForTeamChoiceShip();
+                ClientTeamFlowState.LatchTeamChoiceSuccess(team, spawnPos, hasSpawnPos);
                 ClientJoinSettleCache.ArmPostTeamChoiceHold();
                 ClientTeamFlowState.RequestDeferredConfirmTeamChoice();
 

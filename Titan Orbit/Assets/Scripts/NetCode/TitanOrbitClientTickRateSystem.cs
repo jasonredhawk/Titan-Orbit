@@ -9,11 +9,10 @@ namespace TitanOrbit.NetCode
     /// <see cref="ClientServerTickRate.MaxSimulationStepsPerFrame"/> than Editor Local Host server
     /// so Relay clients can repay command-age debt.
     /// <para>
-    /// Experiment: <see cref="ExperimentalForcedInputLatencyTicks"/> delays local
-    /// <see cref="IInputComponentData"/> playback by one sim tick so prediction consumes
-    /// the same command the server will, instead of running one tick ahead and reconciling.
-    /// Set the constant to 0 to revert. Do not also register
-    /// <c>GhostPredictionSmoothing</c> — that blends poses and fights authority/display coast.
+    /// <see cref="ExperimentalForcedInputLatencyTicks"/> is 0 (package default). The
+    /// 1-tick experiment fought Relay <c>TargetCommandSlack=2</c> and added dedicated
+    /// reconcile snaps. Do not also register <c>GhostPredictionSmoothing</c> — that
+    /// blends poses and fights authority/display coast.
     /// </para>
     /// <para>
     /// basics34 (dedicated GCE): MaxSteps must stay high (8) for join catch-up.
@@ -48,12 +47,10 @@ namespace TitanOrbit.NetCode
         public const ushort PredictedSpawnClassificationTickPeriod = 64;
 
         /// <summary>
-        /// Experiment: delay gathering/playback of <c>ShipInput</c> by this many 60 Hz ticks
-        /// (<c>ClientTickRate.ForcedInputLatencyTicks</c>). 1 ≈ 16 ms. 0 = off (package default).
-        /// NetCode still predicts the owner hull; it just applies last tick's command this tick
-        /// so the server snapshot is less likely to snap the motor.
+        /// Forced input delay in 60 Hz ticks. 0 = off (package default). A value of 1 was
+        /// an experiment that added dedicated reconcile snaps under Relay slack=2.
         /// </summary>
-        public const byte ExperimentalForcedInputLatencyTicks = 1;
+        public const byte ExperimentalForcedInputLatencyTicks = 0;
 
         /// <summary>
         /// Re-applies every frame so a later handshake cannot restore merged tick batches

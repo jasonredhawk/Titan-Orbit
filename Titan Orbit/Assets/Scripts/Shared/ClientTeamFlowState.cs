@@ -1,3 +1,4 @@
+using Unity.Mathematics;
 using UnityEngine;
 
 namespace TitanOrbit.Core
@@ -44,6 +45,21 @@ namespace TitanOrbit.Core
         public static TeamId LastRequestedTeam { get; private set; } = TeamId.None;
 
         /// <summary>
+        /// Team the server assigned on the last successful TeamChoice / Local Host apply.
+        /// Used to tint the hull when <c>ShipState.Team</c> is still None (GhostOwner snapshot lag).
+        /// </summary>
+        public static TeamId AssignedTeam { get; private set; } = TeamId.None;
+
+        /// <summary>True when <see cref="TeamChoiceSpawnPos"/> is the server home-ring spawn.</summary>
+        public static bool HasTeamChoiceSpawnPos { get; private set; }
+
+        /// <summary>
+        /// Server home-ring pose from <c>TeamChoiceResultRpc</c> (or Local Host spawn).
+        /// The Instantiates ghost often starts at the prefab origin; presentation snaps here.
+        /// </summary>
+        public static float3 TeamChoiceSpawnPos { get; private set; }
+
+        /// <summary>
         /// [TITAN-ORBIT] TeamChoiceResult armed the Instantiates hold but Confirm is waiting until
         /// that hold expires (not merely the next frame). While set,
         /// <see cref="ShouldSuppressLocalPlayerControl"/> stays true so systems that check suppress
@@ -68,6 +84,39 @@ namespace TitanOrbit.Core
             _deferredConfirmPending = false;
             TeamChoiceConfirmed = true;
             LockRejoinEligibility();
+        }
+
+        /// <summary>
+        /// Stores assigned team + home-ring spawn from a successful TeamChoice ack.
+        /// Call before <see cref="RequestDeferredConfirmTeamChoice"/> so Instantiates can claim
+        /// an ownerless hull and snap off the prefab origin.
+        /// </summary>
+        /// <param name="team">Server-assigned team.</param>
+        /// <param name="spawnPos">Home-ring pose written on the server ship.</param>
+        /// <param name="hasSpawnPos">True when <paramref name="spawnPos"/> is valid.</param>
+        public static void LatchTeamChoiceSuccess(TeamId team, float3 spawnPos, bool hasSpawnPos)
+        {
+            if (team != TeamId.None)
+            {
+                AssignedTeam = team;
+                LastRequestedTeam = team;
+            }
+
+            HasTeamChoiceSpawnPos = hasSpawnPos && team != TeamId.None;
+            TeamChoiceSpawnPos = HasTeamChoiceSpawnPos ? spawnPos : float3.zero;
+        }
+
+        /// <summary>
+        /// Team for hybrid / EG materials when the ghost still has <see cref="TeamId.None"/>.
+        /// Prefers the server assign, then the button the player clicked.
+        /// </summary>
+        public static TeamId ResolvePresentationTeam(TeamId ghostTeam)
+        {
+            if (ghostTeam != TeamId.None)
+                return ghostTeam;
+            if (AssignedTeam != TeamId.None)
+                return AssignedTeam;
+            return LastRequestedTeam;
         }
 
         /// <summary>
@@ -100,6 +149,9 @@ namespace TitanOrbit.Core
             _rejoinEligibilityLocked = false;
             _deferredConfirmPending = false;
             LastRequestedTeam = TeamId.None;
+            AssignedTeam = TeamId.None;
+            HasTeamChoiceSpawnPos = false;
+            TeamChoiceSpawnPos = float3.zero;
         }
 
         /// <summary>Call when the player clicks a team button (before server ack).</summary>

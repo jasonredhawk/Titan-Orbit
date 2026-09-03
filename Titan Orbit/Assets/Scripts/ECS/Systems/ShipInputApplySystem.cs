@@ -10,11 +10,10 @@ namespace TitanOrbit.ECS
     /// ghost during <see cref="GhostInputSystemGroup"/> — before prediction runs this tick.
     /// [NETCODE] Writes the latest command onto the owner ghost in
     /// <see cref="GhostInputSystemGroup"/>. NetCode copies it into
-    /// <c>InputBufferData&lt;ShipInput&gt;</c> at <c>InputTargetTick</c>. With
+    /// <c>InputBufferData&lt;ShipInput&gt;</c> at <c>InputTargetTick</c>.
     /// <see cref="TitanOrbit.NetCode.TitanOrbitClientTickRateSystem.ExperimentalForcedInputLatencyTicks"/>
-    /// = 1, prediction plays that command one tick later (same tick the server consumes).
-    /// Dedicated server still reads the replicated command buffer. Paired with
-    /// <see cref="Game.ShipInputBridge"/>.
+    /// is 0 (no extra delay). Dedicated server still reads the replicated command buffer.
+    /// Paired with <see cref="Game.ShipInputBridge"/>.
     /// </summary>
     [UpdateInGroup(typeof(GhostInputSystemGroup))]
     [WorldSystemFilter(WorldSystemFilterFlags.ClientSimulation)]

@@ -31,7 +31,7 @@ namespace TitanOrbit.ECS
         public const float CulledTransformScale = 0.01f;
 
         /// <summary>
-        /// Records collider strip + scale squash on <paramref name="asteroid"/> and every
+        /// Records no-collide collider + scale squash on <paramref name="asteroid"/> and every
         /// <see cref="LinkedEntityGroup"/> child. Playback the ECB after the current query.
         /// Safe during SystemAPI foreach (no immediate structural changes).
         /// Use this on the destroy tick after the original scale has been copied for DestroyRpc.
@@ -48,7 +48,7 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// Removes <see cref="PhysicsCollider"/> only — keeps LocalTransform.Scale so
+        /// Swaps <see cref="PhysicsCollider"/> to the shared no-collide blob — keeps LocalTransform.Scale so
         /// <see cref="AsteroidDestructionSystem"/> can still copy the real radius onto DestroyRpc.
         /// Call from ram / bullet kill the same tick Health hits 0.
         /// </summary>
@@ -109,7 +109,14 @@ namespace TitanOrbit.ECS
             }
 
             if (em.HasComponent<PhysicsCollider>(entity))
-                ecb.RemoveComponent<PhysicsCollider>(entity);
+            {
+                // Shared no-collide blob — incremental static broadphase updates one leaf.
+                // RemoveComponent rebuilt the entire static world (104ms BuildPhysicsWorld).
+                ecb.SetComponent(entity, new PhysicsCollider
+                {
+                    Value = AsteroidClientCullPhysicsSystem.NoCollideCollider,
+                });
+            }
         }
     }
 }

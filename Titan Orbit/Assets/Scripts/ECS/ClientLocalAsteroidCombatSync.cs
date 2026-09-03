@@ -1036,7 +1036,10 @@ namespace TitanOrbit.ECS
         {
             if (!em.Exists(entity) || !em.HasComponent<PhysicsCollider>(entity))
                 return;
-            em.RemoveComponent<PhysicsCollider>(entity);
+            em.SetComponentData(entity, new PhysicsCollider
+            {
+                Value = AsteroidClientCullPhysicsSystem.NoCollideCollider,
+            });
         }
     }
 }

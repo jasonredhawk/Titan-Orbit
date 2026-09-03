@@ -2,8 +2,10 @@ using TitanOrbit.Data;
 using TitanOrbit.Simulation;
 using Unity.Collections;
 using Unity.Entities;
+using Unity.Mathematics;
 using Unity.NetCode;
 using Unity.Physics;
+using Unity.Transforms;
 
 namespace TitanOrbit.ECS
 {
@@ -20,6 +22,7 @@ namespace TitanOrbit.ECS
     /// </summary>
     [UpdateInGroup(typeof(SimulationSystemGroup))]
     [UpdateAfter(typeof(ShipStatApplySystem))]
+    [UpdateAfter(typeof(ShipChassisCatalogApplySystem))]
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation | WorldSystemFilterFlags.ClientSimulation)]
     public partial struct ShipHullColliderSyncSystem : ISystem
     {
@@ -38,6 +41,9 @@ namespace TitanOrbit.ECS
         {
             if (TitanOrbitPresentationConfig.UseEntitiesGraphicsForShips)
                 return;
+
+            // Dedicated still syncs: TryApplyChassisCollider walks the prefab asset
+            // (no Instantiate). Skipping that left a degenerate ghost Sphere.
 
             // [TITAN-ORBIT] Client: ship WithEntityAccess + collider structural swap during
             // GhostSpawn Instantiates Crash!!!. Server always syncs. Gate with IsClient().
@@ -218,9 +224,10 @@ namespace TitanOrbit.ECS
             }
 
             string familyPrefix = ResolveFamilyPrefix(chassisId);
-            if (!ShipHullColliderLogic.TryApplyChassisCollider(
-                    em, entity, tier.prefab, motorMass, attrs, familyPrefix))
-                return;
+            // Stamp even when bake fails so dedicated / stripped prefabs do not
+            // Instantiate the chassis every tick (80–100ms SLOW-MO).
+            ShipHullColliderLogic.TryApplyChassisCollider(
+                em, entity, tier.prefab, motorMass, attrs, familyPrefix);
 
             var hullState = new ShipHullColliderState
             {

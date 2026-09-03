@@ -84,6 +84,9 @@ namespace TitanOrbit.Core
         [Tooltip("When enabled, MEGA guns can auto-aim asteroids in damage mode — lowest priority after ships, planetary defense turrets, and moon shields. Heal mode is unchanged. Local Editor / MPPM host only.")]
         [SerializeField] bool debugMegaShipsAutoFireAsteroids;
 
+        [Tooltip("Temporary isolate: skip MegaShipAutoFireSystem (no MEGA auto-aim / turret slew). MEGA still fires hull-forward from BulletSimulationSystem. Honored on dedicated after rebuild — check this, rebuild Linux/Docker, look for [MegaShipAutoFire] disabled.")]
+        [SerializeField] bool debugDisableMegaShipAutoFire = true;
+
         [Header("Debug — Asteroid Destroy Hitch")]
         [Tooltip("Logs [AsteroidDestroy] timings in the Console when an asteroid explodes (local gem Instantiates + urgent gem proxies). Filter the Console with that tag.")]
         [SerializeField] bool debugLogAsteroidDestroyPerf;
@@ -213,6 +216,7 @@ namespace TitanOrbit.Core
                 TitanOrbitDebugFlags.InfiniteMines = false;
                 TitanOrbitDebugFlags.SelfHarmRocketsAndMines = false;
                 TitanOrbitDebugFlags.MegaShipsAutoFireAsteroids = false;
+                TitanOrbitDebugFlags.DisableMegaShipAutoFire = false;
                 TitanOrbitDebugFlags.LogAsteroidDestroyPerf = false;
                 TitanOrbitDebugFlags.InstructionImageCaptureEnabled = false;
                 TitanOrbitDebugFlags.StutterIsolatorEnabled = false;
@@ -241,6 +245,8 @@ namespace TitanOrbit.Core
             TitanOrbitDebugFlags.SelfHarmRocketsAndMines = debugSelfHarmRocketsAndMines;
             TitanOrbitDebugFlags.MegaShipsAutoFireAsteroids = debugMegaShipsAutoFireAsteroids;
 #endif
+            // Isolate MEGA auto-aim on Editor host and dedicated (not stripped on UNITY_SERVER).
+            TitanOrbitDebugFlags.DisableMegaShipAutoFire = debugDisableMegaShipAutoFire;
             TitanOrbitDebugFlags.LogAsteroidDestroyPerf = debugLogAsteroidDestroyPerf;
             // [TITAN-ORBIT] Instruction capture stays OFF unless you flip this for art rebuilds —
             // otherwise F8/F9 and the bottom status banner stay inactive during normal play.

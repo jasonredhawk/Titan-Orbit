@@ -1,7 +1,10 @@
 using TitanOrbit.Core;
+using TitanOrbit.Generation;
 using Unity.Collections;
 using Unity.Entities;
+using Unity.Mathematics;
 using Unity.NetCode;
+using Unity.Transforms;
 using UnityEngine;
 
 namespace TitanOrbit.ECS
@@ -52,6 +55,17 @@ namespace TitanOrbit.ECS
         /// Ship Instantiates seen before local NetworkId was readable — ownership rechecked later.
         /// </summary>
         static Entity s_UnresolvedOwnershipShip;
+
+        /// <summary>
+        /// True after the claimed hull has sat on the home ring — later flight must not snap back.
+        /// </summary>
+        static bool s_ReachedTeamChoiceSpawn;
+
+        /// <summary>
+        /// Ownerless ship Instantiates after the player clicked Join Team. Kept across the
+        /// TeamChoice RPC (PrepareForTeamChoiceShip clears only pre-pick remotes).
+        /// </summary>
+        static Entity s_PostTeamPickShip;
 
         /// <summary>
         /// Clears seed on domain reload. Also use <see cref="BeforeSceneLoad"/> — Editor may run
@@ -120,6 +134,11 @@ namespace TitanOrbit.ECS
                 (!em.Exists(s_UnresolvedOwnershipShip) ||
                  !em.HasComponent<ShipTag>(s_UnresolvedOwnershipShip)))
                 s_UnresolvedOwnershipShip = Entity.Null;
+
+            if (s_PostTeamPickShip != Entity.Null &&
+                (!em.Exists(s_PostTeamPickShip) ||
+                 !em.HasComponent<ShipTag>(s_PostTeamPickShip)))
+                s_PostTeamPickShip = Entity.Null;
         }
 
         /// <summary>
@@ -143,6 +162,20 @@ namespace TitanOrbit.ECS
             //    already counted the hull.
             if (!TryIsLocallyOwnedShip(em, entity, out bool localIdReady, out int ownerId))
             {
+                // Remember Instantiates after the Join Team click even if the Result RPC
+                // has not latched yet (ghost can arrive before TeamChoiceResult).
+                if (ownerId == 0 && ClientTeamFlowState.HasRequestedTeamPick)
+                    s_PostTeamPickShip = entity;
+
+                // --- Join Team Instantiates: GhostOwner often stays 0 for many frames ---
+                // [TITAN-ORBIT] Dedicated Relay: snapshot lag (or a stale ghost hash) leaves
+                // ownerId=0 + Team=None. Presentation then builds a grey hull at the prefab
+                // origin because suppress only hides a matching NetworkId. Claim this
+                // Instantiates when TeamChoice just succeeded — remotes already Instantiated
+                // during map load are dropped by PrepareForTeamChoiceShip.
+                if (TryClaimOwnerlessTeamChoiceShip(em, entity, localIdReady, ownerId))
+                    return;
+
                 if (em.HasComponent<GhostOwner>(entity) &&
                     (!localIdReady || ownerId == 0))
                 {
@@ -156,7 +189,21 @@ namespace TitanOrbit.ECS
                 return;
             }
 
+            ApplyTeamChoiceIdentity(em, entity);
             AcceptOwnedShip(entity);
+        }
+
+        /// <summary>
+        /// Drops pre–TeamChoice unresolved remotes so the next Instantiates (the new hull)
+        /// is the only ownerless candidate we will claim.
+        /// </summary>
+        public static void PrepareForTeamChoiceShip()
+        {
+            // Drop pre-click remotes only. Keep s_PostTeamPickShip — the hull Instantiates
+            // can beat TeamChoiceResult on Relay, and clearing it lost the only handle.
+            s_UnresolvedOwnershipShip = Entity.Null;
+            s_ReachedTeamChoiceSpawn = false;
+            ClientTeamChoiceSpawnCorrectSystem.RestartWindow();
         }
 
         /// <summary>
@@ -250,6 +297,8 @@ namespace TitanOrbit.ECS
             SeededShip = Entity.Null;
             s_PendingOwnedShip = Entity.Null;
             s_UnresolvedOwnershipShip = Entity.Null;
+            s_PostTeamPickShip = Entity.Null;
+            s_ReachedTeamChoiceSpawn = false;
         }
 
         /// <summary>Records ownership match and arms the short Instantiates hold.</summary>
@@ -257,6 +306,7 @@ namespace TitanOrbit.ECS
         {
             s_PendingOwnedShip = entity;
             s_UnresolvedOwnershipShip = Entity.Null;
+            s_PostTeamPickShip = Entity.Null;
             if (!ClientTeamFlowState.ShouldSuppressLocalPlayerControl())
                 SeededShip = entity;
 
@@ -281,6 +331,22 @@ namespace TitanOrbit.ECS
         /// <summary>Promotes <see cref="s_UnresolvedOwnershipShip"/> once NetworkId is ready.</summary>
         static void TryResolveDeferredOwnership(EntityManager em)
         {
+            if (s_PostTeamPickShip != Entity.Null &&
+                em.Exists(s_PostTeamPickShip) &&
+                em.HasComponent<ShipTag>(s_PostTeamPickShip))
+            {
+                if (TryIsLocallyOwnedShip(
+                        em, s_PostTeamPickShip, out bool pickReady, out int pickId))
+                {
+                    ApplyTeamChoiceIdentity(em, s_PostTeamPickShip);
+                    AcceptOwnedShip(s_PostTeamPickShip);
+                    return;
+                }
+
+                if (TryClaimOwnerlessTeamChoiceShip(em, s_PostTeamPickShip, pickReady, pickId))
+                    return;
+            }
+
             if (s_UnresolvedOwnershipShip == Entity.Null)
                 return;
             if (!em.Exists(s_UnresolvedOwnershipShip) ||
@@ -293,6 +359,10 @@ namespace TitanOrbit.ECS
             if (!TryIsLocallyOwnedShip(
                     em, s_UnresolvedOwnershipShip, out bool localIdReady, out int ownerId))
             {
+                if (TryClaimOwnerlessTeamChoiceShip(
+                        em, s_UnresolvedOwnershipShip, localIdReady, ownerId))
+                    return;
+
                 // Still waiting for local id or GhostOwner.NetworkId to leave 0.
                 if (!localIdReady || ownerId == 0)
                     return;
@@ -302,7 +372,102 @@ namespace TitanOrbit.ECS
                 return;
             }
 
+            ApplyTeamChoiceIdentity(em, s_UnresolvedOwnershipShip);
             AcceptOwnedShip(s_UnresolvedOwnershipShip);
+        }
+
+        /// <summary>
+        /// True when Join Team just succeeded and this Instantiates has no GhostOwner yet —
+        /// treat it as the local hull so Confirm / camera / tint do not wait on a 0 owner.
+        /// </summary>
+        static bool TryClaimOwnerlessTeamChoiceShip(
+            EntityManager em,
+            Entity entity,
+            bool localIdReady,
+            int ownerId)
+        {
+            if (!localIdReady || ownerId != 0)
+                return false;
+            if (!ClientTeamFlowState.HasDeferredTeamChoiceConfirmPending &&
+                !ClientTeamFlowState.TeamChoiceConfirmed)
+                return false;
+            if (entity == Entity.Null || !em.Exists(entity) || !em.HasComponent<ShipTag>(entity))
+                return false;
+
+            ApplyTeamChoiceIdentity(em, entity);
+            AcceptOwnedShip(entity);
+            Debug.Log(
+                "[LocalShipEntitySeed] Claimed ownerless TeamChoice Instantiates as local ship " +
+                $"(team={ClientTeamFlowState.ResolvePresentationTeam(TeamId.None)}, " +
+                $"hasSpawn={ClientTeamFlowState.HasTeamChoiceSpawnPos}).");
+            return true;
+        }
+
+        /// <summary>
+        /// Writes local <see cref="GhostOwner"/> / team / home-ring pose onto a TeamChoice hull
+        /// when the first snapshot still has owner 0, Team None, or prefab-origin position.
+        /// GhostUpdate may stomp these; <c>ClientTeamChoiceSpawnCorrectSystem</c> re-applies
+        /// for a short window.
+        /// </summary>
+        /// <param name="em">Client EntityManager.</param>
+        /// <param name="entity">Candidate ship.</param>
+        public static void ApplyTeamChoiceIdentity(EntityManager em, Entity entity)
+        {
+            if (entity == Entity.Null || !em.Exists(entity))
+                return;
+
+            int localId = ReadLocalNetworkId(em);
+            if (localId > 0 && em.HasComponent<GhostOwner>(entity))
+            {
+                var owner = em.GetComponentData<GhostOwner>(entity);
+                if (owner.NetworkId <= 0)
+                    em.SetComponentData(entity, new GhostOwner { NetworkId = localId });
+            }
+
+            TeamId team = ClientTeamFlowState.ResolvePresentationTeam(TeamId.None);
+            if (team != TeamId.None && em.HasComponent<ShipState>(entity))
+            {
+                var ship = em.GetComponentData<ShipState>(entity);
+                if (ship.Team == TeamId.None)
+                {
+                    ship.Team = team;
+                    ship.AwaitingTeamSelection = false;
+                    em.SetComponentData(entity, ship);
+                }
+            }
+
+            if (!ClientTeamFlowState.HasTeamChoiceSpawnPos ||
+                !em.HasComponent<LocalTransform>(entity))
+                return;
+
+            float3 spawn = ClientTeamFlowState.TeamChoiceSpawnPos;
+            var lt = em.GetComponentData<LocalTransform>(entity);
+            if (!ShouldSnapToTeamChoiceSpawn(lt.Position, spawn))
+                return;
+
+            lt.Position = spawn;
+            em.SetComponentData(entity, lt);
+        }
+
+        /// <summary>
+        /// True when the Instantiates pose is still the prefab origin or interpolating across
+        /// the map toward the home ring. Once the hull has arrived, later flight is left alone.
+        /// </summary>
+        public static bool ShouldSnapToTeamChoiceSpawn(float3 currentPos, float3 spawnPos)
+        {
+            float dist;
+            if (ToroidalMapEcs.TryGetMapSize(out float mapW, out float mapH))
+                dist = ToroidalMapEcs.ToroidalDistance(currentPos, spawnPos, mapW, mapH);
+            else
+                dist = math.distance(currentPos, spawnPos);
+
+            if (dist <= 25f)
+            {
+                s_ReachedTeamChoiceSpawn = true;
+                return false;
+            }
+
+            return !s_ReachedTeamChoiceSpawn;
         }
 
         /// <summary>

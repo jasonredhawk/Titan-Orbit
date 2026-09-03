@@ -9,6 +9,7 @@ using Unity.Mathematics;
 using Unity.NetCode;
 using Unity.Physics;
 using Unity.Transforms;
+using UnityEngine;
 
 namespace TitanOrbit.ECS
 {
@@ -56,10 +57,13 @@ namespace TitanOrbit.ECS
         EntityQuery _planetQuery;
         EntityQuery _asteroidQuery;
 
+        static bool s_LoggedDisable;
+
         /// <summary>Cache queries used every tick.</summary>
         protected override void OnCreate()
         {
             RequireForUpdate<MapStateSingleton>();
+            RequireForUpdate<ShipTag>();
             _megaQuery = GetEntityQuery(
                 ComponentType.ReadOnly<ShipTag>(),
                 ComponentType.ReadOnly<MegaShipState>(),
@@ -83,6 +87,17 @@ namespace TitanOrbit.ECS
         /// <summary>Refresh sticky auto-aim while the owner holds Fire. Does not spawn bullets.</summary>
         protected override void OnUpdate()
         {
+            if (TitanOrbitDebugFlags.DisableMegaShipAutoFire)
+            {
+                if (!s_LoggedDisable)
+                {
+                    s_LoggedDisable = true;
+                    Debug.Log("[MegaShipAutoFire] disabled (GameManager Debug — Disable MEGA Auto-Fire).");
+                }
+
+                return;
+            }
+
             if (!SystemAPI.TryGetSingleton<MapStateSingleton>(out var map) ||
                 !ToroidalMapEcs.IsValidMapSize(map.MapWidth, map.MapHeight))
                 return;

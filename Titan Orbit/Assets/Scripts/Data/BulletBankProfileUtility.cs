@@ -177,7 +177,7 @@ namespace TitanOrbit.Data
         {
             if (TryParseDroneSourceFamilyId(componentId, out int familyIndex))
             {
-                var config = Resources.Load<PlanetShipFamilyConfig>("PlanetShipFamilyConfig");
+                var config = PlanetShipFamilyConfig.LoadDefault();
                 var entry = config != null ? config.GetFamilyByConfigIndex(familyIndex) : null;
                 if (entry?.shipFamilyDefinition != null)
                     return ResolveBankIndexForFamily(entry.shipFamilyDefinition);
@@ -236,7 +236,7 @@ namespace TitanOrbit.Data
             if (string.IsNullOrWhiteSpace(componentId))
                 return 0;
             if (config == null)
-                config = Resources.Load<PlanetShipFamilyConfig>("PlanetShipFamilyConfig");
+                config = PlanetShipFamilyConfig.LoadDefault();
             if (config?.families == null)
                 return 0;
 
@@ -263,7 +263,7 @@ namespace TitanOrbit.Data
             if (string.IsNullOrWhiteSpace(componentId))
                 return false;
             if (config == null)
-                config = Resources.Load<PlanetShipFamilyConfig>("PlanetShipFamilyConfig");
+                config = PlanetShipFamilyConfig.LoadDefault();
             if (config?.families == null)
                 return false;
 

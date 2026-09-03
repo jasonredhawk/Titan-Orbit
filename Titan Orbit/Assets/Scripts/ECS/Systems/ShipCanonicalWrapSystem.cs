@@ -16,9 +16,10 @@ namespace TitanOrbit.ECS
     /// seam fakes. Velocity is unchanged (the ship keeps flying).
     /// <para>
     /// [TITAN-ORBIT] A wrap that lands inside a solid depenetrates against the real
-    /// <see cref="PhysicsCollider"/> via <see cref="CollisionWorld.CalculateDistance"/> —
-    /// not a new AABB-sphere game. Client join skips only that query
-    /// (<see cref="ClientJoinSettleCache.ShouldSkipShipSimulation"/>); wrap math always runs.
+    /// <see cref="PhysicsCollider"/> via <see cref="CollisionWorld.CalculateDistance"/>
+    /// on the <b>server only</b>. Client predicted CollisionWorld disagrees with authority
+    /// (interpolated remotes, seed-hydrate asteroids) and that depenetrate became a
+    /// dedicated snap-back wall. Wrap math still runs on both worlds.
     /// </para>
     /// Pipeline: Drive → Physics → Bounce → Friction → Wrap (this) → Planar → KinematicsSync.
     /// Paired with gem / bullet / transport wrap at their integrate sites.
@@ -58,15 +59,17 @@ namespace TitanOrbit.ECS
             if (!ToroidalMapEcs.ResolveMapSize(preferredW, preferredH, out float mapW, out float mapH))
                 return;
 
-            bool canQueryPhysics = SystemAPI.TryGetSingleton(out PhysicsWorldSingleton physicsWorld);
-            if (state.World.IsClient() && ClientJoinSettleCache.ShouldSkipShipSimulation)
-                canQueryPhysics = false;
+            bool client = state.World.IsClient();
+            // Server only: client CollisionWorld has interpolated remotes / seed-hydrate
+            // asteroids and depenetrate here disagrees with authority every wrap (dedicated
+            // RTT turns that into a snap-back wall). Wrap the pose; let the snapshot own contacts.
+            bool hasPhysicsWorld = SystemAPI.TryGetSingleton(out PhysicsWorldSingleton physicsWorld);
+            bool canQueryPhysics = !client && hasPhysicsWorld;
 
             CollisionWorld collisionWorld = default;
             if (canQueryPhysics)
                 collisionWorld = physicsWorld.CollisionWorld;
 
-            bool client = state.World.IsClient();
             var predictedLookup = SystemAPI.GetComponentLookup<PredictedGhost>(true);
 
             foreach (var (transform, physicsCollider, shipState, shipEntity) in SystemAPI

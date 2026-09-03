@@ -97,6 +97,11 @@ namespace TitanOrbit.ECS
 
             EnsureWarmed();
 
+            // Empty lobby: no hulls or transports to shoot. Skip 25-planet aim (main never
+            // paid MEGA-era lead / bank work here). Turret regen waits until a target exists.
+            if (_enemyShipQuery.IsEmptyIgnoreFilter && _transportQuery.IsEmptyIgnoreFilter)
+                return;
+
             float mapW = map.MapWidth;
             float mapH = map.MapHeight;
             float now = (float)SystemAPI.Time.ElapsedTime;
@@ -392,7 +397,7 @@ namespace TitanOrbit.ECS
         {
             if (_warmed)
                 return;
-            _familyConfig = Resources.Load<PlanetShipFamilyConfig>("PlanetShipFamilyConfig");
+            _familyConfig = PlanetShipFamilyConfig.LoadDefault();
             _vfxBank = BulletVfxBank.LoadDefault();
             _warmed = true;
         }

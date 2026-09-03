@@ -398,6 +398,16 @@ namespace TitanOrbit.Game
         /// </summary>
         void Awake()
         {
+#if UNITY_SERVER && !UNITY_EDITOR
+            enabled = false;
+            return;
+#endif
+            if (!TitanOrbitDedicatedServerAutoBoot.ShouldRunClientPresentation())
+            {
+                enabled = false;
+                return;
+            }
+
             // --- Resolve designer assets (editor paths; player builds use serialized refs) ---
             if (shipFamily == null)
                 shipFamily = LoadDefaultShipFamily();
@@ -1869,6 +1879,9 @@ namespace TitanOrbit.Game
                 shipFamilyConfigIndex = ship.ShipFamilyConfigIndex;
             }
 
+            // Ghost Team can stay None for many frames after Join Team — use the RPC assign.
+            team = ClientTeamFlowState.ResolvePresentationTeam(team);
+
             string chassisId = null;
             if (team != TeamId.None)
             {
@@ -2010,8 +2023,17 @@ namespace TitanOrbit.Game
                 if (em.HasComponent<GhostOwner>(entity))
                     networkId = em.GetComponentData<GhostOwner>(entity).NetworkId;
 
+                bool isClaimedLocal =
+                    LocalShipEntitySeed.TryGetOwnedShipEntityUnchecked(em, out var claimed) &&
+                    claimed == entity;
+
                 // [TITAN-ORBIT] Do not spawn a hybrid hull for the local NetworkId until team confirm.
-                if (suppressOwnedVisuals && localNetworkId > 0 && networkId == localNetworkId)
+                // Ownerless Instantiates (NetworkId 0) used to skip this gate and appear grey at
+                // the prefab origin — hide those too while Confirm is still deferred.
+                if (suppressOwnedVisuals &&
+                    ((localNetworkId > 0 && networkId == localNetworkId) ||
+                     isClaimedLocal ||
+                     (networkId <= 0 && ClientTeamFlowState.HasDeferredTeamChoiceConfirmPending)))
                 {
                     if (_proxies.ContainsKey(entity))
                         DestroyProxy(entity);
@@ -2032,6 +2054,9 @@ namespace TitanOrbit.Game
                     branchIndex = Mathf.Max(0, ship.BranchIndex);
                     shipFamilyConfigIndex = ship.ShipFamilyConfigIndex;
                 }
+
+                if (isClaimedLocal || isLocalPlayerShip)
+                    team = ClientTeamFlowState.ResolvePresentationTeam(team);
 
                 string chassisId = null;
                 if (team != TeamId.None)

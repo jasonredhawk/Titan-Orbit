@@ -35,6 +35,17 @@ namespace TitanOrbit.ECS
         };
 
         /// <summary>
+        /// Broadphase-only: other ships, not planets/asteroids. Kept for wrap / aim queries
+        /// that must ignore world statics.
+        /// </summary>
+        public static readonly CollisionFilter ShipVsShips = new CollisionFilter
+        {
+            BelongsTo = Ships,
+            CollidesWith = Ships,
+            GroupIndex = 0,
+        };
+
+        /// <summary>
         /// Planet and asteroid static bodies — ships, gems, and transports may collide with world.
         /// Used by <c>PlanetGhostAuthoring</c> and <c>AsteroidGhostAuthoring</c>.
         /// </summary>

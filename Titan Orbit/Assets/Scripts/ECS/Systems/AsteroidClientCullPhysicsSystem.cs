@@ -1,4 +1,3 @@
-using Unity.Collections;
 using Unity.Entities;
 using Unity.Mathematics;
 using Unity.NetCode;
@@ -8,10 +7,10 @@ using Unity.Transforms;
 namespace TitanOrbit.ECS
 {
     /// <summary>
-    /// Client predicted step: drop culled asteroid hulls out of Unity Physics <b>before</b> the
-    /// solver runs. Blob-swapping <see cref="PhysicsCollider"/> to a zero-filter sphere was not
-    /// enough — static collision worlds often keep the previous sphere, so the ship still rammed
-    /// empty space after the mesh hid.
+    /// Client predicted step: disable culled asteroid hulls <b>before</b> the solver runs.
+    /// Swaps <see cref="PhysicsCollider"/> to a shared zero-filter sphere. Incremental static
+    /// broadphase updates that BVH leaf — do not <c>RemoveComponent&lt;PhysicsCollider&gt;</c>
+    /// (that rebuilt the whole static world).
     /// <para>
     /// Also walks the Instantiates registry for dead rocks that never got
     /// <see cref="AsteroidClientCulledTag"/> (HitRpc hide / GO teardown race).
@@ -37,8 +36,8 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// Tags leftover dead rocks, then removes PhysicsCollider from every culled entity so
-        /// this tick's physics step cannot block the ship.
+        /// Tags leftover dead rocks and keeps culled LocalTransform scale squashed.
+        /// Collision disable is the shared no-collide blob on <see cref="PhysicsCollider"/>.
         /// </summary>
         public void OnUpdate(ref SystemState state)
         {
@@ -54,20 +53,9 @@ namespace TitanOrbit.ECS
             // --- Catch dead rocks that still look solid (match miss / GO-only hide) ---
             ClientLocalAsteroidCombatSync.CullDeadAsteroidsStillSolid(em);
 
-            // --- Drop hulls from the static physics world (blob-swap is not enough) ---
-            // [PHYSICS] RemoveComponent forces BuildPhysicsWorld to rebuild static bodies.
-            // Do this before PhysicsSystemGroup this predicted step.
-            var stripEcb = new EntityCommandBuffer(Allocator.Temp);
-            foreach (var (_, entity) in SystemAPI
-                         .Query<RefRO<PhysicsCollider>>()
-                         .WithAll<AsteroidClientCulledTag>()
-                         .WithEntityAccess())
-            {
-                stripEcb.RemoveComponent<PhysicsCollider>(entity);
-            }
-
-            stripEcb.Playback(em);
-            stripEcb.Dispose();
+            // Keep PhysicsCollider. Incremental static broadphase updates the BVH leaf
+            // when CullPhysics swaps the shared no-collide blob. RemoveComponent forced
+            // a full BuildPhysicsWorld (profiler: 104ms) plus PhysicsWorldHistory copy.
 
             // --- Keep scale squashed if a collider is restored this tick before strip ---
             foreach (var transform in SystemAPI

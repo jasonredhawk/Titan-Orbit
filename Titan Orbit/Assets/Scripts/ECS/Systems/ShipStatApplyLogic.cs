@@ -71,7 +71,7 @@ namespace TitanOrbit.ECS
         /// </summary>
         static PlanetShipFamilyConfig LoadConfig()
         {
-            return Resources.Load<PlanetShipFamilyConfig>("PlanetShipFamilyConfig");
+            return PlanetShipFamilyConfig.LoadDefault();
         }
 
         /// <summary>Clears cached config — call after hot-reload or editor asset changes.</summary>
@@ -323,7 +323,7 @@ namespace TitanOrbit.ECS
             // Weapons: Base + PerExtra × ((shipLevel−1) + ability) per barrel (no N stack).
             if (!TryGetChassisPartSum(em, shipEntity, chassisId, out ShipFamilyStatsCalculator.SumResult partSum))
             {
-                // Fallback: legacy flat sum when prefab parts are unavailable.
+                // Fallback: baked breakdown / family defaults when prefab parts are unavailable.
                 if (!TryGetBaseStatsForChassis(chassisId, shipLevel, out ShipComponentAbilityStats summedFallback))
                     return;
                 partSum = new ShipFamilyStatsCalculator.SumResult
@@ -332,6 +332,13 @@ namespace TitanOrbit.ECS
                     MatchedComponentIds = new System.Collections.Generic.List<string>(),
                     PerComponentStats = new System.Collections.Generic.List<ShipComponentAbilityStats>(),
                 };
+                Debug.LogWarning(
+                    "[ShipStatApply] chassis=" + chassisId +
+                    " used fallback stats (0 prefab parts). move=" +
+                    summedFallback.moveSpeed.ToString("F1") +
+                    " hp=" + summedFallback.healthCap.ToString("F1") +
+                    " gems=" + summedFallback.maxGems.ToString("F1") +
+                    " — expected familyId_* children on the chassis prefab.");
             }
 
             ShipComponentAbilityStats summed = partSum.TotalStats;
@@ -521,8 +528,13 @@ namespace TitanOrbit.ECS
                     : moveVal);
 
                 // --- ComponentSize (box × attribute grow × tier → HullMassReference) ---
-                float liveComponentSize = TryGetLiveHullComponentMass(
+                // Dedicated: never Instantiate the chassis (80–200ms, stripped meshes).
+                // Walk the prefab-asset transforms instead.
+                float liveComponentSize = 0f;
+#if !UNITY_SERVER || UNITY_EDITOR
+                liveComponentSize = TryGetLiveHullComponentMass(
                     chassisId, hasAttrs ? attrs : default, shipLevel, applyAttributeScale: true);
+#endif
                 if (liveComponentSize <= 0.0001f)
                     liveComponentSize = TryGetChassisComponentMass(chassisId);
 

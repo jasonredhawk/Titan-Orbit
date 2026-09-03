@@ -37,7 +37,8 @@ namespace TitanOrbit.ECS
     /// for <see cref="BulletSimulationSystem"/>
     /// (<c>WorldSystemFilterFlags.ServerSimulation</c> only — never client join gathers).
     /// <para>
-    /// Built once per tick. Each bullet segment queries nearby cells instead of
+    /// Built once per tick when a live bullet exists or a shot is about to spawn.
+    /// Empty ticks skip this. Each bullet segment queries nearby cells instead of
     /// walking every rock on the map. Exact hit math stays in
     /// <c>TryResolveBulletHit</c> — this is broadphase only.
     /// Map size comes from <see cref="MapStateSingleton"/> (passed in).
