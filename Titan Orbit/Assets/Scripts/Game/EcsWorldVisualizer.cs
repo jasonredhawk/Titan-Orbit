@@ -1625,7 +1625,7 @@ namespace TitanOrbit.Game
             go.SetPositionAndRotation(pos, rot);
             go.localScale = Vector3.one * scale;
 
-            if (isLocalPlayerShip)
+            if (isLocalPlayerShip && LocalShipEntitySeed.EntityMatchesLocalOwner(em, entity))
                 ShipDisplayPose.SetLocalPose(pos, rot);
 
             MegaShipWeaponVisualSync.Apply(em, entity, go.gameObject);
@@ -1653,7 +1653,24 @@ namespace TitanOrbit.Game
                 return raw;
 
             float3 vel = em.GetComponentData<ShipKinematics>(entity).Velocity;
-            float speedSq = math.lengthsq(new float3(vel.x, 0f, vel.z));
+            float3 planarVel = new float3(vel.x, 0f, vel.z);
+            float speedSq = math.lengthsq(planarVel);
+
+            // Cheap velocity lead (one mul-add). Interpolation is the recent past; this
+            // shows the remote nearer to now. Wrap jumps already returned — no map-crossing lerp.
+            if (speedSq > 0.25f)
+            {
+                float delay = ShipContactPredictionMath.GetClientInterpolationDelaySeconds(em);
+                if (delay > 1e-4f)
+                {
+                    float3 extra = ShipContactPredictionMath.ExtrapolateWrapped(
+                        interpolated, vel, delay, ToroidalMapEcs.MapWidth, ToroidalMapEcs.MapHeight);
+                    if (!ToroidalMapEcs.IsWrapJump(interpolated, extra) &&
+                        !ToroidalMapEcs.IsWrapJump(previousDisplay, extra))
+                        raw = extra;
+                }
+            }
+
             if (speedSq < 4f)
                 return raw;
 
@@ -1661,9 +1678,9 @@ namespace TitanOrbit.Game
             if (math.lengthsq(delta) < 1f)
                 return raw;
 
-            float3 planarVel = math.normalize(new float3(vel.x, 0f, vel.z));
+            float3 planarDir = math.normalize(planarVel);
             float3 planarDelta = math.normalize(delta);
-            bool opposing = math.dot(planarVel, planarDelta) < -0.25f;
+            bool opposing = math.dot(planarDir, planarDelta) < -0.25f;
             float halfW = ToroidalMapEcs.MapWidth * 0.5f;
             float halfH = ToroidalMapEcs.MapHeight * 0.5f;
             bool nearEdge = math.abs(previousDisplay.x) > halfW * 0.8f ||
@@ -1740,7 +1757,8 @@ namespace TitanOrbit.Game
                 if (LocalShipEntitySeed.TryGetSeededShip(em, out var seeded) &&
                     seeded != Entity.Null &&
                     em.Exists(seeded) &&
-                    em.HasComponent<ShipTag>(seeded))
+                    em.HasComponent<ShipTag>(seeded) &&
+                    LocalShipEntitySeed.EntityMatchesLocalOwner(em, seeded))
                 {
                     localShipEntity = seeded;
                     _cachedLocalPlayerShipEntity = seeded;
@@ -1750,7 +1768,8 @@ namespace TitanOrbit.Game
                 // Cache hit only — never fall through to CreateEntityQuery + ToEntityArray below.
                 if (_cachedLocalPlayerShipEntity != Entity.Null &&
                     em.Exists(_cachedLocalPlayerShipEntity) &&
-                    em.HasComponent<ShipTag>(_cachedLocalPlayerShipEntity))
+                    em.HasComponent<ShipTag>(_cachedLocalPlayerShipEntity) &&
+                    LocalShipEntitySeed.EntityMatchesLocalOwner(em, _cachedLocalPlayerShipEntity))
                 {
                     localShipEntity = _cachedLocalPlayerShipEntity;
                     return true;
@@ -1761,17 +1780,22 @@ namespace TitanOrbit.Game
 
             if (_cachedLocalPlayerShipEntity != Entity.Null &&
                 em.Exists(_cachedLocalPlayerShipEntity) &&
-                em.HasComponent<ShipTag>(_cachedLocalPlayerShipEntity))
+                em.HasComponent<ShipTag>(_cachedLocalPlayerShipEntity) &&
+                LocalShipEntitySeed.EntityMatchesLocalOwner(em, _cachedLocalPlayerShipEntity))
             {
                 localShipEntity = _cachedLocalPlayerShipEntity;
                 return true;
             }
 
+            if (_cachedLocalPlayerShipEntity != Entity.Null)
+                _cachedLocalPlayerShipEntity = Entity.Null;
+
             using var localQuery = em.CreateEntityQuery(
                 ComponentType.ReadOnly<LocalPlayerShipTag>(),
                 ComponentType.ReadOnly<ShipTag>());
             using var localEntities = localQuery.ToEntityArray(Unity.Collections.Allocator.Temp);
-            if (localEntities.Length > 0)
+            if (localEntities.Length == 1 &&
+                LocalShipEntitySeed.EntityMatchesLocalOwner(em, localEntities[0]))
             {
                 localShipEntity = localEntities[0];
                 _cachedLocalPlayerShipEntity = localShipEntity;

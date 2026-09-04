@@ -177,7 +177,8 @@ namespace TitanOrbit.Game
                 !teamSuppress &&
                 _smoothShipEntity != Entity.Null &&
                 EntityManager.Exists(_smoothShipEntity) &&
-                EntityManager.HasComponent<ShipTag>(_smoothShipEntity))
+                EntityManager.HasComponent<ShipTag>(_smoothShipEntity) &&
+                LocalShipEntitySeed.EntityMatchesLocalOwner(EntityManager, _smoothShipEntity))
             {
                 localShip = _smoothShipEntity;
                 resolved = true;
@@ -187,10 +188,19 @@ namespace TitanOrbit.Game
             // [TITAN-ORBIT] Without a seed, hold leaves hasPose=false then camera snaps on first pose.
             if (!resolved &&
                 !teamSuppress &&
-                LocalShipEntitySeed.TryGetSeededShip(EntityManager, out var seededShip))
+                LocalShipEntitySeed.TryGetSeededShip(EntityManager, out var seededShip) &&
+                LocalShipEntitySeed.EntityMatchesLocalOwner(EntityManager, seededShip))
             {
                 localShip = seededShip;
                 resolved = true;
+            }
+
+            if (resolved &&
+                !LocalShipEntitySeed.EntityMatchesLocalOwner(EntityManager, localShip))
+            {
+                localShip = Entity.Null;
+                resolved = false;
+                _smoothShipEntity = Entity.Null;
             }
 
             // --- Remotes: never WithEntityAccess while ShouldSkipShipEntityQueries ---

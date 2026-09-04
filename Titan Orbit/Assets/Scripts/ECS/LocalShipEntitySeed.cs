@@ -139,6 +139,58 @@ namespace TitanOrbit.ECS
                 (!em.Exists(s_PostTeamPickShip) ||
                  !em.HasComponent<ShipTag>(s_PostTeamPickShip)))
                 s_PostTeamPickShip = Entity.Null;
+
+            DropSeedIfForeignOwner(em);
+        }
+
+        /// <summary>
+        /// True when <paramref name="entity"/> is this client's hull. Non-zero GhostOwner
+        /// must match local NetworkId — never treat Player 2 as local.
+        /// </summary>
+        public static bool EntityMatchesLocalOwner(EntityManager em, Entity entity)
+        {
+            if (entity == Entity.Null || !em.Exists(entity) || !em.HasComponent<ShipTag>(entity))
+                return false;
+            if (!em.HasComponent<GhostOwner>(entity))
+                return false;
+
+            int ownerId = em.GetComponentData<GhostOwner>(entity).NetworkId;
+            int localId = ReadLocalNetworkId(em);
+            if (localId <= 0)
+                return false;
+            if (ownerId == localId)
+                return true;
+            if (ownerId > 0)
+                return false;
+
+            // Owner still 0: only the current seed/pending Join Team hull is allowed.
+            return entity == SeededShip || entity == s_PendingOwnedShip;
+        }
+
+        /// <summary>
+        /// Drops seed/pending when GhostUpdate assigned the hull to another player.
+        /// </summary>
+        static void DropSeedIfForeignOwner(EntityManager em)
+        {
+            int localId = ReadLocalNetworkId(em);
+            if (localId <= 0)
+                return;
+
+            Entity seeded = SeededShip;
+            DropIfForeign(em, ref seeded, localId);
+            SeededShip = seeded;
+            DropIfForeign(em, ref s_PendingOwnedShip, localId);
+            DropIfForeign(em, ref s_UnresolvedOwnershipShip, localId);
+            DropIfForeign(em, ref s_PostTeamPickShip, localId);
+        }
+
+        static void DropIfForeign(EntityManager em, ref Entity ship, int localId)
+        {
+            if (ship == Entity.Null || !em.Exists(ship) || !em.HasComponent<GhostOwner>(ship))
+                return;
+            int ownerId = em.GetComponentData<GhostOwner>(ship).NetworkId;
+            if (ownerId > 0 && ownerId != localId)
+                ship = Entity.Null;
         }
 
         /// <summary>
@@ -164,7 +216,11 @@ namespace TitanOrbit.ECS
             {
                 // Remember Instantiates after the Join Team click even if the Result RPC
                 // has not latched yet (ghost can arrive before TeamChoiceResult).
-                if (ownerId == 0 && ClientTeamFlowState.HasRequestedTeamPick)
+                // Keep the first post-pick handle only. Overwriting here let P2's
+                // ownerless Instantiates steal the camera after P1 already joined.
+                if (ownerId == 0 &&
+                    ClientTeamFlowState.HasRequestedTeamPick &&
+                    s_PostTeamPickShip == Entity.Null)
                     s_PostTeamPickShip = entity;
 
                 // --- Join Team Instantiates: GhostOwner often stays 0 for many frames ---
@@ -394,6 +450,20 @@ namespace TitanOrbit.ECS
             if (entity == Entity.Null || !em.Exists(entity) || !em.HasComponent<ShipTag>(entity))
                 return false;
 
+            // Already have a local hull — P2 arriving with GhostOwner=0 must not steal it.
+            if (SeededShip != Entity.Null || s_PendingOwnedShip != Entity.Null)
+                return false;
+            if (s_PostTeamPickShip != Entity.Null && entity != s_PostTeamPickShip)
+                return false;
+
+            int localId = ReadLocalNetworkId(em);
+            if (localId > 0 && !ClientJoinSettleCache.ShouldSkipShipEntityQueries)
+            {
+                CountShipOwners(em, localId, out int ownedLocal, out int ownerless);
+                if (ownedLocal > 0 || ownerless > 1)
+                    return false;
+            }
+
             ApplyTeamChoiceIdentity(em, entity);
             AcceptOwnedShip(entity);
             Debug.Log(
@@ -494,6 +564,23 @@ namespace TitanOrbit.ECS
             int localId = ReadLocalNetworkId(em);
             localIdReady = localId > 0;
             return localIdReady && ownerId == localId;
+        }
+
+        /// <summary>Tiny ship-owner gather — never call during ShouldSkipShipEntityQueries.</summary>
+        static void CountShipOwners(EntityManager em, int localId, out int ownedLocal, out int ownerless)
+        {
+            ownedLocal = 0;
+            ownerless = 0;
+            using var query = em.CreateEntityQuery(typeof(ShipTag), typeof(GhostOwner));
+            using var owners = query.ToComponentDataArray<GhostOwner>(Allocator.Temp);
+            for (int i = 0; i < owners.Length; i++)
+            {
+                int id = owners[i].NetworkId;
+                if (id == localId)
+                    ownedLocal++;
+                else if (id == 0)
+                    ownerless++;
+            }
         }
 
         /// <summary>Local client's NetworkId from the in-game connection entity (tiny query).</summary>

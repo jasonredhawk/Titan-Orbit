@@ -120,7 +120,8 @@ namespace TitanOrbit.Game
                 s_LocalPlayerShipCacheWorld == world &&
                 s_LocalPlayerShipEntity != Entity.Null &&
                 em.Exists(s_LocalPlayerShipEntity) &&
-                em.HasComponent<LocalPlayerShipTag>(s_LocalPlayerShipEntity))
+                em.HasComponent<LocalPlayerShipTag>(s_LocalPlayerShipEntity) &&
+                LocalShipEntitySeed.EntityMatchesLocalOwner(em, s_LocalPlayerShipEntity))
             {
                 shipEntity = s_LocalPlayerShipEntity;
                 return true;
@@ -1494,16 +1495,17 @@ namespace TitanOrbit.Game
                 }
             }
 
-            if (TryGetLocalOwnedShipEntity(em, out shipEntity))
+            if (TryGetLocalOwnedShipEntity(em, out shipEntity) &&
+                LocalShipEntitySeed.EntityMatchesLocalOwner(em, shipEntity))
                 return true;
 
             using var tagged = em.CreateEntityQuery(typeof(LocalPlayerShipTag), typeof(ShipTag));
-            if (tagged.CalculateEntityCount() > 0)
+            if (tagged.CalculateEntityCount() == 1)
             {
-                using var entities = tagged.ToEntityArray(Allocator.Temp);
-                if (entities.Length > 0)
+                Entity taggedShip = tagged.GetSingletonEntity();
+                if (LocalShipEntitySeed.EntityMatchesLocalOwner(em, taggedShip))
                 {
-                    shipEntity = entities[0];
+                    shipEntity = taggedShip;
                     return true;
                 }
             }
@@ -1515,6 +1517,8 @@ namespace TitanOrbit.Game
             {
                 var target = targets[i].targetEntity;
                 if (target == Entity.Null || !em.Exists(target) || !em.HasComponent<ShipTag>(target))
+                    continue;
+                if (!LocalShipEntitySeed.EntityMatchesLocalOwner(em, target))
                     continue;
                 shipEntity = target;
                 return true;
