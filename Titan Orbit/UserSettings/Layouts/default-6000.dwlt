@@ -19,7 +19,7 @@ MonoBehaviour:
     width: 2560
     height: 1349
   m_ShowMode: 4
-  m_Title: Game
+  m_Title: Edgegap Server Hosting
   m_RootView: {fileID: 2}
   m_MinSize: {x: 875, y: 300}
   m_MaxSize: {x: 10000, y: 10000}
@@ -165,7 +165,7 @@ MonoBehaviour:
     serializedVersion: 2
     x: 0
     y: 0
-    width: 1685
+    width: 1684
     height: 1293
   m_MinSize: {x: 200, y: 112}
   m_MaxSize: {x: 16192, y: 16192}
@@ -191,8 +191,8 @@ MonoBehaviour:
     serializedVersion: 2
     x: 0
     y: 0
-    width: 1685
-    height: 871
+    width: 1684
+    height: 906
   m_MinSize: {x: 200, y: 56}
   m_MaxSize: {x: 16192, y: 8096}
   vertical: 0
@@ -215,8 +215,8 @@ MonoBehaviour:
     serializedVersion: 2
     x: 0
     y: 0
-    width: 281
-    height: 871
+    width: 280
+    height: 906
   m_MinSize: {x: 201, y: 226}
   m_MaxSize: {x: 4001, y: 4026}
   m_ActualView: {fileID: 17}
@@ -240,10 +240,10 @@ MonoBehaviour:
   m_Children: []
   m_Position:
     serializedVersion: 2
-    x: 281
+    x: 280
     y: 0
     width: 1404
-    height: 871
+    height: 906
   m_MinSize: {x: 52, y: 76}
   m_MaxSize: {x: 4002, y: 4026}
   m_ActualView: {fileID: 16}
@@ -264,24 +264,24 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 1
   m_Script: {fileID: 12006, guid: 0000000000000000e000000000000000, type: 0}
-  m_Name: ConsoleWindow
+  m_Name: ProfilerWindow
   m_EditorClassIdentifier: 
   m_Children: []
   m_Position:
     serializedVersion: 2
     x: 0
-    y: 871
-    width: 1685
-    height: 422
-  m_MinSize: {x: 101, y: 126}
+    y: 906
+    width: 1684
+    height: 387
+  m_MinSize: {x: 901, y: 242}
   m_MaxSize: {x: 4001, y: 4026}
-  m_ActualView: {fileID: 23}
+  m_ActualView: {fileID: 24}
   m_Panes:
   - {fileID: 22}
   - {fileID: 23}
   - {fileID: 24}
-  m_Selected: 1
-  m_LastSelected: 2
+  m_Selected: 2
+  m_LastSelected: 1
 --- !u!114 &12
 MonoBehaviour:
   m_ObjectHideFlags: 52
@@ -299,14 +299,14 @@ MonoBehaviour:
   - {fileID: 14}
   m_Position:
     serializedVersion: 2
-    x: 1685
+    x: 1684
     y: 0
-    width: 875
+    width: 876
     height: 1293
   m_MinSize: {x: 100, y: 112}
   m_MaxSize: {x: 8096, y: 16192}
   vertical: 1
-  controlID: 118
+  controlID: 97
   draggingID: 0
 --- !u!114 &13
 MonoBehaviour:
@@ -318,26 +318,26 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 1
   m_Script: {fileID: 12006, guid: 0000000000000000e000000000000000, type: 0}
-  m_Name: MultiplayerPlayModeWindow
+  m_Name: EdgegapWindowV2
   m_EditorClassIdentifier: 
   m_Children: []
   m_Position:
     serializedVersion: 2
     x: 0
     y: 0
-    width: 875
+    width: 876
     height: 977
-  m_MinSize: {x: 601, y: 236}
-  m_MaxSize: {x: 1201, y: 4026}
-  m_ActualView: {fileID: 27}
+  m_MinSize: {x: 601, y: 926}
+  m_MaxSize: {x: 601, y: 926}
+  m_ActualView: {fileID: 29}
   m_Panes:
   - {fileID: 25}
   - {fileID: 26}
   - {fileID: 27}
   - {fileID: 28}
   - {fileID: 29}
-  m_Selected: 2
-  m_LastSelected: 4
+  m_Selected: 4
+  m_LastSelected: 0
 --- !u!114 &14
 MonoBehaviour:
   m_ObjectHideFlags: 52
@@ -355,7 +355,7 @@ MonoBehaviour:
     serializedVersion: 2
     x: 0
     y: 977
-    width: 875
+    width: 876
     height: 316
   m_MinSize: {x: 51, y: 76}
   m_MaxSize: {x: 4001, y: 4026}
@@ -665,10 +665,10 @@ MonoBehaviour:
     m_TextWithWhitespace: "Game\u200B"
   m_Pos:
     serializedVersion: 2
-    x: 282
+    x: 281
     y: 24
     width: 1402
-    height: 845
+    height: 880
   m_SerializedDataModeController:
     m_DataMode: 0
     m_PreferredDataMode: 0
@@ -690,7 +690,7 @@ MonoBehaviour:
   m_ShowGizmos: 0
   m_TargetDisplay: 0
   m_ClearColor: {r: 0, g: 0, b: 0, a: 0}
-  m_TargetSize: {x: 1402, y: 824}
+  m_TargetSize: {x: 1402, y: 859}
   m_TextureFilterMode: 0
   m_TextureHideFlags: 61
   m_RenderIMGUI: 1
@@ -707,8 +707,8 @@ MonoBehaviour:
     vZoomLockedByDefault: 0
     m_HBaseRangeMin: -701
     m_HBaseRangeMax: 701
-    m_VBaseRangeMin: -412
-    m_VBaseRangeMax: 412
+    m_VBaseRangeMin: -429.5
+    m_VBaseRangeMax: 429.5
     m_HAllowExceedBaseRangeMin: 1
     m_HAllowExceedBaseRangeMax: 1
     m_VAllowExceedBaseRangeMin: 1
@@ -727,9 +727,9 @@ MonoBehaviour:
       x: 0
       y: 21
       width: 1402
-      height: 824
+      height: 859
     m_Scale: {x: 1, y: 1}
-    m_Translation: {x: 701, y: 412}
+    m_Translation: {x: 701, y: 429.5}
     m_MarginLeft: 0
     m_MarginRight: 0
     m_MarginTop: 0
@@ -737,12 +737,12 @@ MonoBehaviour:
     m_LastShownAreaInsideMargins:
       serializedVersion: 2
       x: -701
-      y: -412
+      y: -429.5
       width: 1402
-      height: 824
+      height: 859
     m_MinimalGUI: 1
   m_defaultScale: 1
-  m_LastWindowPixelSize: {x: 1402, y: 845}
+  m_LastWindowPixelSize: {x: 1402, y: 880}
   m_ClearInEditMode: 1
   m_NoCameraWarning: 1
   m_LowResolutionForAspectRatios: 01000000000000000000
@@ -772,8 +772,8 @@ MonoBehaviour:
     serializedVersion: 2
     x: 0
     y: 24
-    width: 280
-    height: 845
+    width: 279
+    height: 880
   m_SerializedDataModeController:
     m_DataMode: 0
     m_PreferredDataMode: 0
@@ -794,10 +794,13 @@ MonoBehaviour:
       m_LastClickedID:
         m_Data: 0
       m_ExpandedIDs:
-      - m_Data: -48902
-      - m_Data: -48522
-      - m_Data: -48396
-      - m_Data: -44454
+      - m_Data: -402418
+      - m_Data: -402024
+      - m_Data: -401904
+      - m_Data: -5438
+      - m_Data: -5058
+      - m_Data: -4932
+      - m_Data: -1386
       m_RenameOverlay:
         m_UserAcceptedRename: 0
         m_Name: 
@@ -1654,19 +1657,7 @@ MonoBehaviour:
       m_Data: 99874
     m_ExpandedIDs:
     - m_Data: 0
-    - m_Data: 82054
-    - m_Data: 99804
-    - m_Data: 99806
-    - m_Data: 99808
-    - m_Data: 99810
-    - m_Data: 99812
-    - m_Data: 99814
-    - m_Data: 99816
-    - m_Data: 99818
-    - m_Data: 99820
-    - m_Data: 99822
-    - m_Data: 99824
-    - m_Data: 99826
+    - m_Data: 82078
     - m_Data: 99828
     - m_Data: 99830
     - m_Data: 99832
@@ -1674,6 +1665,18 @@ MonoBehaviour:
     - m_Data: 99836
     - m_Data: 99838
     - m_Data: 99840
+    - m_Data: 99842
+    - m_Data: 99844
+    - m_Data: 99846
+    - m_Data: 99848
+    - m_Data: 99850
+    - m_Data: 99852
+    - m_Data: 99854
+    - m_Data: 99856
+    - m_Data: 99858
+    - m_Data: 99860
+    - m_Data: 99862
+    - m_Data: 99864
     m_RenameOverlay:
       m_UserAcceptedRename: 0
       m_Name: 
@@ -1707,19 +1710,7 @@ MonoBehaviour:
       m_Data: 0
     m_ExpandedIDs:
     - m_Data: 0
-    - m_Data: 82054
-    - m_Data: 99804
-    - m_Data: 99806
-    - m_Data: 99808
-    - m_Data: 99810
-    - m_Data: 99812
-    - m_Data: 99814
-    - m_Data: 99816
-    - m_Data: 99818
-    - m_Data: 99820
-    - m_Data: 99822
-    - m_Data: 99824
-    - m_Data: 99826
+    - m_Data: 82078
     - m_Data: 99828
     - m_Data: 99830
     - m_Data: 99832
@@ -1727,6 +1718,18 @@ MonoBehaviour:
     - m_Data: 99836
     - m_Data: 99838
     - m_Data: 99840
+    - m_Data: 99842
+    - m_Data: 99844
+    - m_Data: 99846
+    - m_Data: 99848
+    - m_Data: 99850
+    - m_Data: 99852
+    - m_Data: 99854
+    - m_Data: 99856
+    - m_Data: 99858
+    - m_Data: 99860
+    - m_Data: 99862
+    - m_Data: 99864
     m_RenameOverlay:
       m_UserAcceptedRename: 0
       m_Name: 
@@ -1836,9 +1839,9 @@ MonoBehaviour:
   m_Pos:
     serializedVersion: 2
     x: 0
-    y: 895
-    width: 1684
-    height: 396
+    y: 985
+    width: 1683
+    height: 361
   m_SerializedDataModeController:
     m_DataMode: 0
     m_PreferredDataMode: 0
@@ -1874,9 +1877,9 @@ MonoBehaviour:
   m_Pos:
     serializedVersion: 2
     x: 0
-    y: 951
-    width: 1684
-    height: 395
+    y: 930
+    width: 1683
+    height: 361
   m_SerializedDataModeController:
     m_DataMode: 0
     m_PreferredDataMode: 0
@@ -1928,7 +1931,7 @@ MonoBehaviour:
         m_PaneScroll: {x: 0, y: 0}
         m_ViewType: 1
         updateViewLive: 0
-        m_CurrentFrameIndex: -1
+        m_CurrentFrameIndex: 2340
         m_HierarchyOverruledThreadFromSelection: 0
         m_ProfilerViewFilteringOptions: 1
         m_FrameDataHierarchyView:
@@ -2931,9 +2934,9 @@ MonoBehaviour:
     m_TextWithWhitespace: "Inspector\u200B"
   m_Pos:
     serializedVersion: 2
-    x: 1983
+    x: 1685
     y: 79
-    width: 576
+    width: 874
     height: 950
   m_SerializedDataModeController:
     m_DataMode: 0
@@ -3025,8 +3028,8 @@ MonoBehaviour:
     m_TextWithWhitespace: "PlayMode Tools\u200B"
   m_Pos:
     serializedVersion: 2
-    x: 1
-    y: 24
+    x: 1685
+    y: 79
     width: 874
     height: 951
   m_SerializedDataModeController:
@@ -3101,9 +3104,9 @@ MonoBehaviour:
     m_TextWithWhitespace: "Edgegap Server Hosting\u200B"
   m_Pos:
     serializedVersion: 2
-    x: 1685
-    y: 79
-    width: 874
+    x: 1
+    y: 24
+    width: 875
     height: 951
   m_SerializedDataModeController:
     m_DataMode: 0
@@ -3141,7 +3144,7 @@ MonoBehaviour:
     serializedVersion: 2
     x: 1
     y: 1001
-    width: 874
+    width: 875
     height: 290
   m_SerializedDataModeController:
     m_DataMode: 0
