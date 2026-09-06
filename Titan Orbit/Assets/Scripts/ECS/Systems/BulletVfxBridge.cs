@@ -91,6 +91,12 @@ namespace TitanOrbit.ECS
             /// (0 = destroyed this hit). Ignored when PlanetId is 0.
             /// </summary>
             public float PlanetaryDefenseHealthAfter;
+
+            /// <summary>
+            /// <see cref="BulletHitRpc.AsteroidLayoutSlot"/> — −1 when not an asteroid hit.
+            /// VFX does not use this; HitRpc apply does.
+            /// </summary>
+            public int AsteroidLayoutSlot;
         }
 
         static readonly ConcurrentQueue<SpawnRequest> SpawnQueue = new ConcurrentQueue<SpawnRequest>();

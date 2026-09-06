@@ -160,7 +160,8 @@ namespace TitanOrbit.Entities
             TeamId team,
             float damage,
             float scaleMultiplier,
-            Transform attachParent = null)
+            Transform attachParent = null,
+            float duration = 0f)
         {
             // [TITAN-ORBIT] Isolation F1 — skip impact Instantiates/Rent to bisect destroy stutter.
             if (TitanOrbitDebugFlags.IsolateDisableImpactVfx)
@@ -169,6 +170,7 @@ namespace TitanOrbit.Entities
             // Keep the caller Y (drawn surface). Flattening to 0 put flashes under large rocks / moons.
             float impactScale = GetImpactScale(bank, scaleMultiplier, bankIndex);
             float pitch = GetImpactSoundPitch(damage);
+            float life = duration > 0.05f ? duration : DefaultImpactDuration;
 
             if (Application.isMobilePlatform)
             {
@@ -185,7 +187,7 @@ namespace TitanOrbit.Entities
                 return;
             }
 
-            SpawnImpactAt(position, prefab, pitch, impactScale, DefaultImpactDuration, attachParent);
+            SpawnImpactAt(position, prefab, pitch, impactScale, life, attachParent);
             AudioManager.Instance?.PlayImpactSound(pitch);
         }
 

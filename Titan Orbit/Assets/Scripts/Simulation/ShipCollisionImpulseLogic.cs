@@ -27,6 +27,13 @@ namespace TitanOrbit.Simulation
         public const float DefaultShipShipRestitution = 0.75f;
 
         /// <summary>
+        /// Client bounce against an interpolated remote (no <c>PhysicsVelocity</c>).
+        /// Lower than <see cref="DefaultShipShipRestitution"/> so a frozen ghost does not
+        /// feel like a magnetic wall.
+        /// </summary>
+        public const float InterpolatedRemoteRestitution = 0.32f;
+
+        /// <summary>
         /// When hulls are still overlapping after the solver, force at least this relative
         /// normal speed (world units/sec) so they pop apart instead of resting inside each other.
         /// </summary>

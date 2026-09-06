@@ -125,6 +125,9 @@ namespace TitanOrbit.ECS
             /// <summary>Designer Size for bounce mass.</summary>
             public float Size;
 
+            /// <summary>Blueprint slot to stamp on Instantiates. −1 if the RPC omitted it.</summary>
+            public int LayoutSlot;
+
             /// <summary>Ticks we have already retried this pose.</summary>
             public int Attempts;
         }
@@ -176,14 +179,16 @@ namespace TitanOrbit.ECS
         public static Entity ApplyHitAtPosition(
             EntityManager em,
             float3 hitPosition,
-            float asteroidHealthAfter)
+            float asteroidHealthAfter,
+            int layoutSlot = -1)
         {
             if (asteroidHealthAfter < 0f || !em.World.IsCreated)
                 return Entity.Null;
 
             // Kill frames must still match a rock we just culled (presentation hide can win the race).
             bool liveOnly = asteroidHealthAfter > 0.01f;
-            if (!TryFindAsteroidAtSurfaceHit(em, hitPosition, liveOnly, out Entity asteroid, out _))
+            if (!TryResolveAsteroidForHit(
+                    em, hitPosition, liveOnly, layoutSlot, ramContact: false, out Entity asteroid))
                 return Entity.Null;
 
             ApplyAuthoritativeHealth(em, asteroid, asteroidHealthAfter);
@@ -203,13 +208,15 @@ namespace TitanOrbit.ECS
         public static Entity ApplyRamHitAtPosition(
             EntityManager em,
             float3 hitPosition,
-            float asteroidHealthAfter)
+            float asteroidHealthAfter,
+            int layoutSlot = -1)
         {
             if (asteroidHealthAfter < 0f || !em.World.IsCreated)
                 return Entity.Null;
 
             bool liveOnly = asteroidHealthAfter > 0.01f;
-            if (!TryFindAsteroidAtRamContact(em, hitPosition, liveOnly, out Entity asteroid, out _))
+            if (!TryResolveAsteroidForHit(
+                    em, hitPosition, liveOnly, layoutSlot, ramContact: true, out Entity asteroid))
                 return Entity.Null;
 
             ApplyAuthoritativeHealth(em, asteroid, asteroidHealthAfter);
@@ -293,7 +300,8 @@ namespace TitanOrbit.ECS
             float scale,
             float gemValue,
             float maxHealth,
-            float size)
+            float size,
+            int layoutSlot = -1)
         {
             if (!em.World.IsCreated)
                 return false;
@@ -319,7 +327,7 @@ namespace TitanOrbit.ECS
                 MaxHealth = maxHealth,
                 Size = size,
             };
-            Entity spawned = ClientLocalMapBodySpawn.SpawnAsteroid(em, asteroidPrefab, body, layoutSlot: -1);
+            Entity spawned = ClientLocalMapBodySpawn.SpawnAsteroid(em, asteroidPrefab, body, layoutSlot);
             return spawned != Entity.Null;
         }
 
@@ -395,7 +403,8 @@ namespace TitanOrbit.ECS
             float scale,
             float gemValue,
             float maxHealth,
-            float size)
+            float size,
+            int layoutSlot = -1)
         {
             position.y = 0f;
             for (int i = 0; i < UnmatchedRespawns.Count; i++)
@@ -412,6 +421,7 @@ namespace TitanOrbit.ECS
                 GemValue = gemValue,
                 MaxHealth = maxHealth,
                 Size = size,
+                LayoutSlot = layoutSlot,
                 Attempts = 0,
             });
         }
@@ -439,7 +449,8 @@ namespace TitanOrbit.ECS
                     pending.Scale,
                     pending.GemValue,
                     pending.MaxHealth,
-                    pending.Size))
+                    pending.Size,
+                    pending.LayoutSlot))
                 {
                     UnmatchedRespawns.RemoveAt(i);
                     continue;
@@ -645,6 +656,34 @@ namespace TitanOrbit.ECS
             asteroid = bestAny;
             matchedScale = bestAnyScale;
             return true;
+        }
+
+        /// <summary>
+        /// O(1) slot lookup when the server sent <see cref="AsteroidLayoutSlot"/>, else the
+        /// existing position walk (dense-belt neighbor risk). Slot wins even for culled zombies
+        /// so a late grind pulse cannot retarget a neighbor.
+        /// </summary>
+        static bool TryResolveAsteroidForHit(
+            EntityManager em,
+            float3 hitPosition,
+            bool liveOnly,
+            int layoutSlot,
+            bool ramContact,
+            out Entity asteroid)
+        {
+            asteroid = Entity.Null;
+            if (layoutSlot >= 0 &&
+                AsteroidClientEntityRegistry.TryGetBySlot(layoutSlot, out Entity slotted) &&
+                em.Exists(slotted) &&
+                em.HasComponent<AsteroidState>(slotted))
+            {
+                asteroid = slotted;
+                return true;
+            }
+
+            return ramContact
+                ? TryFindAsteroidAtRamContact(em, hitPosition, liveOnly, out asteroid, out _)
+                : TryFindAsteroidAtSurfaceHit(em, hitPosition, liveOnly, out asteroid, out _);
         }
 
         /// <summary>

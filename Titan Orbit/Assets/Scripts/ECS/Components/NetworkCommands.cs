@@ -500,6 +500,12 @@ namespace TitanOrbit.ECS
         /// Lets clients destroy the matching anticipation without a 12u nearest-fallback.
         /// </summary>
         public int MountIndex;
+
+        /// <summary>
+        /// Blueprint asteroid slot for O(1) client HP apply. −1 = not an asteroid / unknown.
+        /// Same index as <see cref="AsteroidOccupancyRpc"/> bit i and <see cref="AsteroidLayoutSlot"/>.
+        /// </summary>
+        public int AsteroidLayoutSlot;
     }
 
     /// <summary>
@@ -569,6 +575,12 @@ namespace TitanOrbit.ECS
 
         /// <summary>Designer Size for bounce mass.</summary>
         public float Size;
+
+        /// <summary>
+        /// Blueprint asteroid slot to restore on the client Instantiates. −1 = unknown
+        /// (client falls back to pose match and cannot O(1) HitRpc that rock).
+        /// </summary>
+        public int LayoutSlot;
     }
 
     /// <summary>

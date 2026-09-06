@@ -30,10 +30,12 @@ namespace TitanOrbit.ECS
     /// Hull/gem rules use <see cref="ShipDamageLogic"/>. Clients never predict this.
     /// Dead / 0-HP asteroids are ignored even if PhysX still emits a contact (phantom grind).
     /// Each asteroid impact and grind pulse broadcasts <see cref="BulletHitRpc"/> (Sequence 0)
-    /// so every client plays the ship's bullet explosion and culls the rock the same way bullets do.
+    /// so every client applies Health on seed-hydrated rocks (not ghost-relevant) and culls
+    /// kills the same way bullets do. Skipping those pulses made rams look like a tunnel
+    /// through an undamaged mesh. Client VFX still throttles the explosion prefab.
     /// Grind pulses at 4 Hz (<see cref="AsteroidSettings.GrindPulseIntervalSeconds"/>):
     /// each pulse applies that interval's ship damage, then spawns one gem worth that pulse's
-    /// expelled cargo (four pulses → four gems per second, no banking).
+    /// expelled cargo.
     /// </para>
     /// </summary>
     [UpdateInGroup(typeof(PredictedFixedStepSimulationSystemGroup), OrderLast = true)]
@@ -770,7 +772,8 @@ namespace TitanOrbit.ECS
                 (byte)team,
                 bankIndex,
                 scaleMul,
-                healthAfter);
+                healthAfter,
+                AsteroidLayoutSlot.Read(state.EntityManager, asteroid));
         }
 
         /// <summary>

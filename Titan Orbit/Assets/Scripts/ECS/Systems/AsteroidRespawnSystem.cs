@@ -77,7 +77,8 @@ namespace TitanOrbit.ECS
                     pending.Scale,
                     pending.GemValue,
                     pending.MaxHealth,
-                    pending.Size);
+                    pending.Size,
+                    pending.LayoutSlot);
 
                 // --- Clients hydrate asteroids locally (not ghost-relevant) ---
                 Entity rpcEntity = rpcEcb.CreateEntity();
@@ -88,6 +89,7 @@ namespace TitanOrbit.ECS
                     GemValue = pending.GemValue,
                     MaxHealth = pending.MaxHealth,
                     Size = pending.Size,
+                    LayoutSlot = pending.LayoutSlot,
                 });
                 rpcEcb.AddComponent(rpcEntity, new SendRpcCommandRequest());
             }
@@ -133,6 +135,7 @@ namespace TitanOrbit.ECS
         /// <param name="gemValue">Full mineable gem capacity (MaxGems / RemainingGems).</param>
         /// <param name="maxHealth">Full combat Health (may differ from gemValue).</param>
         /// <param name="size">Designer Size for bounce mass / respawn restore. ≤0 derives from maxHealth.</param>
+        /// <param name="layoutSlot">Blueprint asteroid index. −1 leaves <see cref="AsteroidLayoutSlot"/> unset.</param>
         /// <returns>New asteroid entity, or Null if the prefab is missing.</returns>
         public static Entity Spawn(
             EntityManager em,
@@ -141,7 +144,8 @@ namespace TitanOrbit.ECS
             float uniformScale,
             float gemValue,
             float maxHealth,
-            float size = 0f)
+            float size = 0f,
+            int layoutSlot = -1)
         {
             if (asteroidPrefab == Entity.Null)
                 return Entity.Null;
@@ -211,6 +215,7 @@ namespace TitanOrbit.ECS
             // the client hid the mesh from HitRpc, and the ship rammed empty space.
             // [TITAN-ORBIT] Same strip the client already runs in ClientLocalMapBodySpawn.
             ClientLocalMapBodySpawn.StripGhostNetworking(em, e);
+            AsteroidLayoutSlot.Write(em, e, layoutSlot);
 
             return e;
         }
@@ -226,6 +231,7 @@ namespace TitanOrbit.ECS
         /// <param name="size">Designer Size to restore (bounce mass identity).</param>
         /// <param name="nowElapsed">Current server ElapsedTime.</param>
         /// <param name="delaySeconds">Seconds until spawn (settings default 30).</param>
+        /// <param name="layoutSlot">Blueprint slot to restore. −1 if the dead rock had none.</param>
         public static void ScheduleRespawn(
             DynamicBuffer<PendingAsteroidRespawnElement> buffer,
             float3 position,
@@ -234,7 +240,8 @@ namespace TitanOrbit.ECS
             float maxHealth,
             float size,
             double nowElapsed,
-            float delaySeconds)
+            float delaySeconds,
+            int layoutSlot = -1)
         {
             position.y = 0f;
             float restoreSize = size;
@@ -253,6 +260,7 @@ namespace TitanOrbit.ECS
                 MaxHealth = math.max(1f, maxHealth),
                 Size = math.max(0.01f, restoreSize),
                 RespawnAtElapsedTime = nowElapsed + math.max(1.0, delaySeconds),
+                LayoutSlot = layoutSlot,
             });
         }
     }

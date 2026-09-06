@@ -120,20 +120,25 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>HitRpc / ram / burn-tick: attach from the impact point alone.</summary>
+        /// <param name="duration">
+        /// Seconds the pooled flash stays alive. 0 or less uses
+        /// <see cref="BulletVisualFactory.DefaultImpactDuration"/>.
+        /// </param>
         public static void PlayAtLogicalPoint(
             float3 logicalHit,
             BulletVfxBank bank,
             int bankIndex,
             TeamId team,
             float damage,
-            float scaleMultiplier)
+            float scaleMultiplier,
+            float duration = 0f)
         {
             TryResolveAtLogicalPoint(logicalHit, out Transform parent, out Vector3 worldPos);
             if (parent == null && ToroidalDisplay.TryGetReferencePosition(out var reference))
                 worldPos = ToroidalDisplay.ToDisplayPosition(logicalHit, reference);
 
             BulletVisualFactory.SpawnBulletImpactVfx(
-                worldPos, bank, bankIndex, team, damage, scaleMultiplier, parent);
+                worldPos, bank, bankIndex, team, damage, scaleMultiplier, parent, duration);
         }
 
         static float GetAsteroidRadius(in BulletCosmeticHitQuery.Obstacle obstacle)

@@ -13,8 +13,10 @@ namespace TitanOrbit.ECS
     /// <summary>
     /// After Unity Physics exports contacts, applies mass-aware bounce from
     /// <see cref="ShipCollisionImpulseLogic"/> for asteroids (virtual rock mass) and
-    /// planets/moons (infinite-mass wall). Ship↔ship is left to the Unity Physics solver
-    /// (hull restitution / friction on the real <see cref="PhysicsCollider"/>).
+    /// planets/moons (infinite-mass wall). Server ship↔ship stays on the Unity Physics
+    /// two-body solver. Client remotes have no <see cref="PhysicsVelocity"/>, so a local
+    /// ram would otherwise bounce off a frozen interpolated hull — rewrite that contact
+    /// as a moving wall from ghosted <see cref="ShipKinematics"/> (real events only).
     /// MEGA hulls plow asteroids: restore pre-collision motion (no bounce) so a field does
     /// not slow the ship. MEGA vs planet also restores pose — the covering sphere must not
     /// park the hull outside a small planet's orbit ring; capped keep-out runs after this.
@@ -26,16 +28,43 @@ namespace TitanOrbit.ECS
     /// </para>
     /// Pipeline: Drive → Snapshot → PhysicsSimulation → Export → ContactCollect →
     /// Bounce (this) → Friction → Wrap → Planar → Kinematics.
+    /// All hulls are single spheres (ship, rock, planet, moon, shield).
     /// </summary>
     [UpdateInGroup(typeof(AfterPhysicsSystemGroup))]
     [UpdateBefore(typeof(ShipAsteroidContactFrictionSystem))]
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation | WorldSystemFilterFlags.ClientSimulation)]
     public partial struct ShipCollisionBounceSystem : ISystem
     {
+        NativeHashMap<Entity, float3> _working;
+        NativeHashSet<Entity> _megaUnconstrained;
+        NativeHashSet<Entity> _megaKeepPhysX;
+        NativeHashSet<long> _seenShipPairs;
+        NativeHashSet<Entity> _seenPlowRocks;
+
         /// <summary>Require the classified contact buffer from <see cref="ShipPhysicsContactCollectSystem"/>.</summary>
         public void OnCreate(ref SystemState state)
         {
             state.RequireForUpdate<ShipPhysicsContactQueueTag>();
+            _working = new NativeHashMap<Entity, float3>(32, Allocator.Persistent);
+            _megaUnconstrained = new NativeHashSet<Entity>(16, Allocator.Persistent);
+            _megaKeepPhysX = new NativeHashSet<Entity>(16, Allocator.Persistent);
+            _seenShipPairs = new NativeHashSet<long>(16, Allocator.Persistent);
+            _seenPlowRocks = new NativeHashSet<Entity>(16, Allocator.Persistent);
+        }
+
+        /// <summary>Persistent scratch from <see cref="OnCreate"/>.</summary>
+        public void OnDestroy(ref SystemState state)
+        {
+            if (_working.IsCreated)
+                _working.Dispose();
+            if (_megaUnconstrained.IsCreated)
+                _megaUnconstrained.Dispose();
+            if (_megaKeepPhysX.IsCreated)
+                _megaKeepPhysX.Dispose();
+            if (_seenShipPairs.IsCreated)
+                _seenShipPairs.Dispose();
+            if (_seenPlowRocks.IsCreated)
+                _seenPlowRocks.Dispose();
         }
 
         /// <summary>
@@ -74,20 +103,22 @@ namespace TitanOrbit.ECS
             var asteroidStateLookup = SystemAPI.GetComponentLookup<AsteroidState>(true);
             var culledLookup = SystemAPI.GetComponentLookup<AsteroidClientCulledTag>(true);
             var velocityLookup = SystemAPI.GetComponentLookup<PhysicsVelocity>(false);
+            var kinematicsLookup = SystemAPI.GetComponentLookup<ShipKinematics>(true);
+            bool isClient = state.World.IsClient();
 
             // Working velocities start from the pre-collision snapshot so multiple contacts
             // in one tick accumulate correctly without reading PhysX's inelastic result.
-            var working = new NativeHashMap<Entity, float3>(math.max(8, pairs.Length * 2), Allocator.Temp);
-
-            // MEGA asteroid plow / planet approach: restore unconstrained pose unless a
-            // ship or moon contact this tick must keep PhysX / wall bounce. Two sets so
-            // pair order cannot re-add a MEGA after a ship hit (or drop a plow after a
-            // later planet pair). Capped planet keep-out runs in ToroidalWorldCollision.
-            var megaUnconstrained = new NativeHashSet<Entity>(math.max(8, pairs.Length), Allocator.Temp);
-            var megaKeepPhysX = new NativeHashSet<Entity>(math.max(8, pairs.Length), Allocator.Temp);
-
-            // --- Deduplicate ship↔ship pairs (A,B) and (B,A) ---
-            var seenShipPairs = new NativeHashSet<long>(pairs.Length, Allocator.Temp);
+            // Persistent scratch — grind emits contacts every predicted tick (Allocator.Temp
+            // here used to allocate every physics step while pinned on a rock).
+            int pairCap = math.max(8, pairs.Length * 2);
+            EnsureMapCapacity(ref _working, pairCap);
+            EnsureSetCapacity(ref _megaUnconstrained, pairCap);
+            EnsureSetCapacity(ref _megaKeepPhysX, pairCap);
+            EnsureSetCapacity(ref _seenShipPairs, math.max(8, pairs.Length));
+            _working.Clear();
+            _megaUnconstrained.Clear();
+            _megaKeepPhysX.Clear();
+            _seenShipPairs.Clear();
 
             for (int i = 0; i < pairs.Length; i++)
             {
@@ -96,20 +127,27 @@ namespace TitanOrbit.ECS
                 if (pair.Kind == ShipPhysicsContactKind.Ship)
                 {
                     long key = PackEntityPairKey(pair.Ship, pair.Other);
-                    if (!seenShipPairs.Add(key))
+                    if (!_seenShipPairs.Add(key))
                         continue;
-                    // Unity Physics already bounced these hulls. Do not rewrite velocity
-                    // (that felt like a magnet). Keep MEGA plow from undoing the solver pose.
-                    megaKeepPhysX.Add(pair.Ship);
-                    megaKeepPhysX.Add(pair.Other);
+                    // Server / two predicted hulls: PhysX already bounced. Do not two-body
+                    // rewrite (that felt like a magnet). Client remotes have no PhysicsVelocity,
+                    // so PhysX treats them as a frozen wall — replace that with a moving wall
+                    // from ghosted kinematics. Keep MEGA plow from undoing the solver pose.
+                    _megaKeepPhysX.Add(pair.Ship);
+                    _megaKeepPhysX.Add(pair.Other);
+                    if (isClient)
+                    {
+                        ApplyLocalVsInterpolatedRemote(
+                            pair, ref _working, snapshotLookup, velocityLookup, kinematicsLookup, megaLookup);
+                    }
                 }
                 else if (pair.Kind == ShipPhysicsContactKind.Asteroid)
                 {
                     bool plowed = ApplyShipVsAsteroid(
-                        pair, ref working, snapshotLookup, motorLookup, shipStateLookup,
+                        pair, ref _working, snapshotLookup, motorLookup, shipStateLookup,
                         megaLookup, asteroidStateLookup, culledLookup, asteroidMassPerSize, asteroidRestitution);
                     if (plowed)
-                        megaUnconstrained.Add(pair.Ship);
+                        _megaUnconstrained.Add(pair.Ship);
                 }
                 else if (pair.Kind == ShipPhysicsContactKind.Planet)
                 {
@@ -121,13 +159,13 @@ namespace TitanOrbit.ECS
                     if (megaPlanet)
                     {
                         // Keep snapshot velocity — PhysX planet depenetration is undone below.
-                        working[pair.Ship] = GetWorkingOrSnapshot(
-                            pair.Ship, ref working, snapshotLookup);
-                        megaUnconstrained.Add(pair.Ship);
+                        _working[pair.Ship] = GetWorkingOrSnapshot(
+                            pair.Ship, ref _working, snapshotLookup);
+                        _megaUnconstrained.Add(pair.Ship);
                     }
                     else
                     {
-                        ApplyShipVsInfiniteWall(pair, ref working, snapshotLookup);
+                        ApplyShipVsInfiniteWall(pair, ref _working, snapshotLookup);
                     }
                 }
                 else if (pair.Kind == ShipPhysicsContactKind.Moon)
@@ -135,33 +173,30 @@ namespace TitanOrbit.ECS
                     if (IsTakingOffMoon(pair.Ship, moonDockLookup))
                         continue;
 
-                    ApplyShipVsInfiniteWall(pair, ref working, snapshotLookup);
-                    megaKeepPhysX.Add(pair.Ship);
+                    ApplyShipVsInfiniteWall(pair, ref _working, snapshotLookup);
+                    _megaKeepPhysX.Add(pair.Ship);
                 }
             }
 
             // --- Write PhysicsVelocity ---
-            var written = working.GetKeyArray(Allocator.Temp);
-            for (int i = 0; i < written.Length; i++)
+            foreach (var kv in _working)
             {
-                Entity e = written[i];
+                Entity e = kv.Key;
                 if (!velocityLookup.HasComponent(e))
                     continue;
                 var pv = velocityLookup[e];
-                pv.Linear = working[e];
+                pv.Linear = kv.Value;
                 velocityLookup[e] = pv;
             }
 
             // --- MEGA plow / planet approach: undo PhysX depenetration ---
             // Reconstruct unconstrained pose from the pre-physics snapshot (drive already applied).
-            if (megaUnconstrained.Count > 0)
+            if (_megaUnconstrained.Count > 0)
             {
                 var transformLookup = SystemAPI.GetComponentLookup<LocalTransform>(false);
-                var plowShips = megaUnconstrained.ToNativeArray(Allocator.Temp);
-                for (int i = 0; i < plowShips.Length; i++)
+                foreach (Entity ship in _megaUnconstrained)
                 {
-                    Entity ship = plowShips[i];
-                    if (megaKeepPhysX.Contains(ship))
+                    if (_megaKeepPhysX.Contains(ship))
                         continue;
                     if (!snapshotLookup.HasComponent(ship) || !transformLookup.HasComponent(ship))
                         continue;
@@ -173,8 +208,6 @@ namespace TitanOrbit.ECS
                     lt.Position = pos;
                     transformLookup[ship] = lt;
                 }
-
-                plowShips.Dispose();
             }
 
             // Client predicts the rock vanishing so the next physics step cannot pin the MEGA
@@ -183,7 +216,8 @@ namespace TitanOrbit.ECS
             // collect rocks first, then teardown after megaLookup is no longer used.
             if (state.World.IsClient())
             {
-                var seenPlowRocks = new NativeHashSet<Entity>(math.max(8, pairs.Length), Allocator.Temp);
+                EnsureSetCapacity(ref _seenPlowRocks, math.max(8, pairs.Length));
+                _seenPlowRocks.Clear();
                 for (int i = 0; i < pairs.Length; i++)
                 {
                     ShipPhysicsContactElement pair = pairs[i];
@@ -191,29 +225,35 @@ namespace TitanOrbit.ECS
                         continue;
                     if (!megaLookup.HasComponent(pair.Ship) || !megaLookup[pair.Ship].IsMega)
                         continue;
-                    seenPlowRocks.Add(pair.Other);
+                    _seenPlowRocks.Add(pair.Other);
                 }
 
-                if (seenPlowRocks.Count > 0)
+                foreach (Entity rock in _seenPlowRocks)
                 {
-                    var plowList = seenPlowRocks.ToNativeArray(Allocator.Temp);
-                    for (int i = 0; i < plowList.Length; i++)
-                    {
-                        ClientLocalAsteroidCombatSync.SoftDestroyLocalAsteroidEntity(
-                            state.EntityManager, plowList[i]);
-                    }
-
-                    plowList.Dispose();
+                    ClientLocalAsteroidCombatSync.SoftDestroyLocalAsteroidEntity(
+                        state.EntityManager, rock);
                 }
-
-                seenPlowRocks.Dispose();
             }
+        }
 
-            written.Dispose();
-            working.Dispose();
-            seenShipPairs.Dispose();
-            megaUnconstrained.Dispose();
-            megaKeepPhysX.Dispose();
+        static void EnsureMapCapacity(ref NativeHashMap<Entity, float3> map, int needed)
+        {
+            if (map.Capacity >= needed)
+                return;
+            var grown = new NativeHashMap<Entity, float3>(
+                math.max(needed, map.Capacity * 2), Allocator.Persistent);
+            map.Dispose();
+            map = grown;
+        }
+
+        static void EnsureSetCapacity<T>(ref NativeHashSet<T> set, int needed)
+            where T : unmanaged, System.IEquatable<T>
+        {
+            if (set.Capacity >= needed)
+                return;
+            var grown = new NativeHashSet<T>(math.max(needed, set.Capacity * 2), Allocator.Persistent);
+            set.Dispose();
+            set = grown;
         }
 
         /// <summary>
@@ -248,6 +288,48 @@ namespace TitanOrbit.ECS
         static bool IsTakingOffMoon(Entity ship, ComponentLookup<ShipMoonDockState> moonDock)
         {
             return moonDock.HasComponent(ship) && moonDock[ship].IsTakingOff;
+        }
+
+        /// <summary>
+        /// Client only: local predicted hull vs interpolated remote (no <see cref="PhysicsVelocity"/>).
+        /// Restores pre-collision velocity then reflects in the remote's rest frame so a ram
+        /// scrapes off a moving ghost instead of a static magnet. No-ops when both hulls have
+        /// velocity (listen-server / two predicted) or the local ship is a MEGA plow.
+        /// </summary>
+        static void ApplyLocalVsInterpolatedRemote(
+            ShipPhysicsContactElement pair,
+            ref NativeHashMap<Entity, float3> working,
+            ComponentLookup<ShipPreCollisionVelocity> snapshots,
+            ComponentLookup<PhysicsVelocity> velocities,
+            ComponentLookup<ShipKinematics> kinematics,
+            ComponentLookup<MegaShipState> megas)
+        {
+            Entity local = pair.Ship;
+            Entity remote = pair.Other;
+            float3 n = pair.NormalShipFromOther;
+
+            bool shipHasVel = velocities.HasComponent(local);
+            bool otherHasVel = velocities.HasComponent(remote);
+            if (shipHasVel == otherHasVel)
+                return;
+
+            if (!shipHasVel)
+            {
+                local = pair.Other;
+                remote = pair.Ship;
+                n = -n;
+            }
+
+            if (megas.HasComponent(local) && megas[local].IsMega)
+                return;
+
+            float3 wallVel = kinematics.HasComponent(remote)
+                ? kinematics[remote].Velocity
+                : float3.zero;
+            float3 v = GetWorkingOrSnapshot(local, ref working, snapshots);
+            ShipCollisionImpulseLogic.ApplyMovingWallImpulse(
+                ref v, wallVel, n, ShipCollisionImpulseLogic.InterpolatedRemoteRestitution);
+            working[local] = v;
         }
 
         /// <summary>Reads snapshot (or current working) velocity for a ship entity.</summary>

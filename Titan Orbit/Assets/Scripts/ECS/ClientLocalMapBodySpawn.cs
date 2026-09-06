@@ -10,13 +10,35 @@ using Unity.Transforms;
 namespace TitanOrbit.ECS
 {
     /// <summary>
-    /// [TITAN-ORBIT] Blueprint asteroid index on a seed-hydrated local rock.
-    /// Occupancy catch-up SoftDestroys slots whose live bit is 0.
+    /// [TITAN-ORBIT] Stable blueprint asteroid index (EntityKind==3 order in
+    /// <see cref="MapLayoutBlueprint"/>). Same integer on server and client for a given seed.
+    /// Occupancy bits, HitRpc apply, and respawn all key off this — not ECS Entity ids.
     /// </summary>
-    public struct ClientAsteroidLayoutSlot : IComponentData
+    public struct AsteroidLayoutSlot : IComponentData
     {
-        /// <summary>Index among EntityKind==3 bodies in <see cref="MapLayoutBlueprint"/> order.</summary>
+        /// <summary>0-based layout index. Negative means unknown / not assigned.</summary>
         public int Slot;
+
+        /// <summary>Reads the slot or −1 when the component is missing.</summary>
+        public static int Read(EntityManager em, Entity entity)
+        {
+            if (entity == Entity.Null || !em.Exists(entity) || !em.HasComponent<AsteroidLayoutSlot>(entity))
+                return -1;
+            return em.GetComponentData<AsteroidLayoutSlot>(entity).Slot;
+        }
+
+        /// <summary>Writes the slot when <paramref name="slot"/> is valid. No-op for −1.</summary>
+        public static void Write(EntityManager em, Entity entity, int slot)
+        {
+            if (entity == Entity.Null || slot < 0 || !em.Exists(entity))
+                return;
+
+            var data = new AsteroidLayoutSlot { Slot = slot };
+            if (em.HasComponent<AsteroidLayoutSlot>(entity))
+                em.SetComponentData(entity, data);
+            else
+                em.AddComponentData(entity, data);
+        }
     }
 
     /// <summary>
@@ -184,21 +206,17 @@ namespace TitanOrbit.ECS
                 body.Scale,
                 body.GemValue,
                 body.MaxHealth,
-                body.Size);
+                body.Size,
+                layoutSlot);
 
             if (e == Entity.Null)
                 return Entity.Null;
 
             StripGhostNetworking(em, e);
             TagSeedHydratedGroup(em, e);
-            if (layoutSlot >= 0)
-            {
-                if (!em.HasComponent<ClientAsteroidLayoutSlot>(e))
-                    em.AddComponentData(e, new ClientAsteroidLayoutSlot { Slot = layoutSlot });
-                else
-                    em.SetComponentData(e, new ClientAsteroidLayoutSlot { Slot = layoutSlot });
-            }
+            AsteroidLayoutSlot.Write(em, e, layoutSlot);
             AsteroidClientEntityRegistry.NotifyInstantiated(e);
+            AsteroidClientEntityRegistry.RegisterSlot(e, layoutSlot);
             QueueHybridVisual(em, e);
             return e;
         }

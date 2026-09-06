@@ -52,7 +52,7 @@ namespace TitanOrbit.ECS
                     Center = float3.zero,
                     Radius = BodyCollisionMath.AsteroidMeshBaseRadius,
                 },
-                TitanOrbitPhysicsLayers.WorldStatic,
+                TitanOrbitPhysicsLayers.AsteroidStatic,
                 material);
         }
 

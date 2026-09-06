@@ -1049,6 +1049,7 @@ namespace TitanOrbit.ECS
             public float Size;
             public TeamId LastInteractTeam;
             public byte TerritoryTeamsMask;
+            public int LayoutSlot;
         }
 
         /// <summary>Ensures the respawn queue exists. Gem prefab is optional for despawn.</summary>
@@ -1106,6 +1107,7 @@ namespace TitanOrbit.ECS
                     Size = a.Size,
                     LastInteractTeam = a.LastInteractTeam,
                     TerritoryTeamsMask = a.TerritoryTeamsMask,
+                    LayoutSlot = AsteroidLayoutSlot.Read(em, entity),
                 });
             }
 
@@ -1183,7 +1185,8 @@ namespace TitanOrbit.ECS
                     restoreHealth,
                     dead.Size,
                     now,
-                    settings.AsteroidRespawnDelaySeconds);
+                    settings.AsteroidRespawnDelaySeconds,
+                    dead.LayoutSlot);
 
                 // --- Clients: destroy seed-hydrated local rock now ---
                 // [NETCODE] Asteroids are not ghost-relevant. HitRpc alone misses mining/ram kills

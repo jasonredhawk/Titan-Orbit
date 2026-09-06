@@ -7,8 +7,8 @@ using Unity.Transforms;
 namespace TitanOrbit.ECS
 {
     /// <summary>
-    /// MEGA hull colliders are a compound of the prefab's part colliders.
-    /// These helpers aim and test against that collider footprint.
+    /// MEGA and regular ships use one Physics sphere. These helpers aim and test
+    /// against that sphere (compound child walks still work if an old blob remains).
     /// </summary>
     public static class MegaShipCombatAim
     {

@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using TitanOrbit.Core;
 using TitanOrbit.Data;
 using TitanOrbit.Simulation;
 using Unity.Collections;
@@ -40,6 +41,36 @@ namespace TitanOrbit.ECS
         /// Bump the constant when restitution/friction changes so live ships rebuild.
         /// </summary>
         public int AppliedHullMaterialRevision;
+
+        /// <summary>
+        /// Last <see cref="ShipState.Team"/> written into the sphere <see cref="CollisionFilter"/>.
+        /// Friendly moon shields are excluded for this team.
+        /// </summary>
+        public byte AppliedTeam;
+
+        /// <summary>
+        /// Max of the cached covering ellipsoid extents (presentation space).
+        /// World size is this × <c>LocalTransform.Scale</c>. 0 = not computed yet.
+        /// </summary>
+        public float AppliedCoveringRadius;
+
+        /// <summary>Cached covering ellipsoid radius on X (presentation space).</summary>
+        public float AppliedCoveringExtentX;
+
+        /// <summary>Cached covering ellipsoid radius on Y (presentation space).</summary>
+        public float AppliedCoveringExtentY;
+
+        /// <summary>Cached covering ellipsoid radius on Z (presentation space).</summary>
+        public float AppliedCoveringExtentZ;
+
+        /// <summary>Cached covering ellipsoid center X. Presentation space.</summary>
+        public float AppliedCoveringCenterX;
+
+        /// <summary>Cached covering ellipsoid center Y. Presentation space.</summary>
+        public float AppliedCoveringCenterY;
+
+        /// <summary>Cached covering ellipsoid center Z. Presentation space.</summary>
+        public float AppliedCoveringCenterZ;
     }
 
     /// <summary>
@@ -52,19 +83,47 @@ namespace TitanOrbit.ECS
     }
 
     /// <summary>
-    /// Builds Unity Physics compound colliders from chassis prefab colliders (per-component
-    /// Box/Mesh/etc.) and applies them to ship ghost entities. Visual proxies keep those
-    /// UnityEngine colliders disabled for Inspector gizmos; the live hull is this ECS blob.
+    /// Single Unity Physics covering box per ship (X/Y/Z independent, max bevel so it reads as
+    /// a stretched / flattened circle) that fits every chassis collider after attribute grow.
+    /// Measurements are cached per prefab + attributes so choosing ships does not Instantiate
+    /// again. Rebuilt only when chassis or upgrades change. World size then grows with
+    /// <c>LocalTransform.Scale</c> (tier / MEGA catalog scale).
     /// </summary>
     public static class ShipHullColliderLogic
     {
         static readonly Material HullMaterial = CreateHullMaterial();
 
         /// <summary>
-        /// Bump when hull material or solid envelope bake changes so
-        /// <see cref="ShipHullColliderSyncSystem"/> rebuilds existing compounds.
+        /// Bump when hull material or covering-sphere bake changes so live ships rebuild once.
         /// </summary>
-        public const int HullMaterialRevision = 3;
+        public const int HullMaterialRevision = 8;
+
+        struct CoveringBakeKey : System.IEquatable<CoveringBakeKey>
+        {
+            public int PrefabId;
+            public int AttrHash;
+            public byte Mega;
+
+            public bool Equals(CoveringBakeKey other) =>
+                PrefabId == other.PrefabId && AttrHash == other.AttrHash && Mega == other.Mega;
+
+            public override bool Equals(object obj) => obj is CoveringBakeKey other && Equals(other);
+
+            public override int GetHashCode() => PrefabId * 397 ^ AttrHash * 17 ^ Mega;
+        }
+
+        struct CoveringBakeValue
+        {
+            public float3 Center;
+            public float3 Extents;
+        }
+
+        /// <summary>
+        /// Measurement cache — same chassis + attributes is never Instantiated again this session.
+        /// Browsing ship types used to clone MEGA hulls repeatedly and hitch worse each pick.
+        /// </summary>
+        static readonly Dictionary<CoveringBakeKey, CoveringBakeValue> CoveringBakeCache =
+            new Dictionary<CoveringBakeKey, CoveringBakeValue>(32);
 
         /// <summary>
         /// Replaces the ship's physics collider with a compound built from the chassis prefab.
@@ -111,21 +170,357 @@ namespace TitanOrbit.ECS
             in ShipAttributeUpgradeState attrs,
             string familyPrefix)
         {
-            if (chassisPrefab == null || !em.Exists(shipEntity))
+            return TryApplyCoveringHull(
+                em, shipEntity, chassisPrefab, motorMass, attrs, familyPrefix,
+                megaParts: false, cachedExtents: new float3(-1f), cachedCenter: float3.zero,
+                out _, out _);
+        }
+
+        /// <summary>
+        /// Fallback uniform covering sphere (level-1 hull radius). Prefer
+        /// <see cref="EnsureCoveringCollider"/> when extents are known.
+        /// </summary>
+        public static bool EnsureSingleSphereCollider(
+            EntityManager em,
+            Entity shipEntity,
+            float motorMass)
+        {
+            float radius = BodyCollisionMath.GetShipHullRadiusWorld(1f);
+            return EnsureCoveringCollider(
+                em, shipEntity, motorMass, new float3(radius), float3.zero);
+        }
+
+        /// <summary>
+        /// Writes the covering box (X/Y/Z independent, rounded). Extents and center
+        /// are presentation-space (level-1). Tier scale stays on <c>LocalTransform.Scale</c>.
+        /// </summary>
+        public static bool EnsureCoveringCollider(
+            EntityManager em,
+            Entity shipEntity,
+            float motorMass,
+            float3 localExtents,
+            float3 localCenter)
+        {
+            if (!em.Exists(shipEntity))
                 return false;
 
-            // Level-1 presentation bake — tier size is LocalTransform.Scale (see ShipStatApplyLogic).
-            float presentationScale = BodyCollisionMath.ShipPresentationScale;
-            if (!TryBuildCompoundCollider(
-                    chassisPrefab,
-                    presentationScale,
-                    attrs,
-                    familyPrefix,
-                    out var compound))
+            localExtents = math.max(localExtents, new float3(0.02f));
+            var team = TeamId.None;
+            if (em.HasComponent<ShipState>(shipEntity))
+                team = em.GetComponentData<ShipState>(shipEntity).Team;
+            var wantFilter = TitanOrbitPhysicsLayers.ShipForTeam(team);
+
+            if (em.HasComponent<PhysicsCollider>(shipEntity))
+            {
+                var existing = em.GetComponentData<PhysicsCollider>(shipEntity);
+                if (existing.Value.IsCreated && CoveringMatches(existing, localCenter, localExtents))
+                {
+                    if (TitanOrbitPhysicsLayers.FiltersEqual(
+                            existing.Value.Value.GetCollisionFilter(), wantFilter))
+                        return true;
+
+                    // Team-only: rewrite filter in place. Do not rebuild the blob.
+                    existing.Value.Value.SetCollisionFilter(wantFilter);
+                    return true;
+                }
+            }
+
+            float mass = motorMass;
+            if (mass <= 0f && em.HasComponent<ShipMotorConfig>(shipEntity))
+                mass = em.GetComponentData<ShipMotorConfig>(shipEntity).Mass;
+
+            var blob = CreateCoveringBox(localCenter, localExtents, wantFilter);
+            if (!blob.IsCreated)
                 return false;
 
-            ReplacePhysicsCollider(em, shipEntity, compound, motorMass);
+            ReplacePhysicsCollider(em, shipEntity, blob, mass);
             return true;
+        }
+
+        /// <summary>
+        /// Measures chassis part colliders (with attribute grow), caches a covering ellipsoid,
+        /// and applies it. Uses <paramref name="cachedExtents"/> when the prefab walk fails
+        /// so a prior bake is not lost.
+        /// </summary>
+        public static bool TryApplyCoveringHull(
+            EntityManager em,
+            Entity shipEntity,
+            GameObject chassisPrefab,
+            float motorMass,
+            in ShipAttributeUpgradeState attrs,
+            string familyPrefix,
+            bool megaParts,
+            float3 cachedExtents,
+            float3 cachedCenter,
+            out float3 usedCenter,
+            out float3 usedExtents)
+        {
+            usedCenter = cachedCenter;
+            usedExtents = cachedExtents;
+
+            if (chassisPrefab != null
+                && TryComputeCoveringHull(
+                    chassisPrefab, attrs, familyPrefix, megaParts, out float3 measuredCenter, out float3 measuredExtents)
+                && math.cmax(measuredExtents) > 0.01f)
+            {
+                usedCenter = measuredCenter;
+                usedExtents = measuredExtents;
+            }
+            else if (math.cmax(cachedExtents) <= 0.01f)
+            {
+                usedCenter = float3.zero;
+                float fallback = BodyCollisionMath.GetShipHullRadiusWorld(1f);
+                usedExtents = new float3(fallback);
+            }
+
+            return EnsureCoveringCollider(em, shipEntity, motorMass, usedExtents, usedCenter);
+        }
+
+        /// <summary>
+        /// Presentation-space ellipsoid that fits every enabled non-trigger collider on the
+        /// chassis after <see cref="ShipComponentAttributeScaleLogic.ApplyToHierarchy"/>.
+        /// Instantiates once (nested MEGA modules + attribute grow). Call only when
+        /// <see cref="NeedsCoveringRecompute"/> is true.
+        /// </summary>
+        public static bool TryComputeCoveringHull(
+            GameObject chassisPrefab,
+            in ShipAttributeUpgradeState attrs,
+            string familyPrefix,
+            bool megaParts,
+            out float3 localCenter,
+            out float3 localExtents)
+        {
+            localCenter = float3.zero;
+            localExtents = float3.zero;
+            if (chassisPrefab == null)
+                return false;
+
+            var key = new CoveringBakeKey
+            {
+                PrefabId = chassisPrefab.GetInstanceID(),
+                AttrHash = megaParts ? 0 : HashAttributes(attrs),
+                Mega = megaParts ? (byte)1 : (byte)0,
+            };
+            if (CoveringBakeCache.TryGetValue(key, out var cached))
+            {
+                localCenter = cached.Center;
+                localExtents = cached.Extents;
+                return math.cmax(localExtents) > 0.01f;
+            }
+
+            float presentationScale = BodyCollisionMath.ShipPresentationScale;
+            GameObject instance = null;
+            try
+            {
+                // Walk the prefab asset unless we must mutate it (attribute grow) or MEGA
+                // nested module colliders are stripped until Instantiate.
+                bool needClone = megaParts || ShipStatApplyLogic.SumAttributeLevels(attrs) > 0;
+                Transform root;
+                if (needClone)
+                {
+                    instance = Object.Instantiate(chassisPrefab);
+                    instance.SetActive(false);
+                    instance.transform.SetPositionAndRotation(Vector3.zero, Quaternion.identity);
+                    instance.transform.localScale = Vector3.one;
+                    root = instance.transform;
+                    if (!megaParts)
+                    {
+                        string prefix = ResolveFamilyPrefix(chassisPrefab, familyPrefix);
+                        ShipComponentAttributeScaleLogic.ApplyToHierarchy(
+                            root, prefix, attrs, territoryMovementMult: 1f);
+                    }
+                }
+                else
+                {
+                    root = chassisPrefab.transform;
+                }
+
+                var hull = Aabb.Empty;
+                bool any = false;
+                var colliders = root.GetComponentsInChildren<UnityEngine.Collider>(true);
+                for (int i = 0; i < colliders.Length; i++)
+                {
+                    var collider = colliders[i];
+                    if (collider == null || !collider.enabled || collider.isTrigger)
+                        continue;
+                    if (!TryIncludeColliderAabb(
+                            collider, root, presentationScale, scaleSizeByPresentation: false, ref hull))
+                        continue;
+                    any = true;
+                }
+
+                if (!any || !hull.IsValid)
+                    return false;
+
+                localCenter = hull.Center;
+                localExtents = hull.Extents * 0.5f + 0.04f;
+                if (math.cmax(localExtents) <= 0.01f)
+                    return false;
+
+                CoveringBakeCache[key] = new CoveringBakeValue
+                {
+                    Center = localCenter,
+                    Extents = localExtents,
+                };
+                return true;
+            }
+            finally
+            {
+                DestroyCoveringInstance(instance);
+            }
+        }
+
+        static int HashAttributes(in ShipAttributeUpgradeState attrs)
+        {
+            unchecked
+            {
+                int hash = 17;
+                hash = hash * 31 + attrs.FirePower;
+                hash = hash * 31 + attrs.BulletSpeed;
+                hash = hash * 31 + attrs.MaxHealth;
+                hash = hash * 31 + attrs.HealthRegen;
+                hash = hash * 31 + attrs.EnergyCapacity;
+                hash = hash * 31 + attrs.EnergyRegen;
+                hash = hash * 31 + attrs.MovementSpeed;
+                hash = hash * 31 + attrs.RotationSpeed;
+                hash = hash * 31 + attrs.GemCapacity;
+                hash = hash * 31 + attrs.PeopleCapacity;
+                return hash;
+            }
+        }
+
+        static void DestroyCoveringInstance(GameObject instance)
+        {
+            if (instance == null)
+                return;
+#if UNITY_EDITOR
+            if (!Application.isPlaying)
+            {
+                Object.DestroyImmediate(instance);
+                return;
+            }
+#endif
+            // Play Mode: destroy now so browsing ships cannot pile deferred clones.
+            Object.DestroyImmediate(instance);
+        }
+
+        static bool CoveringMatches(in PhysicsCollider existing, float3 center, float3 extents)
+        {
+            if (!existing.Value.IsCreated)
+                return false;
+
+            if (existing.Value.Value.Type == ColliderType.Box)
+            {
+                unsafe
+                {
+                    var box = (Unity.Physics.BoxCollider*)existing.Value.GetUnsafePtr();
+                    BoxGeometry g = box->Geometry;
+                    float3 size = extents * 2f;
+                    return math.lengthsq(g.Center - center) < 1e-6f
+                        && math.lengthsq(g.Size - size) < 1e-6f;
+                }
+            }
+
+            Aabb aabb = existing.Value.Value.CalculateAabb();
+            float3 half = aabb.Extents * 0.5f;
+            return math.lengthsq(aabb.Center - center) < 1e-5f
+                && math.lengthsq(half - extents) < 1e-5f;
+        }
+
+        /// <summary>
+        /// Native box scaled independently on X/Y/Z (flat disk / long oval). Max bevel rounds
+        /// it toward a stretched circle without ConvexCollider.Create.
+        /// </summary>
+        static BlobAssetReference<PhysicsColliderBlob> CreateCoveringBox(
+            float3 center,
+            float3 extents,
+            CollisionFilter filter)
+        {
+            float3 size = extents * 2f;
+            float bevel = math.max(0f, math.cmin(extents) * 0.9f);
+            return Unity.Physics.BoxCollider.Create(
+                new BoxGeometry
+                {
+                    Center = center,
+                    Size = size,
+                    Orientation = quaternion.identity,
+                    BevelRadius = bevel,
+                },
+                filter,
+                HullMaterial);
+        }
+
+        static bool TryIncludeColliderAabb(
+            UnityEngine.Collider unityCollider,
+            Transform root,
+            float presentationScale,
+            bool scaleSizeByPresentation,
+            ref Aabb hull)
+        {
+            Matrix4x4 relative = root.worldToLocalMatrix * unityCollider.transform.localToWorldMatrix;
+            DecomposeMatrix(relative, presentationScale, out float3 position, out quaternion orientation, out float3 lossyScale);
+            float sizeScale = scaleSizeByPresentation ? presentationScale : 1f;
+
+            switch (unityCollider)
+            {
+                case UnityEngine.BoxCollider box:
+                {
+                    float3 size = math.abs((float3)box.size * lossyScale) * sizeScale;
+                    if (math.any(size < 0.001f))
+                        return false;
+                    float3 center = position + math.mul(orientation, (float3)box.center * lossyScale * sizeScale);
+                    IncludeOrientedBox(ref hull, center, size * 0.5f, orientation);
+                    return true;
+                }
+                case UnityEngine.SphereCollider sphere:
+                {
+                    float radius = math.max(0.001f, sphere.radius * math.cmax(lossyScale) * sizeScale);
+                    float3 center = position + math.mul(orientation, (float3)sphere.center * lossyScale * sizeScale);
+                    float3 e = new float3(radius, radius, radius);
+                    hull.Include(center - e);
+                    hull.Include(center + e);
+                    return true;
+                }
+                case UnityEngine.CapsuleCollider capsule:
+                {
+                    float radius = math.max(0.001f, capsule.radius * math.max(lossyScale.x, lossyScale.z) * sizeScale);
+                    float height = math.max(radius * 2f, capsule.height * lossyScale.y * sizeScale);
+                    float3 center = position + math.mul(orientation, (float3)capsule.center * lossyScale * sizeScale);
+                    float3 half = new float3(radius, height * 0.5f, radius);
+                    quaternion capRot = capsule.direction switch
+                    {
+                        0 => math.mul(orientation, quaternion.Euler(0f, 0f, math.radians(90f))),
+                        2 => math.mul(orientation, quaternion.Euler(math.radians(90f), 0f, 0f)),
+                        _ => orientation,
+                    };
+                    IncludeOrientedBox(ref hull, center, half, capRot);
+                    return true;
+                }
+                case UnityEngine.MeshCollider meshCollider:
+                {
+                    if (meshCollider.sharedMesh == null)
+                        return false;
+                    Bounds b = meshCollider.sharedMesh.bounds;
+                    float3 center = position + math.mul(orientation, (float3)b.center * lossyScale * sizeScale);
+                    float3 half = math.abs((float3)b.extents * lossyScale) * sizeScale;
+                    IncludeOrientedBox(ref hull, center, half, orientation);
+                    return true;
+                }
+                default:
+                    return false;
+            }
+        }
+
+        static void IncludeOrientedBox(ref Aabb hull, float3 center, float3 halfExtents, quaternion rotation)
+        {
+            for (int i = 0; i < 8; i++)
+            {
+                float3 local = new float3(
+                    (i & 1) == 0 ? -halfExtents.x : halfExtents.x,
+                    (i & 2) == 0 ? -halfExtents.y : halfExtents.y,
+                    (i & 4) == 0 ? -halfExtents.z : halfExtents.z);
+                hull.Include(center + math.mul(rotation, local));
+            }
         }
 
         /// <summary>
@@ -141,15 +536,54 @@ namespace TitanOrbit.ECS
             GameObject chassisPrefab,
             float motorMass)
         {
-            if (chassisPrefab == null || !em.Exists(shipEntity))
-                return false;
+            var zeroAttrs = default(ShipAttributeUpgradeState);
+            return TryApplyCoveringHull(
+                em, shipEntity, chassisPrefab, motorMass, zeroAttrs, familyPrefix: null,
+                megaParts: true, cachedExtents: new float3(-1f), cachedCenter: float3.zero,
+                out _, out _);
+        }
 
-            float presentationScale = BodyCollisionMath.ShipPresentationScale;
-            if (!TryBuildMegaPartCompound(chassisPrefab, presentationScale, out var compound))
-                return false;
+        /// <summary>
+        /// True when chassis, branch, attribute grow, or bake revision changed — walk the
+        /// prefab again. Ship level alone is not enough: tier size lives on
+        /// <c>LocalTransform.Scale</c>. Team-only filter updates reuse the cache.
+        /// </summary>
+        public static bool NeedsCoveringRecompute(
+            in ShipHullColliderState applied,
+            in FixedString64Bytes chassisKey,
+            int branchIndex,
+            int attributeSum,
+            bool isMega)
+        {
+            if (math.cmax(GetCachedCoveringExtents(applied)) <= 0.01f)
+                return true;
+            if (!applied.ChassisId.Equals(chassisKey))
+                return true;
+            if (applied.AppliedBranchIndex != branchIndex)
+                return true;
+            if (applied.AppliedAttributeSum != attributeSum)
+                return true;
+            if (applied.AppliedHullMaterialRevision != HullMaterialRevision)
+                return true;
+            if (isMega && applied.AppliedMegaColliderRevision != MegaShipCatalog.HullColliderRevision)
+                return true;
+            return false;
+        }
 
-            ReplacePhysicsCollider(em, shipEntity, compound, motorMass);
-            return true;
+        /// <summary>Cached covering ellipsoid center from the last bake.</summary>
+        public static float3 GetCachedCoveringCenter(in ShipHullColliderState applied) =>
+            new float3(applied.AppliedCoveringCenterX, applied.AppliedCoveringCenterY, applied.AppliedCoveringCenterZ);
+
+        /// <summary>Cached covering ellipsoid radii (X/Y/Z). Falls back to uniform radius.</summary>
+        public static float3 GetCachedCoveringExtents(in ShipHullColliderState applied)
+        {
+            var extents = new float3(
+                applied.AppliedCoveringExtentX,
+                applied.AppliedCoveringExtentY,
+                applied.AppliedCoveringExtentZ);
+            if (math.cmax(extents) > 0.01f)
+                return extents;
+            return new float3(applied.AppliedCoveringRadius);
         }
 
         /// <summary>

@@ -583,13 +583,42 @@ namespace TitanOrbit.ECS
             }
         }
 
-        /// <summary>Local client's NetworkId from the in-game connection entity (tiny query).</summary>
+        static int s_LocalNetworkIdFrame = -1;
+        static int s_LocalNetworkId = -1;
+        static World s_LocalNetworkIdWorld;
+        static EntityQuery s_LocalNetworkIdQuery;
+        static bool s_LocalNetworkIdQueryValid;
+
+        /// <summary>Local client's NetworkId from the in-game connection entity (cached per frame).</summary>
         static int ReadLocalNetworkId(EntityManager em)
         {
-            using var ids = em.CreateEntityQuery(
-                    typeof(NetworkStreamConnection), typeof(NetworkStreamInGame), typeof(NetworkId))
-                .ToComponentDataArray<NetworkId>(Allocator.Temp);
-            return ids.Length > 0 ? ids[0].Value : -1;
+            var world = em.World;
+            if (world == null || !world.IsCreated)
+                return -1;
+
+            int frame = Time.frameCount;
+            if (frame == s_LocalNetworkIdFrame && s_LocalNetworkIdWorld == world)
+                return s_LocalNetworkId;
+
+            s_LocalNetworkIdFrame = frame;
+            s_LocalNetworkId = -1;
+
+            if (!s_LocalNetworkIdQueryValid || s_LocalNetworkIdWorld != world)
+            {
+                if (s_LocalNetworkIdQueryValid && s_LocalNetworkIdWorld != null && s_LocalNetworkIdWorld.IsCreated)
+                    s_LocalNetworkIdQuery.Dispose();
+                s_LocalNetworkIdQuery = em.CreateEntityQuery(
+                    typeof(NetworkStreamConnection), typeof(NetworkStreamInGame), typeof(NetworkId));
+                s_LocalNetworkIdQueryValid = true;
+                s_LocalNetworkIdWorld = world;
+            }
+
+            if (s_LocalNetworkIdQuery.IsEmptyIgnoreFilter)
+                return -1;
+
+            using var ids = s_LocalNetworkIdQuery.ToComponentDataArray<NetworkId>(Allocator.Temp);
+            s_LocalNetworkId = ids.Length > 0 ? ids[0].Value : -1;
+            return s_LocalNetworkId;
         }
     }
 }

@@ -78,6 +78,9 @@ namespace TitanOrbit.ECS.Authoring
                 // [NETCODE] Deployed mines must bake so GhostFields replicate. Runtime-only
                 // AddBuffer from ShipEnsureComponentsSystem does not register them on the ghost.
                 AddBuffer<DeployedMineElement>(entity);
+                // Runtime hull bookkeeping — bake so predicted ghosts are not AddComponent'd
+                // every chassis pick (structural change + covering bake).
+                AddComponent(entity, new ShipHullColliderState());
                 AddComponent(entity, new ShipMotorConfig
                 {
                     EngineThrust = authoring.EngineThrust,

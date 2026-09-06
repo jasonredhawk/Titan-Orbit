@@ -41,8 +41,9 @@ namespace TitanOrbit.Game
     /// <see cref="PlanetaryDefenseClientHealthSync"/> — this driver does not write pad Health.
     /// </para>
     /// <para>
-    /// [TITAN-ORBIT] Sequence 0 HitRpcs are ram/grind explosions (no tracer). They must play
-    /// impact VFX and must not adopt/destroy a nearby flying tracer.
+    /// [TITAN-ORBIT] Sequence 0 HitRpcs are ram/grind (no tracer). Contact-enter and kill
+    /// still play the ship's bullet explosion. Grind pulses at 4 Hz are throttled so a
+    /// 3-second prefab does not stack ~12 lights/particles (Profiler GPU 9→26 ms while grinding).
     /// </para>
     /// <para>
     /// [TITAN-ORBIT] Homing rockets (local-fired and incoming remote) dead-reckon on the
@@ -176,6 +177,18 @@ namespace TitanOrbit.Game
         /// <summary>Display-space radius for matching HitRpc to a recent predicted impact (no Sequence yet).</summary>
         const float PredictedImpactMatchRadius = 14f;
 
+        /// <summary>
+        /// Min seconds between Sequence-0 impact prefabs at the same rock. Grind pulses at
+        /// 4 Hz; each flash lives <see cref="BulletVisualFactory.DefaultImpactDuration"/> (3s).
+        /// </summary>
+        const float RamImpactVfxMinInterval = 1f;
+
+        /// <summary>XZ slop (world units) for treating two ram hits as the same rock.</summary>
+        const float RamImpactVfxPosSlop = 4f;
+
+        /// <summary>Shorter than the bullet default so a throttled grind flash does not linger.</summary>
+        const float RamGrindImpactDuration = 1.25f;
+
         readonly List<Tracer> _tracers = new List<Tracer>(64);
         readonly Dictionary<uint, int> _indexBySequence = new Dictionary<uint, int>(64);
 
@@ -200,6 +213,12 @@ namespace TitanOrbit.Game
         bool _hasLastObserverHull;
         /// <summary>Increments per anticipation CreateTracer so FIFO adopt survives RemoveAtSwap.</summary>
         int _nextAnticipationOrder;
+
+        /// <summary>Last Sequence-0 impact flash time (unscaled) for grind VFX throttle.</summary>
+        float _lastRamImpactVfxTime = -999f;
+
+        /// <summary>Last Sequence-0 flash XZ (logical / display flattened).</summary>
+        float3 _lastRamImpactVfxPos;
 
         /// <summary>[UNITY] Attach to session manager when the scene loads.</summary>
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
@@ -715,6 +734,29 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
+        /// True when this Sequence-0 flash should Instantiates (first contact / spaced grind).
+        /// Kill booms skip this and always play.
+        /// </summary>
+        bool ShouldPlayRamImpactVfx(float3 hitPos)
+        {
+            float now = Time.unscaledTime;
+            if (now - _lastRamImpactVfxTime >= RamImpactVfxMinInterval)
+                return true;
+
+            float3 delta = hitPos - _lastRamImpactVfxPos;
+            delta.y = 0f;
+            return math.lengthsq(delta) > RamImpactVfxPosSlop * RamImpactVfxPosSlop;
+        }
+
+        /// <summary>Latch the last Sequence-0 flash so nearby grind pulses can skip VFX.</summary>
+        void RememberRamImpactVfx(float3 hitPos)
+        {
+            _lastRamImpactVfxTime = Time.unscaledTime;
+            hitPos.y = 0f;
+            _lastRamImpactVfxPos = hitPos;
+        }
+
+        /// <summary>
         /// Impact VFX + destroy matching tracer by Sequence.
         /// Falls back to nearest same-team tracer (incl. Sequence=0 anticipation) so orphan
         /// cosmetics do not keep flying through the rock after a real server hit.
@@ -722,6 +764,7 @@ namespace TitanOrbit.Game
         /// Mining floats always use HitRpc <c>AsteroidHealthAfter</c> (never cosmetic-predicted HP).
         /// Turret HP is written in <see cref="BulletHitRpcClientSystem"/> (not here).
         /// Sequence 0 (ram/grind) plays VFX only — never adopts a tracer.
+        /// Grind pulses reuse Sequence 0; VFX is throttled (kill / first contact always play).
         /// </summary>
         void DrainHits()
         {
@@ -742,8 +785,16 @@ namespace TitanOrbit.Game
                     var ramTeam = (TeamId)hit.OwnerTeam;
                     int ramBank = math.max(0, hit.BankIndex);
                     float ramScale = hit.ScaleMultiplier > 0f ? hit.ScaleMultiplier : 1f;
-                    BulletImpactAttach.PlayAtLogicalPoint(
-                        hit.HitPosition, _bank, ramBank, ramTeam, hit.Damage, ramScale);
+                    bool killBoom = hit.AsteroidHealthAfter >= 0f && hit.AsteroidHealthAfter <= 0.01f;
+                    if (killBoom || ShouldPlayRamImpactVfx(hitPos))
+                    {
+                        float duration = killBoom
+                            ? BulletVisualFactory.DefaultImpactDuration
+                            : RamGrindImpactDuration;
+                        BulletImpactAttach.PlayAtLogicalPoint(
+                            hit.HitPosition, _bank, ramBank, ramTeam, hit.Damage, ramScale, duration);
+                        RememberRamImpactVfx(hitPos);
+                    }
 
                     var ramSynth = new Tracer { OwnerNetworkId = 0, IsAnticipation = false };
                     TryShowHitRpcFloats(

@@ -307,14 +307,13 @@ namespace TitanOrbit.UI
                     continue;
 
                 var lt = em.GetComponentData<LocalTransform>(entity);
-                anchor.transform.position = lt.Position;
-                anchor.transform.localScale = Vector3.one * math.max(0.25f, lt.Scale);
 
                 if (anchor.Kind == MinimapBlipKind.GemMoon)
                     continue;
 
                 if (anchor.Kind == MinimapBlipKind.Ship && em.HasComponent<ShipState>(entity))
                 {
+                    WriteAnchorPoseIfChanged(anchor, lt);
                     var ship = em.GetComponentData<ShipState>(entity);
                     ApplyShipAnchorPresentation(em, entity, anchor, ship, lt);
                     if (anchor.IsLocalPlayer)
@@ -323,6 +322,7 @@ namespace TitanOrbit.UI
                 else if ((anchor.Kind == MinimapBlipKind.Planet || anchor.Kind == MinimapBlipKind.HomePlanet) &&
                          em.HasComponent<PlanetState>(entity))
                 {
+                    WriteAnchorPoseIfChanged(anchor, lt);
                     var planet = em.GetComponentData<PlanetState>(entity);
                     anchor.Team = planet.Ownership;
                     anchor.PlanetLevel = planet.PlanetLevel;
@@ -337,15 +337,37 @@ namespace TitanOrbit.UI
                 }
                 else if (anchor.Kind == MinimapBlipKind.Asteroid && em.HasComponent<AsteroidState>(entity))
                 {
-                    // --- Asteroid blip: destroyed flag + scale only (logical pose, not toroidal) ---
+                    // Rocks do not move. Skip transform writes every LateUpdate (~200 dirty
+                    // Transforms while grinding — Profiler hitch). Only refresh destroyed/size.
                     var asteroid = em.GetComponentData<AsteroidState>(entity);
                     anchor.IsDestroyed = asteroid.IsDestroyed;
-                    anchor.BodySize = math.max(0.25f, lt.Scale);
+                    float size = math.max(0.25f, lt.Scale);
+                    if (math.abs(anchor.BodySize - size) > 0.01f)
+                    {
+                        anchor.BodySize = size;
+                        WriteAnchorPoseIfChanged(anchor, lt);
+                    }
                 }
             }
 
             if (_localPlayer == null)
                 TryResolveLocalPlayerByNetworkId(em);
+        }
+
+        /// <summary>
+        /// Writes minimap anchor pose only when the ECS transform actually moved/scaled.
+        /// Assigning the same position still dirties the Transform and showed up in grind hitches.
+        /// </summary>
+        static void WriteAnchorPoseIfChanged(MinimapBlipAnchor anchor, in LocalTransform lt)
+        {
+            Vector3 pos = lt.Position;
+            float size = math.max(0.25f, lt.Scale);
+            Vector3 scale = Vector3.one * size;
+            Transform t = anchor.transform;
+            if ((t.position - pos).sqrMagnitude > 0.0001f)
+                t.position = pos;
+            if ((t.localScale - scale).sqrMagnitude > 0.0001f)
+                t.localScale = scale;
         }
 
         void TryResolveLocalPlayerByNetworkId(EntityManager em)

@@ -204,6 +204,15 @@ namespace TitanOrbit.UI
         /// </summary>
         private int _statsSnapshotKey = int.MinValue;
 
+        /// <summary>Last painted cargo bucket (rounded gems). Grind changes this every pulse.</summary>
+        private int _lastGemBucket = int.MinValue;
+
+        /// <summary>Unscaled time of the last chip paint (cargo-only rebuilds are throttled).</summary>
+        private float _lastChipPaintTime = -999f;
+
+        /// <summary>Min seconds between gem-only STATS chip rebuilds while grinding.</summary>
+        const float CargoChipRepaintMinInterval = 0.4f;
+
         // --- STATS toggle (shows/hides chip row + hover tips) ---
         private RectTransform _statsToggleRect;
         private TextMeshProUGUI _statsToggleLabel;
@@ -1211,8 +1220,9 @@ namespace TitanOrbit.UI
                 h = h * 31 + attrs.PeopleCapacity;
                 // Centi-units — ignores sub-0.01 noise, still catches MinMass → real hull size.
                 h = h * 31 + Mathf.RoundToInt(componentSize * 100f);
-                // [TITAN-ORBIT] Gems / people change mass tax → Move Speed and Turn chips must repaint.
-                h = h * 31 + Mathf.RoundToInt(ship.CurrentGems);
+                // People still in the identity key (rare). Gems are throttled in
+                // TryRefreshAbilityChipSnapshot — grind pulses used to rebuild all 10 TMP
+                // chips every 0.25s (Profiler ~9.6 ms hitch).
                 h = h * 31 + ship.CurrentPeople;
                 h = h * 31 + BulletBankHudCopy.SnapshotKey();
                 // MEGA catalog row — buying / swapping a MEGA must rebuild chips even when
@@ -2072,13 +2082,23 @@ namespace TitanOrbit.UI
             if (!TryResolveChipLiveContext(out _, out var live, out _) || !IsChipLiveContextReady(in live))
                 return;
 
-            // Key includes ComponentSize + CurrentGems/People so cargo mass tax repaints MS/TS.
+            // Key includes ComponentSize + people so cargo mass tax repaints MS/TS.
+            // Gems are bucketed + throttled — 4 Hz grind expulsion must not ForceMeshUpdate
+            // every pulse (Profiler hitch ~9.6 ms on ShipAttributeUpgradeHUD.LateUpdate).
             int snapshotKey = ComputeStatsSnapshotKey(
                 in ship, in attrs, live.ComponentSize, live.IsMega ? live.MegaCatalogIndex + 1 : 0);
-            if (snapshotKey == _statsSnapshotKey)
+            int gemBucket = Mathf.RoundToInt(ship.CurrentGems);
+            bool identityChanged = snapshotKey != _statsSnapshotKey;
+            bool gemsChanged = gemBucket != _lastGemBucket;
+            if (!identityChanged && !gemsChanged)
+                return;
+            if (!identityChanged &&
+                Time.unscaledTime - _lastChipPaintTime < CargoChipRepaintMinInterval)
                 return;
 
             _statsSnapshotKey = snapshotKey;
+            _lastGemBucket = gemBucket;
+            _lastChipPaintTime = Time.unscaledTime;
             PaintChipValues(in live, in attrs);
             if (_activeAbilityTipIndex.HasValue)
                 RefreshAbilityTipContent();

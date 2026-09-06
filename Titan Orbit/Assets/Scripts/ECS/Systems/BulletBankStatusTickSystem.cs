@@ -212,7 +212,8 @@ namespace TitanOrbit.ECS
                         damage,
                         inst.VfxTeam,
                         inst.VfxBankIndex,
-                        asteroid.Health);
+                        asteroid.Health,
+                        AsteroidLayoutSlot.Read(state.EntityManager, entity));
 
                     if (asteroid.IsDestroyed)
                         break;
@@ -237,7 +238,8 @@ namespace TitanOrbit.ECS
             float damage,
             byte ownerTeam,
             int bankIndex,
-            float asteroidHealthAfter)
+            float asteroidHealthAfter,
+            int asteroidLayoutSlot = -1)
         {
             BulletNetNotify.SendRamAsteroidHit(
                 ref ecb,
@@ -246,7 +248,8 @@ namespace TitanOrbit.ECS
                 ownerTeam,
                 bankIndex,
                 scaleMultiplier: 1f,
-                asteroidHealthAfter);
+                asteroidHealthAfter,
+                asteroidLayoutSlot);
         }
 
         void TickGravityWells(ref SystemState state, float dt, double elapsed)

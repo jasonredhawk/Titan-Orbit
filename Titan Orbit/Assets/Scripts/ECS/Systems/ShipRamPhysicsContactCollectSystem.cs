@@ -11,6 +11,7 @@ namespace TitanOrbit.ECS
     /// </summary>
     [UpdateInGroup(typeof(AfterPhysicsSystemGroup))]
     [UpdateAfter(typeof(ShipPhysicsContactCollectSystem))]
+    [UpdateAfter(typeof(ShipCircleOverlapSystem))]
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation)]
     public partial struct ShipRamPhysicsContactCollectSystem : ISystem
     {

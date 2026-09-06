@@ -12,7 +12,8 @@ namespace TitanOrbit.ECS
     /// <list type="number">
     /// <item>
     /// Clears then writes <see cref="ShipAsteroidContactState"/> so the next drive tick can
-    /// reject inward motor velocity into asteroids (ship↔ship is Unity Physics only).
+    /// reject inward motor velocity into asteroids. Ship↔ship sets
+    /// <see cref="ShipAsteroidContactState.InContactHull"/> for presentation coast.
     /// </item>
     /// <item>
     /// Bleeds ship tangential (slide) velocity using <see cref="AsteroidSettings.Friction"/>.
@@ -74,6 +75,18 @@ namespace TitanOrbit.ECS
             for (int i = 0; i < pairs.Length; i++)
             {
                 ShipPhysicsContactElement pair = pairs[i];
+                if (pair.Kind == ShipPhysicsContactKind.Ship)
+                {
+                    if (contactLookup.HasComponent(pair.Ship))
+                    {
+                        var hull = contactLookup[pair.Ship];
+                        hull.InContactHull = 1;
+                        contactLookup[pair.Ship] = hull;
+                    }
+
+                    continue;
+                }
+
                 if (pair.Kind != ShipPhysicsContactKind.Asteroid)
                     continue;
 
@@ -99,11 +112,10 @@ namespace TitanOrbit.ECS
 
                 if (contactLookup.HasComponent(ship))
                 {
-                    contactLookup[ship] = new ShipAsteroidContactState
-                    {
-                        InContact = 1,
-                        OutwardNormal = normal,
-                    };
+                    var rockContact = contactLookup[ship];
+                    rockContact.InContact = 1;
+                    rockContact.OutwardNormal = normal;
+                    contactLookup[ship] = rockContact;
                 }
 
                 if (friction <= 0f || !velocityLookup.HasComponent(ship))

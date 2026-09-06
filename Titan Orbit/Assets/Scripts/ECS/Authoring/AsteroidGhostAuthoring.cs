@@ -10,7 +10,7 @@ namespace TitanOrbit.ECS.Authoring
     /// <summary>
     /// [UNITY] MonoBehaviour authoring on asteroid ghost prefabs. The nested Baker converts this
     /// GameObject into an ECS entity with <see cref="AsteroidTag"/>, <see cref="AsteroidState"/>,
-    /// and a static sphere physics collider on <see cref="TitanOrbitPhysicsLayers.WorldStatic"/>.
+    /// and a static sphere physics collider on <see cref="TitanOrbitPhysicsLayers.AsteroidStatic"/>.
     /// [PHYSICS] Asteroids block ship movement; gems do not collide with ships. Baked into SubScenes
     /// for NetCode ghost replication. Server map generation instantiates from <see cref="GamePrefabs.Asteroid"/>.
     /// </summary>
@@ -40,7 +40,7 @@ namespace TitanOrbit.ECS.Authoring
                 AddComponent(entity, new MapBodyHybridVisualPending());
 
                 // --- Static physics collider ---
-                // [PHYSICS] WorldStatic layer — collides with Ship layer only (see TitanOrbitPhysicsLayers).
+                // [PHYSICS] AsteroidStatic — gems/transports only. Ships use circle-circle overlap.
                 // [TITAN-ORBIT] Friction from AsteroidSettings; PhysX restitution is 0 so
                 // ShipCollisionImpulseLogic owns mass-aware bounce. Runtime spawn rebuilds from
                 // AsteroidSettingsCache so Inspector friction tweaks apply without rebake.

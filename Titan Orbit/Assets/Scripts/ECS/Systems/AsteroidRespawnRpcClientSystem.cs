@@ -33,6 +33,7 @@ namespace TitanOrbit.ECS
             public float GemValue;
             public float MaxHealth;
             public float Size;
+            public int LayoutSlot;
             public Entity RpcEntity;
         }
 
@@ -63,6 +64,7 @@ namespace TitanOrbit.ECS
                     GemValue = r.GemValue,
                     MaxHealth = r.MaxHealth,
                     Size = r.Size,
+                    LayoutSlot = r.LayoutSlot,
                     RpcEntity = reqEntity,
                 });
             }
@@ -88,10 +90,10 @@ namespace TitanOrbit.ECS
                 float3 pos = p.Position;
                 pos.y = 0f;
                 if (!ClientLocalAsteroidCombatSync.TryApplyAsteroidRespawn(
-                    em, prefab, pos, p.Scale, p.GemValue, p.MaxHealth, p.Size))
+                    em, prefab, pos, p.Scale, p.GemValue, p.MaxHealth, p.Size, p.LayoutSlot))
                 {
                     ClientLocalAsteroidCombatSync.QueueUnmatchedRespawn(
-                        pos, p.Scale, p.GemValue, p.MaxHealth, p.Size);
+                        pos, p.Scale, p.GemValue, p.MaxHealth, p.Size, p.LayoutSlot);
                 }
             }
 

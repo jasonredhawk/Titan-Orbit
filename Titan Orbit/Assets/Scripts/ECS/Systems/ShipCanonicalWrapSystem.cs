@@ -1,4 +1,5 @@
 using TitanOrbit.Generation;
+using TitanOrbit.Simulation;
 using Unity.Collections;
 using Unity.Entities;
 using Unity.Mathematics;
@@ -107,8 +108,8 @@ namespace TitanOrbit.ECS
 
         /// <summary>
         /// If the wrapped hull overlaps a Unity.Physics body, slide out along the contact
-        /// normal by the penetration depth. Uses the ship's collider AABB as the query
-        /// radius so compound chassis keep-out matches bake, not a guessed sphere.
+        /// normal by the penetration depth. Query radius is the ship sphere
+        /// (<see cref="ShipToroidalWorldCollisionLogic.GetShipCollisionRadiusWorld"/>).
         /// </summary>
         static void TryDepenetrateWrappedShip(
             ref LocalTransform transform,
@@ -116,9 +117,8 @@ namespace TitanOrbit.ECS
             in CollisionWorld collisionWorld,
             Entity self)
         {
-            Aabb aabb = physicsCollider.Value.Value.CalculateAabb(
-                new RigidTransform(transform.Rotation, transform.Position));
-            float radius = math.max(aabb.Extents.x, aabb.Extents.z) * 0.5f;
+            float radius = ShipToroidalWorldCollisionLogic.GetShipCollisionRadiusWorld(
+                physicsCollider, transform.Scale);
             if (radius < 0.05f)
                 return;
 

@@ -399,20 +399,7 @@ namespace TitanOrbit.ECS
                 }
             }
 
-            // --- Enemy / neutral moon shield (deterministic; moons have no physics colliders) ---
-            // [TITAN-ORBIT] Must run on client prediction + server — never client-only VFX push.
-            // Moons share the ship orbit ring. Hard 8–22 kicks during passive coast made neutral/
-            // enemy rings feel stepped (friendly moons skip entirely). Soften only while useOrbit;
-            // thrust / moon-dock approach still get the full combat boot (Fire no longer exits orbit).
-            PlanetGemMoonCombatLogic.ApplyShieldRepelIfNeeded(
-                transform.Position,
-                ref vel,
-                shipState.Team,
-                in planets,
-                mapW,
-                mapH,
-                elapsedSeconds,
-                softenForPassiveOrbit: useOrbit);
+            // Moon shield is a kinematic PhysX sphere (PlanetGemMoonShieldColliderTag).
 
             // --- Asteroid contact: reject inward motor velocity (no position shove) ---
             // [TITAN-ORBIT] Continuous thrust into a rock used to fight PhysX and slowly dig the

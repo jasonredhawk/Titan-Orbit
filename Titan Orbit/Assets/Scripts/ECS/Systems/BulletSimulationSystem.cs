@@ -702,6 +702,7 @@ namespace TitanOrbit.ECS
             bool spawnHit = false;
             float3 spawnHitPoint = firstEnd;
             float spawnAsteroidHealthAfter = -1f;
+            int spawnAsteroidLayoutSlot = -1;
             int spawnPdPlanetId = 0;
             byte spawnPdSlotIndex = 0;
             float spawnPdHealthAfter = -1f;
@@ -713,6 +714,7 @@ namespace TitanOrbit.ECS
                         ref state, ecb, gemPrefab, gemSpawnServerTime,
                         in spawn, cursor, next, mapW, mapH, moonElapsed, serverElapsed,
                         out spawnHitPoint, out spawnAsteroidHealthAfter,
+                        out spawnAsteroidLayoutSlot,
                         out spawnPdPlanetId, out spawnPdSlotIndex,
                         out spawnPdHealthAfter,
                         hashedObstaclesAlreadyGathered: true))
@@ -730,7 +732,7 @@ namespace TitanOrbit.ECS
                 BulletNetNotify.SendHit(
                     ref ecb, spawn, spawnHitPoint, spawnAsteroidHealthAfter,
                     spawnPdPlanetId, spawnPdSlotIndex, spawnPdHealthAfter,
-                    mountIdx);
+                    mountIdx, spawnAsteroidLayoutSlot);
             }
             else
             {
@@ -877,12 +879,14 @@ namespace TitanOrbit.ECS
                             ref state, ecb, gemPrefab, gemSpawnServerTime,
                             in b, stepFrom[i], stepTo[i], mapW, mapH, moonElapsed, serverElapsed,
                             out float3 hitPoint, out float asteroidHealthAfter,
+                            out int asteroidLayoutSlot,
                             out int pdPlanetId, out byte pdSlotIndex, out float pdHealthAfter,
                             hashedObstaclesAlreadyGathered: true))
                     {
                         BulletNetNotify.SendHit(
                             ref ecb, b, hitPoint, asteroidHealthAfter,
-                            pdPlanetId, pdSlotIndex, pdHealthAfter);
+                            pdPlanetId, pdSlotIndex, pdHealthAfter,
+                            asteroidLayoutSlot: asteroidLayoutSlot);
                         bullets = state.EntityManager.GetBuffer<BulletElement>(bulletEntity);
                         bullets.RemoveAtSwapBack(i);
                     }
@@ -992,6 +996,7 @@ namespace TitanOrbit.ECS
             double serverElapsed,
             out float3 hitPoint,
             out float asteroidHealthAfter,
+            out int asteroidLayoutSlot,
             out int planetaryDefensePlanetId,
             out byte planetaryDefenseSlotIndex,
             out float planetaryDefenseHealthAfter,
@@ -999,6 +1004,7 @@ namespace TitanOrbit.ECS
         {
             hitPoint = to;
             asteroidHealthAfter = -1f;
+            asteroidLayoutSlot = -1;
             planetaryDefensePlanetId = 0;
             planetaryDefenseSlotIndex = 0;
             planetaryDefenseHealthAfter = -1f;
@@ -1322,6 +1328,7 @@ namespace TitanOrbit.ECS
                     {
                         // Still report 0 so clients can hide a lingering proxy.
                         asteroidHealthAfter = 0f;
+                        asteroidLayoutSlot = AsteroidLayoutSlot.Read(state.EntityManager, bestEntity);
                         // [PHYSICS] A 0-HP zombie that missed DestroyEntity still blocks the hull.
                         AsteroidDeathPhysics.QueueStripColliders(ecb, state.EntityManager, bestEntity);
                         return true;
@@ -1338,6 +1345,7 @@ namespace TitanOrbit.ECS
 
                     // Publish post-hit HP on BulletHitRpc — ghost snapshots lag MaxSendRate.
                     asteroidHealthAfter = asteroid.Health;
+                    asteroidLayoutSlot = AsteroidLayoutSlot.Read(state.EntityManager, bestEntity);
                     state.EntityManager.SetComponentData(bestEntity, asteroid);
 
                     // [PHYSICS] Lethal hits drop the hull immediately. Waiting for

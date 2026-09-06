@@ -1681,24 +1681,85 @@ namespace TitanOrbit.Game
             return false;
         }
 
+        static int s_LocalNetworkIdFrame = -1;
+        static int s_LocalNetworkId = -1;
+        static World s_LocalNetworkIdWorld;
+
+        static World s_NetQueryWorld;
+        static EntityQuery s_LocalNetworkIdQuery;
+        static EntityQuery s_InGameQuery;
+        static bool s_NetQueriesValid;
+
         /// <summary>First in-game connection's <see cref="NetworkId"/> on the client world.</summary>
         static int GetLocalNetworkId(World clientWorld)
         {
             if (clientWorld == null || !clientWorld.IsCreated)
                 return -1;
 
-            var em = clientWorld.EntityManager;
-            using var ids = em.CreateEntityQuery(
-                    typeof(NetworkStreamConnection), typeof(NetworkStreamInGame), typeof(NetworkId))
-                .ToComponentDataArray<NetworkId>(Allocator.Temp);
-            return ids.Length > 0 ? ids[0].Value : -1;
+            int frame = Time.frameCount;
+            if (frame == s_LocalNetworkIdFrame && s_LocalNetworkIdWorld == clientWorld)
+                return s_LocalNetworkId;
+
+            s_LocalNetworkIdFrame = frame;
+            s_LocalNetworkIdWorld = clientWorld;
+            s_LocalNetworkId = -1;
+
+            if (!TryGetCachedNetQueries(clientWorld, out var idQuery, out _))
+                return -1;
+
+            if (idQuery.IsEmptyIgnoreFilter)
+                return -1;
+
+            using var ids = idQuery.ToComponentDataArray<NetworkId>(Allocator.Temp);
+            s_LocalNetworkId = ids.Length > 0 ? ids[0].Value : -1;
+            return s_LocalNetworkId;
         }
 
         /// <summary>Whether any connection entity has <see cref="NetworkStreamInGame"/>.</summary>
         static bool HasNetworkStreamInGame(World world)
         {
-            if (world == null || !world.IsCreated) return false;
-            return world.EntityManager.CreateEntityQuery(typeof(NetworkStreamInGame)).CalculateEntityCount() > 0;
+            if (world == null || !world.IsCreated)
+                return false;
+            if (!TryGetCachedNetQueries(world, out _, out var inGameQuery))
+                return false;
+            return !inGameQuery.IsEmptyIgnoreFilter;
+        }
+
+        static bool TryGetCachedNetQueries(World world, out EntityQuery idQuery, out EntityQuery inGameQuery)
+        {
+            idQuery = default;
+            inGameQuery = default;
+            if (world == null || !world.IsCreated)
+                return false;
+
+            if (s_NetQueriesValid && s_NetQueryWorld == world && world.IsCreated)
+            {
+                idQuery = s_LocalNetworkIdQuery;
+                inGameQuery = s_InGameQuery;
+                return true;
+            }
+
+            DisposeNetQueries();
+            s_NetQueryWorld = world;
+            s_LocalNetworkIdQuery = world.EntityManager.CreateEntityQuery(
+                typeof(NetworkStreamConnection), typeof(NetworkStreamInGame), typeof(NetworkId));
+            s_InGameQuery = world.EntityManager.CreateEntityQuery(typeof(NetworkStreamInGame));
+            s_NetQueriesValid = true;
+            idQuery = s_LocalNetworkIdQuery;
+            inGameQuery = s_InGameQuery;
+            return true;
+        }
+
+        static void DisposeNetQueries()
+        {
+            if (s_NetQueriesValid && s_NetQueryWorld != null && s_NetQueryWorld.IsCreated)
+            {
+                s_LocalNetworkIdQuery.Dispose();
+                s_InGameQuery.Dispose();
+            }
+
+            s_NetQueriesValid = false;
+            s_NetQueryWorld = null;
         }
 
         /// <summary>Reads <see cref="MapStateSingleton.LoadingComplete"/> from a world.</summary>

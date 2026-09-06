@@ -103,7 +103,8 @@ namespace TitanOrbit.ECS
             int planetaryDefensePlanetId = 0,
             byte planetaryDefenseSlotIndex = 0,
             float planetaryDefenseHealthAfter = -1f,
-            int mountIndex = -1)
+            int mountIndex = -1,
+            int asteroidLayoutSlot = -1)
         {
             if (bullet.Sequence == 0)
                 return;
@@ -123,6 +124,7 @@ namespace TitanOrbit.ECS
                 PlanetaryDefensePlanetId = planetaryDefensePlanetId,
                 PlanetaryDefenseSlotIndex = planetaryDefenseSlotIndex,
                 PlanetaryDefenseHealthAfter = planetaryDefenseHealthAfter,
+                AsteroidLayoutSlot = asteroidHealthAfter >= 0f ? asteroidLayoutSlot : -1,
             };
 
             if (ClientServerBootstrap.ClientWorld != null && ClientServerBootstrap.ClientWorld.IsCreated)
@@ -143,6 +145,7 @@ namespace TitanOrbit.ECS
                 PlanetaryDefenseHealthAfter = planetaryDefenseHealthAfter,
                 OwnerNetworkId = bullet.OwnerNetworkId,
                 MountIndex = mountIndex,
+                AsteroidLayoutSlot = asteroidHealthAfter >= 0f ? asteroidLayoutSlot : -1,
             });
             ecb.AddComponent(rpcEntity, new SendRpcCommandRequest { TargetConnection = Entity.Null });
         }
@@ -169,7 +172,8 @@ namespace TitanOrbit.ECS
             byte ownerTeam,
             int bankIndex,
             float scaleMultiplier,
-            float asteroidHealthAfter)
+            float asteroidHealthAfter,
+            int asteroidLayoutSlot = -1)
         {
             // --- Flatten to the play plane ---
             // [TITAN-ORBIT] Combat and display are XZ; Y is unused on the torus.
@@ -189,6 +193,7 @@ namespace TitanOrbit.ECS
                 PlanetaryDefensePlanetId = 0,
                 PlanetaryDefenseSlotIndex = 0,
                 PlanetaryDefenseHealthAfter = -1f,
+                AsteroidLayoutSlot = asteroidLayoutSlot,
             };
 
             // --- Host in-process (Editor / listen-server) ---
@@ -211,6 +216,7 @@ namespace TitanOrbit.ECS
                 PlanetaryDefensePlanetId = 0,
                 PlanetaryDefenseSlotIndex = 0,
                 PlanetaryDefenseHealthAfter = -1f,
+                AsteroidLayoutSlot = asteroidLayoutSlot,
             });
             ecb.AddComponent(rpcEntity, new SendRpcCommandRequest { TargetConnection = Entity.Null });
         }

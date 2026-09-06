@@ -190,6 +190,12 @@ namespace TitanOrbit.Game
         /// <summary>Turret scale mul at the peak of the hit punch (1 = no punch).</summary>
         const float HitPunchScalePeak = 1.12f;
 
+        /// <summary>Roster cache refresh cadence (names almost never change mid-combat).</summary>
+        const int NameCacheRefreshIntervalFrames = 20;
+
+        /// <summary>Unity frame of the last <see cref="EcsGameBridge.RefreshPlayerDisplayNameCache"/>.</summary>
+        int _nameCacheFrame = -1;
+
         /// <summary>Shared 1×1 white sprite for outline + bg + fill (created once).</summary>
         static Sprite s_HealthBarSprite;
 
@@ -483,7 +489,13 @@ namespace TitanOrbit.Game
             // --- Player names for occupied-pad labels (Lv N + name) ---
             // [HYBRID] Singleton PlayerNameElement buffer only — no ship gathers.
             // Needed because ship nameplates hide while the hull is stowed in a turret.
-            EcsGameBridge.RefreshPlayerDisplayNameCache();
+            // Not every LateUpdate — roster rarely changes; grind frames were paying this
+            // plus Hub transform writes on every owned planet.
+            if (_nameCacheFrame < 0 || Time.frameCount - _nameCacheFrame >= NameCacheRefreshIntervalFrames)
+            {
+                EcsGameBridge.RefreshPlayerDisplayNameCache();
+                _nameCacheFrame = Time.frameCount;
+            }
 
             _alivePlanetIds.Clear();
             bool canAimShips = !ClientJoinSettleCache.ShouldSkipShipEntityQueries;
@@ -540,9 +552,14 @@ namespace TitanOrbit.Game
                     group.Hub.SetParent(planetProxy.transform, worldPositionStays: false);
                 if (group.Hub != null)
                 {
-                    group.Hub.localPosition = Vector3.zero;
-                    group.Hub.localRotation = Quaternion.identity;
-                    group.Hub.localScale = Vector3.one;
+                    // Identity is written once — assigning every LateUpdate dirties the
+                    // Transform hierarchy on every owned planet (Profiler ~3 ms while grinding).
+                    if (group.Hub.localPosition.sqrMagnitude > 1e-8f)
+                        group.Hub.localPosition = Vector3.zero;
+                    if (group.Hub.localRotation != Quaternion.identity)
+                        group.Hub.localRotation = Quaternion.identity;
+                    if ((group.Hub.localScale - Vector3.one).sqrMagnitude > 1e-6f)
+                        group.Hub.localScale = Vector3.one;
                 }
 
                 // ECS scale is authoritative — unit-scale planet roots no longer carry diameter.

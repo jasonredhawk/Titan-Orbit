@@ -27,6 +27,9 @@ namespace TitanOrbit.ECS
         /// <summary>Shared zero-filter sphere — never mutate bake-shared asteroid blobs.</summary>
         static BlobAssetReference<Collider> s_noCollide;
 
+        /// <summary>Last Unity frame we walked the Instantiates registry for leftover solids.</summary>
+        static int s_DeadSolidCullFrame = -1;
+
         /// <summary>
         /// No RequireForUpdate on CulledTag — we must also catch dead rocks that were never tagged.
         /// </summary>
@@ -50,8 +53,13 @@ namespace TitanOrbit.ECS
 
             var em = state.EntityManager;
 
-            // --- Catch dead rocks that still look solid (match miss / GO-only hide) ---
-            ClientLocalAsteroidCombatSync.CullDeadAsteroidsStillSolid(em);
+            // PredictedFixedStep can run several times per display frame. The registry walk
+            // is enough once per Unity frame — extra ticks only squash already-culled scale.
+            if (s_DeadSolidCullFrame != UnityEngine.Time.frameCount)
+            {
+                s_DeadSolidCullFrame = UnityEngine.Time.frameCount;
+                ClientLocalAsteroidCombatSync.CullDeadAsteroidsStillSolid(em);
+            }
 
             // Keep PhysicsCollider. Incremental static broadphase updates the BVH leaf
             // when CullPhysics swaps the shared no-collide blob. RemoveComponent forced

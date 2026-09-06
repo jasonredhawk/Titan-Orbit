@@ -239,6 +239,12 @@ namespace TitanOrbit.ECS
             if (applied.AppliedHullMaterialRevision != ShipHullColliderLogic.HullMaterialRevision)
                 return true;
 
+            if (applied.AppliedTeam != (byte)ship.Team)
+                return true;
+
+            if (applied.AppliedCoveringRadius <= 0.01f)
+                return true;
+
             return false;
         }
 
@@ -398,40 +404,49 @@ namespace TitanOrbit.ECS
 
             bool isMega = em.HasComponent<MegaShipState>(entity)
                 && em.GetComponentData<MegaShipState>(entity).IsMega;
-            if (chassisPrefab != null)
-            {
-                float motorMass = 1f;
-                if (em.HasComponent<ShipMotorConfig>(entity))
-                    motorMass = em.GetComponentData<ShipMotorConfig>(entity).Mass;
-                if (isMega)
-                    motorMass = math.max(motorMass, MegaShipCatalog.DefaultHullCollisionMass);
+            float motorMass = 1f;
+            if (em.HasComponent<ShipMotorConfig>(entity))
+                motorMass = em.GetComponentData<ShipMotorConfig>(entity).Mass;
+            if (isMega)
+                motorMass = math.max(motorMass, MegaShipCatalog.DefaultHullCollisionMass);
 
-                string familyPrefix = ResolveFamilyPrefix(chassisId);
-#if UNITY_SERVER && !UNITY_EDITOR
-                // Dedicated: walk prefab-asset BoxColliders (no Instantiate).
-                // MEGA still Instantiates nested modules; skip that on dedicated.
-                if (!isMega)
-                    ShipHullColliderLogic.TryApplyChassisCollider(
-                        em, entity, chassisPrefab, motorMass, attrs, familyPrefix);
-#else
-                // [TITAN-ORBIT] Bake hierarchy with same attribute scale as proxy meshes so
-                // grown wings/engines collide at their visible size (not authored-only).
-                if (isMega)
-                    ShipHullColliderLogic.TryApplyMegaPartColliders(em, entity, chassisPrefab, motorMass);
-                else
-                    ShipHullColliderLogic.TryApplyChassisCollider(
-                        em, entity, chassisPrefab, motorMass, attrs, familyPrefix);
-#endif
+            var chassisKey = new FixedString64Bytes(chassisId);
+            bool recompute = true;
+            float3 cachedExtents = new float3(-1f);
+            float3 cachedCenter = float3.zero;
+            if (em.HasComponent<ShipHullColliderState>(entity))
+            {
+                var prev = em.GetComponentData<ShipHullColliderState>(entity);
+                recompute = ShipHullColliderLogic.NeedsCoveringRecompute(
+                    prev, chassisKey, branchIndex, attributeSum, isMega);
+                if (!recompute)
+                {
+                    cachedExtents = ShipHullColliderLogic.GetCachedCoveringExtents(prev);
+                    cachedCenter = ShipHullColliderLogic.GetCachedCoveringCenter(prev);
+                }
             }
+
+            GameObject prefabToWalk = recompute ? chassisPrefab : null;
+            ShipHullColliderLogic.TryApplyCoveringHull(
+                em, entity, prefabToWalk, motorMass, attrs, ResolveFamilyPrefix(chassisId),
+                isMega, cachedExtents, cachedCenter, out float3 usedCenter, out float3 usedExtents);
 
             var hullState = new ShipHullColliderState
             {
-                ChassisId = new FixedString64Bytes(chassisId),
+                ChassisId = chassisKey,
                 AppliedShipLevel = ship.ShipLevel,
                 AppliedBranchIndex = branchIndex,
                 AppliedAttributeSum = attributeSum,
                 AppliedMegaColliderRevision = isMega ? MegaShipCatalog.HullColliderRevision : 0,
                 AppliedHullMaterialRevision = ShipHullColliderLogic.HullMaterialRevision,
+                AppliedTeam = (byte)ship.Team,
+                AppliedCoveringRadius = math.cmax(usedExtents),
+                AppliedCoveringExtentX = usedExtents.x,
+                AppliedCoveringExtentY = usedExtents.y,
+                AppliedCoveringExtentZ = usedExtents.z,
+                AppliedCoveringCenterX = usedCenter.x,
+                AppliedCoveringCenterY = usedCenter.y,
+                AppliedCoveringCenterZ = usedCenter.z,
             };
 
             if (em.HasComponent<ShipHullColliderState>(entity))

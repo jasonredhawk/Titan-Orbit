@@ -39,6 +39,7 @@ namespace TitanOrbit.Game
         /// call fontMaterial (TMP instance alloc) ×3 per planet → ~16KB GC (Profiler frame 2224).
         /// </summary>
         bool _labelReady;
+        float _cachedLayoutPlanetSize = float.NaN;
         /// <summary>[UNITY] Sorting order so planet text draws above world meshes.</summary>
         const int TextSortingOrder = 5001;
 
@@ -629,8 +630,7 @@ namespace TitanOrbit.Game
         /// [UNITY] Per-frame refresh so population and triangle bonuses stay live.
         /// Dirty-checks TMP writes — assigning .text every frame rebuilt meshes + GC
         /// (~4ms / 93KB across labels, Profiler frame 41220).
-        /// Layout/scale always updates: unit-scale roots need ECS diameter applied every
-        /// frame until pose is ready, and recovered labels may still carry a tiny old scale.
+        /// Layout/scale runs when text is dirty or the planet diameter changes — not every frame.
         /// </summary>
         void LateUpdate()
         {
@@ -638,8 +638,17 @@ namespace TitanOrbit.Game
             if (planetId == 0)
                 return;
 
-            Refresh();
-            ApplyLayout();
+            bool textDirty = Refresh();
+            float planetSize = PlanetVisualBody.ResolvePresentationSize(transform);
+            if (EcsGameBridge.TryGetPlanetPoseByPlanetId(planetId, out _, out float ecsScale, out _))
+                planetSize = ecsScale;
+            bool sizeDirty = float.IsNaN(_cachedLayoutPlanetSize) ||
+                             Mathf.Abs(_cachedLayoutPlanetSize - planetSize) > 0.01f;
+            if (textDirty || sizeDirty)
+            {
+                ApplyLayout();
+                _cachedLayoutPlanetSize = planetSize;
+            }
         }
 
         /// <summary>

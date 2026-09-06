@@ -10,10 +10,9 @@ namespace TitanOrbit.Game
     /// Instantiates ship-family chassis prefabs as render-only GameObject proxies and applies
     /// team-colored materials. Called by EcsWorldVisualizer when spawning or respawning ship visuals.
     /// Strips Rigidbodies and NetCode MonoBehaviour components so the proxy cannot run a
-    /// second GameObject physics world. Authoritative hulls are Unity.Physics
-    /// <c>PhysicsCollider</c> + <c>PhysicsVelocity</c> on the ECS ghost (that pair is the
-    /// rigidbody). Authored Box/Capsule colliders stay on the proxy, disabled, so they
-    /// remain visible in the Inspector — same as MEGA module boxes.
+    /// second GameObject physics world. Authoritative hulls are one Unity.Physics
+    /// sphere on the ECS ghost. Authored Box/Mesh colliders on chassis parts are destroyed
+    /// on the proxy — they are not used for gameplay collision.
     /// <para>
     /// Prefers an exact chassis id from <see cref="PlanetShipFamilyConfig"/> (level + branch ladder)
     /// so moon-orbit upgrade-tree clicks load the hull that was selected, not a generic level placeholder.
@@ -95,7 +94,7 @@ namespace TitanOrbit.Game
             // --- Instantiate proxy ---
             instance = Object.Instantiate(prefab);
             instance.name = prefab.name + "Proxy";
-            StripPhysicsAndNetworking(instance, keepColliders: true);
+            StripPhysicsAndNetworking(instance, keepColliders: false);
             ApplyTeamMaterials(family, instance, team);
             return true;
         }

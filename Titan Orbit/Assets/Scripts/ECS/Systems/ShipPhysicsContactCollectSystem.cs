@@ -10,8 +10,9 @@ namespace TitanOrbit.ECS
 {
     /// <summary>
     /// Single walk of the Unity Physics collision-event stream after Export.
-    /// Classifies ship↔ship and ship↔world contacts into
+    /// Classifies ship↔ship, ship↔planet/moon/shield, and ship↔asteroid contacts into
     /// <see cref="ShipPhysicsContactElement"/> for bounce, friction, and ram.
+    /// Every body is one Unity Physics sphere.
     /// <para>
     /// This is the contact pipeline for 60–100 ships: narrowphase stays in Unity Physics
     /// (compound hulls, layer filters, speculative CCD via <see cref="PhysicsStep.CollisionTolerance"/>).
@@ -58,6 +59,7 @@ namespace TitanOrbit.ECS
                 Asteroids = SystemAPI.GetComponentLookup<AsteroidTag>(true),
                 Planets = SystemAPI.GetComponentLookup<PlanetTag>(true),
                 Moons = SystemAPI.GetComponentLookup<PlanetGemMoonColliderTag>(true),
+                Shields = SystemAPI.GetComponentLookup<PlanetGemMoonShieldColliderTag>(true),
                 Velocities = SystemAPI.GetComponentLookup<PhysicsVelocity>(true),
                 PreCollision = SystemAPI.GetComponentLookup<ShipPreCollisionVelocity>(true),
             }.Schedule(SystemAPI.GetSingleton<SimulationSingleton>(), state.Dependency);
@@ -80,6 +82,7 @@ namespace TitanOrbit.ECS
             [ReadOnly] public ComponentLookup<AsteroidTag> Asteroids;
             [ReadOnly] public ComponentLookup<PlanetTag> Planets;
             [ReadOnly] public ComponentLookup<PlanetGemMoonColliderTag> Moons;
+            [ReadOnly] public ComponentLookup<PlanetGemMoonShieldColliderTag> Shields;
             [ReadOnly] public ComponentLookup<PhysicsVelocity> Velocities;
             [ReadOnly] public ComponentLookup<ShipPreCollisionVelocity> PreCollision;
 
@@ -130,7 +133,7 @@ namespace TitanOrbit.ECS
                         kind = ShipPhysicsContactKind.Asteroid;
                     else if (Planets.HasComponent(other))
                         kind = ShipPhysicsContactKind.Planet;
-                    else if (Moons.HasComponent(other))
+                    else if (Moons.HasComponent(other) || Shields.HasComponent(other))
                         kind = ShipPhysicsContactKind.Moon;
                     else
                         return;

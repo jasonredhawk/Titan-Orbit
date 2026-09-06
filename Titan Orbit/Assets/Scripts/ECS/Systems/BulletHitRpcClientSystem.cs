@@ -10,8 +10,8 @@ namespace TitanOrbit.ECS
     /// <c>BulletVfxDriver</c> can play impact VFX and destroy the matching tracer.
     /// <para>
     /// [TITAN-ORBIT] Also applies <see cref="BulletHitRpc.AsteroidHealthAfter"/> onto seed-hydrated
-    /// local asteroids (not ghost-relevant). Sequence 0 (ram/grind) uses body-radius matching so
-    /// a packed neighbor is not culled instead of the rock the server damaged.
+    /// local asteroids (not ghost-relevant). <see cref="BulletHitRpc.AsteroidLayoutSlot"/> is O(1);
+    /// Sequence 0 still falls back to body-radius matching when the slot is missing.
     /// Planetary-defense remaining HP is applied the same way via
     /// <see cref="PlanetaryDefenseClientHealthSync"/> — a client store filled from HitRpc,
     /// not from the planet ghost buffer (layout channel: level, occupancy, MaxHealth).
@@ -30,6 +30,8 @@ namespace TitanOrbit.ECS
             public float AsteroidHealthAfter;
             /// <summary>0 = ram/grind (body-radius match); non-zero = bullet (hit-sphere match).</summary>
             public uint Sequence;
+            /// <summary>Blueprint slot from the server. −1 falls back to position match.</summary>
+            public int LayoutSlot;
         }
 
         /// <summary>Re-queues broadcast hit RPCs into the VFX bridge and syncs local asteroid HP.</summary>
@@ -63,6 +65,7 @@ namespace TitanOrbit.ECS
                     PlanetaryDefensePlanetId = r.PlanetaryDefensePlanetId,
                     PlanetaryDefenseSlotIndex = r.PlanetaryDefenseSlotIndex,
                     PlanetaryDefenseHealthAfter = r.PlanetaryDefenseHealthAfter,
+                    AsteroidLayoutSlot = r.AsteroidLayoutSlot,
                 });
 
                 if (r.AsteroidHealthAfter >= 0f)
@@ -72,6 +75,7 @@ namespace TitanOrbit.ECS
                         HitPosition = hit,
                         AsteroidHealthAfter = r.AsteroidHealthAfter,
                         Sequence = r.Sequence,
+                        LayoutSlot = r.AsteroidLayoutSlot,
                     });
                 }
 
@@ -106,12 +110,12 @@ namespace TitanOrbit.ECS
                 if (hit.Sequence == 0)
                 {
                     ClientLocalAsteroidCombatSync.ApplyRamHitAtPosition(
-                        em, hit.HitPosition, hit.AsteroidHealthAfter);
+                        em, hit.HitPosition, hit.AsteroidHealthAfter, hit.LayoutSlot);
                 }
                 else
                 {
                     ClientLocalAsteroidCombatSync.ApplyHitAtPosition(
-                        em, hit.HitPosition, hit.AsteroidHealthAfter);
+                        em, hit.HitPosition, hit.AsteroidHealthAfter, hit.LayoutSlot);
                 }
             }
 

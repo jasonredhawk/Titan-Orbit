@@ -122,6 +122,9 @@ namespace TitanOrbit.Game
         /// </summary>
         readonly Dictionary<Entity, TeamId> _proxyAsteroidTerritory = new Dictionary<Entity, TeamId>();
 
+        /// <summary>Last applied bonus-gem tint flag per gem proxy (skip retint every sync).</summary>
+        readonly Dictionary<Entity, bool> _proxyGemBonusTint = new Dictionary<Entity, bool>();
+
         /// <summary>
         /// [TITAN-ORBIT] Client topology revision last used for asteroid tint PIT.
         /// Full PIT for every rock on every PublishClient was ~2+ ms — revision + budget instead.
@@ -189,6 +192,25 @@ namespace TitanOrbit.Game
 
         /// <summary>Asteroid proxy keys only — DetectAsteroidGemBursts must not walk ships/planets/gems.</summary>
         readonly HashSet<Entity> _asteroidProxyEntities = new HashSet<Entity>();
+
+        /// <summary>Ship proxy keys — pose sync walks this instead of a per-frame ship gather.</summary>
+        readonly HashSet<Entity> _shipProxyEntities = new HashSet<Entity>();
+
+        /// <summary>Scratch copy of ship keys so Ensure/Sync can DestroyProxy without enumerating the set.</summary>
+        readonly List<Entity> _shipEnsureScratch = new List<Entity>(16);
+
+        /// <summary>Reused Pending/SpawnRequest drain batch (no List alloc per frame).</summary>
+        readonly List<Entity> _pendingBodyBatchScratch = new List<Entity>(48);
+
+        /// <summary>Reused urgent-gem Instantiates drain (was <c>new List</c> every LateUpdate).</summary>
+        readonly List<Entity> _urgentGemScratch = new List<Entity>(8);
+
+        World _cachedQueryWorld;
+        EntityQuery _pendingBodiesQuery;
+        EntityQuery _shipQuery;
+        EntityQuery _localTaggedShipQuery;
+        EntityQuery _ownedShipQuery;
+        bool _queriesValid;
 
         /// <summary>Reused each sync — allocating a 300+ entity HashSet every frame caused GC hitch.</summary>
         readonly HashSet<Entity> _aliveScratch = new HashSet<Entity>();
@@ -367,6 +389,7 @@ namespace TitanOrbit.Game
             _asteroidProxyEntities.Clear();
             _asteroidBurstFired.Clear();
             _asteroidLastKnown.Clear();
+            _proxyGemBonusTint.Clear();
             ResetInstanceLoadingCounts();
         }
 
@@ -507,6 +530,7 @@ namespace TitanOrbit.Game
             // Force full asteroid tint recompute next enable (viewer team / graph may change).
             _lastAsteroidTintGraphRevision = int.MinValue;
             _lastAsteroidTintViewerTeam = TeamId.None;
+            DisposeVisualizerQueries();
         }
 
         /// <summary>
@@ -757,6 +781,7 @@ namespace TitanOrbit.Game
                 return;
 
             var em = world.EntityManager;
+            BindVisualizerQueries(em);
             _newWorldBodyProxiesThisFrame = 0;
             // [TITAN-ORBIT] Reuse scratch set — SyncAllProxies hitched with ~320 proxies when
             // allocating a fresh HashSet every frame + string name scans.
@@ -979,7 +1004,14 @@ namespace TitanOrbit.Game
                     gemValue = gemState.Value;
                     // [TITAN-ORBIT] IsBonusGem can arrive one snapshot after Instantiates — retint
                     // so a territory yellow gem does not stay on the pooled red material.
-                    GemVisualApplier.ApplyTintForBonusFlag(go, gemState.IsBonusGem);
+                    // Skip GetComponentInChildren + sharedMaterial write when the flag is unchanged
+                    // (grind dumps gems at 4 Hz; walking them all used to retint every frame).
+                    if (!_proxyGemBonusTint.TryGetValue(entity, out bool appliedBonus) ||
+                        appliedBonus != gemState.IsBonusGem)
+                    {
+                        GemVisualApplier.ApplyTintForBonusFlag(go, gemState.IsBonusGem);
+                        _proxyGemBonusTint[entity] = gemState.IsBonusGem;
+                    }
                     // [TITAN-ORBIT] ServerTick clock — World.Time diverges on late-join (moon orbit rule).
                     float now = PlanetGemMoonOrbitClock.TryGetElapsedSeconds(out double tickNow, includeTickFraction: true)
                         ? (float)tickNow
@@ -1170,7 +1202,6 @@ namespace TitanOrbit.Game
                     continue;
 
                 var asteroid = em.GetComponentData<AsteroidState>(entity);
-                var lt = em.GetComponentData<LocalTransform>(entity);
 
                 // Cache only while alive — needed if RemainingGems is zeroed on the destroy frame.
                 // [TITAN-ORBIT] Health<=0 also means dead (bullet kill) even if IsDestroyed lags
@@ -1178,9 +1209,16 @@ namespace TitanOrbit.Game
                 bool dead = asteroid.IsDestroyed || asteroid.Health <= 0f;
                 if (!dead)
                 {
+                    // Skip LT + Dictionary write when RemainingGems is unchanged (asteroids
+                    // do not move). Used to run for every live rock every LateUpdate.
+                    if (_asteroidLastKnown.TryGetValue(entity, out var known) &&
+                        math.abs(known.RemainingGems - asteroid.RemainingGems) <= 0.01f)
+                        continue;
+
+                    var liveLt = em.GetComponentData<LocalTransform>(entity);
                     _asteroidLastKnown[entity] = new AsteroidBurstCache
                     {
-                        Position = lt.Position,
+                        Position = liveLt.Position,
                         RemainingGems = asteroid.RemainingGems,
                     };
                     continue;
@@ -1299,21 +1337,9 @@ namespace TitanOrbit.Game
         /// <returns>Number of new proxies created this call.</returns>
         int DrainPendingWorldBodyProxies(EntityManager em, HashSet<Entity> alive)
         {
-            // --- Query: baked Pending OR runtime SpawnRequest ---
-            // [TITAN-ORBIT] SpawnRequest is the Windows-player backfill path (non-ghost).
-            var desc = new EntityQueryDesc
-            {
-                Any = new[]
-                {
-                    ComponentType.ReadOnly<MapBodyHybridVisualPending>(),
-                    ComponentType.ReadOnly<MapBodyHybridVisualSpawnRequest>(),
-                },
-                All = new[] { ComponentType.ReadOnly<LocalTransform>() },
-                None = new[] { ComponentType.ReadOnly<PendingSpawnPlaceholder>() },
-            };
-            using var query = em.CreateEntityQuery(desc);
-            if (query.IsEmptyIgnoreFilter)
+            if (!_queriesValid || _pendingBodiesQuery.IsEmptyIgnoreFilter)
                 return 0;
+            var query = _pendingBodiesQuery;
 
             // --- Collect up to this frame's budget, then mutate ---
             // [TITAN-ORBIT] Prefer GemTag first so destroy/mining pickups appear before leftover
@@ -1326,7 +1352,8 @@ namespace TitanOrbit.Game
             // ToEntityArray on this Pending/SpawnRequest queue only is join-safe (not all asteroids).
             int frameBudget = GetWorldBodyProxyBudgetThisFrame();
             using var entities = query.ToEntityArray(Unity.Collections.Allocator.Temp);
-            var batch = new List<Entity>(frameBudget);
+            var batch = _pendingBodyBatchScratch;
+            batch.Clear();
 
             // Pass 1: gems only
             for (int i = 0; i < entities.Length && batch.Count < frameBudget; i++)
@@ -1519,11 +1546,15 @@ namespace TitanOrbit.Game
                 UnregisterProxyKindCounts(prev);
                 if (prev == ProxyVisualKind.Asteroid)
                     _asteroidProxyEntities.Remove(entity);
+                else if (prev == ProxyVisualKind.Ship)
+                    _shipProxyEntities.Remove(entity);
             }
 
             _proxyKinds[entity] = kind;
             if (kind == ProxyVisualKind.Asteroid)
                 _asteroidProxyEntities.Add(entity);
+            else if (kind == ProxyVisualKind.Ship)
+                _shipProxyEntities.Add(entity);
 
             switch (kind)
             {
@@ -1655,22 +1686,6 @@ namespace TitanOrbit.Game
             float3 vel = em.GetComponentData<ShipKinematics>(entity).Velocity;
             float3 planarVel = new float3(vel.x, 0f, vel.z);
             float speedSq = math.lengthsq(planarVel);
-
-            // Cheap velocity lead (one mul-add). Interpolation is the recent past; this
-            // shows the remote nearer to now. Wrap jumps already returned — no map-crossing lerp.
-            if (speedSq > 0.25f)
-            {
-                float delay = ShipContactPredictionMath.GetClientInterpolationDelaySeconds(em);
-                if (delay > 1e-4f)
-                {
-                    float3 extra = ShipContactPredictionMath.ExtrapolateWrapped(
-                        interpolated, vel, delay, ToroidalMapEcs.MapWidth, ToroidalMapEcs.MapHeight);
-                    if (!ToroidalMapEcs.IsWrapJump(interpolated, extra) &&
-                        !ToroidalMapEcs.IsWrapJump(previousDisplay, extra))
-                        raw = extra;
-                }
-            }
-
             if (speedSq < 4f)
                 return raw;
 
@@ -1790,9 +1805,9 @@ namespace TitanOrbit.Game
             if (_cachedLocalPlayerShipEntity != Entity.Null)
                 _cachedLocalPlayerShipEntity = Entity.Null;
 
-            using var localQuery = em.CreateEntityQuery(
-                ComponentType.ReadOnly<LocalPlayerShipTag>(),
-                ComponentType.ReadOnly<ShipTag>());
+            if (!_queriesValid)
+                return false;
+            var localQuery = _localTaggedShipQuery;
             using var localEntities = localQuery.ToEntityArray(Unity.Collections.Allocator.Temp);
             if (localEntities.Length == 1 &&
                 LocalShipEntitySeed.EntityMatchesLocalOwner(em, localEntities[0]))
@@ -1805,7 +1820,7 @@ namespace TitanOrbit.Game
             int localId = EcsGameBridge.GetLocalNetworkId();
             if (localId > 0)
             {
-                using var owned = em.CreateEntityQuery(typeof(ShipTag), typeof(GhostOwner));
+                var owned = _ownedShipQuery;
                 using var owners = owned.ToComponentDataArray<GhostOwner>(Unity.Collections.Allocator.Temp);
                 using var entities = owned.ToEntityArray(Unity.Collections.Allocator.Temp);
                 for (int i = 0; i < entities.Length; i++)
@@ -2027,19 +2042,34 @@ namespace TitanOrbit.Game
         {
             TryResolveLocalPlayerShipEntityCached(em, out var localShipEntity);
 
-            using var query = em.CreateEntityQuery(
-                ComponentType.ReadOnly<ShipTag>(),
-                ComponentType.ReadOnly<LocalTransform>());
-            using var entities = query.ToEntityArray(Unity.Collections.Allocator.Temp);
-            using var transforms = query.ToComponentDataArray<LocalTransform>(Unity.Collections.Allocator.Temp);
+            _shipEnsureScratch.Clear();
+            foreach (var existing in _shipProxyEntities)
+                _shipEnsureScratch.Add(existing);
+
+            // New hulls only — chassis rebuilds walk the known proxy set above.
+            if (_queriesValid)
+            {
+                int ecsCount = _shipQuery.CalculateEntityCount();
+                if (ecsCount > _shipProxyEntities.Count)
+                {
+                    using var discovered = _shipQuery.ToEntityArray(Unity.Collections.Allocator.Temp);
+                    for (int d = 0; d < discovered.Length; d++)
+                    {
+                        if (!_proxies.ContainsKey(discovered[d]))
+                            _shipEnsureScratch.Add(discovered[d]);
+                    }
+                }
+            }
 
             int localNetworkId = EcsGameBridge.GetLocalNetworkId();
             bool suppressOwnedVisuals = ClientTeamFlowState.ShouldSuppressLocalPlayerControl();
 
-            for (int i = 0; i < entities.Length; i++)
+            for (int i = 0; i < _shipEnsureScratch.Count; i++)
             {
-                var entity = entities[i];
-                var lt = transforms[i];
+                var entity = _shipEnsureScratch[i];
+                if (!em.Exists(entity) || !em.HasComponent<LocalTransform>(entity))
+                    continue;
+                var lt = em.GetComponentData<LocalTransform>(entity);
                 bool isLocalPlayerShip = IsLocalPlayerShip(entity, localShipEntity);
                 float scale = Mathf.Max(0.25f, lt.Scale) * shipVisualScale;
 
@@ -2167,14 +2197,15 @@ namespace TitanOrbit.Game
             _pendingShipNameplates.Clear();
             _nameplateRoleCandidates.Clear();
 
-            using var query = em.CreateEntityQuery(
-                ComponentType.ReadOnly<ShipTag>(),
-                ComponentType.ReadOnly<LocalTransform>());
-            using var entities = query.ToEntityArray(Unity.Collections.Allocator.Temp);
+            _shipEnsureScratch.Clear();
+            foreach (var existing in _shipProxyEntities)
+                _shipEnsureScratch.Add(existing);
 
-            for (int i = 0; i < entities.Length; i++)
+            for (int i = 0; i < _shipEnsureScratch.Count; i++)
             {
-                var entity = entities[i];
+                var entity = _shipEnsureScratch[i];
+                if (!em.Exists(entity))
+                    continue;
                 alive.Add(entity);
 
                 int networkId = 0;
@@ -2637,7 +2668,8 @@ namespace TitanOrbit.Game
             if (ClientJoinSettleCache.Settling)
                 return;
 
-            var urgent = new List<Entity>(8);
+            var urgent = _urgentGemScratch;
+            urgent.Clear();
             int remainingAfter = GemClientEntityRegistry.DrainUrgentVisualQueue(urgent, MaxUrgentGemProxiesPerFrame);
             if (urgent.Count == 0)
                 return;
@@ -2763,6 +2795,7 @@ namespace TitanOrbit.Game
                 }
 
                 _asteroidProxyEntities.Remove(entity);
+                _shipProxyEntities.Remove(entity);
                 _proxies.Remove(entity);
                 _proxyNetworkIds.Remove(entity);
                 _proxyShipLevels.Remove(entity);
@@ -2771,6 +2804,7 @@ namespace TitanOrbit.Game
                 _proxyTeams.Remove(entity);
                 _proxyPlanetVisuals.Remove(entity);
                 _proxyAsteroidTerritory.Remove(entity);
+                _proxyGemBonusTint.Remove(entity);
                 _bulletStretchVisuals.Remove(entity);
             }
         }
@@ -3255,9 +3289,55 @@ namespace TitanOrbit.Game
             }
         }
 
+        void BindVisualizerQueries(EntityManager em)
+        {
+            var world = em.World;
+            if (_queriesValid && _cachedQueryWorld == world && world != null && world.IsCreated)
+                return;
+
+            DisposeVisualizerQueries();
+            if (world == null || !world.IsCreated)
+                return;
+
+            _cachedQueryWorld = world;
+            _pendingBodiesQuery = em.CreateEntityQuery(new EntityQueryDesc
+            {
+                Any = new[]
+                {
+                    ComponentType.ReadOnly<MapBodyHybridVisualPending>(),
+                    ComponentType.ReadOnly<MapBodyHybridVisualSpawnRequest>(),
+                },
+                All = new[] { ComponentType.ReadOnly<LocalTransform>() },
+                None = new[] { ComponentType.ReadOnly<PendingSpawnPlaceholder>() },
+            });
+            _shipQuery = em.CreateEntityQuery(
+                ComponentType.ReadOnly<ShipTag>(),
+                ComponentType.ReadOnly<LocalTransform>());
+            _localTaggedShipQuery = em.CreateEntityQuery(
+                ComponentType.ReadOnly<LocalPlayerShipTag>(),
+                ComponentType.ReadOnly<ShipTag>());
+            _ownedShipQuery = em.CreateEntityQuery(typeof(ShipTag), typeof(GhostOwner));
+            _queriesValid = true;
+        }
+
+        void DisposeVisualizerQueries()
+        {
+            if (_queriesValid && _cachedQueryWorld != null && _cachedQueryWorld.IsCreated)
+            {
+                _pendingBodiesQuery.Dispose();
+                _shipQuery.Dispose();
+                _localTaggedShipQuery.Dispose();
+                _ownedShipQuery.Dispose();
+            }
+
+            _queriesValid = false;
+            _cachedQueryWorld = null;
+        }
+
         /// <summary>[UNITY] Unregisters weapon mounts and destroys all proxies on scene teardown.</summary>
         void OnDestroy()
         {
+            DisposeVisualizerQueries();
             foreach (var kv in _proxies)
             {
                 if (_proxyNetworkIds.TryGetValue(kv.Key, out int networkId) && kv.Value != null)
@@ -3273,6 +3353,7 @@ namespace TitanOrbit.Game
             _proxyTeams.Clear();
             _proxyPlanetVisuals.Clear();
             _proxyAsteroidTerritory.Clear();
+            _proxyGemBonusTint.Clear();
             ClearProxyCountStaticsIfOwner();
         }
     }

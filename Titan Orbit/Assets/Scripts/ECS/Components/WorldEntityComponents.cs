@@ -201,6 +201,9 @@ namespace TitanOrbit.ECS
 
         /// <summary>Server ElapsedTime when this entry is due to spawn.</summary>
         public double RespawnAtElapsedTime;
+
+        /// <summary>Blueprint slot to stamp on the respawned rock. −1 if the dead rock had none.</summary>
+        public int LayoutSlot;
     }
 
     /// <summary>[ECS/DOTS] Query filter — entity is a planet (home or neutral).</summary>
@@ -294,5 +297,28 @@ namespace TitanOrbit.ECS
     {
         /// <summary>Planet ghost that owns this moon's shield, gems, and orbit phase.</summary>
         public Entity PlanetEntity;
+    }
+
+    /// <summary>
+    /// Back-link from a planet to its kinematic moon-shield sphere. Not a ghost —
+    /// each sim world builds its own body. Radius follows
+    /// <c>PlanetGemMoonMath.GetMoonShieldOuterRadiusLocal</c>; scale collapses when shield is down.
+    /// </summary>
+    public struct PlanetGemMoonShieldColliderEntity : IComponentData
+    {
+        /// <summary>Kinematic shield sphere entity.</summary>
+        public Entity ShieldColliderEntity;
+    }
+
+    /// <summary>Query filter — kinematic moon-shield sphere that ships bounce on.</summary>
+    public struct PlanetGemMoonShieldColliderTag : IComponentData { }
+
+    /// <summary>
+    /// Last planet owner baked into this shield collider filter. Recreate the blob when
+    /// ownership flips — not every tick.
+    /// </summary>
+    public struct PlanetGemMoonShieldOwnerState : IComponentData
+    {
+        public TeamId Owner;
     }
 }

@@ -546,7 +546,8 @@ namespace TitanOrbit.UI
             }
 
             // Territory triangles: UGUI MinimapConnectionsUI under minimapContent so the circular
-            // Mask clips them. Draws wrap copies for expanded full-map view (toroidal seams).
+            // Mask clips them. First sibling so later planet/ship blips draw on top of the fill.
+            // Draws wrap copies for expanded full-map view (toroidal seams).
             Transform connectionsParent = minimapContent != null ? minimapContent : minimapRect;
 
             var connectionsUI = GetComponentInChildren<MinimapConnectionsUI>(true);
@@ -554,7 +555,7 @@ namespace TitanOrbit.UI
             {
                 GameObject panelObj = new GameObject("MinimapConnectionsUI");
                 panelObj.transform.SetParent(connectionsParent, false);
-                panelObj.transform.SetAsLastSibling();
+                panelObj.transform.SetAsFirstSibling();
                 var rt = panelObj.AddComponent<RectTransform>();
                 rt.anchorMin = Vector2.zero;
                 rt.anchorMax = Vector2.one;
@@ -566,7 +567,7 @@ namespace TitanOrbit.UI
             {
                 if (connectionsParent != null && connectionsUI.transform.parent != connectionsParent)
                     connectionsUI.transform.SetParent(connectionsParent, false);
-                connectionsUI.transform.SetAsLastSibling();
+                connectionsUI.transform.SetAsFirstSibling();
             }
 
             // Temporary wrap-test rectangle (cyan seams). Same parent so the circular Mask clips it.
