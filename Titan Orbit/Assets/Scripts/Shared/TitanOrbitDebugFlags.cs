@@ -47,9 +47,29 @@ namespace TitanOrbit
         public static bool IsSelfHarmArmed(float ageSeconds) =>
             SelfHarmRocketsAndMines && ageSeconds >= SelfHarmArmDelaySeconds;
 
+        /// <summary>
+        /// True when a homing rocket may lock and collide with its owner / team (debug self-harm).
+        /// Straight guns never use this path.
+        /// </summary>
+        public static bool IsHomingSelfHarmArmed(byte homing, float ageSeconds) =>
+            homing != 0 && IsSelfHarmArmed(ageSeconds);
+
         /// <summary>True when a mine placed at <paramref name="placeTime"/> is armed against its owner.</summary>
         public static bool IsSelfHarmArmed(double placeTime, double now) =>
             SelfHarmRocketsAndMines && now >= placeTime + SelfHarmArmDelaySeconds;
+
+        /// <summary>
+        /// When true, unoccupied MEGA mounts auto-aim and fire on living asteroids (damage mode
+        /// only). Local Editor / MPPM host only; dedicated server stays false.
+        /// </summary>
+        public static bool MegaShipsAutoFireAsteroids;
+
+        /// <summary>
+        /// When true, <c>MegaShipAutoFireSystem</c> returns immediately (no auto-aim / MEGA
+        /// turret slew). Editor hitch isolate only — dedicated Docker / Edgegap forces this
+        /// off so Phase B is not left hull-forward while client tracers aim at the mouse.
+        /// </summary>
+        public static bool DisableMegaShipAutoFire;
 
         /// <summary>
         /// When true, asteroid-destroy paths log millisecond timings (local gem burst, urgent gem
@@ -90,5 +110,12 @@ namespace TitanOrbit
 
         /// <summary>Skip local gem burst presentation on asteroid kill.</summary>
         public static bool IsolateDisableGemBurst;
+
+        /// <summary>
+        /// Temporary wrap-test overlay: cyan rectangle on the world map and minimap at
+        /// <c>±MapWidth/2</c> / <c>±MapHeight/2</c>. Default on for seam playtest; turn off
+        /// from GameManager when done.
+        /// </summary>
+        public static bool ShowMapSeamLines = true;
     }
 }

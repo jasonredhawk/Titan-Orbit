@@ -1,3 +1,4 @@
+using TitanOrbit.Data;
 using TitanOrbit.Simulation;
 using Unity.Entities;
 using Unity.Mathematics;
@@ -26,8 +27,9 @@ namespace TitanOrbit.ECS
             if (state.World.IsClient() && ClientJoinSettleCache.ShouldSkipShipSimulation)
                 return;
 
-            foreach (var (motor, shipState, physicsMass, collider) in SystemAPI
-                         .Query<RefRO<ShipMotorConfig>, RefRO<ShipState>, RefRW<PhysicsMass>, RefRO<PhysicsCollider>>()
+            foreach (var (motor, shipState, mega, physicsMass, collider) in SystemAPI
+                         .Query<RefRO<ShipMotorConfig>, RefRO<ShipState>, RefRO<MegaShipState>,
+                             RefRW<PhysicsMass>, RefRO<PhysicsCollider>>()
                          .WithAll<ShipTag, Simulate>())
             {
                 float baseMass = motor.ValueRO.Mass > 0f ? motor.ValueRO.Mass : ShipMassLogic.DefaultBaseMass;
@@ -38,6 +40,9 @@ namespace TitanOrbit.ECS
                     shipState.ValueRO.CurrentGems,
                     baseMass,
                     shipState.ValueRO.CurrentPeople);
+
+                if (mega.ValueRO.IsMega)
+                    movementMass = math.max(movementMass, MegaShipCatalog.DefaultHullCollisionMass);
 
                 movementMass = math.max(ShipMassLogic.MinMass, movementMass);
                 physicsMass.ValueRW = PhysicsMass.CreateDynamic(

@@ -6,7 +6,7 @@ namespace TitanOrbit.Data
 {
     /// <summary>
     /// Static stat summing from a chassis prefab hierarchy plus a <see cref="ShipFamilyDefinition"/>.
-    /// Walks child transforms named <c>{familyId}_{componentId}</c>, scales stats by transform size, applies
+    /// Walks child transforms named <c>{familyId}_{part}</c> (catalog id is the full name), scales stats by transform size, applies
     /// propulsion aggregation, weapon projectile-speed max (not sum), then stat fallbacks. Weapon fire
     /// power / rate stay summed for power scores; live shots use per-mount combat from
     /// <c>ShipWeaponMountCombatLogic</c>. Shared by editor previews, power-score baking, and runtime UI.
@@ -54,19 +54,37 @@ namespace TitanOrbit.Data
             in ShipAbilityLevelCounts abilities,
             out ShipComponentAbilityStats effectiveAtLevel)
         {
+            return TrySumFromPrefab(
+                prefab, family, shipLevel, in abilities, out effectiveAtLevel, out _);
+        }
+
+        /// <summary>
+        /// Same as <see cref="TrySumFromPrefab(GameObject, ShipFamilyDefinition, int, in ShipAbilityLevelCounts, out ShipComponentAbilityStats)"/>
+        /// and also returns the scale-adjusted per-part list so callers can sum
+        /// all-gun DPS (every mount Extra-Leveled, then <c>FP × RoF</c>).
+        /// </summary>
+        public static bool TrySumFromPrefab(
+            GameObject prefab,
+            ShipFamilyDefinition family,
+            int shipLevel,
+            in ShipAbilityLevelCounts abilities,
+            out ShipComponentAbilityStats effectiveAtLevel,
+            out SumResult rawParts)
+        {
             effectiveAtLevel = default;
+            rawParts = default;
             if (prefab == null || family == null)
                 return false;
 
             // Raw parts at authored bases — Extra Level applies shipLevel + abilities below.
-            SumResult sum = SumFromPrefabHierarchy(
+            rawParts = SumFromPrefabHierarchy(
                 prefab, family, shipLevel: 1, applyPropulsionAndWeaponRules: false);
-            if (sum.MatchedComponentIds == null || sum.MatchedComponentIds.Count == 0)
+            if (rawParts.MatchedComponentIds == null || rawParts.MatchedComponentIds.Count == 0)
                 return false;
 
             effectiveAtLevel = ShipComponentExtraLevelMath.AggregateAndEvaluate(
-                sum.MatchedComponentIds,
-                sum.PerComponentStats,
+                rawParts.MatchedComponentIds,
+                rawParts.PerComponentStats,
                 shipLevel,
                 in abilities);
             effectiveAtLevel = ShipComponentExtraLevelMath.ApplyMobilityPenalties(effectiveAtLevel, shipLevel);
@@ -80,7 +98,7 @@ namespace TitanOrbit.Data
         }
 
         /// <summary>
-        /// Core scan: instantiate prefab if needed, match children, sum scaled stats.
+        /// Core scan: walk prefab-asset children, match names, sum scaled stats.
         /// When <paramref name="applyPropulsionAndWeaponRules"/> is true (default), applies shared
         /// propulsion aggregation, weapon projectile-speed max, and family fallbacks.
         /// Pass false when the caller will append extra components (e.g. moon-store engines)
@@ -110,55 +128,43 @@ namespace TitanOrbit.Data
             if (string.IsNullOrEmpty(familyId))
                 return result;
 
-            // [UNITY] Prefab assets are not in a scene — instantiate temporarily so GetComponentsInChildren works.
-            GameObject instance = prefab;
-            bool destroyInstance = false;
-            if (!prefab.scene.IsValid())
+            // Walk the prefab asset. Do not Instantiate — dedicated Docker clones are stripped
+            // (Dedicated Server Optimizations) so child names vanish and stats fall back to
+            // family defaults. GetComponentsInChildren works on the asset; weapon bake already
+            // uses this path.
+            Transform root = prefab.transform;
+            var transforms = root.GetComponentsInChildren<Transform>(true);
+            for (int i = 0; i < transforms.Length; i++)
             {
-                instance = UnityEngine.Object.Instantiate(prefab);
-                destroyInstance = true;
+                Transform t = transforms[i];
+                if (t == null || t == root)
+                    continue;
+
+                string name = t.name;
+                if (string.IsNullOrEmpty(name))
+                    continue;
+                // [TITAN-ORBIT] Child names must start with familyId_ to count as a stat-bearing part.
+                if (!name.StartsWith(familyId + "_", StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                string componentId = ShipFamilyDefinition.NormalizeComponentId(name);
+                if (string.IsNullOrWhiteSpace(componentId))
+                    continue;
+
+                if (!family.TryGetStatsForComponent(componentId, out ShipComponentAbilityStats stats))
+                    continue;
+
+                ShipComponentAbilityStats scaled = ShipComponentAbilityStatsMath.ScaleStatsByTransform(stats, t, componentId);
+                result.TotalStats.AddInPlace(scaled);
+                result.MatchedComponentIds.Add(componentId);
+                result.PerComponentStats.Add(scaled);
+                // [TITAN-ORBIT] Keep the authored start scale so HUD formula cards can show
+                // catalog × scale (a Cockpit at 3× multiplies Health / Gems / Troops by 3).
+                result.PerComponentLocalScales.Add(t.localScale);
             }
 
-            try
-            {
-                var transforms = instance.GetComponentsInChildren<Transform>(true);
-                for (int i = 0; i < transforms.Length; i++)
-                {
-                    Transform t = transforms[i];
-                    if (t == null || t == instance.transform)
-                        continue;
-
-                    string name = t.name;
-                    if (string.IsNullOrEmpty(name))
-                        continue;
-                    // [TITAN-ORBIT] Child names must start with familyId_ to count as a stat-bearing part.
-                    if (!name.StartsWith(familyId + "_", StringComparison.OrdinalIgnoreCase))
-                        continue;
-
-                    string componentId = name.Substring(familyId.Length + 1);
-                    if (string.IsNullOrWhiteSpace(componentId))
-                        continue;
-
-                    if (!family.TryGetStatsForComponent(componentId, out ShipComponentAbilityStats stats))
-                        continue;
-
-                    ShipComponentAbilityStats scaled = ShipComponentAbilityStatsMath.ScaleStatsByTransform(stats, t, componentId);
-                    result.TotalStats.AddInPlace(scaled);
-                    result.MatchedComponentIds.Add(componentId);
-                    result.PerComponentStats.Add(scaled);
-                    // [TITAN-ORBIT] Keep the authored start scale so HUD formula cards can show
-                    // catalog × scale (a Cockpit at 3× multiplies Health / Gems / People by 3).
-                    result.PerComponentLocalScales.Add(t.localScale);
-                }
-
-                if (applyPropulsionAndWeaponRules)
-                    ApplySharedAggregationRules(ref result, family, shipLevel);
-            }
-            finally
-            {
-                if (destroyInstance && instance != null)
-                    UnityEngine.Object.Destroy(instance);
-            }
+            if (applyPropulsionAndWeaponRules)
+                ApplySharedAggregationRules(ref result, family, shipLevel);
 
             return result;
         }

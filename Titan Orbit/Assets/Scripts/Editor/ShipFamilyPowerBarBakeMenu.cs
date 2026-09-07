@@ -74,5 +74,68 @@ namespace TitanOrbit.Editor
             Debug.Log($"[ShipFamilyPowerBarBake] Baked {tiers} tier(s) on {updated} family asset(s).");
             return true;
         }
+
+        const string ResortAllPath =
+            "TitanOrbit/Ship Families/Resort All Upgrade Trees (All-Gun DPS + Energy Sustain)";
+
+        /// <summary>
+        /// Re-sums every family prefab with all-gun DPS + energy-sustain sort,
+        /// reorders unlocked tree slots, and bakes at-ship-level power bars.
+        /// Does not rewrite component catalog numbers from Part Profiles.
+        /// </summary>
+        [MenuItem(ResortAllPath)]
+        public static void ResortAllUpgradeTrees()
+        {
+            if (!ResortAllUpgradeTreesCore(out int updated, out int unlocked, out string error))
+            {
+                EditorUtility.DisplayDialog("Resort Upgrade Trees", error ?? "Resort failed.", "OK");
+                return;
+            }
+
+            EditorUtility.DisplayDialog(
+                "Resort Upgrade Trees",
+                $"Resorted {unlocked} unlocked chassis across {updated} family asset(s).\n" +
+                "Power scores now use all-gun DPS and energy sustain.",
+                "OK");
+        }
+
+        /// <summary>Batch resort without a blocking dialog. Returns false when no families exist.</summary>
+        public static bool ResortAllUpgradeTreesCore(out int updated, out int unlocked, out string error)
+        {
+            updated = 0;
+            unlocked = 0;
+            error = null;
+
+            string[] guids = AssetDatabase.FindAssets("t:ShipFamilyDefinition", new[] { "Assets/Prefabs/Ships" });
+            if (guids == null || guids.Length == 0)
+            {
+                error = "No ShipFamilyDefinition assets found under Assets/Prefabs/Ships.";
+                return false;
+            }
+
+            for (int i = 0; i < guids.Length; i++)
+            {
+                string path = AssetDatabase.GUIDToAssetPath(guids[i]);
+                var def = AssetDatabase.LoadAssetAtPath<ShipFamilyDefinition>(path);
+                if (def?.upgradeTree == null)
+                    continue;
+
+                ShipFamilyDefinitionEditor.ResortUpgradeTreeResult result =
+                    ShipFamilyDefinitionEditor.ResortUpgradeTreeAndRecalculateStats(
+                        def, showDialog: false, saveAssets: false);
+                if (!result.success)
+                    continue;
+
+                unlocked += result.resortedUnlocked;
+                updated++;
+            }
+
+            ShipFamilyPowerBarNorm.InvalidateCache();
+            ShipFamilyDefinition.InvalidateGlobalMaxUpgradeTreeTurnSpeedCache();
+            AssetDatabase.SaveAssets();
+            AssetDatabase.Refresh();
+            Debug.Log($"[ShipFamilyResort] Resorted {unlocked} unlocked chassis on {updated} family asset(s).");
+            return updated > 0;
+        }
     }
 }

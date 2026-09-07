@@ -34,6 +34,13 @@ namespace TitanOrbit.ECS
         /// used by Burst moon-dock attach (surface contact) without calling managed Mathf helpers.
         /// </summary>
         public float MoonBodyRadiusWorld;
+
+        /// <summary>
+        /// Precomputed friendly-moon dock shell (same pad as <see cref="ShipMoonDockSystem"/>).
+        /// Drive uses this on the first coast tick so orbit / space-brakes cannot run
+        /// before the server writes <c>MoonPlanetId</c>.
+        /// </summary>
+        public float MoonDockZoneRadiusWorld;
     }
 
     /// <summary>
@@ -154,6 +161,9 @@ namespace TitanOrbit.ECS
                     planet.IsHomePlanet),
                 // [TITAN-ORBIT] Collected on main thread — PlanetGemMoonMath uses Mathf (not Burst-safe).
                 MoonBodyRadiusWorld = PlanetGemMoonMath.GetMoonBodyRadiusWorld(
+                    planetSize,
+                    planet.IsHomePlanet),
+                MoonDockZoneRadiusWorld = PlanetGemMoonMath.GetMoonDockZoneRadiusWorld(
                     planetSize,
                     planet.IsHomePlanet),
             });

@@ -1,5 +1,6 @@
 using Unity.Entities;
 using Unity.NetCode;
+using UnityEngine;
 
 namespace TitanOrbit.NetCode
 {
@@ -14,9 +15,12 @@ namespace TitanOrbit.NetCode
     /// — headless needs MaxSteps≥4 so the server can hold 60 Hz under hitch without starving.
     /// </para>
     /// <para>
-    /// Frame pacing uses <see cref="ClientServerTickRate.FrameRateMode.Auto"/> (Sleep on dedicated
-    /// server, BusyWait in Editor / host). Forcing Sleep in Editor Local Host caused constant
-    /// NetcodeServerRateManager warnings when a frame ran 2 catch-up steps.
+    /// Editor Local Host stays <see cref="ClientServerTickRate.FrameRateMode.Auto"/> (BusyWait).
+    /// Dedicated Docker / NullGfx is different from GCE Sleep on <c>main</c>: dummy present can
+    /// be ~2 Hz, TimeManager clamps <c>deltaTime</c> to 0.1 s, and Sleep+MaxSteps=4 then runs
+    /// ~12 wall-clock ticks/s (ships + moons crawl). Dedicated uses BusyWait, asks for 60
+    /// Unity frames (never <c>targetFrameRate = -1</c>), turns VSync off, raises
+    /// <see cref="Time.maximumDeltaTime"/>, and allows enough discrete catch-up steps.
     /// </para>
     /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation)]
@@ -36,9 +40,11 @@ namespace TitanOrbit.NetCode
         public const int EditorLocalHostMaxStepsPerFrame = 2;
 
         /// <summary>
-        /// Headless / dedicated server catch-up budget — enough for 60 Hz after frame hitches.
+        /// Headless catch-up budget. Docker + NullGfx can present at ~2 Hz; Unity then
+        /// clamps <c>Time.deltaTime</c> to 100 ms unless we raise maximumDeltaTime.
+        /// 64 discrete 16.67 ms steps cover a 1 s wall frame without merging dt.
         /// </summary>
-        public const int DedicatedMaxStepsPerFrame = 4;
+        public const int DedicatedMaxStepsPerFrame = 64;
 
         /// <summary>
         /// Client prediction catch-up budget (Relay). basics34: MaxSteps=2 left cmdAge≈20 and
@@ -49,9 +55,40 @@ namespace TitanOrbit.NetCode
         public const int ClientMaxStepsPerFrame = 8;
 
         /// <summary>
-        /// Server MaxSteps for this process: Editor Local Host → 2; otherwise dedicated → 4.
+        /// Server MaxSteps for this process: Editor Local Host → 2; otherwise dedicated → 64.
         /// </summary>
         public static int MaxStepsPerFrame => ResolveServerMaxSteps();
+
+        static bool s_LoggedDedicatedPacing;
+
+        /// <summary>
+        /// Headless dedicated pacing. Dummy NullGfx in Docker treats <c>targetFrameRate = -1</c>
+        /// as the platform present rate (~2 Hz). Ask Unity for 60 Unity frames, disable VSync,
+        /// and raise <see cref="Time.maximumDeltaTime"/> so a slow present still feeds NetCode
+        /// a full wall interval (see DedicatedMaxStepsPerFrame).
+        /// </summary>
+        public static void ApplyDedicatedHeadlessFramePacing()
+        {
+#if UNITY_SERVER && !UNITY_EDITOR
+            if (QualitySettings.vSyncCount != 0)
+                QualitySettings.vSyncCount = 0;
+            if (Application.targetFrameRate != SimulationHz)
+                Application.targetFrameRate = SimulationHz;
+            // [UNITY] Project TimeManager Maximum Allowed Timestep is 0.1s. At 2 Unity FPS
+            // that discards ~400 ms of wall time per frame (wallSim≈12 Hz). Dedicated only.
+            if (Time.maximumDeltaTime < 1f)
+                Time.maximumDeltaTime = 1f;
+
+            if (!s_LoggedDedicatedPacing)
+            {
+                s_LoggedDedicatedPacing = true;
+                Debug.Log(
+                    "[TitanOrbitServerTick] dedicated pacing vSync=0 targetFrameRate=" +
+                    SimulationHz + " maxDelta=1 MaxSteps=" + DedicatedMaxStepsPerFrame +
+                    " mode=BusyWait (Docker NullGfx — not main GCE Sleep)");
+            }
+#endif
+        }
 
         /// <summary>Picks server catch-up cap from world layout (not a single global for clients).</summary>
         public static int ResolveServerMaxSteps()
@@ -93,11 +130,16 @@ namespace TitanOrbit.NetCode
             tickRate.MaxSimulationStepsPerFrame = maxSteps;
             tickRate.MaxSimulationStepBatchSize = 1;
             tickRate.PredictedFixedStepSimulationTickRatio = 1;
-            // [NETCODE] Sleep expects exactly 1 sim step per frame and owns Application.targetFrameRate
-            // (NetcodeServerRateManager warns otherwise). Auto → Sleep on dedicated server builds,
-            // BusyWait in Editor / client+server (Local Host). Forcing Sleep here flooded the
-            // console whenever Editor dual-world frames slipped past 1/60s with MaxSteps=2.
+#if UNITY_SERVER && !UNITY_EDITOR
+            // [NETCODE] Auto → Sleep on UNITY_SERVER. Docker dummy present + 0.1s clamp +
+            // MaxSteps=4 (main) yields ~12 Hz wall-clock play. BusyWait + raised maxDelta
+            // lets each slow Unity frame run the missed 60 Hz ticks.
+            tickRate.TargetFrameRateMode = ClientServerTickRate.FrameRateMode.BusyWait;
+            ApplyDedicatedHeadlessFramePacing();
+#else
+            // [NETCODE] Auto → BusyWait in Editor / host. Do not force Sleep (warnings + hitch).
             tickRate.TargetFrameRateMode = ClientServerTickRate.FrameRateMode.Auto;
+#endif
 
             state.EntityManager.SetComponentData(tickEntity, tickRate);
         }

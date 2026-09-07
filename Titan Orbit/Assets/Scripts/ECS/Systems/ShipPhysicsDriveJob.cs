@@ -57,13 +57,15 @@ namespace TitanOrbit.ECS
 
         /// <summary>
         /// Per-ship motor tick. Writes velocity, yaw, <see cref="ShipOrbitState"/>,
-        /// <see cref="ShipTerritoryBoostLatch"/>, and <see cref="ShipState.OverdriveLockout"/>.
-        /// Position stays physics-owned except while fully moon-docked (surface attach).
+        /// <see cref="ShipTerritoryBoostLatch"/>, <see cref="ShipMoonDockState"/> takeoff
+        /// fields, and <see cref="ShipState.OverdriveLockout"/>.
+        /// Position stays physics-owned except while fully moon-docked (surface attach)
+        /// or taking off (forced outward exit).
         /// </summary>
         void Execute(
             RefRO<ShipInput> input,
             RefRO<ShipMotorConfig> motor,
-            RefRO<ShipMoonDockState> moonDock,
+            RefRW<ShipMoonDockState> moonDock,
             RefRO<ShipTurretControlState> turretControl,
             RefRW<ShipState> shipState,
             RefRW<PhysicsVelocity> physicsVelocity,
@@ -72,7 +74,8 @@ namespace TitanOrbit.ECS
             RefRW<ShipOrbitState> orbitState,
             RefRW<ShipTerritoryBoostLatch> territoryLatch,
             RefRO<ShipAsteroidContactState> asteroidContact,
-            RefRO<ShipElectricShockState> electricShock)
+            RefRO<ShipElectricShockState> electricShock,
+            RefRO<MegaShipState> megaState)
         {
             // --- Stowed in planetary defense turret: freeze hull (server + predicted client) ---
             // [TITAN-ORBIT] Aim/Fire still flow through ShipInput for the pad; thrust = exit on server.
@@ -94,7 +97,7 @@ namespace TitanOrbit.ECS
             ShipPhysicsDriveLogic.Step(
                 input.ValueRO,
                 motor.ValueRO,
-                moonDock.ValueRO,
+                ref moonDock.ValueRW,
                 ref shipState.ValueRW,
                 ref physicsVelocity.ValueRW,
                 ref physicsDamping.ValueRW,
@@ -117,7 +120,9 @@ namespace TitanOrbit.ECS
                 TurnWeightPerMass,
                 MinSpeed,
                 MinAccel,
-                MinTurn);
+                MinTurn,
+                skipMassTax: motor.ValueRO.SkipMassTax != 0,
+                isMegaShip: megaState.ValueRO.IsMega);
         }
     }
 }

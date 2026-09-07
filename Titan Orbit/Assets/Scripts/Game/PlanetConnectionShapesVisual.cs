@@ -23,6 +23,14 @@ namespace TitanOrbit.Game
     /// Ship / asteroid membership uses the same short-embed charts in
     /// <see cref="PlanetConnectionGraphLogic.PointInTriangleXZ"/> (not a VertexA-only unwrap).
     /// </para>
+    /// <para>
+    /// [TITAN-ORBIT] This drawer is <c>ExecuteAlways</c>, so Scene / preview cameras also
+    /// call <see cref="DrawShapes"/>. Those cameras used to rebuild and lock
+    /// <c>_lastGraphRevision</c> while hybrid planet proxies were missing (script reload,
+    /// first frame). The Game camera then skipped rebuild and the world fill vanished
+    /// even though the minimap still drew. We only cache/draw for gameplay cameras and
+    /// retry while published topology outnumbers resolved verts.
+    /// </para>
     /// Client presentation only.
     /// </summary>
     [ExecuteAlways]
@@ -84,11 +92,16 @@ namespace TitanOrbit.Game
 
         /// <summary>
         /// [UNITY] Shapes draw callback — fills for embeddable triangles, shortest lines for every
-        /// graph edge, plus wrap copies near seams. Retiles every frame; verts refresh on topology.
+        /// graph edge, plus wrap copies near seams. Retiles every frame; verts refresh on topology
+        /// or while a previous pass failed to resolve planet poses / map size.
         /// </summary>
         public override void DrawShapes(Camera cam)
         {
-            if (cam == null)
+            // --- Gameplay camera only ---
+            // [SHAPES] ImmediateModeShapeDrawer is invoked for Scene, preview, and Game cameras.
+            // [TITAN-ORBIT] A Scene-view pass after script reload rebuilt an empty cache and
+            // locked the revision — the Game view then drew nothing. Minimap (UGUI) kept working.
+            if (cam == null || !IsGameplayCamera(cam))
                 return;
 
             var triangles = PlanetConnectionGraphCache.CurrentTriangles;
@@ -98,9 +111,15 @@ namespace TitanOrbit.Game
             if (triCount == 0 && edgeCount == 0)
                 return;
 
-            // Planet centers are fixed — rebuild draw cache only when graph topology publishes.
+            // --- Rebuild when topology publishes OR last resolve was incomplete ---
+            // Planet centers are fixed, but the first Game-camera pass can still miss
+            // EcsWorldVisualizer proxies or ToroidalMap size (TryPickShortEmbedAnchor then
+            // returns false for every fill). Retry until resolved count matches publish.
             int revision = PlanetConnectionGraphCache.ClientPublishRevision;
-            if (revision != _lastGraphRevision)
+            int published = triCount + edgeCount;
+            int resolved = _worldCache.Count + _edgeCache.Count;
+            bool incomplete = published > 0 && resolved < published;
+            if (revision != _lastGraphRevision || incomplete)
             {
                 RebuildWorldCache();
                 _lastGraphRevision = revision;
@@ -155,7 +174,26 @@ namespace TitanOrbit.Game
             }
         }
 
-        /// <summary>Resolves planet-center vertices into canonical world space.</summary>
+        /// <summary>
+        /// True for the live Game view (not Scene, preview, or a render-texture utility cam).
+        /// Same filter as <see cref="GemTractorBeamVisual"/> so HUD / editor cameras cannot
+        /// own the territory cache.
+        /// </summary>
+        static bool IsGameplayCamera(Camera cam)
+        {
+            // [UNITY] CameraType.Game = Play Mode / standalone view. SceneView must not lock cache.
+            if (cam.cameraType != CameraType.Game)
+                return false;
+            // Render-texture cameras (minimap grab, instruction capture) are not the world view.
+            if (cam.targetTexture != null)
+                return false;
+            return true;
+        }
+
+        /// <summary>
+        /// Resolves planet-center vertices into canonical world space (wrapped XZ, Y = 0).
+        /// Skips a triangle/edge when any corner or the map period is missing — DrawShapes retries.
+        /// </summary>
         void RebuildWorldCache()
         {
             _worldCache.Clear();

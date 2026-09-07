@@ -21,6 +21,10 @@ namespace TitanOrbit.Data
         public const string Cockpit = "Cockpit";
         public const string WeaponBullet = "Weapon Bullet";
         public const string WeaponCannon = "Weapon Cannon";
+        /// <summary>MEGA / heavy rockets — slow, high damage.</summary>
+        public const string WeaponMissile = "Weapon Missile";
+        /// <summary>MEGA sniper — high damage, high speed, very slow cadence.</summary>
+        public const string WeaponSniper = "Weapon Sniper";
         public const string Wing = "Wing";
         /// <summary>Power-plant profile — move/accel + Energy Cap/Regen.</summary>
         public const string Engine = "Engine";
@@ -48,6 +52,28 @@ namespace TitanOrbit.Data
             Tail,
             Hull,
         };
+
+        /// <summary>
+        /// Inspector popup for Name Mapping / suggestion Part Type:
+        /// Unmapped, eight core groups, Ignore.
+        /// </summary>
+        public static readonly string[] InspectorChoices =
+        {
+            Unmapped,
+            Cockpit,
+            WeaponBullet,
+            WeaponCannon,
+            Wing,
+            Engine,
+            Thruster,
+            Tail,
+            Hull,
+            Ignore,
+        };
+
+        /// <summary>Popup labels for mapping rows (Unmapped + core + Ignore) or profile rows (core only).</summary>
+        public static string[] GetInspectorChoices(bool includeUnmappedAndIgnore) =>
+            includeUnmappedAndIgnore ? InspectorChoices : CoreProfiles;
 
         /// <summary>True for Engine, Thruster, and legacy Engine/Thrust labels.</summary>
         public static bool IsPropulsion(string partType)
@@ -82,6 +108,8 @@ namespace TitanOrbit.Data
                 return false;
             return string.Equals(partType, WeaponBullet, StringComparison.OrdinalIgnoreCase)
                 || string.Equals(partType, WeaponCannon, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(partType, WeaponMissile, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(partType, WeaponSniper, StringComparison.OrdinalIgnoreCase)
                 || string.Equals(partType, "Weapon", StringComparison.OrdinalIgnoreCase);
         }
 
@@ -225,7 +253,8 @@ namespace TitanOrbit.Data
             string id = componentIdOrName.ToLowerInvariant();
             if (id.IndexOf("cannon", StringComparison.Ordinal) >= 0
                 || id.IndexOf("missile", StringComparison.Ordinal) >= 0
-                || id.IndexOf("rocket", StringComparison.Ordinal) >= 0)
+                || id.IndexOf("rocket", StringComparison.Ordinal) >= 0
+                || id.IndexOf("launcher", StringComparison.Ordinal) >= 0)
                 return WeaponCannon;
 
             return WeaponBullet;
@@ -246,11 +275,13 @@ namespace TitanOrbit.Data
                 return Wing;
             if (id.IndexOf("cannon", StringComparison.Ordinal) >= 0
                 || id.IndexOf("missile", StringComparison.Ordinal) >= 0
-                || id.IndexOf("rocket", StringComparison.Ordinal) >= 0)
+                || id.IndexOf("rocket", StringComparison.Ordinal) >= 0
+                || id.IndexOf("launcher", StringComparison.Ordinal) >= 0)
                 return WeaponCannon;
             if (id.IndexOf("weapon", StringComparison.Ordinal) >= 0
                 || id.IndexOf("gun", StringComparison.Ordinal) >= 0
                 || id.IndexOf("barrel", StringComparison.Ordinal) >= 0
+                || id.IndexOf("turret", StringComparison.Ordinal) >= 0
                 || id.IndexOf("ammunition", StringComparison.Ordinal) >= 0)
                 return WeaponBullet;
 

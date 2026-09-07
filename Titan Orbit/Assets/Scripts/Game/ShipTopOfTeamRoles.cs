@@ -20,7 +20,7 @@ namespace TitanOrbit.Game
             /// <summary>Owner NetworkId with the most gems deposited on this team (0 = none).</summary>
             public int MinerNetworkId;
 
-            /// <summary>Owner NetworkId with the most people delivered on this team (0 = none).</summary>
+            /// <summary>Owner NetworkId with the most troops delivered on this team (0 = none).</summary>
             public int TransporterNetworkId;
         }
 
@@ -42,7 +42,7 @@ namespace TitanOrbit.Game
             /// <summary>Match-long gems deposited.</summary>
             public int GemsDeposited;
 
-            /// <summary>Match-long people delivered.</summary>
+            /// <summary>Match-long troops delivered.</summary>
             public int PeopleDelivered;
 
             /// <summary>Dead ships never win a top-of-team role.</summary>

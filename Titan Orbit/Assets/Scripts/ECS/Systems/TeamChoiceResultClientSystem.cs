@@ -64,17 +64,22 @@ namespace TitanOrbit.ECS
                 // Player.log 2026-07-30: next-frame-only Confirm flush still Crash!!!'d.
                 // Arm publishes GhostSpawnBacklog immediately; deferred Confirm keeps suppress on.
                 // Flush: ClientDeferredTeamChoiceConfirmSystem (waits for hold clear).
+                var team = (TeamId)rpc.AssignedTeam;
+                bool hasSpawn = rpc.HasSpawnPos != 0;
+                LocalShipEntitySeed.PrepareForTeamChoiceShip();
+                ClientTeamFlowState.LatchTeamChoiceSuccess(team, rpc.SpawnPosition, hasSpawn);
                 ClientJoinSettleCache.ArmPostTeamChoiceHold();
                 ClientTeamFlowState.RequestDeferredConfirmTeamChoice();
 
                 // --- Wait for GhostReceive of the server ship ---
                 // [TITAN-ORBIT] Do not Instantiates a ClientWorld predicted hull. Overlay stays
                 // until LocalShipEntitySeed sees the owner ghost (real RTT), then Confirm flushes.
-                var team = (TeamId)rpc.AssignedTeam;
+                // Spawn pose is latched so an ownerless Instantiates can snap off prefab origin.
 
                 UnityEngine.Debug.Log(
-                    $"[TeamChoiceResult] Assigned to {team} (networkId={rpc.NetworkId}). " +
-                    "Confirm deferred until GhostReceive owner ship + Instantiates hold (join-crash guard).");
+                    $"[TeamChoiceResult] Assigned to {team} (networkId={rpc.NetworkId}" +
+                    (hasSpawn ? $", spawn={rpc.SpawnPosition}" : "") +
+                    "). Confirm deferred until GhostReceive owner ship + Instantiates hold (join-crash guard).");
             }
             else
             {

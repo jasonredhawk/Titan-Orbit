@@ -6,13 +6,8 @@ using Unity.Physics;
 namespace TitanOrbit.ECS
 {
     /// <summary>
-    /// Shared ship↔world hull resolve on the toroidal map. Unity Physics only sees absolute
-    /// <see cref="Unity.Transforms.LocalTransform"/> positions, so after the local ship flies past a
-    /// map edge the nearest displayed planet/asteroid can sit next to the hull while the sim bodies
-    /// are still ~one map width apart — Euclidean contacts miss. This math uses
-    /// <see cref="ToroidalMapEcs.ShortestOffsetXZ"/> (same idea as <see cref="BulletCollision"/>)
-    /// so bounce still works across seams. Called from <see cref="ShipToroidalWorldCollisionSystem"/>
-    /// on both server and predicted client — never move shared planet transforms for one client's display.
+    /// Retired seam sphere-resolve helpers. Canonical wrap + Unity.Physics own hull contacts.
+    /// <see cref="GetShipCollisionRadiusWorld"/> is still used for MEGA aim radius.
     /// <para>
     /// Asteroids use <see cref="ShipCollisionImpulseLogic"/> with virtual mass (rocks stay static).
     /// Planets / moons keep infinite-mass wall reflect. Ship↔ship seam pairs use two-body impulse.
@@ -48,8 +43,10 @@ namespace TitanOrbit.ECS
 
             // --- Collider-local AABB, then apply entity scale ---
             // [PHYSICS] Chassis bake often stores presentation-sized geometry with Scale ≈ 1.
+            // Unity.Physics Aabb.Extents is Max−Min (full size), not half-extents. Using the
+            // full width as a radius doubled MEGA keep-out and blocked small-planet orbit rings.
             Aabb aabb = physicsCollider.Value.Value.CalculateAabb();
-            float r = math.max(aabb.Extents.x, aabb.Extents.z);
+            float r = math.max(aabb.Extents.x, aabb.Extents.z) * 0.5f;
             r *= math.max(0.01f, transformScale);
             if (r < BodyCollisionMath.MinShipHullRadiusWorld)
                 return fallback;
@@ -70,6 +67,49 @@ namespace TitanOrbit.ECS
             raw.y = 0f;
             float3 shortest = ToroidalMapEcs.ShortestOffsetXZ(shipPos, bodyPos, mapW, mapH);
             return math.lengthsq(raw - shortest) > DifferentTileEpsilonSq;
+        }
+
+        /// <summary>
+        /// Cross-seam overlap test with no depenetration or bounce. MEGA asteroid plow uses this
+        /// so the hull can queue ram damage without being shoved off its flight path.
+        /// Same-tile pairs stay false — PhysX + bounce own those contacts.
+        /// </summary>
+        /// <param name="shipPos">Ship sim position (may be unbounded).</param>
+        /// <param name="shipVel">Ship linear velocity (closing speed only).</param>
+        /// <param name="shipRadius">Ship hull sphere radius.</param>
+        /// <param name="bodyPos">Asteroid / world body logical center.</param>
+        /// <param name="bodyRadius">World body sphere radius.</param>
+        /// <param name="mapW">Map width.</param>
+        /// <param name="mapH">Map height.</param>
+        /// <param name="normalShipFromBody">Unit XZ normal from the body toward the ship.</param>
+        /// <param name="closingSpeed">Approach speed along that normal (0 if separating).</param>
+        /// <returns>True when the pair is on different tiles and overlapping.</returns>
+        public static bool TryGetCrossSeamWorldSphereOverlap(
+            float3 shipPos,
+            float3 shipVel,
+            float shipRadius,
+            float3 bodyPos,
+            float bodyRadius,
+            float mapW,
+            float mapH,
+            out float3 normalShipFromBody,
+            out float closingSpeed)
+        {
+            normalShipFromBody = new float3(0f, 0f, 1f);
+            closingSpeed = 0f;
+            if (!NeedsToroidalResolve(shipPos, bodyPos, mapW, mapH))
+                return false;
+
+            float3 offset = ToroidalMapEcs.ShortestOffsetXZ(shipPos, bodyPos, mapW, mapH);
+            float dist = math.length(offset);
+            float minDist = math.max(0.01f, shipRadius + bodyRadius);
+            if (dist >= minDist)
+                return false;
+
+            normalShipFromBody = ComputeSeparationNormal(offset, dist, shipVel);
+            float3 planarVel = new float3(shipVel.x, 0f, shipVel.z);
+            closingSpeed = math.max(0f, -math.dot(planarVel, normalShipFromBody));
+            return true;
         }
 
         /// <summary>
@@ -95,6 +135,14 @@ namespace TitanOrbit.ECS
         /// <param name="bodyMass">
         /// Virtual asteroid mass (&gt; 0). ≤ 0 ⇒ infinite-mass wall (planets).
         /// </param>
+        /// <param name="resolveSameTile">
+        /// When true, also depenetrate Euclidean (same-tile) pairs. MEGA vs planet uses this
+        /// after PhysX planet shove is undone, so a covering sphere can be capped at the orbit ring.
+        /// </param>
+        /// <param name="maxKeepOut">
+        /// When &gt; 0, cap <c>shipRadius + bodyRadius</c> so the ship center can still reach this
+        /// distance (orbit-ring inner). 0 = use the natural sphere sum.
+        /// </param>
         /// <returns>True when a penetration was resolved this call.</returns>
         public static bool TryResolveShipVsWorldSphere(
             ref float3 shipPos,
@@ -108,19 +156,24 @@ namespace TitanOrbit.ECS
             float friction = 0f,
             float dt = 0f,
             float shipMass = 0f,
-            float bodyMass = 0f)
+            float bodyMass = 0f,
+            bool resolveSameTile = false,
+            float maxKeepOut = 0f)
         {
             // --- Same tile: leave to Unity Physics + bounce/friction + drive inward-reject ---
             // [TITAN-ORBIT] Avoids double-bounce near the origin where Euclidean contacts already work.
             // Progressive grind dig-in is stopped by ShipAsteroidContactState (motor cannot push into
             // the rock). Do NOT sphere-push from AABB radii — compound hulls over-estimate and shove.
-            if (!NeedsToroidalResolve(shipPos, bodyPos, mapW, mapH))
+            // MEGA vs planet opts in (resolveSameTile) with an orbit-ring keep-out cap.
+            if (!resolveSameTile && !NeedsToroidalResolve(shipPos, bodyPos, mapW, mapH))
                 return false;
 
             // --- Toroidal separation (ship → body) ---
             float3 offset = ToroidalMapEcs.ShortestOffsetXZ(shipPos, bodyPos, mapW, mapH);
             float dist = math.length(offset);
             float minDist = math.max(0.01f, shipRadius + bodyRadius);
+            if (maxKeepOut > 0.01f)
+                minDist = math.min(minDist, maxKeepOut);
             if (dist >= minDist)
                 return false;
 

@@ -17,8 +17,11 @@ namespace TitanOrbit.ECS
         /// <summary>
         /// [TITAN-ORBIT] Current hull points. Hitting zero alone does not kill — death requires
         /// hull and <see cref="CurrentGems"/> both depleted (<see cref="TitanOrbit.Simulation.ShipDamageLogic"/>).
+        /// Clamp (not Interpolate): floating damage reads this field. Interpolated Health
+        /// shredded 2-HP turret hits into sub-1 fragments that PollShips dropped.
         /// </summary>
-        [GhostField] public float Health;
+        [GhostField(Smoothing = SmoothingAction.Clamp)]
+        public float Health;
 
         /// <summary>[TITAN-ORBIT] Maximum hull from chassis stats + attribute upgrades.</summary>
         [GhostField] public float MaxHealth;
@@ -57,10 +60,10 @@ namespace TitanOrbit.ECS
         /// <summary>[TITAN-ORBIT] Maximum energy from chassis stats.</summary>
         [GhostField] public float MaxEnergy;
 
-        /// <summary>[TITAN-ORBIT] Population units aboard (people transport gameplay).</summary>
+        /// <summary>[TITAN-ORBIT] Troop units aboard (troop transport gameplay).</summary>
         [GhostField] public int CurrentPeople;
 
-        /// <summary>[TITAN-ORBIT] Maximum population cargo capacity.</summary>
+        /// <summary>[TITAN-ORBIT] Troop cap aboard this hull.</summary>
         [GhostField] public int PeopleCapacity;
 
         /// <summary>
@@ -153,6 +156,12 @@ namespace TitanOrbit.ECS
         /// <see cref="ThrustEnergyDrainPerSecond"/>. Legacy mul path left for ghost/bake safety.
         /// </summary>
         public float OverdriveEnergyDrainMultiplier;
+
+        /// <summary>
+        /// 1 = MEGA hull: skip cargo / ComponentSize mass tax on speed, accel, and turn.
+        /// Not ghosted — written by chassis apply on server and client.
+        /// </summary>
+        public byte SkipMassTax;
     }
 
     /// <summary>

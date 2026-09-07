@@ -366,10 +366,10 @@ namespace TitanOrbit.ECS
             for (int i = 0; i < RegistryScratch.Count; i++)
             {
                 Entity e = RegistryScratch[i];
-                if (!em.Exists(e) || !em.HasComponent<ClientAsteroidLayoutSlot>(e))
+                if (!em.Exists(e) || !em.HasComponent<AsteroidLayoutSlot>(e))
                     continue;
 
-                int slot = em.GetComponentData<ClientAsteroidLayoutSlot>(e).Slot;
+                int slot = em.GetComponentData<AsteroidLayoutSlot>(e).Slot;
                 if (AsteroidOccupancyBits.IsAlive(in rpc, slot))
                     continue;
 

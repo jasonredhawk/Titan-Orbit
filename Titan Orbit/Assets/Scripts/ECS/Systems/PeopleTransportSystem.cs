@@ -1,4 +1,5 @@
 using TitanOrbit.Core;
+using TitanOrbit.Data;
 using TitanOrbit.Generation;
 using TitanOrbit.Simulation;
 using Unity.Burst;
@@ -26,14 +27,14 @@ namespace TitanOrbit.ECS
         public const float DefaultShipHullRadius = 1f;
 
         /// <summary>
-        /// Locks Y to the flat map plane. Positions stay unbounded (ships do not wrap);
-        /// delivery/range still use toroidal distance helpers.
+        /// Locks Y to the flat map plane and wraps XZ into the canonical rectangle.
+        /// Delivery / magnet range still use toroidal distance helpers.
         /// </summary>
         public static void WriteTransform(ref LocalTransform transform, float3 position, float mapW, float mapH)
         {
-            _ = mapW;
-            _ = mapH;
             position.y = 0f;
+            if (ToroidalMapEcs.IsValidMapSize(mapW, mapH))
+                position = ToroidalMapEcs.Wrap(position, mapW, mapH);
             transform.Position = position;
         }
 
@@ -94,6 +95,17 @@ namespace TitanOrbit.ECS
             float mapW = map.MapWidth;
             float mapH = map.MapHeight;
 
+            // Empty lobby: no orbiting hulls. Skip the 25-planet hashmap (main did not).
+            bool anyShip = false;
+            foreach (var _ in SystemAPI.Query<RefRO<ShipState>>().WithAll<ShipTag>())
+            {
+                anyShip = true;
+                break;
+            }
+
+            if (!anyShip)
+                return;
+
             var planetById = new NativeHashMap<int, Entity>(32, Allocator.Temp);
             var planetStateById = new NativeHashMap<int, PlanetState>(32, Allocator.Temp);
             var planetTransformById = new NativeHashMap<int, LocalTransform>(32, Allocator.Temp);
@@ -111,21 +123,23 @@ namespace TitanOrbit.ECS
             var ecb = new EntityCommandBuffer(Allocator.Temp);
 
             foreach (var (shipState, shipInput, orbit, moonDock, transferState, shipTransform, shipEntity) in SystemAPI
-                         .Query<RefRW<ShipState>, RefRO<ShipInput>, RefRO<ShipOrbitState>, RefRO<ShipMoonDockState>,
+                         .Query<RefRW<ShipState>, RefRO<ShipInput>, RefRW<ShipOrbitState>, RefRO<ShipMoonDockState>,
                              RefRW<ShipPeopleTransferState>, RefRO<LocalTransform>>()
                          .WithAll<ShipTag>()
                          .WithEntityAccess())
             {
                 if (shipState.ValueRO.IsDead || shipState.ValueRO.AwaitingTeamSelection)
+                {
+                    orbit.ValueRW.IsTransferringPeople = false;
                     continue;
+                }
 
                 ref var transfer = ref transferState.ValueRW;
                 float3 shipPos = shipTransform.ValueRO.Position;
                 if (!orbit.ValueRO.InOrbitRing || orbit.ValueRO.OrbitPlanetId == 0)
                 {
-                    transfer.OrbitDwellSeconds = 0f;
-                    transfer.LoadAccumulator = 0f;
-                    transfer.UnloadAccumulator = 0f;
+                    ResetTransferDwell(ref transfer);
+                    orbit.ValueRW.IsTransferringPeople = false;
                     continue;
                 }
 
@@ -134,26 +148,31 @@ namespace TitanOrbit.ECS
                         in orbit.ValueRO, in shipInput.ValueRO, in moonDock.ValueRO, shipPos,
                         orbitPlanetId, planetTransformById, planetStateById, mapW, mapH))
                 {
-                    transfer.OrbitDwellSeconds = 0f;
-                    transfer.LoadAccumulator = 0f;
-                    transfer.UnloadAccumulator = 0f;
+                    ResetTransferDwell(ref transfer);
+                    orbit.ValueRW.IsTransferringPeople = false;
                     continue;
                 }
 
                 if (orbitPlanetId != transfer.LastOrbitPlanetId)
                 {
                     transfer.LastOrbitPlanetId = orbitPlanetId;
-                    transfer.OrbitDwellSeconds = 0f;
-                    transfer.LoadAccumulator = 0f;
-                    transfer.UnloadAccumulator = 0f;
+                    ResetTransferDwell(ref transfer);
                 }
 
                 transfer.OrbitDwellSeconds += dt;
-                if (transfer.OrbitDwellSeconds < PeopleTransportConstants.OrbitDwellBeforeTransferSeconds)
+                bool dwellReady = transfer.OrbitDwellSeconds >=
+                    PeopleTransportConstants.OrbitDwellBeforeTransferSeconds;
+                if (!dwellReady)
+                {
+                    orbit.ValueRW.IsTransferringPeople = transfer.PeopleInTransit > 0.01f;
                     continue;
+                }
 
                 if (!planetById.TryGetValue(orbitPlanetId, out var planetEntity))
+                {
+                    orbit.ValueRW.IsTransferringPeople = false;
                     continue;
+                }
 
                 var planetState = planetStateById[orbitPlanetId];
                 var planetTransform = planetTransformById[orbitPlanetId];
@@ -177,14 +196,24 @@ namespace TitanOrbit.ECS
                 int planetLevel = math.max(1, planetState.PlanetLevel);
                 float loadChunk = math.max(1f, math.min(shipLevel, planetLevel));
                 float unloadChunk = math.max(1f, shipLevel);
-                float loadStep = loadChunk * dt * PeopleTransportConstants.TransferSpeedMultiplier;
-                float unloadStep = unloadChunk * dt * PeopleTransportConstants.TransferSpeedMultiplier;
+                float transferMul = CardEffectQuery.GetMul(state.EntityManager, shipEntity, CardEffectKind.PeopleTransferSpeedMul);
+                float unloadAdd = CardEffectQuery.GetValue(state.EntityManager, shipEntity, CardEffectKind.PeopleUnloadChunkAdd);
+                unloadChunk = math.max(1f, unloadChunk + unloadAdd);
+                float loadStep = loadChunk * dt * PeopleTransportConstants.TransferSpeedMultiplier * transferMul;
+                float unloadStep = unloadChunk * dt * PeopleTransportConstants.TransferSpeedMultiplier * transferMul;
                 int shipNetworkId = GetShipNetworkId(ref state, shipEntity);
                 if (shipNetworkId == 0)
+                {
+                    orbit.ValueRW.IsTransferringPeople = false;
                     continue;
+                }
                 float3 planetPos = planetTransform.Position;
                 float shipHullRadius = PeopleTransportMath.GetShipHullRadius(shipTransform.ValueRO.Scale);
                 bool friendly = shipState.ValueRO.Team != TeamId.None && planetState.Ownership == shipState.ValueRO.Team;
+                orbit.ValueRW.IsTransferringPeople = ComputeIsTransferringPeople(
+                    dwellReady, friendly, planetState.Population, halfCap,
+                    shipState.ValueRO.CurrentPeople, shipState.ValueRO.PeopleCapacity,
+                    transfer.PeopleInTransit);
 
                 if (friendly)
                 {
@@ -258,6 +287,45 @@ namespace TitanOrbit.ECS
             planetById.Dispose();
             planetStateById.Dispose();
             planetTransformById.Dispose();
+        }
+
+        static void ResetTransferDwell(ref ShipPeopleTransferState transfer)
+        {
+            transfer.OrbitDwellSeconds = 0f;
+            transfer.LoadAccumulator = 0f;
+            transfer.UnloadAccumulator = 0f;
+        }
+
+        /// <summary>
+        /// True when this ship can load or unload troops (or inbound crew is still flying).
+        /// Ghosted onto <see cref="ShipOrbitState.IsTransferringPeople"/> so orbit-ring tint
+        /// matches the troop-transfer lock — not mere ring entry.
+        /// </summary>
+        static bool ComputeIsTransferringPeople(
+            bool dwellReady,
+            bool friendly,
+            int planetPopulation,
+            int halfCap,
+            int currentPeople,
+            int peopleCapacity,
+            float peopleInTransit)
+        {
+            if (peopleInTransit > 0.01f)
+                return true;
+            if (!dwellReady)
+                return false;
+
+            if (friendly)
+            {
+                if (planetPopulation < halfCap)
+                    return currentPeople > 0;
+
+                int space = peopleCapacity - currentPeople;
+                int surplus = planetPopulation - halfCap;
+                return space > 0 && surplus > 0;
+            }
+
+            return currentPeople > 0;
         }
 
         static bool CanTransferPeople(
@@ -446,6 +514,8 @@ namespace TitanOrbit.ECS
             // --- Client VFX spawn (PeopleTransportVfxDriver) ---
             float3 bakedTarget = targetPos;
             bakedTarget.y = 0f;
+            // VFX/RPC carry the involved ship for hull floats (load dest, or unload source).
+            int vfxShipId = targetShipNetworkId != 0 ? targetShipNetworkId : sourceShipNetworkId;
             var vfxReq = new PeopleTransportVfxBridge.SpawnRequest
             {
                 Sequence = sequence,
@@ -454,7 +524,7 @@ namespace TitanOrbit.ECS
                 Velocity = velocity,
                 CruiseSpeed = cruise,
                 Amount = amount,
-                TargetShipNetworkId = targetShipNetworkId,
+                TargetShipNetworkId = vfxShipId,
                 SourcePlanetId = sourcePlanetId,
                 TargetPlanetId = targetPlanetId,
                 IsLoad = isLoadByte,
@@ -473,7 +543,7 @@ namespace TitanOrbit.ECS
                 Velocity = velocity,
                 CruiseSpeed = cruise,
                 Amount = amount,
-                TargetShipNetworkId = targetShipNetworkId,
+                TargetShipNetworkId = vfxShipId,
                 SourcePlanetId = sourcePlanetId,
                 TargetPlanetId = targetPlanetId,
                 IsLoad = isLoadByte,
@@ -660,13 +730,39 @@ namespace TitanOrbit.ECS
                         // Ship already debited at dispatch — only apply planet-side outcome here.
                         var planetEntity = planetById[t.TargetPlanetId];
                         var unloadOutcome = DeliverUnload(ref planetState, t.Amount, team, planetTransform, planetSize);
+
+                        // --- Per-planet siege ledger (hostile drain + the capturing unload) ---
+                        // [TITAN-ORBIT] Top contributor = most troops delivered by the capturing team.
+                        int peopleScore = (int)t.Amount;
+                        if (peopleScore > 0 &&
+                            t.SourceShipNetworkId > 0 &&
+                            (unloadOutcome == PeopleUnloadOutcome.HostileDrain ||
+                             unloadOutcome == PeopleUnloadOutcome.Captured))
+                        {
+                            PlanetPeopleContributionLogic.Add(
+                                state.EntityManager,
+                                planetEntity,
+                                t.SourceShipNetworkId,
+                                peopleScore,
+                                team);
+                        }
+
+                        if (unloadOutcome == PeopleUnloadOutcome.Captured)
+                        {
+                            planetState.TopContributorNetworkId =
+                                PlanetPeopleContributionLogic.ResolveTopAndClear(
+                                    state.EntityManager,
+                                    planetEntity,
+                                    team,
+                                    t.SourceShipNetworkId);
+                        }
+
                         planetStateById[t.TargetPlanetId] = planetState;
                         ecb.SetComponent(planetEntity, planetState);
 
                         // --- Match-long transporter score (minimap top transporter badge) ---
                         // [TITAN-ORBIT] Credit the dispatching ship for every successful unload
                         // (friendly reinforce, hostile drain, or capture) — people reached the planet.
-                        int peopleScore = (int)t.Amount;
                         if (peopleScore > 0 &&
                             t.SourceShipNetworkId > 0 &&
                             shipByNetworkId.TryGetValue(t.SourceShipNetworkId, out Entity sourceShipEntity))
@@ -696,7 +792,8 @@ namespace TitanOrbit.ECS
                                 planetState.PlanetId,
                                 team,
                                 planetState.Population,
-                                planetState.PlanetLevel);
+                                planetState.PlanetLevel,
+                                planetState.TopContributorNetworkId);
                         }
                         if (state.EntityManager.HasComponent<PlanetGrowthState>(planetEntity))
                         {

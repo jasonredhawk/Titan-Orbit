@@ -24,8 +24,16 @@ namespace TitanOrbit.UI
     /// compact minimap does not drop the fill when a fixed anchor sits off-circle. Borders come
     /// from the full edge list (nearer endpoint as anchor).
     /// </para>
+    /// <para>
+    /// [HYBRID] LateUpdate is ordered after <see cref="EcsWorldVisualizer"/> (66000) so planet
+    /// proxies exist before we cache verts. We also retry while the published graph has more
+    /// triangles/edges than we resolved — the world Shapes drawer is created later and succeeds
+    /// on its first rebuild; this panel used to lock an empty cache on the first publish and
+    /// never draw.
+    /// </para>
     /// </summary>
     [RequireComponent(typeof(RectTransform))]
+    [DefaultExecutionOrder(66010)]
     public class MinimapConnectionsUI : RawImage
     {
         /// <summary>Fill alpha for minimap triangles.</summary>
@@ -78,11 +86,18 @@ namespace TitanOrbit.UI
         /// <summary>Scratch Z offsets for 3×3 toroidal tile copies (reused each mesh rebuild).</summary>
         readonly float[] _wrapsZ = new float[9];
 
-        /// <summary>[UNITY] Disable raycasts; assign 1×1 white texture for UI mesh tinting.</summary>
+        /// <summary>
+        /// [UNITY] Disable raycasts; assign 1×1 white texture for UI mesh tinting.
+        /// Turns off transparent-mesh cull so an empty first populate (graph published
+        /// before planet poses exist) does not permanently hide later triangle verts.
+        /// </summary>
         protected override void Awake()
         {
             base.Awake();
             raycastTarget = false;
+            // [UNITY] Empty VertexHelper on the first graph publish used to cull this Graphic
+            // forever — later SetVerticesDirty rebuilt verts the player never saw.
+            canvasRenderer.cullTransparentMesh = false;
             if (_whiteTex == null)
             {
                 _whiteTex = new Texture2D(1, 1);
@@ -96,20 +111,33 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// Dirties the UI mesh when topology publishes or the player/view moves.
-        /// Planet-center verts are cached; only projection changes with camera/player.
+        /// Dirties the UI mesh when topology publishes, planet poses become resolvable,
+        /// or the player/view moves. Planet-center verts are cached; only projection
+        /// changes with camera/player.
         /// </summary>
         void LateUpdate()
         {
+            // --- Read published Client graph ---
+            // Revision increments each time PlanetConnectionGraphClientSystem publishes.
+            // Count is a safety net if revision were reused after Clear().
             int revision = PlanetConnectionGraphCache.ClientPublishRevision;
             int triCount = PlanetConnectionGraphCache.CurrentTriangles?.Count ?? 0;
             int edgeCount = PlanetConnectionGraphCache.CurrentEdges?.Count ?? 0;
             int count = triCount + edgeCount;
             bool topologyChanged = revision != _lastGraphRevision || count != _lastDrawnCount;
+
+            // --- Incomplete cache (the world-map vs minimap mismatch) ---
+            // [TITAN-ORBIT] This panel lives on the HUD from Start. The world Shapes
+            // drawer is spawned from EcsWorldVisualizer.OnEnable — after proxies exist —
+            // so its first RebuildWorldCache succeeds. We used to rebuild only when
+            // revision changed, lock that revision, and keep an empty cache when
+            // TryGetCanonicalPlanetVertex failed (Active null / no proxies yet).
+            // Regular map looked fine; minimap triangles never appeared.
+            int resolved = _worldCache.Count + _edgeCache.Count;
+            bool incomplete = count > 0 && resolved < count;
             bool vertsRebuilt = false;
 
-            // Planet centers are fixed — only rebuild world verts when topology publishes.
-            if (topologyChanged)
+            if (topologyChanged || incomplete)
             {
                 RebuildWorldCache();
                 _lastGraphRevision = revision;
@@ -120,6 +148,7 @@ namespace TitanOrbit.UI
             if (_minimap == null)
                 _minimap = GetComponentInParent<MinimapController>();
 
+            // --- View / zoom dirty ---
             Vector3 playerPos = _minimap != null ? _minimap.PlayerPosition : Vector3.zero;
             float radius = _minimap != null ? _minimap.MinimapRadius : 0f;
             bool expanded = _minimap != null && _minimap.IsExpanded;
@@ -136,14 +165,17 @@ namespace TitanOrbit.UI
                 _lastExpanded = expanded;
                 SetVerticesDirty();
             }
-            else if (topologyChanged && !hasGeom)
+            else if ((topologyChanged || vertsRebuilt) && !hasGeom)
             {
+                // Clear a stale mesh when topology dropped to zero (or resolve still failed).
                 SetVerticesDirty();
             }
         }
 
         /// <summary>
-        /// Resolves planet-center vertices into canonical world space once (expensive path).
+        /// Resolves planet-center vertices into canonical world space (wrapped XZ, Y = 0).
+        /// Called from LateUpdate when topology publishes or a previous pass missed poses.
+        /// Skips a triangle/edge when any corner cannot be resolved — LateUpdate will retry.
         /// </summary>
         void RebuildWorldCache()
         {
@@ -167,12 +199,9 @@ namespace TitanOrbit.UI
             for (int i = 0; i < triCount; i++)
             {
                 var tri = triangles[i];
-                if (!PlanetConnectionShapesVisual.TryGetCanonicalPlanetVertex(
-                        em, visualizer, tri.PlanetIdA, out Vector3 aCanon) ||
-                    !PlanetConnectionShapesVisual.TryGetCanonicalPlanetVertex(
-                        em, visualizer, tri.PlanetIdB, out Vector3 bCanon) ||
-                    !PlanetConnectionShapesVisual.TryGetCanonicalPlanetVertex(
-                        em, visualizer, tri.PlanetIdC, out Vector3 cCanon))
+                if (!TryResolvePlanetVertex(em, visualizer, tri.PlanetIdA, out Vector3 aCanon) ||
+                    !TryResolvePlanetVertex(em, visualizer, tri.PlanetIdB, out Vector3 bCanon) ||
+                    !TryResolvePlanetVertex(em, visualizer, tri.PlanetIdC, out Vector3 cCanon))
                     continue;
 
                 Color baseColor = tri.Team.ToColor();
@@ -189,10 +218,8 @@ namespace TitanOrbit.UI
             for (int i = 0; i < edgeCount; i++)
             {
                 var edge = edges[i];
-                if (!PlanetConnectionShapesVisual.TryGetCanonicalPlanetVertex(
-                        em, visualizer, edge.PlanetIdA, out Vector3 aCanon) ||
-                    !PlanetConnectionShapesVisual.TryGetCanonicalPlanetVertex(
-                        em, visualizer, edge.PlanetIdB, out Vector3 bCanon))
+                if (!TryResolvePlanetVertex(em, visualizer, edge.PlanetIdA, out Vector3 aCanon) ||
+                    !TryResolvePlanetVertex(em, visualizer, edge.PlanetIdB, out Vector3 bCanon))
                     continue;
 
                 Color baseColor = edge.Team.ToColor();
@@ -203,6 +230,68 @@ namespace TitanOrbit.UI
                     Color = new Color(baseColor.r, baseColor.g, baseColor.b, BorderAlpha),
                 });
             }
+        }
+
+        /// <summary>
+        /// Planet core XZ wrapped into canonical map space. Prefers the same visualizer
+        /// lookup as the world drawer; falls back to minimap blip anchors (already shown
+        /// as planet dots) when hybrid proxies are not registered yet this frame.
+        /// </summary>
+        /// <param name="em">Visualization-world EntityManager (quarantine-safe per-entity reads).</param>
+        /// <param name="visualizer">Active hybrid visualizer; may be null on the first HUD frames.</param>
+        /// <param name="planetId">Stable <c>PlanetState.PlanetId</c> from the published graph.</param>
+        /// <param name="planetCanonical">Wrapped XZ (Y forced to 0) on success.</param>
+        /// <returns>True when a pose was found.</returns>
+        static bool TryResolvePlanetVertex(
+            EntityManager em,
+            EcsWorldVisualizer visualizer,
+            int planetId,
+            out Vector3 planetCanonical)
+        {
+            // --- Same path as world territory fills ---
+            if (PlanetConnectionShapesVisual.TryGetCanonicalPlanetVertex(
+                    em, visualizer, planetId, out planetCanonical))
+                return true;
+
+            // --- Fallback: minimap already placed this planet as a blip ---
+            // [HYBRID] MinimapEcsEntitySync writes hidden world-space anchors. Planets and
+            // home worlds live in separate lists — search both.
+            var sync = MinimapEcsEntitySync.Instance;
+            if (sync == null)
+                return false;
+
+            if (TryAnchorCanonical(sync.Planets, planetId, out planetCanonical))
+                return true;
+            return TryAnchorCanonical(sync.HomePlanets, planetId, out planetCanonical);
+        }
+
+        /// <summary>
+        /// Finds <paramref name="planetId"/> in a minimap anchor list and wraps its transform
+        /// into canonical XZ (same wrap as <see cref="PlanetConnectionShapesVisual"/>).
+        /// </summary>
+        static bool TryAnchorCanonical(
+            IReadOnlyList<MinimapBlipAnchor> anchors,
+            int planetId,
+            out Vector3 planetCanonical)
+        {
+            planetCanonical = default;
+            if (anchors == null)
+                return false;
+
+            for (int i = 0; i < anchors.Count; i++)
+            {
+                MinimapBlipAnchor anchor = anchors[i];
+                if (anchor == null || anchor.PlanetId != planetId)
+                    continue;
+
+                Vector3 raw = anchor.transform.position;
+                raw.y = 0f;
+                planetCanonical = ToroidalMap.WrapPosition(raw);
+                planetCanonical.y = 0f;
+                return true;
+            }
+
+            return false;
         }
 
         /// <summary>

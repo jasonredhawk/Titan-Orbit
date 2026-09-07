@@ -259,6 +259,14 @@ namespace TitanOrbit.NetCode
         static void ResumeEditorLocalServerForLocalPlay()
         {
 #if UNITY_EDITOR
+            // MPPM Player 2+ joins the main Editor host. Recreating ServerWorld here generates a
+            // second map in this process; RequestTeam / visuals then talk to the wrong world.
+            if (TitanOrbitPlayModeUtility.IsMppmAdditionalEditorInstance())
+            {
+                Debug.Log("[TitanOrbitSessionManager] MPPM clone — skipped ServerWorld recreate (join the main Editor host).");
+                return;
+            }
+
             // basics41: a Local Host recreate ran while Relay join was active (Recreated → Disposed
             // ~4s later, ServerWorld wall-clock probe during dedicated play). Never rebuild server
             // while this process is a dedicated online / Relay client.
@@ -370,6 +378,16 @@ namespace TitanOrbit.NetCode
                 yield return ClearNetworkConnections(client);
             }
 
+            // MPPM clones must stay client-only. A leftover ServerWorld from a previous Local
+            // client click would generate a second map and steal RequestTeam from the host.
+            if (TitanOrbitPlayModeUtility.IsMppmAdditionalEditorInstance())
+            {
+                DisposeMppmCloneServerWorldIfPresent();
+                if (resetNetworkDrivers)
+                    ResetClientDriverIfNeeded();
+                yield break;
+            }
+
             if (server != null && server.IsCreated)
             {
                 ClearNetworkStreamInGame(server);
@@ -381,6 +399,17 @@ namespace TitanOrbit.NetCode
                 ResetClientDriverIfNeeded();
                 ResetServerDriverIfNeeded();
             }
+        }
+
+        /// <summary>Drops a clone-local ServerWorld so Player 2 cannot host a second LAN map.</summary>
+        static void DisposeMppmCloneServerWorldIfPresent()
+        {
+            var server = ClientServerBootstrap.ServerWorld;
+            if (server == null || !server.IsCreated)
+                return;
+
+            Debug.Log("[TitanOrbitSessionManager] MPPM clone — disposing leftover ServerWorld (this window is client-only).");
+            server.Dispose();
         }
 
         /// <summary>[UNITY_SERVER] True when this process should run headless dedicated boot (no client UI).</summary>
@@ -466,6 +495,12 @@ namespace TitanOrbit.NetCode
 
         bool _localBootRunning;
 
+        /// <summary>
+        /// True while <see cref="ReturnToMainMenuAsync"/> is disconnecting.
+        /// Blocks a second leave and a overlapping Local play boot.
+        /// </summary>
+        bool _returningToMenu;
+
         /// <summary>Polls client world until a NetworkId exists — LAN host/client bootstrap.</summary>
         IEnumerator MaintainClientSession()
         {
@@ -506,7 +541,8 @@ namespace TitanOrbit.NetCode
         public void StartLocalPlay()
         {
             LastStatusMessage = "Starting local play...";
-            if (_localBootRunning || HasClientInGame() || IsInGame)
+            // Block a Play click that races an Escape leave (worlds are mid-disconnect).
+            if (_returningToMenu || _localBootRunning || HasClientInGame() || IsInGame)
                 return;
             StartCoroutine(BootLanHost());
         }
@@ -525,7 +561,7 @@ namespace TitanOrbit.NetCode
         public bool StartLocalHostForLanTest()
         {
             LastStatusMessage = "Starting local LAN host...";
-            if (_localBootRunning)
+            if (_returningToMenu || _localBootRunning)
                 return false;
 
             var server = ClientServerBootstrap.ServerWorld;
@@ -593,7 +629,7 @@ namespace TitanOrbit.NetCode
         public bool StartLocalClientForLanTest(string address = "127.0.0.1")
         {
             LastStatusMessage = "Connecting to local server...";
-            if (_localBootRunning || HasClientInGame() || IsInGame)
+            if (_returningToMenu || _localBootRunning || HasClientInGame() || IsInGame)
                 return false;
             StartCoroutine(BootLanClient(address));
             return true;
@@ -1653,6 +1689,85 @@ namespace TitanOrbit.NetCode
             }
         }
 
+        /// <summary>
+        /// Disconnects this client and returns UI to the Main Menu.
+        /// Called from the Escape command overlay. Dedicated Relay clients leave the lobby
+        /// and reset the driver; a local host also parks ServerWorld so the leftover match
+        /// does not keep simulating on the menu. Does not run on a headless dedicated server.
+        /// </summary>
+        /// <remarks>
+        /// [NETCODE] Removing <see cref="NetworkStreamInGame"/> is the leave-session signal.
+        /// After a short debounce the client tears down hybrid proxies and the game-flow
+        /// controller shows MainMenuPanel because gameplay-ready is false.
+        /// </remarks>
+        public async Task ReturnToMainMenuAsync()
+        {
+            if (_returningToMenu)
+                return;
+
+            _returningToMenu = true;
+            LastStatusMessage = "Leaving match...";
+            Debug.Log("[TitanOrbitSessionManager] Returning to main menu.");
+
+            try
+            {
+                // --- Cancel an in-flight dedicated connect watch ---
+                if (_connectWatch != null)
+                {
+                    StopCoroutine(_connectWatch);
+                    _connectWatch = null;
+                }
+
+                bool dedicated = IsDedicatedOnlineClient;
+                IsInGame = false;
+                ClientTeamFlowState.Reset();
+
+                if (dedicated)
+                {
+                    // ResetDedicatedClientSessionAsync clears Relay, NetworkStreamInGame, and connections.
+                    await ResetDedicatedClientSessionAsync("Returned to main menu.");
+                    _activeLobbyId = null;
+                    await TitanOrbitLobbyService.TryLeaveAllJoinedLobbiesAsync("return_to_menu");
+                    LastStatusMessage = "Returned to main menu.";
+                    return;
+                }
+
+                // --- Local host / local LAN client ---
+                // [NETCODE] Drop GoInGame on the client first so HUD / flow see "not in game".
+                var client = ClientServerBootstrap.ClientWorld;
+                if (client != null && client.IsCreated)
+                {
+                    ClearNetworkStreamInGame(client);
+                    await ClearNetworkConnectionsAsync(client);
+                }
+
+                ResetClientDriverIfNeeded();
+                TitanOrbitRelayState.Clear();
+                IsDedicatedOnlineClient = false;
+                _activeLobbyId = null;
+
+                // MPPM additional editors are clients of the main Editor host — do not park
+                // their unused ServerWorld or disconnect the host's listeners.
+                bool isMppmClient = TitanOrbitPlayModeUtility.IsMppmAdditionalEditorInstance();
+                var server = ClientServerBootstrap.ServerWorld;
+                if (!isMppmClient && server != null && server.IsCreated)
+                {
+                    ClearNetworkStreamInGame(server);
+                    await ClearNetworkConnectionsAsync(server);
+                    ResetServerDriverIfNeeded();
+                    // [TITAN-ORBIT] Same park as boot-to-menu: QuitUpdate so map/match sim stops.
+                    SuspendEditorLocalServerUntilLocalPlay();
+                }
+
+                LastStatusMessage = "Returned to main menu.";
+                Debug.Log("[TitanOrbitSessionManager] Returned to main menu.");
+            }
+            finally
+            {
+                _returningToMenu = false;
+            }
+        }
+
         public async Task ResetDedicatedClientSessionAsync(string reason = null)
         {
             IsDedicatedOnlineClient = false;
@@ -2275,9 +2390,12 @@ namespace TitanOrbit.NetCode
             // [NETCODE] IPC: NetworkTimeSystem uses TargetCommandSlack=0 and 1-tick RTT. UDP loopback
             // was leaving ServerCommandAge ≈ +24 and metronomic 12-tick prediction snaps.
             // Prefer IPC when an in-process ServerWorld is listening (Local Host).
+            // MPPM Player 2+ must use UDP loopback — IPC in that process is the clone's own
+            // leftover ServerWorld, not the main Editor host.
             NetworkEndpoint endpoint = NetworkEndpoint.LoopbackIpv4.WithPort(port);
+            bool mppmClone = TitanOrbitPlayModeUtility.IsMppmAdditionalEditorInstance();
             var server = ClientServerBootstrap.ServerWorld;
-            if (server != null && server.IsCreated)
+            if (!mppmClone && server != null && server.IsCreated)
             {
                 using var serverQ = server.EntityManager.CreateEntityQuery(typeof(NetworkStreamDriver));
                 if (serverQ.TryGetSingleton(out NetworkStreamDriver serverDriver))
@@ -2294,6 +2412,9 @@ namespace TitanOrbit.NetCode
                     }
                 }
             }
+
+            Debug.Log("[TitanOrbitSessionManager] ConnectLocalClient " + endpoint +
+                      (mppmClone ? " (MPPM clone — UDP to host)" : " (Local Host IPC if available)"));
 
             var driver = em.CreateEntityQuery(typeof(NetworkStreamDriver)).GetSingletonRW<NetworkStreamDriver>();
             driver.ValueRW.Connect(em, endpoint);
@@ -2529,6 +2650,10 @@ namespace TitanOrbit.NetCode
         {
             // Dedicated Relay clients never inject onto a local ServerWorld.
             if (IsDedicatedOnlineClient)
+                return false;
+
+            // MPPM Player 2+ must SendRpc to the main Editor host, even if a leftover ServerWorld exists.
+            if (TitanOrbitPlayModeUtility.IsMppmAdditionalEditorInstance())
                 return false;
 
             var client = ClientServerBootstrap.ClientWorld;

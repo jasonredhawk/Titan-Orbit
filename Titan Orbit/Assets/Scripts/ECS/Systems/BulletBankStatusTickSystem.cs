@@ -1,4 +1,5 @@
 using TitanOrbit.Core;
+using TitanOrbit.Data;
 using TitanOrbit.Generation;
 using TitanOrbit.Simulation;
 using Unity.Collections;
@@ -92,7 +93,7 @@ namespace TitanOrbit.ECS
                         ref health,
                         ref gems,
                         ref isDead,
-                        damage,
+                        CardEffectQuery.ScaleIncomingDamage(state.EntityManager, entity, damage),
                         ship.Team,
                         (TeamId)inst.SourceTeam,
                         gemExpulsionPerHullDamage: ShipDamageLogic.ExcessDamageGemExpulsionPerHullDamage,
@@ -123,9 +124,9 @@ namespace TitanOrbit.ECS
                             asteroidHealthAfter: -1f);
                     }
 
-                    if ((result.AppliedHullDamage || result.GemsToExpel > 0.0001f || result.BecameDead) &&
-                        inst.SourceNetworkId > 0)
+                    if (result.AppliedHullDamage || result.GemsToExpel > 0.0001f || result.BecameDead)
                     {
+                        // Burn ticks have no clear direction — keep last impulse, credit damager.
                         ShipMatchStatsLogic.SetLastDamager(
                             state.EntityManager,
                             entity,
@@ -211,7 +212,8 @@ namespace TitanOrbit.ECS
                         damage,
                         inst.VfxTeam,
                         inst.VfxBankIndex,
-                        asteroid.Health);
+                        asteroid.Health,
+                        AsteroidLayoutSlot.Read(state.EntityManager, entity));
 
                     if (asteroid.IsDestroyed)
                         break;
@@ -236,7 +238,8 @@ namespace TitanOrbit.ECS
             float damage,
             byte ownerTeam,
             int bankIndex,
-            float asteroidHealthAfter)
+            float asteroidHealthAfter,
+            int asteroidLayoutSlot = -1)
         {
             BulletNetNotify.SendRamAsteroidHit(
                 ref ecb,
@@ -245,7 +248,8 @@ namespace TitanOrbit.ECS
                 ownerTeam,
                 bankIndex,
                 scaleMultiplier: 1f,
-                asteroidHealthAfter);
+                asteroidHealthAfter,
+                asteroidLayoutSlot);
         }
 
         void TickGravityWells(ref SystemState state, float dt, double elapsed)

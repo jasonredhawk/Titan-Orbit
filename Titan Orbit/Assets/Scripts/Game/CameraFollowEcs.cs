@@ -1,6 +1,10 @@
 using TitanOrbit.Data;
 using TitanOrbit.ECS;
+using TitanOrbit.Generation;
 using TitanOrbit.Shared;
+using Unity.Entities;
+using Unity.Mathematics;
+using Unity.Transforms;
 using UnityEngine;
 using UnityEngine.Serialization;
 
@@ -11,15 +15,20 @@ namespace TitanOrbit.Game
     /// [HYBRID] Reads <see cref="ShipDisplayPose"/> (filled by <see cref="ShipVisualSyncSystem"/>),
     /// never drives ship sim. Client only; execution order 67001 so it runs after presentation sync.
     /// <para>
+    /// When the ship wraps, this camera jumps the same delta the same frame and draws a short
+    /// fade (<see cref="MapWrapTransition"/>) so the world pop is a beat, not a streak.
     /// [TITAN-ORBIT] Framing knobs live on a <see cref="CameraFollowSettings"/> ScriptableObject.
     /// Each <see cref="ShipFamilyDefinition"/> can point at its own profile; this component watches
     /// the local ship's ghosted <c>ShipFamilyConfigIndex</c> and calls <see cref="SetSettings"/> when
     /// the family changes (team spawn or moon-dock purchase). The camera hard-locks to the ship,
     /// then adds a gently smoothed look-ahead on XZ and a smoothly eased height zoom from ship level.
-    /// <see cref="CurrentHeightZoomFactor"/> exposes that zoom proportion for the collapsed minimap
-    /// (<see cref="TitanOrbit.UI.MinimapController"/>) so both views stay in sync.
+    /// Family <see cref="ShipFamilySpecialBonuses.cameraHeightMul"/> scales that height (zoom out / in)
+    /// without needing a unique CameraFollowSettings asset. MEGA hulls skip the family mul — the
+    /// MEGA catalog owns framing. <see cref="CurrentHeightZoomFactor"/> exposes that zoom proportion
+    /// for the collapsed minimap (<see cref="TitanOrbit.UI.MinimapController"/>) so both views stay in sync.
     /// During gem Instantiates (<see cref="ClientJoinSettleCache.ShouldSkipShipEntityQueries"/>) look-ahead
-    /// freezes and ship level holds last-good — avoids false zoom when asteroids break or hits spike speed.
+    /// freezes, ship level holds last-good, and MEGA vs family camera stays latched — avoids false
+    /// zoom when MEGA plow Instantiates gem ghosts.
     /// Ship flight smoothing stays owned by NetCode — we only SmoothDamp camera composition.
     /// </para>
     /// Moon-dock cinematic overrides the follow target with a hard lock on the spinning hull.
@@ -36,6 +45,12 @@ namespace TitanOrbit.Game
             "automatically when ShipFamilyConfigIndex changes.")]
         [FormerlySerializedAs("settings")]
         [SerializeField] CameraFollowSettings defaultSettings;
+
+        /// <summary>Gameplay follow camera — used by bullet tracers to stay readable at MEGA height.</summary>
+        public static CameraFollowEcs Instance { get; private set; }
+
+        /// <summary>Last MEGA hull-top Y in display space (0 when the local ship is not a MEGA).</summary>
+        public float MegaHullTopDisplayY { get; private set; }
 
         /// <summary>
         /// Runtime-active profile (family override or <see cref="defaultSettings"/>).
@@ -64,7 +79,8 @@ namespace TitanOrbit.Game
             {
                 if (_initialized && _currentHeight > 0.01f)
                     return _currentHeight;
-                return Settings.ComputeTargetHeight(Mathf.Max(1, _lastKnownShipLevel));
+                return ApplyFamilyCameraHeightMul(
+                    Settings.ComputeTargetHeight(Mathf.Max(1, _lastKnownShipLevel)));
             }
         }
 
@@ -104,6 +120,19 @@ namespace TitanOrbit.Game
         /// <summary>Last profile instance applied for <see cref="_syncedFamilyConfigIndex"/> (identity compare).</summary>
         CameraFollowSettings _syncedProfile;
 
+        /// <summary>
+        /// Cached <see cref="ShipFamilySpecialBonuses.cameraHeightMul"/> for the local family.
+        /// 1 when unset, MEGA, or the family has not synced yet. Applied on top of
+        /// <see cref="CameraFollowSettings.ComputeTargetHeight"/>.
+        /// </summary>
+        float _familyCameraHeightMul = 1f;
+
+        /// <summary>
+        /// Last resolved MEGA vs family camera. Held while gem Instantiates skip ship gathers
+        /// so MEGA plow does not swap to the family profile for a frame (zoom flicker).
+        /// </summary>
+        bool _latchedIsMega;
+
         /// <summary>[UNITY] Cached Camera on this GameObject (may be null if misconfigured).</summary>
         UnityEngine.Camera cam;
 
@@ -136,6 +165,15 @@ namespace TitanOrbit.Game
         /// asteroid destroy) — that caused SmoothDamp height zoom-in/out.
         /// </summary>
         int _lastKnownShipLevel = 1;
+
+        /// <summary>Cached MEGA follow offset (collider center minus pivot) on XZ.</summary>
+        Vector3 _megaFollowOffset;
+
+        /// <summary>Cached MEGA view radius including catalog padding.</summary>
+        float _megaViewRadius;
+
+        /// <summary>True when the local ship is a MEGA and hull framing is valid.</summary>
+        bool _hasMegaView;
 
         /// <summary>
         /// Code defaults matching <see cref="CameraFollowSettings"/> field defaults.
@@ -177,6 +215,7 @@ namespace TitanOrbit.Game
         void Awake()
         {
             cam = GetComponent<UnityEngine.Camera>();
+            Instance = this;
 
             // --- Seed runtime profile from the Inspector fallback until a local ship family resolves ---
             if (_activeSettings == null)
@@ -186,6 +225,29 @@ namespace TitanOrbit.Game
 
             // [TITAN-ORBIT] Top-down: pitch 90° so +Y is "out of the screen," XZ is the play plane.
             transform.rotation = Quaternion.Euler(90f, 0f, 0f);
+        }
+
+        void OnDisable()
+        {
+            if (Instance == this)
+                Instance = null;
+            MapWrapTransition.Reset();
+        }
+
+        /// <summary>
+        /// [UNITY] Fullscreen fade while the local ship wraps. Hides the world pop for
+        /// <see cref="MapWrapTransition.DurationSeconds"/>.
+        /// </summary>
+        void OnGUI()
+        {
+            float fade = MapWrapTransition.Fade01;
+            if (fade <= 0.01f)
+                return;
+
+            var prev = GUI.color;
+            GUI.color = new Color(0f, 0f, 0f, fade * MapWrapTransition.PeakAlpha);
+            GUI.DrawTexture(new Rect(0f, 0f, Screen.width, Screen.height), Texture2D.whiteTexture);
+            GUI.color = prev;
         }
 
 #if UNITY_EDITOR
@@ -239,15 +301,28 @@ namespace TitanOrbit.Game
             if (dt <= 0f)
                 return;
 
+            MapWrapTransition.Tick(dt);
+
+            // --- Same-frame wrap: snap velocity sample so look-ahead does not spike ---
+            // Camera hard-locks to ship XZ, so the hull stays on-screen; the world pops.
+            if (_hasLastShipPos && ToroidalMap.IsWrapJump(_lastShipPos, shipPos))
+            {
+                MapWrapTransition.NotifyWrap();
+                _lastShipPos = shipPos;
+                _lookAheadSmoothVelocity = Vector3.zero;
+            }
+
             var profile = Settings;
             profile.ClampValues();
+
+            RefreshMegaHullFraming(ref shipPos, isMoonDockOverride);
 
             // --- Seed SmoothDamp state on first lock ---
             // Without this, the first frame would ease from (0,0,0) and the camera would fly in from origin.
             if (!_initialized)
             {
                 int level = ResolveShipLevel();
-                _currentHeight = profile.ComputeTargetHeight(level);
+                _currentHeight = ApplyFamilyCameraHeightMul(profile.ComputeTargetHeight(level));
                 _lookAheadCurrent = Vector3.zero;
                 _lookAheadSmoothVelocity = Vector3.zero;
                 _heightSmoothVelocity = 0f;
@@ -260,7 +335,8 @@ namespace TitanOrbit.Game
             // Default: ship-level curve from the active family profile.
             // Turret possession: raise height so the pad's engage/bullet radius fits the viewport
             // (never zoom in closer than the normal ship framing).
-            float targetHeight = profile.ComputeTargetHeight(ResolveShipLevel());
+            // MEGA: raise just enough to fit the collider box, then cap so tracers stay readable.
+            float targetHeight = ApplyFamilyCameraHeightMul(profile.ComputeTargetHeight(ResolveShipLevel()));
             if (Shared.PlanetaryDefenseTurretClientState.IsControlling &&
                 Shared.PlanetaryDefenseTurretClientState.DesiredViewRadiusWorld > 0.01f)
             {
@@ -268,6 +344,13 @@ namespace TitanOrbit.Game
                     Shared.PlanetaryDefenseTurretClientState.DesiredViewRadiusWorld,
                     profile.gameplayFieldOfView);
                 targetHeight = Mathf.Max(targetHeight, turretHeight);
+            }
+            else if (_hasMegaView && _megaViewRadius > 0.01f)
+            {
+                float megaHeight = ComputeHeightForViewRadius(_megaViewRadius, profile.gameplayFieldOfView);
+                var megaCatalog = MegaShipCatalog.Load();
+                float cap = megaCatalog != null ? megaCatalog.GetCameraMaxHeight() : MegaShipCatalog.DefaultCameraMaxHeight;
+                targetHeight = Mathf.Min(cap, Mathf.Max(targetHeight, megaHeight));
             }
 
             _currentHeight = Mathf.SmoothDamp(
@@ -324,6 +407,8 @@ namespace TitanOrbit.Game
         /// <summary>
         /// Resolves the local ship's family from ghosted <c>ShipFamilyConfigIndex</c> and applies that
         /// family's <see cref="ShipFamilyDefinition.cameraFollowSettings"/> (or the scene fallback).
+        /// Also caches <see cref="ShipFamilySpecialBonuses.cameraHeightMul"/> so height zoom can
+        /// differ per family without a unique CameraFollowSettings asset.
         /// </summary>
         void SyncProfileFromLocalShipFamily()
         {
@@ -333,25 +418,66 @@ namespace TitanOrbit.Game
 
             int familyIndex = state.ShipFamilyConfigIndex;
 
-            // --- Resolve desired profile for this family index ---
+            // --- Resolve desired profile + family camera-height mul ---
             // Prefer the family's authored asset; fall back to the Main Camera defaultSettings slot.
             CameraFollowSettings desired = defaultSettings;
+            float heightMul = 1f;
             PlanetShipFamilyConfig config = ShipStatApplyLogic.Config;
             if (config != null)
             {
                 PlanetShipFamilyConfig.ShipFamilyEntry entry = config.GetFamilyByConfigIndex(familyIndex);
                 ShipFamilyDefinition family = entry != null ? entry.shipFamilyDefinition : null;
-                if (family != null && family.cameraFollowSettings != null)
-                    desired = family.cameraFollowSettings;
+                if (family != null)
+                {
+                    if (family.cameraFollowSettings != null)
+                        desired = family.cameraFollowSettings;
+                    // [TITAN-ORBIT] Family identity zoom — same shared profile, different height.
+                    heightMul = family.specialBonuses.ResolveCameraHeightMul();
+                }
             }
 
-            // --- Skip if we already applied this family index + same profile instance ---
+            // --- MEGA catalog camera (latch through gem Instantiates) ---
+            // [TITAN-ORBIT] TryGetLocalShipEntityOnWorld is false during GhostSpawnBacklog
+            // (MEGA plow → asteroid destroy → gem ghosts). Treating that miss as “not MEGA”
+            // swapped this camera onto the family profile for a frame — zoom / UI flicker.
+            bool isMega;
+            if (EcsGameBridge.TryGetLocalMegaShipState(out _))
+                isMega = true;
+            else if (ClientJoinSettleCache.ShouldSkipShipEntityQueries)
+                isMega = _latchedIsMega;
+            else
+                isMega = false;
+            _latchedIsMega = isMega;
+            if (isMega)
+            {
+                var megaCatalog = MegaShipCatalog.Load();
+                if (megaCatalog != null && megaCatalog.cameraFollowSettings != null)
+                    desired = megaCatalog.cameraFollowSettings;
+                // MEGA catalog owns framing — do not stack family zoom on the capital-ship camera.
+                heightMul = 1f;
+            }
+
+            _familyCameraHeightMul = heightMul;
+
+            // --- Skip SetSettings if we already applied this family index + same profile instance ---
             if (familyIndex == _syncedFamilyConfigIndex && ReferenceEquals(desired, _syncedProfile))
                 return;
 
             _syncedFamilyConfigIndex = familyIndex;
             _syncedProfile = desired;
             SetSettings(desired);
+        }
+
+        /// <summary>
+        /// Scales a profile height by the cached family camera-height mul.
+        /// Unset / zero muls stay at 1 so a missing family never pins the camera to the hull.
+        /// </summary>
+        /// <param name="profileHeight">World-Y from <see cref="CameraFollowSettings.ComputeTargetHeight"/>.</param>
+        /// <returns>Height after the family zoom identity multiplier.</returns>
+        float ApplyFamilyCameraHeightMul(float profileHeight)
+        {
+            float mul = _familyCameraHeightMul > 0.0001f ? _familyCameraHeightMul : 1f;
+            return profileHeight * mul;
         }
 
         /// <summary>
@@ -396,6 +522,74 @@ namespace TitanOrbit.Game
             }
 
             return Vector3.zero;
+        }
+
+        /// <summary>
+        /// Centers the follow target on the MEGA collider box and caches view radius / hull-top Y
+        /// so tracers can ride above the mesh. Skips new ship queries during join settle.
+        /// </summary>
+        void RefreshMegaHullFraming(ref Vector3 shipPos, bool isMoonDockOverride)
+        {
+            MegaHullTopDisplayY = 0f;
+            if (isMoonDockOverride)
+            {
+                _hasMegaView = false;
+                return;
+            }
+
+            if (ClientJoinSettleCache.ShouldSkipShipEntityQueries)
+            {
+                if (_hasMegaView)
+                {
+                    shipPos += _megaFollowOffset;
+                    MegaHullTopDisplayY = shipPos.y + _megaViewRadius * 0.35f;
+                }
+                return;
+            }
+
+            _hasMegaView = false;
+            _megaFollowOffset = Vector3.zero;
+            _megaViewRadius = 0f;
+
+            var world = EcsGameBridge.ClientWorld;
+            if (world == null || !world.IsCreated)
+                return;
+            if (!EcsGameBridge.TryGetLocalShipEntityOnWorld(world, out var shipEntity))
+                return;
+
+            var em = world.EntityManager;
+            if (!em.HasComponent<MegaShipState>(shipEntity)
+                || !em.GetComponentData<MegaShipState>(shipEntity).IsMega
+                || !em.HasComponent<LocalTransform>(shipEntity))
+                return;
+
+            var xf = em.GetComponentData<LocalTransform>(shipEntity);
+            if (!MegaShipCombatAim.TryGetHullView(em, shipEntity, xf, out float3 center, out float radius, out float hullTopY))
+                return;
+
+            var catalog = MegaShipCatalog.Load();
+            float padding = catalog != null
+                ? catalog.GetCameraHullViewPadding()
+                : MegaShipCatalog.DefaultCameraHullViewPadding;
+
+            Vector3 displayCenter = shipPos;
+            if (ShipDisplayPose.HasLocalPose)
+            {
+                Vector3 localOff = (Vector3)(center - xf.Position);
+                displayCenter = ShipDisplayPose.LocalPosition + ShipDisplayPose.LocalRotation * localOff;
+                displayCenter.y = shipPos.y;
+            }
+            else
+            {
+                displayCenter = new Vector3(center.x, shipPos.y, center.z);
+            }
+
+            _megaFollowOffset = displayCenter - shipPos;
+            _megaFollowOffset.y = 0f;
+            _megaViewRadius = radius + padding;
+            _hasMegaView = true;
+            MegaHullTopDisplayY = hullTopY;
+            shipPos += _megaFollowOffset;
         }
 
         /// <summary>

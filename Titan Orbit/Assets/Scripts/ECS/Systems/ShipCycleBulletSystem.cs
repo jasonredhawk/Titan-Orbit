@@ -55,6 +55,11 @@ namespace TitanOrbit.ECS
                 if (!input.ValueRO.CycleBullet.IsSet)
                     continue;
 
+                // MEGA mounts each fire a catalog bank — B-key must not retarget the volley.
+                if (SystemAPI.HasComponent<MegaShipState>(entity) &&
+                    SystemAPI.GetComponentRO<MegaShipState>(entity).ValueRO.IsMega)
+                    continue;
+
                 if (TitanOrbitDebugFlags.CycleAllBulletBanks)
                 {
                     int current = loadout.ValueRO.RuntimeBulletIndex;

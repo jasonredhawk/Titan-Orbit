@@ -74,6 +74,12 @@ namespace TitanOrbit.ECS
     {
         /// <summary>[TITAN-ORBIT] UTF-8 display name (length capped by FixedString64).</summary>
         public FixedString64Bytes DisplayName;
+
+        /// <summary>
+        /// Filename-stable badge id from Badge (N).png. 0 = none.
+        /// Adding fields changes RPC layout: client and Linux headless must rebuild together.
+        /// </summary>
+        public int BadgeId;
     }
 
     /// <summary>
@@ -89,6 +95,9 @@ namespace TitanOrbit.ECS
 
         /// <summary>[TITAN-ORBIT] Sanitized UTF-8 display name.</summary>
         public FixedString64Bytes DisplayName;
+
+        /// <summary>Filename-stable badge id from Badge (N).png. 0 = none.</summary>
+        public int BadgeId;
     }
 
     /// <summary>
@@ -479,6 +488,24 @@ namespace TitanOrbit.ECS
         /// not a PD impact (PlanetId already 0 — field unused).
         /// </summary>
         public float PlanetaryDefenseHealthAfter;
+
+        /// <summary>
+        /// Shooter NetworkId for orphan-tracer reconcile when Sequence was never bound.
+        /// 0 on ram/grind (Sequence 0).
+        /// </summary>
+        public int OwnerNetworkId;
+
+        /// <summary>
+        /// Weapon mount that fired this shot (−1 when unknown / non-weapon).
+        /// Lets clients destroy the matching anticipation without a 12u nearest-fallback.
+        /// </summary>
+        public int MountIndex;
+
+        /// <summary>
+        /// Blueprint asteroid slot for O(1) client HP apply. −1 = not an asteroid / unknown.
+        /// Same index as <see cref="AsteroidOccupancyRpc"/> bit i and <see cref="AsteroidLayoutSlot"/>.
+        /// </summary>
+        public int AsteroidLayoutSlot;
     }
 
     /// <summary>
@@ -501,6 +528,12 @@ namespace TitanOrbit.ECS
 
         /// <summary>Planet level at flip time (fingerprint / bonuses).</summary>
         public int PlanetLevel;
+
+        /// <summary>
+        /// Player who delivered the most troops during this capture (0 = starting claim / unknown).
+        /// Immediate client label — do not wait on the rate-limited planet ghost.
+        /// </summary>
+        public int TopContributorNetworkId;
     }
 
     /// <summary>
@@ -542,6 +575,12 @@ namespace TitanOrbit.ECS
 
         /// <summary>Designer Size for bounce mass.</summary>
         public float Size;
+
+        /// <summary>
+        /// Blueprint asteroid slot to restore on the client Instantiates. −1 = unknown
+        /// (client falls back to pose match and cannot O(1) HitRpc that rock).
+        /// </summary>
+        public int LayoutSlot;
     }
 
     /// <summary>

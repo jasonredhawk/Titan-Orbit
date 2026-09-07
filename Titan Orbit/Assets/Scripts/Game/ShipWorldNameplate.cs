@@ -1,6 +1,8 @@
 using System.Collections.Generic;
 using System.Text;
 using TitanOrbit.Core;
+using TitanOrbit.Data;
+using TitanOrbit.ECS;
 using TMPro;
 using UnityEngine;
 using UnityEngine.Rendering;
@@ -8,13 +10,15 @@ using UnityEngine.Rendering;
 namespace TitanOrbit.Game
 {
     /// <summary>
-    /// World-space nameplate sitting <b>screen-below</b> a ship (world −Z), locked to world
-    /// orientation so it does <b>not</b> spin when the hull yaws:
+    /// World-space nameplate locked to world orientation so it does <b>not</b> spin when the hull yaws.
+    /// Regular ships sit <b>screen-below</b> the hull (world −Z); MEGA hulls sit <b>above mid-center</b>
+    /// (world +Y):
     /// <code>
     /// [Name] .............. [Lv N]
     /// [Score] ............. [#Rank]
     /// [---- Full Version ----]
     /// [------ Health bar -----]
+    /// [      (Badge)          ]  mid-center, overlaps the three bars
     /// [------- Mine bar ------]
     /// [---- Transports bar ---]
     /// [ K ] [ G ] [ T ]
@@ -22,13 +26,19 @@ namespace TitanOrbit.Game
     /// Name / score are left-justified; ship level / rank are right-justified inside one shared
     /// content width. Long names are truncated by cutting characters.
     /// <para>
-    /// [HYBRID] Client presentation only — fed by <see cref="EcsWorldVisualizer"/>. Clearance is
-    /// half the ship's widest local footprint (+ padding), frozen until ability-upgrade growth;
-    /// yaw must not move the plate. The label root is unparented so text/bars stay world-upright.
-    /// Fully moon-docked ships hide the plate until takeoff.
+    /// [HYBRID] Client presentation only — fed by <see cref="EcsWorldVisualizer"/>. Regular-ship
+    /// clearance is half the widest local footprint (+ padding); MEGA clearance is half-height
+    /// above mid-center. Both are frozen until ability-upgrade growth; yaw must not move the plate.
+    /// The label root is unparented so text/bars stay world-upright. Fully moon-docked ships hide
+    /// the plate until takeoff.
+    /// </para>
+    /// <para>
+    /// Health / gem / troop bars are 9-sliced sprites with a 1-texel transparent rim (bilinear AA)
+    /// and no motion vectors. Hard 1×1 quads crawled along pixel edges while the camera moved;
+    /// TMP names stay SDF so they did not show the same shimmer.
     /// </para>
     /// </summary>
-    [DefaultExecutionOrder(120)]
+    [DefaultExecutionOrder(67002)]
     public sealed class ShipWorldNameplate : MonoBehaviour
     {
         // --- Visual constants ---
@@ -37,6 +47,7 @@ namespace TitanOrbit.Game
         const int BarSortingOrder = 5000;
         const int RoleSortingOrder = 5003;
         const int BadgeSortingOrder = 5001;
+        const int PlayerBadgeSortingOrder = 5004;
 
         /// <summary>
         /// World scale for the unparented flat label root.
@@ -59,15 +70,21 @@ namespace TitanOrbit.Game
 
         const float HeightAbovePlane = 0.08f;
 
-        /// <summary>Gap past the hull edge — keep readable space under the ship.</summary>
+        /// <summary>Gap past the hull edge — keep readable space under regular ships.</summary>
         const float PaddingPastHull = 0.35f;
+
+        /// <summary>Gap above the hull top so MEGA plates sit over mid-center, not inside the mesh.</summary>
+        const float PaddingAboveHull = 0.45f;
         const float FallbackHullExtentWorld = 0.4f;
 
-        /// <summary>Hard cap so a bad bounds read can never throw the plate off-screen.</summary>
+        /// <summary>Hard cap so a bad bounds read can never throw a regular plate off-screen.</summary>
         const float MaxClearanceWorld = 1.6f;
 
-        /// <summary>Fraction of half-widest used as offset (full half-extent + padding).</summary>
+        /// <summary>Fraction of half-widest used as the under-ship offset (full half-extent + padding).</summary>
         const float ClearanceScale = 1.0f;
+
+        /// <summary>Hard cap on measured half-height so a bad MEGA bounds read cannot throw the plate away.</summary>
+        const float MaxHeightWorld = 8f;
 
         /// <summary>Bar track height in label-local units (world ≈ 0.10 after 25% thinner).</summary>
         const float BarHeight = 0.45f;
@@ -82,16 +99,37 @@ namespace TitanOrbit.Game
         const float RoleSlotSize = 0.98f;
         const float RoleSlotGap = 0.12f;
 
+        /// <summary>
+        /// Profile emblem over the three stat bars (label-local). Taller than the bar stack
+        /// so it overlaps health / mine / transports as a centered medallion.
+        /// </summary>
+        const float PlayerBadgeSize = 2.97f;
+
+        /// <summary>
+        /// Sharper mip than the GPU would pick from on-screen size. Still uses mipmaps so
+        /// the emblem does not crawl/pixelate while the camera moves.
+        /// </summary>
+        const float PlayerBadgeMipBias = -0.85f;
+
         const float HealthHighRatio = 2f / 3f;
         const float HealthLowRatio = 1f / 3f;
 
-        /// <summary>Discrete fill steps across the bar — reduces subpixel edge shimmer while moving.</summary>
+        /// <summary>Discrete fill steps across the bar — fill amount stays put unless vitals change.</summary>
         const int BarFillQuantizeSteps = 128;
+
+        /// <summary>
+        /// Pixels-per-unit of the 8×8 bar sprite. 1px rim ÷ this = local-unit AA width (~0.6 screen
+        /// pixels at typical follow height) so the silhouette is soft enough not to crawl.
+        /// </summary>
+        const float BarSpritePpu = 8f;
+
+        /// <summary>1px transparent rim on each side — sliced size cannot shrink below this.</summary>
+        const float BarSliceMinWidth = 2f / BarSpritePpu;
 
         /// <summary>
         /// Bump when row spacing / fonts / clearance policy change so live proxies refresh layout.
         /// </summary>
-        const int LayoutVersion = 12;
+        const int LayoutVersion = 20;
 
         /// <summary>Max name characters before width-fit (wider plate allows longer names).</summary>
         const int MaxNameCharacters = 28;
@@ -115,6 +153,8 @@ namespace TitanOrbit.Game
         static readonly Vector3 ScreenBelowWorld = new Vector3(0f, 0f, -1f);
 
         static Sprite s_WhiteSprite;
+        static Sprite s_BarSprite;
+        static Material s_PlayerBadgeMaterial;
         static readonly StringBuilder s_NameScratch = new StringBuilder(32);
 
         // --- Bound identity ---
@@ -129,6 +169,7 @@ namespace TitanOrbit.Game
         TextMeshPro _scoreText;
         TextMeshPro _rankText;
         SpriteRenderer _fullVersionBadge;
+        SpriteRenderer _playerBadge;
         ThinBar _healthBar;
         ThinBar _gemsBar;
         ThinBar _peopleBar;
@@ -145,6 +186,7 @@ namespace TitanOrbit.Game
         string _cachedScore;
         string _cachedRank;
         bool _cachedShowBadge;
+        int _cachedBadgeId = int.MinValue;
         float _cachedHealthRatio = -1f;
         float _cachedGemsRatio = -1f;
         float _cachedPeopleRatio = -1f;
@@ -152,11 +194,13 @@ namespace TitanOrbit.Game
         bool _cachedMiner;
         bool _cachedTransporter;
         bool _cachedVisible = true;
+        bool _isMega;
 
         /// <summary>
         /// Half of the ship's widest horizontal dimension in <b>world</b> units, cached until growth.
         /// </summary>
         float _cachedHalfWidestWorld = -1f;
+        float _cachedHalfHeightWorld;
 
         /// <summary>
         /// Ship-local XZ center of the hull footprint (y ignored). Plate anchors from this point
@@ -211,9 +255,14 @@ namespace TitanOrbit.Game
         /// <param name="isStowedInTurret">
         /// True when <c>ShipTurretControlState.IsControlling</c> — hull is hidden on a pad.
         /// </param>
+        /// <param name="isMega">
+        /// True when this hull is a purchased MEGA — plate sits above mid-center instead of under the ship.
+        /// </param>
+        /// <param name="badgeId">Filename-stable profile badge id, or 0 for none.</param>
         public void ApplyPresentation(
             int networkId,
             string displayName,
+            int badgeId,
             TeamId team,
             bool isDead,
             bool awaitingTeamSelection,
@@ -230,10 +279,12 @@ namespace TitanOrbit.Game
             int peopleCapacity,
             bool isTopKiller,
             bool isTopMiner,
-            bool isTopTransporter)
+            bool isTopTransporter,
+            bool isMega)
         {
             if (networkId > 0)
                 _networkId = networkId;
+            _isMega = isMega;
             EnsureHierarchy();
             if (!_ready || _labelRoot == null)
                 return;
@@ -256,6 +307,8 @@ namespace TitanOrbit.Game
 
             if (!visible)
                 return;
+
+            ApplyPlayerBadge(badgeId);
 
             // --- Row 1: Name (left) + Ship Level (right) ---
             string rawName = string.IsNullOrEmpty(displayName) ? $"Player {_networkId}" : displayName;
@@ -328,9 +381,11 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// After attribute-scale LateUpdate — follow the ship with a <b>fixed</b> clearance
-        /// from the widest hull dimension. Clearance only recalculates when the ship grows
-        /// (ability upgrades / root scale), not when it yaws.
+        /// After hybrid ship pose (66000) and <see cref="CameraFollowEcs"/> (67001) — follow the
+        /// hull with a <b>fixed</b> clearance from the widest dimension. Posing earlier wrote the
+        /// plate against last-frame ship position, then the visualizer moved the hull; thin bar
+        /// edges picked that up as a one-pixel crawl. Clearance only recalculates when the ship
+        /// grows (ability upgrades / root scale), not when it yaws.
         /// </summary>
         void LateUpdate()
         {
@@ -358,6 +413,7 @@ namespace TitanOrbit.Game
 
             // Force a fresh snug clearance with the world-unit conversion fix.
             _cachedHalfWidestWorld = -1f;
+            _cachedHalfHeightWorld = 0f;
             _cachedGrowthSignature = float.NaN;
             _hullRenderers = null;
 
@@ -380,8 +436,9 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// World position screen-below the hull footprint center by half the widest <b>world</b>
-        /// dimension. Clearance is frozen until ability-upgrade growth changes the signature.
+        /// Regular ships: screen-below the hull footprint by half the widest world dimension.
+        /// MEGA hulls: above the geometric mid-center by measured half-height.
+        /// Clearance is frozen until ability-upgrade growth changes the signature.
         /// </summary>
         void RefreshAnchorPose()
         {
@@ -390,15 +447,32 @@ namespace TitanOrbit.Game
 
             RefreshCachedHullFootprintIfGrown();
 
-            float clearance = Mathf.Clamp(
-                Mathf.Max(0.1f, _cachedHalfWidestWorld) * ClearanceScale + PaddingPastHull,
-                0.1f,
-                MaxClearanceWorld);
+            Vector3 worldPos;
+            if (_isMega)
+            {
+                float lift = Mathf.Clamp(
+                    Mathf.Max(0.12f, _cachedHalfHeightWorld) + PaddingAboveHull,
+                    0.2f,
+                    MaxHeightWorld);
 
-            // Anchor from geometric hull center (not raw pivot) so yaw keeps the plate under the ship.
-            Vector3 centerWorld = transform.TransformPoint(_cachedLocalCenter);
-            Vector3 worldPos = centerWorld + ScreenBelowWorld * clearance;
-            worldPos.y = centerWorld.y + HeightAbovePlane;
+                Vector3 centerWorld = transform.TransformPoint(_cachedLocalCenter);
+                worldPos = centerWorld;
+                worldPos.y = centerWorld.y + lift + HeightAbovePlane;
+            }
+            else
+            {
+                float clearance = Mathf.Clamp(
+                    Mathf.Max(0.1f, _cachedHalfWidestWorld) * ClearanceScale + PaddingPastHull,
+                    0.1f,
+                    MaxClearanceWorld);
+
+                // Anchor from XZ hull center (not raw pivot) so yaw keeps the plate under the ship.
+                Vector3 localCenter = _cachedLocalCenter;
+                localCenter.y = 0f;
+                Vector3 centerWorld = transform.TransformPoint(localCenter);
+                worldPos = centerWorld + ScreenBelowWorld * clearance;
+                worldPos.y = centerWorld.y + HeightAbovePlane;
+            }
 
             // [TITAN-ORBIT] World rotation — plate stays upright while the hull turns.
             _labelRoot.SetPositionAndRotation(worldPos, Quaternion.Euler(-90f, 0f, 0f));
@@ -421,7 +495,7 @@ namespace TitanOrbit.Game
             if (growthChanged)
                 _hullRenderers = null;
 
-            MeasureHullFootprint(out _cachedLocalCenter, out _cachedHalfWidestWorld);
+            MeasureHullFootprint(out _cachedLocalCenter, out _cachedHalfWidestWorld, out _cachedHalfHeightWorld);
             _cachedGrowthSignature = growthSig;
         }
 
@@ -459,18 +533,21 @@ namespace TitanOrbit.Game
         /// ship proxies use <c>ShipPresentationScale</c> (~0.155), so local units are ~6× world.
         /// Using local as world was throwing the plate to the bottom of the screen.
         /// </summary>
-        void MeasureHullFootprint(out Vector3 localCenter, out float halfWidestWorld)
+        void MeasureHullFootprint(out Vector3 localCenter, out float halfWidestWorld, out float halfHeightWorld)
         {
             EnsureHullRendererCache();
 
             localCenter = Vector3.zero;
             halfWidestWorld = FallbackHullExtentWorld;
+            halfHeightWorld = FallbackHullExtentWorld;
 
             if (_hullRenderers == null)
                 return;
 
             float minX = float.PositiveInfinity;
             float maxX = float.NegativeInfinity;
+            float minY = float.PositiveInfinity;
+            float maxY = float.NegativeInfinity;
             float minZ = float.PositiveInfinity;
             float maxZ = float.NegativeInfinity;
             bool any = false;
@@ -495,6 +572,8 @@ namespace TitanOrbit.Game
                     Vector3 shipLocal = transform.InverseTransformPoint(world);
                     if (shipLocal.x < minX) minX = shipLocal.x;
                     if (shipLocal.x > maxX) maxX = shipLocal.x;
+                    if (shipLocal.y < minY) minY = shipLocal.y;
+                    if (shipLocal.y > maxY) maxY = shipLocal.y;
                     if (shipLocal.z < minZ) minZ = shipLocal.z;
                     if (shipLocal.z > maxZ) maxZ = shipLocal.z;
                     any = true;
@@ -504,15 +583,19 @@ namespace TitanOrbit.Game
             if (!any)
                 return;
 
-            localCenter = new Vector3((minX + maxX) * 0.5f, 0f, (minZ + maxZ) * 0.5f);
+            localCenter = new Vector3((minX + maxX) * 0.5f, (minY + maxY) * 0.5f, (minZ + maxZ) * 0.5f);
             float localW = maxX - minX;
+            float localH = maxY - minY;
             float localD = maxZ - minZ;
 
             // Local → world (accounts for ShipPresentationScale on the proxy root).
             float worldW = transform.TransformVector(new Vector3(localW, 0f, 0f)).magnitude;
+            float worldH = transform.TransformVector(new Vector3(0f, localH, 0f)).magnitude;
             float worldD = transform.TransformVector(new Vector3(0f, 0f, localD)).magnitude;
             halfWidestWorld = 0.5f * Mathf.Max(worldW, worldD);
-            halfWidestWorld = Mathf.Clamp(halfWidestWorld, 0.12f, MaxClearanceWorld);
+            halfHeightWorld = 0.5f * Mathf.Max(worldH, 0.2f);
+            halfWidestWorld = Mathf.Max(0.12f, halfWidestWorld);
+            halfHeightWorld = Mathf.Clamp(halfHeightWorld, 0.12f, MaxHeightWorld);
         }
 
         /// <summary>Caches child renderers once (invalidated on chassis / root-scale rebuild).</summary>
@@ -579,6 +662,9 @@ namespace TitanOrbit.Game
             _gemsBar = CreateThinBar(_labelRoot, "GemsBar");
             _peopleBar = CreateThinBar(_labelRoot, "PeopleBar");
 
+            DestroyChildIfPresent(_labelRoot, "PlayerBadgeBack");
+            _playerBadge = CreatePlayerBadgeRenderer(_labelRoot, "PlayerBadge", PlayerBadgeSortingOrder);
+
             var roleRow = new GameObject("RoleRow");
             roleRow.transform.SetParent(_labelRoot, false);
             _roleKiller = CreateRoleSlot(roleRow.transform, "Killer", "K", RoleKiller);
@@ -601,6 +687,7 @@ namespace TitanOrbit.Game
             _scoreText = null;
             _rankText = null;
             _fullVersionBadge = null;
+            _playerBadge = null;
             _healthBar = default;
             _gemsBar = default;
             _peopleBar = default;
@@ -616,8 +703,10 @@ namespace TitanOrbit.Game
             _cachedGemsRatio = -1f;
             _cachedPeopleRatio = -1f;
             _cachedShowBadge = false;
+            _cachedBadgeId = int.MinValue;
             _cachedHalfWidestWorld = -1f;
             _cachedLocalCenter = Vector3.zero;
+            _isMega = false;
             _hullRenderers = null;
             _cachedGrowthSignature = float.NaN;
             _appliedLayoutVersion = -1;
@@ -647,6 +736,7 @@ namespace TitanOrbit.Game
 
             _nameText = nameRow.Find("Name")?.GetComponent<TextMeshPro>();
             _shipLevelText = nameRow.Find("ShipLevel")?.GetComponent<TextMeshPro>();
+            RecoverOrMigratePlayerBadge(nameRow);
             _scoreText = scoreRow.Find("Score")?.GetComponent<TextMeshPro>();
             _rankText = scoreRow.Find("Rank")?.GetComponent<TextMeshPro>();
             _fullVersionBadge = _labelRoot.Find("FullVersionBadge")?.GetComponent<SpriteRenderer>();
@@ -739,9 +829,12 @@ namespace TitanOrbit.Game
                 y -= BadgeHeight * 0.5f + RowGap;
             }
 
+            float barsTop = y;
             PlaceBar(ref _healthBar, ref y);
             PlaceBar(ref _gemsBar, ref y);
             PlaceBar(ref _peopleBar, ref y);
+            float barsBottom = y + RowGap;
+            PlacePlayerBadgeOverBars((barsTop + barsBottom) * 0.5f);
 
             y -= RowGap;
             if (roleRow != null)
@@ -763,7 +856,7 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>Left + right TMP inside <see cref="ContentWidth"/>; row height from preferredHeight.</summary>
-        static void LayoutDualTextRow(TextMeshPro left, TextMeshPro right)
+        void LayoutDualTextRow(TextMeshPro left, TextMeshPro right)
         {
             if (left == null || right == null)
                 return;
@@ -810,7 +903,7 @@ namespace TitanOrbit.Game
         /// Further shrinks <paramref name="name"/> against a live TMP until it fits
         /// roughly half of <see cref="ContentWidth"/> (leaves room for ship level).
         /// </summary>
-        static string FitNameToWidth(TextMeshPro tmp, string name)
+        string FitNameToWidth(TextMeshPro tmp, string name)
         {
             if (tmp == null || string.IsNullOrEmpty(name))
                 return name ?? string.Empty;
@@ -831,17 +924,19 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Sets fill width from a 0–1 ratio. Empty bars hide the fill renderer entirely —
-        /// a leftover min-width scale left a colored speck that flickered while flying.
+        /// Sets sliced fill width from a 0–1 ratio. Empty bars hide the fill renderer entirely —
+        /// a leftover min-width sliver flickered while flying. Size (not scale) keeps the 9-slice
+        /// AA rim a constant local width so the leading edge does not stretch into a smear.
         /// </summary>
         static void SetBarRatio(ref ThinBar bar, float ratio, ref float cached, Color fillColor)
         {
             if (bar.Fill == null || bar.FillRenderer == null)
                 return;
 
-            // Quantize fill so the leading edge sits on stable steps (less crawl while moving).
+            // Quantize fill so the leading edge sits on stable steps (not every float vital tick).
             float qRatio = Mathf.Round(Mathf.Clamp01(ratio) * BarFillQuantizeSteps) / BarFillQuantizeSteps;
-            bool showFill = qRatio > 0f;
+            float fillW = ContentWidth * qRatio;
+            bool showFill = fillW >= BarSliceMinWidth;
 
             if (Mathf.Abs(qRatio - cached) < 0.0001f
                 && bar.FillRenderer.enabled == showFill
@@ -850,22 +945,23 @@ namespace TitanOrbit.Game
 
             cached = qRatio;
 
-            // --- Empty: hide fill (do not leave a 0.001-wide colored sliver) ---
-            // [TITAN-ORBIT] While the camera moves, subpixel sampling of a tiny SpriteRenderer
-            // fill reads as blinking colored artifacts on gem/people bars at 0.
+            // --- Empty: hide fill (do not leave a colored sliver narrower than the AA rim) ---
+            // [TITAN-ORBIT] While the camera moves, a tiny SpriteRenderer fill reads as blinking
+            // colored artifacts on gem/people bars at 0.
             if (!showFill)
             {
                 bar.FillRenderer.enabled = false;
-                bar.Fill.localScale = new Vector3(0.001f, BarHeight, 1f);
+                bar.Fill.localScale = Vector3.one;
                 bar.Fill.localPosition = new Vector3(-ContentWidth * 0.5f, 0f, 0f);
+                bar.FillRenderer.size = new Vector2(BarSliceMinWidth, BarHeight);
                 return;
             }
 
-            // --- Non-empty: left-aligned fill inside the track ---
-            float fillW = ContentWidth * qRatio;
+            // --- Non-empty: left-aligned sliced fill inside the track ---
             bar.FillRenderer.enabled = true;
-            bar.Fill.localScale = new Vector3(fillW, BarHeight, 1f);
+            bar.Fill.localScale = Vector3.one;
             bar.Fill.localPosition = new Vector3((-ContentWidth + fillW) * 0.5f, 0f, 0f);
+            bar.FillRenderer.size = new Vector2(fillW, BarHeight);
             bar.FillRenderer.color = fillColor;
         }
 
@@ -921,6 +1017,17 @@ namespace TitanOrbit.Game
             if (_fullVersionBadge != null)
                 _fullVersionBadge.transform.localScale = new Vector3(ContentWidth, BadgeHeight, 1f);
 
+            if (_playerBadge != null)
+            {
+                _playerBadge.sortingOrder = PlayerBadgeSortingOrder;
+                ApplyPlayerBadgeRendererStyle(_playerBadge);
+                if (_playerBadge.enabled && _playerBadge.sprite != null)
+                {
+                    ApplyCrispBadgeSampling(_playerBadge.sprite);
+                    ScaleSpriteToSize(_playerBadge, PlayerBadgeSize);
+                }
+            }
+
             // Fonts may be from an older build — re-apply current sizes.
             if (_nameText != null) _nameText.fontSize = NameFontSize;
             if (_shipLevelText != null) _shipLevelText.fontSize = MetaFontSize;
@@ -957,40 +1064,48 @@ namespace TitanOrbit.Game
 
             Transform bg = bar.Root.Find("Bg");
             if (bg != null)
-                bg.localScale = new Vector3(ContentWidth, BarHeight, 1f);
+            {
+                bg.localScale = Vector3.one;
+                var bgSr = bg.GetComponent<SpriteRenderer>();
+                ApplyBarRendererStyle(bgSr, BarSortingOrder);
+                if (bgSr != null)
+                    bgSr.size = new Vector2(ContentWidth, BarHeight);
+            }
 
-            // Keep height in sync; width/visibility come from SetBarRatio (do not force a speck).
+            // Height / sliced mode only — SetBarRatio owns width/visibility (avoids a full-width flash).
             if (bar.Fill != null)
             {
-                Vector3 s = bar.Fill.localScale;
-                bar.Fill.localScale = new Vector3(Mathf.Max(0.001f, s.x), BarHeight, 1f);
+                bar.Fill.localScale = Vector3.one;
+                ApplyBarRendererStyle(bar.FillRenderer, BarSortingOrder + 1);
+                if (bar.FillRenderer != null)
+                {
+                    float w = Mathf.Max(BarSliceMinWidth, bar.FillRenderer.size.x);
+                    bar.FillRenderer.size = new Vector2(w, BarHeight);
+                }
             }
         }
 
         static ThinBar CreateThinBar(Transform parent, string name)
         {
             // --- Bg + fill only (no white outline rim) ---
-            Sprite sprite = GetWhiteSprite();
             var rootGo = new GameObject(name);
             rootGo.transform.SetParent(parent, false);
 
             var bgGo = new GameObject("Bg");
             bgGo.transform.SetParent(rootGo.transform, false);
-            bgGo.transform.localScale = new Vector3(ContentWidth, BarHeight, 1f);
             var bgSr = bgGo.AddComponent<SpriteRenderer>();
-            bgSr.sprite = sprite;
             bgSr.color = BarBgColor;
-            bgSr.sortingOrder = BarSortingOrder;
+            ApplyBarRendererStyle(bgSr, BarSortingOrder);
+            bgSr.size = new Vector2(ContentWidth, BarHeight);
 
             var fillGo = new GameObject("Fill");
             fillGo.transform.SetParent(rootGo.transform, false);
             // Start hidden at left edge — SetBarRatio enables + sizes on first vitals sync.
-            fillGo.transform.localScale = new Vector3(0.001f, BarHeight, 1f);
             fillGo.transform.localPosition = new Vector3(-ContentWidth * 0.5f, 0f, 0f);
             var fillSr = fillGo.AddComponent<SpriteRenderer>();
-            fillSr.sprite = sprite;
             fillSr.color = HealthFillFull;
-            fillSr.sortingOrder = BarSortingOrder + 1;
+            ApplyBarRendererStyle(fillSr, BarSortingOrder + 1);
+            fillSr.size = new Vector2(BarSliceMinWidth, BarHeight);
             fillSr.enabled = false;
 
             return new ThinBar
@@ -1014,15 +1129,26 @@ namespace TitanOrbit.Game
 
             Transform bg = root.Find("Bg");
             if (bg != null)
-                bg.localScale = new Vector3(ContentWidth, BarHeight, 1f);
+            {
+                bg.localScale = Vector3.one;
+                var bgSr = bg.GetComponent<SpriteRenderer>();
+                ApplyBarRendererStyle(bgSr, BarSortingOrder);
+                if (bgSr != null)
+                    bgSr.size = new Vector2(ContentWidth, BarHeight);
+            }
 
             Transform fill = root.Find("Fill");
             SpriteRenderer fillSr = fill != null ? fill.GetComponent<SpriteRenderer>() : null;
             if (fill != null)
             {
-                // Height only — SetBarRatio owns width/visibility (avoids a full-width flash).
-                Vector3 s = fill.localScale;
-                fill.localScale = new Vector3(Mathf.Max(0.001f, s.x), BarHeight, 1f);
+                // Height / sliced mode only — SetBarRatio owns width/visibility (avoids a full-width flash).
+                fill.localScale = Vector3.one;
+                ApplyBarRendererStyle(fillSr, BarSortingOrder + 1);
+                if (fillSr != null)
+                {
+                    float w = Mathf.Max(BarSliceMinWidth, fillSr.size.x);
+                    fillSr.size = new Vector2(w, BarHeight);
+                }
             }
 
             return new ThinBar
@@ -1031,6 +1157,161 @@ namespace TitanOrbit.Game
                 Fill = fill,
                 FillRenderer = fillSr,
             };
+        }
+
+        void RecoverOrMigratePlayerBadge(Transform nameRow)
+        {
+            DestroyChildIfPresent(_labelRoot, "PlayerBadgeBack");
+            if (nameRow != null)
+                DestroyChildIfPresent(nameRow, "PlayerBadgeBack");
+
+            _playerBadge = _labelRoot.Find("PlayerBadge")?.GetComponent<SpriteRenderer>();
+
+            // Older builds parented the emblem on NameRow — move it onto the plate root.
+            if (_playerBadge == null && nameRow != null)
+            {
+                Transform leftover = nameRow.Find("PlayerBadge");
+                if (leftover != null)
+                    leftover.SetParent(_labelRoot, false);
+                _playerBadge = leftover != null
+                    ? leftover.GetComponent<SpriteRenderer>()
+                    : null;
+            }
+
+            if (_playerBadge == null)
+                _playerBadge = CreatePlayerBadgeRenderer(_labelRoot, "PlayerBadge", PlayerBadgeSortingOrder);
+            else
+            {
+                _playerBadge.sortingOrder = PlayerBadgeSortingOrder;
+                ApplyPlayerBadgeRendererStyle(_playerBadge);
+            }
+        }
+
+        void ApplyPlayerBadge(int badgeId)
+        {
+            int cleaned = PlayerBadgeIdUtil.Sanitize(badgeId);
+            if (cleaned == _cachedBadgeId && _playerBadge != null)
+                return;
+
+            Sprite sprite = PlayerBadgeCatalog.FindSprite(cleaned);
+            bool show = sprite != null;
+            if (_playerBadge != null)
+            {
+                _playerBadge.sprite = sprite;
+                _playerBadge.enabled = show;
+                ApplyPlayerBadgeRendererStyle(_playerBadge);
+                if (show)
+                {
+                    ApplyCrispBadgeSampling(sprite);
+                    ScaleSpriteToSize(_playerBadge, PlayerBadgeSize);
+                }
+            }
+
+            _cachedBadgeId = cleaned;
+        }
+
+        void PlacePlayerBadgeOverBars(float midY)
+        {
+            if (_playerBadge == null)
+                return;
+
+            _playerBadge.transform.localPosition = new Vector3(0f, midY, -0.04f);
+        }
+
+        static SpriteRenderer CreatePlayerBadgeRenderer(Transform parent, string name, int sortingOrder)
+        {
+            Transform existing = parent.Find(name);
+            GameObject go = existing != null ? existing.gameObject : new GameObject(name);
+            if (existing == null)
+                go.transform.SetParent(parent, false);
+
+            var sr = go.GetComponent<SpriteRenderer>();
+            if (sr == null)
+                sr = go.AddComponent<SpriteRenderer>();
+            sr.sprite = null;
+            sr.color = Color.white;
+            sr.sortingOrder = sortingOrder;
+            sr.enabled = false;
+            ApplyPlayerBadgeRendererStyle(sr);
+            go.transform.localScale = new Vector3(PlayerBadgeSize, PlayerBadgeSize, 1f);
+            return sr;
+        }
+
+        static void ApplyPlayerBadgeRendererStyle(SpriteRenderer renderer)
+        {
+            if (renderer == null)
+                return;
+
+            renderer.sharedMaterial = GetPlayerBadgeMaterial();
+            renderer.color = Color.white;
+            renderer.drawMode = SpriteDrawMode.Simple;
+            renderer.shadowCastingMode = ShadowCastingMode.Off;
+            renderer.receiveShadows = false;
+            renderer.allowOcclusionWhenDynamic = false;
+            if (renderer.sprite != null)
+                ApplyCrispBadgeSampling(renderer.sprite);
+        }
+
+        /// <summary>
+        /// Bilinear + mipmaps + a negative mip bias: sharp at nameplate size, but the GPU
+        /// still has mip levels so motion does not crawl like point filtering would.
+        /// </summary>
+        static void ApplyCrispBadgeSampling(Sprite sprite)
+        {
+            if (sprite == null)
+                return;
+
+            Texture tex = sprite.texture;
+            if (tex == null)
+                return;
+
+            if (tex.filterMode != FilterMode.Bilinear)
+                tex.filterMode = FilterMode.Bilinear;
+            if (tex.anisoLevel < 4)
+                tex.anisoLevel = 4;
+            if (Mathf.Abs(tex.mipMapBias - PlayerBadgeMipBias) > 0.01f)
+                tex.mipMapBias = PlayerBadgeMipBias;
+        }
+
+        static Material GetPlayerBadgeMaterial()
+        {
+            if (s_PlayerBadgeMaterial != null)
+                return s_PlayerBadgeMaterial;
+
+            Shader shader = Shader.Find("Sprites/Default");
+            if (shader == null)
+                shader = Shader.Find("Universal Render Pipeline/2D/Sprite-Unlit-Default");
+
+            s_PlayerBadgeMaterial = shader != null
+                ? new Material(shader)
+                : new Material(Shader.Find("Hidden/InternalErrorShader"));
+            s_PlayerBadgeMaterial.name = "ShipNameplatePlayerBadge";
+            s_PlayerBadgeMaterial.renderQueue = RenderQueueOverlay;
+            return s_PlayerBadgeMaterial;
+        }
+
+        static void DestroyChildIfPresent(Transform parent, string name)
+        {
+            if (parent == null)
+                return;
+            Transform child = parent.Find(name);
+            if (child == null)
+                return;
+            if (Application.isPlaying)
+                Object.Destroy(child.gameObject);
+            else
+                Object.DestroyImmediate(child.gameObject);
+        }
+
+        static void ScaleSpriteToSize(SpriteRenderer renderer, float targetSize)
+        {
+            if (renderer == null || renderer.sprite == null)
+                return;
+
+            Sprite sprite = renderer.sprite;
+            float worldW = sprite.rect.width / Mathf.Max(1f, sprite.pixelsPerUnit);
+            float scale = targetSize / Mathf.Max(0.01f, worldW);
+            renderer.transform.localScale = new Vector3(scale, scale, 1f);
         }
 
         /// <summary>Full-width bling strip under the score row (hidden until entitlement exists).</summary>
@@ -1150,8 +1431,73 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// 1×1 white sprite with point filtering — bilinear on a stretched bar softens edges
-        /// and makes them crawl under camera/ship motion.
+        /// Shared look for health / gem / troop tracks: 9-sliced AA sprite, no motion vectors.
+        /// [UNITY] TAA reprojects per-object motion; thin world quads write noisy vectors and
+        /// shimmer. ForceNoMotion treats them as HUD chrome (camera motion only).
+        /// </summary>
+        static void ApplyBarRendererStyle(SpriteRenderer renderer, int sortingOrder)
+        {
+            if (renderer == null)
+                return;
+
+            renderer.sprite = GetBarSprite();
+            renderer.drawMode = SpriteDrawMode.Sliced;
+            renderer.sortingOrder = sortingOrder;
+            renderer.shadowCastingMode = ShadowCastingMode.Off;
+            renderer.receiveShadows = false;
+            renderer.allowOcclusionWhenDynamic = false;
+            renderer.motionVectorGenerationMode = MotionVectorGenerationMode.ForceNoMotion;
+        }
+
+        /// <summary>
+        /// 8×8 white sprite with a 1px transparent rim and 9-slice borders. Bilinear filtering
+        /// turns that rim into a 1-texel AA so bar edges do not crawl while the camera moves.
+        /// Stretching a 1×1 point sprite made the silhouette a hard mesh edge (the old jiggle).
+        /// </summary>
+        static Sprite GetBarSprite()
+        {
+            if (s_BarSprite != null)
+                return s_BarSprite;
+
+            const int dim = 8;
+            var tex = new Texture2D(dim, dim, TextureFormat.RGBA32, false);
+            tex.name = "ShipNameplateBarTex_v2";
+            tex.filterMode = FilterMode.Bilinear;
+            tex.wrapMode = TextureWrapMode.Clamp;
+            tex.anisoLevel = 0;
+
+            var pixels = new Color32[dim * dim];
+            var clear = new Color32(255, 255, 255, 0);
+            var solid = new Color32(255, 255, 255, 255);
+            for (int y = 0; y < dim; y++)
+            {
+                for (int x = 0; x < dim; x++)
+                {
+                    bool rim = x == 0 || y == 0 || x == dim - 1 || y == dim - 1;
+                    pixels[y * dim + x] = rim ? clear : solid;
+                }
+            }
+
+            tex.SetPixels32(pixels);
+            tex.Apply(false, true);
+
+            // [UNITY] FullRect + 1px borders so SpriteDrawMode.Sliced keeps the AA rim a fixed
+            // local width instead of stretching it with the fill.
+            s_BarSprite = Sprite.Create(
+                tex,
+                new Rect(0f, 0f, dim, dim),
+                new Vector2(0.5f, 0.5f),
+                BarSpritePpu,
+                0,
+                SpriteMeshType.FullRect,
+                new Vector4(1f, 1f, 1f, 1f));
+            s_BarSprite.name = "ShipNameplateBarSprite_v2";
+            return s_BarSprite;
+        }
+
+        /// <summary>
+        /// 1×1 white sprite with point filtering — role slots and the full-version strip stay
+        /// solid (they are not thin tracks, so a hard edge reads cleaner than a fade).
         /// </summary>
         static Sprite GetWhiteSprite()
         {

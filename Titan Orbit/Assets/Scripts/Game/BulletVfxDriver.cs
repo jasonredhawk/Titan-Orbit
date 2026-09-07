@@ -9,6 +9,7 @@ using TitanOrbit.Generation;
 using TitanOrbit.NetCode;
 using TitanOrbit.Shared;
 using TitanOrbit.Simulation;
+using Unity.Collections;
 using Unity.Entities;
 using Unity.Mathematics;
 using UnityEngine;
@@ -40,8 +41,9 @@ namespace TitanOrbit.Game
     /// <see cref="PlanetaryDefenseClientHealthSync"/> — this driver does not write pad Health.
     /// </para>
     /// <para>
-    /// [TITAN-ORBIT] Sequence 0 HitRpcs are ram/grind explosions (no tracer). They must play
-    /// impact VFX and must not adopt/destroy a nearby flying tracer.
+    /// [TITAN-ORBIT] Sequence 0 HitRpcs are ram/grind (no tracer). Contact-enter and kill
+    /// still play the ship's bullet explosion. Grind pulses at 4 Hz are throttled so a
+    /// 3-second prefab does not stack ~12 lights/particles (Profiler GPU 9→26 ms while grinding).
     /// </para>
     /// <para>
     /// [TITAN-ORBIT] Homing rockets (local-fired and incoming remote) dead-reckon on the
@@ -110,6 +112,8 @@ namespace TitanOrbit.Game
             public float TickCarry;
             public bool HasPrevTick;
             public ClientBulletStretchVisual Stretch;
+            /// <summary>Cached so a seam snap does not GetComponentsInChildren every frame.</summary>
+            public TrailRenderer Trail;
         }
 
         /// <summary>
@@ -173,6 +177,18 @@ namespace TitanOrbit.Game
         /// <summary>Display-space radius for matching HitRpc to a recent predicted impact (no Sequence yet).</summary>
         const float PredictedImpactMatchRadius = 14f;
 
+        /// <summary>
+        /// Min seconds between Sequence-0 impact prefabs at the same rock. Grind pulses at
+        /// 4 Hz; each flash lives <see cref="BulletVisualFactory.DefaultImpactDuration"/> (3s).
+        /// </summary>
+        const float RamImpactVfxMinInterval = 1f;
+
+        /// <summary>XZ slop (world units) for treating two ram hits as the same rock.</summary>
+        const float RamImpactVfxPosSlop = 4f;
+
+        /// <summary>Shorter than the bullet default so a throttled grind flash does not linger.</summary>
+        const float RamGrindImpactDuration = 1.25f;
+
         readonly List<Tracer> _tracers = new List<Tracer>(64);
         readonly Dictionary<uint, int> _indexBySequence = new Dictionary<uint, int>(64);
 
@@ -197,6 +213,12 @@ namespace TitanOrbit.Game
         bool _hasLastObserverHull;
         /// <summary>Increments per anticipation CreateTracer so FIFO adopt survives RemoveAtSwap.</summary>
         int _nextAnticipationOrder;
+
+        /// <summary>Last Sequence-0 impact flash time (unscaled) for grind VFX throttle.</summary>
+        float _lastRamImpactVfxTime = -999f;
+
+        /// <summary>Last Sequence-0 flash XZ (logical / display flattened).</summary>
+        float3 _lastRamImpactVfxPos;
 
         /// <summary>[UNITY] Attach to session manager when the scene loads.</summary>
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
@@ -298,6 +320,8 @@ namespace TitanOrbit.Game
             // --- Cosmetic hit prediction (hybrid-proxy spheres; no map ToEntityArray) ---
             // Skip while join Instantiates are incomplete — HitRpc still destroys tracers.
             bool canPredictHits = !blockInstantiates && BulletCosmeticHitQuery.TryRefresh();
+            bool usedGunBurst = TryAdvanceStraightTracersBurst(
+                dt, canPredictHits, hasRef, reference);
 
             for (int i = _tracers.Count - 1; i >= 0; i--)
             {
@@ -328,23 +352,47 @@ namespace TitanOrbit.Game
                         continue;
                     }
                 }
+                else if (usedGunBurst)
+                {
+                    // Straight tracers were advanced + collided in Burst this frame.
+                    displayLogical = t.LogicalPos;
+                    displayVel = t.Velocity;
+                }
                 else
                 {
                     // --- Gun / drone / PD: variable-dt dead reckon (already a straight line) ---
                     float3 prevPos = t.LogicalPos;
                     t.RemainingLifetime -= dt;
-                    float step = math.length(t.Velocity) * dt;
+                    BulletFlight.GetStep(prevPos, t.Velocity, dt, out float3 nextPos, out int substeps);
+                    float step = math.distance(prevPos, nextPos);
                     t.Traveled += step;
-                    t.LogicalPos += t.Velocity * dt;
 
-                    if (canPredictHits &&
-                        TryPredictCosmeticHit(
-                            in t, prevPos, t.LogicalPos,
-                            out float3 hitPoint,
-                            out _,
-                            out _,
-                            out _,
-                            out _))
+                    float3 cursor = prevPos;
+                    bool cosmeticHit = false;
+                    float3 hitPoint = nextPos;
+                    for (int s = 0; s < substeps; s++)
+                    {
+                        float3 sample = BulletFlight.SubstepEnd(prevPos, nextPos, s, substeps);
+                        if (canPredictHits &&
+                            TryPredictCosmeticHit(
+                                in t, cursor, sample,
+                                out hitPoint,
+                                out _,
+                                out _,
+                                out _,
+                                out _))
+                        {
+                            cosmeticHit = true;
+                            break;
+                        }
+
+                        cursor = sample;
+                    }
+
+                    t.LogicalPos = cosmeticHit ? hitPoint : nextPos;
+                    if (!cosmeticHit && ToroidalMapEcs.HasValidMapSize)
+                        t.LogicalPos = ToroidalMapEcs.Wrap(t.LogicalPos);
+                    if (cosmeticHit)
                     {
                         ApplyPredictedHit(i, in t, hitPoint);
                         continue;
@@ -370,9 +418,11 @@ namespace TitanOrbit.Game
                     t.HasPrevTick ? math.saturate(t.TickCarry / RocketPresentationTickDt) : 1f);
                 Vector3 prevDisplay = t.Go.transform.position;
                 if ((displayPos - prevDisplay).sqrMagnitude > 40f * 40f)
-                    ResetTrail(t.Go);
+                    ResetTrail(in t);
 
-                displayPos.y = mountY;
+                displayPos.y = ResolveTracerFlightDisplayY(t.SpawnPos.y, t.Traveled);
+                if (BulletCosmeticHitQuery.TryGetMegaFlightLiftY(displayLogical, out float megaY, out float lift))
+                    displayPos.y = math.lerp(displayPos.y, megaY, lift);
                 t.Go.transform.position = displayPos;
                 if (math.lengthsq(displayVel) > 0.0001f)
                     t.Go.transform.rotation = Quaternion.LookRotation(((Vector3)displayVel).normalized, Vector3.up);
@@ -527,7 +577,7 @@ namespace TitanOrbit.Game
                     TrySteerHomingTracer(ref t, tickDt);
 
                 float3 prevPos = t.LogicalPos;
-                t.LogicalPos += t.Velocity * tickDt;
+                float3 nextPos = prevPos + t.Velocity * tickDt;
                 t.Traveled += math.length(t.Velocity) * tickDt;
                 t.Age += tickDt;
                 t.RemainingLifetime -= tickDt;
@@ -536,18 +586,23 @@ namespace TitanOrbit.Game
 
                 if (canPredictHits &&
                     TryPredictCosmeticHit(
-                        in t, prevPos, t.LogicalPos,
+                        in t, prevPos, nextPos,
                         out hitPoint,
                         out _,
                         out _,
                         out _,
                         out _))
                 {
+                    t.LogicalPos = hitPoint;
                     hit = true;
                     displayLogical = t.LogicalPos;
                     displayVel = t.Velocity;
                     return false;
                 }
+
+                t.LogicalPos = ToroidalMapEcs.HasValidMapSize
+                    ? ToroidalMapEcs.Wrap(nextPos)
+                    : nextPos;
 
                 if (t.RemainingLifetime <= 0f || t.Traveled >= math.max(0.5f, t.MaxDistance))
                 {
@@ -647,15 +702,11 @@ namespace TitanOrbit.Game
                     HasFreshLocalPresentationTracer(req.OwnerNetworkId, req.MountIndex))
                     continue;
 
-                // --- Starblast: reproject local muzzle/velocity at CreateTracer time (best-effort) ---
-                // [TITAN-ORBIT] Never drop a server spawn when reproject fails — client ECS mounts are
-                // often empty under hybrid/TransformQuarantine while the server still fires (energy +
-                // hits work). Falling back to server pose/vel restores visible tracers; reproject
-                // (ECS or GO mounts) still corrects feel when it succeeds.
-                bool localShot = req.IsAnticipation ||
-                                 BulletMuzzlePresentation.IsLocalOwner(req.OwnerNetworkId);
-                if (localShot)
-                    BulletMuzzlePresentation.TryReprojectLocalOwnerSpawn(ref req);
+                // --- Starblast: reproject onto the drawn barrel (local + every remote observer) ---
+                // [TITAN-ORBIT] Never drop a server spawn when reproject fails — fall back to
+                // server logical pose. MEGA shots resolve the MEGA hull and its live barrels.
+                BulletMuzzlePresentation.TryReprojectSpawn(ref req);
+                req.IsDisplaySpace = false;
 
                 CreateTracer(req);
                 spawned++;
@@ -675,11 +726,34 @@ namespace TitanOrbit.Game
                     continue;
                 if (t.MountIndex != mountIndex)
                     continue;
-                if (t.IsDisplaySpace && t.Traveled < 2f)
+                if (t.Traveled < 2f)
                     return true;
             }
 
             return false;
+        }
+
+        /// <summary>
+        /// True when this Sequence-0 flash should Instantiates (first contact / spaced grind).
+        /// Kill booms skip this and always play.
+        /// </summary>
+        bool ShouldPlayRamImpactVfx(float3 hitPos)
+        {
+            float now = Time.unscaledTime;
+            if (now - _lastRamImpactVfxTime >= RamImpactVfxMinInterval)
+                return true;
+
+            float3 delta = hitPos - _lastRamImpactVfxPos;
+            delta.y = 0f;
+            return math.lengthsq(delta) > RamImpactVfxPosSlop * RamImpactVfxPosSlop;
+        }
+
+        /// <summary>Latch the last Sequence-0 flash so nearby grind pulses can skip VFX.</summary>
+        void RememberRamImpactVfx(float3 hitPos)
+        {
+            _lastRamImpactVfxTime = Time.unscaledTime;
+            hitPos.y = 0f;
+            _lastRamImpactVfxPos = hitPos;
         }
 
         /// <summary>
@@ -690,6 +764,7 @@ namespace TitanOrbit.Game
         /// Mining floats always use HitRpc <c>AsteroidHealthAfter</c> (never cosmetic-predicted HP).
         /// Turret HP is written in <see cref="BulletHitRpcClientSystem"/> (not here).
         /// Sequence 0 (ram/grind) plays VFX only — never adopts a tracer.
+        /// Grind pulses reuse Sequence 0; VFX is throttled (kill / first contact always play).
         /// </summary>
         void DrainHits()
         {
@@ -710,13 +785,21 @@ namespace TitanOrbit.Game
                     var ramTeam = (TeamId)hit.OwnerTeam;
                     int ramBank = math.max(0, hit.BankIndex);
                     float ramScale = hit.ScaleMultiplier > 0f ? hit.ScaleMultiplier : 1f;
-                    BulletVisualFactory.SpawnBulletImpactVfx(
-                        hitPos, _bank, ramBank, ramTeam, hit.Damage, ramScale);
+                    bool killBoom = hit.AsteroidHealthAfter >= 0f && hit.AsteroidHealthAfter <= 0.01f;
+                    if (killBoom || ShouldPlayRamImpactVfx(hitPos))
+                    {
+                        float duration = killBoom
+                            ? BulletVisualFactory.DefaultImpactDuration
+                            : RamGrindImpactDuration;
+                        BulletImpactAttach.PlayAtLogicalPoint(
+                            hit.HitPosition, _bank, ramBank, ramTeam, hit.Damage, ramScale, duration);
+                        RememberRamImpactVfx(hitPos);
+                    }
 
                     var ramSynth = new Tracer { OwnerNetworkId = 0, IsAnticipation = false };
-                    TryShowAsteroidFloatForHitRpc(
+                    TryShowHitRpcFloats(
                         hitPos, hit.HitPosition, hit.Damage, ramTeam,
-                        hit.AsteroidHealthAfter, in ramSynth);
+                        hit.AsteroidHealthAfter, hit.PlanetaryDefensePlanetId, in ramSynth);
                     continue;
                 }
 
@@ -736,9 +819,9 @@ namespace TitanOrbit.Game
                         OwnerNetworkId = ownerNetworkId,
                         IsAnticipation = false,
                     };
-                    TryShowAsteroidFloatForHitRpc(
+                    TryShowHitRpcFloats(
                         hitPos, hit.HitPosition, hit.Damage, (TeamId)hit.OwnerTeam,
-                        hit.AsteroidHealthAfter, in synth);
+                        hit.AsteroidHealthAfter, hit.PlanetaryDefensePlanetId, in synth);
                     ClearStaleAnticipationTracers(hit.OwnerTeam);
                     continue;
                 }
@@ -753,8 +836,8 @@ namespace TitanOrbit.Game
                     var team = (TeamId)hit.OwnerTeam;
                     int bankIndex = math.max(0, hit.BankIndex);
                     float scaleMul = hit.ScaleMultiplier > 0f ? hit.ScaleMultiplier : 1f;
-                    BulletVisualFactory.SpawnBulletImpactVfx(
-                        hitPos, _bank, bankIndex, team, hit.Damage, scaleMul);
+                    BulletImpactAttach.PlayAtLogicalPoint(
+                        hit.HitPosition, _bank, bankIndex, team, hit.Damage, scaleMul);
                 }
 
                 // --- Preferred: exact Sequence from server ---
@@ -763,9 +846,9 @@ namespace TitanOrbit.Game
                 {
                     var tracer = _tracers[idx];
                     // Always show float on HitRpc — even when VFX was client-predicted.
-                    TryShowAsteroidFloatForHitRpc(
+                    TryShowHitRpcFloats(
                         hitPos, hit.HitPosition, hit.Damage, (TeamId)hit.OwnerTeam,
-                        hit.AsteroidHealthAfter, in tracer);
+                        hit.AsteroidHealthAfter, hit.PlanetaryDefensePlanetId, in tracer);
 
                     DestroyTracerGo(tracer);
                     RemoveAtSwap(idx);
@@ -776,15 +859,16 @@ namespace TitanOrbit.Game
                     continue;
                 }
 
-                // --- Fallback: nearest same-team tracer near the impact (orphan anticipation) ---
-                // [TITAN-ORBIT] Adopt can miss when OwnerNetworkId was 0 on enqueue; HitRpc still
-                // has a Sequence the client never bound — without this, the cosmetic tunnels.
-                if (TryFindNearestTracerIndex(hitPos, hit.OwnerTeam, maxDistance: 12f, out int nearIdx))
+                // --- Fallback: owner+mount, then nearest same-team tracer (orphan anticipation) ---
+                // [TITAN-ORBIT] A 12u window missed MEGA range and Local Host double-hit used to
+                // destroy a sibling volley tracer. Prefer the barrel that fired.
+                if (TryFindOwnerMountTracerIndex(hit.OwnerNetworkId, hit.MountIndex, hit.OwnerTeam, out int nearIdx)
+                    || TryFindNearestTracerIndex(hitPos, hit.OwnerTeam, maxDistance: 48f, out nearIdx))
                 {
                     var nearTracer = _tracers[nearIdx];
-                    TryShowAsteroidFloatForHitRpc(
+                    TryShowHitRpcFloats(
                         hitPos, hit.HitPosition, hit.Damage, (TeamId)hit.OwnerTeam,
-                        hit.AsteroidHealthAfter, in nearTracer);
+                        hit.AsteroidHealthAfter, hit.PlanetaryDefensePlanetId, in nearTracer);
 
                     DestroyTracerGo(nearTracer);
                     RemoveAtSwap(nearIdx);
@@ -797,44 +881,50 @@ namespace TitanOrbit.Game
                         OwnerNetworkId = recentOwnerNetworkId,
                         IsAnticipation = true,
                     };
-                    TryShowAsteroidFloatForHitRpc(
+                    TryShowHitRpcFloats(
                         hitPos, hit.HitPosition, hit.Damage, (TeamId)hit.OwnerTeam,
-                        hit.AsteroidHealthAfter, in synth);
+                        hit.AsteroidHealthAfter, hit.PlanetaryDefensePlanetId, in synth);
                     ClearStaleAnticipationTracers(hit.OwnerTeam);
                 }
                 else
                 {
                     // No tracer to destroy — still apply asteroid teardown from HitRpc.
                     var synth = new Tracer { OwnerNetworkId = 0, IsAnticipation = false };
-                    TryShowAsteroidFloatForHitRpc(
+                    TryShowHitRpcFloats(
                         hitPos, hit.HitPosition, hit.Damage, (TeamId)hit.OwnerTeam,
-                        hit.AsteroidHealthAfter, in synth);
+                        hit.AsteroidHealthAfter, hit.PlanetaryDefensePlanetId, in synth);
                 }
             }
         }
 
         /// <summary>
-        /// HitRpc path: local asteroid impact → +Damage and server-authored HP Left.
+        /// HitRpc path: asteroid mining floats, or ship-hull damage floats.
         /// <para>
         /// [TITAN-ORBIT] <paramref name="asteroidHealthAfter"/> comes from the server on
         /// <see cref="BulletHitRpc"/> — do not subtract from lagging ghost Health. Seed-hydrate
         /// asteroids are not ghosts: <see cref="BulletHitRpcClientSystem"/> writes Health /
         /// IsDestroyed; this path shows floats (local shots) and hides/tears down the hybrid GO
         /// on kill. Do not DestroyEntity here — sim-group soft-destroy owns ECS teardown.
-        /// Non-asteroid hits pass &lt; 0 and skip mining floats entirely.
+        /// Ship hits pass &lt; 0 and <paramref name="planetaryDefensePlanetId"/> 0 — we
+        /// surface-fit the hull and show accumulated damage on that ship.
         /// </para>
         /// </summary>
-        static void TryShowAsteroidFloatForHitRpc(
+        static void TryShowHitRpcFloats(
             Vector3 hitDisplayPos,
             float3 hitLogicalPos,
             float damage,
             TeamId ownerTeam,
             float asteroidHealthAfter,
+            int planetaryDefensePlanetId,
             in Tracer tracer)
         {
-            // Not an asteroid impact — do not attribute mining floats to a nearby rock.
+            // Planetary-defense pad HP is applied in BulletHitRpcClientSystem — not a ship hull.
             if (asteroidHealthAfter < 0f)
+            {
+                if (planetaryDefensePlanetId <= 0)
+                    TryShowShipFloatForHitRpc(hitDisplayPos, damage, ownerTeam);
                 return;
+            }
 
             bool localShot = tracer.IsAnticipation ||
                              BulletMuzzlePresentation.IsLocalOwner(tracer.OwnerNetworkId);
@@ -851,7 +941,8 @@ namespace TitanOrbit.Game
                     asteroidEntity,
                     damage,
                     ownerTeam,
-                    authoritativeRemainingHealth: asteroidHealthAfter);
+                    authoritativeRemainingHealth: asteroidHealthAfter,
+                    impactWorldPosition: hitDisplayPos);
             }
 
             // --- Kill: do not hide from HitRpc ---
@@ -860,6 +951,23 @@ namespace TitanOrbit.Game
             // leftover invisible hull). Authoritative teardown is AsteroidDestroyedRpc only.
             if (asteroidHealthAfter <= 0.01f)
                 return;
+        }
+
+        /// <summary>
+        /// Ship-hull damage float from HitRpc. Not gated on local-shot — incoming turret
+        /// fire must show on the victim, including the local player.
+        /// </summary>
+        static void TryShowShipFloatForHitRpc(
+            Vector3 hitDisplayPos,
+            float damage,
+            TeamId ownerTeam)
+        {
+            if (damage <= 0.01f)
+                return;
+            if (!BulletCosmeticHitQuery.TryFindShipAtImpact(hitDisplayPos, out Entity shipEntity))
+                return;
+
+            EcsFloatingCountPresenter.TryNotifyShipBulletHit(shipEntity, damage, ownerTeam);
         }
 
         /// <summary>
@@ -986,6 +1094,34 @@ namespace TitanOrbit.Game
         /// Finds the tracer GameObject closest to a display-space impact for the firing team.
         /// Used when HitRpc Sequence was never bound (orphan anticipation).
         /// </summary>
+        /// <summary>
+        /// Orphan anticipation for this shooter + barrel. Prefer this over nearest-point fallback
+        /// so a MEGA volley sibling is not destroyed by the wrong HitRpc.
+        /// </summary>
+        bool TryFindOwnerMountTracerIndex(int ownerNetworkId, int mountIndex, byte ownerTeam, out int index)
+        {
+            index = -1;
+            if (ownerNetworkId <= 0 || mountIndex < 0)
+                return false;
+
+            float bestTravel = float.MaxValue;
+            for (int i = 0; i < _tracers.Count; i++)
+            {
+                var t = _tracers[i];
+                if (t.OwnerTeam != ownerTeam || t.Go == null)
+                    continue;
+                if (t.OwnerNetworkId != ownerNetworkId || t.MountIndex != mountIndex)
+                    continue;
+                if (t.Traveled < bestTravel)
+                {
+                    bestTravel = t.Traveled;
+                    index = i;
+                }
+            }
+
+            return index >= 0;
+        }
+
         bool TryFindNearestTracerIndex(Vector3 hitDisplayPos, byte ownerTeam, float maxDistance, out int index)
         {
             index = -1;
@@ -1022,17 +1158,19 @@ namespace TitanOrbit.Game
             float mountY = req.SpawnPosition.y;
             if (!req.IsDisplaySpace && ToroidalDisplay.TryGetReferencePosition(out var reference))
                 spawnDisplay = ToroidalDisplay.ToDisplayPosition(req.SpawnPosition, reference);
-            // Keep weapon-mount height (display unwrap is XZ-only).
+            // Muzzle flash stays on the drawn barrel. Tracer Y drops to the play plane in Advance
+            // (MEGA barrels sit high — keeping that Y for the whole flight pierced 3D bodies).
             spawnDisplay.y = mountY;
 
             // --- Muzzle flash at fire origin ---
+            float cameraScale = ResolveMegaCameraVisualScale();
             BulletVisualFactory.PlayMuzzleVfx(
                 spawnDisplay,
                 req.Velocity,
                 _bank,
                 bankIndex,
                 team,
-                scaleMul,
+                scaleMul * cameraScale,
                 bulletSpeed);
             AudioManager.Instance?.PlayWeaponShootSound(
                 BulletVisualFactory.GetProjectileSoundPitchBySpeed(bulletSpeed));
@@ -1062,7 +1200,8 @@ namespace TitanOrbit.Game
             GameObject visual = go.transform.childCount > 0
                 ? go.transform.GetChild(0).gameObject
                 : go;
-            float visualScale = BulletVisualFactory.GetBulletVisualScale(_bank, scaleMul, bankIndex);
+            float visualScale = BulletVisualFactory.GetBulletVisualScale(_bank, scaleMul, bankIndex)
+                                * cameraScale;
             BulletVisualFactory.ApplyColorToVisual(visual, BulletVisualFactory.GetTeamBulletColor(team));
             VfxUrpCompat.ApplyImpactVisualScale(go, visualScale);
             VfxUrpCompat.PrepareVfxInstance(go);
@@ -1075,7 +1214,14 @@ namespace TitanOrbit.Game
                 && profile != null
                 && profile.TryGetStretchLengthFactors(out float startFactor, out float endFactor))
             {
-                // Root already carries drone/ship shot scale — do not shrink length again.
+                // Camera scale is on the tracer root (thickness). Divide length so a 4× MEGA
+                // lens does not push the slug tip through the target before XZ collision.
+                if (cameraScale > 1.01f)
+                {
+                    startFactor /= cameraScale;
+                    endFactor /= cameraScale;
+                }
+
                 if (stretch == null)
                 {
                     if (ClientBulletStretchVisual.TryAttach(go.transform, visual, startFactor, endFactor))
@@ -1111,6 +1257,7 @@ namespace TitanOrbit.Game
                 TurnSpeedDeg = req.TurnSpeedDeg,
                 AcquireRange = req.AcquireRange,
                 Stretch = stretch,
+                Trail = go.GetComponentInChildren<TrailRenderer>(true),
             };
 
             // Seed observer-hull samples so the first frame can already ride the camera
@@ -1142,6 +1289,37 @@ namespace TitanOrbit.Game
         /// </summary>
         /// <param name="lifetimeSeconds">Authoritative Lifetime from the spawn request / RPC.</param>
         /// <returns>Seconds for RemainingLifetime, or <see cref="float.PositiveInfinity"/> when unused.</returns>
+        /// <summary>
+        /// Display Y for a flying tracer. Regular muzzles already sit on the play plane.
+        /// MEGA barrels are high on a tall hull — if we keep that Y (or lift to hull-top)
+        /// the slug visually tunnels 3D rocks / moons / ships while XZ collision and
+        /// attached impact VFX stay on the surface. Drop onto Y=0 after leaving the barrel.
+        /// </summary>
+        static float ResolveTracerFlightDisplayY(float muzzleY, float traveled)
+        {
+            if (math.abs(muzzleY) < 0.75f)
+                return muzzleY;
+
+            const float dropDistance = 3.5f;
+            float t = math.saturate(traveled / dropDistance);
+            t = t * t * (3f - 2f * t);
+            return math.lerp(muzzleY, 0f, t);
+        }
+
+        /// <summary>
+        /// Grow tracers with MEGA camera height so they stay readable when the lens pulls back.
+        /// Regular L7 height (~43) stays near 1×; taller MEGA framing scales up to 4×.
+        /// </summary>
+        static float ResolveMegaCameraVisualScale()
+        {
+            var follow = CameraFollowEcs.Instance;
+            if (follow == null || follow.MegaHullTopDisplayY <= 0.01f)
+                return 1f;
+            float height = follow.CurrentHeight;
+            const float referenceHeight = 25f;
+            return math.clamp(height / referenceHeight, 1f, 4f);
+        }
+
         static float ResolveTracerLifetime(float lifetimeSeconds)
         {
             // [TITAN-ORBIT] Mirror BulletSimulationSystem: Lifetime <= 0 skips the age timer.
@@ -1190,6 +1368,107 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
+        /// Burst-advances every straight tracer (mega volleys). Homing stays in LateUpdate.
+        /// High-to-low apply so <see cref="RemoveAtSwap"/> keeps remaining indices stable.
+        /// </summary>
+        bool TryAdvanceStraightTracersBurst(float dt, bool canPredictHits, bool hasRef, Vector3 reference)
+        {
+            _ = hasRef;
+            _ = reference;
+            if (!canPredictHits)
+                return false;
+
+            int gunN = 0;
+            for (int i = 0; i < _tracers.Count; i++)
+            {
+                var t = _tracers[i];
+                if (t.Go != null && t.Homing == 0)
+                    gunN++;
+            }
+
+            if (gunN <= 0)
+                return false;
+
+            var requests = new NativeArray<CosmeticSweepRequest>(gunN, Allocator.TempJob);
+            var results = new NativeArray<CosmeticSweepResult>(gunN, Allocator.TempJob);
+            var tracerIndex = new NativeArray<int>(gunN, Allocator.TempJob);
+            try
+            {
+                int w = 0;
+                for (int i = 0; i < _tracers.Count; i++)
+                {
+                    var t = _tracers[i];
+                    if (t.Go == null || t.Homing != 0)
+                        continue;
+                    tracerIndex[w] = i;
+                    requests[w] = new CosmeticSweepRequest
+                    {
+                        Position = t.LogicalPos,
+                        Velocity = t.Velocity,
+                        Dt = dt,
+                        Traveled = t.Traveled,
+                        RemainingLifetime = t.RemainingLifetime,
+                        MaxDistance = t.MaxDistance,
+                        ScaleMultiplier = t.ScaleMultiplier > 0f ? t.ScaleMultiplier : 1f,
+                        OwnerNetworkId = t.OwnerNetworkId,
+                        OwnerTeam = t.OwnerTeam,
+                        DamageFilter = t.DamageFilter,
+                        HealFriendly = BulletBankCombatLogic.HasHealFriendly(t.BankIndex) ? (byte)1 : (byte)0,
+                    };
+                    w++;
+                }
+
+                if (!BulletCosmeticHitQuery.TryAdvanceStraightTracers(requests, results))
+                    return false;
+
+                for (int r = gunN - 1; r >= 0; r--)
+                {
+                    int i = tracerIndex[r];
+                    if (i < 0 || i >= _tracers.Count)
+                        continue;
+                    var t = _tracers[i];
+                    if (t.Go == null)
+                    {
+                        RemoveAtSwap(i);
+                        continue;
+                    }
+
+                    var outcome = results[r];
+                    if (outcome.Outcome == CosmeticSweepResult.Hit)
+                    {
+                        ApplyPredictedHit(i, in t, outcome.HitPoint);
+                        continue;
+                    }
+
+                    if (outcome.Outcome == CosmeticSweepResult.Expire)
+                    {
+                        DestroyTracerGo(t);
+                        RemoveAtSwap(i);
+                        continue;
+                    }
+
+                    t.LogicalPos = ToroidalMapEcs.HasValidMapSize
+                        ? ToroidalMapEcs.Wrap(outcome.NewPos)
+                        : outcome.NewPos;
+                    t.Traveled = outcome.NewTraveled;
+                    t.RemainingLifetime = outcome.NewLifetime;
+                    _tracers[i] = t;
+                }
+
+                return true;
+            }
+            finally
+            {
+                if (requests.IsCreated)
+                    requests.Dispose();
+                if (results.IsCreated)
+                    results.Dispose();
+                if (tracerIndex.IsCreated)
+                    tracerIndex.Dispose();
+            }
+        }
+
+        /// <summary>
         /// Swept cosmetic collide for one tracer step using <see cref="BulletCosmeticHitQuery"/>.
         /// Passes <see cref="Tracer.ScaleMultiplier"/> so turret spheres match server
         /// <c>ExpandRadiusForBulletScale</c> (heavy bolts connect like hull hits).
@@ -1211,14 +1490,16 @@ namespace TitanOrbit.Game
                 to,
                 t.OwnerTeam,
                 t.OwnerNetworkId,
-                t.IsDisplaySpace,
+                isDisplaySpace: false,
                 out hitPoint,
                 out hitKind,
                 out hitEntity,
                 out hitPlanetId,
                 out hitSlotIndex,
                 t.DamageFilter,
-                t.ScaleMultiplier);
+                t.ScaleMultiplier,
+                t.BankIndex,
+                allowSelfHarm: TitanOrbitDebugFlags.IsHomingSelfHarmArmed(t.Homing, t.Age));
         }
 
         /// <summary>
@@ -1230,17 +1511,33 @@ namespace TitanOrbit.Game
         {
             EnsureBank();
 
-            // --- Display-space impact position for the VFX prefab ---
-            Vector3 hitDisplay = hitPoint;
-            if (!t.IsDisplaySpace && ToroidalDisplay.TryGetReferencePosition(out var reference))
-                hitDisplay = ToroidalDisplay.ToDisplayPosition(hitPoint, reference);
-            hitDisplay.y = 0f;
-
             var team = (TeamId)t.OwnerTeam;
             int bankIndex = math.max(0, t.BankIndex);
             float scaleMul = t.ScaleMultiplier > 0f ? t.ScaleMultiplier : 1f;
+
+            // --- Surface + follow parent (same tile as the drawn body) ---
+            Transform attachParent = null;
+            Vector3 hitDisplay;
+            if (BulletCosmeticHitQuery.TryFindNearestObstacle(hitPoint, out var obstacle) &&
+                BulletImpactAttach.TryResolve(in obstacle, hitPoint, out attachParent, out hitDisplay))
+            {
+                // resolved
+            }
+            else
+            {
+                hitDisplay = hitPoint;
+                if (!t.IsDisplaySpace && ToroidalDisplay.TryGetReferencePosition(out var reference))
+                    hitDisplay = ToroidalDisplay.ToDisplayPosition(hitPoint, reference);
+            }
+
+            // Collapse stretch and snap the slug onto the flash so the tip cannot overshoot.
+            if (t.Stretch != null)
+                t.Stretch.Collapse();
+            if (t.Go != null)
+                t.Go.transform.position = hitDisplay;
+
             BulletVisualFactory.SpawnBulletImpactVfx(
-                hitDisplay, _bank, bankIndex, team, t.Damage, scaleMul);
+                hitDisplay, _bank, bankIndex, team, t.Damage, scaleMul, attachParent);
 
             // --- Remember for HitRpc / SpawnRpc reconcile ---
             // Mining floats and turret HP wait for HitRpc (authoritative remaining Health).
@@ -1382,15 +1679,10 @@ namespace TitanOrbit.Game
             }
         }
 
-        static void ResetTrail(GameObject go)
+        static void ResetTrail(in Tracer t)
         {
-            if (go == null) return;
-            var trails = go.GetComponentsInChildren<TrailRenderer>(true);
-            for (int i = 0; i < trails.Length; i++)
-            {
-                if (trails[i] != null)
-                    trails[i].Clear();
-            }
+            if (t.Trail != null)
+                t.Trail.Clear();
         }
 
         /// <summary>

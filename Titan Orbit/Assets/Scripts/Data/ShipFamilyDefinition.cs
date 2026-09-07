@@ -70,8 +70,12 @@ namespace TitanOrbit.Data
     public class ShipFamilyDefinition : ScriptableObject
     {
         static readonly Regex CloneSuffixRegex = new Regex(@"\(Clone\)\s*$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
-        static readonly Regex PropulsionIdUnderscoreFormRegex = new Regex(@"^(Engine|Thruster)_(\d+)$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
-        static readonly Regex PropulsionIdCompactFormRegex = new Regex(@"^(Engine|Thruster)(\d+)$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+        static readonly Regex PropulsionIdUnderscoreFormRegex = new Regex(
+            @"^(?:(?<family>[A-Za-z]+)_)?(?<kind>Engine|Thruster)_(?<num>\d+)$",
+            RegexOptions.Compiled | RegexOptions.IgnoreCase);
+        static readonly Regex PropulsionIdCompactFormRegex = new Regex(
+            @"^(?:(?<family>[A-Za-z]+)_)?(?<kind>Engine|Thruster)(?<num>\d+)$",
+            RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
         public string familyId;
 
@@ -103,7 +107,10 @@ namespace TitanOrbit.Data
         public ShipComponentAbilityStats defaultFallbackStats;
 
         [Header("Family Special Bonuses")]
-        [Tooltip("Multipliers applied after component sum. Identity = all 1s. This is how families differ from shared part profiles.")]
+        [Tooltip(
+            "Multipliers applied after component sum. Identity = all 1s. Values may be below 1 (trade-offs). " +
+            "cameraHeightMul is presentation-only (CameraFollowEcs zoom). " +
+            "This is how families differ from shared part profiles.")]
         public ShipFamilySpecialBonuses specialBonuses = ShipFamilySpecialBonuses.Identity;
 
         [Header("Bullets")]
@@ -163,8 +170,8 @@ namespace TitanOrbit.Data
         [Min(1f)]
         public float menuPreviewBoundsPadding = 1.15f;
 
-        [Tooltip("Solid clear color behind menu preview renders (alpha usually 0 for transparent PNGs).")]
-        public Color menuPreviewBackgroundColor = new Color(0f, 0f, 0f, 0f);
+        [Tooltip("Clear color behind top-down menu preview PNGs. Theatrical renders always use opaque black (same as MEGA hull thumbs).")]
+        public Color menuPreviewBackgroundColor = Color.black;
 
         [Header("Components")]
         public List<ShipFamilyComponentEntry> components = new List<ShipFamilyComponentEntry>();
@@ -312,15 +319,16 @@ namespace TitanOrbit.Data
         {
             if (upgradeCardDeck != null && upgradeCardDeck.cards != null && upgradeCardDeck.cards.Count > 0)
                 return upgradeCardDeck.cards;
-            return _runtimeProceduralCards ??= CardDeckRuntimeDefaults.CreateProceduralDeck(familyId);
+            return _runtimeProceduralCards ??= CardDeckRuntimeDefaults.CreateUniqueDeck(familyId, specialBonuses);
         }
 
         /// <summary>Clears the cached component-id → stats dictionary (editor OnValidate calls this).</summary>
         public void InvalidateComponentStatsLookup() => _lookupBuilt = false;
 
         /// <summary>
-        /// Looks up authored stats for a prefab child name such as <c>Weapon_1</c> or <c>Engine_2</c>.
-        /// Tries raw id, normalized id, and alternate propulsion naming (<c>Engine1</c> ↔ <c>Engine_1</c>).
+        /// Looks up authored stats for a prefab child name such as <c>AstroEagle_Engine_2</c>
+        /// or the short suffix <c>Engine_2</c>. Tries raw id, normalized id, family-prefixed /
+        /// suffix forms, and alternate propulsion naming (<c>Engine1</c> ↔ <c>Engine_1</c>).
         /// </summary>
         public bool TryGetStatsForComponent(string componentId, out ShipComponentAbilityStats stats)
         {
@@ -329,14 +337,32 @@ namespace TitanOrbit.Data
             if (string.IsNullOrWhiteSpace(componentId))
                 return false;
 
-            string raw = componentId.Trim();
-            if (_lookup.TryGetValue(raw, out stats))
+            if (TryLookupStats(componentId, out stats))
                 return true;
-            string canonical = NormalizeComponentId(raw);
-            if (!string.IsNullOrEmpty(canonical) && _lookup.TryGetValue(canonical, out stats))
+            if (TryLookupStats(NormalizeComponentId(componentId), out stats))
                 return true;
-            string alternate = GetAlternateComponentIdForm(raw);
-            return !string.IsNullOrEmpty(alternate) && _lookup.TryGetValue(alternate, out stats);
+            if (TryLookupStats(GetAlternateComponentIdForm(componentId), out stats))
+                return true;
+
+            if (string.IsNullOrWhiteSpace(familyId))
+                return false;
+
+            string full = ComposeFamilyPrefixedComponentId(familyId, componentId);
+            if (TryLookupStats(full, out stats))
+                return true;
+            if (TryLookupStats(GetAlternateComponentIdForm(full), out stats))
+                return true;
+
+            string suffix = GetComponentIdSuffix(familyId, componentId);
+            if (TryLookupStats(suffix, out stats))
+                return true;
+            return TryLookupStats(GetAlternateComponentIdForm(suffix), out stats);
+        }
+
+        bool TryLookupStats(string key, out ShipComponentAbilityStats stats)
+        {
+            stats = default;
+            return !string.IsNullOrWhiteSpace(key) && _lookup.TryGetValue(key.Trim(), out stats);
         }
 
         /// <summary>Full component row (stats, preview sprite, categories) for a component id, or false.</summary>
@@ -346,19 +372,39 @@ namespace TitanOrbit.Data
             if (components == null || string.IsNullOrWhiteSpace(componentId))
                 return false;
 
+            if (TryMatchComponentEntry(componentId, out entry))
+                return true;
+
+            if (string.IsNullOrWhiteSpace(familyId))
+                return false;
+
+            if (TryMatchComponentEntry(ComposeFamilyPrefixedComponentId(familyId, componentId), out entry))
+                return true;
+            return TryMatchComponentEntry(GetComponentIdSuffix(familyId, componentId), out entry);
+        }
+
+        bool TryMatchComponentEntry(string componentId, out ShipFamilyComponentEntry entry)
+        {
+            entry = null;
+            if (string.IsNullOrWhiteSpace(componentId))
+                return false;
+
             string id = componentId.Trim();
             string canonical = NormalizeComponentId(id);
+            string alternate = GetAlternateComponentIdForm(id);
             for (int i = 0; i < components.Count; i++)
             {
                 if (components[i] == null) continue;
                 string test = components[i].componentId?.Trim();
-                if (string.Equals(test, id, StringComparison.OrdinalIgnoreCase))
-                {
-                    entry = components[i];
-                    return true;
-                }
-                if (!string.IsNullOrEmpty(canonical) &&
-                    string.Equals(NormalizeComponentId(test), canonical, StringComparison.OrdinalIgnoreCase))
+                if (string.IsNullOrEmpty(test))
+                    continue;
+                if (string.Equals(test, id, StringComparison.OrdinalIgnoreCase)
+                    || (!string.IsNullOrEmpty(canonical)
+                        && string.Equals(NormalizeComponentId(test), canonical, StringComparison.OrdinalIgnoreCase))
+                    || (!string.IsNullOrEmpty(alternate)
+                        && string.Equals(NormalizeComponentId(test), alternate, StringComparison.OrdinalIgnoreCase))
+                    || (!string.IsNullOrEmpty(alternate)
+                        && string.Equals(GetAlternateComponentIdForm(test), alternate, StringComparison.OrdinalIgnoreCase)))
                 {
                     entry = components[i];
                     return true;
@@ -434,7 +480,8 @@ namespace TitanOrbit.Data
         }
 
         /// <summary>
-        /// Strips Unity clone suffixes and mirrored-part markers so prefab child names match authored ids.
+        /// Strips Unity clone suffixes, mirrored-part markers, and left/right suffixes so prefab
+        /// child names match authored ids (<c>AstroEagle_Wing_1_L</c> → <c>AstroEagle_Wing_1</c>).
         /// </summary>
         public static string NormalizeComponentId(string rawId)
         {
@@ -445,11 +492,47 @@ namespace TitanOrbit.Data
             s = CloneSuffixRegex.Replace(s, string.Empty);
             if (s.EndsWith("_Mirrored", StringComparison.OrdinalIgnoreCase))
                 s = s.Substring(0, s.Length - "_Mirrored".Length);
+            if (s.EndsWith("_L", StringComparison.OrdinalIgnoreCase)
+                || s.EndsWith("_R", StringComparison.OrdinalIgnoreCase))
+                s = s.Substring(0, s.Length - 2);
             return s.Trim();
         }
 
         /// <summary>
-        /// Converts between <c>Engine_1</c> and <c>Engine1</c> forms so lookups survive inconsistent naming.
+        /// Builds <c>FamilyId_Part</c> when the part is not already family-prefixed.
+        /// </summary>
+        public static string ComposeFamilyPrefixedComponentId(string familyId, string partOrFullId)
+        {
+            string part = NormalizeComponentId(partOrFullId);
+            if (string.IsNullOrEmpty(part))
+                return string.Empty;
+            if (string.IsNullOrWhiteSpace(familyId))
+                return part;
+
+            string fid = familyId.Trim();
+            if (part.StartsWith(fid + "_", StringComparison.OrdinalIgnoreCase))
+                return part;
+            return fid + "_" + part;
+        }
+
+        /// <summary>
+        /// Returns the part suffix after <c>FamilyId_</c> when present; otherwise the normalized id.
+        /// </summary>
+        public static string GetComponentIdSuffix(string familyId, string componentId)
+        {
+            string id = NormalizeComponentId(componentId);
+            if (string.IsNullOrEmpty(id) || string.IsNullOrWhiteSpace(familyId))
+                return id;
+
+            string fid = familyId.Trim();
+            if (id.StartsWith(fid + "_", StringComparison.OrdinalIgnoreCase))
+                return id.Substring(fid.Length + 1);
+            return id;
+        }
+
+        /// <summary>
+        /// Converts between <c>Engine_1</c> and <c>Engine1</c> forms (including
+        /// <c>AstroEagle_Engine_1</c> ↔ <c>AstroEagle_Engine1</c>) so lookups survive inconsistent naming.
         /// </summary>
         public static string GetAlternateComponentIdForm(string componentId)
         {
@@ -459,11 +542,21 @@ namespace TitanOrbit.Data
             string s = NormalizeComponentId(componentId);
             Match underscored = PropulsionIdUnderscoreFormRegex.Match(s);
             if (underscored.Success)
-                return underscored.Groups[1].Value + underscored.Groups[2].Value;
+            {
+                string family = underscored.Groups["family"].Value;
+                string kind = underscored.Groups["kind"].Value;
+                string num = underscored.Groups["num"].Value;
+                return string.IsNullOrEmpty(family) ? kind + num : family + "_" + kind + num;
+            }
 
             Match compact = PropulsionIdCompactFormRegex.Match(s);
             if (compact.Success)
-                return compact.Groups[1].Value + "_" + compact.Groups[2].Value;
+            {
+                string family = compact.Groups["family"].Value;
+                string kind = compact.Groups["kind"].Value;
+                string num = compact.Groups["num"].Value;
+                return string.IsNullOrEmpty(family) ? kind + "_" + num : family + "_" + kind + "_" + num;
+            }
 
             return string.Empty;
         }
@@ -482,6 +575,15 @@ namespace TitanOrbit.Data
                     RegisterLookupKey(raw, entry.stats);
                     RegisterLookupKey(NormalizeComponentId(raw), entry.stats);
                     RegisterLookupKey(GetAlternateComponentIdForm(raw), entry.stats);
+                    if (!string.IsNullOrWhiteSpace(familyId))
+                    {
+                        string full = ComposeFamilyPrefixedComponentId(familyId, raw);
+                        RegisterLookupKey(full, entry.stats);
+                        RegisterLookupKey(GetAlternateComponentIdForm(full), entry.stats);
+                        string suffix = GetComponentIdSuffix(familyId, raw);
+                        RegisterLookupKey(suffix, entry.stats);
+                        RegisterLookupKey(GetAlternateComponentIdForm(suffix), entry.stats);
+                    }
                 }
             }
 
@@ -564,9 +666,23 @@ namespace TitanOrbit.Data
             }
 
             EnforceComponentStatCategories();
+            PrepopulateBlankUpgradeTreeShipNames();
             InvalidateComponentStatsLookup();
             InvalidateGlobalMaxUpgradeTreeTurnSpeedCache();
             _runtimeProceduralCards = null;
+        }
+
+        /// <summary>
+        /// Fills empty <see cref="ShipFamilyChassisTierEntry.upgradeTreeShipName"/> fields
+        /// from the chassis prefab (SpaceExcalibur_7 → Space Excalibur 7). Authored names stay.
+        /// </summary>
+        void PrepopulateBlankUpgradeTreeShipNames()
+        {
+            if (upgradeTree == null)
+                return;
+
+            for (int i = 0; i < upgradeTree.Count; i++)
+                upgradeTree[i]?.TryPrepopulateUpgradeTreeShipName();
         }
 #endif
     }
@@ -576,6 +692,12 @@ namespace TitanOrbit.Data
     public class ShipFamilyChassisTierEntry
     {
         public string chassisId;
+
+        /// <summary>
+        /// Orbit Menu ship name. Leave blank and the prefab name is used:
+        /// SpaceExcalibur_7 → Space Excalibur 7 (CamelCase, digits, underscores).
+        /// </summary>
+        [Tooltip("Orbit Menu ship name. Blank fills from the prefab (SpaceExcalibur_7 → Space Excalibur 7).")]
         public string upgradeTreeShipName;
         public GameObject prefab;
         public Sprite menuPreviewSprite;
@@ -587,7 +709,8 @@ namespace TitanOrbit.Data
         public float powerScoreAtMaxLevel;
         /// <summary>
         /// Level-1 Extra Level sum (abilities = 0). Used for gem cost, tree sort, and
-        /// runtime chassis bases. Do not put ship-level PerExtra growth here — that
+        /// runtime chassis bases. <c>sustainedDps</c> is all-gun DPS; sort uses that
+        /// after energy-sustain. Do not put ship-level PerExtra growth here — that
         /// double-applies when the live ship is evaluated.
         /// </summary>
         public ShipFamilyPowerScoreBreakdown powerScoreBreakdown;
@@ -600,6 +723,45 @@ namespace TitanOrbit.Data
         public ShipFamilyPowerScoreBreakdown powerScoreBreakdownAtShipLevel;
         public float componentMass;
         public bool lockedInUpgradeTree;
+
+        /// <summary>
+        /// Authored Orbit Menu name, or a spaced prefab name when that field is blank.
+        /// SpaceExcalibur_7 becomes Space Excalibur 7. Used by the upgrade tree, moon dock,
+        /// and power-bar RANK 1 tips so empty designer fields still show a real hull name.
+        /// </summary>
+        public string ResolveUpgradeTreeShipName()
+        {
+            if (!string.IsNullOrWhiteSpace(upgradeTreeShipName))
+                return upgradeTreeShipName.Trim();
+
+            if (prefab != null && !string.IsNullOrWhiteSpace(prefab.name))
+                return DisplayNameFormatting.FormatPrefabShipName(prefab.name);
+
+            if (!string.IsNullOrWhiteSpace(chassisId))
+                return DisplayNameFormatting.FormatPrefabShipName(chassisId);
+
+            return string.Empty;
+        }
+
+        /// <summary>
+        /// Writes the formatted prefab name into <see cref="upgradeTreeShipName"/> when that
+        /// field is still blank. Editor OnValidate and the family inspector call this so
+        /// designers see Space Excalibur 7 instead of an empty box. Returns true when it wrote.
+        /// </summary>
+        public bool TryPrepopulateUpgradeTreeShipName()
+        {
+            if (!string.IsNullOrWhiteSpace(upgradeTreeShipName))
+                return false;
+            if (prefab == null || string.IsNullOrWhiteSpace(prefab.name))
+                return false;
+
+            string generated = DisplayNameFormatting.FormatPrefabShipName(prefab.name);
+            if (string.IsNullOrWhiteSpace(generated))
+                return false;
+
+            upgradeTreeShipName = generated;
+            return true;
+        }
 
         /// <summary>Top-down menu sprite, preferring a team tint when available.</summary>
         public Sprite GetMenuPreviewSprite(TeamManager.Team team = TeamManager.Team.None)

@@ -74,6 +74,7 @@ namespace TitanOrbit.ECS
                     seeded != Entity.Null &&
                     state.EntityManager.Exists(seeded) &&
                     state.EntityManager.HasComponent<ShipTag>(seeded) &&
+                    LocalShipEntitySeed.EntityMatchesLocalOwner(state.EntityManager, seeded) &&
                     !state.EntityManager.HasComponent<LocalPlayerShipTag>(seeded))
                 {
                     ecb.AddComponent<LocalPlayerShipTag>(seeded);
@@ -87,13 +88,19 @@ namespace TitanOrbit.ECS
             int localNetworkId = GetLocalNetworkId(ref state);
 
             // --- Path 1: CommandTarget on the in-game connection ---
-            // [NETCODE] CommandTarget on the connection points at the controlled ship ghost.
+            // After settle, require GhostOwner.NetworkId so a stale CommandTarget cannot
+            // tag Player 2. Path 2 strips extras when owner does not match.
             foreach (var cmd in SystemAPI.Query<RefRO<CommandTarget>>().WithAll<NetworkStreamInGame>())
             {
                 var target = cmd.ValueRO.targetEntity;
                 if (target == Entity.Null || !state.EntityManager.Exists(target))
                     continue;
                 if (!state.EntityManager.HasComponent<ShipTag>(target))
+                    continue;
+                // After settle: only the owned hull. Owner 0 / missing GhostOwner is P2 arriving late.
+                if (localNetworkId <= 0 ||
+                    !state.EntityManager.HasComponent<GhostOwner>(target) ||
+                    state.EntityManager.GetComponentData<GhostOwner>(target).NetworkId != localNetworkId)
                     continue;
                 if (!state.EntityManager.HasComponent<LocalPlayerShipTag>(target))
                     ecb.AddComponent<LocalPlayerShipTag>(target);

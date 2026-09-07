@@ -90,7 +90,7 @@ namespace TitanOrbit.Game
         [Header("Ship Propulsion VFX")]
         [SerializeField] ShipPropulsionVisualApplier.Settings propulsionVfxSettings;
 
-        // Ship banking knobs live on ShipBankVisualSettings (Resources default + family field).
+        // Ship banking knobs live on ShipBankVisualSettings (Resources default, family field, or MegaShipCatalog).
 
         // --- Runtime proxy registries (entity → GameObject) ---
 
@@ -121,6 +121,9 @@ namespace TitanOrbit.Game
         /// Skip GetComponent/tint work every SyncAllProxies when unchanged.
         /// </summary>
         readonly Dictionary<Entity, TeamId> _proxyAsteroidTerritory = new Dictionary<Entity, TeamId>();
+
+        /// <summary>Last applied bonus-gem tint flag per gem proxy (skip retint every sync).</summary>
+        readonly Dictionary<Entity, bool> _proxyGemBonusTint = new Dictionary<Entity, bool>();
 
         /// <summary>
         /// [TITAN-ORBIT] Client topology revision last used for asteroid tint PIT.
@@ -190,6 +193,25 @@ namespace TitanOrbit.Game
         /// <summary>Asteroid proxy keys only — DetectAsteroidGemBursts must not walk ships/planets/gems.</summary>
         readonly HashSet<Entity> _asteroidProxyEntities = new HashSet<Entity>();
 
+        /// <summary>Ship proxy keys — pose sync walks this instead of a per-frame ship gather.</summary>
+        readonly HashSet<Entity> _shipProxyEntities = new HashSet<Entity>();
+
+        /// <summary>Scratch copy of ship keys so Ensure/Sync can DestroyProxy without enumerating the set.</summary>
+        readonly List<Entity> _shipEnsureScratch = new List<Entity>(16);
+
+        /// <summary>Reused Pending/SpawnRequest drain batch (no List alloc per frame).</summary>
+        readonly List<Entity> _pendingBodyBatchScratch = new List<Entity>(48);
+
+        /// <summary>Reused urgent-gem Instantiates drain (was <c>new List</c> every LateUpdate).</summary>
+        readonly List<Entity> _urgentGemScratch = new List<Entity>(8);
+
+        World _cachedQueryWorld;
+        EntityQuery _pendingBodiesQuery;
+        EntityQuery _shipQuery;
+        EntityQuery _localTaggedShipQuery;
+        EntityQuery _ownedShipQuery;
+        bool _queriesValid;
+
         /// <summary>Reused each sync — allocating a 300+ entity HashSet every frame caused GC hitch.</summary>
         readonly HashSet<Entity> _aliveScratch = new HashSet<Entity>();
 
@@ -236,6 +258,11 @@ namespace TitanOrbit.Game
             /// True when the ship is stowed in a planetary defense turret — nameplate stays hidden.
             /// </summary>
             public bool IsStowedInTurret;
+
+            /// <summary>
+            /// True when the hull is a purchased MEGA — plate sits above mid-center, not under the ship.
+            /// </summary>
+            public bool IsMega;
         }
 
         /// <summary>
@@ -362,6 +389,7 @@ namespace TitanOrbit.Game
             _asteroidProxyEntities.Clear();
             _asteroidBurstFired.Clear();
             _asteroidLastKnown.Clear();
+            _proxyGemBonusTint.Clear();
             ResetInstanceLoadingCounts();
         }
 
@@ -393,6 +421,16 @@ namespace TitanOrbit.Game
         /// </summary>
         void Awake()
         {
+#if UNITY_SERVER && !UNITY_EDITOR
+            enabled = false;
+            return;
+#endif
+            if (!TitanOrbitDedicatedServerAutoBoot.ShouldRunClientPresentation())
+            {
+                enabled = false;
+                return;
+            }
+
             // --- Resolve designer assets (editor paths; player builds use serialized refs) ---
             if (shipFamily == null)
                 shipFamily = LoadDefaultShipFamily();
@@ -441,7 +479,8 @@ namespace TitanOrbit.Game
 
             // --- Ship banking (cosmetic roll) ---
             // [TITAN-ORBIT] Shared profile on Resources/ShipBankVisualSettings; families may
-            // override via ShipFamilyDefinition.bankVisualSettings (same pattern as damage smoke).
+            // override via ShipFamilyDefinition.bankVisualSettings. MEGAs bind
+            // MegaShipCatalog.bankVisualSettings on the hybrid proxy instead of this cache.
             PublishShipBankVisualSettings();
         }
 
@@ -471,6 +510,7 @@ namespace TitanOrbit.Game
             // --- Territory triangle world drawer (Shapes) ---
             // [HYBRID] Reads PlanetConnectionGraphCache — no map-body ECS gathers.
             PlanetConnectionShapesVisual.EnsureExists();
+            MapSeamDebugVisual.EnsureExists();
         }
 
         /// <summary>[UNITY] Unsubscribe to avoid leaks when the visualizer is destroyed.</summary>
@@ -490,6 +530,7 @@ namespace TitanOrbit.Game
             // Force full asteroid tint recompute next enable (viewer team / graph may change).
             _lastAsteroidTintGraphRevision = int.MinValue;
             _lastAsteroidTintViewerTeam = TeamId.None;
+            DisposeVisualizerQueries();
         }
 
         /// <summary>
@@ -740,6 +781,7 @@ namespace TitanOrbit.Game
                 return;
 
             var em = world.EntityManager;
+            BindVisualizerQueries(em);
             _newWorldBodyProxiesThisFrame = 0;
             // [TITAN-ORBIT] Reuse scratch set — SyncAllProxies hitched with ~320 proxies when
             // allocating a fresh HashSet every frame + string name scans.
@@ -962,7 +1004,14 @@ namespace TitanOrbit.Game
                     gemValue = gemState.Value;
                     // [TITAN-ORBIT] IsBonusGem can arrive one snapshot after Instantiates — retint
                     // so a territory yellow gem does not stay on the pooled red material.
-                    GemVisualApplier.ApplyTintForBonusFlag(go, gemState.IsBonusGem);
+                    // Skip GetComponentInChildren + sharedMaterial write when the flag is unchanged
+                    // (grind dumps gems at 4 Hz; walking them all used to retint every frame).
+                    if (!_proxyGemBonusTint.TryGetValue(entity, out bool appliedBonus) ||
+                        appliedBonus != gemState.IsBonusGem)
+                    {
+                        GemVisualApplier.ApplyTintForBonusFlag(go, gemState.IsBonusGem);
+                        _proxyGemBonusTint[entity] = gemState.IsBonusGem;
+                    }
                     // [TITAN-ORBIT] ServerTick clock — World.Time diverges on late-join (moon orbit rule).
                     float now = PlanetGemMoonOrbitClock.TryGetElapsedSeconds(out double tickNow, includeTickFraction: true)
                         ? (float)tickNow
@@ -1153,7 +1202,6 @@ namespace TitanOrbit.Game
                     continue;
 
                 var asteroid = em.GetComponentData<AsteroidState>(entity);
-                var lt = em.GetComponentData<LocalTransform>(entity);
 
                 // Cache only while alive — needed if RemainingGems is zeroed on the destroy frame.
                 // [TITAN-ORBIT] Health<=0 also means dead (bullet kill) even if IsDestroyed lags
@@ -1161,9 +1209,16 @@ namespace TitanOrbit.Game
                 bool dead = asteroid.IsDestroyed || asteroid.Health <= 0f;
                 if (!dead)
                 {
+                    // Skip LT + Dictionary write when RemainingGems is unchanged (asteroids
+                    // do not move). Used to run for every live rock every LateUpdate.
+                    if (_asteroidLastKnown.TryGetValue(entity, out var known) &&
+                        math.abs(known.RemainingGems - asteroid.RemainingGems) <= 0.01f)
+                        continue;
+
+                    var liveLt = em.GetComponentData<LocalTransform>(entity);
                     _asteroidLastKnown[entity] = new AsteroidBurstCache
                     {
-                        Position = lt.Position,
+                        Position = liveLt.Position,
                         RemainingGems = asteroid.RemainingGems,
                     };
                     continue;
@@ -1282,21 +1337,9 @@ namespace TitanOrbit.Game
         /// <returns>Number of new proxies created this call.</returns>
         int DrainPendingWorldBodyProxies(EntityManager em, HashSet<Entity> alive)
         {
-            // --- Query: baked Pending OR runtime SpawnRequest ---
-            // [TITAN-ORBIT] SpawnRequest is the Windows-player backfill path (non-ghost).
-            var desc = new EntityQueryDesc
-            {
-                Any = new[]
-                {
-                    ComponentType.ReadOnly<MapBodyHybridVisualPending>(),
-                    ComponentType.ReadOnly<MapBodyHybridVisualSpawnRequest>(),
-                },
-                All = new[] { ComponentType.ReadOnly<LocalTransform>() },
-                None = new[] { ComponentType.ReadOnly<PendingSpawnPlaceholder>() },
-            };
-            using var query = em.CreateEntityQuery(desc);
-            if (query.IsEmptyIgnoreFilter)
+            if (!_queriesValid || _pendingBodiesQuery.IsEmptyIgnoreFilter)
                 return 0;
+            var query = _pendingBodiesQuery;
 
             // --- Collect up to this frame's budget, then mutate ---
             // [TITAN-ORBIT] Prefer GemTag first so destroy/mining pickups appear before leftover
@@ -1309,7 +1352,8 @@ namespace TitanOrbit.Game
             // ToEntityArray on this Pending/SpawnRequest queue only is join-safe (not all asteroids).
             int frameBudget = GetWorldBodyProxyBudgetThisFrame();
             using var entities = query.ToEntityArray(Unity.Collections.Allocator.Temp);
-            var batch = new List<Entity>(frameBudget);
+            var batch = _pendingBodyBatchScratch;
+            batch.Clear();
 
             // Pass 1: gems only
             for (int i = 0; i < entities.Length && batch.Count < frameBudget; i++)
@@ -1502,11 +1546,15 @@ namespace TitanOrbit.Game
                 UnregisterProxyKindCounts(prev);
                 if (prev == ProxyVisualKind.Asteroid)
                     _asteroidProxyEntities.Remove(entity);
+                else if (prev == ProxyVisualKind.Ship)
+                    _shipProxyEntities.Remove(entity);
             }
 
             _proxyKinds[entity] = kind;
             if (kind == ProxyVisualKind.Asteroid)
                 _asteroidProxyEntities.Add(entity);
+            else if (kind == ProxyVisualKind.Ship)
+                _shipProxyEntities.Add(entity);
 
             switch (kind)
             {
@@ -1590,8 +1638,8 @@ namespace TitanOrbit.Game
 
         /// <summary>
         /// Applies NetCode presentation pose to the GameObject proxy. No extra lerp on the local owner —
-        /// prediction + GhostPredictionSmoothing own sim feel; proxies are render shells only.
-        /// Remotes use toroidal display unwrap so they appear near the local ship across a seam.
+        /// prediction owns sim feel; proxies are render shells only. Remotes use the wrapped
+        /// chart; a wrap jump snaps so ghost interpolation does not streak across the map.
         /// </summary>
         void ApplyShipProxyTransform(
             Entity entity,
@@ -1601,19 +1649,62 @@ namespace TitanOrbit.Game
             Transform go,
             float scale)
         {
-            // --- Local = unbounded sim; remote = hysteresis tile near local ship ---
-            // [TITAN-ORBIT] Do not Wrap the local hull. Continuum re-unwrap lives only in the
-            // moon-dock takeoff cinematic (ShipMoonDockVisualApplier) — running it every frame
-            // fought soft-track and added presentation lag.
-            Vector3 pos = isLocalPlayerShip
-                ? (Vector3)lt.Position
-                : GetVisualPosition(entity, em, lt.Position);
+            Vector3 pos = lt.Position;
+            if (!isLocalPlayerShip)
+                pos = ResolveRemoteWrappedPose(em, entity, go.position, lt.Position);
             Quaternion rot = lt.Rotation;
             go.SetPositionAndRotation(pos, rot);
             go.localScale = Vector3.one * scale;
 
-            if (isLocalPlayerShip)
+            if (isLocalPlayerShip && LocalShipEntitySeed.EntityMatchesLocalOwner(em, entity))
                 ShipDisplayPose.SetLocalPose(pos, rot);
+
+            MegaShipWeaponVisualSync.Apply(em, entity, go.gameObject);
+        }
+
+        /// <summary>
+        /// Remote ghosts interpolate <see cref="LocalTransform"/> in Euclidean space. A wrap
+        /// snapshot ( +edge → −edge ) would lerp across the whole map. Snap when the jump is
+        /// a wrap, or when interpolated motion fights velocity near an edge.
+        /// </summary>
+        static Vector3 ResolveRemoteWrappedPose(
+            EntityManager em,
+            Entity entity,
+            Vector3 previousDisplay,
+            float3 interpolated)
+        {
+            Vector3 raw = interpolated;
+            if (!ToroidalMapEcs.HasValidMapSize)
+                return raw;
+
+            if (ToroidalMapEcs.IsWrapJump(previousDisplay, raw))
+                return raw;
+
+            if (!em.HasComponent<ShipKinematics>(entity))
+                return raw;
+
+            float3 vel = em.GetComponentData<ShipKinematics>(entity).Velocity;
+            float3 planarVel = new float3(vel.x, 0f, vel.z);
+            float speedSq = math.lengthsq(planarVel);
+            if (speedSq < 4f)
+                return raw;
+
+            float3 delta = new float3(raw.x - previousDisplay.x, 0f, raw.z - previousDisplay.z);
+            if (math.lengthsq(delta) < 1f)
+                return raw;
+
+            float3 planarDir = math.normalize(planarVel);
+            float3 planarDelta = math.normalize(delta);
+            bool opposing = math.dot(planarDir, planarDelta) < -0.25f;
+            float halfW = ToroidalMapEcs.MapWidth * 0.5f;
+            float halfH = ToroidalMapEcs.MapHeight * 0.5f;
+            bool nearEdge = math.abs(previousDisplay.x) > halfW * 0.8f ||
+                            math.abs(previousDisplay.z) > halfH * 0.8f;
+            if (!opposing || !nearEdge)
+                return raw;
+
+            float3 predicted = (float3)previousDisplay + vel * UnityEngine.Time.deltaTime;
+            return ToroidalMapEcs.Wrap(predicted);
         }
 
         /// <summary>
@@ -1681,7 +1772,8 @@ namespace TitanOrbit.Game
                 if (LocalShipEntitySeed.TryGetSeededShip(em, out var seeded) &&
                     seeded != Entity.Null &&
                     em.Exists(seeded) &&
-                    em.HasComponent<ShipTag>(seeded))
+                    em.HasComponent<ShipTag>(seeded) &&
+                    LocalShipEntitySeed.EntityMatchesLocalOwner(em, seeded))
                 {
                     localShipEntity = seeded;
                     _cachedLocalPlayerShipEntity = seeded;
@@ -1691,7 +1783,8 @@ namespace TitanOrbit.Game
                 // Cache hit only — never fall through to CreateEntityQuery + ToEntityArray below.
                 if (_cachedLocalPlayerShipEntity != Entity.Null &&
                     em.Exists(_cachedLocalPlayerShipEntity) &&
-                    em.HasComponent<ShipTag>(_cachedLocalPlayerShipEntity))
+                    em.HasComponent<ShipTag>(_cachedLocalPlayerShipEntity) &&
+                    LocalShipEntitySeed.EntityMatchesLocalOwner(em, _cachedLocalPlayerShipEntity))
                 {
                     localShipEntity = _cachedLocalPlayerShipEntity;
                     return true;
@@ -1702,17 +1795,22 @@ namespace TitanOrbit.Game
 
             if (_cachedLocalPlayerShipEntity != Entity.Null &&
                 em.Exists(_cachedLocalPlayerShipEntity) &&
-                em.HasComponent<ShipTag>(_cachedLocalPlayerShipEntity))
+                em.HasComponent<ShipTag>(_cachedLocalPlayerShipEntity) &&
+                LocalShipEntitySeed.EntityMatchesLocalOwner(em, _cachedLocalPlayerShipEntity))
             {
                 localShipEntity = _cachedLocalPlayerShipEntity;
                 return true;
             }
 
-            using var localQuery = em.CreateEntityQuery(
-                ComponentType.ReadOnly<LocalPlayerShipTag>(),
-                ComponentType.ReadOnly<ShipTag>());
+            if (_cachedLocalPlayerShipEntity != Entity.Null)
+                _cachedLocalPlayerShipEntity = Entity.Null;
+
+            if (!_queriesValid)
+                return false;
+            var localQuery = _localTaggedShipQuery;
             using var localEntities = localQuery.ToEntityArray(Unity.Collections.Allocator.Temp);
-            if (localEntities.Length > 0)
+            if (localEntities.Length == 1 &&
+                LocalShipEntitySeed.EntityMatchesLocalOwner(em, localEntities[0]))
             {
                 localShipEntity = localEntities[0];
                 _cachedLocalPlayerShipEntity = localShipEntity;
@@ -1722,7 +1820,7 @@ namespace TitanOrbit.Game
             int localId = EcsGameBridge.GetLocalNetworkId();
             if (localId > 0)
             {
-                using var owned = em.CreateEntityQuery(typeof(ShipTag), typeof(GhostOwner));
+                var owned = _ownedShipQuery;
                 using var owners = owned.ToComponentDataArray<GhostOwner>(Unity.Collections.Allocator.Temp);
                 using var entities = owned.ToEntityArray(Unity.Collections.Allocator.Temp);
                 for (int i = 0; i < entities.Length; i++)
@@ -1743,52 +1841,23 @@ namespace TitanOrbit.Game
             localShipEntity != Entity.Null && entity == localShipEntity;
 
         /// <summary>
-        /// [TITAN-ORBIT] Local ship stays at its real (unbounded) pose. Every other body picks its
-        /// own nearest map-tile copy relative to that ship, with per-entity hysteresis so planets
-        /// and asteroids reposition individually — not as one global blink when crossing a seam.
-        /// The planet the local ship is orbiting / moon-docked on uses a tight hysteresis margin
-        /// so the ring follows across seams without ForceNearest midpoint flicker.
+        /// World pose for a proxy. Movers wrap in sim, so display equals logical
+        /// <see cref="LocalTransform"/> — no per-body tile offset.
         /// </summary>
-        /// <param name="forceLogical">When true, skip display unwrap (rare debug / special cases).</param>
+        /// <param name="forceLogical">Unused; kept so call sites do not need a compile break.</param>
         Vector3 GetVisualPosition(Entity entity, EntityManager em, float3 logicalPos, bool forceLogical = false)
         {
-            if (forceLogical || ToroidalDisplay.IsLocalPlayerShip(em, entity))
-                return logicalPos;
-
-            if (!_hasToroidalReference && !ToroidalDisplay.TryGetReferencePosition(out _toroidalReference))
-                return logicalPos;
-
-            _hasToroidalReference = true;
-            if (ShouldForceNearestPlanetTile(em, entity))
-            {
-                int planetId = em.HasComponent<PlanetState>(entity)
-                    ? em.GetComponentData<PlanetState>(entity).PlanetId
-                    : 0;
-                return ToroidalDisplay.ToDisplayPositionForOrbitPlanet(
-                    entity, planetId, logicalPos, _toroidalReference);
-            }
-
-            return ToroidalDisplay.ToDisplayPositionWithHysteresis(entity, logicalPos, _toroidalReference);
+            _ = entity;
+            _ = em;
+            _ = forceLogical;
+            return logicalPos;
         }
 
-        /// <summary>Per-entity tile unwrap when EntityManager is not needed for local-ship checks.</summary>
+        /// <summary>World pose for a proxy (logical = wrapped sim).</summary>
         Vector3 GetVisualPosition(Entity entity, float3 logicalPos)
         {
-            if (!_hasToroidalReference && !ToroidalDisplay.TryGetReferencePosition(out _toroidalReference))
-                return logicalPos;
-
-            _hasToroidalReference = true;
-
-            // --- Orbit / dock planet: tight hysteresis via cached planet visual key ---
-            if (_forceNearestPlanetId != 0 &&
-                _proxyPlanetVisuals.TryGetValue(entity, out var planetKey) &&
-                planetKey.PlanetId == _forceNearestPlanetId)
-            {
-                return ToroidalDisplay.ToDisplayPositionForOrbitPlanet(
-                    entity, _forceNearestPlanetId, logicalPos, _toroidalReference);
-            }
-
-            return ToroidalDisplay.ToDisplayPositionWithHysteresis(entity, logicalPos, _toroidalReference);
+            _ = entity;
+            return logicalPos;
         }
 
         /// <summary>
@@ -1849,16 +1918,20 @@ namespace TitanOrbit.Game
                 shipFamilyConfigIndex = ship.ShipFamilyConfigIndex;
             }
 
+            // Ghost Team can stay None for many frames after Join Team — use the RPC assign.
+            team = ClientTeamFlowState.ResolvePresentationTeam(team);
+
             string chassisId = null;
             if (team != TeamId.None)
             {
                 ShipStatApplyLogic.TryResolveChassisId(
+                    em,
+                    shipEntity,
                     team,
                     shipLevel,
                     branchIndex,
                     out chassisId,
-                    allowFallback: true,
-                    shipFamilyConfigIndex: shipFamilyConfigIndex);
+                    allowFallback: true);
             }
 
             var lt = em.GetComponentData<LocalTransform>(shipEntity);
@@ -1876,7 +1949,10 @@ namespace TitanOrbit.Game
                     && lastBranch == branchIndex
                     && lastTeam == team
                     && string.Equals(lastChassis, chassisId, System.StringComparison.Ordinal);
-                needCreate = !sameHull;
+                bool isDead = em.HasComponent<ShipState>(shipEntity)
+                              && em.GetComponentData<ShipState>(shipEntity).IsDead;
+                // Keep the death-frame hull so debris can snapshot MEGA / current modules.
+                needCreate = !sameHull && !isDead;
                 if (needCreate)
                     DestroyProxy(shipEntity);
             }
@@ -1891,6 +1967,8 @@ namespace TitanOrbit.Game
                     shipEntity, networkId, team, shipLevel, branchIndex, chassisId, scale, muzzleOffset);
                 if (TryGetPresentationTransform(shipEntity, em, out var presentLt))
                     ApplyShipProxyTransform(shipEntity, em, true, presentLt, go.transform, scale);
+                if (networkId > 0)
+                    ShipWeaponProxyRegistry.SnapshotClearance(networkId);
             }
 
             // --- Pose sync for the one known entity (no WithEntityAccess / ToEntityArray) ---
@@ -1912,12 +1990,20 @@ namespace TitanOrbit.Game
                 _proxyTeams[shipEntity] = ship.Team;
                 _proxyBranchIndices[shipEntity] = Mathf.Max(0, ship.BranchIndex);
                 // --- Hide dead hulls and ships stowed in planetary defense turrets ---
-                bool stowedInTurret = em.HasComponent<ShipTurretControlState>(shipEntity) &&
-                    em.GetComponentData<ShipTurretControlState>(shipEntity).IsControlling;
-                if (ship.IsDead || stowedInTurret)
+                bool stowedInTurret = IsShipHullStowed(em, shipEntity);
+                if (ship.IsDead)
+                {
+                    ShipDeathDebrisDriver.TryBegin(shipEntity, proxyGo, em);
                     proxyGo.SetActive(false);
-                else if (!proxyGo.activeSelf)
-                    proxyGo.SetActive(true);
+                }
+                else
+                {
+                    ShipDeathDebrisDriver.End(shipEntity);
+                    if (stowedInTurret)
+                        proxyGo.SetActive(false);
+                    else if (!proxyGo.activeSelf)
+                        proxyGo.SetActive(true);
+                }
 
                 // --- Local nameplate during Instantiates backlog (seeded path only) ---
                 // [TITAN-ORBIT] Full SyncShipProxyTransforms is skipped while ShouldSkipShipEntityQueries;
@@ -1939,7 +2025,7 @@ namespace TitanOrbit.Game
                 bool landedOnMoon = IsShipFullyLandedOnMoon(em, shipEntity);
                 ApplyShipNameplatePresentation(
                     proxyGo, networkId, ship, kills, gemsDeposited, peopleDelivered,
-                    landedOnMoon, stowedInTurret);
+                    landedOnMoon, stowedInTurret, IsMegaNameplateHull(em, shipEntity));
             }
         }
 
@@ -1956,19 +2042,34 @@ namespace TitanOrbit.Game
         {
             TryResolveLocalPlayerShipEntityCached(em, out var localShipEntity);
 
-            using var query = em.CreateEntityQuery(
-                ComponentType.ReadOnly<ShipTag>(),
-                ComponentType.ReadOnly<LocalTransform>());
-            using var entities = query.ToEntityArray(Unity.Collections.Allocator.Temp);
-            using var transforms = query.ToComponentDataArray<LocalTransform>(Unity.Collections.Allocator.Temp);
+            _shipEnsureScratch.Clear();
+            foreach (var existing in _shipProxyEntities)
+                _shipEnsureScratch.Add(existing);
+
+            // New hulls only — chassis rebuilds walk the known proxy set above.
+            if (_queriesValid)
+            {
+                int ecsCount = _shipQuery.CalculateEntityCount();
+                if (ecsCount > _shipProxyEntities.Count)
+                {
+                    using var discovered = _shipQuery.ToEntityArray(Unity.Collections.Allocator.Temp);
+                    for (int d = 0; d < discovered.Length; d++)
+                    {
+                        if (!_proxies.ContainsKey(discovered[d]))
+                            _shipEnsureScratch.Add(discovered[d]);
+                    }
+                }
+            }
 
             int localNetworkId = EcsGameBridge.GetLocalNetworkId();
             bool suppressOwnedVisuals = ClientTeamFlowState.ShouldSuppressLocalPlayerControl();
 
-            for (int i = 0; i < entities.Length; i++)
+            for (int i = 0; i < _shipEnsureScratch.Count; i++)
             {
-                var entity = entities[i];
-                var lt = transforms[i];
+                var entity = _shipEnsureScratch[i];
+                if (!em.Exists(entity) || !em.HasComponent<LocalTransform>(entity))
+                    continue;
+                var lt = em.GetComponentData<LocalTransform>(entity);
                 bool isLocalPlayerShip = IsLocalPlayerShip(entity, localShipEntity);
                 float scale = Mathf.Max(0.25f, lt.Scale) * shipVisualScale;
 
@@ -1976,8 +2077,17 @@ namespace TitanOrbit.Game
                 if (em.HasComponent<GhostOwner>(entity))
                     networkId = em.GetComponentData<GhostOwner>(entity).NetworkId;
 
+                bool isClaimedLocal =
+                    LocalShipEntitySeed.TryGetOwnedShipEntityUnchecked(em, out var claimed) &&
+                    claimed == entity;
+
                 // [TITAN-ORBIT] Do not spawn a hybrid hull for the local NetworkId until team confirm.
-                if (suppressOwnedVisuals && localNetworkId > 0 && networkId == localNetworkId)
+                // Ownerless Instantiates (NetworkId 0) used to skip this gate and appear grey at
+                // the prefab origin — hide those too while Confirm is still deferred.
+                if (suppressOwnedVisuals &&
+                    ((localNetworkId > 0 && networkId == localNetworkId) ||
+                     isClaimedLocal ||
+                     (networkId <= 0 && ClientTeamFlowState.HasDeferredTeamChoiceConfirmPending)))
                 {
                     if (_proxies.ContainsKey(entity))
                         DestroyProxy(entity);
@@ -1999,16 +2109,20 @@ namespace TitanOrbit.Game
                     shipFamilyConfigIndex = ship.ShipFamilyConfigIndex;
                 }
 
+                if (isClaimedLocal || isLocalPlayerShip)
+                    team = ClientTeamFlowState.ResolvePresentationTeam(team);
+
                 string chassisId = null;
                 if (team != TeamId.None)
                 {
                     ShipStatApplyLogic.TryResolveChassisId(
+                        em,
+                        entity,
                         team,
                         shipLevel,
                         branchIndex,
                         out chassisId,
-                        allowFallback: true,
-                        shipFamilyConfigIndex: shipFamilyConfigIndex);
+                        allowFallback: true);
                 }
 
                 // [TITAN-ORBIT] Chassis swap while moon-docked: keep the old hull's spinning
@@ -2028,7 +2142,9 @@ namespace TitanOrbit.Game
                         && lastBranch == branchIndex
                         && lastTeam == team
                         && string.Equals(lastChassis, chassisId, System.StringComparison.Ordinal);
-                    if (sameHull)
+                    bool isDead = em.HasComponent<ShipState>(entity)
+                                  && em.GetComponentData<ShipState>(entity).IsDead;
+                    if (sameHull || isDead)
                         continue;
 
                     // Capture contact dir before DestroyProxy clears the old applier.
@@ -2050,6 +2166,8 @@ namespace TitanOrbit.Game
                     entity, networkId, team, shipLevel, branchIndex, chassisId, scale, muzzleOffset);
                 if (TryGetPresentationTransform(entity, em, out var presentLt))
                     ApplyShipProxyTransform(entity, em, isLocalPlayerShip, presentLt, go.transform, scale);
+                if (networkId > 0)
+                    ShipWeaponProxyRegistry.SnapshotClearance(networkId);
 
                 // After pose apply: if still fully moon-docked, snap cinematic to landed (chassis swap).
                 // Prefer preserved surface dir so purchase keeps the spinning moon pose.
@@ -2070,6 +2188,7 @@ namespace TitanOrbit.Game
         /// </summary>
         void SyncShipProxyTransforms(EntityManager em, HashSet<Entity> alive)
         {
+            MegaShipWeaponVisualTargets.RebuildFromProxies(em, _proxies);
             TryResolveLocalPlayerShipEntityCached(em, out var localShipEntity);
             int localNetworkId = EcsGameBridge.GetLocalNetworkId();
             bool suppressOwnedVisuals = ClientTeamFlowState.ShouldSuppressLocalPlayerControl();
@@ -2078,14 +2197,15 @@ namespace TitanOrbit.Game
             _pendingShipNameplates.Clear();
             _nameplateRoleCandidates.Clear();
 
-            using var query = em.CreateEntityQuery(
-                ComponentType.ReadOnly<ShipTag>(),
-                ComponentType.ReadOnly<LocalTransform>());
-            using var entities = query.ToEntityArray(Unity.Collections.Allocator.Temp);
+            _shipEnsureScratch.Clear();
+            foreach (var existing in _shipProxyEntities)
+                _shipEnsureScratch.Add(existing);
 
-            for (int i = 0; i < entities.Length; i++)
+            for (int i = 0; i < _shipEnsureScratch.Count; i++)
             {
-                var entity = entities[i];
+                var entity = _shipEnsureScratch[i];
+                if (!em.Exists(entity))
+                    continue;
                 alive.Add(entity);
 
                 int networkId = 0;
@@ -2133,9 +2253,11 @@ namespace TitanOrbit.Game
 
                 if (!skipTransformSync)
                     ApplyShipProxyTransform(entity, em, isLocalPlayerShip, lt, go.transform, scale);
-                else if (isLocalPlayerShip)
+                else
                 {
-                    ShipDisplayPose.SetLocalPose(go.transform.position, go.transform.rotation);
+                    if (isLocalPlayerShip)
+                        ShipDisplayPose.SetLocalPose(go.transform.position, go.transform.rotation);
+                    MegaShipWeaponVisualSync.Apply(em, entity, go);
                 }
 
                 if (em.HasComponent<ShipState>(entity))
@@ -2145,12 +2267,20 @@ namespace TitanOrbit.Game
                     _proxyTeams[entity] = ship.Team;
                     _proxyBranchIndices[entity] = Mathf.Max(0, ship.BranchIndex);
                     // --- Hide dead hulls and ships stowed in planetary defense turrets ---
-                    bool stowedInTurret = em.HasComponent<ShipTurretControlState>(entity) &&
-                        em.GetComponentData<ShipTurretControlState>(entity).IsControlling;
-                    if (ship.IsDead || stowedInTurret)
+                    bool stowedInTurret = IsShipHullStowed(em, entity);
+                    if (ship.IsDead)
+                    {
+                        ShipDeathDebrisDriver.TryBegin(entity, go, em);
                         go.SetActive(false);
-                    else if (!go.activeSelf)
-                        go.SetActive(true);
+                    }
+                    else
+                    {
+                        ShipDeathDebrisDriver.End(entity);
+                        if (stowedInTurret)
+                            go.SetActive(false);
+                        else if (!go.activeSelf)
+                            go.SetActive(true);
+                    }
 
                     // --- Nameplate vitals / role candidates (no extra ship gather) ---
                     QueueShipNameplate(em, entity, go, networkId, ship);
@@ -2164,6 +2294,7 @@ namespace TitanOrbit.Game
                         if (existingId > 0)
                             ShipWeaponProxyRegistry.Unregister(existingId, go.transform);
                         ShipWeaponProxyRegistry.Register(networkId, go.transform);
+                        ShipWeaponProxyRegistry.SnapshotClearance(networkId);
                         _proxyNetworkIds[entity] = networkId;
                     }
                 }
@@ -2212,10 +2343,7 @@ namespace TitanOrbit.Game
             ShipWingTractorBeamCollector.EnsureWingTractorBeamsOnHierarchy(go.transform);
 
             if (networkId > 0)
-            {
-                ShipWeaponProxyRegistry.Register(networkId, go.transform);
                 _proxyNetworkIds[entity] = networkId;
-            }
 
             // --- Bookkeeping for rebuild detection ---
             _proxyShipLevels[entity] = shipLevel;
@@ -2248,11 +2376,12 @@ namespace TitanOrbit.Game
             propulsionVisual.Bind(entity, familyPrefix, propulsionVfxSettings, bindFamily);
 
             // --- Cosmetic bank (roll while turning) ---
-            // [HYBRID] Profile from ShipFamilyDefinition.bankVisualSettings (shared asset today).
+            // [HYBRID] MEGA hulls use MegaShipCatalog.bankVisualSettings; regular families
+            // use ShipFamilyDefinition.bankVisualSettings (shared Resources default today).
             var bankVisual = go.GetComponent<ShipBankVisualApplier>();
             if (bankVisual == null)
                 bankVisual = go.AddComponent<ShipBankVisualApplier>();
-            bankVisual.Bind(entity, ShipBankVisualSettings.ResolveForFamily(bindFamily));
+            bankVisual.Bind(entity, ShipBankVisualSettings.ResolveForChassis(chassisId, bindFamily));
 
             // --- Damage smoke (hull HP → trail density) ---
             // [HYBRID] Cosmetic only — profile from ShipFamilyDefinition.damageSmokeSettings.
@@ -2280,6 +2409,9 @@ namespace TitanOrbit.Game
             // --- World nameplate (name / badge / thin bars / top-role slots) ---
             // [HYBRID] Presentation only — vitals pushed from SyncShipProxyTransforms.
             EnsureShipNameplate(go, networkId);
+
+            if (networkId > 0)
+                ShipWeaponProxyRegistry.Register(networkId, go.transform);
 
             return go;
         }
@@ -2312,6 +2444,9 @@ namespace TitanOrbit.Game
         /// <param name="isStowedInTurret">
         /// True when the ship is piloting a planetary defense pad — plate is hidden.
         /// </param>
+        /// <param name="isMega">
+        /// True when the hull is a purchased MEGA — plate sits above mid-center, not under the ship.
+        /// </param>
         void ApplyShipNameplatePresentation(
             GameObject proxyGo,
             int networkId,
@@ -2320,7 +2455,8 @@ namespace TitanOrbit.Game
             int gemsDeposited,
             int peopleDelivered,
             bool isLandedOnMoon,
-            bool isStowedInTurret)
+            bool isStowedInTurret,
+            bool isMega)
         {
             // --- ApplyShipNameplatePresentation ---
             if (proxyGo == null)
@@ -2338,6 +2474,7 @@ namespace TitanOrbit.Game
             nameplate.ApplyPresentation(
                 networkId,
                 displayName,
+                EcsGameBridge.GetCachedPlayerBadgeId(networkId),
                 ship.Team,
                 ship.IsDead,
                 ship.AwaitingTeamSelection,
@@ -2354,7 +2491,8 @@ namespace TitanOrbit.Game
                 ship.PeopleCapacity,
                 ShipTopOfTeamRoles.IsKiller(ship.Team, networkId),
                 ShipTopOfTeamRoles.IsMiner(ship.Team, networkId),
-                ShipTopOfTeamRoles.IsTransporter(ship.Team, networkId));
+                ShipTopOfTeamRoles.IsTransporter(ship.Team, networkId),
+                isMega);
         }
 
         /// <summary>
@@ -2379,7 +2517,8 @@ namespace TitanOrbit.Game
                     pending.GemsDeposited,
                     pending.PeopleDelivered,
                     pending.IsLandedOnMoon,
-                    pending.IsStowedInTurret);
+                    pending.IsStowedInTurret,
+                    pending.IsMega);
             }
 
             _pendingShipNameplates.Clear();
@@ -2418,8 +2557,8 @@ namespace TitanOrbit.Game
             bool landedOnMoon = IsShipFullyLandedOnMoon(em, entity);
             // [NETCODE] ShipTurretControlState is ghosted — nameplate root is unparented, so we
             // must hide explicitly (SetActive(false) on the hull proxy is not enough).
-            bool stowedInTurret = em.HasComponent<ShipTurretControlState>(entity) &&
-                em.GetComponentData<ShipTurretControlState>(entity).IsControlling;
+            bool stowedInTurret = IsShipHullStowed(em, entity);
+            bool isMega = IsMegaNameplateHull(em, entity);
 
             _nameplateRoleCandidates.Add(new ShipTopOfTeamRoles.Candidate
             {
@@ -2441,6 +2580,7 @@ namespace TitanOrbit.Game
                 PeopleDelivered = peopleDelivered,
                 IsLandedOnMoon = landedOnMoon,
                 IsStowedInTurret = stowedInTurret,
+                IsMega = isMega,
             });
         }
 
@@ -2451,6 +2591,29 @@ namespace TitanOrbit.Game
         /// <param name="em">Client world entity manager from the ship sync path.</param>
         /// <param name="shipEntity">Ship ghost entity already in hand from the ship loop.</param>
         /// <returns>True when MoonPlanetId is set and landing progress is at the complete threshold.</returns>
+        /// <summary>
+        /// True when the hull is hidden on a planetary turret pad.
+        /// </summary>
+        static bool IsShipHullStowed(EntityManager em, Entity shipEntity)
+        {
+            return em.HasComponent<ShipTurretControlState>(shipEntity)
+                && em.GetComponentData<ShipTurretControlState>(shipEntity).IsControlling;
+        }
+
+        /// <summary>
+        /// True when this hull should use the MEGA mid-center nameplate (ghost MEGA or MEGA chassis id).
+        /// Reads the already-synced ghost / cached chassis id — not a ship gather.
+        /// </summary>
+        bool IsMegaNameplateHull(EntityManager em, Entity shipEntity)
+        {
+            if (em.HasComponent<MegaShipState>(shipEntity)
+                && em.GetComponentData<MegaShipState>(shipEntity).IsMega)
+                return true;
+
+            return _proxyChassisIds.TryGetValue(shipEntity, out string chassisId)
+                   && MegaShipCatalog.IsMegaChassisId(chassisId);
+        }
+
         static bool IsShipFullyLandedOnMoon(EntityManager em, Entity shipEntity)
         {
             // --- Per-entity moon dock read (safe under quarantine — not a planet/asteroid scan) ---
@@ -2505,7 +2668,8 @@ namespace TitanOrbit.Game
             if (ClientJoinSettleCache.Settling)
                 return;
 
-            var urgent = new List<Entity>(8);
+            var urgent = _urgentGemScratch;
+            urgent.Clear();
             int remainingAfter = GemClientEntityRegistry.DrainUrgentVisualQueue(urgent, MaxUrgentGemProxiesPerFrame);
             if (urgent.Count == 0)
                 return;
@@ -2593,6 +2757,8 @@ namespace TitanOrbit.Game
         /// <summary>Tears down proxy GameObject and clears all per-entity registry entries.</summary>
         void DestroyProxy(Entity entity)
         {
+            ShipDeathDebrisDriver.End(entity);
+
             if (entity == _cachedDedicatedLocalShipEntity)
                 _cachedDedicatedLocalShipEntity = Entity.Null;
 
@@ -2629,6 +2795,7 @@ namespace TitanOrbit.Game
                 }
 
                 _asteroidProxyEntities.Remove(entity);
+                _shipProxyEntities.Remove(entity);
                 _proxies.Remove(entity);
                 _proxyNetworkIds.Remove(entity);
                 _proxyShipLevels.Remove(entity);
@@ -2637,6 +2804,7 @@ namespace TitanOrbit.Game
                 _proxyTeams.Remove(entity);
                 _proxyPlanetVisuals.Remove(entity);
                 _proxyAsteroidTerritory.Remove(entity);
+                _proxyGemBonusTint.Remove(entity);
                 _bulletStretchVisuals.Remove(entity);
             }
         }
@@ -2663,11 +2831,8 @@ namespace TitanOrbit.Game
                 int bankIndex = hit.BankIndex >= 0 ? hit.BankIndex : defaultBulletBankIndex;
                 float scaleMul = hit.ScaleMultiplier > 0f ? hit.ScaleMultiplier : defaultBulletScaleMultiplier;
                 // --- Impact VFX on nearest tile to local ship (classic display) ---
-                Vector3 hitPos = hit.HitPosition;
-                if (ToroidalDisplay.TryGetReferencePosition(out var reference))
-                    hitPos = ToroidalDisplay.ToDisplayPosition(hitPos, reference);
-                BulletVisualFactory.SpawnBulletImpactVfx(
-                    hitPos,
+                BulletImpactAttach.PlayAtLogicalPoint(
+                    hit.HitPosition,
                     bulletVfxBank,
                     bankIndex,
                     team,
@@ -3124,9 +3289,55 @@ namespace TitanOrbit.Game
             }
         }
 
+        void BindVisualizerQueries(EntityManager em)
+        {
+            var world = em.World;
+            if (_queriesValid && _cachedQueryWorld == world && world != null && world.IsCreated)
+                return;
+
+            DisposeVisualizerQueries();
+            if (world == null || !world.IsCreated)
+                return;
+
+            _cachedQueryWorld = world;
+            _pendingBodiesQuery = em.CreateEntityQuery(new EntityQueryDesc
+            {
+                Any = new[]
+                {
+                    ComponentType.ReadOnly<MapBodyHybridVisualPending>(),
+                    ComponentType.ReadOnly<MapBodyHybridVisualSpawnRequest>(),
+                },
+                All = new[] { ComponentType.ReadOnly<LocalTransform>() },
+                None = new[] { ComponentType.ReadOnly<PendingSpawnPlaceholder>() },
+            });
+            _shipQuery = em.CreateEntityQuery(
+                ComponentType.ReadOnly<ShipTag>(),
+                ComponentType.ReadOnly<LocalTransform>());
+            _localTaggedShipQuery = em.CreateEntityQuery(
+                ComponentType.ReadOnly<LocalPlayerShipTag>(),
+                ComponentType.ReadOnly<ShipTag>());
+            _ownedShipQuery = em.CreateEntityQuery(typeof(ShipTag), typeof(GhostOwner));
+            _queriesValid = true;
+        }
+
+        void DisposeVisualizerQueries()
+        {
+            if (_queriesValid && _cachedQueryWorld != null && _cachedQueryWorld.IsCreated)
+            {
+                _pendingBodiesQuery.Dispose();
+                _shipQuery.Dispose();
+                _localTaggedShipQuery.Dispose();
+                _ownedShipQuery.Dispose();
+            }
+
+            _queriesValid = false;
+            _cachedQueryWorld = null;
+        }
+
         /// <summary>[UNITY] Unregisters weapon mounts and destroys all proxies on scene teardown.</summary>
         void OnDestroy()
         {
+            DisposeVisualizerQueries();
             foreach (var kv in _proxies)
             {
                 if (_proxyNetworkIds.TryGetValue(kv.Key, out int networkId) && kv.Value != null)
@@ -3142,6 +3353,7 @@ namespace TitanOrbit.Game
             _proxyTeams.Clear();
             _proxyPlanetVisuals.Clear();
             _proxyAsteroidTerritory.Clear();
+            _proxyGemBonusTint.Clear();
             ClearProxyCountStaticsIfOwner();
         }
     }

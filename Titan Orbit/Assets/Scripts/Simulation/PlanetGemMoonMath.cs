@@ -199,7 +199,9 @@ namespace TitanOrbit.Simulation
 
         /// <summary>
         /// Gameplay moon orbit / dock shell (legacy GetMoonDockSnapRadiusWorld × ship radius).
-        /// Ships inside this zone can begin landing even while the moon orbits.
+        /// Regular ships begin landing when the pivot is inside this padded radius.
+        /// MEGA hulls overlap <see cref="GetMoonVisualShellOuterRadiusWorld"/> with a tight
+        /// collider box so landing starts only when a part is inside the drawn orbit zone.
         /// </summary>
         public static float GetMoonDockZoneRadiusWorld(
             float planetSize,

@@ -7,6 +7,7 @@ using TitanOrbit.Generation;
 using TitanOrbit.Simulation;
 using Unity.Collections;
 using Unity.Entities;
+using Unity.Jobs;
 using Unity.Mathematics;
 using Unity.NetCode;
 using Unity.Physics;
@@ -35,6 +36,9 @@ namespace TitanOrbit.ECS
     /// (1) same-frame spawn collide on the first <c>vel*dt</c> segment (not a bare point test —
     /// wing muzzles inside side rocks must not count); (2) substep advance when travel is large
     /// vs <see cref="GemEconomyConstants.MinAsteroidHitRadius"/>; (3) collide before lifetime cull.
+    /// MEGA hulls use this same Phase B spawn + collide along barrel forward after
+    /// <see cref="MegaShipAutoFireSystem"/> slews the mount. Do not spawn MEGA rounds
+    /// in another system.
     /// </para>
     /// Broadcasts <see cref="BulletSpawnRpc"/> / <see cref="BulletHitRpc"/> via
     /// <see cref="BulletNetNotify"/>. Damage is server-only. Not Burst-compiled — managed notify.
@@ -86,7 +90,18 @@ namespace TitanOrbit.ECS
 
         EntityQuery _droneShipQuery;
         EntityQuery _allShipQuery;
+        EntityQuery _asteroidHashQuery;
+        EntityQuery _transportHashQuery;
         EntityQuery _defensePlanetQuery;
+        EntityQuery _planetSweepQuery;
+
+        /// <summary>Broadphase built once per tick — used by <see cref="TryResolveBulletHit"/>.</summary>
+        BulletObstacleSpatialHash _obstacleHash;
+        NativeList<int> _nearbyObstacles;
+        NativeHashSet<int> _nearbySeen;
+
+        /// <summary>Resources.Load once — Phase B used to call LoadDefault every tick.</summary>
+        static BulletVfxBank s_CachedVfxBank;
 
         /// <summary>Require bullet singleton before ticking.</summary>
         public void OnCreate(ref SystemState state)
@@ -105,17 +120,44 @@ namespace TitanOrbit.ECS
                 ComponentType.ReadOnly<ShipState>(),
                 ComponentType.ReadOnly<LocalTransform>(),
                 ComponentType.ReadOnly<GhostOwner>());
+            _asteroidHashQuery = state.GetEntityQuery(
+                ComponentType.ReadOnly<AsteroidTag>(),
+                ComponentType.ReadOnly<AsteroidState>(),
+                ComponentType.ReadOnly<LocalTransform>());
+            _transportHashQuery = state.GetEntityQuery(
+                ComponentType.ReadOnly<PeopleTransportTag>(),
+                ComponentType.ReadOnly<PeopleTransportState>(),
+                ComponentType.ReadOnly<LocalTransform>());
+            _nearbyObstacles = new NativeList<int>(64, Allocator.Persistent);
+            _nearbySeen = new NativeHashSet<int>(64, Allocator.Persistent);
             _defensePlanetQuery = state.GetEntityQuery(
                 ComponentType.ReadOnly<PlanetTag>(),
                 ComponentType.ReadOnly<PlanetState>(),
                 ComponentType.ReadOnly<LocalTransform>(),
                 ComponentType.ReadOnly<PlanetaryDefenseSlotElement>());
+            _planetSweepQuery = state.GetEntityQuery(
+                ComponentType.ReadOnly<PlanetTag>(),
+                ComponentType.ReadOnly<PlanetState>(),
+                ComponentType.ReadOnly<LocalTransform>(),
+                ComponentType.ReadOnly<PlanetGemMoonState>());
 
             // [TITAN-ORBIT] Pull Upgrade Visual Scale Multiplier from the single Resources bank
             // so ScaleMultiplier on spawns matches designer Inspector values (client + server).
             var vfxBank = BulletVfxBank.LoadDefault();
+            s_CachedVfxBank = vfxBank;
             if (vfxBank != null)
                 BulletVisualScale.ActiveUpgradeVisualScaleMultiplier = vfxBank.UpgradeVisualScaleMultiplier;
+        }
+
+        /// <summary>Releases persistent broadphase scratch.</summary>
+        public void OnDestroy(ref SystemState state)
+        {
+            if (_nearbyObstacles.IsCreated)
+                _nearbyObstacles.Dispose();
+            if (_nearbySeen.IsCreated)
+                _nearbySeen.Dispose();
+            if (_obstacleHash.IsCreated)
+                _obstacleHash.Dispose();
         }
 
         /// <summary>
@@ -164,6 +206,23 @@ namespace TitanOrbit.ECS
             float mapW = mapState.MapWidth;
             float mapH = mapState.MapHeight;
 
+            // Empty lobby: no live rounds and no hulls that can fire. Skip the 333-asteroid
+            // hash (main never paid this). Phase B same-frame collide builds it lazily.
+            if (bullets.Length == 0 && _allShipQuery.IsEmptyIgnoreFilter)
+            {
+                ecb.Dispose();
+                return;
+            }
+
+            try
+            {
+            // --- Broadphase for ship / asteroid / transport sweeps ---
+            // [TITAN-ORBIT] Built from MapStateSingleton size only when something can hit.
+            // TryResolveBulletHit queries nearby cells instead of walking every rock.
+            // TempJob: IJob.Run() cannot touch Allocator.Temp containers.
+            if (bullets.Length > 0)
+                EnsureObstacleHash(state.EntityManager, mapW, mapH);
+
             // Gem prefab for cargo spill after hull breaks (optional — damage still applies).
             Entity gemPrefab = Entity.Null;
             if (SystemAPI.TryGetSingleton<GamePrefabs>(out var gamePrefabs))
@@ -208,115 +267,46 @@ namespace TitanOrbit.ECS
                 s_DefenseHitTargets.Clear();
             }
 
-            // --- Phase A: advance existing bullets (substepped sweeps) ---
-            for (int i = bullets.Length - 1; i >= 0; i--)
+            // --- Phase A: homing steer (managed), then Burst sweep ---
+            for (int i = 0; i < bullets.Length; i++)
             {
                 var b = bullets[i];
-
-                // --- Homing rockets: steer before the sweep so this tick's segment follows the turn ---
-                // [TITAN-ORBIT] Closest enemy ship or turret. Asteroids / moons / planets are
-                // never acquired (they can still be hit and take damage on the sweep).
-                if (b.Homing != 0 && b.TurnSpeedDeg > 0.01f)
-                {
-                    bool hadLock = b.HomingHasLock != 0;
-                    if (RocketHomingTargeting.TryFindClosestTarget(
-                            state.EntityManager, b.Position, b.OwnerTeam, b.OwnerNetworkId,
-                            b.AcquireRange, mapW, mapH,
-                            b.HomingLockPos, hadLock, out float3 lockPos,
-                            includeOwner: TitanOrbitDebugFlags.IsSelfHarmArmed(b.Age)))
-                    {
-                        b.HomingLockPos = lockPos;
-                        b.HomingHasLock = 1;
-                        float3 vel = b.Velocity;
-                        RocketHomingLogic.TrySteerToward(
-                            b.Position, ref vel, lockPos, b.TurnSpeedDeg, dt, mapW, mapH);
-                        b.Velocity = vel;
-                    }
-                    else
-                    {
-                        b.HomingHasLock = 0;
-                    }
-                }
-
-                float3 startPos = b.Position;
-                float3 endPos = startPos + b.Velocity * dt;
-                // [TITAN-ORBIT] Euclidean step on unbounded flight (not a wrapped-torus path sum).
-                // MaxDistance is a straight-line budget from spawn. Planetary defense sets it via
-                // PlanetaryDefenseAimMath.ComputeBulletMaxDistance — at least engage range, but
-                // longer when lead intercept is past the acquisition sphere (crossing/fleeing ships).
-                float stepDistance = math.distance(startPos, endPos);
-
-                // Collide before lifetime/range cull so the final segment still scores hits.
-                // [TITAN-ORBIT] Lifetime <= 0 means "no timer" (planetary defense) — MaxDistance alone.
-                bool lifetimeExpired = b.Lifetime > 0f && (b.Age + dt) >= b.Lifetime;
-                bool rangeExpired = (b.Traveled + stepDistance) >= b.MaxDistance;
-                bool wouldExpire = lifetimeExpired || rangeExpired;
-
-                // --- Substep when |vel|*dt is large vs smallest asteroid ---
-                // [TITAN-ORBIT] Starblast continuous feel: split long steps so grazing rocks cannot
-                // fall between discrete samples while flying at shipVel + BulletSpeed.
-                // Upgraded hulls (higher BulletSpeed + shipVel) need far more than 4 samples.
-                int substeps = BulletCollision.ComputeAdvanceSubstepCount(stepDistance);
-                float3 cursor = startPos;
-                bool hit = false;
-                float3 hitPoint = endPos;
-                float asteroidHealthAfter = -1f;
-                int pdPlanetId = 0;
-                byte pdSlotIndex = 0;
-                float pdHealthAfter = -1f;
-
-                for (int s = 0; s < substeps; s++)
-                {
-                    float t1 = (s + 1) / (float)substeps;
-                    float3 next = math.lerp(startPos, endPos, t1);
-                    if (TryResolveBulletHit(
-                            ref state, ecb, gemPrefab, gemSpawnServerTime,
-                            in b, cursor, next, mapW, mapH, moonElapsed, serverElapsed,
-                            out hitPoint, out asteroidHealthAfter,
-                            out pdPlanetId, out pdSlotIndex, out pdHealthAfter))
-                    {
-                        hit = true;
-                        break;
-                    }
-
-                    cursor = next;
-                }
-
-                if (hit)
-                {
-                    // [NETCODE] Server owns impact timing — clients play VFX from BulletHitRpc.
-                    // AsteroidHealthAfter / PlanetaryDefenseHealthAfter let clients show true HP
-                    // without waiting for lagging ghost snapshots (asteroids + planet MaxSendRate).
-                    BulletNetNotify.SendHit(
-                        ref ecb, b, hitPoint, asteroidHealthAfter,
-                        pdPlanetId, pdSlotIndex, pdHealthAfter);
-                    // Hit resolution can DestroyEntity (transports). Re-acquire before mutate.
-                    bullets = state.EntityManager.GetBuffer<BulletElement>(bulletEntity);
-                    bullets.RemoveAtSwapBack(i);
+                if (b.Homing == 0 || b.TurnSpeedDeg <= 0.01f)
                     continue;
-                }
 
-                // --- No hit this tick: apply age/travel, then expire or keep flying ---
-                // [TITAN-ORBIT] Range/lifetime expiry is silent — no BulletHitRpc / impact VFX.
-                b.Age += dt;
-                b.Traveled += stepDistance;
-                if (wouldExpire)
+                bool hadLock = b.HomingHasLock != 0;
+                if (RocketHomingTargeting.TryFindClosestTarget(
+                        state.EntityManager, b.Position, b.OwnerTeam, b.OwnerNetworkId,
+                        b.AcquireRange, mapW, mapH,
+                        b.HomingLockPos, hadLock, out float3 lockPos,
+                        includeOwner: TitanOrbitDebugFlags.IsSelfHarmArmed(b.Age)))
                 {
-                    bullets.RemoveAtSwapBack(i);
-                    continue;
+                    b.HomingLockPos = lockPos;
+                    b.HomingHasLock = 1;
+                    float3 vel = b.Velocity;
+                    RocketHomingLogic.TrySteerToward(
+                        b.Position, ref vel, lockPos, b.TurnSpeedDeg, dt, mapW, mapH);
+                    b.Velocity = vel;
+                }
+                else
+                {
+                    b.HomingHasLock = 0;
                 }
 
-                b.Position = endPos;
                 bullets[i] = b;
             }
+
+            AdvanceLiveBulletsBurst(
+                ref state, ref ecb, bulletEntity, bullets,
+                gemPrefab, gemSpawnServerTime, dt, mapW, mapH, moonElapsed, serverElapsed);
 
             // Hit resolution may have destroyed entities — refresh before fire mutates the same buffers.
             bullets = state.EntityManager.GetBuffer<BulletElement>(bulletEntity);
             spawnEvents = state.EntityManager.GetBuffer<BulletSpawnEventElement>(bulletEntity);
 
             // --- Phase B: ship firing + same-frame spawn collide ---
-            // [TITAN-ORBIT] Category Upgrade Visual Scale from Resources bank (once per tick).
-            var vfxBankForScale = TitanOrbit.Data.BulletVfxBank.LoadDefault();
+            // [TITAN-ORBIT] Category Upgrade Visual Scale from the cached Resources bank.
+            var vfxBankForScale = s_CachedVfxBank;
 
             foreach (var (input, weaponCfg, weaponState, shipState, kinematics, transform, ghostOwner, entity) in SystemAPI
                          .Query<RefRO<ShipInput>, RefRO<ShipWeaponConfig>, RefRW<ShipWeaponState>, RefRW<ShipState>, RefRO<ShipKinematics>, RefRO<LocalTransform>, RefRO<GhostOwner>>()
@@ -344,21 +334,31 @@ namespace TitanOrbit.ECS
                 // a stale "all barrels ready" volley the moment Fire becomes legal again.
                 ShipWeaponFireLogic.TickMountCooldowns(mounts, dt);
 
-                if (!input.ValueRO.Fire.IsSet)
-                    continue;
+                bool isMega = SystemAPI.HasComponent<MegaShipState>(entity) &&
+                              SystemAPI.GetComponentRO<MegaShipState>(entity).ValueRO.IsMega;
+                bool ownerShocked = SystemAPI.HasComponent<ShipElectricShockState>(entity) &&
+                                    SystemAPI.GetComponentRO<ShipElectricShockState>(entity).ValueRO
+                                        .IsActive(serverElapsed);
+                bool ownerInOrbit = SystemAPI.HasComponent<ShipOrbitState>(entity) &&
+                                    SystemAPI.GetComponentRO<ShipOrbitState>(entity).ValueRO.InOrbitRing;
+                bool ownerMayFire = input.ValueRO.Fire.IsSet && !ownerShocked && !ownerInOrbit;
 
-                // --- Electric shock: cannot fire while stunned ---
-                if (SystemAPI.HasComponent<ShipElectricShockState>(entity) &&
-                    SystemAPI.GetComponentRO<ShipElectricShockState>(entity).ValueRO.IsActive(serverElapsed))
-                    continue;
+                if (!isMega)
+                {
+                    if (!input.ValueRO.Fire.IsSet)
+                        continue;
 
-                // --- Orbit ring: weapons locked ---
-                // [TITAN-ORBIT] InOrbitRing is written by ShipPhysicsDriveLogic (toroidal annulus).
-                // Fire input may still be held (player mashing shoot) — ignore it here; thrust
-                // remains the only way to leave the passive orbit motor.
-                if (SystemAPI.HasComponent<ShipOrbitState>(entity) &&
-                    SystemAPI.GetComponentRO<ShipOrbitState>(entity).ValueRO.InOrbitRing)
-                    continue;
+                    // --- Electric shock: cannot fire while stunned ---
+                    if (ownerShocked)
+                        continue;
+
+                    // --- Orbit ring: weapons locked ---
+                    // [TITAN-ORBIT] InOrbitRing is written by ShipPhysicsDriveLogic (toroidal annulus).
+                    // Fire input may still be held (player mashing shoot) — ignore it here; thrust
+                    // remains the only way to leave the passive orbit motor.
+                    if (ownerInOrbit)
+                        continue;
+                }
 
                 // [TITAN-ORBIT] Family bank from ghosted loadout (ShipStatApplyLogic writes it).
                 int bankIndex = 0;
@@ -369,9 +369,34 @@ namespace TitanOrbit.ECS
                 int firePowerAbilityLv = 0;
                 if (SystemAPI.HasComponent<ShipAttributeUpgradeState>(entity))
                     firePowerAbilityLv = SystemAPI.GetComponentRO<ShipAttributeUpgradeState>(entity).ValueRO.FirePower;
-                int firePowerExtras = BulletBankCombatLogic.CountFirePowerExtraLevels(
-                    shipState.ValueRO.ShipLevel, firePowerAbilityLv);
-                float abilityEnergy = BulletBankCombatLogic.GetAbilityEnergyDrain(bankIndex, firePowerExtras);
+                int firePowerExtras = isMega
+                    ? 0
+                    : BulletBankCombatLogic.CountFirePowerExtraLevels(
+                        shipState.ValueRO.ShipLevel, firePowerAbilityLv);
+                float abilityEnergy = isMega
+                    ? 0f
+                    : BulletBankCombatLogic.GetAbilityEnergyDrain(bankIndex, firePowerExtras);
+
+                // Per-category Upgrade Visual Scale (default 1). Global category scale is applied
+                // later in BulletVisualFactory — ScaleMultiplier is fire-power upgrade only.
+                float categoryUpgradeScale = vfxBankForScale != null
+                    ? vfxBankForScale.GetCategoryUpgradeVisualScaleMultiplier(bankIndex)
+                    : 1f;
+
+                float3 shipVel = kinematics.ValueRO.Velocity;
+                shipVel.y = 0f;
+
+                if (isMega)
+                {
+                    FireMegaReadyMountsAlongBarrel(
+                        ref state, ref ecb, bulletEntity, entity,
+                        mounts, ownerMayFire, input.ValueRO, weaponCfg.ValueRO, ref shipState.ValueRW,
+                        transform.ValueRO, ghostOwner.ValueRO,
+                        bankIndex, vfxBankForScale, shipVel,
+                        dt, mapW, mapH, moonElapsed, serverElapsed,
+                        gemPrefab, gemSpawnServerTime);
+                    continue;
+                }
 
                 // --- Volley / round-robin / hybrid per ShipWeaponConfig.FireMode ---
                 if (!ShipWeaponFireLogic.TryPlanFire(
@@ -388,135 +413,27 @@ namespace TitanOrbit.ECS
                         abilityEnergy))
                     continue;
 
-                // Per-category Upgrade Visual Scale (default 1). Global category scale is applied
-                // later in BulletVisualFactory — ScaleMultiplier is fire-power upgrade only.
-                float categoryUpgradeScale = vfxBankForScale != null
-                    ? vfxBankForScale.GetCategoryUpgradeVisualScaleMultiplier(bankIndex)
-                    : 1f;
-
-                float3 shipVel = kinematics.ValueRO.Velocity;
-                shipVel.y = 0f;
-                float fallbackRefDamage = weaponCfg.ValueRO.ReferenceBulletDamage > 0f
-                    ? weaponCfg.ValueRO.ReferenceBulletDamage
-                    : BulletVisualScale.DefaultReferenceBulletDamage;
-                float refSpeed = weaponCfg.ValueRO.ReferenceBulletSpeed > 0f
-                    ? weaponCfg.ValueRO.ReferenceBulletSpeed
-                    : BulletVisualScale.DefaultReferenceBulletSpeed;
-
                 // --- Spawn each planned barrel with that mount’s own damage / VFX scale ---
                 for (int shot = 0; shot < shotCount; shot++)
                 {
                     var planned = s_ShotScratch[shot];
                     int mountIdx = planned.MountIndex;
                     var mount = mounts[mountIdx];
-                    float3 fireOrigin;
-                    float3 fireForward;
-                    if (!ShipWeaponPose.TryResolve(transform.ValueRO, mount, out fireOrigin, out fireForward))
-                    {
-                        // Fallback mirrors ShipWeaponPose (presentation-scaled local offset).
-                        float3 localFwd = math.mul(mount.LocalRotation, new float3(0f, 0f, 1f));
-                        localFwd.y = 0f;
-                        if (math.lengthsq(localFwd) < 0.0001f)
-                            localFwd = new float3(0f, 0f, 1f);
-                        else
-                            localFwd = math.normalize(localFwd);
-                        fireForward = math.rotate(transform.ValueRO.Rotation, localFwd);
-                        fireForward.y = 0f;
-                        if (math.lengthsq(fireForward) < 0.0001f)
-                            fireForward = new float3(0f, 0f, 1f);
-                        else
-                            fireForward = math.normalize(fireForward);
-                        float ecsScale = math.max(0.25f, transform.ValueRO.Scale);
-                        float3 presentationLocal = mount.LocalPosition
-                            * (BodyCollisionMath.ShipPresentationScale * ecsScale);
-                        fireOrigin = transform.ValueRO.Position
-                            + math.rotate(transform.ValueRO.Rotation, presentationLocal);
-                    }
+                    ResolveFirePose(transform.ValueRO, in mount, out float3 fireOrigin, out float3 fireForward);
 
-                    float damage = planned.Damage;
-                    float bulletSpeed = weaponCfg.ValueRO.BulletSpeed;
-                    float maxDistance = weaponCfg.ValueRO.BulletMaxDistance;
-                    float lifetime = weaponCfg.ValueRO.BulletLifetime;
-                    float fireRate = weaponCfg.ValueRO.FireRate;
-                    BulletBankCombatLogic.ApplyFireModifiers(
-                        bankIndex, ref damage, ref bulletSpeed, ref maxDistance, ref lifetime, ref fireRate,
-                        firePowerExtras);
-                    float fireRateMul = fireRate / math.max(0.1f, weaponCfg.ValueRO.FireRate);
-
-                    float refDamage = mount.ReferenceFirePower > 0.01f
-                        ? mount.ReferenceFirePower
-                        : fallbackRefDamage;
-                    float visualScale = BulletVisualScale.ComputePerShotScale(
-                        weaponCfg.ValueRO.BulletScale,
-                        damage,
-                        bulletSpeed,
-                        refDamage,
-                        refSpeed,
-                        categoryUpgradeScale);
-
-                    float3 bulletVel = fireForward * math.max(1f, bulletSpeed) + shipVel;
-                    uint sequence = BulletVfxBridge.NextSequence();
-                    var spawn = new BulletElement
-                    {
-                        Position = fireOrigin,
-                        Velocity = bulletVel,
-                        MaxDistance = math.max(10f, maxDistance),
-                        Lifetime = math.max(0.1f, lifetime),
-                        Damage = damage,
-                        OwnerNetworkId = ghostOwner.ValueRO.NetworkId,
-                        OwnerTeam = (byte)shipState.ValueRO.Team,
-                        Sequence = sequence,
-                        BankIndex = bankIndex,
-                        ScaleMultiplier = visualScale,
-                        FirePowerExtraLevels = firePowerExtras,
-                    };
-
-                    spawnEvents.Add(new BulletSpawnEventElement
-                    {
-                        SpawnPosition = spawn.Position,
-                        Velocity = spawn.Velocity,
-                        Lifetime = spawn.Lifetime,
-                        MaxDistance = spawn.MaxDistance,
-                        Damage = spawn.Damage,
-                        OwnerTeam = spawn.OwnerTeam,
-                        Sequence = spawn.Sequence,
-                        BankIndex = bankIndex,
-                        ScaleMultiplier = visualScale,
-                    });
-
-                    // [NETCODE] Cosmetic path for all clients (host bridge + broadcast RPC).
-                    BulletNetNotify.SendSpawn(ref ecb, spawn, mountIdx);
+                    float fireRateMul = SpawnAndCollideShipBullet(
+                        ref state, ref ecb, bulletEntity, mountIdx,
+                        fireOrigin, fireForward, planned.Damage,
+                        weaponCfg.ValueRO, in mount, bankIndex, firePowerExtras,
+                        categoryUpgradeScale, shipVel,
+                        ghostOwner.ValueRO.NetworkId, (byte)shipState.ValueRO.Team,
+                        shipState.ValueRO.ShipLevel,
+                        dt, gemPrefab, gemSpawnServerTime, mapW, mapH,
+                        moonElapsed, serverElapsed);
 
                     // --- Arm this barrel’s own cooldown (independent of other mounts) ---
                     mount.FireCooldown = planned.CooldownSeconds / math.max(0.05f, fireRateMul);
                     mounts[mountIdx] = mount;
-
-                    // --- Same-frame spawn collide (first-bullet tunnel fix) ---
-                    // [TITAN-ORBIT] Collide the first vel*dt segment immediately so nose-touch shots
-                    // do not idle one tick. Do NOT point-test fireOrigin alone — wing muzzles on
-                    // 4-gun hulls sit inside side rocks in clusters and that registered false hits
-                    // with no aim (player saw forward tracers; side asteroids died).
-                    float3 firstEnd = fireOrigin + bulletVel * dt;
-                    bool spawnHit = TryResolveBulletHit(
-                        ref state, ecb, gemPrefab, gemSpawnServerTime,
-                        in spawn, fireOrigin, firstEnd, mapW, mapH, moonElapsed, serverElapsed,
-                        out float3 spawnHitPoint, out float spawnAsteroidHealthAfter,
-                        out int spawnPdPlanetId, out byte spawnPdSlotIndex,
-                        out float spawnPdHealthAfter);
-
-                    if (spawnHit)
-                    {
-                        BulletNetNotify.SendHit(
-                            ref ecb, spawn, spawnHitPoint, spawnAsteroidHealthAfter,
-                            spawnPdPlanetId, spawnPdSlotIndex, spawnPdHealthAfter);
-                        bullets = state.EntityManager.GetBuffer<BulletElement>(bulletEntity);
-                        spawnEvents = state.EntityManager.GetBuffer<BulletSpawnEventElement>(bulletEntity);
-                        // Do not add to the live buffer — bullet resolved this frame.
-                    }
-                    else
-                    {
-                        bullets.Add(spawn);
-                    }
                 }
 
                 // Energy equals sum of each firing barrel’s firePower this tick.
@@ -528,6 +445,339 @@ namespace TitanOrbit.ECS
             ecb.Playback(state.EntityManager);
             ecb.Dispose();
             BulletBankHitEffects.FlushPendingBurns(state.EntityManager);
+            }
+            finally
+            {
+                if (_obstacleHash.IsCreated)
+                    _obstacleHash.Dispose();
+                _obstacleHash = default;
+            }
+        }
+
+        /// <summary>
+        /// MEGA Phase B: same <see cref="ResolveFirePose"/> + <see cref="SpawnAndCollideShipBullet"/>
+        /// as regular hulls (barrel origin + barrel forward). Only the MEGA owner may fire.
+        /// Owner Shift aims each muzzle at the mouse point here — not only in
+        /// <see cref="MegaShipAutoFireSystem"/> — so tracers and damage stay on the
+        /// same ray when auto-aim is isolated. The mouse yaw is applied to a spawn
+        /// copy only (mount pose / FireCooldown stay independent). Per-mount
+        /// FirePower / energy stay. Lead intercept distance from
+        /// <see cref="MegaShipAutoAimSlotElement"/> (or muzzle→mouse while Shift is
+        /// held) grows <c>MaxDistance</c> so shots are not culled early.
+        /// </summary>
+        void FireMegaReadyMountsAlongBarrel(
+            ref SystemState state,
+            ref EntityCommandBuffer ecb,
+            Entity bulletEntity,
+            Entity mega,
+            DynamicBuffer<ShipWeaponMountElement> mounts,
+            bool ownerMayFire,
+            in ShipInput input,
+            in ShipWeaponConfig weaponCfg,
+            ref ShipState shipState,
+            in LocalTransform transform,
+            in GhostOwner ghostOwner,
+            int fallbackBankIndex,
+            BulletVfxBank vfxBankForScale,
+            float3 shipVel,
+            float dt,
+            float mapW,
+            float mapH,
+            double moonElapsed,
+            double serverElapsed,
+            Entity gemPrefab,
+            float gemSpawnServerTime)
+        {
+            int megaOwnerNet = ghostOwner.NetworkId;
+            float energy = shipState.CurrentEnergy;
+            bool shiftMouseAim = input.Overdrive;
+
+            var aims = state.EntityManager.HasBuffer<MegaShipAutoAimSlotElement>(mega)
+                ? state.EntityManager.GetBuffer<MegaShipAutoAimSlotElement>(mega)
+                : default;
+
+            for (int m = 0; m < mounts.Length; m++)
+            {
+                var mount = mounts[m];
+                if (mount.FireCooldown > 0.001f || mount.FirePower <= 0.01f)
+                    continue;
+
+                if (!ownerMayFire)
+                    continue;
+
+                if (energy < mount.FirePower)
+                    continue;
+
+                int mountBank = mount.BulletBankIndex >= 0 ? mount.BulletBankIndex : fallbackBankIndex;
+                float categoryUpgradeScale = vfxBankForScale != null
+                    ? vfxBankForScale.GetCategoryUpgradeVisualScaleMultiplier(mountBank)
+                    : 1f;
+
+                // [TITAN-ORBIT] Presentation overlays Shift mouse-aim on a local copy.
+                // AutoFire may be isolated (DisableMegaShipAutoFire) and then bake
+                // LocalRotation stays hull-forward — tracers hit the cursor, sim does not.
+                // Aim on a spawn copy only — do not persist that yaw onto the mount or a
+                // NaN/degenerate mouse sample can stick FireCooldown + pose and mute the guns.
+                var fireMount = mount;
+                if (shiftMouseAim
+                    && MegaShipWeaponAim.TryGetMuzzleDirToMousePoint(
+                        in transform, in fireMount, in input, mapW, mapH, out float3 toCursor))
+                {
+                    MegaShipWeaponAim.RotateMountTowardWorldDir(
+                        in transform, ref fireMount, toCursor, 0f);
+                }
+
+                ResolveFirePose(transform, in fireMount, out float3 fireOrigin, out float3 fireForward);
+
+                float interceptDistance = 0f;
+                if (shiftMouseAim
+                    && MegaShipWeaponAim.TryGetOwnerMouseAimPoint(
+                        in transform, in input, out float3 mousePoint))
+                {
+                    float3 toMouse = ToroidalMapEcs.ShortestOffsetXZ(
+                        fireOrigin, mousePoint, mapW, mapH);
+                    toMouse.y = 0f;
+                    interceptDistance = math.length(toMouse);
+                    if (!math.isfinite(interceptDistance))
+                        interceptDistance = 0f;
+                }
+                else if (aims.IsCreated && m < aims.Length)
+                {
+                    interceptDistance = aims[m].InterceptDistance;
+                    if (!math.isfinite(interceptDistance))
+                        interceptDistance = 0f;
+                }
+
+                float fireRateMul = SpawnAndCollideShipBullet(
+                    ref state, ref ecb, bulletEntity, m,
+                    fireOrigin, fireForward, mount.FirePower,
+                    weaponCfg, in fireMount, mountBank, firePowerExtras: 0,
+                    categoryUpgradeScale, shipVel,
+                    megaOwnerNet, (byte)shipState.Team,
+                    shipState.ShipLevel,
+                    dt, gemPrefab, gemSpawnServerTime, mapW, mapH,
+                    moonElapsed, serverElapsed,
+                    interceptDistance);
+                if (!math.isfinite(fireRateMul) || fireRateMul < 0.05f)
+                    fireRateMul = 0.05f;
+
+                float fireRate = math.max(0.15f, mount.FireRate > 0.01f ? mount.FireRate : weaponCfg.FireRate);
+                mount.FireCooldown = (1f / fireRate) / fireRateMul;
+                mounts[m] = mount;
+                energy -= mount.FirePower;
+            }
+
+            shipState.CurrentEnergy = math.max(0f, energy);
+        }
+
+        /// <summary>
+        /// Shared muzzle resolve — same fallback as the old Phase B inline block.
+        /// </summary>
+        static void ResolveFirePose(
+            in LocalTransform transform,
+            in ShipWeaponMountElement mount,
+            out float3 fireOrigin,
+            out float3 fireForward)
+        {
+            if (ShipWeaponPose.TryResolve(transform, mount, out fireOrigin, out fireForward))
+                return;
+
+            float3 localFwd = math.mul(mount.LocalRotation, new float3(0f, 0f, 1f));
+            localFwd.y = 0f;
+            if (math.lengthsq(localFwd) < 0.0001f)
+                localFwd = new float3(0f, 0f, 1f);
+            else
+                localFwd = math.normalize(localFwd);
+            fireForward = math.rotate(transform.Rotation, localFwd);
+            fireForward.y = 0f;
+            if (math.lengthsq(fireForward) < 0.0001f)
+                fireForward = new float3(0f, 0f, 1f);
+            else
+                fireForward = math.normalize(fireForward);
+            float ecsScale = math.max(0.25f, transform.Scale);
+            float3 presentationLocal = mount.LocalPosition
+                * (BodyCollisionMath.ShipPresentationScale * ecsScale);
+            fireOrigin = transform.Position + math.rotate(transform.Rotation, presentationLocal);
+        }
+
+        /// <summary>
+        /// One ship/MEGA shot: modifiers, spawn RPC, same-frame <see cref="TryResolveBulletHit"/>.
+        /// Misses stay in the live buffer for Phase A next tick — never advance twice this tick.
+        /// </summary>
+        float SpawnAndCollideShipBullet(
+            ref SystemState state,
+            ref EntityCommandBuffer ecb,
+            Entity bulletEntity,
+            int mountIdx,
+            float3 fireOrigin,
+            float3 fireForward,
+            float damage,
+            in ShipWeaponConfig weaponCfg,
+            in ShipWeaponMountElement mount,
+            int bankIndex,
+            int firePowerExtras,
+            float categoryUpgradeScale,
+            float3 shipVel,
+            int ownerNetworkId,
+            byte ownerTeam,
+            int shipLevel,
+            float dt,
+            Entity gemPrefab,
+            float gemSpawnServerTime,
+            float mapW,
+            float mapH,
+            double moonElapsed,
+            double serverElapsed,
+            float interceptDistance = 0f)
+        {
+            float fallbackRefDamage = weaponCfg.ReferenceBulletDamage > 0f
+                ? weaponCfg.ReferenceBulletDamage
+                : BulletVisualScale.DefaultReferenceBulletDamage;
+            float refSpeed = weaponCfg.ReferenceBulletSpeed > 0f
+                ? weaponCfg.ReferenceBulletSpeed
+                : BulletVisualScale.DefaultReferenceBulletSpeed;
+            float refDamage = mount.ReferenceFirePower > 0.01f
+                ? mount.ReferenceFirePower
+                : fallbackRefDamage;
+            float muzzleSpeed = BulletShotMath.ResolveMuzzleSpeed(mount.BulletSpeed, weaponCfg.BulletSpeed);
+            float refMuzzleSpeed = mount.BulletSpeed > 0.01f ? mount.BulletSpeed : refSpeed;
+            float maxDistanceForLife = BulletShotMath.ResolveMaxDistance(
+                mount.BulletRange, weaponCfg.BulletMaxDistance);
+            float lifetime = mount.BulletSpeed > 0.01f
+                ? math.max(0.25f, maxDistanceForLife / math.max(1f, muzzleSpeed))
+                : weaponCfg.BulletLifetime;
+
+            var plan = BulletShotMath.Build(
+                fireOrigin,
+                fireForward,
+                shipVel,
+                damage,
+                muzzleSpeed,
+                weaponCfg.BulletMaxDistance,
+                lifetime,
+                weaponCfg.FireRate,
+                mount.BulletRange,
+                weaponCfg.BulletScale,
+                refDamage,
+                refMuzzleSpeed,
+                bankIndex,
+                firePowerExtras,
+                categoryUpgradeScale);
+
+            byte homing = 0;
+            float turnSpeedDeg = 0f;
+            float acquireRange = 0f;
+            if (RocketHomingFire.TryApply(
+                    bankIndex, shipLevel, fireForward, ref plan,
+                    out turnSpeedDeg, out acquireRange))
+            {
+                homing = 1;
+            }
+
+            // --- Lead flight budget (MEGA auto-aim) ---
+            // [TITAN-ORBIT] Same bug planetary turrets had: intercept for a fleeing /
+            // crossing target sits past current range. Without this, the sim culls the
+            // round before it arrives and it looks like undershoot.
+            // Rockets use catalog lifetime / unlimited travel — do not clamp them to
+            // MaxBulletTravelDistance or they cannot chase.
+            if (homing == 0 && interceptDistance > 0.5f)
+            {
+                float engage = plan.MaxDistance;
+                float lead = PlanetaryDefenseAimMath.ComputeBulletMaxDistance(
+                    engage, interceptDistance);
+                // MEGA volleys were flying to the lead point with no cap (48u+).
+                // That kept dozens of live rounds in sim/VFX. Cap travel; undershoot
+                // a fleeing target past MaxBulletTravelDistance rather than hitch.
+                plan.MaxDistance = math.min(lead, MegaShipCatalog.MaxBulletTravelDistance);
+                if (plan.MaxDistance > engage + 0.01f)
+                {
+                    float planarMuzzleSpeed = math.length(plan.Velocity - shipVel);
+                    if (planarMuzzleSpeed < 1f)
+                        planarMuzzleSpeed = 1f;
+                    plan.Lifetime = math.max(plan.Lifetime, plan.MaxDistance / planarMuzzleSpeed);
+                }
+            }
+
+            uint sequence = BulletVfxBridge.NextSequence();
+            var spawn = new BulletElement
+            {
+                Position = plan.Origin,
+                Velocity = plan.Velocity,
+                MaxDistance = plan.MaxDistance,
+                Lifetime = plan.Lifetime,
+                Damage = plan.Damage,
+                OwnerNetworkId = ownerNetworkId,
+                OwnerTeam = ownerTeam,
+                Sequence = sequence,
+                BankIndex = bankIndex,
+                ScaleMultiplier = plan.VisualScale,
+                FirePowerExtraLevels = firePowerExtras,
+                Homing = homing,
+                TurnSpeedDeg = turnSpeedDeg,
+                AcquireRange = acquireRange,
+            };
+
+            var spawnEvents = state.EntityManager.GetBuffer<BulletSpawnEventElement>(bulletEntity);
+            spawnEvents.Add(new BulletSpawnEventElement
+            {
+                SpawnPosition = spawn.Position,
+                Velocity = spawn.Velocity,
+                Lifetime = spawn.Lifetime,
+                MaxDistance = spawn.MaxDistance,
+                Damage = spawn.Damage,
+                OwnerTeam = spawn.OwnerTeam,
+                Sequence = spawn.Sequence,
+                BankIndex = bankIndex,
+                ScaleMultiplier = plan.VisualScale,
+            });
+
+            BulletNetNotify.SendSpawn(ref ecb, spawn, mountIdx);
+
+            // --- Same-frame spawn collide (substepped — MEGA sniper + shipVel can skip a rock) ---
+            EnsureObstacleHash(state.EntityManager, mapW, mapH);
+            BulletFlight.GetStep(plan.Origin, plan.Velocity, dt, out float3 firstEnd, out int spawnSteps);
+            float3 cursor = plan.Origin;
+            bool spawnHit = false;
+            float3 spawnHitPoint = firstEnd;
+            float spawnAsteroidHealthAfter = -1f;
+            int spawnAsteroidLayoutSlot = -1;
+            int spawnPdPlanetId = 0;
+            byte spawnPdSlotIndex = 0;
+            float spawnPdHealthAfter = -1f;
+            GatherHashedObstaclesForSegment(plan.Origin, firstEnd);
+            for (int s = 0; s < spawnSteps; s++)
+            {
+                float3 next = BulletFlight.SubstepEnd(plan.Origin, firstEnd, s, spawnSteps);
+                if (TryResolveBulletHit(
+                        ref state, ecb, gemPrefab, gemSpawnServerTime,
+                        in spawn, cursor, next, mapW, mapH, moonElapsed, serverElapsed,
+                        out spawnHitPoint, out spawnAsteroidHealthAfter,
+                        out spawnAsteroidLayoutSlot,
+                        out spawnPdPlanetId, out spawnPdSlotIndex,
+                        out spawnPdHealthAfter,
+                        hashedObstaclesAlreadyGathered: true))
+                {
+                    spawnHit = true;
+                    break;
+                }
+
+                cursor = next;
+            }
+
+            var bullets = state.EntityManager.GetBuffer<BulletElement>(bulletEntity);
+            if (spawnHit)
+            {
+                BulletNetNotify.SendHit(
+                    ref ecb, spawn, spawnHitPoint, spawnAsteroidHealthAfter,
+                    spawnPdPlanetId, spawnPdSlotIndex, spawnPdHealthAfter,
+                    mountIdx, spawnAsteroidLayoutSlot);
+            }
+            else
+            {
+                bullets.Add(spawn);
+            }
+
+            return plan.FireRateMul;
         }
 
         /// <summary>
@@ -556,6 +806,185 @@ namespace TitanOrbit.ECS
             /// Planetary defense turret on an owned planet (ghosted slot buffer HP).
             /// </summary>
             PlanetaryDefense = 7,
+        }
+
+        /// <summary>
+        /// Burst-advances every live bullet, then applies managed hit Pass 2 + RPCs.
+        /// </summary>
+        void AdvanceLiveBulletsBurst(
+            ref SystemState state,
+            ref EntityCommandBuffer ecb,
+            Entity bulletEntity,
+            DynamicBuffer<BulletElement> bullets,
+            Entity gemPrefab,
+            float gemSpawnServerTime,
+            float dt,
+            float mapW,
+            float mapH,
+            double moonElapsed,
+            double serverElapsed)
+        {
+            int n = bullets.Length;
+            if (n <= 0)
+                return;
+
+            var jobBullets = new NativeArray<BulletElement>(n, Allocator.TempJob);
+            var outcomes = new NativeArray<byte>(n, Allocator.TempJob);
+            var hitPoints = new NativeArray<float3>(n, Allocator.TempJob);
+            var stepFrom = new NativeArray<float3>(n, Allocator.TempJob);
+            var stepTo = new NativeArray<float3>(n, Allocator.TempJob);
+            var planets = new NativeList<BulletJobPlanet>(16, Allocator.TempJob);
+            NativeArray<PlanetaryDefenseHitTarget> defense = default;
+            NativeArray<DroneHitTarget> drones = default;
+            try
+            {
+                for (int i = 0; i < n; i++)
+                    jobBullets[i] = bullets[i];
+
+                using var planetStates = _planetSweepQuery.ToComponentDataArray<PlanetState>(Allocator.Temp);
+                using var planetXfs = _planetSweepQuery.ToComponentDataArray<LocalTransform>(Allocator.Temp);
+                using var moonStates = _planetSweepQuery.ToComponentDataArray<PlanetGemMoonState>(Allocator.Temp);
+                for (int p = 0; p < planetStates.Length; p++)
+                {
+                    float scale = math.max(0.25f, planetXfs[p].Scale);
+                    bool home = planetStates[p].IsHomePlanet;
+                    planets.Add(new BulletJobPlanet
+                    {
+                        Position = planetXfs[p].Position,
+                        Scale = scale,
+                        MoonBodyRadius = PlanetGemMoonMath.GetMoonBodyRadiusWorld(scale, home),
+                        MoonShieldRadius = PlanetGemMoonMath.GetMoonBulletHitRadiusWorld(
+                            scale, home, moonStates[p].CurrentShield, attackerFriendlyToMoon: false),
+                        PlanetLevel = planetStates[p].PlanetLevel,
+                        PlanetId = planetStates[p].PlanetId,
+                        Ownership = (byte)planetStates[p].Ownership,
+                        IsHome = home,
+                        HasMoon = true,
+                    });
+                }
+
+                defense = new NativeArray<PlanetaryDefenseHitTarget>(
+                    s_DefenseHitTargets.Count, Allocator.TempJob);
+                for (int i = 0; i < s_DefenseHitTargets.Count; i++)
+                    defense[i] = s_DefenseHitTargets[i];
+
+                drones = new NativeArray<DroneHitTarget>(s_DroneHitTargets.Count, Allocator.TempJob);
+                for (int i = 0; i < s_DroneHitTargets.Count; i++)
+                    drones[i] = s_DroneHitTargets[i];
+
+                var job = new BulletAdvanceJob
+                {
+                    Dt = dt,
+                    MapW = mapW,
+                    MapH = mapH,
+                    MoonElapsed = moonElapsed,
+                    Bullets = jobBullets,
+                    Outcomes = outcomes,
+                    HitPoints = hitPoints,
+                    StepFrom = stepFrom,
+                    StepTo = stepTo,
+                    Hash = _obstacleHash,
+                    Nearby = _nearbyObstacles,
+                    Seen = _nearbySeen,
+                    Planets = planets.AsArray(),
+                    Defense = defense,
+                    Drones = drones,
+                    AllowSelfHarmHits = TitanOrbitDebugFlags.SelfHarmRocketsAndMines ? (byte)1 : (byte)0,
+                    SelfHarmArmDelay = TitanOrbitDebugFlags.SelfHarmArmDelaySeconds,
+                };
+                job.Run();
+
+                for (int i = n - 1; i >= 0; i--)
+                {
+                    byte outcome = outcomes[i];
+                    if (outcome == BulletAdvanceJob.OutcomeExpire)
+                    {
+                        bullets = state.EntityManager.GetBuffer<BulletElement>(bulletEntity);
+                        bullets.RemoveAtSwapBack(i);
+                        continue;
+                    }
+
+                    if (outcome == BulletAdvanceJob.OutcomeFly)
+                    {
+                        bullets = state.EntityManager.GetBuffer<BulletElement>(bulletEntity);
+                        bullets[i] = jobBullets[i];
+                        continue;
+                    }
+
+                    var b = jobBullets[i];
+                    GatherHashedObstaclesForSegment(stepFrom[i], stepTo[i]);
+                    if (TryResolveBulletHit(
+                            ref state, ecb, gemPrefab, gemSpawnServerTime,
+                            in b, stepFrom[i], stepTo[i], mapW, mapH, moonElapsed, serverElapsed,
+                            out float3 hitPoint, out float asteroidHealthAfter,
+                            out int asteroidLayoutSlot,
+                            out int pdPlanetId, out byte pdSlotIndex, out float pdHealthAfter,
+                            hashedObstaclesAlreadyGathered: true))
+                    {
+                        BulletNetNotify.SendHit(
+                            ref ecb, b, hitPoint, asteroidHealthAfter,
+                            pdPlanetId, pdSlotIndex, pdHealthAfter,
+                            asteroidLayoutSlot: asteroidLayoutSlot);
+                        bullets = state.EntityManager.GetBuffer<BulletElement>(bulletEntity);
+                        bullets.RemoveAtSwapBack(i);
+                    }
+                    else
+                    {
+                        b.Position = stepTo[i];
+                        b.Age += dt;
+                        b.Traveled += math.distance(stepFrom[i], stepTo[i]);
+                        bullets = state.EntityManager.GetBuffer<BulletElement>(bulletEntity);
+                        bullets[i] = b;
+                    }
+                }
+            }
+            finally
+            {
+                if (jobBullets.IsCreated)
+                    jobBullets.Dispose();
+                if (outcomes.IsCreated)
+                    outcomes.Dispose();
+                if (hitPoints.IsCreated)
+                    hitPoints.Dispose();
+                if (stepFrom.IsCreated)
+                    stepFrom.Dispose();
+                if (stepTo.IsCreated)
+                    stepTo.Dispose();
+                if (planets.IsCreated)
+                    planets.Dispose();
+                if (defense.IsCreated)
+                    defense.Dispose();
+                if (drones.IsCreated)
+                    drones.Dispose();
+            }
+        }
+
+        /// <summary>
+        /// Builds the asteroid/ship/transport hash once per tick, on first use.
+        /// Empty ticks (no live bullets, no fire) never pay this — that is the
+        /// mega-ships Docker cost <c>main</c> did not have.
+        /// </summary>
+        void EnsureObstacleHash(EntityManager em, float mapW, float mapH)
+        {
+            if (_obstacleHash.IsCreated)
+                return;
+            _obstacleHash = BulletObstacleSpatialHash.Build(
+                em,
+                _allShipQuery,
+                _asteroidHashQuery,
+                _transportHashQuery,
+                mapW,
+                mapH,
+                Allocator.TempJob);
+        }
+
+        /// <summary>
+        /// One hash gather for the whole [from, to] step. Substeps reuse this list.
+        /// </summary>
+        void GatherHashedObstaclesForSegment(float3 from, float3 to)
+        {
+            if (_obstacleHash.IsCreated && _nearbyObstacles.IsCreated && _nearbySeen.IsCreated)
+                _obstacleHash.GatherAlongSegment(from, to, _nearbyObstacles, _nearbySeen);
         }
 
         /// <summary>
@@ -605,12 +1034,15 @@ namespace TitanOrbit.ECS
             double serverElapsed,
             out float3 hitPoint,
             out float asteroidHealthAfter,
+            out int asteroidLayoutSlot,
             out int planetaryDefensePlanetId,
             out byte planetaryDefenseSlotIndex,
-            out float planetaryDefenseHealthAfter)
+            out float planetaryDefenseHealthAfter,
+            bool hashedObstaclesAlreadyGathered = false)
         {
             hitPoint = to;
             asteroidHealthAfter = -1f;
+            asteroidLayoutSlot = -1;
             planetaryDefensePlanetId = 0;
             planetaryDefenseSlotIndex = 0;
             planetaryDefenseHealthAfter = -1f;
@@ -670,118 +1102,42 @@ namespace TitanOrbit.ECS
                 }
             }
 
-            // --- Enemy ships only (pass through self + friendly team) ---
-            // [TITAN-ORBIT] Same-team skip covers allies; OwnerNetworkId covers own hull even if
-            // Team is briefly unset during Join Team / respawn (muzzle sits inside own radius).
-            // Mining drones skip ships entirely (AsteroidsOnly).
-            if (AllowsHitKind(b.DamageFilter, BulletHitKind.Ship))
+            // --- Ships / asteroids / transports (spatial hash) ---
+            // [TITAN-ORBIT] Map size from MapStateSingleton at hash build. Exact tests
+            // are unchanged — only the candidate set is nearby cells, not the whole belt.
+            if (_obstacleHash.IsCreated && _nearbyObstacles.IsCreated && _nearbySeen.IsCreated)
             {
-            foreach (var (shipState, shipTransform, shipEntity) in SystemAPI
-                         .Query<RefRO<ShipState>, RefRO<LocalTransform>>()
-                         .WithAll<ShipTag>()
-                         .WithEntityAccess())
-            {
-                if (shipState.ValueRO.IsDead)
-                    continue;
-                // --- Stowed in turret: hull is "removed" — ignore bullet hits ---
-                if (state.EntityManager.HasComponent<ShipTurretControlState>(shipEntity) &&
-                    state.EntityManager.GetComponentData<ShipTurretControlState>(shipEntity).IsControlling)
-                    continue;
-                bool selfHarm = b.Homing != 0 && TitanOrbitDebugFlags.IsSelfHarmArmed(b.Age);
-                if (shipState.ValueRO.Team == (TeamId)b.OwnerTeam && !healFriendly && !selfHarm)
-                    continue;
-                if (!selfHarm &&
-                    b.OwnerNetworkId > 0 &&
-                    state.EntityManager.HasComponent<GhostOwner>(shipEntity) &&
-                    state.EntityManager.GetComponentData<GhostOwner>(shipEntity).NetworkId == b.OwnerNetworkId)
-                    continue;
-
-                // --- Hit radius from attribute-grown PhysicsCollider (XZ AABB) ---
-                // [TITAN-ORBIT] Component upgrades scale compound hull children via
-                // ShipHullColliderLogic — GetShipHullRadiusWorld only sees tier LocalTransform.Scale
-                // and under-hits fat ships. Same helper as ShipToroidalWorldCollisionLogic.
-                float shipRadius;
-                if (state.EntityManager.HasComponent<PhysicsCollider>(shipEntity))
+                if (!hashedObstaclesAlreadyGathered)
+                    _obstacleHash.GatherAlongSegment(from, to, _nearbyObstacles, _nearbySeen);
+                bool wantShip = AllowsHitKind(b.DamageFilter, BulletHitKind.Ship);
+                bool wantAsteroid = AllowsHitKind(b.DamageFilter, BulletHitKind.Asteroid);
+                bool wantTransport = AllowsHitKind(b.DamageFilter, BulletHitKind.Transport);
+                var em = state.EntityManager;
+                for (int n = 0; n < _nearbyObstacles.Length; n++)
                 {
-                    var physicsCollider = state.EntityManager.GetComponentData<PhysicsCollider>(shipEntity);
-                    shipRadius = ShipToroidalWorldCollisionLogic.GetShipCollisionRadiusWorld(
-                        physicsCollider, shipTransform.ValueRO.Scale);
+                    var entry = _obstacleHash.Entries[_nearbyObstacles[n]];
+                    switch (entry.Kind)
+                    {
+                        case BulletObstacleKind.Ship:
+                            if (wantShip)
+                                ConsiderHashedShip(
+                                    em, in b, from, to, mapW, mapH, healFriendly, entry.Entity,
+                                    ref bestT, ref bestHit, ref bestKind, ref bestEntity);
+                            break;
+                        case BulletObstacleKind.Asteroid:
+                            if (wantAsteroid)
+                                ConsiderHashedAsteroid(
+                                    em, in b, from, to, mapW, mapH, entry.Entity,
+                                    ref bestT, ref bestHit, ref bestKind, ref bestEntity);
+                            break;
+                        case BulletObstacleKind.Transport:
+                            if (wantTransport)
+                                ConsiderHashedTransport(
+                                    em, in b, from, to, mapW, mapH, entry.Entity,
+                                    ref bestT, ref bestHit, ref bestKind, ref bestEntity);
+                            break;
+                    }
                 }
-                else
-                {
-                    shipRadius = BodyCollisionMath.GetShipHullRadiusWorld(shipTransform.ValueRO.Scale);
-                }
-
-                // [TITAN-ORBIT] Heavier fire-power tracers (ScaleMultiplier) get a matching
-                // collision pad so big planetary-defense / upgraded shots do not skim past hulls.
-                float bulletPad = math.clamp(b.ScaleMultiplier * 0.18f, 0f, 0.85f);
-                shipRadius += bulletPad;
-                if (!BulletCollision.SegmentHitsSphereToroidal(
-                        from, to, shipTransform.ValueRO.Position, shipRadius, mapW, mapH, out float3 shipHit))
-                    continue;
-
-                if (!TryKeepNearestHit(from, to, shipHit, ref bestT, ref bestHit))
-                    continue;
-
-                bestKind = BulletHitKind.Ship;
-                bestEntity = shipEntity;
-            }
-            }
-
-            // --- Asteroids ---
-            // [TITAN-ORBIT] Fighter drones skip rocks (ShipsOnly) — bolts pass through asteroids.
-            if (AllowsHitKind(b.DamageFilter, BulletHitKind.Asteroid))
-            {
-            foreach (var (asteroidState, asteroidTransform, asteroidEntity) in SystemAPI
-                         .Query<RefRO<AsteroidState>, RefRO<LocalTransform>>()
-                         .WithAll<AsteroidTag>()
-                         .WithEntityAccess())
-            {
-                // Already-dead rocks do not block or absorb further shots this tick.
-                if (asteroidState.ValueRO.IsDestroyed || asteroidState.ValueRO.Health <= 0f)
-                    continue;
-
-                float hitRadius = BulletCollision.AsteroidHitRadius(asteroidTransform.ValueRO.Scale);
-                if (!BulletCollision.SegmentHitsSphereToroidal(
-                        from, to, asteroidTransform.ValueRO.Position, hitRadius, mapW, mapH, out float3 rockHit))
-                    continue;
-
-                if (!TryKeepNearestHit(from, to, rockHit, ref bestT, ref bestHit))
-                    continue;
-
-                bestKind = BulletHitKind.Asteroid;
-                bestEntity = asteroidEntity;
-            }
-            }
-
-            // --- Enemy people transports ---
-            if (AllowsHitKind(b.DamageFilter, BulletHitKind.Transport))
-            {
-            foreach (var (transport, transform, transportEntity) in SystemAPI
-                         .Query<RefRO<PeopleTransportState>, RefRO<LocalTransform>>()
-                         .WithAll<PeopleTransportTag>()
-                         .WithEntityAccess())
-            {
-                var t = transport.ValueRO;
-                if (t.Amount <= 0f || t.Health <= 0f)
-                    continue;
-
-                var sourceTeam = (TeamId)t.Team;
-                var ownerTeam = (TeamId)b.OwnerTeam;
-                if (sourceTeam == TeamId.None || sourceTeam == ownerTeam)
-                    continue;
-
-                float hitRadius = PeopleTransportMath.GetBulletHitRadius(transform.ValueRO.Scale);
-                if (!BulletCollision.SegmentHitsSphereToroidal(
-                        from, to, transform.ValueRO.Position, hitRadius, mapW, mapH, out float3 transportHit))
-                    continue;
-
-                if (!TryKeepNearestHit(from, to, transportHit, ref bestT, ref bestHit))
-                    continue;
-
-                bestKind = BulletHitKind.Transport;
-                bestEntity = transportEntity;
-            }
             }
 
             // --- Derived drones (shield wall / escort bodies) ---
@@ -924,7 +1280,7 @@ namespace TitanOrbit.ECS
                     float health = ship.Health;
                     float gems = ship.CurrentGems;
                     bool isDead = ship.IsDead;
-                    bool selfHarmHit = b.Homing != 0 && TitanOrbitDebugFlags.IsSelfHarmArmed(b.Age);
+                    bool selfHarmHit = TitanOrbitDebugFlags.IsHomingSelfHarmArmed(b.Homing, b.Age);
                     var damageTeam = selfHarmHit && ship.Team == (TeamId)b.OwnerTeam
                         ? TeamId.None
                         : (TeamId)b.OwnerTeam;
@@ -932,7 +1288,7 @@ namespace TitanOrbit.ECS
                         ref health,
                         ref gems,
                         ref isDead,
-                        hitDamage,
+                        CardEffectQuery.ScaleIncomingDamage(state.EntityManager, bestEntity, hitDamage),
                         ship.Team,
                         damageTeam,
                         gemExpulsionPerHullDamage: ShipDamageLogic.ExcessDamageGemExpulsionPerHullDamage,
@@ -953,14 +1309,16 @@ namespace TitanOrbit.ECS
                     // --- Kill attribution (last damager for ShipMatchStats.Kills) ---
                     // [TITAN-ORBIT] Stamp whenever real damage landed so ShipDeathRecordingSystem
                     // can credit the bullet owner even if death happens on a later gem-spill hit.
-                    if ((result.AppliedHullDamage || result.GemsToExpel > 0.0001f || result.BecameDead) &&
-                        b.OwnerNetworkId > 0)
+                    if (result.AppliedHullDamage || result.GemsToExpel > 0.0001f || result.BecameDead)
                     {
+                        float2 impulse = new float2(b.Velocity.x, b.Velocity.z);
                         ShipMatchStatsLogic.SetLastDamager(
                             state.EntityManager,
                             bestEntity,
                             b.OwnerNetworkId,
-                            (float)serverElapsed);
+                            (float)serverElapsed,
+                            impulse,
+                            hitDamage);
                     }
 
                     if (result.GemsToExpel > 0.0001f &&
@@ -1008,6 +1366,7 @@ namespace TitanOrbit.ECS
                     {
                         // Still report 0 so clients can hide a lingering proxy.
                         asteroidHealthAfter = 0f;
+                        asteroidLayoutSlot = AsteroidLayoutSlot.Read(state.EntityManager, bestEntity);
                         // [PHYSICS] A 0-HP zombie that missed DestroyEntity still blocks the hull.
                         AsteroidDeathPhysics.QueueStripColliders(ecb, state.EntityManager, bestEntity);
                         return true;
@@ -1024,6 +1383,7 @@ namespace TitanOrbit.ECS
 
                     // Publish post-hit HP on BulletHitRpc — ghost snapshots lag MaxSendRate.
                     asteroidHealthAfter = asteroid.Health;
+                    asteroidLayoutSlot = AsteroidLayoutSlot.Read(state.EntityManager, bestEntity);
                     state.EntityManager.SetComponentData(bestEntity, asteroid);
 
                     // [PHYSICS] Lethal hits drop the hull immediately. Waiting for
@@ -1154,6 +1514,161 @@ namespace TitanOrbit.ECS
                 UnityEngine.Resources.Load<PlanetShipFamilyConfig>("PlanetShipFamilyConfig");
             s_DefenseDefaultConfig = PlanetaryDefenseConfig.LoadDefault();
             s_DefenseConfigWarmed = true;
+        }
+
+        /// <summary>
+        /// Exact ship test for one hashed candidate. Same filters as the old
+        /// all-ships foreach (dead / stowed / friendly / self / MEGA parts).
+        /// </summary>
+        static void ConsiderHashedShip(
+            EntityManager em,
+            in BulletElement b,
+            float3 from,
+            float3 to,
+            float mapW,
+            float mapH,
+            bool healFriendly,
+            Entity shipEntity,
+            ref float bestT,
+            ref float3 bestHit,
+            ref BulletHitKind bestKind,
+            ref Entity bestEntity)
+        {
+            if (!em.Exists(shipEntity) || !em.HasComponent<ShipState>(shipEntity) ||
+                !em.HasComponent<LocalTransform>(shipEntity))
+                return;
+
+            var shipState = em.GetComponentData<ShipState>(shipEntity);
+            if (shipState.IsDead)
+                return;
+            if (em.HasComponent<ShipTurretControlState>(shipEntity) &&
+                em.GetComponentData<ShipTurretControlState>(shipEntity).IsControlling)
+                return;
+
+            bool selfHarm = TitanOrbitDebugFlags.IsHomingSelfHarmArmed(b.Homing, b.Age);
+            if (shipState.Team == (TeamId)b.OwnerTeam && !healFriendly && !selfHarm)
+                return;
+            if (!selfHarm &&
+                b.OwnerNetworkId > 0 &&
+                em.HasComponent<GhostOwner>(shipEntity) &&
+                em.GetComponentData<GhostOwner>(shipEntity).NetworkId == b.OwnerNetworkId)
+                return;
+
+            var shipTransform = em.GetComponentData<LocalTransform>(shipEntity);
+            float bulletPad = math.clamp(b.ScaleMultiplier * 0.18f, 0f, 0.85f);
+            float3 shipHit;
+            bool isMega = em.HasComponent<MegaShipState>(shipEntity)
+                          && em.GetComponentData<MegaShipState>(shipEntity).IsMega;
+            if (isMega)
+            {
+                if (!MegaShipCombatAim.TryHitBulletSegment(
+                        em, shipEntity, shipTransform,
+                        from, to, bulletPad, mapW, mapH, out shipHit, out _))
+                    return;
+            }
+            else
+            {
+                float shipRadius;
+                if (em.HasComponent<PhysicsCollider>(shipEntity))
+                {
+                    var physicsCollider = em.GetComponentData<PhysicsCollider>(shipEntity);
+                    shipRadius = MegaShipCombatAim.GetHitRadiusWorld(
+                        em, shipEntity, physicsCollider, shipTransform.Scale);
+                }
+                else
+                {
+                    shipRadius = BodyCollisionMath.GetShipHullRadiusWorld(shipTransform.Scale);
+                }
+
+                shipRadius += bulletPad;
+                float3 shipCenter = MegaShipCombatAim.GetAimPoint(em, shipEntity, shipTransform);
+                if (!BulletCollision.SegmentHitsSphereToroidal(
+                        from, to, shipCenter, shipRadius, mapW, mapH, out shipHit))
+                    return;
+            }
+
+            if (!TryKeepNearestHit(from, to, shipHit, ref bestT, ref bestHit))
+                return;
+
+            bestKind = BulletHitKind.Ship;
+            bestEntity = shipEntity;
+        }
+
+        /// <summary>Exact asteroid test for one hashed candidate.</summary>
+        static void ConsiderHashedAsteroid(
+            EntityManager em,
+            in BulletElement b,
+            float3 from,
+            float3 to,
+            float mapW,
+            float mapH,
+            Entity asteroidEntity,
+            ref float bestT,
+            ref float3 bestHit,
+            ref BulletHitKind bestKind,
+            ref Entity bestEntity)
+        {
+            if (!em.Exists(asteroidEntity) || !em.HasComponent<AsteroidState>(asteroidEntity) ||
+                !em.HasComponent<LocalTransform>(asteroidEntity))
+                return;
+
+            var asteroidState = em.GetComponentData<AsteroidState>(asteroidEntity);
+            if (asteroidState.IsDestroyed || asteroidState.Health <= 0f)
+                return;
+
+            var asteroidTransform = em.GetComponentData<LocalTransform>(asteroidEntity);
+            float hitRadius = BulletCollision.AsteroidHitRadiusForSweep(
+                asteroidTransform.Scale, b.ScaleMultiplier);
+            if (!BulletCollision.SegmentHitsSphereToroidal(
+                    from, to, asteroidTransform.Position, hitRadius, mapW, mapH, out float3 rockHit))
+                return;
+
+            if (!TryKeepNearestHit(from, to, rockHit, ref bestT, ref bestHit))
+                return;
+
+            bestKind = BulletHitKind.Asteroid;
+            bestEntity = asteroidEntity;
+        }
+
+        /// <summary>Exact transport test for one hashed candidate.</summary>
+        static void ConsiderHashedTransport(
+            EntityManager em,
+            in BulletElement b,
+            float3 from,
+            float3 to,
+            float mapW,
+            float mapH,
+            Entity transportEntity,
+            ref float bestT,
+            ref float3 bestHit,
+            ref BulletHitKind bestKind,
+            ref Entity bestEntity)
+        {
+            if (!em.Exists(transportEntity) ||
+                !em.HasComponent<PeopleTransportState>(transportEntity) ||
+                !em.HasComponent<LocalTransform>(transportEntity))
+                return;
+
+            var t = em.GetComponentData<PeopleTransportState>(transportEntity);
+            if (t.Amount <= 0f || t.Health <= 0f)
+                return;
+
+            var sourceTeam = (TeamId)t.Team;
+            var ownerTeam = (TeamId)b.OwnerTeam;
+            if (sourceTeam == TeamId.None || sourceTeam == ownerTeam)
+                return;
+
+            var transform = em.GetComponentData<LocalTransform>(transportEntity);
+            float hitRadius = PeopleTransportMath.GetBulletHitRadius(transform.Scale);
+            if (!BulletCollision.SegmentHitsSphereToroidal(
+                    from, to, transform.Position, hitRadius, mapW, mapH, out float3 transportHit))
+                return;
+
+            if (!TryKeepNearestHit(from, to, transportHit, ref bestT, ref bestHit))
+                return;
+
+            bestKind = BulletHitKind.Transport;
+            bestEntity = transportEntity;
         }
 
         /// <summary>

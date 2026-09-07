@@ -5,6 +5,7 @@ using TitanOrbit.ECS;
 using TitanOrbit.Generation;
 using TitanOrbit.NetCode;
 using TitanOrbit.Simulation;
+using Unity.Entities;
 using Unity.Mathematics;
 using UnityEngine;
 
@@ -65,12 +66,15 @@ namespace TitanOrbit.Game
             public byte IsLoad;
             public int SourcePlanetId;
             public int TargetPlanetId;
+            public int TargetShipNetworkId;
             public float Amount;
             public byte Team;
             public float RemainingLifetime;
             public int TileK;
             public int TileM;
             public bool LeavePopupShown;
+            /// <summary>True after the load flight turned around (ship left orbit) and +N was shown.</summary>
+            public bool ReturnPopupShown;
             /// <summary>True after at least one Active pose RPC — suppress local arrive guesses.</summary>
             public bool HasServerPose;
         }
@@ -100,6 +104,62 @@ namespace TitanOrbit.Game
 
         /// <summary>Live driver instance, or null when disabled.</summary>
         public static PeopleTransportVfxDriver Active => s_Instance;
+
+        /// <summary>
+        /// Join-safe cosmetic spheres for bullet tracers. Transports are not client ghosts —
+        /// this is the pose the observer actually sees.
+        /// </summary>
+        public static void AppendBulletObstacles(List<BulletCosmeticHitQuery.Obstacle> into)
+        {
+            if (into == null || s_Instance == null)
+                return;
+
+            var flights = s_Instance._flights;
+            for (int i = 0; i < flights.Count; i++)
+            {
+                var f = flights[i];
+                if (f.Amount <= 0.01f)
+                    continue;
+                into.Add(new BulletCosmeticHitQuery.Obstacle
+                {
+                    Kind = BulletCosmeticHitQuery.ObstacleKind.Transport,
+                    SourceEntity = Entity.Null,
+                    LogicalCenter = f.LogicalPos,
+                    Radius = PeopleTransportMath.GetBulletHitRadius(PeopleTransportMath.TransportRadius),
+                    TeamOrOwnership = f.Team,
+                });
+            }
+        }
+
+        /// <summary>
+        /// Nearest live transport VFX transform to a logical point (join-safe list walk).
+        /// </summary>
+        public static bool TryGetNearestFlightTransform(
+            float3 logicalPos,
+            float maxDistance,
+            out Transform root)
+        {
+            root = null;
+            if (s_Instance == null)
+                return false;
+
+            float best = maxDistance * maxDistance;
+            var flights = s_Instance._flights;
+            for (int i = 0; i < flights.Count; i++)
+            {
+                var f = flights[i];
+                if (f.Go == null || f.Amount <= 0.01f)
+                    continue;
+                float distSq = math.distancesq(f.LogicalPos, logicalPos);
+                if (distSq < best)
+                {
+                    best = distSq;
+                    root = f.Go.transform;
+                }
+            }
+
+            return root != null;
+        }
 
         /// <summary>[UNITY] Attach to session manager when the scene loads.</summary>
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
@@ -236,6 +296,7 @@ namespace TitanOrbit.Game
                         new Vector3(forward.x, 0f, forward.z), Vector3.up);
                 }
 
+                TryShowReturnToPlanetPopup(ref f);
                 _flights[i] = f;
             }
 
@@ -316,8 +377,9 @@ namespace TitanOrbit.Game
             // higher N → slightly lower pitch. Destroyed (shot down) stays silent like before.
             if (pose.Status == PeopleTransportPoseStatus.Consumed)
             {
-                if (f.Go != null)
-                    ShowPeoplePopupAt(f.Go.transform.position, f.Amount, (TeamId)f.Team, in f);
+                // Return-to-planet already showed +N on the planet — don't also +N the ship.
+                if (f.Go != null && !f.ReturnPopupShown)
+                    ShowArrivePeoplePopup(in f);
 
                 PlayPeopleArriveSound(in f);
                 DestroyFlightAt(index, showArrivePopup: false);
@@ -341,6 +403,7 @@ namespace TitanOrbit.Game
             f.Velocity = pose.Velocity;
             f.Velocity.y = 0f;
             f.HasServerPose = true;
+            TryShowReturnToPlanetPopup(ref f);
             _flights[index] = f;
         }
 
@@ -390,6 +453,7 @@ namespace TitanOrbit.Game
                     IsLoad = req.IsLoad,
                     SourcePlanetId = req.SourcePlanetId,
                     TargetPlanetId = req.TargetPlanetId,
+                    TargetShipNetworkId = req.TargetShipNetworkId,
                     Amount = math.max(1f, req.Amount),
                     Team = req.Team,
                     RemainingLifetime = MaxLifetimeSeconds,
@@ -399,9 +463,12 @@ namespace TitanOrbit.Game
                     HasServerPose = false,
                 };
 
-                // Leave popup: planet lost people (load) or ship lost people (unload).
-                ShowPeoplePopupAt(displayPos, -flight.Amount, (TeamId)flight.Team, in flight);
-                flight.LeavePopupShown = true;
+                // Leave: planet −N (load) or ship −N (unload). Arrive is a separate target.
+                if (flight.SourcePlanetId != 0 || flight.TargetPlanetId != 0 || flight.TargetShipNetworkId != 0)
+                {
+                    ShowLeavePeoplePopup(in flight, displayPos);
+                    flight.LeavePopupShown = true;
+                }
 
                 _flights.Add(flight);
                 RebuildSequenceIndex();
@@ -427,8 +494,8 @@ namespace TitanOrbit.Game
         void DestroyFlightAt(int index, bool showArrivePopup)
         {
             var f = _flights[index];
-            if (showArrivePopup && f.Go != null)
-                ShowPeoplePopupAt(f.Go.transform.position, f.Amount, (TeamId)f.Team, in f);
+            if (showArrivePopup && f.Go != null && !f.ReturnPopupShown)
+                ShowArrivePeoplePopup(in f);
 
             if (f.Go != null)
                 Destroy(f.Go);
@@ -442,20 +509,116 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Compact ±N near the transport. Nudges outside a nearby planet body when needed.
+        /// When a load flight turns around (ship left orbit), the planet is refunding people.
+        /// Show +N once and replace the live −N streak on that planet.
         /// </summary>
-        void ShowPeoplePopupAt(Vector3 worldPosition, float signedAmount, TeamId team, in Flight flight)
+        void TryShowReturnToPlanetPopup(ref Flight f)
+        {
+            if (f.ReturnPopupShown || f.IsLoad == 0 || f.Amount < 0.01f)
+                return;
+            if (!IsLoadReturningToPlanet(in f))
+                return;
+
+            Vector3 hint = f.Go != null
+                ? f.Go.transform.position
+                : new Vector3(f.LogicalPos.x, LiftY, f.LogicalPos.z);
+            ShowPlanetPeoplePopup(f.Amount, (TeamId)f.Team, in f, hint);
+            f.ReturnPopupShown = true;
+        }
+
+        static bool IsLoadReturningToPlanet(in Flight f)
+        {
+            if (!f.HasServerPose || f.SourcePlanetId == 0)
+                return false;
+
+            bool notEligible = false;
+            if (f.TargetShipNetworkId > 0 &&
+                EcsGameBridge.TryIsShipEligibleForPeopleLoad(
+                    f.TargetShipNetworkId, f.SourcePlanetId, out bool eligible))
+            {
+                if (eligible)
+                    return false;
+                notEligible = true;
+            }
+
+            if (math.lengthsq(f.Velocity) < 0.05f)
+                return notEligible;
+            if (!EcsGameBridge.TryGetPlanetPoseByPlanetId(f.SourcePlanetId, out float3 planetPos, out _, out _))
+                return notEligible;
+            if (!ToroidalMapEcs.TryGetMapSize(out float mapW, out float mapH))
+                return notEligible;
+
+            float3 toPlanet = ToroidalMapEcs.ShortestOffsetXZ(f.LogicalPos, planetPos, mapW, mapH);
+            toPlanet.y = 0f;
+            if (math.lengthsq(toPlanet) < 1e-6f)
+                return false;
+            float3 vel = f.Velocity;
+            vel.y = 0f;
+            bool towardPlanet = math.dot(math.normalizesafe(vel), math.normalizesafe(toPlanet)) > 0.45f;
+            return notEligible && towardPlanet;
+        }
+
+        void ShowLeavePeoplePopup(in Flight flight, Vector3 hintPos)
+        {
+            if (flight.IsLoad != 0)
+                ShowPlanetPeoplePopup(-flight.Amount, (TeamId)flight.Team, in flight, hintPos);
+            else
+                ShowShipPeoplePopup(-flight.Amount, (TeamId)flight.Team, in flight);
+        }
+
+        void ShowArrivePeoplePopup(in Flight flight)
+        {
+            Vector3 hint = flight.Go != null
+                ? flight.Go.transform.position
+                : new Vector3(flight.LogicalPos.x, LiftY, flight.LogicalPos.z);
+            if (flight.IsLoad != 0)
+                ShowShipPeoplePopup(flight.Amount, (TeamId)flight.Team, in flight);
+            else
+                ShowPlanetPeoplePopup(flight.Amount, (TeamId)flight.Team, in flight, hint);
+        }
+
+        /// <summary>People leaving or landing on the planet — parked on the play-plane rim.</summary>
+        void ShowPlanetPeoplePopup(float signedAmount, TeamId team, in Flight flight, Vector3 hintPos)
         {
             if (WorldFloatingCountManager.Instance == null)
+                return;
+
+            int planetId = flight.IsLoad != 0
+                ? flight.SourcePlanetId
+                : (flight.TargetPlanetId != 0 ? flight.TargetPlanetId : flight.SourcePlanetId);
+            if (planetId == 0)
                 return;
 
             var channel = flight.IsLoad != 0
                 ? FloatingCountChannel.PeopleLoad
                 : FloatingCountChannel.PeopleUnload;
 
-            TryGetNearbyPlanetAvoidance(in flight, worldPosition, out Vector3 avoidCenter, out float avoidRadius);
+            if (!TryGetPlanetAvoidance(planetId, out Vector3 avoidCenter, out float avoidRadius))
+                return;
+
             WorldFloatingCountManager.Instance.ShowFloatingCountAtWorldPosition(
-                worldPosition, channel, signedAmount, team, avoidCenter, avoidRadius);
+                hintPos, channel, signedAmount, team, avoidCenter, avoidRadius,
+                WorldFloatingCountManager.TargetIdForPlanet(planetId));
+        }
+
+        /// <summary>People loading onto or unloading from the ship — follows the hull.</summary>
+        void ShowShipPeoplePopup(float signedAmount, TeamId team, in Flight flight)
+        {
+            if (WorldFloatingCountManager.Instance == null)
+                return;
+
+            int shipId = flight.TargetShipNetworkId;
+            if (shipId <= 0)
+                shipId = EcsGameBridge.GetLocalNetworkId();
+            if (shipId <= 0 || !ShipWeaponProxyRegistry.TryGetHull(shipId, out Transform hull) || hull == null)
+                return;
+
+            var channel = flight.IsLoad != 0
+                ? FloatingCountChannel.PeopleLoad
+                : FloatingCountChannel.PeopleUnload;
+
+            WorldFloatingCountManager.Instance.ShowOrAccumulateOnShip(
+                shipId, hull, channel, signedAmount, team);
         }
 
         /// <summary>
@@ -481,27 +644,18 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// If the transport display point sits near a planet body, returns that planet's display
-        /// center + radius so floating text parks in empty space.
+        /// Display-space planet center + radius for rim-parked people floats.
         /// </summary>
-        static void TryGetNearbyPlanetAvoidance(
-            in Flight flight,
-            Vector3 transportDisplayPos,
-            out Vector3 avoidCenter,
-            out float avoidRadius)
+        static bool TryGetPlanetAvoidance(int planetId, out Vector3 avoidCenter, out float avoidRadius)
         {
             avoidCenter = default;
             avoidRadius = 0f;
-
-            int planetId = flight.IsLoad != 0
-                ? flight.SourcePlanetId
-                : (flight.TargetPlanetId != 0 ? flight.TargetPlanetId : flight.SourcePlanetId);
             if (planetId == 0)
-                return;
+                return false;
 
             if (!EcsGameBridge.TryGetPlanetPoseByPlanetId(
                     planetId, out float3 logicalPlanet, out float planetScale, out _))
-                return;
+                return false;
 
             float3 planetDisplay = logicalPlanet;
             if (ToroidalDisplay.TryGetReferencePosition(out Vector3 reference))
@@ -512,15 +666,9 @@ namespace TitanOrbit.Game
                     logicalPlanet, (float3)reference, ref k, ref m);
             }
 
-            float bodyRadius = BodyCollisionMath.GetPlanetBodyRadiusWorld(planetScale);
-            Vector3 planetPos = new Vector3(planetDisplay.x, 0f, planetDisplay.z);
-            Vector3 tip = transportDisplayPos;
-            tip.y = 0f;
-            if (Vector3.Distance(tip, planetPos) > bodyRadius + 4f)
-                return;
-
-            avoidCenter = planetPos;
-            avoidRadius = bodyRadius;
+            avoidCenter = new Vector3(planetDisplay.x, 0f, planetDisplay.z);
+            avoidRadius = BodyCollisionMath.GetPlanetBodyRadiusWorld(planetScale);
+            return avoidRadius > 0.01f;
         }
 
         void ClearAllFlights()

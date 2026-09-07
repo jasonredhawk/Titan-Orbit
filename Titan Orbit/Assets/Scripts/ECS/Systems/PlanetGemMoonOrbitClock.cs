@@ -45,6 +45,12 @@ namespace TitanOrbit.ECS
         /// <summary>Realtime when <see cref="s_LastPresentationTick"/> last changed.</summary>
         static float s_LastPresentationTickRealtime = -1f;
 
+        /// <summary>
+        /// Last valid ServerTick elapsed. Dedicated clients have no ServerWorld fallback —
+        /// holding this beats <see cref="Time.timeAsDouble"/> (that snaps the ring every stall).
+        /// </summary>
+        static double s_LastGoodElapsed;
+
         /// <summary>Realtime seconds with unchanged ClientWorld tick before presentation fallback.</summary>
         const float PresentationTickStallSeconds = 0.35f;
 
@@ -165,6 +171,7 @@ namespace TitanOrbit.ECS
                     {
                         s_LastPresentationTick = clientTick;
                         s_LastPresentationTickRealtime = now;
+                        s_LastGoodElapsed = elapsedSeconds;
                         return true;
                     }
 
@@ -172,7 +179,10 @@ namespace TitanOrbit.ECS
                         s_LastPresentationTickRealtime = now;
 
                     if (now - s_LastPresentationTickRealtime < PresentationTickStallSeconds)
+                    {
+                        s_LastGoodElapsed = elapsedSeconds;
                         return true;
+                    }
                 }
             }
 
@@ -185,10 +195,21 @@ namespace TitanOrbit.ECS
                     out bool serverValid) &&
                 serverValid)
             {
+                s_LastGoodElapsed = elapsedSeconds;
                 return true;
             }
 
-            // --- Last resort presentation: wall clock (cosmetic only — not used by sim) ---
+            // --- Dedicated: hold last ServerTick phase (do not jump to wall clock) ---
+            // Time.timeAsDouble is a different epoch than ServerTick. Alternating them
+            // snaps the entire moon ring every time snapshots hitch — the dedicated-only
+            // "orbit path snap-back" that Local Host never hits (ServerWorld fallback).
+            if (s_LastGoodElapsed > 0d)
+            {
+                elapsedSeconds = s_LastGoodElapsed;
+                return true;
+            }
+
+            // --- First frames only: no tick yet ---
             elapsedSeconds = Time.timeAsDouble;
             return true;
         }

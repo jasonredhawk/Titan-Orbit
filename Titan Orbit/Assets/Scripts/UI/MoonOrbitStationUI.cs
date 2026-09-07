@@ -1,9 +1,11 @@
+using System;
 using System.Collections.Generic;
 using TitanOrbit.Core;
 using TitanOrbit.Data;
 using TitanOrbit.ECS;
 using TitanOrbit.Game;
 using TitanOrbit.Simulation;
+using TitanOrbit.Systems;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
@@ -15,6 +17,8 @@ namespace TitanOrbit.UI
     /// Client-only hybrid UI. Ship-tree unlock / purchase rules live here; when
     /// <see cref="GameManager.DebugFreeShipUpgradeTree"/> is enabled in the Inspector
     /// (NceGameRoot → Game Manager), every tree node is free to click for local testing.
+    /// Unique MEGA cards disable after purchase and show the owner's name so every
+    /// docked player can see who holds that hull.
     /// Paired with <see cref="MoonOrbitStoreSystem"/> on the server for purchase validation.
     /// </summary>
     public class MoonOrbitStationUI : MonoBehaviour, IOrbitStationHost
@@ -101,7 +105,7 @@ namespace TitanOrbit.UI
 
         static Canvas FindOverlayCanvas()
         {
-            var canvases = Object.FindObjectsByType<Canvas>(FindObjectsSortMode.None);
+            var canvases = UnityEngine.Object.FindObjectsByType<Canvas>(FindObjectsSortMode.None);
             Canvas best = null;
             for (int i = 0; i < canvases.Length; i++)
             {
@@ -124,7 +128,7 @@ namespace TitanOrbit.UI
 
         static void EnsureEventSystemExists()
         {
-            if (Object.FindFirstObjectByType<UnityEngine.EventSystems.EventSystem>() != null)
+            if (UnityEngine.Object.FindFirstObjectByType<UnityEngine.EventSystems.EventSystem>() != null)
                 return;
 
             var esGo = new GameObject("EventSystem");
@@ -703,6 +707,11 @@ namespace TitanOrbit.UI
             // --- Hint line (debug vs normal purchase rules) ---
             UpdateShipTreeHintText();
 
+            // --- Player names for unique MEGA occupancy chips ---
+            // [HYBRID] OccupiedByNetworkId is ghosted on the planet slot. Names live in
+            // PlayerNameRosterCache (announce RPC). Refresh once per tree paint, not per node.
+            EcsGameBridge.RefreshPlayerDisplayNameCache();
+
             if (nodes == null)
                 return;
             for (int i = 0; i < nodes.Count; i++)
@@ -720,13 +729,14 @@ namespace TitanOrbit.UI
             _shipTree.EnsurePanelHeader();
             if (_shipTree.Title != null)
                 _shipTree.Title.text = ShipUpgradeTreeUI.PanelTitleText;
+            _shipTree.ApplyFamilyIdentity(ResolveUpgradeTreeFamily());
 
             if (_shipTree.Hint == null)
                 return;
 
-            // [TITAN-ORBIT] Same copy the old OrbitStationUI used when Debug Free Ship Upgrade Tree is on.
+            // [TITAN-ORBIT] Debug still unlocks family hulls, but unique MEGAs stay claimed.
             if (IsDebugFreeShipUpgradeTree())
-                _shipTree.Hint.text = "Debug: click any ship to try it for free (all tiers unlocked).";
+                _shipTree.Hint.text = "Debug: click any ship for free. Claimed MEGAs stay with their owner.";
             else
                 _shipTree.Hint.text = ShipUpgradeTreeUI.PanelDefaultSubtitle;
         }
@@ -734,6 +744,8 @@ namespace TitanOrbit.UI
         /// <summary>
         /// Colors, prices, and click handlers for one tree node (or current-ship display).
         /// Debug mode unlocks every node; normal mode only next-tier purchases / current slot.
+        /// Level-7 MEGA cards that are already owned stay disabled and show the owner's name
+        /// on the price chip (or "You" when this client is the owner).
         /// </summary>
         public void PopulateTreeNode(ShipUpgradeTreeNodeUI view, ShipPowerBarStatMaxes maxes)
         {
@@ -761,26 +773,62 @@ namespace TitanOrbit.UI
             int currentBranch = BranchIndex;
             int nextLevel = currentLevel + 1;
             bool isCurrent = view.Level == currentLevel && view.BranchIndex == currentBranch;
-            bool tierBlocked = view.Level > StorePlanetLevel || view.Level > HomePlanetLevel;
+            bool megaOccupied = false;
+            int megaOccupiedBy = 0;
+            bool megaUnlockBlocked = false;
+            bool megaUnarmed = false;
+            if (view.Level == 7)
+            {
+                if (TryResolveMegaOccupancy(_storePlanetId, view.BranchIndex, out megaOccupiedBy, out megaUnarmed))
+                    megaOccupied = megaOccupiedBy != 0;
+                if (!EcsGameBridge.TryGetPlanetGemMoonStateByPlanetId(_storePlanetId, out var moon)
+                    || !MegaShipPlanetLogic.IsMegaPurchaseUnlocked(
+                        StorePlanetLevel, moon.CurrentMoonGems, moon.MaxMoonGems))
+                    megaUnlockBlocked = true;
+            }
+
+            bool tierBlocked = view.Level < 7 && (view.Level > StorePlanetLevel || view.Level > HomePlanetLevel)
+                || megaUnlockBlocked;
 
             UpgradeTree.GetNextLevelBranchTargets(currentLevel, currentBranch, _nextTargets);
             bool isNextChoice = view.Level == nextLevel && _nextTargets.Contains(view.BranchIndex);
-            float nodeCost = isNextChoice ? MoonOrbitStorePricing.GetShipUpgradeCost(nextLevel) : 0f;
-            bool canPurchase = isNextChoice && _contributedGems >= nodeCost && !tierBlocked;
+            float nodeCost = isNextChoice
+                ? (nextLevel == 7
+                    ? (MegaShipCatalog.Load() != null
+                        ? MegaShipCatalog.Load().GetPurchaseGemCost()
+                        : MoonOrbitStorePricing.GetShipUpgradeCost(7))
+                    : MoonOrbitStorePricing.GetShipUpgradeCost(nextLevel))
+                : 0f;
+            bool canPurchase = isNextChoice && _contributedGems >= nodeCost && !tierBlocked && !megaOccupied && !megaUnarmed;
+            bool clickable = !megaOccupied && (canPurchase || isCurrent);
 
-            view.SetInteractable(canPurchase || isCurrent);
+            view.SetInteractable(clickable);
             view.SetButtonBackgroundColor(isCurrent
                 ? new Color(0.26f, 0.62f, 0.36f, 0.98f)
                 : canPurchase
                     ? new Color(0.28f, 0.45f, 0.82f, 0.98f)
                     : new Color(0.2f, 0.22f, 0.28f, 0.92f));
 
-            view.SetLevelLabel(view.Level == 1 ? "Lv 1" : $"Lv {view.Level}");
+            view.SetLevelLabel(ShipUpgradeTreeNodeUI.FormatTreeLevelCaption(view.Level, true));
             TryGetChassisIdForTreeSlot(view.Level, view.BranchIndex, out string chassisId);
             view.SetShipName(GetShipDisplayNameForSlot(view.Level, view.BranchIndex, chassisId));
+            view.SetFamilyName(GetFamilyDisplayNameForSlot(chassisId));
             view.SetPreview(GetMenuPreviewForChassis(chassisId));
+            if (view.Level == 7)
+                view.ApplyMegaShipCardStyle(isCurrent, canPurchase, megaOccupied, tierBlocked);
+            else
+                view.ClearMegaShipCardStyle();
 
-            if (isCurrent)
+            if (megaOccupied)
+            {
+                view.SetPrice(FormatMegaOwnerPriceLabel(megaOccupiedBy));
+                view.SetOwnedOccupantStyle();
+            }
+            else if (megaUnarmed)
+                view.SetPrice("NO WEAPONS");
+            else if (megaUnlockBlocked)
+                view.SetPrice("MOON FULL");
+            else if (isCurrent)
                 view.SetPrice("You");
             else if (tierBlocked)
                 view.SetPrice($"Planet Lv {view.Level}+");
@@ -789,14 +837,22 @@ namespace TitanOrbit.UI
             else
                 view.SetPrice("—");
 
-            view.ApplyPowerBreakdown(GetPowerBreakdownForTreeNode(view.Level, view.BranchIndex), maxes);
+            // --- Power bar (regular vs MEGA pool) ---
+            // [TITAN-ORBIT] Regular hulls fill against every family's L1–L6 chassis.
+            // MEGA hulls fill against the armed MEGA catalog only.
+            view.ApplyPowerBreakdown(
+                GetPowerBreakdownForTreeNode(view.Level, view.BranchIndex),
+                ShipFamilyPowerBarNorm.ResolveForTreeLevel(view.Level, maxes));
             UnityEngine.Events.UnityAction click = () => OnUpgradeTreeNodeClicked(view.Level, view.BranchIndex);
-            view.SetClickHandler(canPurchase || isCurrent ? click : null);
-            view.SetPriceClickHandler(canPurchase || isCurrent ? click : null);
+            view.SetClickHandler(clickable ? click : null);
+            view.SetPriceClickHandler(clickable ? click : null);
+            if (megaOccupied)
+                view.SetOwnedOccupantStyle();
         }
 
         /// <summary>
-        /// Debug populate: every node is interactable and priced "Free" so designers can jump to any hull.
+        /// Debug populate: family hulls stay free to click. Unique MEGAs that already have
+        /// an owner are disabled and show that player's name — same as live matches.
         /// </summary>
         void PopulateTreeNodeDebug(ShipUpgradeTreeNodeUI view, ShipPowerBarStatMaxes maxes)
         {
@@ -805,23 +861,156 @@ namespace TitanOrbit.UI
             bool isCurrent = level == ShipLevel && branch == BranchIndex;
             bool hasChassis = TryGetChassisIdForTreeSlot(level, branch, out string chassisId);
 
-            view.SetInteractable(hasChassis);
-            view.SetButtonBackgroundColor(!hasChassis
+            // --- Unique MEGA occupancy (debug still honors uniqueness) ---
+            // [TITAN-ORBIT] Debug Free Ship Upgrade Tree skips gem / tier gates, not unique hulls.
+            bool megaOccupied = false;
+            int megaOccupiedBy = 0;
+            if (level == 7
+                && TryResolveMegaOccupancy(_storePlanetId, branch, out megaOccupiedBy, out _)
+                && megaOccupiedBy != 0)
+                megaOccupied = true;
+
+            bool clickable = hasChassis && !megaOccupied;
+            view.SetInteractable(clickable);
+            view.SetButtonBackgroundColor(!hasChassis || megaOccupied
                 ? new Color(0.15f, 0.16f, 0.18f, 0.92f)
                 : isCurrent
                     ? new Color(0.26f, 0.62f, 0.36f, 0.98f)
                     : new Color(0.28f, 0.68f, 0.82f, 0.98f));
 
-            view.SetLevelLabel(level == 1 ? "Lv 1" : $"Lv {level}");
+            view.SetLevelLabel(ShipUpgradeTreeNodeUI.FormatTreeLevelCaption(level, true));
             view.SetShipName(GetShipDisplayNameForSlot(level, branch, chassisId));
+            view.SetFamilyName(GetFamilyDisplayNameForSlot(chassisId));
             view.SetPreview(GetMenuPreviewForChassis(chassisId));
-            view.SetPrice(hasChassis ? "Free" : "—");
-            view.ApplyPowerBreakdown(GetPowerBreakdownForTreeNode(level, branch), maxes);
+            if (level == 7)
+                view.ApplyMegaShipCardStyle(isCurrent, clickable && !isCurrent, megaOccupied, !hasChassis);
+            else
+                view.ClearMegaShipCardStyle();
+            if (megaOccupied)
+            {
+                view.SetPrice(FormatMegaOwnerPriceLabel(megaOccupiedBy));
+                view.SetOwnedOccupantStyle();
+            }
+            else
+                view.SetPrice(hasChassis ? "Free" : "—");
 
-            // Whole card + Free button both purchase (not only the price chip).
+            view.ApplyPowerBreakdown(
+                GetPowerBreakdownForTreeNode(level, branch),
+                ShipFamilyPowerBarNorm.ResolveForTreeLevel(level, maxes));
+
             UnityEngine.Events.UnityAction click = () => OnUpgradeTreeNodeClicked(level, branch);
-            view.SetClickHandler(hasChassis ? click : null);
-            view.SetPriceClickHandler(hasChassis ? click : null);
+            view.SetClickHandler(clickable ? click : null);
+            view.SetPriceClickHandler(clickable ? click : null);
+            if (megaOccupied)
+                view.SetOwnedOccupantStyle();
+        }
+
+        /// <summary>
+        /// Unique MEGA occupancy for one L7 tree branch. Planet slot first, then any other
+        /// planet that sold the same catalog hull, then this client's live
+        /// <see cref="MegaShipState"/> (covers debug purchases and brief ghost delay).
+        /// </summary>
+        /// <param name="storePlanetId">Docked store planet id.</param>
+        /// <param name="branchIndex">L7 tree branch 0 / 1 / 2.</param>
+        /// <param name="occupiedByNetworkId">Owner GhostOwner id, or 0 when free.</param>
+        /// <param name="unarmed">True when the rolled hull has no weapons.</param>
+        /// <returns>True when this planet has a MEGA slot for the branch.</returns>
+        internal static bool TryResolveMegaOccupancy(
+            int storePlanetId,
+            int branchIndex,
+            out int occupiedByNetworkId,
+            out bool unarmed)
+        {
+            occupiedByNetworkId = 0;
+            unarmed = false;
+            if (!EcsGameBridge.TryGetPlanetMegaSlot(storePlanetId, branchIndex, out ushort megaIndex, out int occupiedBy))
+            {
+                // --- Join-settle / missing buffer ---
+                // [TITAN-ORBIT] Map-body gathers are gated off during late-join. The owner
+                // ship still has MegaShipState, so we can label their own card.
+                if (TryResolveOccupancyFromLocalMega(storePlanetId, branchIndex, 0, requireCatalogMatch: false, out occupiedBy))
+                {
+                    occupiedByNetworkId = occupiedBy;
+                    return true;
+                }
+
+                return false;
+            }
+
+            // --- Unarmed catalog row ---
+            var mega = MegaShipCatalog.Load();
+            if (mega != null && !mega.IsEligibleForMatch(megaIndex))
+                unarmed = true;
+
+            // --- Occupancy on this planet, then unique catalog owner elsewhere ---
+            if (occupiedBy == 0)
+                EcsGameBridge.TryGetMegaCatalogOccupant(megaIndex, out occupiedBy);
+
+            // --- Local hull fallback ---
+            // [HYBRID] Debug / Local Host can paint the tree before the planet buffer snapshot
+            // shows OccupiedByNetworkId. MegaShipState on the owner ship is already set.
+            if (occupiedBy == 0)
+                TryResolveOccupancyFromLocalMega(storePlanetId, branchIndex, megaIndex, requireCatalogMatch: true, out occupiedBy);
+
+            occupiedByNetworkId = occupiedBy;
+            return true;
+        }
+
+        /// <summary>
+        /// True when this client already flies the MEGA for this store slot / catalog row.
+        /// Used when planet occupancy has not replicated yet.
+        /// </summary>
+        static bool TryResolveOccupancyFromLocalMega(
+            int storePlanetId,
+            int branchIndex,
+            ushort megaIndex,
+            bool requireCatalogMatch,
+            out int occupiedByNetworkId)
+        {
+            occupiedByNetworkId = 0;
+            if (!EcsGameBridge.TryGetLocalMegaShipState(out MegaShipState localMega) || !localMega.IsMega)
+                return false;
+
+            bool sameHull = requireCatalogMatch && localMega.CatalogIndex == megaIndex;
+            bool sameSlot = localMega.StorePlanetId == storePlanetId
+                && localMega.MegaSlotIndex == branchIndex;
+            if (!sameHull && !sameSlot)
+                return false;
+
+            int localId = EcsGameBridge.GetLocalNetworkId();
+            if (localId <= 0)
+                return false;
+
+            occupiedByNetworkId = localId;
+            return true;
+        }
+
+        /// <summary>
+        /// Price-chip copy for a unique MEGA someone already bought.
+        /// Always the owner's published name (local Main Menu name when this client owns it)
+        /// so every docked player can see who holds the hull.
+        /// </summary>
+        /// <param name="occupiedByNetworkId">GhostOwner NetworkId written on the planet MEGA slot.</param>
+        /// <returns>Short label that fits the tree node's price pill.</returns>
+        internal static string FormatMegaOwnerPriceLabel(int occupiedByNetworkId)
+        {
+            if (occupiedByNetworkId <= 0)
+                return "IN SERVICE";
+
+            // Local owner: Main Menu name is already on this machine (roster RPC may still be in flight).
+            int localId = EcsGameBridge.GetLocalNetworkId();
+            string name = localId > 0 && occupiedByNetworkId == localId
+                ? LocalPlayerDisplayName.Get()
+                : EcsGameBridge.GetCachedPlayerDisplayName(occupiedByNetworkId);
+
+            if (string.IsNullOrEmpty(name))
+                return "IN SERVICE";
+
+            // Price pill is narrow (~40–70px). Long Steam / custom names get an ellipsis.
+            const int maxChars = 10;
+            if (name.Length > maxChars)
+                return name.Substring(0, maxChars - 1) + "…";
+            return name;
         }
 
         /// <summary>Sidebar "current ship" card — always shows your hull; debug mode still allows click-through.</summary>
@@ -830,14 +1019,19 @@ namespace TitanOrbit.UI
             bool debugFree = IsDebugFreeShipUpgradeTree();
             view.SetInteractable(debugFree);
             view.SetButtonBackgroundColor(new Color(0.26f, 0.62f, 0.36f, 0.98f));
-            // Sidebar hero: no "You" label — centered ship name sits above the art instead.
+            // Sidebar hero: no "You" label — hull name sits on top of the ship art instead.
             if (view.UsesSidebarHeroLayout)
                 view.SetLevelLabel(string.Empty);
             else
                 view.SetLevelLabel("You");
-            view.SetShipName($"Lv {ShipLevel}");
+            TryGetFlownChassisId(out string currentChassisId);
+            view.SetShipName(GetShipDisplayNameForSlot(ShipLevel, BranchIndex, currentChassisId));
+            view.SetFamilyName(GetFamilyDisplayNameForSlot(currentChassisId));
             view.SetPrice(debugFree ? "Free" : "—");
-            view.ApplyPowerBreakdown(GetCurrentShipPowerBreakdown(), maxes);
+            // Sidebar "You" card uses the MEGA pool when this hull is a catalog MEGA.
+            view.ApplyPowerBreakdown(
+                GetCurrentShipPowerBreakdown(),
+                ShipFamilyPowerBarNorm.ResolveForTreeLevel(ShipLevel, maxes));
         }
 
         /// <summary>
@@ -849,8 +1043,8 @@ namespace TitanOrbit.UI
             // --- Debug free select (any tier / branch) ---
             if (IsDebugFreeShipUpgradeTree())
             {
-                // Skip no-op click on the hull you already fly.
-                if (nodeLevel == ShipLevel && targetBranchIndex == BranchIndex)
+                // Same level+branch on another family's tree is a different chassis.
+                if (IsAlreadyFlyingTreeSlot(nodeLevel, targetBranchIndex))
                     return;
 
                 MoonOrbitRpcClient.PurchaseShipUpgrade(_storePlanetId, nodeLevel, targetBranchIndex);
@@ -869,11 +1063,60 @@ namespace TitanOrbit.UI
         public void OnCurrentShipDisplayNodeClicked() =>
             OnUpgradeTreeNodeClicked(ShipLevel, BranchIndex);
 
-        /// <summary>Your Ship bar: Extra Level at current ship level with every HUD ability maxed.</summary>
+        /// <summary>
+        /// True when this store slot is the hull the local ship is already flying.
+        /// Level + branch match is not enough after a MEGA — every family's L7 branch
+        /// shares that index, and same-tier family swaps share L1–L6 slot numbers.
+        /// </summary>
+        bool IsAlreadyFlyingTreeSlot(int nodeLevel, int targetBranchIndex)
+        {
+            if (!TryGetChassisIdForTreeSlot(nodeLevel, targetBranchIndex, out string slotChassis)
+                || !TryGetFlownChassisId(out string flownChassis))
+                return nodeLevel == ShipLevel && targetBranchIndex == BranchIndex;
+
+            return string.Equals(slotChassis, flownChassis, StringComparison.OrdinalIgnoreCase);
+        }
+
+        /// <summary>
+        /// Chassis the local player is flying — MEGA catalog id, or the ship's own
+        /// family ladder slot (not the docked store planet's tree).
+        /// </summary>
+        bool TryGetFlownChassisId(out string chassisId)
+        {
+            chassisId = null;
+            if (EcsGameBridge.TryGetLocalMegaShipState(out MegaShipState mega) && mega.IsMega)
+            {
+                chassisId = MegaShipCatalog.FormatChassisId(mega.CatalogIndex);
+                return true;
+            }
+
+            if (!EcsGameBridge.TryGetLocalShipState(out var ship) || ship.Team == TeamId.None)
+                return false;
+
+            return ShipStatApplyLogic.TryResolveChassisId(
+                ship.Team,
+                ship.ShipLevel,
+                ship.BranchIndex,
+                out chassisId,
+                allowFallback: false,
+                shipFamilyConfigIndex: ship.ShipFamilyConfigIndex);
+        }
+
+        /// <summary>
+        /// Your Ship bar: Extra Level at current ship level with every HUD ability maxed.
+        /// MEGA hulls use the static catalog sum (no Extra Level, gem cap 0).
+        /// </summary>
         public ShipFamilyPowerScoreBreakdown GetCurrentShipPowerBreakdown()
         {
-            if (!TryGetChassisIdForTreeSlot(ShipLevel, BranchIndex, out string chassisId))
+            if (!TryGetFlownChassisId(out string chassisId))
                 return default;
+            if (MegaShipCatalog.IsMegaChassisId(chassisId)
+                && MegaShipCatalog.TryParseCatalogIndex(chassisId, out ushort megaIndex))
+            {
+                var mega = MegaShipCatalog.Load();
+                return mega != null ? mega.GetPowerBreakdown(megaIndex) : default;
+            }
+
             var config = ShipStatApplyLogic.Config;
             return config != null
                 ? config.GetPowerScoreBreakdownForChassisIdAtShipLevel(chassisId, ShipLevel)
@@ -885,13 +1128,50 @@ namespace TitanOrbit.UI
         {
             if (!TryGetChassisIdForTreeSlot(level, branchIndex, out string chassisId))
                 return default;
+            if (MegaShipCatalog.IsMegaChassisId(chassisId)
+                && MegaShipCatalog.TryParseCatalogIndex(chassisId, out ushort megaIndex))
+            {
+                var mega = MegaShipCatalog.Load();
+                return mega != null ? mega.GetPowerBreakdown(megaIndex) : default;
+            }
+
             var config = ShipStatApplyLogic.Config;
             return config != null
                 ? config.GetPowerScoreBreakdownForChassisIdAtShipLevel(chassisId, level)
                 : default;
         }
 
-        /// <summary>Global per-stat ceilings for equal-slot power bars (all families, tree-level Extra Level).</summary>
+        /// <summary>
+        /// Family whose hull ladder fills this tree — the docked store planet, not the
+        /// player's current chassis. Same mapping as <see cref="TryGetChassisIdForTreeSlot"/>.
+        /// </summary>
+        ShipFamilyDefinition ResolveUpgradeTreeFamily()
+        {
+            // --- Resolve store-planet family ---
+            if (CardShopSystem.Instance != null && _storePlanetId > 0)
+                return CardShopSystem.Instance.GetShipFamilyForStorePlanet(_storePlanetId);
+
+            var config = ShipStatApplyLogic.Config;
+            if (config == null || _storePlanetId <= 0)
+                return null;
+
+            bool isHome = false;
+            int familyIndex = -1;
+            if (EcsGameBridge.TryGetPlanetStateByPlanetId(_storePlanetId, out var planet))
+            {
+                isHome = planet.IsHomePlanet;
+                familyIndex = planet.IsHomePlanet
+                    ? PlanetShipFamilyAssignment.HomeFamilyConfigIndex
+                    : planet.ShipFamilyConfigIndex;
+            }
+
+            return config.GetFamilyForPlanet(_storePlanetId, isHome, familyIndex)?.shipFamilyDefinition;
+        }
+
+        /// <summary>
+        /// Regular-family (L1–L6) per-stat ceilings for equal-slot power bars.
+        /// MEGA nodes pick the catalog pool in <see cref="ShipFamilyPowerBarNorm.ResolveForTreeLevel"/>.
+        /// </summary>
         static ShipPowerBarStatMaxes ResolvePowerBarStatMaxes()
         {
             var config = ShipStatApplyLogic.Config;
@@ -907,6 +1187,20 @@ namespace TitanOrbit.UI
         bool TryGetChassisIdForTreeSlot(int level, int branchIndex, out string chassisId)
         {
             chassisId = null;
+            if (level == 7)
+            {
+                if (EcsGameBridge.TryGetPlanetMegaSlot(_storePlanetId, branchIndex, out ushort catalogIndex, out _))
+                {
+                    var mega = MegaShipCatalog.Load();
+                    if (mega != null && !mega.IsEligibleForMatch(catalogIndex))
+                        return false;
+                    chassisId = MegaShipCatalog.FormatChassisId(catalogIndex);
+                    return true;
+                }
+
+                return false;
+            }
+
             if (!EcsGameBridge.TryGetLocalShipState(out var ship) || ship.Team == TeamId.None)
             {
                 // Menu can open briefly before team is known — still resolve home family ladder.
@@ -941,10 +1235,28 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
+        /// Family line under the hull name. Regular slots use the docked planet's family;
+        /// MEGA slots use the catalog visual line (CraizanStar → Craizan Star).
+        /// </summary>
+        string GetFamilyDisplayNameForSlot(string chassisId)
+        {
+            return FamilyStatHudCopy.FormatFamilyDisplayNameForChassis(
+                chassisId, ResolveUpgradeTreeFamily());
+        }
+
+        /// <summary>
         /// Display name from family upgradeTree (Hawk, Sparrow, …) — not legacy UpgradeTree.asset labels (2.1).
         /// </summary>
         string GetShipDisplayNameForSlot(int level, int branchIndex, string chassisId)
         {
+            if (MegaShipCatalog.IsMegaChassisId(chassisId)
+                && MegaShipCatalog.TryParseCatalogIndex(chassisId, out ushort megaIndex))
+            {
+                var mega = MegaShipCatalog.Load();
+                if (mega != null)
+                    return mega.GetDisplayName(megaIndex);
+            }
+
             var config = ShipStatApplyLogic.Config;
             if (config != null && !string.IsNullOrEmpty(chassisId))
             {
@@ -965,16 +1277,27 @@ namespace TitanOrbit.UI
                 : chassisId;
         }
 
-        /// <summary>Menu thumbnail for the chassis, or null when the slot has no family entry.</summary>
+        /// <summary>Menu thumbnail for the chassis, or null when the slot has no family/MEGA entry.</summary>
         Sprite GetMenuPreviewForChassis(string chassisId)
         {
-            var config = ShipStatApplyLogic.Config;
-            if (config == null || string.IsNullOrEmpty(chassisId))
+            if (string.IsNullOrEmpty(chassisId))
                 return null;
 
             TeamManager.Team team = TeamManager.Team.None;
             if (EcsGameBridge.TryGetLocalShipState(out var ship))
                 team = (TeamManager.Team)(int)ship.Team;
+
+            if (MegaShipCatalog.IsMegaChassisId(chassisId)
+                && MegaShipCatalog.TryParseCatalogIndex(chassisId, out ushort megaIndex))
+            {
+                MegaShipCatalog mega = MegaShipCatalog.Load();
+                if (mega != null)
+                    return mega.GetMenuPreviewSprite(megaIndex, team);
+            }
+
+            var config = ShipStatApplyLogic.Config;
+            if (config == null)
+                return null;
 
             return config.GetMenuPreviewSpriteForChassisId(chassisId, team);
         }

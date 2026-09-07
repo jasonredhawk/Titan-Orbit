@@ -1,3 +1,4 @@
+using TitanOrbit.Core;
 using TitanOrbit.Data;
 using TitanOrbit.Generation;
 using TitanOrbit.Simulation;
@@ -13,9 +14,10 @@ namespace TitanOrbit.ECS
     /// Shared Starblast-style planar motor for server authority and client owner prediction.
     /// [NETCODE] Identical math on both worlds inside PredictedFixedStepSimulationSystemGroup —
     /// same inputs must produce the same velocity/yaw so reconciliation stays quiet.
-    /// [PHYSICS] Drive writes <see cref="PhysicsVelocity"/> and yaw only; Unity Physics integrates
-    /// position and resolves hull collisions afterward. The next tick <b>reads</b> post-collision
-    /// velocity (bounce is not overwritten blindly).
+    /// [PHYSICS] Drive <b>adds</b> thrust / brakes to the previous step's
+    /// <see cref="PhysicsVelocity.Linear"/> (the solver bounce). It must not snap that
+    /// inherited speed back to MaxSpeed — that erased rams and felt scripted.
+    /// Unity Physics then integrates position and resolves hull contacts.
     /// [TITAN-ORBIT] Also detects planet orbit rings (toroidal distance), blends passive orbit
     /// velocity when coasting, writes <see cref="ShipOrbitState"/> for people-transport dwell /
     /// HUD, applies enemy moon shield repel, latches friendly-triangle speed
@@ -27,6 +29,8 @@ namespace TitanOrbit.ECS
     /// speed hard-caps to the new max so speedometer / bloom stay in sync.
     /// Drain rate = <see cref="ShipMotorConfig.ThrustEnergyDrainPerSecond"/>
     /// (ExtraSpeedEnergyDrain summed across engines).
+    /// MEGA hulls never engage overdrive. Shift instead locks yaw (heading stays put
+    /// while the mouse moves) so unoccupied auto-guns can fire at the cursor.
     /// Live subtractive mass tax (<see cref="ShipMobilityResolution"/>) converts untaxed motor
     /// baselines into MaxSpeed / accel / turn from current gems/people + ComponentSize.
     /// While <see cref="ShipAsteroidContactState"/> reports contact from the previous physics
@@ -43,12 +47,24 @@ namespace TitanOrbit.ECS
         const float TerritoryBoostInsideEpsilon = 1.001f;
 
         /// <summary>
+        /// How quickly approach velocity steers toward the moon's orbital velocity (1/s).
+        /// [TITAN-ORBIT] Same ballpark as orbit capture. Space brakes used to zero world
+        /// speed while the moon kept moving, so a rim entry left the dock shell in ~1s.
+        /// </summary>
+        const float MoonApproachCoOrbitResponsiveness = 5f;
+
+        /// <summary>
         /// Applies player input before <see cref="Unity.Physics.Systems.PhysicsSystemGroup"/>.
-        /// Starts from the previous physics step's linear velocity so asteroid bounces carry forward.
+        /// Starts from the previous physics step's linear velocity so ship↔ship and asteroid
+        /// bounces carry forward; thrust is added on top (GameObject AddForce style).
         /// </summary>
         /// <param name="input">Predicted ship input for this tick.</param>
         /// <param name="motor">Designer motor caps (thrust, max speed, turn rate).</param>
-        /// <param name="moonDock">Moon landing progress — co-orbits moon surface when fully landed without thrust.</param>
+        /// <param name="moonDock">
+        /// Moon landing progress — co-orbits moon surface when fully landed without thrust.
+        /// Thrust while fully landed writes takeoff fields and <see cref="ShipMoonTakeoffLogic"/>
+        /// owns the motor until the hull is outside the moon orbit zone.
+        /// </param>
         /// <param name="shipState">Death / team-select / mass contributors (HP, gems).</param>
         /// <param name="physicsVelocity">Read/write linear velocity handed to Unity Physics.</param>
         /// <param name="physicsDamping">Cleared so package damping cannot fight motor curves.</param>
@@ -78,10 +94,15 @@ namespace TitanOrbit.ECS
         /// <param name="minSpeed">Floor after subtractive MaxSpeed tax.</param>
         /// <param name="minAccel">Floor after subtractive accel tax.</param>
         /// <param name="minTurn">Floor after subtractive turn tax.</param>
+        /// <param name="skipMassTax">True for MEGA hulls — keep chassis speed / accel / turn.</param>
+        /// <param name="isMegaShip">
+        /// True while <see cref="MegaShipState.IsMega"/>. Disables overdrive and treats
+        /// Shift as a heading lock instead of a speed burst.
+        /// </param>
         public static void Step(
             in ShipInput input,
             in ShipMotorConfig motor,
-            in ShipMoonDockState moonDock,
+            ref ShipMoonDockState moonDock,
             ref ShipState shipState,
             ref PhysicsVelocity physicsVelocity,
             ref PhysicsDamping physicsDamping,
@@ -104,7 +125,9 @@ namespace TitanOrbit.ECS
             float turnWeightPerMass,
             float minSpeed,
             float minAccel,
-            float minTurn)
+            float minTurn,
+            bool skipMassTax = false,
+            bool isMegaShip = false)
         {
             // --- Guard: fixed-step dt only ---
             if (dt <= 0f)
@@ -119,6 +142,48 @@ namespace TitanOrbit.ECS
                 ClearTerritoryBoostLatch(ref territoryLatch);
                 shipState.OverdriveLockout = false;
                 return;
+            }
+
+            // --- Forced moon takeoff (thrust while fully landed, or already departing) ---
+            // [TITAN-ORBIT] Exit along planet→moon (away from the planet) so the hull cannot
+            // stall between the moon and the planet orbit ring. Bank visuals hold 0 until
+            // TakeoffPlanetId clears (outside the drawn orbit zone).
+            bool startMoonTakeoff =
+                moonDock.MoonPlanetId != 0 &&
+                moonDock.LandingProgress >= GemEconomyConstants.MoonLandingCompleteThreshold &&
+                input.Thrust;
+            if (moonDock.IsTakingOff || startMoonTakeoff)
+            {
+                if (!moonDock.IsTakingOff)
+                {
+                    moonDock.TakeoffPlanetId = moonDock.MoonPlanetId;
+                    moonDock.TakeoffProgress = 0f;
+                    moonDock.MoonPlanetId = 0;
+                    moonDock.LandingProgress = 0f;
+                    moonDock.LandingApproachDelay = 0f;
+                }
+
+                float takeoffSpeed = math.max(8f, motor.MaxSpeed);
+                if (ShipMoonTakeoffLogic.TryApply(
+                        ref moonDock,
+                        ref transform,
+                        ref physicsVelocity,
+                        in planets,
+                        dt,
+                        mapW,
+                        mapH,
+                        elapsedSeconds,
+                        takeoffSpeed,
+                        isMegaShip))
+                {
+                    physicsDamping = default;
+                    orbitState = default;
+                    ClearTerritoryBoostLatch(ref territoryLatch);
+                    shipState.OverdriveLockout = false;
+                    return;
+                }
+
+                // Takeoff just finished — continue into normal flight this tick.
             }
 
             // --- Landed moon dock — co-orbit the moon until thrust undocks ---
@@ -165,29 +230,49 @@ namespace TitanOrbit.ECS
             float componentSize = motor.HullMassReference > 0f
                 ? motor.HullMassReference
                 : math.max(ShipMassLogic.MinMass, baseMass * ShipMassLogic.HullMassScale);
-            float totalMass = ShipMobilityResolution.ComputeTotalMassBurst(
-                shipState.CurrentGems,
-                shipState.CurrentPeople,
-                componentSize,
-                massPerGem,
-                massPerPerson,
-                massPerComponentSize);
-            ShipMobilityResolution.TaxedMotorStats taxed = ShipMobilityResolution.ApplyMassTaxBurst(
-                motor.MaxSpeed,
-                motor.EngineThrust,
-                motor.RotationSpeed,
-                totalMass,
-                speedWeightPerMass,
-                accelWeightPerMass,
-                turnWeightPerMass,
-                minSpeed,
-                minAccel,
-                minTurn);
+            ShipMobilityResolution.TaxedMotorStats taxed;
+            if (skipMassTax)
+            {
+                taxed = new ShipMobilityResolution.TaxedMotorStats
+                {
+                    MaxSpeed = motor.MaxSpeed,
+                    EngineThrust = motor.EngineThrust,
+                    RotationSpeed = motor.RotationSpeed,
+                    TotalMass = 0f,
+                };
+            }
+            else
+            {
+                float totalMass = ShipMobilityResolution.ComputeTotalMassBurst(
+                    shipState.CurrentGems,
+                    shipState.CurrentPeople,
+                    componentSize,
+                    massPerGem,
+                    massPerPerson,
+                    massPerComponentSize);
+                taxed = ShipMobilityResolution.ApplyMassTaxBurst(
+                    motor.MaxSpeed,
+                    motor.EngineThrust,
+                    motor.RotationSpeed,
+                    totalMass,
+                    speedWeightPerMass,
+                    accelWeightPerMass,
+                    turnWeightPerMass,
+                    minSpeed,
+                    minAccel,
+                    minTurn);
+            }
+
             float rotationSpeed = taxed.RotationSpeed;
 
             // --- Yaw: dt-capped slerp toward aim (never snap to mouse in one frame) ---
-            AimWorldPoint(in transform.Position, in transform.Rotation, in input.AimPlanarDir, out float2 aimWorldXz);
-            TryRotateTowardAim(ref transform, in aimWorldXz, rotationSpeed, dt);
+            // [TITAN-ORBIT] MEGA + Shift: lock heading. Mouse still aims unoccupied
+            // auto-guns (MegaShipAutoFireSystem); the hull keeps flying the last facing.
+            if (!(isMegaShip && input.Overdrive))
+            {
+                AimWorldPoint(in transform.Position, in transform.Rotation, in input.AimPlanarDir, out float2 aimWorldXz);
+                TryRotateTowardAim(ref transform, in aimWorldXz, rotationSpeed, dt);
+            }
 
             // --- Orbit ring detection (toroidal) ---
             // [TITAN-ORBIT] PeopleTransportDispatchSystem dwells on InOrbitRing; without this write,
@@ -195,12 +280,34 @@ namespace TitanOrbit.ECS
             // not (weapons are locked in the ring by BulletSimulationSystem). Ring flag stays
             // true while still inside the annulus (tractor / HUD / dwell can still see it).
             // While moon-docking (approach / land), skip the orbit motor so radial pull cannot yank
-            // the hull out of the dock sphere mid-landing.
+            // the hull out of the dock sphere mid-landing. Detect the friendly zone from snapshots
+            // this tick — MoonPlanetId is written later by ShipMoonDockSystem, so waiting on it
+            // left one (or more) orbit/brake ticks that shoved the ship off the pad.
             bool inOrbitRing = TryFindOrbitPlanet(
                 transform.Position, mapW, mapH, in planets,
                 out PlanetState orbitPlanetState, out LocalTransform orbitPlanetTransform);
-            bool moonDocking = moonDock.MoonPlanetId != 0 && !input.Thrust;
+            float megaDockPad = isMegaShip
+                ? BodyCollisionMath.GetShipHullRadiusWorld(transform.Scale)
+                : 0f;
+            bool inFriendlyMoonZone = TryFindFriendlyMoonDockZone(
+                transform.Position,
+                shipState.Team,
+                in planets,
+                mapW,
+                mapH,
+                elapsedSeconds,
+                megaDockPad,
+                out _,
+                out float3 friendlyMoonVel);
+            bool moonDocking = !input.Thrust && (moonDock.MoonPlanetId != 0 || inFriendlyMoonZone);
             bool useOrbit = inOrbitRing && !input.Thrust && !moonDocking;
+            float3 moonApproachVel = friendlyMoonVel;
+            if (moonDocking && !inFriendlyMoonZone &&
+                TryGetMoonOrbitalVelocity(
+                    moonDock.MoonPlanetId, in planets, elapsedSeconds, out float3 latchedMoonVel))
+            {
+                moonApproachVel = latchedMoonVel;
+            }
 
             // --- Friendly territory speed (1 + 0.05 × homeLevel) — not ship MovementSpeed attributes ---
             // [TITAN-ORBIT] Instant PIT can flicker at edges; latch matches presentation sticky so
@@ -221,38 +328,47 @@ namespace TitanOrbit.ECS
 
             // --- OVERDRIVE lockout + burst (shared predicted + server) ---
             // [TITAN-ORBIT] Ghosted OverdriveLockout — see ShipOverdriveTuning.StepLockout.
-            ShipOverdriveTuning.StepLockout(
-                input.Overdrive,
-                shipState.CurrentEnergy,
-                shipState.MaxEnergy,
-                ref shipState.OverdriveLockout);
-
-            bool overdriveActive = ShipOverdriveTuning.IsBurstActive(
-                input.Overdrive,
-                input.Thrust,
-                useOrbit,
-                shipState.CurrentEnergy,
-                shipState.OverdriveLockout);
-
-            if (overdriveActive)
+            // MEGAs have no overdrive at all: Shift is heading-lock / mouse-aim, not a speed burst.
+            bool overdriveActive = false;
+            if (isMegaShip)
             {
-                thrust *= ShipOverdriveTuning.ResolveThrustMultiplier(motor);
-                maxSpeed *= ShipOverdriveTuning.ResolveSpeedMultiplier(motor);
+                shipState.OverdriveLockout = false;
+            }
+            else
+            {
+                ShipOverdriveTuning.StepLockout(
+                    input.Overdrive,
+                    shipState.CurrentEnergy,
+                    shipState.MaxEnergy,
+                    ref shipState.OverdriveLockout);
 
-                // Energy cost is OVERDRIVE-only (normal flight regenerates / stays full).
-                if (motor.ThrustEnergyDrainPerSecond > 0f)
+                overdriveActive = ShipOverdriveTuning.IsBurstActive(
+                    input.Overdrive,
+                    input.Thrust,
+                    useOrbit,
+                    shipState.CurrentEnergy,
+                    shipState.OverdriveLockout);
+
+                if (overdriveActive)
                 {
-                    float drainMult = ShipOverdriveTuning.ResolveEnergyDrainMultiplier(motor);
-                    float spend = motor.ThrustEnergyDrainPerSecond * drainMult * dt;
-                    shipState.CurrentEnergy = math.max(0f, shipState.CurrentEnergy - spend);
-                    // Empty this tick → lockout so bloom/speed drop immediately.
-                    if (shipState.CurrentEnergy <= 0f)
+                    thrust *= ShipOverdriveTuning.ResolveThrustMultiplier(motor);
+                    maxSpeed *= ShipOverdriveTuning.ResolveSpeedMultiplier(motor);
+
+                    // Energy cost is OVERDRIVE-only (normal flight regenerates / stays full).
+                    if (motor.ThrustEnergyDrainPerSecond > 0f)
                     {
-                        shipState.OverdriveLockout = true;
-                        overdriveActive = false;
-                        // Restore cruise caps — drain ended the burst mid-tick.
-                        thrust = taxed.EngineThrust * territoryMult;
-                        maxSpeed = taxed.MaxSpeed * territoryMult;
+                        float drainMult = ShipOverdriveTuning.ResolveEnergyDrainMultiplier(motor);
+                        float spend = motor.ThrustEnergyDrainPerSecond * drainMult * dt;
+                        shipState.CurrentEnergy = math.max(0f, shipState.CurrentEnergy - spend);
+                        // Empty this tick → lockout so bloom/speed drop immediately.
+                        if (shipState.CurrentEnergy <= 0f)
+                        {
+                            shipState.OverdriveLockout = true;
+                            overdriveActive = false;
+                            // Restore cruise caps — drain ended the burst mid-tick.
+                            thrust = taxed.EngineThrust * territoryMult;
+                            maxSpeed = taxed.MaxSpeed * territoryMult;
+                        }
                     }
                 }
             }
@@ -261,6 +377,7 @@ namespace TitanOrbit.ECS
             float3 vel = physicsVelocity.Linear;
             vel.y = 0f;
 
+            float3 orbitDesiredVel = float3.zero;
             if (useOrbit)
             {
                 // --- Passive orbit blend (replaces thrust/coast this tick) ---
@@ -275,12 +392,24 @@ namespace TitanOrbit.ECS
                     movementMass,
                     mapW,
                     mapH,
-                    out float3 desiredVel,
+                    out orbitDesiredVel,
                     out float alignRate);
-                desiredVel.y = 0f;
+                orbitDesiredVel.y = 0f;
                 float t = math.saturate(alignRate * dt);
-                vel = math.lerp(vel, desiredVel, t);
+                vel = math.lerp(vel, orbitDesiredVel, t);
                 vel.y = 0f;
+            }
+            else if (moonDocking)
+            {
+                // --- Approach co-orbit (not yet fully landed) ---
+                // [TITAN-ORBIT] Fully-landed attach already matches moon velocity. During the
+                // 0.5s + 1s landing dwell, space brakes used to freeze the hull in world space
+                // while the moon kept sliding along the ring — rim entries left the dock zone
+                // before LandingProgress could latch. Steer toward moon velocity instead.
+                float t = math.saturate(MoonApproachCoOrbitResponsiveness * dt);
+                vel = math.lerp(vel, moonApproachVel, t);
+                vel.y = 0f;
+                ApplyRecoilDecay(ref vel, maxSpeed, movementMass, motor.RecoilDecayPerSecond, dt);
             }
             else
             {
@@ -293,26 +422,26 @@ namespace TitanOrbit.ECS
                     movementMass,
                     input.Thrust,
                     !input.DisableSpaceBrakes,
-                    dt,
-                    hardCapToMaxSpeed: !overdriveActive);
+                    dt);
 
                 ApplyRecoilDecay(ref vel, maxSpeed, movementMass, motor.RecoilDecayPerSecond, dt);
+
+                // OVERDRIVE exit only — collision overspeed must not use this snap.
+                if (ShouldSnapOverdriveExit(
+                        overdriveActive,
+                        input.Overdrive,
+                        shipState.OverdriveLockout,
+                        in transform.Rotation,
+                        vel,
+                        maxSpeed))
+                {
+                    float mag = math.length(vel);
+                    if (mag > maxSpeed)
+                        vel = math.normalize(vel) * maxSpeed;
+                }
             }
 
-            // --- Enemy / neutral moon shield (deterministic; moons have no physics colliders) ---
-            // [TITAN-ORBIT] Must run on client prediction + server — never client-only VFX push.
-            // Moons share the ship orbit ring. Hard 8–22 kicks during passive coast made neutral/
-            // enemy rings feel stepped (friendly moons skip entirely). Soften only while useOrbit;
-            // thrust / moon-dock approach still get the full combat boot (Fire no longer exits orbit).
-            PlanetGemMoonCombatLogic.ApplyShieldRepelIfNeeded(
-                transform.Position,
-                ref vel,
-                shipState.Team,
-                in planets,
-                mapW,
-                mapH,
-                elapsedSeconds,
-                softenForPassiveOrbit: useOrbit);
+            // Moon shield is a kinematic PhysX sphere (PlanetGemMoonShieldColliderTag).
 
             // --- Asteroid contact: reject inward motor velocity (no position shove) ---
             // [TITAN-ORBIT] Continuous thrust into a rock used to fight PhysX and slowly dig the
@@ -322,21 +451,27 @@ namespace TitanOrbit.ECS
             RejectInwardAsteroidVelocity(ref vel, in asteroidContact);
 
             vel.y = 0f;
-            physicsVelocity = new PhysicsVelocity
-            {
-                Linear = vel,
-                Angular = float3.zero,
-            };
+            // Keep the bounced linear; only the motor delta above changed it.
+            physicsVelocity.Linear = vel;
+            physicsVelocity.Angular = float3.zero;
 
             // [PHYSICS] Motor owns cruise feel — clear package damping so it cannot fight our curves.
             physicsDamping = default;
 
             // --- Replicate orbit context for HUD, tractor beam, people transports ---
+            // Preserve IsTransferringPeople while still coasting so client prediction does not
+            // wipe the server/ghost flag; clear immediately on thrust or leave.
+            // OrbitLocked waits until velocity has captured the rail — ring tint uses this.
+            bool transferring = useOrbit && orbitState.IsTransferringPeople;
+            bool orbitLocked = PlanetOrbitMath.EvaluatePositiveOrbitLock(
+                useOrbit, vel, orbitDesiredVel, orbitState.OrbitLocked);
             orbitState = new ShipOrbitState
             {
                 OrbitPlanetId = inOrbitRing ? orbitPlanetState.PlanetId : 0,
                 InOrbitRing = inOrbitRing,
                 UsingOrbitMotor = useOrbit,
+                OrbitLocked = orbitLocked,
+                IsTransferringPeople = transferring,
             };
         }
 
@@ -414,15 +549,12 @@ namespace TitanOrbit.ECS
 
         /// <summary>
         /// Continuous thrust and optional space-brake deceleration on the XZ plane.
-        /// Skipped entirely on ticks where passive orbit motor owns velocity.
+        /// Thrust is added to the inherited (post-collision) velocity. Cruise clamp only
+        /// stops this tick's thrust from pushing a sub-max ship past MaxSpeed.
+        /// Inherited bounce / ram overspeed is left for <see cref="ApplyRecoilDecay"/>.
         /// When <paramref name="spaceBrakes"/> is false and the player is not thrusting,
         /// velocity is left alone (frictionless coast — Left Ctrl / AIR BRAKES toggle).
-        /// Callers pass <c>!input.DisableSpaceBrakes</c> so a zeroed command still brakes.
         /// </summary>
-        /// <param name="hardCapToMaxSpeed">
-        /// When true (OVERDRIVE off), clamp planar speed to <paramref name="maxSpeed"/> so
-        /// post-OD overspeed does not linger via the 1.08/1.35 soft band + recoil decay.
-        /// </param>
         static void ApplyThrustCoastAndBrakes(
             ref float3 vel,
             in quaternion rotation,
@@ -432,11 +564,13 @@ namespace TitanOrbit.ECS
             float mass,
             bool thrust,
             bool spaceBrakes,
-            float dt,
-            bool hardCapToMaxSpeed = false)
+            float dt)
         {
             mass = math.max(ShipMassLogic.MinMass, mass);
             maxSpeed = math.max(0.1f, maxSpeed);
+
+            vel.y = 0f;
+            float speedIn = math.length(vel);
 
             if (thrust)
             {
@@ -445,16 +579,16 @@ namespace TitanOrbit.ECS
                 if (math.lengthsq(fwd) > 0.01f)
                 {
                     float3 moveDirection = math.normalize(fwd);
-                    float speed = math.length(vel);
                     float3 accel;
-                    if (speed < maxSpeed)
+                    if (speedIn < maxSpeed)
                     {
                         // [TITAN-ORBIT] EngineThrust is already acceleration after mass tax — no F/m.
                         accel = moveDirection * acceleration;
                     }
                     else
                     {
-                        // At cruise cap: thrust steers sideways without adding forward speed.
+                        // Already at / above cruise (bounce leftover): steer only, do not add
+                        // along-track speed — and do not snap the inherited overspeed down.
                         float3 velNorm = math.normalize(vel);
                         float3 accelVec = moveDirection * acceleration;
                         float alongVel = math.dot(accelVec, velNorm);
@@ -462,6 +596,12 @@ namespace TitanOrbit.ECS
                     }
 
                     vel += accel * dt;
+                    vel.y = 0f;
+
+                    // Thrust from below MaxSpeed may not cross the cruise cap.
+                    float speedOut = math.length(vel);
+                    if (speedIn < maxSpeed && speedOut > maxSpeed)
+                        vel = math.normalize(vel) * maxSpeed;
                 }
             }
             else if (spaceBrakes && math.lengthsq(vel) > 0.001f)
@@ -477,34 +617,48 @@ namespace TitanOrbit.ECS
                     vel += brake;
             }
             // else: DisableSpaceBrakes → frictionless coast (keep velocity; no CoastFriction).
-            // PlayerInputHandler documents this as "float endlessly" when SpaceBrakesEnabled is false.
 
             vel.y = 0f;
 
+            // Safety only — real rams can exceed 1.35×; do not clip those down to cruise.
             float mag = math.length(vel);
+            const float ExplosiveCeilingMul = 3f;
+            if (mag > maxSpeed * ExplosiveCeilingMul)
+                vel *= (maxSpeed * ExplosiveCeilingMul) / mag;
+        }
 
-            // --- OVERDRIVE exit: snap to cruise max (bloom / speedometer sync) ---
-            // [TITAN-ORBIT] Without this, OD overspeed sits in the 1.08–1.35 band and bleeds
-            // slowly via recoil decay — feels like OD "lingers" after energy empties.
-            if (hardCapToMaxSpeed && mag > maxSpeed)
-            {
-                vel = math.normalize(vel) * maxSpeed;
-                return;
-            }
+        /// <summary>
+        /// True when OVERDRIVE just ended and leftover burst speed is still mostly forward.
+        /// Collision kicks that are sideways / reverse must not use the cruise snap.
+        /// </summary>
+        static bool ShouldSnapOverdriveExit(
+            bool overdriveActive,
+            bool overdriveHeld,
+            bool overdriveLockout,
+            in quaternion rotation,
+            float3 vel,
+            float maxSpeed)
+        {
+            if (overdriveActive)
+                return false;
 
-            // --- H74 hard cruise lock (thrusting, small overspeed band only) ---
-            // [TITAN-ORBIT] At cruise, speed can hunt a small band above MaxSpeed even with steady
-            // forward thrust. That variance makes presentation step size wobble every frame
-            // (expected = speed×dt), which reads as chop on a ~60 FPS client.
-            // Lock the hunt band to MaxSpeed while thrusting. Larger overspeed (impacts) still
-            // uses ApplyRecoilDecay + the soft 1.35× ceiling below — not zeroed here.
-            if (thrust && mag > maxSpeed && mag <= maxSpeed * 1.08f)
-                vel = math.normalize(vel) * maxSpeed;
+            vel.y = 0f;
+            float mag = math.length(vel);
+            if (mag <= maxSpeed * 1.3f)
+                return false;
 
-            // Soft hard ceiling — collision overspeed above this is clipped; mid-band bleeds via recoil.
-            mag = math.length(vel);
-            if (mag > maxSpeed * 1.35f)
-                vel = vel * ((maxSpeed * 1.35f) / mag);
+            if (overdriveLockout)
+                return true;
+
+            if (overdriveHeld)
+                return false;
+
+            float3 fwd = math.mul(rotation, new float3(0f, 0f, 1f));
+            fwd.y = 0f;
+            if (math.lengthsq(fwd) < 0.01f)
+                return false;
+
+            return math.dot(vel / mag, math.normalize(fwd)) > 0.8f;
         }
 
         /// <summary>
@@ -548,6 +702,86 @@ namespace TitanOrbit.ECS
             }
 
             return found;
+        }
+
+        /// <summary>
+        /// True when the hull pivot is inside a same-team moon dock shell.
+        /// mapW/mapH from <c>MapStateSingleton</c>; moon pose uses the shared ServerTick clock.
+        /// Regular-ship pad (snapshot <c>MoonDockZoneRadiusWorld</c>). MEGA adds
+        /// <paramref name="extraZoneRadius"/> so a long hull starts co-orbit when a wing
+        /// can already reach the drawn shell (pivot-only would be late).
+        /// </summary>
+        static bool TryFindFriendlyMoonDockZone(
+            float3 shipPos,
+            TeamId team,
+            in NativeArray<PlanetMotorSnapshot> planets,
+            float mapW,
+            float mapH,
+            double elapsedSeconds,
+            float extraZoneRadius,
+            out int planetId,
+            out float3 moonOrbitalVelocity)
+        {
+            planetId = 0;
+            moonOrbitalVelocity = float3.zero;
+            if (team == TeamId.None)
+                return false;
+
+            for (int i = 0; i < planets.Length; i++)
+            {
+                var snapshot = planets[i];
+                if (!PlanetGemMoonCombatLogic.IsTeamFriendlyToMoon(snapshot.Planet.Ownership, team))
+                    continue;
+
+                float zone = snapshot.MoonDockZoneRadiusWorld + math.max(0f, extraZoneRadius);
+                if (zone <= 0.0001f)
+                    continue;
+
+                float planetSize = math.max(0.25f, snapshot.Transform.Scale);
+                float3 moonPos = PlanetOrbitMath.GetMoonWorldPositionNear(
+                    shipPos,
+                    snapshot.Transform.Position,
+                    planetSize,
+                    snapshot.Planet.PlanetLevel,
+                    snapshot.Planet.PlanetId,
+                    elapsedSeconds,
+                    mapW,
+                    mapH);
+                if (ToroidalMapEcs.ToroidalDistance(shipPos, moonPos, mapW, mapH) > zone)
+                    continue;
+
+                planetId = snapshot.Planet.PlanetId;
+                moonOrbitalVelocity = PlanetOrbitMath.GetMoonOrbitalVelocity(
+                    planetSize,
+                    snapshot.Planet.PlanetLevel,
+                    snapshot.Planet.PlanetId,
+                    elapsedSeconds);
+                return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// Moon orbital velocity for a latched <see cref="PlanetState.PlanetId"/>.
+        /// </summary>
+        static bool TryGetMoonOrbitalVelocity(
+            int planetId,
+            in NativeArray<PlanetMotorSnapshot> planets,
+            double elapsedSeconds,
+            out float3 moonOrbitalVelocity)
+        {
+            moonOrbitalVelocity = float3.zero;
+            if (!TryFindPlanetById(planetId, in planets, out PlanetMotorSnapshot snapshot))
+                return false;
+
+            float planetSize = math.max(0.25f, snapshot.Transform.Scale);
+            moonOrbitalVelocity = PlanetOrbitMath.GetMoonOrbitalVelocity(
+                planetSize,
+                snapshot.Planet.PlanetLevel,
+                snapshot.Planet.PlanetId,
+                elapsedSeconds);
+            return true;
         }
 
         /// <summary>

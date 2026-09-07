@@ -136,12 +136,13 @@ namespace TitanOrbit.ECS
             }
 
             if (!ShipStatApplyLogic.TryResolveChassisId(
+                    EntityManager,
+                    shipEntity,
                     ship.Team,
                     ship.ShipLevel,
                     branchIndex,
                     out string chassisId,
-                    allowFallback: true,
-                    shipFamilyConfigIndex: ship.ShipFamilyConfigIndex))
+                    allowFallback: true))
                 return;
 
             if (!catalog.TryGetEntry(chassisId, out var entry) || entry.RenderParts == null || entry.RenderParts.Count == 0)
@@ -174,12 +175,13 @@ namespace TitanOrbit.ECS
             ShipChassisVisualCatalog catalog)
         {
             if (!ShipStatApplyLogic.TryResolveChassisId(
+                    EntityManager,
+                    shipEntity,
                     ship.Team,
                     ship.ShipLevel,
                     branchIndex,
                     out string chassisId,
-                    allowFallback: true,
-                    shipFamilyConfigIndex: ship.ShipFamilyConfigIndex))
+                    allowFallback: true))
                 return;
 
             if (!catalog.TryGetEntry(chassisId, out var entry) || entry.RenderParts == null || entry.RenderParts.Count == 0)
@@ -215,6 +217,16 @@ namespace TitanOrbit.ECS
             // --- GhostOwnerIsLocal (NetCode enableable) ---
             if (EntityManager.HasComponent<GhostOwnerIsLocal>(shipEntity) &&
                 EntityManager.IsComponentEnabled<GhostOwnerIsLocal>(shipEntity))
+                return true;
+
+            if (LocalShipEntitySeed.TryGetOwnedShipEntityUnchecked(EntityManager, out var claimed) &&
+                claimed == shipEntity)
+                return true;
+
+            // Ownerless Instantiates during deferred Confirm — hide the grey prefab mesh.
+            if (ClientTeamFlowState.HasDeferredTeamChoiceConfirmPending &&
+                EntityManager.HasComponent<GhostOwner>(shipEntity) &&
+                EntityManager.GetComponentData<GhostOwner>(shipEntity).NetworkId <= 0)
                 return true;
 
             // --- GhostOwner.NetworkId match ---

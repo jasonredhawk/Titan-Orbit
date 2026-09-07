@@ -194,7 +194,10 @@ namespace TitanOrbit.Game
                     }
 
                     // Presentation never runs the orbit motor — useOrbit false for bloom.
-                    if (ShipOverdriveTuning.IsBurstActive(
+                    // MEGAs have no overdrive (Shift is heading-lock); never bloom them.
+                    bool isMega = em.HasComponent<MegaShipState>(_shipEntity)
+                        && em.GetComponentData<MegaShipState>(_shipEntity).IsMega;
+                    if (!isMega && ShipOverdriveTuning.IsBurstActive(
                             shiftHeld,
                             thrustHeld,
                             useOrbit: false,

@@ -8,7 +8,8 @@ namespace TitanOrbit.Editor
 {
     /// <summary>
     /// Custom inspector for <see cref="ShipFamilyDefinitionCatalog"/>:
-    /// refresh the family list from Prefabs/Ships, then Recalculate + Resort every listed family.
+    /// refresh the family list from Prefabs/Ships, Recalculate + Resort every listed family,
+    /// and batch-generate theatrical ship / component menu preview images.
     /// </summary>
     [CustomEditor(typeof(ShipFamilyDefinitionCatalog))]
     public class ShipFamilyDefinitionCatalogEditor : UnityEditor.Editor
@@ -51,6 +52,37 @@ namespace TitanOrbit.Editor
                     RecalculateAndResortAll(catalog);
                 }
                 GUI.backgroundColor = prev;
+            }
+
+            EditorGUILayout.EndVertical();
+
+            EditorGUILayout.Space(8);
+            EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+            EditorGUILayout.LabelField("Theatrical Menu Previews", EditorStyles.boldLabel);
+            EditorGUILayout.HelpBox(
+                "Runs the same 3/4 hero generators as each family's inspector, for every listed family, " +
+                "with an opaque black clear (same as MEGA hull thumbs).\n\n" +
+                "Ship thumbs overwrite MenuPreviews/<variant>/ and assign theatricalMenuPreviewSprite / " +
+                "teamTheatricalMenuPreviewSprites on each upgrade-tree tier.\n\n" +
+                "Component thumbs overwrite ComponentMenuPreviews/<variant>/ and assign the same fields " +
+                "on each ShipFamilyComponentEntry.",
+                MessageType.Info);
+
+            using (new EditorGUI.DisabledScope(listed == 0))
+            {
+                if (GUILayout.Button(
+                        $"Generate Theatrical Ship Menu Preview Images ({listed})",
+                        GUILayout.Height(28)))
+                {
+                    GenerateTheatricalShipPreviewsAll(catalog);
+                }
+
+                if (GUILayout.Button(
+                        $"Generate Theatrical Component Menu Preview Images ({listed})",
+                        GUILayout.Height(28)))
+                {
+                    GenerateTheatricalComponentPreviewsAll(catalog);
+                }
             }
 
             EditorGUILayout.EndVertical();
@@ -264,6 +296,131 @@ namespace TitanOrbit.Editor
             Debug.Log(
                 $"[ShipFamilyDefinitionCatalog] Recalculate+Resort updated {succeeded} family asset(s), " +
                 $"failed {failed}. Profiles refreshed: {profilesUpdated}.");
+        }
+
+        /// <summary>
+        /// Theatrical 3/4 hero hull thumbs for every listed family. One progress bar, one save, one summary.
+        /// </summary>
+        public static void GenerateTheatricalShipPreviewsAll(ShipFamilyDefinitionCatalog catalog)
+        {
+            GenerateTheatricalPreviewsAll(
+                catalog,
+                components: false,
+                title: "Theatrical Ship Menu Previews",
+                confirmBody:
+                    "Generate theatrical (3/4 hero) ship menu preview images for {0} family asset(s)?\n\n" +
+                    "Overwrites PNGs under each family's MenuPreviews/<variant>/ folder and reassigns " +
+                    "theatrical sprite fields on every upgrade-tree tier.");
+        }
+
+        /// <summary>
+        /// Theatrical 3/4 hero component thumbs for every listed family. One progress bar, one save, one summary.
+        /// </summary>
+        public static void GenerateTheatricalComponentPreviewsAll(ShipFamilyDefinitionCatalog catalog)
+        {
+            GenerateTheatricalPreviewsAll(
+                catalog,
+                components: true,
+                title: "Theatrical Component Menu Previews",
+                confirmBody:
+                    "Generate theatrical (3/4 hero) component menu preview images for {0} family asset(s)?\n\n" +
+                    "Overwrites PNGs under each family's ComponentMenuPreviews/<variant>/ folder and reassigns " +
+                    "theatrical sprite fields on every component entry.");
+        }
+
+        static void GenerateTheatricalPreviewsAll(
+            ShipFamilyDefinitionCatalog catalog,
+            bool components,
+            string title,
+            string confirmBody)
+        {
+            var families = new List<ShipFamilyDefinition>();
+            if (catalog?.families != null)
+            {
+                for (int i = 0; i < catalog.families.Count; i++)
+                {
+                    if (catalog.families[i] != null)
+                        families.Add(catalog.families[i]);
+                }
+            }
+
+            if (families.Count == 0)
+            {
+                EditorUtility.DisplayDialog(
+                    title,
+                    "Catalog family list is empty. Use Refresh Family List From Project first.",
+                    "OK");
+                return;
+            }
+
+            if (!EditorUtility.DisplayDialog(
+                    title,
+                    string.Format(confirmBody, families.Count),
+                    "Generate All",
+                    "Cancel"))
+            {
+                return;
+            }
+
+            int succeeded = 0;
+            int failed = 0;
+            int done = 0;
+            int skipped = 0;
+            var failures = new StringBuilder();
+
+            try
+            {
+                for (int i = 0; i < families.Count; i++)
+                {
+                    ShipFamilyDefinition def = families[i];
+                    string label = !string.IsNullOrWhiteSpace(def.familyId) ? def.familyId : def.name;
+                    EditorUtility.DisplayProgressBar(
+                        title,
+                        $"{i + 1}/{families.Count}  {label}",
+                        (i + 0.5f) / families.Count);
+
+                    ShipFamilyMenuPreviewGenerator.MenuPreviewGenerateResult result = components
+                        ? ShipFamilyMenuPreviewGenerator.GenerateTheatricalComponentPreviewsForFamily(
+                            def,
+                            showDialog: false,
+                            saveAssets: false)
+                        : ShipFamilyMenuPreviewGenerator.GenerateTheatricalForFamily(
+                            def,
+                            showDialog: false,
+                            saveAssets: false);
+
+                    if (!result.success)
+                    {
+                        failed++;
+                        failures.AppendLine($"{label}: {result.error}");
+                        continue;
+                    }
+
+                    succeeded++;
+                    done += result.done;
+                    skipped += result.skipped;
+                }
+            }
+            finally
+            {
+                EditorUtility.ClearProgressBar();
+            }
+
+            AssetDatabase.SaveAssets();
+            AssetDatabase.Refresh();
+
+            string failBlock = failed == 0
+                ? string.Empty
+                : $"\n\nFailed ({failed}):\n{failures}";
+            EditorUtility.DisplayDialog(
+                title,
+                $"Updated {succeeded} family asset(s).\n" +
+                $"Generated {done} image(s). Skipped {skipped}.{failBlock}",
+                "OK");
+
+            Debug.Log(
+                $"[ShipFamilyDefinitionCatalog] {title}: updated {succeeded} family asset(s), " +
+                $"failed {failed}, generated {done}, skipped {skipped}.");
         }
     }
 }

@@ -120,7 +120,8 @@ namespace TitanOrbit.Game
                 s_LocalPlayerShipCacheWorld == world &&
                 s_LocalPlayerShipEntity != Entity.Null &&
                 em.Exists(s_LocalPlayerShipEntity) &&
-                em.HasComponent<LocalPlayerShipTag>(s_LocalPlayerShipEntity))
+                em.HasComponent<LocalPlayerShipTag>(s_LocalPlayerShipEntity) &&
+                LocalShipEntitySeed.EntityMatchesLocalOwner(em, s_LocalPlayerShipEntity))
             {
                 shipEntity = s_LocalPlayerShipEntity;
                 return true;
@@ -468,6 +469,21 @@ namespace TitanOrbit.Game
                 return true;
 
             return false;
+        }
+
+        /// <summary>
+        /// Ghosted MEGA identity for the local ship. False when the hull is a normal family chassis.
+        /// Uses the cached local-player entity — no extra ship gather.
+        /// </summary>
+        public static bool TryGetLocalMegaShipState(out MegaShipState mega)
+        {
+            mega = default;
+            if (!TryGetCachedLocalPlayerShipEntity(out var em, out var shipEntity))
+                return false;
+            if (!em.HasComponent<MegaShipState>(shipEntity))
+                return false;
+            mega = em.GetComponentData<MegaShipState>(shipEntity);
+            return mega.IsMega;
         }
 
         /// <summary>
@@ -882,6 +898,10 @@ namespace TitanOrbit.Game
         public static bool IsLocalHost()
         {
             if (TitanOrbitSessionManager.IsDedicatedOnlineClient)
+                return false;
+
+            // MPPM Player 2+ is always a remote client of the main Editor host.
+            if (TitanOrbit.NetCode.TitanOrbitPlayModeUtility.IsMppmAdditionalEditorInstance())
                 return false;
 
             return ClientWorld != null && ClientWorld.IsCreated && ServerWorld != null && ServerWorld.IsCreated &&
@@ -1475,16 +1495,17 @@ namespace TitanOrbit.Game
                 }
             }
 
-            if (TryGetLocalOwnedShipEntity(em, out shipEntity))
+            if (TryGetLocalOwnedShipEntity(em, out shipEntity) &&
+                LocalShipEntitySeed.EntityMatchesLocalOwner(em, shipEntity))
                 return true;
 
             using var tagged = em.CreateEntityQuery(typeof(LocalPlayerShipTag), typeof(ShipTag));
-            if (tagged.CalculateEntityCount() > 0)
+            if (tagged.CalculateEntityCount() == 1)
             {
-                using var entities = tagged.ToEntityArray(Allocator.Temp);
-                if (entities.Length > 0)
+                Entity taggedShip = tagged.GetSingletonEntity();
+                if (LocalShipEntitySeed.EntityMatchesLocalOwner(em, taggedShip))
                 {
-                    shipEntity = entities[0];
+                    shipEntity = taggedShip;
                     return true;
                 }
             }
@@ -1496,6 +1517,8 @@ namespace TitanOrbit.Game
             {
                 var target = targets[i].targetEntity;
                 if (target == Entity.Null || !em.Exists(target) || !em.HasComponent<ShipTag>(target))
+                    continue;
+                if (!LocalShipEntitySeed.EntityMatchesLocalOwner(em, target))
                     continue;
                 shipEntity = target;
                 return true;
@@ -1658,24 +1681,85 @@ namespace TitanOrbit.Game
             return false;
         }
 
+        static int s_LocalNetworkIdFrame = -1;
+        static int s_LocalNetworkId = -1;
+        static World s_LocalNetworkIdWorld;
+
+        static World s_NetQueryWorld;
+        static EntityQuery s_LocalNetworkIdQuery;
+        static EntityQuery s_InGameQuery;
+        static bool s_NetQueriesValid;
+
         /// <summary>First in-game connection's <see cref="NetworkId"/> on the client world.</summary>
         static int GetLocalNetworkId(World clientWorld)
         {
             if (clientWorld == null || !clientWorld.IsCreated)
                 return -1;
 
-            var em = clientWorld.EntityManager;
-            using var ids = em.CreateEntityQuery(
-                    typeof(NetworkStreamConnection), typeof(NetworkStreamInGame), typeof(NetworkId))
-                .ToComponentDataArray<NetworkId>(Allocator.Temp);
-            return ids.Length > 0 ? ids[0].Value : -1;
+            int frame = Time.frameCount;
+            if (frame == s_LocalNetworkIdFrame && s_LocalNetworkIdWorld == clientWorld)
+                return s_LocalNetworkId;
+
+            s_LocalNetworkIdFrame = frame;
+            s_LocalNetworkIdWorld = clientWorld;
+            s_LocalNetworkId = -1;
+
+            if (!TryGetCachedNetQueries(clientWorld, out var idQuery, out _))
+                return -1;
+
+            if (idQuery.IsEmptyIgnoreFilter)
+                return -1;
+
+            using var ids = idQuery.ToComponentDataArray<NetworkId>(Allocator.Temp);
+            s_LocalNetworkId = ids.Length > 0 ? ids[0].Value : -1;
+            return s_LocalNetworkId;
         }
 
         /// <summary>Whether any connection entity has <see cref="NetworkStreamInGame"/>.</summary>
         static bool HasNetworkStreamInGame(World world)
         {
-            if (world == null || !world.IsCreated) return false;
-            return world.EntityManager.CreateEntityQuery(typeof(NetworkStreamInGame)).CalculateEntityCount() > 0;
+            if (world == null || !world.IsCreated)
+                return false;
+            if (!TryGetCachedNetQueries(world, out _, out var inGameQuery))
+                return false;
+            return !inGameQuery.IsEmptyIgnoreFilter;
+        }
+
+        static bool TryGetCachedNetQueries(World world, out EntityQuery idQuery, out EntityQuery inGameQuery)
+        {
+            idQuery = default;
+            inGameQuery = default;
+            if (world == null || !world.IsCreated)
+                return false;
+
+            if (s_NetQueriesValid && s_NetQueryWorld == world && world.IsCreated)
+            {
+                idQuery = s_LocalNetworkIdQuery;
+                inGameQuery = s_InGameQuery;
+                return true;
+            }
+
+            DisposeNetQueries();
+            s_NetQueryWorld = world;
+            s_LocalNetworkIdQuery = world.EntityManager.CreateEntityQuery(
+                typeof(NetworkStreamConnection), typeof(NetworkStreamInGame), typeof(NetworkId));
+            s_InGameQuery = world.EntityManager.CreateEntityQuery(typeof(NetworkStreamInGame));
+            s_NetQueriesValid = true;
+            idQuery = s_LocalNetworkIdQuery;
+            inGameQuery = s_InGameQuery;
+            return true;
+        }
+
+        static void DisposeNetQueries()
+        {
+            if (s_NetQueriesValid && s_NetQueryWorld != null && s_NetQueryWorld.IsCreated)
+            {
+                s_LocalNetworkIdQuery.Dispose();
+                s_InGameQuery.Dispose();
+            }
+
+            s_NetQueriesValid = false;
+            s_NetQueryWorld = null;
         }
 
         /// <summary>Reads <see cref="MapStateSingleton.LoadingComplete"/> from a world.</summary>
@@ -2351,7 +2435,7 @@ namespace TitanOrbit.Game
                 string name = buffer[i].DisplayName.ToString();
                 if (string.IsNullOrWhiteSpace(name))
                     continue;
-                PlayerNameRosterCache.Upsert(buffer[i].NetworkId, name);
+                PlayerNameRosterCache.Upsert(buffer[i].NetworkId, name, buffer[i].BadgeId);
             }
         }
 
@@ -2364,7 +2448,7 @@ namespace TitanOrbit.Game
             int localId = GetLocalNetworkId();
             if (localId <= 0)
                 return;
-            PlayerNameRosterCache.Upsert(localId, LocalPlayerDisplayName.Get());
+            PlayerNameRosterCache.Upsert(localId, LocalPlayerDisplayName.Get(), LocalPlayerBadge.Get());
         }
 
         /// <summary>
@@ -2417,6 +2501,24 @@ namespace TitanOrbit.Game
                 return LocalPlayerDisplayName.Get();
 
             return "Player " + networkId;
+        }
+
+        /// <summary>
+        /// Profile badge id from <see cref="PlayerNameRosterCache"/> (announce RPC + local overlay).
+        /// Falls back to the Main Menu pick for the local player, or 0 (none) for remotes.
+        /// </summary>
+        public static int GetCachedPlayerBadgeId(int networkId)
+        {
+            if (networkId <= 0)
+                return PlayerBadgeIdUtil.None;
+
+            if (PlayerNameRosterCache.TryGetBadgeId(networkId, out int badgeId))
+                return badgeId;
+
+            if (networkId == GetLocalNetworkId())
+                return LocalPlayerBadge.Get();
+
+            return PlayerBadgeIdUtil.None;
         }
 
         /// <summary>Number of teams in this match (from home planets, then server team state).</summary>
@@ -2648,6 +2750,94 @@ namespace TitanOrbit.Game
                 return true;
 
             return TryFindPlanetState(ClientWorld, planetId, out state);
+        }
+
+        /// <summary>
+        /// MEGA L7 slot on a planet (catalog index + occupancy). Used by the Orbit Menu tree.
+        /// Skips during late-join settle so we do not scan planet buffers while ghosts hydrate.
+        /// </summary>
+        public static bool TryGetPlanetMegaSlot(
+            int planetId,
+            int branchIndex,
+            out ushort catalogIndex,
+            out int occupiedByNetworkId)
+        {
+            catalogIndex = 0;
+            occupiedByNetworkId = 0;
+            if (planetId <= 0 || branchIndex < 0 || branchIndex >= MegaShipPlanetLogic.SlotCount)
+                return false;
+            if (ClientJoinSettleCache.ShouldSkipMapBodyQueries)
+                return false;
+
+            if (IsLocalHost() && TryFindPlanetMegaSlot(ServerWorld, planetId, branchIndex, out catalogIndex, out occupiedByNetworkId))
+                return true;
+            return TryFindPlanetMegaSlot(ClientWorld, planetId, branchIndex, out catalogIndex, out occupiedByNetworkId);
+        }
+
+        /// <summary>
+        /// True when this unique MEGA catalog hull is already flown by someone in the match.
+        /// Orbit Menu uses this so a duplicate rolled card on another planet stays disabled
+        /// and can show the owner's name.
+        /// </summary>
+        /// <param name="catalogIndex">Index into <c>MegaShipCatalog.entries</c>.</param>
+        /// <param name="occupiedByNetworkId">GhostOwner NetworkId of the living owner.</param>
+        /// <returns>True when an owner was found.</returns>
+        public static bool TryGetMegaCatalogOccupant(ushort catalogIndex, out int occupiedByNetworkId)
+        {
+            occupiedByNetworkId = 0;
+            if (ClientJoinSettleCache.ShouldSkipMapBodyQueries)
+                return false;
+
+            // --- Prefer ServerWorld on Local Host (authoritative occupancy) ---
+            // [NETCODE] PlanetMegaShipSlotElement is ghosted; dedicated clients read ClientWorld.
+            if (IsLocalHost() && TryFindMegaCatalogOccupant(ServerWorld, catalogIndex, out occupiedByNetworkId))
+                return true;
+            return TryFindMegaCatalogOccupant(ClientWorld, catalogIndex, out occupiedByNetworkId);
+        }
+
+        /// <summary>
+        /// Walks planet MEGA slot buffers in one ECS world for a catalog-index owner.
+        /// </summary>
+        static bool TryFindMegaCatalogOccupant(World world, ushort catalogIndex, out int occupiedByNetworkId)
+        {
+            occupiedByNetworkId = 0;
+            if (world == null || !world.IsCreated)
+                return false;
+            return MegaShipPlanetLogic.TryFindCatalogOccupant(
+                world.EntityManager, catalogIndex, out occupiedByNetworkId);
+        }
+
+        static bool TryFindPlanetMegaSlot(
+            World world,
+            int planetId,
+            int branchIndex,
+            out ushort catalogIndex,
+            out int occupiedByNetworkId)
+        {
+            catalogIndex = 0;
+            occupiedByNetworkId = 0;
+            if (world == null || !world.IsCreated)
+                return false;
+
+            var em = world.EntityManager;
+            using var query = em.CreateEntityQuery(typeof(PlanetTag), typeof(PlanetState));
+            using var entities = query.ToEntityArray(Allocator.Temp);
+            using var states = query.ToComponentDataArray<PlanetState>(Allocator.Temp);
+            for (int i = 0; i < entities.Length; i++)
+            {
+                if (states[i].PlanetId != planetId)
+                    continue;
+                if (!em.HasBuffer<PlanetMegaShipSlotElement>(entities[i]))
+                    return false;
+                var buffer = em.GetBuffer<PlanetMegaShipSlotElement>(entities[i]);
+                if (branchIndex >= buffer.Length)
+                    return false;
+                catalogIndex = buffer[branchIndex].CatalogIndex;
+                occupiedByNetworkId = buffer[branchIndex].OccupiedByNetworkId;
+                return true;
+            }
+
+            return false;
         }
 
         /// <summary>Gem-moon combat state for a planet — shield, orbit zone, contributed gems UI.</summary>

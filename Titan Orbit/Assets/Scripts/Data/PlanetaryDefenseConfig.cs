@@ -5,9 +5,12 @@ namespace TitanOrbit.Data
 {
     /// <summary>
     /// Designer-tunable planetary defense turret recipe for one ship / planet family.
-    /// Holds the turret mesh prefab, bullet bank, regen knobs, and Level-1 → Level-6
-    /// combat ranges (HP, damage, fire rate, absolute engage range, bullet speed), possession
-    /// camera view radius, plus gem costs that default to Solfeggio / cymatic frequencies.
+    /// Holds the turret mesh prefab, bullet bank (family inherit or a pinned category),
+    /// regen knobs, and Level-1 → Level-6 combat ranges (HP, damage, fire rate, absolute
+    /// engage range, bullet speed), possession camera view radius, plus gem costs that
+    /// default to Solfeggio / cymatic frequencies. Live fire uses
+    /// <see cref="GetCombatLevelStats"/> so the chosen bank's multipliers (Lightning
+    /// fire-rate / fire-power, Fireballs range, …) scale these authored defaults.
     /// Level 7 is the crown rung (963) — only unlockable when the planet is max level and the
     /// gem-moon reservoir is full. Runtime resolve: <see cref="ResolveForFamily"/>.
     /// <para>
@@ -197,12 +200,29 @@ namespace TitanOrbit.Data
             963f, // Lv7 — crown (only when planet L6 + moon gems full)
         };
 
+        /// <summary>
+        /// Inspector inherit row: use the owning planet family's
+        /// <see cref="ShipFamilyDefinition.bulletPrefabIndex"/> (and that bank's full profile).
+        /// </summary>
+        public const int UseFamilyBulletBankIndex = -1;
+
         // --- VFX / bullets ---
 
         [Header("Bullets")]
+        [BulletVfxBankCategory(true, "Ship family default")]
         [Tooltip(
-            "Unused by combat. Planetary defense fires the owning family's default " +
-            "ShipFamilyDefinition.bulletPrefabIndex (and that bank's stat multipliers).")]
+            "Bullet bank this turret fires. Ship family default uses the owning family's " +
+            "ShipFamilyDefinition.bulletPrefabIndex for VFX, on-hit abilities, AND stat " +
+            "multipliers (fire power, fire rate, speed, range) applied to this recipe's " +
+            "Level 1–6 defaults. Lightning is the usual example: 0.25× fire rate and " +
+            "0.9× fire power on top of damageAtLevel* / fireRateAtLevel*.")]
+        public int bulletBankIndex = UseFamilyBulletBankIndex;
+
+        /// <summary>
+        /// [LEGACY] Older assets stored a category name. Combat reads
+        /// <see cref="bulletBankIndex"/>; this string is kept so YAML still loads.
+        /// </summary>
+        [HideInInspector]
         public string bulletBankCategoryName = "";
 
         [Tooltip(
@@ -381,13 +401,47 @@ namespace TitanOrbit.Data
         }
 
         /// <summary>
-        /// Stats for turret level L (1..7). Combat fields always reflect the authored ranges.
+        /// Authored recipe stats for turret level L (1..7). Combat fields always
+        /// reflect the Level 1→6 ranges — no bullet-bank multipliers yet.
+        /// Live fire / aim must use <see cref="GetCombatLevelStats"/> so a family
+        /// Lightning bank actually slows and weakens the pad.
         /// </summary>
         public TurretLevelStats GetLevelStats(int turretLevel)
         {
             EnsureLevelsInitialized();
             int idx = Mathf.Clamp(turretLevel, 1, levels.Length) - 1;
             return levels[idx];
+        }
+
+        /// <summary>
+        /// Authored Level 1→6 combat numbers after the fired bank's stat profile.
+        /// Fire power, fire rate, bullet speed, and engage range all scale; HP, gems,
+        /// camera radius, visual scale, and hit radius stay on the recipe.
+        /// </summary>
+        public TurretLevelStats GetCombatLevelStats(int turretLevel, int bankIndex)
+        {
+            return BulletBankProfileUtility.ApplyProfileToTurretLevelStats(
+                GetLevelStats(turretLevel), bankIndex);
+        }
+
+        /// <summary>
+        /// Bank this recipe fires for <paramref name="family"/>. Inherit (-1) follows
+        /// the family's default damage bank; a pinned index uses that category instead.
+        /// </summary>
+        public int ResolveBulletBankIndex(ShipFamilyDefinition family) =>
+            BulletBankProfileUtility.ResolveBankIndexForPlanetaryDefense(this, family);
+
+        /// <summary>
+        /// Ship-family definition for a planet's <c>ShipFamilyConfigIndex</c>, or null.
+        /// </summary>
+        public static ShipFamilyDefinition ResolveFamilyDefinition(
+            PlanetShipFamilyConfig familyConfig,
+            int shipFamilyConfigIndex)
+        {
+            if (familyConfig == null)
+                return null;
+            var entry = familyConfig.GetFamilyByConfigIndex(shipFamilyConfigIndex);
+            return entry != null ? entry.shipFamilyDefinition : null;
         }
 
         /// <summary>

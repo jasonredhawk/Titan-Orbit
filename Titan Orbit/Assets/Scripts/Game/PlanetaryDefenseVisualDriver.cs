@@ -19,8 +19,9 @@ namespace TitanOrbit.Game
     /// Client-only hybrid: Instantiates soft pad zones and turret meshes for ghosted
     /// <see cref="PlanetaryDefenseSlotElement"/> buffers on owned planets.
     /// <para>
-    /// [HYBRID] Pad = Shapes soft blue disc matching the planet orbit-ring fill and
-    /// <see cref="GemMoonOrbitZoneVisual"/> tint. Turret sits in the disc center; level +
+    /// [HYBRID] Pad = Shapes soft disc matching the planet orbit-ring fill and
+    /// <see cref="PlanetOrbitRingOccupancy.IdleTint"/> (white idle). While a friendly ship
+    /// deposits gems the disc eases to that team's color. Turret sits in the disc center; level +
     /// gem cost text (with the same gem icon as the moon label) sits screen-below the pad.
     /// When a player occupies the pad, the level line also shows their display name
     /// (ship nameplate is hidden while stowed). Active turrets also show a thin horizontal
@@ -33,7 +34,8 @@ namespace TitanOrbit.Game
     /// ships (<see cref="ShipBankVisualApplier"/> / <see cref="ShipBankVisualSettingsCache"/>).
     /// Yaw and bank are kept separate so roll never fights the aim slerp. Hostile tracking uses
     /// the same <see cref="PlanetaryDefenseAimMath"/> lead as server combat (identical
-    /// per-level <c>bulletSpeed</c>, engage range for max-lead cap, and
+    /// bank-scaled <c>bulletSpeed</c> / engage range from
+    /// <see cref="PlanetaryDefenseConfig.GetCombatLevelStats"/>, and
     /// <see cref="PlanetaryDefenseAimMath.ShipVelocityLeadScale"/>) so barrels point where
     /// bullets go (ships via <see cref="ShipKinematics"/>, people transports via
     /// <see cref="PeopleTransportVfxDriver.CopyAimFlights"/>).
@@ -72,10 +74,10 @@ namespace TitanOrbit.Game
         const float IdleBankAngularVelDeadbandDegPerSec = 18f;
 
         /// <summary>
-        /// World Y for the whole slot vs planet center. Slightly below the flight plane so
-        /// ships clear the pad instead of flying under a raised disc.
+        /// World Y for the whole slot vs planet center. Same drop as the people-transfer
+        /// orbit ring so ships clear the pad disc instead of intersecting it.
         /// </summary>
-        const float PresentationLiftY = -0.08f;
+        const float PresentationLiftY = -PlanetOrbitRingOccupancy.ZoneDiscBelowFlightPlane;
 
         /// <summary>How far above the pad plane the turret mesh sits (world units).</summary>
         const float TurretAbovePadWorld = 0.22f;
@@ -188,6 +190,12 @@ namespace TitanOrbit.Game
         /// <summary>Turret scale mul at the peak of the hit punch (1 = no punch).</summary>
         const float HitPunchScalePeak = 1.12f;
 
+        /// <summary>Roster cache refresh cadence (names almost never change mid-combat).</summary>
+        const int NameCacheRefreshIntervalFrames = 20;
+
+        /// <summary>Unity frame of the last <see cref="EcsGameBridge.RefreshPlayerDisplayNameCache"/>.</summary>
+        int _nameCacheFrame = -1;
+
         /// <summary>Shared 1×1 white sprite for outline + bg + fill (created once).</summary>
         static Sprite s_HealthBarSprite;
 
@@ -248,6 +256,28 @@ namespace TitanOrbit.Game
         readonly List<int> _removePlanetIds = new List<int>(16);
         readonly List<Entity> _planetEntitiesScratch = new List<Entity>(32);
         readonly List<Entity> _shipEntitiesScratch = new List<Entity>(32);
+
+        /// <summary>
+        /// Pads that currently have a friendly still ship in-zone with cargo
+        /// (planetId, slotIndex) → depositing team. Rebuilt each LateUpdate.
+        /// </summary>
+        readonly Dictionary<(int PlanetId, int SlotIndex), TeamId> _depositingPadTeams =
+            new Dictionary<(int, int), TeamId>(32);
+
+        /// <summary>
+        /// Hold team tint after a ghosted <c>BuildProgress</c> tick so remotes stay lit
+        /// between metronome beats when interpolation makes the hull look like it is moving.
+        /// Value is <see cref="Time.time"/> deadline.
+        /// </summary>
+        readonly Dictionary<(int PlanetId, int SlotIndex), float> _depositProgressHoldUntil =
+            new Dictionary<(int, int), float>(32);
+
+        /// <summary>Scratch keys for expired deposit-hold prune (no alloc per frame).</summary>
+        readonly List<(int PlanetId, int SlotIndex)> _depositHoldPruneScratch =
+            new List<(int, int)>(16);
+
+        /// <summary>How long a BuildProgress tick keeps the team tint (seconds).</summary>
+        const float DepositProgressHoldSeconds = 0.75f;
 
         /// <summary>
         /// Cached <see cref="MapStateSingleton"/> query — created once, disposed in OnDestroy.
@@ -320,6 +350,11 @@ namespace TitanOrbit.Game
 
             /// <summary>Last Floor(BuildProgress) used for cost digits (avoids string rebuild).</summary>
             public int CachedCostCurrent;
+
+            /// <summary>
+            /// Last ghosted BuildProgress seen by the deposit-tint path (detects metronome ticks).
+            /// </summary>
+            public float LastSeenBuildProgress;
 
             /// <summary>Last Ceil(gemsToNext) used for cost digits.</summary>
             public int CachedCostMax;
@@ -454,10 +489,24 @@ namespace TitanOrbit.Game
             // --- Player names for occupied-pad labels (Lv N + name) ---
             // [HYBRID] Singleton PlayerNameElement buffer only — no ship gathers.
             // Needed because ship nameplates hide while the hull is stowed in a turret.
-            EcsGameBridge.RefreshPlayerDisplayNameCache();
+            // Not every LateUpdate — roster rarely changes; grind frames were paying this
+            // plus Hub transform writes on every owned planet.
+            if (_nameCacheFrame < 0 || Time.frameCount - _nameCacheFrame >= NameCacheRefreshIntervalFrames)
+            {
+                EcsGameBridge.RefreshPlayerDisplayNameCache();
+                _nameCacheFrame = Time.frameCount;
+            }
 
             _alivePlanetIds.Clear();
             bool canAimShips = !ClientJoinSettleCache.ShouldSkipShipEntityQueries;
+
+            // --- Deposit pad tint: which slots have a friendly parked ship feeding them ---
+            // [HYBRID] Presentation only. Same zone / still / cargo gates as
+            // PlanetaryDefenseDepositSystem, via planet-proxy keys + ship presentation cache.
+            _depositingPadTeams.Clear();
+            PruneExpiredDepositHolds();
+            if (canAimShips && hasMap)
+                CollectDepositingPadTeams(em, mapW, mapH);
 
             for (int p = 0; p < _planetEntitiesScratch.Count; p++)
             {
@@ -482,6 +531,9 @@ namespace TitanOrbit.Game
                 _alivePlanetIds.Add(planet.PlanetId);
                 var config = PlanetaryDefenseConfig.ResolveForFamily(
                     _familyConfig, planet.ShipFamilyConfigIndex);
+                ShipFamilyDefinition familyDef = PlanetaryDefenseConfig.ResolveFamilyDefinition(
+                    _familyConfig, planet.ShipFamilyConfigIndex);
+                int bankIndex = config.ResolveBulletBankIndex(familyDef);
 
                 if (!_groupsByPlanetId.TryGetValue(planet.PlanetId, out var group))
                 {
@@ -500,9 +552,14 @@ namespace TitanOrbit.Game
                     group.Hub.SetParent(planetProxy.transform, worldPositionStays: false);
                 if (group.Hub != null)
                 {
-                    group.Hub.localPosition = Vector3.zero;
-                    group.Hub.localRotation = Quaternion.identity;
-                    group.Hub.localScale = Vector3.one;
+                    // Identity is written once — assigning every LateUpdate dirties the
+                    // Transform hierarchy on every owned planet (Profiler ~3 ms while grinding).
+                    if (group.Hub.localPosition.sqrMagnitude > 1e-8f)
+                        group.Hub.localPosition = Vector3.zero;
+                    if (group.Hub.localRotation != Quaternion.identity)
+                        group.Hub.localRotation = Quaternion.identity;
+                    if ((group.Hub.localScale - Vector3.one).sqrMagnitude > 1e-6f)
+                        group.Hub.localScale = Vector3.one;
                 }
 
                 // ECS scale is authoritative — unit-scale planet roots no longer carry diameter.
@@ -547,9 +604,34 @@ namespace TitanOrbit.Game
                     vis.SlotRoot.localRotation = Quaternion.identity;
                     vis.SlotRoot.localScale = Vector3.one;
 
-                    // --- Soft blue pad zone (Shapes — same tint as orbit ring / moon zone) ---
+                    // --- Soft pad zone (idle blue, team color while a friendly deposits) ---
                     if (vis.ZoneVisual != null)
+                    {
                         vis.ZoneVisual.SetRadiusLocal(padWorldRadius);
+
+                        var padKey = (planet.PlanetId, i);
+                        if (slot.BuildProgress > vis.LastSeenBuildProgress + 0.01f
+                            && planet.Ownership != TeamId.None)
+                        {
+                            _depositProgressHoldUntil[padKey] = Time.time + DepositProgressHoldSeconds;
+                        }
+
+                        vis.LastSeenBuildProgress = slot.BuildProgress;
+
+                        bool depositing = _depositingPadTeams.TryGetValue(padKey, out TeamId depositTeam);
+                        if (!depositing
+                            && _depositProgressHoldUntil.TryGetValue(padKey, out float holdUntil)
+                            && Time.time < holdUntil)
+                        {
+                            depositing = true;
+                            depositTeam = planet.Ownership;
+                        }
+
+                        Color teamColor = depositing && depositTeam != TeamId.None
+                            ? depositTeam.ToColor()
+                            : PlanetaryDefensePadZoneVisual.OrbitZoneTint;
+                        vis.ZoneVisual.TickHighlight(depositing, teamColor, Time.deltaTime);
+                    }
 
                     // --- Level + gems just below / outside the pad rim ---
                     // Take Control is a single screen-space HUD button (not per-pad Canvas).
@@ -575,10 +657,12 @@ namespace TitanOrbit.Game
                                 vis.AppliedTeam = planet.Ownership;
                             }
 
-                            var levelStats = config.GetLevelStats(slot.TurretLevel);
+                            // Authored mesh scale + bank-scaled combat (speed / engage for lead).
+                            var authoredStats = config.GetLevelStats(slot.TurretLevel);
+                            var levelStats = config.GetCombatLevelStats(slot.TurretLevel, bankIndex);
 
                             // Modest size vs pad — level visualScale nudges slightly, stays clamped.
-                            float scaleMul = math.clamp(levelStats.visualScale, 0.4f, 1.1f);
+                            float scaleMul = math.clamp(authoredStats.visualScale, 0.4f, 1.1f);
                             float worldScale = math.clamp(
                                 padWorldRadius * TurretSizeVsPadRadius * scaleMul,
                                 MinTurretWorldScale,
@@ -1089,6 +1173,7 @@ namespace TitanOrbit.Game
 
                 // Soft blue faded disc — same tint as orbit ring / moon orbit zone.
                 vis.ZoneVisual = PlanetaryDefensePadZoneVisual.EnsureOnSlotRoot(vis.SlotRoot);
+                vis.LastSeenBuildProgress = slot.BuildProgress;
 
                 CreateInfoPlate(ref vis);
                 CreateHealthBar(ref vis);
@@ -1622,6 +1707,165 @@ namespace TitanOrbit.Game
             return false;
         }
 
+        /// <summary>Drops expired BuildProgress hold timers so the tint dictionary stays small.</summary>
+        void PruneExpiredDepositHolds()
+        {
+            if (_depositProgressHoldUntil.Count == 0)
+                return;
+
+            _depositHoldPruneScratch.Clear();
+            float now = Time.time;
+            foreach (var kv in _depositProgressHoldUntil)
+            {
+                if (kv.Value <= now)
+                    _depositHoldPruneScratch.Add(kv.Key);
+            }
+
+            for (int i = 0; i < _depositHoldPruneScratch.Count; i++)
+                _depositProgressHoldUntil.Remove(_depositHoldPruneScratch[i]);
+        }
+
+        /// <summary>
+        /// Marks pads that a friendly living ship is currently feeding: in the deposit zone,
+        /// nearly still, carrying gems, not moon-docked, not piloting a turret, slot below cap.
+        /// Same gates as <see cref="PlanetaryDefenseDepositSystem"/> except the 2s still timer —
+        /// the disc lights as soon as the hull parks so the team tint reads immediately.
+        /// <para>
+        /// Walks <see cref="_planetEntitiesScratch"/> + <see cref="GhostPresentationTransformCache"/>
+        /// (no ship/map archetype gathers). Call site already gates
+        /// <see cref="ClientJoinSettleCache.ShouldSkipShipEntityQueries"/>.
+        /// </para>
+        /// </summary>
+        void CollectDepositingPadTeams(EntityManager em, float mapW, float mapH)
+        {
+            GhostPresentationTransformCache.CopyShipEntities(_shipEntitiesScratch);
+            for (int s = 0; s < _shipEntitiesScratch.Count; s++)
+            {
+                Entity shipEntity = _shipEntitiesScratch[s];
+                if (!em.Exists(shipEntity) || !em.HasComponent<ShipState>(shipEntity))
+                    continue;
+
+                var ship = em.GetComponentData<ShipState>(shipEntity);
+                if (ship.IsDead || ship.AwaitingTeamSelection || ship.Team == TeamId.None)
+                    continue;
+                if (ship.CurrentGems <= 0.001f)
+                    continue;
+                if (em.HasComponent<ShipTurretControlState>(shipEntity) &&
+                    em.GetComponentData<ShipTurretControlState>(shipEntity).IsControlling)
+                    continue;
+                if (ShipMoonDockState.IsFullyLandedOnMoon(em, shipEntity))
+                    continue;
+
+                float planarSpeed = 0f;
+                if (em.HasComponent<ShipKinematics>(shipEntity))
+                {
+                    float3 vel = em.GetComponentData<ShipKinematics>(shipEntity).Velocity;
+                    planarSpeed = math.length(new float2(vel.x, vel.z));
+                }
+
+                float3 shipPos;
+                if (em.HasComponent<LocalTransform>(shipEntity))
+                    shipPos = em.GetComponentData<LocalTransform>(shipEntity).Position;
+                else if (GhostPresentationTransformCache.TryGetShip(shipEntity, out var snap))
+                    shipPos = snap.Position;
+                else
+                    continue;
+                shipPos.y = PlanetaryDefenseMath.FixedY;
+
+                if (!TryFindClosestDepositSlotForShip(
+                        em, ship.Team, shipPos, planarSpeed, mapW, mapH,
+                        out int planetId, out int slotIndex))
+                    continue;
+
+                _depositingPadTeams[(planetId, slotIndex)] = ship.Team;
+            }
+        }
+
+        /// <summary>
+        /// Closest friendly pad zone this ship is inside that can still accept gems.
+        /// Toroidal shortest path — same placement as server deposit.
+        /// </summary>
+        bool TryFindClosestDepositSlotForShip(
+            EntityManager em,
+            TeamId shipTeam,
+            float3 shipPos,
+            float planarSpeed,
+            float mapW,
+            float mapH,
+            out int bestPlanetId,
+            out int bestSlot)
+        {
+            bestPlanetId = 0;
+            bestSlot = -1;
+            float bestDistSq = float.MaxValue;
+
+            for (int p = 0; p < _planetEntitiesScratch.Count; p++)
+            {
+                Entity planetEntity = _planetEntitiesScratch[p];
+                if (!em.Exists(planetEntity) ||
+                    !em.HasComponent<PlanetState>(planetEntity) ||
+                    !em.HasBuffer<PlanetaryDefenseSlotElement>(planetEntity) ||
+                    !em.HasComponent<LocalTransform>(planetEntity))
+                    continue;
+
+                var planet = em.GetComponentData<PlanetState>(planetEntity);
+                if (planet.Ownership == TeamId.None || planet.Ownership != shipTeam || planet.PlanetId == 0)
+                    continue;
+
+                var buffer = em.GetBuffer<PlanetaryDefenseSlotElement>(planetEntity);
+                if (buffer.Length == 0)
+                    continue;
+
+                var config = PlanetaryDefenseConfig.ResolveForFamily(
+                    _familyConfig, planet.ShipFamilyConfigIndex);
+                float speedEps = math.max(0.01f, config.depositStillSpeedEpsilon);
+                if (planarSpeed > speedEps)
+                    continue;
+
+                float zoneR = math.max(0.25f, config.depositZoneRadius);
+                float zoneRSq = zoneR * zoneR;
+
+                var planetXf = em.GetComponentData<LocalTransform>(planetEntity);
+                float3 planetPos = planetXf.Position;
+                float planetSize = math.max(0.25f, planetXf.Scale);
+                int slotCount = buffer.Length;
+
+                float moonCurrent = 0f;
+                float moonMax = 0f;
+                if (em.HasComponent<PlanetGemMoonState>(planetEntity))
+                {
+                    var moon = em.GetComponentData<PlanetGemMoonState>(planetEntity);
+                    moonCurrent = moon.CurrentMoonGems;
+                    moonMax = moon.MaxMoonGems;
+                }
+
+                int maxLvl = PlanetaryDefenseMath.GetMaxTurretLevelForPlanet(
+                    planet.PlanetLevel, moonCurrent, moonMax);
+
+                for (int i = 0; i < slotCount; i++)
+                {
+                    var slot = buffer[i];
+                    if (slot.TurretLevel >= maxLvl)
+                        continue;
+
+                    float3 slotPos = PlanetaryDefenseMath.GetSlotWorldPositionNear(
+                        shipPos, planetPos, planetSize, planet.PlanetLevel,
+                        i, slotCount, mapW, mapH);
+
+                    float3 delta = ToroidalMapEcs.ShortestOffsetXZ(shipPos, slotPos, mapW, mapH);
+                    float distSq = math.lengthsq(new float3(delta.x, 0f, delta.z));
+                    if (distSq > zoneRSq || distSq >= bestDistSq)
+                        continue;
+
+                    bestDistSq = distSq;
+                    bestPlanetId = planet.PlanetId;
+                    bestSlot = i;
+                }
+            }
+
+            return bestPlanetId != 0 && bestSlot >= 0;
+        }
+
         /// <summary>
         /// Nearest enemy ship or people-transport VFX flight within
         /// <paramref name="engageRange"/> of the turret pad (<paramref name="muzzleDisplay"/>),
@@ -1774,6 +2018,8 @@ namespace TitanOrbit.Game
             foreach (var kv in _groupsByPlanetId)
                 DestroyGroup(kv.Value);
             _groupsByPlanetId.Clear();
+            _depositingPadTeams.Clear();
+            _depositProgressHoldUntil.Clear();
         }
 
         static void DestroyGroup(PlanetDefenseGroup group)

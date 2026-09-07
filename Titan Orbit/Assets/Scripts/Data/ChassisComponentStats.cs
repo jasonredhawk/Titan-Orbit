@@ -269,6 +269,18 @@ namespace TitanOrbit.Data
                 }
 
                 if (!enable)
+                {
+                    // MEGA StarSparrow names (Thruster, Engine) are not family-prefixed.
+                    string megaType = MegaShipPartClassifier.ResolvePartType(t.name);
+                    if (ShipFamilyPartTypes.IsThrusterProfile(megaType)
+                        || ShipFamilyPartTypes.IsEngineProfile(megaType))
+                    {
+                        enable = true;
+                        scale = 1f;
+                    }
+                }
+
+                if (!enable)
                     continue;
 
                 stats.thrusterVfxTransforms.Add(t);
@@ -276,7 +288,7 @@ namespace TitanOrbit.Data
             }
         }
 
-        /// <summary>Resolves Family_Rest → Rest component id (strips Unity <c>(N)</c> duplicate suffix).</summary>
+        /// <summary>Resolves the family-prefixed component id (strips Unity <c>(N)</c> duplicate suffix).</summary>
         static bool TryGetComponentIdFromName(string name, string familyPrefix, out string componentId)
         {
             componentId = string.Empty;
@@ -290,20 +302,19 @@ namespace TitanOrbit.Data
                 cleaned = cleaned.Substring(0, paren).Trim();
 
             string normalized = ShipFamilyDefinition.NormalizeComponentId(cleaned);
+            if (string.IsNullOrWhiteSpace(normalized))
+                return false;
+
+            // Keep FamilyId_Part so ProfileSet / family catalog rows match the inventory.
             if (!string.IsNullOrEmpty(familyPrefix)
                 && normalized.StartsWith(familyPrefix + "_", System.StringComparison.OrdinalIgnoreCase))
             {
-                componentId = normalized.Substring(familyPrefix.Length + 1);
-                // Strip _L / _R symmetry suffixes for lookup consistency with Discover.
-                if (componentId.EndsWith("_L", System.StringComparison.OrdinalIgnoreCase)
-                    || componentId.EndsWith("_R", System.StringComparison.OrdinalIgnoreCase))
-                    componentId = componentId.Substring(0, componentId.Length - 2);
-                return !string.IsNullOrWhiteSpace(componentId);
+                componentId = normalized;
+                return true;
             }
 
-            // No prefix — use full normalized name as id.
             componentId = normalized;
-            return !string.IsNullOrWhiteSpace(componentId);
+            return true;
         }
 
         /// <summary>

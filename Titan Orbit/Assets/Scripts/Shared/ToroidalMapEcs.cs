@@ -4,14 +4,13 @@ namespace TitanOrbit.Generation
 {
     /// <summary>
     /// Pac-Man (toroidal) XZ map math for ECS simulation and presentation.
-    /// Logical positions live in a centered rectangle
-    /// <c>[-MapWidth/2, MapWidth/2) × [-MapHeight/2, MapHeight/2)</c>; flying off one edge
-    /// wraps to the opposite edge. Distance and direction use the shortest path on that torus
-    /// so combat, docking, mining, and beams work across seams. Display helpers pick the
-    /// nearest map-tile copy of a logical point relative to a reference (usually the local ship)
-    /// so GameObject proxies do not jump a full map width when the owner wraps.
-    /// Map size is set from <see cref="TitanOrbit.ECS.MapStateSingleton"/> at match bootstrap
-    /// or from <c>MapSessionMetaRpc</c> on dedicated clients — never invented as a silent default.
+    /// Dynamic movers wrap into the centered rectangle
+    /// <c>[-MapWidth/2, MapWidth/2) × [-MapHeight/2, MapHeight/2)</c> so sim, visuals, and
+    /// Unity.Physics colliders share one chart — one entity, one collider, no tiled copies.
+    /// Distance and direction still use the shortest path on the torus so combat, docking,
+    /// mining, orbit, and beams work when two bodies sit on opposite edges.
+    /// Map size is set from <c>MapStateSingleton</c> at match bootstrap or from
+    /// <c>MapSessionMetaRpc</c> on dedicated clients — never invented as a silent default.
     /// Burst-safe: pure static math, no managed allocations.
     /// </summary>
     public static class ToroidalMapEcs
@@ -125,10 +124,36 @@ namespace TitanOrbit.Generation
         }
 
         /// <summary>
+        /// True when <paramref name="from"/> → <paramref name="to"/> jumped more than half a map
+        /// side — a canonical wrap (or respawn), not ordinary flight. Presentation snaps instead
+        /// of lerping the long way across the rectangle.
+        /// </summary>
+        public static bool IsWrapJump(float3 from, float3 to, float mapWidth, float mapHeight)
+        {
+            if (!IsValidMapSize(mapWidth, mapHeight))
+                return false;
+            float dx = math.abs(to.x - from.x);
+            float dz = math.abs(to.z - from.z);
+            return dx > mapWidth * 0.5f || dz > mapHeight * 0.5f;
+        }
+
+        /// <summary>
+        /// <see cref="IsWrapJump(float3,float3,float,float)"/> using the latched cache.
+        /// False when size is unset.
+        /// </summary>
+        public static bool IsWrapJump(float3 from, float3 to)
+        {
+            if (!HasValidMapSize)
+                return false;
+            return IsWrapJump(from, to, s_MapWidth, s_MapHeight);
+        }
+
+        /// <summary>
         /// Wraps a world position into canonical toroidal space using explicit map dimensions.
         /// Valid range: X in <c>[-halfW, halfW)</c>, Z in <c>[-halfH, halfH)</c>. Y unchanged.
         /// [TITAN-ORBIT] Prefer this overload inside Burst systems that already read MapStateSingleton.
         /// Caller must pass a real rolled size (≥ <see cref="MinValidMapSize"/>).
+        /// Ships, bullets, gems, rockets, and transports call this after they integrate.
         /// </summary>
         public static float3 Wrap(float3 position, float mapWidth, float mapHeight)
         {
@@ -203,34 +228,25 @@ namespace TitanOrbit.Generation
         }
 
         /// <summary>
-        /// Nearest toroidal copy of <paramref name="logicalPos"/> relative to <paramref name="referencePos"/>.
-        /// Uses integer tile indices so the local ship may fly arbitrarily far (many map widths);
-        /// each body independently picks the copy nearest that ship.
+        /// Identity. Movers wrap in sim, so display equals logical. Prefer <see cref="Wrap"/>.
         /// </summary>
         public static float3 GetDisplayPosition(float3 logicalPos, float3 referencePos, float mapWidth, float mapHeight)
         {
-            // --- k,m = how many map tiles to shift logical so it sits near the (possibly unbounded) ship ---
-            float dx = referencePos.x - logicalPos.x;
-            float dz = referencePos.z - logicalPos.z;
-            int k = (int)math.round(dx / mapWidth);
-            int m = (int)math.round(dz / mapHeight);
-            return new float3(logicalPos.x + k * mapWidth, logicalPos.y, logicalPos.z + m * mapHeight);
+            _ = referencePos;
+            _ = mapWidth;
+            _ = mapHeight;
+            return logicalPos;
         }
 
-        /// <summary>
-        /// Overload using cached map size. Returns logical position unchanged when size is unset.
-        /// </summary>
+        /// <summary>Identity — leftover callers keep compiling.</summary>
         public static float3 GetDisplayPosition(float3 logicalPos, float3 referencePos)
         {
-            if (!HasValidMapSize)
-                return logicalPos;
-            return GetDisplayPosition(logicalPos, referencePos, s_MapWidth, s_MapHeight);
+            _ = referencePos;
+            return logicalPos;
         }
 
         /// <summary>
-        /// Like <see cref="GetDisplayPosition"/> but keeps the same map tile until another tile is
-        /// clearly closer. Prevents planets/moons from popping a full map width when the reference
-        /// hovers near a tile boundary. Pass <c>tileK/tileM = int.MinValue</c> to initialize.
+        /// Identity. Tile hysteresis is retired; tile refs are left unchanged.
         /// </summary>
         public static float3 GetDisplayPositionWithHysteresis(
             float3 logicalPos,
@@ -241,50 +257,16 @@ namespace TitanOrbit.Generation
             float mapHeight,
             float switchMarginFraction = 0.35f)
         {
-            // --- Candidate tile from continuous nearest-copy ---
-            float dx = referencePos.x - logicalPos.x;
-            float dz = referencePos.z - logicalPos.z;
-            int candidateK = (int)math.round(dx / mapWidth);
-            int candidateM = (int)math.round(dz / mapHeight);
-
-            // --- First call: latch candidate ---
-            if (tileK == int.MinValue)
-            {
-                tileK = candidateK;
-                tileM = candidateM;
-            }
-            else if (candidateK != tileK || candidateM != tileM)
-            {
-                // --- Only switch when candidate is clearly closer (margin in world units) ---
-                float3 current = new float3(
-                    logicalPos.x + tileK * mapWidth,
-                    logicalPos.y,
-                    logicalPos.z + tileM * mapHeight);
-                float3 candidate = new float3(
-                    logicalPos.x + candidateK * mapWidth,
-                    logicalPos.y,
-                    logicalPos.z + candidateM * mapHeight);
-                float currentDistSq = (referencePos.x - current.x) * (referencePos.x - current.x)
-                    + (referencePos.z - current.z) * (referencePos.z - current.z);
-                float candidateDistSq = (referencePos.x - candidate.x) * (referencePos.x - candidate.x)
-                    + (referencePos.z - candidate.z) * (referencePos.z - candidate.z);
-                float margin = math.max(1f, switchMarginFraction * math.min(mapWidth, mapHeight));
-                if (candidateDistSq < currentDistSq - margin * margin)
-                {
-                    tileK = candidateK;
-                    tileM = candidateM;
-                }
-            }
-
-            return new float3(
-                logicalPos.x + tileK * mapWidth,
-                logicalPos.y,
-                logicalPos.z + tileM * mapHeight);
+            _ = referencePos;
+            _ = tileK;
+            _ = tileM;
+            _ = mapWidth;
+            _ = mapHeight;
+            _ = switchMarginFraction;
+            return logicalPos;
         }
 
-        /// <summary>
-        /// Overload using cached map dimensions. Returns logical position when size is unset.
-        /// </summary>
+        /// <summary>Identity — leftover callers keep compiling.</summary>
         public static float3 GetDisplayPositionWithHysteresis(
             float3 logicalPos,
             float3 referencePos,
@@ -292,16 +274,11 @@ namespace TitanOrbit.Generation
             ref int tileM,
             float switchMarginFraction = 0.35f)
         {
-            if (!HasValidMapSize)
-                return logicalPos;
-            return GetDisplayPositionWithHysteresis(
-                logicalPos,
-                referencePos,
-                ref tileK,
-                ref tileM,
-                s_MapWidth,
-                s_MapHeight,
-                switchMarginFraction);
+            _ = referencePos;
+            _ = tileK;
+            _ = tileM;
+            _ = switchMarginFraction;
+            return logicalPos;
         }
     }
 }

@@ -78,11 +78,20 @@ namespace TitanOrbit.Game
             s_LastGraphRevision = -1;
         }
 
-        /// <summary>Rebuilds only when Client graph revision changes (planet centers are fixed).</summary>
+        /// <summary>
+        /// Rebuilds when Client graph revision changes, or when the last pass resolved
+        /// fewer triangles than published (planet proxies / map size were not ready yet).
+        /// </summary>
         static void EnsureFresh()
         {
+            // --- Same one-shot trap as the world / minimap drawers ---
+            // [TITAN-ORBIT] Locking s_LastGraphRevision after an empty Rebuild() left PIT
+            // and asteroid tint stale while Shapes still retried. Retry until the native
+            // array has one runtime triangle per published Client triangle (or the graph is empty).
             int revision = PlanetConnectionGraphCache.ClientPublishRevision;
-            if (revision == s_LastGraphRevision && s_Native.IsCreated)
+            int published = PlanetConnectionGraphCache.CurrentTriangles?.Count ?? 0;
+            bool incomplete = published > 0 && (!s_Native.IsCreated || s_Native.Length < published);
+            if (revision == s_LastGraphRevision && s_Native.IsCreated && !incomplete)
                 return;
 
             Rebuild();

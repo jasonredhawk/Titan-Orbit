@@ -6,8 +6,9 @@ using UnityEngine;
 namespace TitanOrbit.Data
 {
     /// <summary>
-    /// One discovered <b>prefab asset</b> part name (after family prefix strip) and how Scan / VFX /
-    /// attribute mesh-scale treat it. Filled by Discover &amp; Classify on the shared ProfileSet.
+    /// One discovered <b>prefab asset</b> part name (family-prefixed, e.g. AstroEagle_Cockpit)
+    /// and how Scan / VFX / attribute mesh-scale treat it. Filled by Discover &amp; Classify on
+    /// the shared ProfileSet.
     /// <para>
     /// <see cref="partType"/> is the <b>group</b>: shared Part Profile stats + which attribute-scale
     /// bucket the mesh grows with (e.g. Thruster Cover stays <c>Thruster</c> so it grows with jets,
@@ -17,12 +18,13 @@ namespace TitanOrbit.Data
     [Serializable]
     public class ShipFamilyPartNameMapping
     {
-        /// <summary>Normalized prefab-suffix token, e.g. Exhaust, Thrusters_Big, Cockpit_Base.</summary>
+        /// <summary>Full prefab part id including family, e.g. SpaceExcalibur_Thrusters_Big.</summary>
         public string discoveredName;
         /// <summary>
         /// Broad group key matching a Part Profile row (Engine, Thruster, Wing, Cockpit, Weapon, …).
         /// Also selects the attribute mesh-scale group at runtime.
         /// </summary>
+        [ShipFamilyPartType]
         public string partType = "Unmapped";
         /// <summary>
         /// When false, Scan writes zero ability stats (mass still comes from hierarchy scale).
@@ -60,6 +62,7 @@ namespace TitanOrbit.Data
     [Serializable]
     public class ShipFamilyPartCalcProfile
     {
+        [ShipFamilyPartType(includeUnmappedAndIgnore: false)]
         public string partType = "Engine";
         public List<ShipComponentStatCategory> defaultCategories = new List<ShipComponentStatCategory>();
         public ShipComponentAbilityStats baseAtVersion1;
@@ -234,8 +237,8 @@ namespace TitanOrbit.Data
         [Range(0f, 2f)]
         public float globalUpgradeScaleMultiplier = DefaultGlobalUpgradeScaleMultiplier;
 
-        [Header("Name inventory — one row per unique prefab part name (Discover & Classify)")]
-        [Tooltip("Inventory of prefab suffixes (Wing_2, Thrusters_Big…). Each maps into a Part Profile group via partType. Count is large; that is expected.")]
+        [Header("Name inventory — one row per unique family-prefixed prefab part name (Discover & Classify)")]
+        [Tooltip("Inventory of full prefab part ids (AstroEagle_Wing_2, SpaceExcalibur_Thrusters_Big…). Each maps into a Part Profile group via partType. Count is large; that is expected.")]
         public List<ShipFamilyPartNameMapping> nameMappings = new List<ShipFamilyPartNameMapping>();
 
         [Header("Part Profiles — Cockpit, Weapons, Wing, Engine, Thruster, Tail, Hull")]
@@ -302,6 +305,20 @@ namespace TitanOrbit.Data
             if (_nameLookup.TryGetValue(key, out mapping))
                 return true;
 
+            // Family-prefixed id: retry aliases / digit-stripped keys under the same family.
+            if (TrySplitFamilyPrefixedPart(key, out string familyId, out string rest))
+            {
+                string familyAlias = ShipFamilyComponentPartKey.ResolveAliasKey(rest);
+                if (!string.IsNullOrEmpty(familyAlias)
+                    && _nameLookup.TryGetValue(familyId + "_" + familyAlias, out mapping))
+                    return true;
+
+                string familyBase = ShipFamilyComponentPartKey.GetBasePartKey(rest);
+                if (!string.IsNullOrEmpty(familyBase)
+                    && _nameLookup.TryGetValue(familyId + "_" + familyBase, out mapping))
+                    return true;
+            }
+
             // Try alias canonical (Thrusters_Big) then base key without trailing digits.
             string alias = ShipFamilyComponentPartKey.ResolveAliasKey(key);
             if (!string.IsNullOrEmpty(alias) && _nameLookup.TryGetValue(alias, out mapping))
@@ -309,6 +326,24 @@ namespace TitanOrbit.Data
 
             string baseKey = ShipFamilyComponentPartKey.GetBasePartKey(key);
             return !string.IsNullOrEmpty(baseKey) && _nameLookup.TryGetValue(baseKey, out mapping);
+        }
+
+        /// <summary>
+        /// Splits <c>FamilyId_Part</c> on the first underscore. Used only as a lookup fallback —
+        /// Discover stores the full name.
+        /// </summary>
+        static bool TrySplitFamilyPrefixedPart(string componentId, out string familyId, out string rest)
+        {
+            familyId = string.Empty;
+            rest = string.Empty;
+            if (string.IsNullOrEmpty(componentId))
+                return false;
+            int underscore = componentId.IndexOf('_');
+            if (underscore <= 0 || underscore >= componentId.Length - 1)
+                return false;
+            familyId = componentId.Substring(0, underscore);
+            rest = componentId.Substring(underscore + 1);
+            return !string.IsNullOrWhiteSpace(familyId) && !string.IsNullOrWhiteSpace(rest);
         }
 
         /// <summary>Resolves canonical part type for stats: mapping wins, else keyword heuristic.</summary>
@@ -398,12 +433,19 @@ namespace TitanOrbit.Data
             return _profileLookup.TryGetValue(partType.Trim(), out profile);
         }
 
-        /// <summary>First digit in component suffix, or 1.</summary>
+        /// <summary>First digit in the part suffix (after FamilyId_), or 1.</summary>
         public static int ExtractVersion(string componentId)
         {
             if (string.IsNullOrEmpty(componentId))
                 return 1;
-            Match m = FirstDigitRegex.Match(componentId);
+            string source = componentId;
+            if (TrySplitFamilyPrefixedPart(
+                    ShipFamilyDefinition.NormalizeComponentId(componentId),
+                    out _,
+                    out string rest)
+                && !string.IsNullOrEmpty(rest))
+                source = rest;
+            Match m = FirstDigitRegex.Match(source);
             if (!m.Success)
                 return 1;
             return int.TryParse(m.Value, out int v) ? Mathf.Max(1, v) : 1;
@@ -476,7 +518,7 @@ namespace TitanOrbit.Data
         /// and includeInPopulate are never overwritten. New names start as Unmapped (plus known-name seeds).
         /// </para>
         /// </summary>
-        /// <param name="discoveredName">Prefab suffix after family prefix strip.</param>
+        /// <param name="discoveredName">Full prefab part id including family (FamilyId_Part).</param>
         /// <param name="familyId">Optional family folder id recorded on seenInFamilies.</param>
         /// <returns>Existing or newly created mapping, or null if the name is empty.</returns>
         public ShipFamilyPartNameMapping MergeDiscoveredName(string discoveredName, string familyId)
@@ -514,7 +556,7 @@ namespace TitanOrbit.Data
             };
             AppendSeenFamily(created, familyId);
             // Seed known specials from aliases / plan examples (first discover only).
-            ApplySeedDefaultsForKnownName(created);
+            ApplySeedDefaultsForKnownName(created, familyId);
             nameMappings.Add(created);
             InvalidateLookups();
             return created;
@@ -540,15 +582,31 @@ namespace TitanOrbit.Data
         /// Applies plan seed defaults for well-known names when first discovered.
         /// Cosmetics stay in their gameplay group (Thruster/Wing/…) with stats + VFX off.
         /// </summary>
-        public static void ApplySeedDefaultsForKnownName(ShipFamilyPartNameMapping mapping)
+        public static void ApplySeedDefaultsForKnownName(
+            ShipFamilyPartNameMapping mapping,
+            string familyId = null)
         {
             if (mapping == null || string.IsNullOrEmpty(mapping.discoveredName))
                 return;
 
-            string n = mapping.discoveredName;
+            string full = ShipFamilyDefinition.NormalizeComponentId(mapping.discoveredName);
+            string suffix = ShipFamilyDefinition.GetComponentIdSuffix(familyId, full);
+            if (string.IsNullOrEmpty(suffix))
+                suffix = full;
+            if (string.Equals(suffix, full, StringComparison.OrdinalIgnoreCase)
+                && TrySplitFamilyPrefixedPart(full, out _, out string rest)
+                && !string.IsNullOrEmpty(rest))
+                suffix = rest;
+
+            bool MatchesKnown(string known) =>
+                string.Equals(full, known, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(suffix, known, StringComparison.OrdinalIgnoreCase);
+
+            // Heuristics still see FamilyId_Part; exact seeds try both full and suffix.
+            string n = full;
 
             // --- Known jet mounts (Thruster Part Profile + VFX) ---
-            if (string.Equals(n, "Thrusters_Big", StringComparison.OrdinalIgnoreCase))
+            if (MatchesKnown("Thrusters_Big"))
             {
                 mapping.partType = ShipFamilyPartTypes.Thruster;
                 mapping.contributesAbilityStats = true;
@@ -557,7 +615,7 @@ namespace TitanOrbit.Data
                 return;
             }
 
-            if (string.Equals(n, "Tiny_Thrusters", StringComparison.OrdinalIgnoreCase))
+            if (MatchesKnown("Tiny_Thrusters"))
             {
                 mapping.partType = ShipFamilyPartTypes.Thruster;
                 mapping.contributesAbilityStats = true;
@@ -566,9 +624,9 @@ namespace TitanOrbit.Data
                 return;
             }
 
-            if (string.Equals(n, "Exhaust", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(n, "Thrusters", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(n, "Thruster", StringComparison.OrdinalIgnoreCase))
+            if (MatchesKnown("Exhaust")
+                || MatchesKnown("Thrusters")
+                || MatchesKnown("Thruster"))
             {
                 mapping.partType = ShipFamilyPartTypes.Thruster;
                 mapping.contributesAbilityStats = true;

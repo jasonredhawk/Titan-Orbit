@@ -8,17 +8,18 @@ namespace TitanOrbit.ECS
     /// <summary>
     /// Client-only visual roll banking for Entities Graphics ships. Applies cosmetic Z-roll on
     /// <see cref="ShipVisualBankPivotTag"/> children so hull meshes bank during turns without
-    /// affecting physics yaw. Ported from <c>ShipBankVisualApplier</c> (hybrid proxy path).
+    /// affecting physics yaw. Bank follows yaw rate only — no forward thrust required.
+    /// Ported from <c>ShipBankVisualApplier</c> (hybrid proxy path).
     /// Reads Max Bank / Sensitivity / Smoothing from <see cref="ShipBankVisualSettingsCache"/>
-    /// (published from <c>ShipBankVisualSettings</c> — shared Resources default today).
+    /// for regular hulls, and <see cref="MegaShipCatalog.bankVisualSettings"/> for MEGAs.
     /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ClientSimulation)]
     [UpdateInGroup(typeof(PresentationSystemGroup))]
     [UpdateAfter(typeof(ShipEntitiesGraphicsPresentationSystem))]
     public partial class ShipEntitiesGraphicsBankSystem : SystemBase
     {
-        const float IdleVisualLinearSpeedThreshold = 0.12f;
-        const float IdleBankAngularVelDeadbandDegPerSec = 18f;
+        /// <summary>Ignore interpolation noise at rest. Intentional yaw (including slow MEGA turns) is above this.</summary>
+        const float RestBankAngularVelDeadbandDegPerSec = 2f;
 
         /// <summary>
         /// [ECS/DOTS] Presentation tick: sample yaw rate per bank pivot, map to target roll, lerp.
@@ -36,10 +37,12 @@ namespace TitanOrbit.ECS
             if (dt <= 0f)
                 return;
 
-            // --- Designer knobs (ShipBankVisualSettings → ShipBankVisualSettingsCache) ---
-            float maxBank = ShipBankVisualSettingsCache.MaxBankAngleDegrees;
-            float sensitivity = ShipBankVisualSettingsCache.BankSensitivity;
-            float smoothing = ShipBankVisualSettingsCache.BankSmoothing;
+            // --- Designer knobs (family cache vs MegaShipCatalog.bankVisualSettings) ---
+            float defaultMaxBank = ShipBankVisualSettingsCache.MaxBankAngleDegrees;
+            float defaultSensitivity = ShipBankVisualSettingsCache.BankSensitivity;
+            float defaultSmoothing = ShipBankVisualSettingsCache.BankSmoothing;
+            float defaultRefTurn = ShipBankVisualSettingsCache.ReferenceTurnDegreesPerSecond;
+            ShipBankVisualSettings megaSettings = MegaShipCatalog.Load()?.GetBankVisualSettings();
 
             foreach (var (pivotTag, bankState, pivotTransform, entity) in SystemAPI
                          .Query<RefRO<ShipVisualBankPivotTag>, RefRW<ShipVisualBankState>, RefRW<LocalTransform>>()
@@ -66,8 +69,26 @@ namespace TitanOrbit.ECS
                 if (ShouldSuppressForMoonDock(shipEntity))
                 {
                     bankState.ValueRW.CurrentBankAngleDeg = 0f;
+                    bankState.ValueRW.SmoothedYawRateDegPerSec = 0f;
+                    bankState.ValueRW.PrevYawDeg = GetPlanarYawDegrees(
+                        EntityManager.GetComponentData<LocalTransform>(shipEntity).Rotation);
+                    bankState.ValueRW.YawInitialized = true;
                     pivotTransform.ValueRW.Rotation = quaternion.identity;
                     continue;
+                }
+
+                bool isMega = EntityManager.HasComponent<MegaShipState>(shipEntity)
+                    && EntityManager.GetComponentData<MegaShipState>(shipEntity).IsMega;
+                float maxBank = defaultMaxBank;
+                float sensitivity = defaultSensitivity;
+                float smoothing = defaultSmoothing;
+                float referenceTurn = defaultRefTurn;
+                if (isMega && megaSettings != null)
+                {
+                    maxBank = megaSettings.ClampedMaxBankAngleDegrees;
+                    sensitivity = megaSettings.ClampedBankSensitivity;
+                    smoothing = megaSettings.ClampedBankSmoothing;
+                    referenceTurn = megaSettings.ResolveReferenceTurnDegreesPerSecond();
                 }
 
                 var shipTransform = EntityManager.GetComponentData<LocalTransform>(shipEntity);
@@ -75,23 +96,15 @@ namespace TitanOrbit.ECS
                 SampleYawRate(ref bankState.ValueRW, yawDeg, dt, smoothing);
 
                 float signedYawRate = bankState.ValueRO.SmoothedYawRateDegPerSec;
-                if (EntityManager.HasComponent<ShipKinematics>(shipEntity))
-                {
-                    float3 vel = EntityManager.GetComponentData<ShipKinematics>(shipEntity).Velocity;
-                    float speedSq = vel.x * vel.x + vel.z * vel.z;
-                    if (speedSq < IdleVisualLinearSpeedThreshold * IdleVisualLinearSpeedThreshold
-                        && math.abs(signedYawRate) < IdleBankAngularVelDeadbandDegPerSec)
-                    {
-                        signedYawRate = 0f;
-                    }
-                }
+                // [TITAN-ORBIT] Kill rest-pose interpolation noise only — rotating in place still banks.
+                if (math.abs(signedYawRate) < RestBankAngularVelDeadbandDegPerSec)
+                    signedYawRate = 0f;
 
                 // --- Target bank (same helper as hybrid ShipBankVisualApplier) ---
-                float globalMaxTurn = ShipPropulsionAggregation.GetGlobalMaxTurnSpeedDegreesPerSecond();
                 float targetBank = ShipPropulsionAggregation.ComputeVisualBankTargetAngle(
                     signedYawRate,
                     maxBank,
-                    globalMaxTurn,
+                    referenceTurn,
                     sensitivity);
 
                 float bankT = 1f - math.exp(-smoothing * dt);
@@ -131,7 +144,8 @@ namespace TitanOrbit.ECS
                 return false;
 
             var moonDock = EntityManager.GetComponentData<ShipMoonDockState>(shipEntity);
-            return moonDock.MoonPlanetId != 0 && moonDock.LandingProgress > 0.001f;
+            return moonDock.IsTakingOff ||
+                   (moonDock.MoonPlanetId != 0 && moonDock.LandingProgress > 0.001f);
         }
 
         /// <summary>Exponentially smooths planar yaw rate (°/s) for stable bank targets.</summary>

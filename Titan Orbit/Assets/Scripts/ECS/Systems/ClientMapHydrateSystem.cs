@@ -135,7 +135,11 @@ namespace TitanOrbit.ECS
                 ClientMapHydrateCache.WaitingForPrefabs = false;
                 ClientMapHydrateCache.MarkHydrateStarted(asteroidCount);
 
-                if (ToroidalMapEcs.IsValidMapSize(_rolled.MapWidth, _rolled.MapHeight))
+                // Prefer the server-published period (MapSessionMetaRpc). Re-rolling from the
+                // recipe can disagree by a few units; wrap + IsWrapJump then treat ordinary
+                // flight as a seam jump — dedicated-only snap wall (Local Host shares one static).
+                if (!ToroidalMapEcs.HasValidMapSize &&
+                    ToroidalMapEcs.IsValidMapSize(_rolled.MapWidth, _rolled.MapHeight))
                 {
                     ToroidalMapEcs.SetMapSize(_rolled.MapWidth, _rolled.MapHeight);
                     ToroidalMap.SetMapSize(_rolled.MapWidth, _rolled.MapHeight);

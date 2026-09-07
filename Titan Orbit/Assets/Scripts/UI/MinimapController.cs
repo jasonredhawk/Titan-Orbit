@@ -15,14 +15,23 @@ namespace TitanOrbit.UI
 {
     /// <summary>
     /// Minimap showing a larger region around the player (not full map).
-    /// Displays: player/remote ships as team-colored Cross (X) blips, with a small colored circle
-    /// when that ship is their team's top killer (blue) / gem miner (red) / transporter (yellow).
+    /// Displays: player/remote ships as team-colored Cross (X) blips that grow with
+    /// <see cref="MinimapBlipAnchor.ShipLevel"/> (9px at level 1, +0.5px per level;
+    /// local player and remotes share that ladder),
+    /// or a team-colored triangle outline when that hull is a purchased MEGA
+    /// (<see cref="MinimapBlipAnchor.IsMega"/> — triangle size stays fixed).
+    /// MEGA triangles fill yellow from the base like a troop progress bar
+    /// (<c>CurrentPeople / PeopleCapacity</c>). Small colored
+    /// circles mark a team's top killer (blue) / gem miner (red) / transporter (yellow).
     /// Also planets, home planets, gem moons, and asteroids. Each team has its own color.
-    /// Planet blips also draw a thin team-colored ring at the gem-moon / ship orbit radius
-    /// (<see cref="PlanetOrbitMath.GetOrbitRingCenterRadiusLocal"/>) so the orbit path is readable on the map.
+    /// Planet blips also draw a thin orbit ring at the gem-moon / ship orbit radius
+    /// (<see cref="PlanetOrbitMath.GetOrbitRingCenterRadiusLocal"/>). Ring RGB always matches
+    /// the world orbit fill (idle white, or locked-in ship teams cycling ~1s each).
     /// Collapsed world radius scales with ship-level camera zoom (<see cref="CameraFollowEcs.CurrentHeightZoomFactor"/>)
     /// so the circle shows proportionally more map as the gameplay camera rises. Expanded mode still fits the full torus.
-    /// Client presentation only — reads <see cref="MinimapBlipAnchor"/> caches, never map-body ECS gathers.
+    /// Hovering a planet disc (or its off-screen edge arrow) shows the family name via
+    /// <see cref="MinimapPlanetHoverTip"/>. Client presentation only — reads
+    /// <see cref="MinimapBlipAnchor"/> caches, never map-body ECS gathers.
     /// </summary>
     public class MinimapController : MonoBehaviour
     {
@@ -36,11 +45,14 @@ namespace TitanOrbit.UI
         [SerializeField] private float displaySize = 150f;
         [SerializeField] private RectTransform minimapContent;
         [SerializeField] private float sizeScaleFactor = 1.2f; // Increased from 0.5f - makes entities more visible when zoomed in
-        [SerializeField] private float playerBlipSize = 10f; // Cross blip for local player (other ships use 12f)
+        [Tooltip("Pixel size of a purchased MEGA on the minimap (other players). Larger than the regular Cross so capital hulls read immediately.")]
+        [SerializeField] private float megaShipBlipSize = 16f;
+        [Tooltip("Pixel size of the local player's MEGA Cross-replacement triangle.")]
+        [SerializeField] private float megaPlayerBlipSize = 14f;
         [SerializeField] private float asteroidBlipScaleFactor = 1f; // Asteroids use physical scale for blip size
         [SerializeField] private float moonBlipScaleFactor = 0.85f;
         [SerializeField] private float moonBlipMinSize = 5f;
-        [Tooltip("Alpha of the thin moon-orbit ring around each planet blip (team tint).")]
+        [Tooltip("Alpha of the thin moon-orbit ring around each planet blip (planet team, or locked-in ship teams).")]
         [SerializeField] [Range(0.15f, 1f)] private float planetOrbitRingAlpha = 0.4f;
         [SerializeField] private float edgeMarkerSize = 36f; // Base size of edge markers for planets outside visible area
         [SerializeField] private float edgeMarkerMinSize = 20f; // Minimum size for farthest planets
@@ -158,6 +170,19 @@ namespace TitanOrbit.UI
         static readonly Color RoleDotKiller = new Color(0.35f, 0.55f, 1f, 0.95f);
         static readonly Color RoleDotMiner = new Color(1f, 0.28f, 0.28f, 0.95f);
         static readonly Color RoleDotTransporter = new Color(1f, 0.88f, 0.25f, 0.95f);
+        /// <summary>
+        /// Yellow troop fill inside MEGA triangles — same hue as
+        /// <c>ShipWorldNameplate.PeopleFill</c> so minimap and nameplates agree.
+        /// </summary>
+        static readonly Color MegaTroopFillYellow = new Color(0.95f, 0.85f, 0.25f, 0.98f);
+        /// <summary>Child Image on each MEGA triangle; <c>fillAmount</c> tracks people aboard.</summary>
+        readonly Dictionary<Transform, Image> _megaTroopFillImages = new Dictionary<Transform, Image>();
+        /// <summary>Shared stroke-only MEGA triangle (white; Image.color tints team).</summary>
+        Sprite _megaTriangleOutlineSpriteCache;
+        /// <summary>Shared inset solid MEGA triangle (white; Image.color tints yellow).</summary>
+        Sprite _megaTriangleFillSpriteCache;
+        const string MegaTriangleOutlineSpriteName = "MegaTriangleOutline_v1";
+        const string MegaTriangleFillSpriteName = "MegaTriangleFill_v1";
 
         // Edge markers for planets outside visible area
         private Dictionary<Transform, RectTransform> edgeMarkers = new Dictionary<Transform, RectTransform>();
@@ -226,7 +251,9 @@ namespace TitanOrbit.UI
             Circle,      // Planets, Gems
             Capsule,     // (legacy sprite shape)
             Triangle,    // (legacy directional blip)
-            Cross,       // Ships (player + others)
+            Cross,       // Regular ships (player + others) — diagonal X
+            MegaTriangle,     // MEGA outline — team-color stroke, hollow until troops load
+            MegaTriangleFill, // MEGA troop fill stamp — inset solid, yellow via Image.color
             Irregular,   // Asteroids
             Bullseye,    // Markers (attack/defend)
             Ring         // Thin annulus — planet moon-orbit path on the minimap
@@ -366,6 +393,28 @@ namespace TitanOrbit.UI
             maxPlanetDistance = baseMaxDist * factor;
         }
 
+        /// <summary>
+        /// Pixel size of a regular-ship Cross (X) on the minimap.
+        /// Same ladder for the local player and every other ship: 9px at level 1,
+        /// then +0.5px per level (11.5px at level 6).
+        /// MEGA triangles skip this and keep <see cref="megaShipBlipSize"/> / <see cref="megaPlayerBlipSize"/>.
+        /// [TITAN-ORBIT] Uses <see cref="MinimapBlipAnchor.ShipLevel"/> already filled by
+        /// <see cref="MinimapEcsEntitySync"/> — no extra ECS gather.
+        /// </summary>
+        /// <param name="shipLevel">Upgrade ladder level from the blip anchor (1–6 typical).</param>
+        /// <returns>RectTransform size in pixels for this ship's X this frame.</returns>
+        private static float GetRegularShipCrossSize(int shipLevel)
+        {
+            // --- Shared regular-ship X: 9px at L1, +0.5px/level (11.5px at L6) ---
+            const int minLevel = 1;
+            const int maxLevel = 6;
+            const float sizeAtLevel1 = 9f;
+            const float pixelsPerLevel = 0.5f;
+            int level = shipLevel > 0 ? shipLevel : minLevel;
+            level = Mathf.Clamp(level, minLevel, maxLevel);
+            return sizeAtLevel1 + (level - minLevel) * pixelsPerLevel;
+        }
+
         // Exposed read‑only helpers so other systems (like Shapes panels) can match minimap math.
         public float MinimapRadius => minimapRadius;
         public float DisplaySize => displaySize;
@@ -497,7 +546,8 @@ namespace TitanOrbit.UI
             }
 
             // Territory triangles: UGUI MinimapConnectionsUI under minimapContent so the circular
-            // Mask clips them. Draws wrap copies for expanded full-map view (toroidal seams).
+            // Mask clips them. First sibling so later planet/ship blips draw on top of the fill.
+            // Draws wrap copies for expanded full-map view (toroidal seams).
             Transform connectionsParent = minimapContent != null ? minimapContent : minimapRect;
 
             var connectionsUI = GetComponentInChildren<MinimapConnectionsUI>(true);
@@ -505,7 +555,7 @@ namespace TitanOrbit.UI
             {
                 GameObject panelObj = new GameObject("MinimapConnectionsUI");
                 panelObj.transform.SetParent(connectionsParent, false);
-                panelObj.transform.SetAsLastSibling();
+                panelObj.transform.SetAsFirstSibling();
                 var rt = panelObj.AddComponent<RectTransform>();
                 rt.anchorMin = Vector2.zero;
                 rt.anchorMax = Vector2.one;
@@ -517,7 +567,28 @@ namespace TitanOrbit.UI
             {
                 if (connectionsParent != null && connectionsUI.transform.parent != connectionsParent)
                     connectionsUI.transform.SetParent(connectionsParent, false);
-                connectionsUI.transform.SetAsLastSibling();
+                connectionsUI.transform.SetAsFirstSibling();
+            }
+
+            // Temporary wrap-test rectangle (cyan seams). Same parent so the circular Mask clips it.
+            var seamUI = GetComponentInChildren<MinimapSeamDebugUI>(true);
+            if (seamUI == null)
+            {
+                GameObject seamObj = new GameObject("MinimapSeamDebugUI");
+                seamObj.transform.SetParent(connectionsParent, false);
+                seamObj.transform.SetAsLastSibling();
+                var seamRt = seamObj.AddComponent<RectTransform>();
+                seamRt.anchorMin = Vector2.zero;
+                seamRt.anchorMax = Vector2.one;
+                seamRt.offsetMin = Vector2.zero;
+                seamRt.offsetMax = Vector2.zero;
+                seamUI = seamObj.AddComponent<MinimapSeamDebugUI>();
+            }
+            else
+            {
+                if (connectionsParent != null && seamUI.transform.parent != connectionsParent)
+                    seamUI.transform.SetParent(connectionsParent, false);
+                seamUI.transform.SetAsLastSibling();
             }
         }
         
@@ -764,9 +835,15 @@ namespace TitanOrbit.UI
             canvasGroup.blocksRaycasts = visible;
 
             if (!visible)
+            {
+                HUDController.SetMinimapExpandedObscuresHud(false);
                 RestoreNonMinimapUi();
+            }
             else if (isExpanded)
+            {
+                HUDController.SetMinimapExpandedObscuresHud(true);
                 ApplyHideNonMinimapUi();
+            }
         }
         
         private void SetupMapSizeLabel()
@@ -985,39 +1062,89 @@ namespace TitanOrbit.UI
                     if (marker != null) marker.gameObject.SetActive(false);
                 }
 
-                ApplyHideNonMinimapUi();
                 transform.SetAsLastSibling();
             }
+
+            HUDController.SetMinimapExpandedObscuresHud(true);
+            ApplyHideNonMinimapUi();
         }
 
-        /// <summary>Hide every UI branch that is a sibling of the minimap on the path up to the HUD canvas.</summary>
+        /// <summary>
+        /// Hide every UI branch that is a sibling of the minimap on the path up to the HUD canvas,
+        /// plus other screen-space overlay canvases (rockets, brakes, turret enter, mobile steer).
+        /// </summary>
         private void ApplyHideNonMinimapUi()
         {
             if (_nonMinimapUiRestore.Count > 0)
                 return;
 
-            Canvas canvas = GetComponentInParent<Canvas>();
-            if (canvas == null)
-                return;
-
-            Transform canvasT = canvas.transform;
-            Transform t = transform;
-            while (t != null && t != canvasT)
+            Canvas minimapCanvas = GetComponentInParent<Canvas>();
+            if (minimapCanvas != null)
             {
-                Transform parent = t.parent;
-                if (parent == null)
-                    break;
-
-                for (int i = 0; i < parent.childCount; i++)
+                Transform canvasT = minimapCanvas.transform;
+                Transform t = transform;
+                while (t != null && t != canvasT)
                 {
-                    Transform sibling = parent.GetChild(i);
-                    if (sibling == t)
-                        continue;
-                    PushCanvasGroupHide(sibling.gameObject);
-                }
+                    Transform parent = t.parent;
+                    if (parent == null)
+                        break;
 
-                t = parent;
+                    for (int i = 0; i < parent.childCount; i++)
+                    {
+                        Transform sibling = parent.GetChild(i);
+                        if (sibling == t)
+                            continue;
+                        // Marker popup is a canvas sibling so clicks on the expanded map can still place pins.
+                        if (sibling.GetComponent<MarkerPlacementMenu>() != null)
+                            continue;
+                        PushCanvasGroupHide(sibling.gameObject);
+                    }
+
+                    t = parent;
+                }
             }
+
+            HideOtherOverlayCanvases(minimapCanvas);
+        }
+
+        /// <summary>
+        /// Fade gameplay overlay canvases that are not on the minimap's HUD canvas.
+        /// Escape / death / match-end stay up so those flows are not buried under the map.
+        /// </summary>
+        private void HideOtherOverlayCanvases(Canvas minimapCanvas)
+        {
+            Canvas[] canvases = FindObjectsByType<Canvas>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
+            for (int i = 0; i < canvases.Length; i++)
+            {
+                Canvas canvas = canvases[i];
+                if (ShouldKeepCanvasWhenMinimapExpanded(canvas, minimapCanvas))
+                    continue;
+
+                PushCanvasGroupHide(canvas.gameObject);
+            }
+        }
+
+        /// <summary>True when this canvas is the expanded map, a world-space plate, or a modal overlay we must not bury.</summary>
+        private bool ShouldKeepCanvasWhenMinimapExpanded(Canvas canvas, Canvas minimapCanvas)
+        {
+            if (canvas == null)
+                return true;
+            if (canvas.renderMode == RenderMode.WorldSpace)
+                return true;
+            if (minimapCanvas != null &&
+                (canvas == minimapCanvas || canvas.transform.IsChildOf(minimapCanvas.transform)))
+                return true;
+            if (canvas.transform.IsChildOf(transform) || canvas.GetComponentInParent<MinimapController>() != null)
+                return true;
+            if (canvas.GetComponentInParent<MarkerPlacementMenu>() != null)
+                return true;
+            if (canvas.GetComponentInParent<InGameEscapeMenuController>() != null)
+                return true;
+            if (canvas.GetComponentInParent<DeathScreenController>() != null)
+                return true;
+            if (canvas.GetComponentInParent<MatchEndScreenController>() != null)
+                return true;
+            return false;
         }
 
         private void PushCanvasGroupHide(GameObject root)
@@ -1064,6 +1191,7 @@ namespace TitanOrbit.UI
 
         private void OnDisable()
         {
+            HUDController.SetMinimapExpandedObscuresHud(false);
             RestoreNonMinimapUi();
         }
 
@@ -1073,13 +1201,17 @@ namespace TitanOrbit.UI
             _shipRoleDotMask.Clear();
 
             if (isExpanded)
+            {
+                HUDController.SetMinimapExpandedObscuresHud(true);
                 ApplyHideNonMinimapUi();
+            }
         }
         
         private void CollapseMinimap()
         {
             if (minimapRect == null) return;
 
+            HUDController.SetMinimapExpandedObscuresHud(false);
             RestoreNonMinimapUi();
             
             // Same minimap: restore smaller circle and zoomed-in radius
@@ -1408,6 +1540,14 @@ namespace TitanOrbit.UI
                 return;
             }
 
+            // --- Death: hide the radar so the explosion and death plaque stay unobstructed ---
+            // [TITAN-ORBIT] LocalPlayerDeathHidesHud is cached once per frame (HUDController).
+            if (HUDController.LocalPlayerDeathHidesHud || playerAnchor.IsDead)
+            {
+                SetMinimapVisible(false);
+                return;
+            }
+
             // Toggle minimap expanded/minimized with M key
             if (Keyboard.current != null && Keyboard.current.mKey.wasPressedThisFrame)
                 ToggleExpand();
@@ -1671,6 +1811,7 @@ namespace TitanOrbit.UI
                 planetBlipLayoutState.Remove(t);
                 _shipRoleDotRoots.Remove(t);
                 _shipRoleDotMask.Remove(t);
+                _megaTroopFillImages.Remove(t);
 
                 // Also remove edge markers
                 if (edgeMarkers.TryGetValue(t, out var edgeRt) && edgeRt != null) Destroy(edgeRt.gameObject);
@@ -1713,14 +1854,20 @@ namespace TitanOrbit.UI
             // --- Top-of-team leaders (O(ships)) before drawing role dots ---
             RecomputeTopOfTeamFromCachedShips();
 
-            // --- Local player Cross ---
+            // --- Local player ship (Cross, or triangle while flying a MEGA) ---
             TeamId playerTeam = playerAnchor.Team;
             Color playerColor = playerTeam == TeamId.None ? Color.white : GetTeamColor(playerTeam);
-            EnsureBlip(playerTransform, () => CreateShipCrossBlip(playerTransform, playerColor, playerBlipSize), true);
+            // Regular X uses the shared L1–L6 ladder; MEGA triangle stays at the authored capital size.
+            float localShipSize = playerAnchor.IsMega
+                ? megaPlayerBlipSize
+                : GetRegularShipCrossSize(playerAnchor.ShipLevel);
+            EnsureShipBlip(playerTransform, playerColor, localShipSize, playerAnchor.IsMega, isPlayer: true);
             if (blips.TryGetValue(playerTransform, out var playerRt) && playerRt != null)
             {
                 playerRt.localEulerAngles = Vector3.zero;
-                UpdateBlip(playerTransform, playerColor, playerBlipSize);
+                UpdateBlip(playerTransform, playerColor, localShipSize);
+                if (playerAnchor.IsMega)
+                    UpdateMegaTroopFill(playerAnchor);
                 UpdateShipRoleDots(playerAnchor);
             }
 
@@ -1745,9 +1892,16 @@ namespace TitanOrbit.UI
 
                 if (dist <= currentRadius)
                 {
-                    // Show blip when within visible area
-                    EnsureBlip(ship.transform, () => CreateShipCrossBlip(ship.transform, shipColor, 12f));
-                    UpdateBlip(ship.transform, shipColor, 12f);
+                    // Show blip when within visible area. MEGAs use a triangle so they
+                    // do not look like regular fighters on the same team color.
+                    // Regular X uses the same L1–L6 ladder as the local player; triangle size stays fixed.
+                    float shipSize = ship.IsMega
+                        ? megaShipBlipSize
+                        : GetRegularShipCrossSize(ship.ShipLevel);
+                    EnsureShipBlip(ship.transform, shipColor, shipSize, ship.IsMega);
+                    UpdateBlip(ship.transform, shipColor, shipSize);
+                    if (ship.IsMega)
+                        UpdateMegaTroopFill(ship);
                     UpdateShipRoleDots(ship);
                     // Remove any old ship edge marker (markers only for planets)
                     RemoveShipEdgeMarker(ship.transform);
@@ -2031,6 +2185,7 @@ namespace TitanOrbit.UI
                     // Store the blip type for reference
                     if (img.sprite != null && img.sprite.name.Contains("Circle")) blipTypes[t] = BlipType.Circle;
                     else if (img.sprite != null && img.sprite.name.Contains("Capsule")) blipTypes[t] = BlipType.Capsule;
+                    else if (img.sprite != null && img.sprite.name.Contains("MegaTriangle")) blipTypes[t] = BlipType.MegaTriangle;
                     else if (img.sprite != null && img.sprite.name.Contains("Cross")) blipTypes[t] = BlipType.Cross;
                     else if (img.sprite != null && img.sprite.name.Contains("Irregular")) blipTypes[t] = BlipType.Irregular;
                     else if (img.sprite != null && img.sprite.name.Contains("Bullseye")) blipTypes[t] = BlipType.Bullseye;
@@ -2076,20 +2231,178 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// Team-colored Cross blip plus an empty role-dot stack (filled later when this ship
-        /// leads killer / miner / transporter on their team).
+        /// Creates or replaces a ship blip so the icon matches hull class.
+        /// Regular ships stay a Cross; a purchased MEGA swaps to a hollow triangle
+        /// (team-color stroke + yellow troop fill). Mid-match MEGA buy / death-restore
+        /// rebuilds the UGUI Image so we do not keep drawing an X after the hull changes.
+        /// Also rebuilds if the sprite name is stale (old solid MegaTriangle stamp).
         /// </summary>
-        RectTransform CreateShipCrossBlip(Transform shipTransform, Color color, float size)
+        /// <param name="shipTransform">World-space <see cref="MinimapBlipAnchor"/> transform used as the blip dictionary key.</param>
+        /// <param name="color">Team tint already resolved by the caller (friendly vs enemy).</param>
+        /// <param name="size">Pixel size of the icon this frame.</param>
+        /// <param name="isMega">True when <see cref="MinimapBlipAnchor.IsMega"/> is set.</param>
+        /// <param name="isPlayer">Unused by <see cref="EnsureBlip"/> today; kept so the local-player call site stays explicit.</param>
+        void EnsureShipBlip(Transform shipTransform, Color color, float size, bool isMega, bool isPlayer = false)
         {
-            var rt = CreateBlip(color, size, BlipType.Cross);
+            // --- Wanted shape ---
+            // [TITAN-ORBIT] MEGA = triangle; everyone else = Cross. Same team color either way.
+            BlipType wanted = isMega ? BlipType.MegaTriangle : BlipType.Cross;
+            string wantedSprite = isMega ? MegaTriangleOutlineSpriteName : "Cross";
+
+            // --- Rebuild if hull class or sprite stamp changed ---
+            // EnsureBlip is create-once. Buying a MEGA keeps the same ECS entity / anchor,
+            // so we must destroy the old Cross ourselves or the icon never changes.
+            // Sprite-name check also catches a leftover hex stamp after this shape swap.
+            bool typeOk = blipTypes.TryGetValue(shipTransform, out var existing) && existing == wanted;
+            bool spriteOk = blipImages.TryGetValue(shipTransform, out var img)
+                            && img != null && img.sprite != null
+                            && img.sprite.name == wantedSprite;
+            if (blips.ContainsKey(shipTransform) && (!typeOk || !spriteOk))
+            {
+                DestroyShipBlipVisual(shipTransform);
+            }
+
+            EnsureBlip(shipTransform, () => CreateShipBlip(shipTransform, color, size, wanted), isPlayer);
+        }
+
+        /// <summary>
+        /// Drops one ship blip's UGUI objects and dictionary rows so
+        /// <see cref="EnsureShipBlip"/> can spawn the other shape in the same frame.
+        /// Does not destroy the hidden world-space <see cref="MinimapBlipAnchor"/>.
+        /// </summary>
+        void DestroyShipBlipVisual(Transform t)
+        {
+            if (t == null)
+                return;
+
+            // [UNITY] Destroy the UGUI Image only — the hidden anchor GameObject stays.
+            if (blips.TryGetValue(t, out var rt) && rt != null)
+                Destroy(rt.gameObject);
+
+            // --- Drop every row keyed by this ship so EnsureBlip treats it as new ---
+            blips.Remove(t);
+            blipImages.Remove(t);
+            blipTypes.Remove(t);
+            _shipRoleDotRoots.Remove(t);
+            _shipRoleDotMask.Remove(t);
+            _megaTroopFillImages.Remove(t);
+        }
+
+        /// <summary>
+        /// Team-colored ship blip (Cross or MEGA outline+fill) plus an empty role-dot stack
+        /// (filled later when this ship leads killer / miner / transporter on their team).
+        /// </summary>
+        RectTransform CreateShipBlip(Transform shipTransform, Color color, float size, BlipType blipType)
+        {
+            var rt = blipType == BlipType.MegaTriangle
+                ? CreateMegaTriangleBlip(color, size)
+                : CreateBlip(color, size, blipType);
             if (rt == null || shipTransform == null)
                 return rt;
+
+            if (blipType == BlipType.MegaTriangle)
+            {
+                var fillTf = rt.Find("MegaTroopFill");
+                if (fillTf != null)
+                {
+                    var fillImg = fillTf.GetComponent<Image>();
+                    if (fillImg != null)
+                        _megaTroopFillImages[shipTransform] = fillImg;
+                }
+            }
 
             EnsureShipRoleDotRoot(shipTransform, rt);
             return rt;
         }
 
-        /// <summary>Attaches the RoleDots child under a ship Cross blip if missing.</summary>
+        /// <summary>
+        /// MEGA icon: shared outline sprite (team tint on the root Image) plus a child
+        /// yellow <see cref="Image.Type.Filled"/> triangle. Sprites are generated once
+        /// and reused — per-frame work is only <c>fillAmount</c>, not a new Texture2D.
+        /// </summary>
+        RectTransform CreateMegaTriangleBlip(Color outlineColor, float size)
+        {
+            if (minimapContent == null)
+                return null;
+
+            var go = new GameObject("MegaBlip");
+            go.transform.SetParent(minimapContent, false);
+            go.SetActive(false);
+
+            var outline = go.AddComponent<Image>();
+            outline.color = outlineColor;
+            outline.raycastTarget = false;
+            outline.sprite = GetMegaTriangleOutlineSprite();
+
+            var rt = go.GetComponent<RectTransform>();
+            rt.sizeDelta = new Vector2(size, size);
+            rt.anchorMin = new Vector2(0.5f, 0.5f);
+            rt.anchorMax = new Vector2(0.5f, 0.5f);
+            rt.pivot = new Vector2(0.5f, 0.5f);
+
+            // --- Troop fill (child draws on top; sprite is inset so the stroke stays visible) ---
+            var fillGo = new GameObject("MegaTroopFill", typeof(RectTransform));
+            fillGo.transform.SetParent(rt, false);
+            var fillRt = fillGo.GetComponent<RectTransform>();
+            fillRt.anchorMin = Vector2.zero;
+            fillRt.anchorMax = Vector2.one;
+            fillRt.offsetMin = Vector2.zero;
+            fillRt.offsetMax = Vector2.zero;
+
+            var fillImg = fillGo.AddComponent<Image>();
+            fillImg.raycastTarget = false;
+            fillImg.sprite = GetMegaTriangleFillSprite();
+            fillImg.color = MegaTroopFillYellow;
+            fillImg.type = Image.Type.Filled;
+            fillImg.fillMethod = Image.FillMethod.Vertical;
+            fillImg.fillOrigin = (int)Image.OriginVertical.Bottom;
+            fillImg.fillAmount = 0f;
+
+            return rt;
+        }
+
+        /// <summary>
+        /// Sets the MEGA triangle's yellow fill from people aboard / people cap.
+        /// Unity's Image setter no-ops when the value is unchanged, so this is cheap.
+        /// </summary>
+        void UpdateMegaTroopFill(MinimapBlipAnchor ship)
+        {
+            if (ship == null || ship.transform == null)
+                return;
+            if (!_megaTroopFillImages.TryGetValue(ship.transform, out var fill) || fill == null)
+                return;
+
+            float amount = ship.PeopleCapacity > 0
+                ? Mathf.Clamp01(ship.CurrentPeople / (float)ship.PeopleCapacity)
+                : 0f;
+            fill.fillAmount = amount;
+        }
+
+        /// <summary>Shared stroke-only MEGA triangle. Generated once at 64px, then scaled by Image size.</summary>
+        Sprite GetMegaTriangleOutlineSprite()
+        {
+            if (_megaTriangleOutlineSpriteCache != null
+                && _megaTriangleOutlineSpriteCache.name == MegaTriangleOutlineSpriteName)
+                return _megaTriangleOutlineSpriteCache;
+            _megaTriangleOutlineSpriteCache = CreateBlipSprite(64, BlipType.MegaTriangle);
+            if (_megaTriangleOutlineSpriteCache != null)
+                _megaTriangleOutlineSpriteCache.name = MegaTriangleOutlineSpriteName;
+            return _megaTriangleOutlineSpriteCache;
+        }
+
+        /// <summary>Shared inset solid MEGA triangle used as the yellow troop fill mask.</summary>
+        Sprite GetMegaTriangleFillSprite()
+        {
+            if (_megaTriangleFillSpriteCache != null
+                && _megaTriangleFillSpriteCache.name == MegaTriangleFillSpriteName)
+                return _megaTriangleFillSpriteCache;
+            _megaTriangleFillSpriteCache = CreateBlipSprite(64, BlipType.MegaTriangleFill);
+            if (_megaTriangleFillSpriteCache != null)
+                _megaTriangleFillSpriteCache.name = MegaTriangleFillSpriteName;
+            return _megaTriangleFillSpriteCache;
+        }
+
+        /// <summary>Attaches the RoleDots child under a ship blip (Cross or MEGA triangle) if missing.</summary>
         void EnsureShipRoleDotRoot(Transform shipTransform, RectTransform blipRt)
         {
             if (shipTransform == null || blipRt == null)
@@ -2271,7 +2584,7 @@ namespace TitanOrbit.UI
             // [TITAN-ORBIT] Same centerline as PlanetOrbitMath / gem moon — not the tight level-dot ring.
             // Ring uses worldToMinimapScale (position scale), not the enlarged planet disc size.
             float planetWorldSize = ResolvePlanetWorldSize(p);
-            AddOrUpdatePlanetOrbitRing(rt, planetWorldSize, worldToMinimapScale, color);
+            AddOrUpdatePlanetOrbitRing(rt, planetWorldSize, worldToMinimapScale, p.PlanetId);
 
             // --- Level dots (small circles just outside the planet fill) ---
             var dotsGo = new GameObject("LevelDots", typeof(RectTransform));
@@ -2312,6 +2625,9 @@ namespace TitanOrbit.UI
             tmp.color = Color.white;
             tmp.raycastTarget = false;
             ApplyPlanetPopulationTextLayout(tmp, size);
+
+            // Invisible pad so the player can hover the disc and read the planet family name.
+            MinimapPlanetHoverTip.AttachToPlanetBlip(rt, p, size);
 
             return rt;
         }
@@ -2362,18 +2678,19 @@ namespace TitanOrbit.UI
 
         /// <summary>
         /// Creates or refreshes the thin OrbitRing child under a planet blip.
-        /// Drawn behind LevelDots / PlanetFill; tinted with the planet team color.
+        /// Drawn behind LevelDots / PlanetFill. RGB always matches the world orbit ring
+        /// via <see cref="PlanetOrbitRingOccupancy"/> (idle white, or locked-in teams).
         /// Radius follows the gem-moon orbit centerline in UI space.
         /// </summary>
         /// <param name="planetBlipRoot">Root RectTransform of the planet blip hierarchy.</param>
         /// <param name="planetWorldSize">Planet world scale for <see cref="PlanetOrbitMath"/>.</param>
         /// <param name="worldToMinimapScale">Same scale used to project moon/planet positions.</param>
-        /// <param name="planetColor">Team (or neutral) color used for the planet fill.</param>
+        /// <param name="planetId">Stable planet id for occupancy lookup (0 = shared idle tint).</param>
         private void AddOrUpdatePlanetOrbitRing(
             RectTransform planetBlipRoot,
             float planetWorldSize,
             float worldToMinimapScale,
-            Color planetColor)
+            int planetId)
         {
             if (planetBlipRoot == null) return;
 
@@ -2409,12 +2726,38 @@ namespace TitanOrbit.UI
                 ringTf.SetAsFirstSibling();
             }
 
-            // --- Size + team tint ---
+            // --- Size + occupancy / planet tint ---
             float ringDiameter = GetPlanetOrbitRingBlipDiameter(planetWorldSize, worldToMinimapScale);
             ringRt.sizeDelta = new Vector2(ringDiameter, ringDiameter);
-            Color ringColor = planetColor;
+            ApplyPlanetOrbitRingOccupancyTint(ringImg, planetId);
+        }
+
+        /// <summary>
+        /// Tints a planet's minimap orbit ring with the same RGB as the world ring
+        /// (idle white, or locked-in team colors, including the multi-team cycle).
+        /// </summary>
+        void ApplyPlanetOrbitRingOccupancyTint(Image ringImg, int planetId)
+        {
+            if (ringImg == null)
+                return;
+
+            Color ringColor = PlanetOrbitRingOccupancy.ResolveRingTint(planetId);
             ringColor.a = planetOrbitRingAlpha;
             ringImg.color = ringColor;
+        }
+
+        /// <summary>
+        /// Finds the OrbitRing child and applies the shared occupancy tint.
+        /// Used when planet blip layout is stable so the cycle still animates.
+        /// </summary>
+        void ApplyPlanetOrbitRingOccupancyTint(RectTransform planetBlipRoot, int planetId)
+        {
+            if (planetBlipRoot == null)
+                return;
+            Transform ringTf = planetBlipRoot.Find("OrbitRing");
+            if (ringTf == null)
+                return;
+            ApplyPlanetOrbitRingOccupancyTint(ringTf.GetComponent<Image>(), planetId);
         }
 
         /// <summary>
@@ -2585,7 +2928,12 @@ namespace TitanOrbit.UI
                 prev.Level == level &&
                 prev.DefenseTurretBuiltMask == turretMask &&
                 prev.Color.r == c32.r && prev.Color.g == c32.g && prev.Color.b == c32.b && prev.Color.a == c32.a)
+            {
+                // Layout is stable — still retint the orbit ring so multi-team cycles animate.
+                ApplyPlanetOrbitRingOccupancyTint(blipRt, p.PlanetId);
+                MinimapPlanetHoverTip.AttachToPlanetBlip(blipRt, p, qSize);
                 return;
+            }
 
             planetBlipLayoutState[p.transform] = new PlanetBlipLayoutState
             {
@@ -2600,7 +2948,7 @@ namespace TitanOrbit.UI
             // --- Root + orbit ring (ring follows moon path; disc may be larger for readability) ---
             blipRt.sizeDelta = new Vector2(qSize, qSize);
             float planetWorldSize = ResolvePlanetWorldSize(p);
-            AddOrUpdatePlanetOrbitRing(blipRt, planetWorldSize, worldToMinimapScale, color);
+            AddOrUpdatePlanetOrbitRing(blipRt, planetWorldSize, worldToMinimapScale, p.PlanetId);
 
             // --- Planet fill tint ---
             Image planetImg = null;
@@ -2619,6 +2967,9 @@ namespace TitanOrbit.UI
                 tmp.text = pop.ToString();
                 ApplyPlanetPopulationTextLayout(tmp, qSize);
             }
+
+            // Keep the hover pad sized/bound if layout rebuilt after a zoom or population change.
+            MinimapPlanetHoverTip.AttachToPlanetBlip(blipRt, p, qSize);
 
             // --- Defense dots at world pad radius (ring = empty, filled = turret) ---
             var dotsGo = blipRt.Find("LevelDots");
@@ -2739,8 +3090,15 @@ namespace TitanOrbit.UI
             }
         }
 
+        /// <summary>
+        /// Builds a white UGUI sprite for one <see cref="BlipType"/>. Image.color tints it
+        /// to the team / body color. Called once per newly created blip (not every frame).
+        /// </summary>
+        /// <param name="size">Requested pixel size; textures are at least 32 (64 for discs).</param>
+        /// <param name="blipType">Which silhouette to stamp (Cross, MegaTriangle outline/fill, Circle, …).</param>
         private Sprite CreateBlipSprite(int size, BlipType blipType)
         {
+            // --- Texture resolution ---
             int textureSize = Mathf.Max(size, 32); // Minimum size for quality
             if (blipType == BlipType.Circle)
                 textureSize = Mathf.Max(textureSize, 64); // Planet discs: extra resolution for smooth edges when scaled
@@ -2842,6 +3200,77 @@ namespace TitanOrbit.UI
                             float d2 = Mathf.Abs(dx + dy) * invSqrt2;
                             bool inside = d1 < halfStroke || d2 < halfStroke;
                             pixels[y * textureSize + x] = inside ? Color.white : Color.clear;
+                        }
+                    }
+                    break;
+                }
+
+                case BlipType.MegaTriangle:
+                {
+                    // --- Point-up triangle outline (MEGA capital-ship mark) ---
+                    // [TITAN-ORBIT] Hollow stroke so the yellow troop fill can sit inside.
+                    // Regular ships are an X; asteroids are a diamond; planets are a disc.
+                    GetMegaTriangleVerts(textureSize, 0f, out Vector2 oTip, out Vector2 oLeft, out Vector2 oRight);
+                    float stroke = MegaTriangleStrokePixels(textureSize);
+                    GetMegaTriangleVerts(textureSize, stroke, out Vector2 iTip, out Vector2 iLeft, out Vector2 iRight);
+                    float aa = Mathf.Max(0.75f, textureSize * 0.04f);
+                    for (int y = 0; y < textureSize; y++)
+                    {
+                        for (int x = 0; x < textureSize; x++)
+                        {
+                            Vector2 p = new Vector2(x, y);
+                            bool inOuter = PointInTriangle(p, oTip, oLeft, oRight);
+                            bool inInner = PointInTriangle(p, iTip, iLeft, iRight);
+                            float alpha;
+                            if (inOuter && !inInner)
+                            {
+                                alpha = 1f;
+                            }
+                            else if (!inOuter)
+                            {
+                                float edge = Mathf.Min(
+                                    DistToSegment(p, oTip, oLeft),
+                                    DistToSegment(p, oLeft, oRight),
+                                    DistToSegment(p, oRight, oTip));
+                                alpha = edge < aa ? 1f - Mathf.SmoothStep(0f, aa, edge) : 0f;
+                            }
+                            else
+                            {
+                                float edge = Mathf.Min(
+                                    DistToSegment(p, iTip, iLeft),
+                                    DistToSegment(p, iLeft, iRight),
+                                    DistToSegment(p, iRight, iTip));
+                                alpha = edge < aa ? 1f - Mathf.SmoothStep(0f, aa, edge) : 0f;
+                            }
+                            pixels[y * textureSize + x] = new Color(1f, 1f, 1f, alpha);
+                        }
+                    }
+                    break;
+                }
+
+                case BlipType.MegaTriangleFill:
+                {
+                    // --- Inset solid triangle (troop fill) ---
+                    // Same inset as the outline hole so a full yellow load does not cover the stroke.
+                    float stroke = MegaTriangleStrokePixels(textureSize);
+                    GetMegaTriangleVerts(textureSize, stroke, out Vector2 tip, out Vector2 left, out Vector2 right);
+                    float aa = Mathf.Max(0.75f, textureSize * 0.04f);
+                    for (int y = 0; y < textureSize; y++)
+                    {
+                        for (int x = 0; x < textureSize; x++)
+                        {
+                            Vector2 p = new Vector2(x, y);
+                            bool inside = PointInTriangle(p, tip, left, right);
+                            float alpha = 1f;
+                            if (!inside)
+                            {
+                                float edge = Mathf.Min(
+                                    DistToSegment(p, tip, left),
+                                    DistToSegment(p, left, right),
+                                    DistToSegment(p, right, tip));
+                                alpha = edge < aa ? 1f - Mathf.SmoothStep(0f, aa, edge) : 0f;
+                            }
+                            pixels[y * textureSize + x] = new Color(1f, 1f, 1f, alpha);
                         }
                     }
                     break;
@@ -2949,6 +3378,8 @@ namespace TitanOrbit.UI
                 case BlipType.Capsule: spriteName = "Capsule"; break;
                 case BlipType.Triangle: spriteName = "Triangle"; break;
                 case BlipType.Cross: spriteName = "Cross"; break;
+                case BlipType.MegaTriangle: spriteName = "MegaTriangle"; break;
+                case BlipType.MegaTriangleFill: spriteName = "MegaTriangleFill"; break;
                 case BlipType.Irregular: spriteName = "Irregular"; break;
                 case BlipType.Bullseye: spriteName = "Bullseye"; break;
                 case BlipType.Ring: spriteName = "Ring"; break;
@@ -2978,6 +3409,17 @@ namespace TitanOrbit.UI
             edgeMarkerIsHomePlanet.Remove(shipTransform);
         }
 
+        /// <summary>
+        /// Places or refreshes the off-screen arrow for a planet outside the radar circle.
+        /// Distance scales the arrow (closer to the rim = larger). Also binds the hover name tip
+        /// so the player can still read the family without expanding the map.
+        /// </summary>
+        /// <param name="planetTransform">World anchor transform (dictionary key).</param>
+        /// <param name="dx">Toroidal X delta from the player (world units).</param>
+        /// <param name="dz">Toroidal Z delta from the player (world units).</param>
+        /// <param name="distance">Toroidal distance used for arrow size falloff.</param>
+        /// <param name="isHomePlanet">True for home-world arrows (gold / team tint).</param>
+        /// <param name="team">Owning team for tint; None uses the neutral planet colour.</param>
         private void UpdateEdgeMarker(Transform planetTransform, float dx, float dz, float distance, bool isHomePlanet, TeamId team)
         {
             if (edgeMarkerContainer == null) return;
@@ -3020,6 +3462,11 @@ namespace TitanOrbit.UI
                     {
                         img.color = markerColor;
                     }
+
+                    // Hot-reload / already-spawned arrows: bind the name tip without recreating the marker.
+                    var planetAnchor = planetTransform.GetComponent<MinimapBlipAnchor>();
+                    if (planetAnchor != null)
+                        MinimapPlanetHoverTip.AttachToEdgeMarker(markerRect.gameObject, planetAnchor);
                 }
             }
         }
@@ -3137,6 +3584,10 @@ namespace TitanOrbit.UI
             return sprite;
         }
         
+        /// <summary>
+        /// Builds a new off-screen planet arrow under <see cref="edgeMarkerContainer"/> (outside the mask).
+        /// The Image is a raycast target so <see cref="MinimapPlanetHoverTip"/> can name the planet.
+        /// </summary>
         private void CreateEdgeMarker(Transform planetTransform, float x, float z, float angle, Color color, bool isHomePlanet, float size)
         {
             GameObject markerObj = new GameObject(isHomePlanet ? "HomePlanetEdgeMarker" : "PlanetEdgeMarker");
@@ -3144,7 +3595,8 @@ namespace TitanOrbit.UI
             
             Image img = markerObj.AddComponent<Image>();
             img.color = color;
-            img.raycastTarget = false; // Don't block clicks - let them pass through to minimap background
+            // Hover tip needs raycasts; marker placement still uses Input System bounds, not this Image.
+            img.raycastTarget = true;
             
             // Create arrow/pointer sprite (use base size for sprite quality, but scale the rect transform)
             Sprite arrowSprite = CreateArrowSprite(isHomePlanet, (int)edgeMarkerSize);
@@ -3157,6 +3609,11 @@ namespace TitanOrbit.UI
             rt.pivot = new Vector2(0.5f, 0.5f);
             rt.anchoredPosition = new Vector2(x, z);
             rt.localEulerAngles = new Vector3(0, 0, angle * Mathf.Rad2Deg);
+
+            // Same family name as the on-map planet disc (off-screen arrows are still that planet).
+            var planetAnchor = planetTransform.GetComponent<MinimapBlipAnchor>();
+            if (planetAnchor != null)
+                MinimapPlanetHoverTip.AttachToEdgeMarker(markerObj, planetAnchor);
             
             edgeMarkers[planetTransform] = rt;
             edgeMarkerImages[planetTransform] = img;
@@ -3256,9 +3713,81 @@ namespace TitanOrbit.UI
             return sprite;
         }
         
+        /// <summary>
+        /// Cross product used as a side-of-edge test for filled triangles
+        /// (legacy Triangle stamp, MEGA triangle, and planet edge arrows).
+        /// </summary>
         private float Sign(Vector2 p1, Vector2 p2, Vector2 p3)
         {
             return (p1.x - p3.x) * (p2.y - p3.y) - (p2.x - p3.x) * (p1.y - p3.y);
+        }
+
+        /// <summary>True when <paramref name="p"/> is inside triangle abc (barycentric side test).</summary>
+        bool PointInTriangle(Vector2 p, Vector2 a, Vector2 b, Vector2 c)
+        {
+            float d1 = Sign(p, a, b);
+            float d2 = Sign(p, b, c);
+            float d3 = Sign(p, c, a);
+            bool hasNeg = (d1 < 0) || (d2 < 0) || (d3 < 0);
+            bool hasPos = (d1 > 0) || (d2 > 0) || (d3 > 0);
+            return !(hasNeg && hasPos);
+        }
+
+        /// <summary>Stroke width in texture pixels so the MEGA outline stays readable at 14–16 UI px.</summary>
+        static float MegaTriangleStrokePixels(int textureSize)
+        {
+            return Mathf.Max(2.4f, textureSize * 0.11f);
+        }
+
+        /// <summary>
+        /// Point-up MEGA triangle vertices. <paramref name="insetPixels"/> &gt; 0 shrinks
+        /// each vertex toward the centroid so the fill sits inside the outline hole.
+        /// </summary>
+        static void GetMegaTriangleVerts(
+            float textureSize,
+            float insetPixels,
+            out Vector2 tip,
+            out Vector2 left,
+            out Vector2 right)
+        {
+            float cx = textureSize * 0.5f;
+            float cy = textureSize * 0.5f;
+            float height = textureSize * 0.88f;
+            float halfBase = textureSize * 0.46f;
+            tip = new Vector2(cx, cy + height * 0.5f);
+            left = new Vector2(cx - halfBase, cy - height * 0.5f);
+            right = new Vector2(cx + halfBase, cy - height * 0.5f);
+            if (insetPixels <= 0.01f)
+                return;
+
+            Vector2 centroid = (tip + left + right) / 3f;
+            tip = InsetToward(tip, centroid, insetPixels);
+            left = InsetToward(left, centroid, insetPixels);
+            right = InsetToward(right, centroid, insetPixels);
+        }
+
+        /// <summary>Moves <paramref name="v"/> toward <paramref name="centroid"/> by <paramref name="pixels"/>.</summary>
+        static Vector2 InsetToward(Vector2 v, Vector2 centroid, float pixels)
+        {
+            Vector2 d = v - centroid;
+            float len = d.magnitude;
+            if (len <= pixels + 0.01f)
+                return centroid;
+            return centroid + d * ((len - pixels) / len);
+        }
+
+        /// <summary>
+        /// Pixel distance from <paramref name="p"/> to the closest point on segment a→b.
+        /// Used to anti-alias the MEGA triangle's edges.
+        /// </summary>
+        static float DistToSegment(Vector2 p, Vector2 a, Vector2 b)
+        {
+            Vector2 ab = b - a;
+            float denom = ab.sqrMagnitude;
+            if (denom < 0.0001f)
+                return Vector2.Distance(p, a);
+            float t = Mathf.Clamp01(Vector2.Dot(p - a, ab) / denom);
+            return Vector2.Distance(p, a + ab * t);
         }
     }
 }

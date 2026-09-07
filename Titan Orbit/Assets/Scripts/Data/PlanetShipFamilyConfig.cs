@@ -47,6 +47,24 @@ namespace TitanOrbit.Data
         [Tooltip("Ordered list: index 0 = home planet family, index 1 = planet 1, etc.")]
         public List<ShipFamilyEntry> families = new List<ShipFamilyEntry>();
 
+        const string ResourcesLoadName = "PlanetShipFamilyConfig";
+
+        static PlanetShipFamilyConfig s_Cached;
+
+        /// <summary>
+        /// Single Resources load of this asset. Cached after first resolve — the asset
+        /// references every family chassis, and <c>Resources.Load</c> on dedicated walks
+        /// stripped prefabs (~10ms). Card / bank lookups were paying that every tick.
+        /// </summary>
+        public static PlanetShipFamilyConfig LoadDefault()
+        {
+            if (s_Cached != null)
+                return s_Cached;
+
+            s_Cached = Resources.Load<PlanetShipFamilyConfig>(ResourcesLoadName);
+            return s_Cached;
+        }
+
         /// <summary>
         /// Linear index into <see cref="ShipFamilyDefinition.upgradeTree"/>: sum of per-level slot counts for levels &lt; L, plus branch.
         /// Level 7 has 3 slots (MEGA); levels 1–6 have L slots each → total 24 tiers before repeating.
@@ -179,13 +197,35 @@ namespace TitanOrbit.Data
         }
 
         /// <summary>
-        /// World-space planet label from this planet's <see cref="ShipFamilyDefinition.familyId"/> (CamelCase split for display).
+        /// World-space / minimap planet label from this planet's family.
+        /// Prefers designer <see cref="ShipFamilyEntry.familyName"/>, then camel-splits <c>familyId</c>
+        /// (AstroEagle → "Astro Eagle"). Same string the world label and minimap hover tip show.
         /// </summary>
-        public string GetPlanetDisplayNameFromFamilyId(int planetId)
+        /// <param name="planetId">Stable <c>PlanetState.PlanetId</c>.</param>
+        public string GetPlanetDisplayNameFromFamilyId(int planetId) =>
+            GetPlanetDisplayName(planetId, isHomePlanet: false, shipFamilyConfigIndex: -1);
+
+        /// <summary>
+        /// Resolves the player-facing planet name using home flag + ghosted family index.
+        /// Homes always use the AstroEagle slot; neutrals use the index rolled at spawn.
+        /// </summary>
+        /// <param name="planetId">Stable planet id (homes are 0).</param>
+        /// <param name="isHomePlanet">True for team home worlds — forces config index 0.</param>
+        /// <param name="shipFamilyConfigIndex">Ghosted <c>PlanetState.ShipFamilyConfigIndex</c> (−1 = infer).</param>
+        /// <returns>Display name, or empty when the config list has no family for this planet.</returns>
+        public string GetPlanetDisplayName(int planetId, bool isHomePlanet, int shipFamilyConfigIndex = -1)
         {
-            // --- Compute value ---
-            ShipFamilyEntry entry = GetFamilyForPlanet(planetId);
-            string familyId = entry?.shipFamilyDefinition != null ? entry.shipFamilyDefinition.familyId : null;
+            // --- Resolve family entry ---
+            ShipFamilyEntry entry = GetFamilyForPlanet(planetId, isHomePlanet, shipFamilyConfigIndex);
+            if (entry == null)
+                return string.Empty;
+
+            // Designer override wins (Inspector "familyName" on the config row).
+            if (!string.IsNullOrWhiteSpace(entry.familyName))
+                return entry.familyName.Trim();
+
+            // Fallback: split the ScriptableObject familyId so AstroEagle reads as "Astro Eagle".
+            string familyId = entry.shipFamilyDefinition != null ? entry.shipFamilyDefinition.familyId : null;
             if (string.IsNullOrWhiteSpace(familyId))
                 return string.Empty;
             return Core.DisplayNameFormatting.SplitCamelCase(familyId.Trim());
@@ -296,7 +336,10 @@ namespace TitanOrbit.Data
             return null;
         }
 
-        /// <summary>Upgrade-tree display name from <see cref="ShipFamilyChassisTierEntry.upgradeTreeShipName"/> for this chassis, or null if unset.</summary>
+        /// <summary>
+        /// Orbit Menu name for a chassis: authored <c>upgradeTreeShipName</c>, or the
+        /// formatted prefab (SpaceExcalibur_7 → Space Excalibur 7) when that field is blank.
+        /// </summary>
         public string GetUpgradeTreeShipNameForChassisId(string chassisId)
         {
             // --- Compute value ---
@@ -316,14 +359,25 @@ namespace TitanOrbit.Data
                 {
                     if (tier != null && tier.chassisId == chassisId)
                     {
-                        if (!string.IsNullOrEmpty(tier.upgradeTreeShipName))
-                            return tier.upgradeTreeShipName.Trim();
-                        return null;
+                        string resolved = tier.ResolveUpgradeTreeShipName();
+                        return string.IsNullOrEmpty(resolved) ? null : resolved;
                     }
                 }
                 return null;
             }
             return null;
+        }
+
+        /// <summary>
+        /// Chassis card title: formatted prefab/authored name, then chassis id if both are empty.
+        /// </summary>
+        static string ResolveChassisDisplayName(ShipFamilyChassisTierEntry tier)
+        {
+            if (tier == null)
+                return string.Empty;
+
+            string name = tier.ResolveUpgradeTreeShipName();
+            return !string.IsNullOrWhiteSpace(name) ? name : (tier.chassisId ?? string.Empty);
         }
 
         /// <summary>Upgrade-tree tier entry for a chassis ID, or null.</summary>
@@ -414,7 +468,11 @@ namespace TitanOrbit.Data
             return ShipFamilyPowerBarNorm.GetBreakdownAtShipLevel(family, tier, shipLevel);
         }
 
-        /// <summary>Ten global maxes for equal-slot power bars (cached; all families × chassis at tree level).</summary>
+        /// <summary>
+        /// Ten regular-family maxes for equal-slot power bars (cached; all families ×
+        /// L1–L6 chassis at tree level). MEGA hulls use
+        /// <see cref="ShipFamilyPowerBarNorm.GetMegaMaxPerStat"/> instead.
+        /// </summary>
         public ShipPowerBarStatMaxes GetGlobalPowerBarStatMaxes() =>
             ShipFamilyPowerBarNorm.GetGlobalMaxPerStat(this);
 
@@ -446,7 +504,7 @@ namespace TitanOrbit.Data
             var chassis = ScriptableObject.CreateInstance<ShipChassisDefinition>();
             chassis.chassisId = tier.chassisId;
             chassis.shipFamily = family.shipFamilyDefinition.familyId;
-            chassis.displayName = !string.IsNullOrEmpty(tier.upgradeTreeShipName) ? tier.upgradeTreeShipName.Trim() : tier.chassisId;
+            chassis.displayName = ResolveChassisDisplayName(tier);
             chassis.basePrefab = tier.prefab;
             chassis.originPlanetId = planetId;
             chassis.minHomePlanetLevel = tier.minHomePlanetLevel;
@@ -490,7 +548,7 @@ namespace TitanOrbit.Data
                         var chassis = ScriptableObject.CreateInstance<ShipChassisDefinition>();
                         chassis.chassisId = tier.chassisId;
                         chassis.shipFamily = f.shipFamilyDefinition.familyId;
-                        chassis.displayName = !string.IsNullOrEmpty(tier.upgradeTreeShipName) ? tier.upgradeTreeShipName.Trim() : tier.chassisId;
+                        chassis.displayName = ResolveChassisDisplayName(tier);
                         chassis.basePrefab = tier.prefab;
                         chassis.originPlanetId = f.planetId;
                         chassis.minHomePlanetLevel = tier.minHomePlanetLevel;
@@ -523,7 +581,7 @@ namespace TitanOrbit.Data
                 var chassis = ScriptableObject.CreateInstance<ShipChassisDefinition>();
                 chassis.chassisId = tier.chassisId;
                 chassis.shipFamily = family.shipFamilyDefinition.familyId;
-                chassis.displayName = !string.IsNullOrEmpty(tier.upgradeTreeShipName) ? tier.upgradeTreeShipName.Trim() : tier.chassisId;
+                chassis.displayName = ResolveChassisDisplayName(tier);
                 chassis.basePrefab = tier.prefab;
                 chassis.originPlanetId = planetId;
                 chassis.minHomePlanetLevel = tier.minHomePlanetLevel;

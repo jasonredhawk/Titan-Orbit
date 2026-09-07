@@ -9,6 +9,12 @@ namespace TitanOrbit.NetCode
     /// <see cref="ClientServerTickRate.MaxSimulationStepsPerFrame"/> than Editor Local Host server
     /// so Relay clients can repay command-age debt.
     /// <para>
+    /// <see cref="ExperimentalForcedInputLatencyTicks"/> is 0 (package default). The
+    /// 1-tick experiment fought Relay <c>TargetCommandSlack=2</c> and added dedicated
+    /// reconcile snaps. Do not also register <c>GhostPredictionSmoothing</c> — that
+    /// blends poses and fights authority/display coast.
+    /// </para>
+    /// <para>
     /// basics34 (dedicated GCE): MaxSteps must stay high (8) for join catch-up.
     /// basics51 / H59: cruise MaxSteps=2 did <b>not</b> reduce
     /// <c>NetworkTime.SimulationStepBatchSize</c> — on clients that field is predict-target
@@ -39,6 +45,12 @@ namespace TitanOrbit.NetCode
         /// predicted ghosts). Package default is 5.
         /// </summary>
         public const ushort PredictedSpawnClassificationTickPeriod = 64;
+
+        /// <summary>
+        /// Forced input delay in 60 Hz ticks. 0 = off (package default). A value of 1 was
+        /// an experiment that added dedicated reconcile snaps under Relay slack=2.
+        /// </summary>
+        public const byte ExperimentalForcedInputLatencyTicks = 0;
 
         /// <summary>
         /// Re-applies every frame so a later handshake cannot restore merged tick batches
@@ -75,6 +87,8 @@ namespace TitanOrbit.NetCode
             // [NETCODE] RequirePredictedGhost — prediction runs after GhostReceive delivers the
             // owner ship. Do not AlwaysRun; Join Team no longer Instantiates a fake hull.
             clientTickRate.PredictionLoopUpdateMode = PredictionLoopUpdateMode.RequirePredictedGhost;
+            // [NETCODE] Official input-delay knob — not a second pose smoother.
+            clientTickRate.ForcedInputLatencyTicks = ExperimentalForcedInputLatencyTicks;
             state.EntityManager.SetComponentData(clientTickEntity, clientTickRate);
 
             // --- ClientServerTickRate: match Hz, allow Relay catch-up ---

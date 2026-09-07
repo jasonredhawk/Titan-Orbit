@@ -13,8 +13,7 @@ namespace TitanOrbit.ECS
 {
     /// <summary>
     /// Server-authoritative ramming damage from <b>real collisions only</b>:
-    /// PhysX collision-event pairs (same-tile) plus cross-seam asteroid
-    /// penetrations queued by <see cref="ShipToroidalWorldCollisionSystem"/>.
+    /// PhysX collision-event pairs after movers wrap onto the canonical chart.
     /// No proximity skin — flying past an asteroid does not chip hull.
     /// <para>
     /// [TITAN-ORBIT] Damage uses mobility <c>totalMass</c> and after-tax motion:
@@ -24,17 +23,23 @@ namespace TitanOrbit.ECS
     /// </para>
     /// <para>
     /// Targets: asteroids (impact + grind) and enemy ships (impact reciprocal damage).
+    /// MEGA hulls plow asteroids: first contact instantly destroys the rock and applies
+    /// remaining rock Health × <see cref="MegaShipCatalog.asteroidPlowDamageMultiplier"/>
+    /// (default 1) — no grind, so a field does not stall the hull.
+    /// Plow impact VFX is remaining rock HP vs a mid-size rock, not hull mass or cannon scale.
     /// Hull/gem rules use <see cref="ShipDamageLogic"/>. Clients never predict this.
     /// Dead / 0-HP asteroids are ignored even if PhysX still emits a contact (phantom grind).
     /// Each asteroid impact and grind pulse broadcasts <see cref="BulletHitRpc"/> (Sequence 0)
-    /// so every client plays the ship's bullet explosion and culls the rock the same way bullets do.
+    /// so every client applies Health on seed-hydrated rocks (not ghost-relevant) and culls
+    /// kills the same way bullets do. Skipping those pulses made rams look like a tunnel
+    /// through an undamaged mesh. Client VFX still throttles the explosion prefab.
     /// Grind pulses at 4 Hz (<see cref="AsteroidSettings.GrindPulseIntervalSeconds"/>):
     /// each pulse applies that interval's ship damage, then spawns one gem worth that pulse's
-    /// expelled cargo (four pulses → four gems per second, no banking).
+    /// expelled cargo.
     /// </para>
     /// </summary>
     [UpdateInGroup(typeof(PredictedFixedStepSimulationSystemGroup), OrderLast = true)]
-    [UpdateAfter(typeof(ShipToroidalWorldCollisionSystem))]
+    [UpdateAfter(typeof(ShipCanonicalWrapSystem))]
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation)]
     public partial struct ShipRammingCollisionDamageSystem : ISystem
     {
@@ -189,6 +194,65 @@ namespace TitanOrbit.ECS
 
                 var contact = contacts[contactIndex];
 
+                bool isMega = MegaShipCatalog.PlowsAsteroids
+                              && state.EntityManager.HasComponent<MegaShipState>(shipEntity)
+                              && state.EntityManager.GetComponentData<MegaShipState>(shipEntity).IsMega;
+
+                // --- MEGA plow: instant kill + rock-HP hull chip, no grind ---
+                // Asteroids are no match for a MEGA hull. Movement bounce/friction are skipped
+                // elsewhere. Self-damage is remaining rock Health × catalog plow slider (default 1).
+                if (isMega && !otherIsShip)
+                {
+                    if (isNewContact && !IsDeadAsteroid(ref state, other))
+                    {
+                        float remainingHp = 0f;
+                        if (state.EntityManager.HasComponent<AsteroidState>(other))
+                            remainingHp = math.max(
+                                0f,
+                                state.EntityManager.GetComponentData<AsteroidState>(other).Health);
+
+                        if (remainingHp > 0.01f)
+                            ApplyAsteroidDamage(ref state, other, remainingHp, ship.Team);
+                        if (IsDeadAsteroid(ref state, other))
+                            AsteroidDeathPhysics.QueueStripColliders(ecb, state.EntityManager, other);
+
+                        float plowMul = MegaShipCatalog.DefaultAsteroidPlowDamageMultiplier;
+                        float plowVfxMul = MegaShipCatalog.DefaultAsteroidPlowImpactVisualScale;
+                        var megaCatalog = MegaShipCatalog.Load();
+                        if (megaCatalog != null)
+                        {
+                            plowMul = megaCatalog.GetAsteroidPlowDamageMultiplier();
+                            plowVfxMul = megaCatalog.GetAsteroidPlowImpactVisualScale();
+                        }
+
+                        // Boom from remaining rock HP (damage actually applied), not hull mass
+                        // or cannon fire-power. ComputePerShotScale treats HP as bullet damage
+                        // vs a ref of 8 and then ×1.75 kill — mid rocks became ~12× explosions.
+                        float plowVfxScale = MegaShipCatalog.ComputeAsteroidPlowImpactVisualScale(
+                            remainingHp, plowVfxMul);
+                        NotifyRamAsteroidHit(
+                            ref state, ref ecb, shipEntity, other, normalShipFromOther,
+                            math.max(remainingHp, 0.01f), ship.Team, plowVfxScale);
+
+                        float selfDamage = MegaShipCatalog.ComputeAsteroidPlowSelfDamage(
+                            remainingHp, plowMul);
+                        float intensity = ShipComponentRammingSuggestions.ComputeRamImpactGemExpulsionIntensity(
+                            remainingHp, selfDamage);
+                        ApplyShipSelfDamage(
+                            ref state, ref ship, shipEntity, selfDamage, intensity,
+                            gemPrefab, shipPos, spawnServerTime, ecb, now,
+                            damagerNetworkId: 0,
+                            impulseXZ: new float2(normalShipFromOther.x, normalShipFromOther.z),
+                            impulsePower: selfDamage);
+                        state.EntityManager.SetComponentData(shipEntity, ship);
+                    }
+
+                    contact.WasColliding = 1;
+                    contact.MissedTicks = 0;
+                    contacts[contactIndex] = contact;
+                    continue;
+                }
+
                 // --- Impact on contact enter: rating × totalMass × closingSpeed ---
                 if (isNewContact && closing >= ImpactMinClosingSpeed)
                 {
@@ -218,7 +282,9 @@ namespace TitanOrbit.ECS
                         ApplyShipSelfDamage(
                             ref state, ref ship, shipEntity, selfDamage, intensity,
                             gemPrefab, shipPos, spawnServerTime, ecb, now,
-                            damagerNetworkId: 0);
+                            damagerNetworkId: 0,
+                            impulseXZ: new float2(normalShipFromOther.x, normalShipFromOther.z),
+                            impulsePower: selfDamage);
                         state.EntityManager.SetComponentData(shipEntity, ship);
                     }
                     else
@@ -286,7 +352,9 @@ namespace TitanOrbit.ECS
                         ApplyShipSelfDamage(
                             ref state, ref ship, shipEntity, selfPulse, grindIntensity,
                             gemPrefab, shipPos, spawnServerTime, ecb, now,
-                            damagerNetworkId: 0);
+                            damagerNetworkId: 0,
+                            impulseXZ: new float2(normalShipFromOther.x, normalShipFromOther.z),
+                            impulsePower: selfPulse);
                         state.EntityManager.SetComponentData(shipEntity, ship);
 
                         contact.NextGrindTime = now + pulse;
@@ -471,10 +539,27 @@ namespace TitanOrbit.ECS
             if (state.EntityManager.HasComponent<GhostOwner>(offender))
                 offenderNetworkId = state.EntityManager.GetComponentData<GhostOwner>(offender).NetworkId;
 
+            float2 ramImpulse = float2.zero;
+            if (state.EntityManager.HasComponent<LocalTransform>(offender))
+            {
+                float3 offPos = state.EntityManager.GetComponentData<LocalTransform>(offender).Position;
+                if (ToroidalMapEcs.TryGetMapSize(out float mapW, out float mapH))
+                {
+                    float3 off = ToroidalMapEcs.ShortestOffsetXZ(offPos, vicPos, mapW, mapH);
+                    ramImpulse = new float2(off.x, off.z);
+                }
+                else
+                {
+                    ramImpulse = new float2(vicPos.x - offPos.x, vicPos.z - offPos.z);
+                }
+            }
+
             ApplyShipSelfDamage(
                 ref state, ref vicShip, victim, damage, intensity,
                 gemPrefab, vicPos, spawnServerTime, ecb, now,
-                damagerNetworkId: offenderNetworkId);
+                damagerNetworkId: offenderNetworkId,
+                impulseXZ: ramImpulse,
+                impulsePower: damage);
             state.EntityManager.SetComponentData(victim, vicShip);
         }
 
@@ -484,7 +569,7 @@ namespace TitanOrbit.ECS
         /// </summary>
         /// <param name="ship">Current vitals (gems / people).</param>
         /// <param name="motor">Untaxed chassis baselines + HullMassReference (ComponentSize).</param>
-        /// <param name="totalMass">Gems×mG + people×mP + size×mCS.</param>
+        /// <param name="totalMass">Gems×mG + people×mP + size×mCS. MEGA skip-tax reports 0 (plow ignores this).</param>
         /// <param name="taxedAccel">After-tax acceleration used for grind damage and the push gate.</param>
         static void ResolveMobilityRamInputs(
             in ShipState ship,
@@ -497,14 +582,15 @@ namespace TitanOrbit.ECS
                 ? motor.HullMassReference
                 : math.max(ShipMassLogic.MinMass, baseMass * ShipMassLogic.HullMassScale);
 
-            // [TITAN-ORBIT] ApplyMassTaxFromCargo reads ShipCargoMobilitySettingsCache — same asset as drive.
-            ShipMobilityResolution.TaxedMotorStats taxed = ShipMobilityResolution.ApplyMassTaxFromCargo(
+            // [TITAN-ORBIT] Same live tax as drive / speedometer. MEGAs skip mobility tax.
+            ShipMobilityResolution.TaxedMotorStats taxed = ShipMobilityResolution.ResolveLiveMotorStats(
                 motor.MaxSpeed,
                 motor.EngineThrust,
                 motor.RotationSpeed,
                 ship.CurrentGems,
                 ship.CurrentPeople,
-                componentSize);
+                componentSize,
+                skipMassTax: motor.SkipMassTax != 0);
             totalMass = taxed.TotalMass;
             taxedAccel = taxed.EngineThrust;
         }
@@ -613,6 +699,10 @@ namespace TitanOrbit.ECS
         /// <param name="normalShipFromOther">Contact normal pointing from the rock toward the ship.</param>
         /// <param name="asteroidDamage">Damage just applied (VFX intensity).</param>
         /// <param name="team">Ramming ship's team.</param>
+        /// <param name="visualScaleOverride">
+        /// When &gt; 0, use this HitRpc scale instead of cannon fire-power × kill boom.
+        /// MEGA plow passes remaining-HP scale so hull mass cannot inflate the explosion.
+        /// </param>
         static void NotifyRamAsteroidHit(
             ref SystemState state,
             ref EntityCommandBuffer ecb,
@@ -620,7 +710,8 @@ namespace TitanOrbit.ECS
             Entity asteroid,
             float3 normalShipFromOther,
             float asteroidDamage,
-            TeamId team)
+            TeamId team,
+            float visualScaleOverride = -1f)
         {
             if (asteroidDamage <= 0.0001f)
                 return;
@@ -657,12 +748,22 @@ namespace TitanOrbit.ECS
             }
 
             // --- Visual size from ram damage; finishing blows are a bigger boom ---
-            float scaleMul = BulletVisualScale.ComputePerShotScale(
-                cannonScale,
-                asteroidDamage,
-                0f);
-            if (healthAfter <= 0.01f)
-                scaleMul *= ShipComponentRammingSuggestions.RamKillImpactVisualScale;
+            // Override (MEGA plow) is remaining rock HP vs a mid-size rock — do not feed
+            // that HP into ComputePerShotScale (ref damage 8) or the 1.75× kill boom.
+            float scaleMul;
+            if (visualScaleOverride > 0f)
+            {
+                scaleMul = visualScaleOverride;
+            }
+            else
+            {
+                scaleMul = BulletVisualScale.ComputePerShotScale(
+                    cannonScale,
+                    asteroidDamage,
+                    0f);
+                if (healthAfter <= 0.01f)
+                    scaleMul *= ShipComponentRammingSuggestions.RamKillImpactVisualScale;
+            }
 
             BulletNetNotify.SendRamAsteroidHit(
                 ref ecb,
@@ -671,7 +772,8 @@ namespace TitanOrbit.ECS
                 (byte)team,
                 bankIndex,
                 scaleMul,
-                healthAfter);
+                healthAfter,
+                AsteroidLayoutSlot.Read(state.EntityManager, asteroid));
         }
 
         /// <summary>
@@ -717,7 +819,9 @@ namespace TitanOrbit.ECS
             float spawnServerTime,
             EntityCommandBuffer ecb,
             double now,
-            int damagerNetworkId)
+            int damagerNetworkId,
+            float2 impulseXZ = default,
+            float impulsePower = -1f)
         {
             if (damage <= 0.0001f || ship.IsDead)
                 return;
@@ -733,7 +837,7 @@ namespace TitanOrbit.ECS
                 ref health,
                 ref gems,
                 ref isDead,
-                damage,
+                CardEffectQuery.ScaleIncomingDamage(state.EntityManager, shipEntity, damage),
                 ship.Team,
                 TeamId.None,
                 gemExpulsionPerHullDamage: ShipDamageLogic.ExcessDamageGemExpulsionPerHullDamage,
@@ -751,16 +855,17 @@ namespace TitanOrbit.ECS
                 state.EntityManager.SetComponentData(shipEntity, vitals);
             }
 
-            // --- Kill attribution ---
-            // [TITAN-ORBIT] Only stamp when another ship dealt the damage (network id > 0).
-            if ((result.AppliedHullDamage || result.GemsToExpel > 0.0001f || result.BecameDead) &&
-                damagerNetworkId > 0)
+            // --- Kill attribution + death-impulse ---
+            if (result.AppliedHullDamage || result.GemsToExpel > 0.0001f || result.BecameDead)
             {
+                float power = impulsePower >= 0f ? impulsePower : damage;
                 ShipMatchStatsLogic.SetLastDamager(
                     state.EntityManager,
                     shipEntity,
                     damagerNetworkId,
-                    (float)now);
+                    (float)now,
+                    impulseXZ,
+                    power);
             }
 
             if (result.GemsToExpel > 0.0001f)

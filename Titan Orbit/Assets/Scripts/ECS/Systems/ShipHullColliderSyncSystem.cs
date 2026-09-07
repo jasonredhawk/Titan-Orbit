@@ -2,24 +2,22 @@ using TitanOrbit.Data;
 using TitanOrbit.Simulation;
 using Unity.Collections;
 using Unity.Entities;
+using Unity.Mathematics;
 using Unity.NetCode;
 using Unity.Physics;
+using Unity.Transforms;
+using UnityEngine;
 
 namespace TitanOrbit.ECS
 {
     /// <summary>
-    /// Rebuilds each ship's <see cref="PhysicsCollider"/> from its chassis visual prefab when level,
-    /// branch, chassis id, or bottom-bar attribute upgrade sum changes. Runs on server and client
-    /// so prediction matches authority. Paired with <see cref="ShipStatApplySystem"/> (stats) and
-    /// hybrid hull proxies when EG is off.
-    /// <para>
-    /// [TITAN-ORBIT] Attribute mesh grow used to be presentation-only — grown wings/engines then
-    /// clipped through asteroids because the PhysicsCollider stayed at authored size. This system
-    /// rebuilds the compound with the same <see cref="ShipComponentAttributeScaleLogic"/> factors.
-    /// </para>
+    /// Ensures each ship keeps a single covering ellipsoid that fits every chassis box after
+    /// attribute grow (X/Y/Z radii independent). Cached until chassis / attributes change.
+    /// Tier / MEGA size is <c>LocalTransform.Scale</c>.
     /// </summary>
     [UpdateInGroup(typeof(SimulationSystemGroup))]
     [UpdateAfter(typeof(ShipStatApplySystem))]
+    [UpdateAfter(typeof(ShipChassisCatalogApplySystem))]
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation | WorldSystemFilterFlags.ClientSimulation)]
     public partial struct ShipHullColliderSyncSystem : ISystem
     {
@@ -38,6 +36,9 @@ namespace TitanOrbit.ECS
         {
             if (TitanOrbitPresentationConfig.UseEntitiesGraphicsForShips)
                 return;
+
+            // Dedicated still syncs: covering-sphere bake Instantiates the chassis once
+            // per upgrade so attribute grow and MEGA nested boxes are visible.
 
             // [TITAN-ORBIT] Client: ship WithEntityAccess + collider structural swap during
             // GhostSpawn Instantiates Crash!!!. Server always syncs. Gate with IsClient().
@@ -128,17 +129,19 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// True when chassis identity or attribute-upgrade sum differs from the last bake.
+        /// True when covering-sphere inputs or the team shield filter differ from the last bake.
+        /// Level-only growth uses <c>LocalTransform.Scale</c> and does not re-walk the prefab.
         /// </summary>
         static bool NeedsHullSync(EntityManager em, Entity entity, in ShipState ship, int branchIndex)
         {
             if (!ShipStatApplyLogic.TryResolveChassisId(
+                    em,
+                    entity,
                     ship.Team,
                     ship.ShipLevel,
                     branchIndex,
                     out string chassisId,
-                    allowFallback: true,
-                    shipFamilyConfigIndex: ship.ShipFamilyConfigIndex))
+                    allowFallback: true))
                 return false;
 
             int attributeSum = 0;
@@ -151,15 +154,15 @@ namespace TitanOrbit.ECS
 
             var applied = em.GetComponentData<ShipHullColliderState>(entity);
             var chassisKey = new FixedString64Bytes(chassisId);
-            return !applied.ChassisId.Equals(chassisKey)
-                || applied.AppliedShipLevel != ship.ShipLevel
-                || applied.AppliedBranchIndex != branchIndex
-                || applied.AppliedAttributeSum != attributeSum;
+            bool isMega = em.HasComponent<MegaShipState>(entity)
+                && em.GetComponentData<MegaShipState>(entity).IsMega;
+            return ShipHullColliderLogic.NeedsCoveringRecompute(
+                       applied, chassisKey, branchIndex, attributeSum, isMega)
+                || applied.AppliedTeam != (byte)ship.Team;
         }
 
         /// <summary>
-        /// Builds the compound collider from the chassis prefab (with attribute grow) and stamps
-        /// <see cref="ShipHullColliderState"/>.
+        /// Measures (or reuses) the covering sphere and stamps <see cref="ShipHullColliderState"/>.
         /// </summary>
         static void TrySyncHull(
             Entity entity,
@@ -169,23 +172,19 @@ namespace TitanOrbit.ECS
             int branchIndex)
         {
             if (!ShipStatApplyLogic.TryResolveChassisId(
+                    em,
+                    entity,
                     ship.Team,
                     ship.ShipLevel,
                     branchIndex,
                     out string chassisId,
-                    allowFallback: true,
-                    shipFamilyConfigIndex: ship.ShipFamilyConfigIndex))
-                return;
-
-            var tier = config.GetTierEntryForChassisId(chassisId);
-            if (tier?.prefab == null)
+                    allowFallback: true))
                 return;
 
             float motorMass = 1f;
             if (em.HasComponent<ShipMotorConfig>(entity))
                 motorMass = em.GetComponentData<ShipMotorConfig>(entity).Mass;
 
-            // --- Attribute levels for part grow during bake ---
             var attrs = default(ShipAttributeUpgradeState);
             int attributeSum = 0;
             if (em.HasComponent<ShipAttributeUpgradeState>(entity))
@@ -194,17 +193,53 @@ namespace TitanOrbit.ECS
                 attributeSum = ShipStatApplyLogic.SumAttributeLevels(attrs);
             }
 
+            bool isMega = em.HasComponent<MegaShipState>(entity)
+                && em.GetComponentData<MegaShipState>(entity).IsMega;
+            if (isMega)
+                motorMass = math.max(motorMass, MegaShipCatalog.DefaultHullCollisionMass);
+
+            var chassisKey = new FixedString64Bytes(chassisId);
+            bool recompute = true;
+            float3 cachedExtents = new float3(-1f);
+            float3 cachedCenter = float3.zero;
+            int megaRevision = 0;
+            if (em.HasComponent<ShipHullColliderState>(entity))
+            {
+                var prev = em.GetComponentData<ShipHullColliderState>(entity);
+                megaRevision = prev.AppliedMegaColliderRevision;
+                recompute = ShipHullColliderLogic.NeedsCoveringRecompute(
+                    prev, chassisKey, branchIndex, attributeSum, isMega);
+                if (!recompute)
+                {
+                    cachedExtents = ShipHullColliderLogic.GetCachedCoveringExtents(prev);
+                    cachedCenter = ShipHullColliderLogic.GetCachedCoveringCenter(prev);
+                }
+            }
+
+            GameObject chassisPrefab = recompute ? ResolveChassisPrefab(config, chassisId) : null;
             string familyPrefix = ResolveFamilyPrefix(chassisId);
-            if (!ShipHullColliderLogic.TryApplyChassisCollider(
-                    em, entity, tier.prefab, motorMass, attrs, familyPrefix))
-                return;
+            ShipHullColliderLogic.TryApplyCoveringHull(
+                em, entity, chassisPrefab, motorMass, attrs, familyPrefix, isMega,
+                cachedExtents, cachedCenter, out float3 usedCenter, out float3 usedExtents);
 
             var hullState = new ShipHullColliderState
             {
-                ChassisId = new FixedString64Bytes(chassisId),
+                ChassisId = chassisKey,
                 AppliedShipLevel = ship.ShipLevel,
                 AppliedBranchIndex = branchIndex,
                 AppliedAttributeSum = attributeSum,
+                AppliedMegaColliderRevision = isMega
+                    ? MegaShipCatalog.HullColliderRevision
+                    : megaRevision,
+                AppliedHullMaterialRevision = ShipHullColliderLogic.HullMaterialRevision,
+                AppliedTeam = (byte)ship.Team,
+                AppliedCoveringRadius = math.cmax(usedExtents),
+                AppliedCoveringExtentX = usedExtents.x,
+                AppliedCoveringExtentY = usedExtents.y,
+                AppliedCoveringExtentZ = usedExtents.z,
+                AppliedCoveringCenterX = usedCenter.x,
+                AppliedCoveringCenterY = usedCenter.y,
+                AppliedCoveringCenterZ = usedCenter.z,
             };
 
             if (em.HasComponent<ShipHullColliderState>(entity))
@@ -213,7 +248,22 @@ namespace TitanOrbit.ECS
                 em.AddComponentData(entity, hullState);
         }
 
-        /// <summary>USC family token from chassis id (AstroEagle_Tier2 → AstroEagle).</summary>
+        static GameObject ResolveChassisPrefab(PlanetShipFamilyConfig config, string chassisId)
+        {
+            var tier = config != null ? config.GetTierEntryForChassisId(chassisId) : null;
+            if (tier != null && tier.prefab != null)
+                return tier.prefab;
+
+            if (MegaShipCatalog.IsMegaChassisId(chassisId))
+            {
+                var mega = MegaShipCatalog.Load();
+                if (mega != null)
+                    return mega.GetPrefabByChassisId(chassisId);
+            }
+
+            return null;
+        }
+
         static string ResolveFamilyPrefix(string chassisId)
         {
             if (string.IsNullOrEmpty(chassisId))

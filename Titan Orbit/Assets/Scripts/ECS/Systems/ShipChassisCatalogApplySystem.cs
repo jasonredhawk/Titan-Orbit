@@ -3,6 +3,7 @@ using TitanOrbit.Data;
 using TitanOrbit.Simulation;
 using Unity.Collections;
 using Unity.Entities;
+using Unity.Mathematics;
 using Unity.NetCode;
 using UnityEngine;
 
@@ -140,12 +141,8 @@ namespace TitanOrbit.ECS
 
             pending.Dispose();
 
-            // --- Pass 3: refill empty / undercounted wing+weapon buffers (no collider Instantiates) ---
-            // [TITAN-ORBIT] After Join Team, ShouldSkipShipEntityQueries can skip this system while
-            // ShipHullColliderSync still writes ShipHullColliderState → NeedsCatalogApply false forever
-            // with Length==0 wings. Also: old wing bake stopped at the first authoring marker so
-            // multi-wing hulls kept a single beam while the hybrid GO showed every wing.
-            // Collect first — AddBuffer is a structural change and cannot run inside the foreach.
+            // --- Pass 3: refill undercounted wing+weapon buffers (chassis already applied) ---
+            // Empty buffers are valid. Only refill when the prefab has more bodies than the buffer.
             var refill = new NativeList<PendingCatalogApply>(4, Allocator.Temp);
             foreach (var (ship, entity) in SystemAPI
                          .Query<RefRO<ShipState>>()
@@ -193,17 +190,18 @@ namespace TitanOrbit.ECS
             int branchIndex)
         {
             if (!ShipStatApplyLogic.TryResolveChassisId(
+                    em,
+                    entity,
                     ship.Team,
                     ship.ShipLevel,
                     branchIndex,
                     out string chassisId,
-                    allowFallback: true,
-                    shipFamilyConfigIndex: ship.ShipFamilyConfigIndex))
+                    allowFallback: true))
                 return false;
 
             // Catalog entry OR tier prefab is enough — wings can live-bake from the prefab alone.
             bool hasCatalog = catalog.TryGetEntry(chassisId, out _);
-            bool hasPrefab = config.GetTierEntryForChassisId(chassisId)?.prefab != null;
+            bool hasPrefab = ResolveChassisPrefab(config, chassisId) != null;
             if (!hasCatalog && !hasPrefab)
                 return false;
 
@@ -232,12 +230,27 @@ namespace TitanOrbit.ECS
                 && applied.AppliedAttributeSum != attributeSum)
                 return true;
 
+            // MEGA collider bake revision — rebuild once when the part-collider path changes.
+            if (em.HasComponent<MegaShipState>(entity)
+                && em.GetComponentData<MegaShipState>(entity).IsMega
+                && applied.AppliedMegaColliderRevision != MegaShipCatalog.HullColliderRevision)
+                return true;
+
+            if (applied.AppliedHullMaterialRevision != ShipHullColliderLogic.HullMaterialRevision)
+                return true;
+
+            if (applied.AppliedTeam != (byte)ship.Team)
+                return true;
+
+            if (applied.AppliedCoveringRadius <= 0.01f)
+                return true;
+
             return false;
         }
 
         /// <summary>
-        /// True when wing/weapon buffers are empty or the wing buffer has fewer slots than distinct
-        /// wing bodies on the chassis prefab (cheap name walk — no Instantiates).
+        /// True when this chassis was already applied but wing/weapon buffers have fewer slots
+        /// than the prefab. Empty is valid (unarmed / no wings) — do not re-bake every tick.
         /// </summary>
         static bool NeedsAttachmentRefill(
             EntityManager em,
@@ -245,37 +258,36 @@ namespace TitanOrbit.ECS
             Entity entity,
             in ShipState ship)
         {
-            bool wingsEmpty = !em.HasBuffer<ShipWingTractorBeamElement>(entity)
-                || em.GetBuffer<ShipWingTractorBeamElement>(entity).Length == 0;
-            bool weaponsEmpty = !em.HasBuffer<ShipWeaponMountElement>(entity)
-                || em.GetBuffer<ShipWeaponMountElement>(entity).Length == 0;
-
-            if (wingsEmpty || weaponsEmpty)
-                return true;
+            if (!em.HasComponent<ShipHullColliderState>(entity))
+                return false;
 
             if (!ShipStatApplyLogic.TryResolveChassisId(
+                    em,
+                    entity,
                     ship.Team,
                     ship.ShipLevel,
                     ship.BranchIndex,
                     out string chassisId,
-                    allowFallback: true,
-                    shipFamilyConfigIndex: ship.ShipFamilyConfigIndex))
+                    allowFallback: true))
                 return false;
 
-            var tier = config.GetTierEntryForChassisId(chassisId);
-            GameObject chassisPrefab = tier != null ? tier.prefab : null;
+            var applied = em.GetComponentData<ShipHullColliderState>(entity);
+            if (!applied.ChassisId.Equals(new FixedString64Bytes(chassisId)))
+                return false;
+
+            GameObject chassisPrefab = ResolveChassisPrefab(config, chassisId);
             if (chassisPrefab == null)
                 return false;
 
-            // [TITAN-ORBIT] Prefab asset walk only — detects 1-slot buffers on multi-wing / multi-gun hulls.
+            int currentWings = em.HasBuffer<ShipWingTractorBeamElement>(entity)
+                ? em.GetBuffer<ShipWingTractorBeamElement>(entity).Length
+                : 0;
+            int currentWeapons = em.HasBuffer<ShipWeaponMountElement>(entity)
+                ? em.GetBuffer<ShipWeaponMountElement>(entity).Length
+                : 0;
             int expectedWings = ShipChassisPrefabBakeUtility.CountDistinctWingBodies(chassisPrefab);
-            int currentWings = em.GetBuffer<ShipWingTractorBeamElement>(entity).Length;
-            if (expectedWings > currentWings)
-                return true;
-
             int expectedWeapons = ShipChassisPrefabBakeUtility.CountDistinctWeaponBodies(chassisPrefab);
-            int currentWeapons = em.GetBuffer<ShipWeaponMountElement>(entity).Length;
-            return expectedWeapons > currentWeapons;
+            return expectedWings > currentWings || expectedWeapons > currentWeapons;
         }
 
         /// <summary>
@@ -290,12 +302,13 @@ namespace TitanOrbit.ECS
             in ShipState ship)
         {
             if (!ShipStatApplyLogic.TryResolveChassisId(
+                    em,
+                    entity,
                     ship.Team,
                     ship.ShipLevel,
                     ship.BranchIndex,
                     out string chassisId,
-                    allowFallback: true,
-                    shipFamilyConfigIndex: ship.ShipFamilyConfigIndex))
+                    allowFallback: true))
                 return;
 
             // Only refill when the applied chassis key still matches — otherwise Pass 1/2 owns it.
@@ -304,42 +317,35 @@ namespace TitanOrbit.ECS
                 return;
 
             catalog.TryGetEntry(chassisId, out var entry);
-            var tier = config.GetTierEntryForChassisId(chassisId);
-            GameObject chassisPrefab = tier != null ? tier.prefab : null;
+            GameObject chassisPrefab = ResolveChassisPrefab(config, chassisId);
             if (entry == null && chassisPrefab == null)
                 return;
 
-            bool wingsEmpty = !em.HasBuffer<ShipWingTractorBeamElement>(entity)
-                || em.GetBuffer<ShipWingTractorBeamElement>(entity).Length == 0;
-            bool weaponsEmpty = !em.HasBuffer<ShipWeaponMountElement>(entity)
-                || em.GetBuffer<ShipWeaponMountElement>(entity).Length == 0;
-            bool wingsUndercounted = false;
-            bool weaponsUndercounted = false;
-            if (chassisPrefab != null)
-            {
-                if (!wingsEmpty)
-                {
-                    int expectedWings = ShipChassisPrefabBakeUtility.CountDistinctWingBodies(chassisPrefab);
-                    wingsUndercounted =
-                        expectedWings > em.GetBuffer<ShipWingTractorBeamElement>(entity).Length;
-                }
+            int currentWings = em.HasBuffer<ShipWingTractorBeamElement>(entity)
+                ? em.GetBuffer<ShipWingTractorBeamElement>(entity).Length
+                : 0;
+            int currentWeapons = em.HasBuffer<ShipWeaponMountElement>(entity)
+                ? em.GetBuffer<ShipWeaponMountElement>(entity).Length
+                : 0;
+            int expectedWings = chassisPrefab != null
+                ? ShipChassisPrefabBakeUtility.CountDistinctWingBodies(chassisPrefab)
+                : 0;
+            int expectedWeapons = chassisPrefab != null
+                ? ShipChassisPrefabBakeUtility.CountDistinctWeaponBodies(chassisPrefab)
+                : 0;
 
-                if (!weaponsEmpty)
-                {
-                    int expectedWeapons = ShipChassisPrefabBakeUtility.CountDistinctWeaponBodies(chassisPrefab);
-                    weaponsUndercounted =
-                        expectedWeapons > em.GetBuffer<ShipWeaponMountElement>(entity).Length;
-                }
-            }
-
-            if (weaponsEmpty || weaponsUndercounted)
+            if (expectedWeapons > currentWeapons)
             {
                 ApplyWeaponMounts(em, entity, entry, chassisPrefab);
                 ShipStatApplyLogic.TryApplyPerMountWeaponCombat(
                     em, entity, chassisId, ship.ShipLevel);
+                if (em.HasComponent<MegaShipState>(entity)
+                    && em.GetComponentData<MegaShipState>(entity).IsMega)
+                    MegaShipStatApplyLogic.ResizeGunnerSlots(em, entity);
+                TryApplyMegaWeaponMountStats(em, entity);
             }
 
-            if (wingsEmpty || wingsUndercounted)
+            if (expectedWings > currentWings)
                 ApplyWingTractorBeams(em, entity, entry, chassisPrefab);
         }
 
@@ -355,26 +361,33 @@ namespace TitanOrbit.ECS
             int branchIndex)
         {
             if (!ShipStatApplyLogic.TryResolveChassisId(
+                    em,
+                    entity,
                     ship.Team,
                     ship.ShipLevel,
                     branchIndex,
                     out string chassisId,
-                    allowFallback: true,
-                    shipFamilyConfigIndex: ship.ShipFamilyConfigIndex))
+                    allowFallback: true))
                 return;
 
             catalog.TryGetEntry(chassisId, out var entry);
-            var tier = config.GetTierEntryForChassisId(chassisId);
-            GameObject chassisPrefab = tier != null ? tier.prefab : null;
+            GameObject chassisPrefab = ResolveChassisPrefab(config, chassisId);
 
             // [TITAN-ORBIT] Weapons: live prefab bake first so multi-cannon upgrade hulls fire from
             // every Weapon child. Stale catalog WeaponMounts often had 0–1 entries while the GO
             // showed 4 barrels — server then only simulated a single muzzle.
             ApplyWeaponMounts(em, entity, entry, chassisPrefab);
 
+            if (em.HasComponent<MegaShipState>(entity)
+                && em.GetComponentData<MegaShipState>(entity).IsMega)
+            {
+                MegaShipStatApplyLogic.ResizeGunnerSlots(em, entity);
+            }
+
             // [TITAN-ORBIT] Pose bake clears combat fields — refill per-barrel firePower / fireRate
-            // from family Weapon stats × transform scale × ship level (same helper as ShipStatApply).
+            // from family Weapon catalog stats × ship level (same helper as ShipStatApply).
             ShipStatApplyLogic.TryApplyPerMountWeaponCombat(em, entity, chassisId, ship.ShipLevel);
+            TryApplyMegaWeaponMountStats(em, entity);
 
             // [TITAN-ORBIT] Wings: live prefab bake first so server pull radius matches the upgrade
             // hull the client draws beams from. Stale catalog lists caused “beam shows, no pull.”
@@ -389,25 +402,51 @@ namespace TitanOrbit.ECS
                 attributeSum = ShipStatApplyLogic.SumAttributeLevels(attrs);
             }
 
-            if (chassisPrefab != null)
-            {
-                float motorMass = 1f;
-                if (em.HasComponent<ShipMotorConfig>(entity))
-                    motorMass = em.GetComponentData<ShipMotorConfig>(entity).Mass;
+            bool isMega = em.HasComponent<MegaShipState>(entity)
+                && em.GetComponentData<MegaShipState>(entity).IsMega;
+            float motorMass = 1f;
+            if (em.HasComponent<ShipMotorConfig>(entity))
+                motorMass = em.GetComponentData<ShipMotorConfig>(entity).Mass;
+            if (isMega)
+                motorMass = math.max(motorMass, MegaShipCatalog.DefaultHullCollisionMass);
 
-                // [TITAN-ORBIT] Bake hierarchy with same attribute scale as proxy meshes so
-                // grown wings/engines collide at their visible size (not authored-only).
-                string familyPrefix = ResolveFamilyPrefix(chassisId);
-                ShipHullColliderLogic.TryApplyChassisCollider(
-                    em, entity, chassisPrefab, motorMass, attrs, familyPrefix);
+            var chassisKey = new FixedString64Bytes(chassisId);
+            bool recompute = true;
+            float3 cachedExtents = new float3(-1f);
+            float3 cachedCenter = float3.zero;
+            if (em.HasComponent<ShipHullColliderState>(entity))
+            {
+                var prev = em.GetComponentData<ShipHullColliderState>(entity);
+                recompute = ShipHullColliderLogic.NeedsCoveringRecompute(
+                    prev, chassisKey, branchIndex, attributeSum, isMega);
+                if (!recompute)
+                {
+                    cachedExtents = ShipHullColliderLogic.GetCachedCoveringExtents(prev);
+                    cachedCenter = ShipHullColliderLogic.GetCachedCoveringCenter(prev);
+                }
             }
+
+            GameObject prefabToWalk = recompute ? chassisPrefab : null;
+            ShipHullColliderLogic.TryApplyCoveringHull(
+                em, entity, prefabToWalk, motorMass, attrs, ResolveFamilyPrefix(chassisId),
+                isMega, cachedExtents, cachedCenter, out float3 usedCenter, out float3 usedExtents);
 
             var hullState = new ShipHullColliderState
             {
-                ChassisId = new FixedString64Bytes(chassisId),
+                ChassisId = chassisKey,
                 AppliedShipLevel = ship.ShipLevel,
                 AppliedBranchIndex = branchIndex,
                 AppliedAttributeSum = attributeSum,
+                AppliedMegaColliderRevision = isMega ? MegaShipCatalog.HullColliderRevision : 0,
+                AppliedHullMaterialRevision = ShipHullColliderLogic.HullMaterialRevision,
+                AppliedTeam = (byte)ship.Team,
+                AppliedCoveringRadius = math.cmax(usedExtents),
+                AppliedCoveringExtentX = usedExtents.x,
+                AppliedCoveringExtentY = usedExtents.y,
+                AppliedCoveringExtentZ = usedExtents.z,
+                AppliedCoveringCenterX = usedCenter.x,
+                AppliedCoveringCenterY = usedCenter.y,
+                AppliedCoveringCenterZ = usedCenter.z,
             };
 
             if (em.HasComponent<ShipHullColliderState>(entity))
@@ -428,9 +467,25 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// Fills <see cref="ShipWeaponMountElement"/> from a live chassis prefab bake when possible,
-        /// else from the catalog entry list. Empty buffer = intentional unarmed.
+        /// MEGA barrels use catalog unique-component stats (including short <c>bulletRange</c>),
+        /// not the store-planet family's per-mount combat table.
         /// </summary>
+        static void TryApplyMegaWeaponMountStats(EntityManager em, Entity entity)
+        {
+            if (!em.HasComponent<MegaShipState>(entity))
+                return;
+
+            var mega = em.GetComponentData<MegaShipState>(entity);
+            if (!mega.IsMega)
+                return;
+
+            var catalog = MegaShipCatalog.Load();
+            if (catalog == null || !catalog.TryGetEntry(mega.CatalogIndex, out MegaShipCatalogEntry entry))
+                return;
+
+            MegaShipStatApplyLogic.ApplyCatalogWeaponMountStats(em, entity, catalog, entry);
+        }
+
         static void ApplyWeaponMounts(
             EntityManager em,
             Entity entity,
@@ -526,6 +581,23 @@ namespace TitanOrbit.ECS
 
             for (int i = 0; i < entry.WingTractorBeams.Count; i++)
                 buffer.Add(ToWingElement(entry.WingTractorBeams[i]));
+        }
+
+        /// <summary>Family ladder prefab, or MEGA catalog prefab for <c>MEGA_###</c> ids.</summary>
+        static GameObject ResolveChassisPrefab(PlanetShipFamilyConfig config, string chassisId)
+        {
+            var tier = config != null ? config.GetTierEntryForChassisId(chassisId) : null;
+            if (tier != null && tier.prefab != null)
+                return tier.prefab;
+
+            if (MegaShipCatalog.IsMegaChassisId(chassisId))
+            {
+                var mega = MegaShipCatalog.Load();
+                if (mega != null)
+                    return mega.GetPrefabByChassisId(chassisId);
+            }
+
+            return null;
         }
 
         /// <summary>Maps bake DTO → runtime buffer element.</summary>

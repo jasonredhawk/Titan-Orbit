@@ -51,6 +51,24 @@ namespace TitanOrbit.ECS
         public const float MoonLandingApproachDelaySeconds = 0.5f;
 
         /// <summary>
+        /// Seconds to force a departing hull from the moon's space-side surface to outside
+        /// the drawn orbit zone. Matches the client takeoff cinematic.
+        /// </summary>
+        public const float MoonTakeoffDurationSeconds = 1f;
+
+        /// <summary>
+        /// Extra world units past the moon orbit shell so takeoff ends in open space
+        /// (not on the planet-facing rim where orbit motor / moon body can recapture).
+        /// </summary>
+        public const float MoonTakeoffExitPadWorld = 1.15f;
+
+        /// <summary>
+        /// Small gap past moon-body contact at takeoff start so the first tick is not
+        /// sitting inside the moon collider.
+        /// </summary>
+        public const float MoonTakeoffSurfaceStandoffWorld = 0.2f;
+
+        /// <summary>
         /// Historical gems/sec factor (<c>ShipLevel × 2</c>). Kept so docs and design notes still
         /// match the discrete beat math: one full chunk every <see cref="GemDepositBeatIntervalSeconds"/>.
         /// </summary>
@@ -204,7 +222,9 @@ namespace TitanOrbit.ECS
                         continue;
 
                     var a = asteroidState.ValueRO;
-                    float mined = GemEconomyConstants.MiningRate * dt;
+                    float mineMul = CardEffectQuery.GetMul(state.EntityManager, shipEntity, CardEffectKind.MiningRateMul);
+                    float yieldMul = CardEffectQuery.GetMul(state.EntityManager, shipEntity, CardEffectKind.AsteroidGemYieldMul);
+                    float mined = GemEconomyConstants.MiningRate * dt * mineMul;
                     mined = math.min(mined, a.RemainingGems);
                     if (mined < GemEconomyConstants.MinGemSpawnValue)
                         continue;
@@ -238,7 +258,7 @@ namespace TitanOrbit.ECS
                         ecb,
                         prefabs.Gem,
                         asteroidTransform.ValueRO.Position,
-                        mined,
+                        mined * yieldMul,
                         (uint)asteroidEntity.Index,
                         burst: false,
                         spawnServerTime,
@@ -279,7 +299,7 @@ namespace TitanOrbit.ECS
     [UpdateAfter(typeof(MiningSystem))]
     public partial struct GemMotionSystem : ISystem
     {
-        /// <summary>Integrates velocity + tumble with PhysX-like damping (unbounded XZ).</summary>
+        /// <summary>Integrates velocity + tumble with PhysX-like damping, then wraps XZ.</summary>
         public void OnUpdate(ref SystemState state)
         {
             float dt = SystemAPI.Time.DeltaTime;
@@ -320,9 +340,11 @@ namespace TitanOrbit.ECS
                 float3 ang = GemExplosionMath.IntegrateAngularVelocity(
                     kin.AngularVelocity, angularDamping, dt);
 
-                // --- Integrate in unbounded space (same as ships); toroidal math is for reach only ---
+                // --- Integrate then wrap onto the canonical chart ---
                 var lt = transform.ValueRO;
                 lt.Position += vel * dt;
+                if (ToroidalMapEcs.HasValidMapSize)
+                    lt.Position = ToroidalMapEcs.Wrap(lt.Position);
                 if (math.lengthsq(ang) > 0.0001f)
                 {
                     // AngularVelocity is rad/s — quaternion integrate in world space.
@@ -687,7 +709,8 @@ namespace TitanOrbit.ECS
                 var wings = em.GetBuffer<ShipWingTractorBeamElement>(shipEntity);
                 // [TITAN-ORBIT] Floor at the visible crystal so overlapping the mesh consumes.
                 float collectRadius = GemCollectMath.ResolveWingCollectRadius(
-                    pickupSettings, gemState.Value, gemState.Size);
+                    pickupSettings, gemState.Value, gemState.Size)
+                    + CardEffectQuery.GetValue(em, shipEntity, CardEffectKind.GemPickupRadiusAdd);
                 for (int wi = 0; wi < wings.Length; wi++)
                 {
                     float3 wingPos = ShipWingTractorBeamPose.GetWorldPosition(shipTransform, wings[wi]);
@@ -700,13 +723,13 @@ namespace TitanOrbit.ECS
                 // for a wing tip / tractor lock. When OFF, only tip zones collect (tight old feel).
                 if (pickupSettings.AlsoUseHullPickupWithWings)
                     return IsWithinHullPickupRange(
-                        shipTransform, gemPos, gemState, pickupSettings, mapW, mapH);
+                        em, shipEntity, shipTransform, gemPos, gemState, pickupSettings, mapW, mapH);
 
                 return false;
             }
 
             // --- No wings: hull-center only ---
-            return IsWithinHullPickupRange(shipTransform, gemPos, gemState, pickupSettings, mapW, mapH);
+            return IsWithinHullPickupRange(em, shipEntity, shipTransform, gemPos, gemState, pickupSettings, mapW, mapH);
         }
 
         /// <summary>
@@ -714,6 +737,8 @@ namespace TitanOrbit.ECS
         /// radius (see <see cref="GemCollectMath"/>) — overlapping the mesh the player sees counts.
         /// </summary>
         static bool IsWithinHullPickupRange(
+            EntityManager em,
+            Entity shipEntity,
             in LocalTransform shipTransform,
             float3 gemPos,
             in GemState gemState,
@@ -722,7 +747,8 @@ namespace TitanOrbit.ECS
             float mapH)
         {
             float hullRange = GemCollectMath.ResolveHullCollectRadius(
-                pickupSettings, gemState.Value, gemState.Size, shipTransform.Scale);
+                pickupSettings, gemState.Value, gemState.Size, shipTransform.Scale)
+                + CardEffectQuery.GetValue(em, shipEntity, CardEffectKind.GemPickupRadiusAdd);
             return GemTractorBeamMath.ToroidalDistance(gemPos, shipTransform.Position, mapW, mapH) <=
                    hullRange;
         }
@@ -784,7 +810,7 @@ namespace TitanOrbit.ECS
             // --- Fixed timestep ---
             // [UNITY] Same dt as other sim systems — we accumulate it into ShipDepositBeatTimer.
             float dt = SystemAPI.Time.DeltaTime;
-            float beatInterval = GemEconomyConstants.GemDepositBeatIntervalSeconds;
+            float baseBeatInterval = GemEconomyConstants.GemDepositBeatIntervalSeconds;
 
             foreach (var (shipState, shipInput, moonDock, shipEntity) in SystemAPI
                          .Query<RefRW<ShipState>, RefRO<ShipInput>, RefRO<ShipMoonDockState>>()
@@ -831,6 +857,11 @@ namespace TitanOrbit.ECS
                     // --- Metronome accumulator (first eligible tick deposits immediately) ---
                     // [TITAN-ORBIT] Priming Accum to beatInterval matches the client metronome, which
                     // fires on the first frame WantDepositGems is true (no half-second silence).
+                    float beatInterval = baseBeatInterval;
+                    float depositMul = CardEffectQuery.GetMul(state.EntityManager, shipEntity, CardEffectKind.GemDepositSpeedMul);
+                    if (depositMul > 0.0001f && math.abs(depositMul - 1f) > 0.0001f)
+                        beatInterval = math.max(0.08f, baseBeatInterval / depositMul);
+
                     if (timer.Accum <= 0f)
                         timer.Accum = beatInterval;
 
@@ -1018,6 +1049,7 @@ namespace TitanOrbit.ECS
             public float Size;
             public TeamId LastInteractTeam;
             public byte TerritoryTeamsMask;
+            public int LayoutSlot;
         }
 
         /// <summary>Ensures the respawn queue exists. Gem prefab is optional for despawn.</summary>
@@ -1075,6 +1107,7 @@ namespace TitanOrbit.ECS
                     Size = a.Size,
                     LastInteractTeam = a.LastInteractTeam,
                     TerritoryTeamsMask = a.TerritoryTeamsMask,
+                    LayoutSlot = AsteroidLayoutSlot.Read(em, entity),
                 });
             }
 
@@ -1152,7 +1185,8 @@ namespace TitanOrbit.ECS
                     restoreHealth,
                     dead.Size,
                     now,
-                    settings.AsteroidRespawnDelaySeconds);
+                    settings.AsteroidRespawnDelaySeconds,
+                    dead.LayoutSlot);
 
                 // --- Clients: destroy seed-hydrated local rock now ---
                 // [NETCODE] Asteroids are not ghost-relevant. HitRpc alone misses mining/ram kills

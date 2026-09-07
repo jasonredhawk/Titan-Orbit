@@ -1,6 +1,9 @@
 using System.Collections.Generic;
 using TitanOrbit.Core;
+using TitanOrbit.Data;
+using TitanOrbit.ECS;
 using TitanOrbit.Game;
+using TitanOrbit.NetCode;
 using TMPro;
 using UnityEngine;
 using UnityEngine.InputSystem;
@@ -12,14 +15,16 @@ namespace TitanOrbit.UI
     /// In-game team leaderboard in the top-right corner — same width as the minimap, height
     /// stretched down until it meets the minimap below. Press TAB to cycle Team A…E panels.
     /// <para>
-    /// Shows a player list only: role icons (top killer / miner / transporter), rank, name, and a
-    /// combined score. No per-stat K/G/P columns. Client presentation only — reads
-    /// <see cref="MinimapBlipAnchor"/> caches from <see cref="MinimapEcsEntitySync"/> (no ship-entity
-    /// gathers) and names from <see cref="EcsGameBridge.RefreshPlayerDisplayNameCache"/>.
+    /// Shows a player list only: role icons (top killer / miner / transporter), rank, profile
+    /// badge, name, and a combined score. No per-stat K/G/P columns. Client presentation only —
+    /// reads <see cref="MinimapBlipAnchor"/> caches from <see cref="MinimapEcsEntitySync"/> (no
+    /// ship-entity gathers) and identity from <see cref="EcsGameBridge.RefreshPlayerDisplayNameCache"/>.
     /// </para>
     /// <para>
-    /// [TITAN-ORBIT] Restores the pre-ECS <c>HUDController</c> leaderboard. Combined score matches
-    /// the old NGO <c>ScoreSystem</c> weights: kill=100, deposited gem=2, delivered person=5.
+    /// The header tabs are a planet-control bar: the full leaderboard width is every capturable
+    /// planet (homes + neutrals). Each team's colored tab is that team's owned share; leftover
+    /// width is still-neutral worlds. Combined player score still uses the old NGO
+    /// <c>ScoreSystem</c> weights: kill=100, deposited gem=2, delivered person=5.
     /// Layout uses the minimap's own rect size (not renderer bounds) so moving blips cannot drift
     /// the panel while the ship flies.
     /// </para>
@@ -68,7 +73,7 @@ namespace TitanOrbit.UI
         Image _panelBg;
         Image _accentStripe;
         TextMeshProUGUI _titleText;
-        RectTransform _tabDotsRoot;
+        RectTransform _planetBarRoot;
         ScrollRect _scrollRect;
         RectTransform _viewportRect;
         RectTransform _contentRect;
@@ -87,20 +92,49 @@ namespace TitanOrbit.UI
         readonly List<RowWidgets> _rows = new List<RowWidgets>(16);
         readonly List<MinimapBlipAnchor> _teamShips = new List<MinimapBlipAnchor>(16);
         readonly List<RowData> _sorted = new List<RowData>(16);
+        /// <summary>Pooled team + unowned slices for the planet-control bar.</summary>
+        readonly List<PlanetBarSegment> _planetBarSegments = new List<PlanetBarSegment>(6);
+
+        /// <summary>Owned capturable planets per team index (Team A = 0). Filled each refresh.</summary>
+        readonly int[] _planetCountsByTeam = new int[5];
 
         static Sprite s_WhiteSprite;
 
-        const float HeaderHeight = 28f;
+        // [TITAN-ORBIT] Control bar sits above the title. Its full width is every capturable world.
+        const float PlanetControlBarHeight = 14f;
+        const float HeaderHeight = 24f;
+        const float TopChromePad = 4f;
         const float RowHeight = 40f;
         const float RowSpacing = 3f;
         const float ContentPadding = 4f;
         const float PanelSidePad = 6f;
         const int MaxKeepExtraRows = 4;
+        /// <summary>Profile emblem beside the name. Fits the 40px row after 5px vertical padding.</summary>
+        const float PlayerBadgeSize = 26f;
 
         // Role icon colors — match minimap top-of-team dots.
         static readonly Color BadgeKiller = new Color(0.35f, 0.55f, 1f, 1f);
         static readonly Color BadgeMiner = new Color(0.95f, 0.35f, 0.35f, 1f);
         static readonly Color BadgeTransporter = new Color(0.95f, 0.85f, 0.25f, 1f);
+
+        /// <summary>
+        /// One colored slice of the planet-control bar (a team, or the leftover unowned worlds).
+        /// Width is a share of every capturable planet, not a fixed tab size.
+        /// </summary>
+        sealed class PlanetBarSegment
+        {
+            /// <summary>Slice GameObject; deactivated when this team owns nothing.</summary>
+            public GameObject Root;
+
+            /// <summary>Anchors are set as a fraction of capturable planets.</summary>
+            public RectTransform Rect;
+
+            /// <summary>Team color (or dark ice for unowned worlds).</summary>
+            public Image Fill;
+
+            /// <summary>Planet count, shown only when the slice is wide enough to read.</summary>
+            public TextMeshProUGUI CountText;
+        }
 
         /// <summary>Widgets for one pooled leaderboard row.</summary>
         sealed class RowWidgets
@@ -108,6 +142,8 @@ namespace TitanOrbit.UI
             public GameObject Root;
             public Image Background;
             public RectTransform BadgeContainer;
+            public RectTransform PlayerBadgeCell;
+            public Image PlayerBadgeImage;
             public TextMeshProUGUI RankText;
             public TextMeshProUGUI NameText;
             public TextMeshProUGUI ScoreText;
@@ -118,6 +154,7 @@ namespace TitanOrbit.UI
         {
             public int OwnerNetworkId;
             public string Name;
+            public int BadgeId;
             public int Kills;
             public int Gems;
             public int People;
@@ -157,11 +194,15 @@ namespace TitanOrbit.UI
             if (_accentStripe != null)
                 _accentStripe.color = new Color(teamColor.r, teamColor.g, teamColor.b, 0.95f);
             if (_titleText != null)
-                _titleText.text = "Team A  <size=80%><color=#9EB6D8>[TAB]</color></size>";
-            UpdateTabDots(3, 0, teamColor);
+                _titleText.text = "Team A  <size=80%><color=#9EB6D8>4/10  [TAB]</color></size>";
+
+            // Demo: 10 capturable worlds — A leads, some still neutral.
+            int[] demoCounts = { 4, 2, 1, 0, 0 };
+            PaintPlanetControlBar(3, 0, demoCounts, 10);
 
             string[] names = { "Nova", "Viper", "Echo", "Ranger" };
             int[] scores = { 1280, 640, 210, 40 };
+            int[] demoBadgeIds = { 1, 2, 3, 0 };
             EnsureRowCount(names.Length);
             for (int i = 0; i < names.Length; i++)
             {
@@ -172,6 +213,7 @@ namespace TitanOrbit.UI
                 w.ScoreText.text = scores[i].ToString();
                 w.Background.color = new Color(0f, 0f, 0f, i % 2 == 0 ? 0.28f : 0.18f);
                 PopulateBadges(w.BadgeContainer, i == 0, i == 1, i == 2);
+                ApplyPlayerBadge(w, demoBadgeIds[i]);
             }
 
             if (_emptyText != null)
@@ -195,7 +237,12 @@ namespace TitanOrbit.UI
             bool hide = false;
             if (hideWhenUpgradeTreeOpen && HUDController.ShipUpgradeTreeObscuresHud)
                 hide = true;
-            if (hideWhenMinimapExpanded && _minimapController != null && _minimapController.IsExpanded)
+            if (hideWhenMinimapExpanded &&
+                (HUDController.MinimapExpandedObscuresHud ||
+                 (_minimapController != null && _minimapController.IsExpanded)))
+                hide = true;
+            // [TITAN-ORBIT] Same death hide as minimap / rockets — keep the explosion unobstructed.
+            if (HUDController.LocalPlayerDeathHidesHud)
                 hide = true;
 
             if (_canvasGroup != null)
@@ -361,7 +408,8 @@ namespace TitanOrbit.UI
         // =========================================================================
 
         /// <summary>
-        /// Rebuilds sorted rows for the viewed team from minimap ship anchors + name cache.
+        /// Rebuilds the planet-control bar and sorted rows for the viewed team from minimap
+        /// planet/ship anchors + the name cache. No ECS entity gathers.
         /// </summary>
         void RefreshRows()
         {
@@ -392,8 +440,15 @@ namespace TitanOrbit.UI
             if (_panelBg != null)
                 _panelBg.color = new Color(0f, 0f, 0f, 0.72f);
 
-            _titleText.text = viewedTeam.ToDisplayName() + "  <size=80%><color=#9EB6D8>[TAB]</color></size>";
-            UpdateTabDots(teamCount, _viewedTeamIndex, teamColor);
+            // --- Planet-control tabs (full width = every world that can be owned) ---
+            CountPlanetOwnership(teamCount, out int capturableTotal);
+            PaintPlanetControlBar(teamCount, _viewedTeamIndex, _planetCountsByTeam, capturableTotal);
+
+            int viewedOwned = _viewedTeamIndex >= 0 && _viewedTeamIndex < _planetCountsByTeam.Length
+                ? _planetCountsByTeam[_viewedTeamIndex]
+                : 0;
+            _titleText.text = viewedTeam.ToDisplayName()
+                + "  <size=80%><color=#9EB6D8>" + viewedOwned + "/" + capturableTotal + "  [TAB]</color></size>";
 
             // --- Collect ships from presentation cache ---
             // [TITAN-ORBIT] Anchors are filled by MinimapEcsEntitySync under join-safe rules.
@@ -445,6 +500,7 @@ namespace TitanOrbit.UI
                 {
                     OwnerNetworkId = a.OwnerNetworkId,
                     Name = name,
+                    BadgeId = EcsGameBridge.GetCachedPlayerBadgeId(a.OwnerNetworkId),
                     Kills = kills,
                     Gems = gems,
                     People = people,
@@ -489,6 +545,7 @@ namespace TitanOrbit.UI
                     bestKills > 0 && r.OwnerNetworkId == bestKillerId,
                     bestGems > 0 && r.OwnerNetworkId == bestMinerId,
                     bestPeople > 0 && r.OwnerNetworkId == bestTransporterId);
+                ApplyPlayerBadge(w, r.BadgeId);
             }
 
             for (int i = _sorted.Count; i < _rows.Count; i++)
@@ -547,6 +604,35 @@ namespace TitanOrbit.UI
         // =========================================================================
 
         /// <summary>
+        /// Paints the profile emblem from <see cref="PlayerBadgeCatalog"/>. Collapses the cell
+        /// when this player has no sprite so names stay tight against rank.
+        /// </summary>
+        static void ApplyPlayerBadge(RowWidgets w, int badgeId)
+        {
+            if (w == null || w.PlayerBadgeImage == null)
+                return;
+
+            Sprite sprite = PlayerBadgeCatalog.FindSprite(PlayerBadgeIdUtil.Sanitize(badgeId));
+            bool show = sprite != null;
+            w.PlayerBadgeImage.sprite = sprite;
+            w.PlayerBadgeImage.enabled = show;
+            w.PlayerBadgeImage.color = Color.white;
+            w.PlayerBadgeImage.preserveAspect = true;
+
+            var layout = w.PlayerBadgeCell != null
+                ? w.PlayerBadgeCell.GetComponent<LayoutElement>()
+                : null;
+            if (layout != null)
+            {
+                float width = show ? PlayerBadgeSize : 0f;
+                layout.preferredWidth = width;
+                layout.minWidth = width;
+                layout.preferredHeight = PlayerBadgeSize;
+                layout.minHeight = PlayerBadgeSize;
+            }
+        }
+
+        /// <summary>
         /// Rebuilds K / G / T role icons for team leaders. Collapses width to 0 when none apply
         /// so an empty badge slot cannot leave a blank square beside the name.
         /// </summary>
@@ -601,46 +687,200 @@ namespace TitanOrbit.UI
             tmp.raycastTarget = false;
         }
 
-        /// <summary>Updates the A/B/C… tab dots under the compact title.</summary>
-        void UpdateTabDots(int teamCount, int activeIndex, Color activeColor)
+        /// <summary>
+        /// Tallies home + regular planets per team from <see cref="MinimapEcsEntitySync"/> anchors.
+        /// The bar denominator is every capturable world: live ghost count, else session meta
+        /// (homes + neutrals). Never queries ship or map-body entities — join-safe presentation only.
+        /// </summary>
+        /// <param name="teamCount">Active teams; ownership indices past this are ignored.</param>
+        /// <param name="capturableTotal">Bar width in planets (at least 1 so layout cannot divide by zero).</param>
+        void CountPlanetOwnership(int teamCount, out int capturableTotal)
         {
-            if (_tabDotsRoot == null)
+            // --- Reset this refresh's owned-planet tallies ---
+            for (int i = 0; i < _planetCountsByTeam.Length; i++)
+                _planetCountsByTeam[i] = 0;
+
+            // Homes and neutrals live on separate minimap lists — both can be owned.
+            int seen = 0;
+            seen += TallyPlanetAnchors(_entitySync != null ? _entitySync.Planets : null, teamCount);
+            seen += TallyPlanetAnchors(_entitySync != null ? _entitySync.HomePlanets : null, teamCount);
+
+            // [TITAN-ORBIT] Meta is the match recipe: every home and every neutral can be owned.
+            // Prefer LivePlanetCount so the bar stays full-width before every ghost has arrived.
+            int metaTotal = 0;
+            if (MapSessionMetaCache.LivePlanetCount > 0)
+                metaTotal = MapSessionMetaCache.LivePlanetCount;
+            else if (MapSessionMetaCache.TeamCount > 0 || MapSessionMetaCache.NeutralPlanetCount > 0)
+            {
+                metaTotal = Mathf.Max(0, MapSessionMetaCache.TeamCount)
+                            + Mathf.Max(0, MapSessionMetaCache.NeutralPlanetCount);
+            }
+
+            capturableTotal = Mathf.Max(seen, metaTotal);
+            if (capturableTotal <= 0)
+                capturableTotal = Mathf.Max(1, teamCount);
+        }
+
+        /// <summary>
+        /// Adds each planet blip's owner into <see cref="_planetCountsByTeam"/>. Neutral worlds
+        /// (<see cref="TeamId.None"/>) are not stored — leftover bar width is unowned.
+        /// </summary>
+        /// <returns>How many planet anchors were read (owned + unowned).</returns>
+        int TallyPlanetAnchors(IReadOnlyList<MinimapBlipAnchor> anchors, int teamCount)
+        {
+            if (anchors == null)
+                return 0;
+
+            int seen = 0;
+            for (int i = 0; i < anchors.Count; i++)
+            {
+                MinimapBlipAnchor a = anchors[i];
+                if (a == null)
+                    continue;
+
+                // Every planet counts toward the bar's total, even if nobody owns it yet.
+                seen++;
+
+                // TeamA = 1 → slot 0. TeamId.None lands at -1 and stays in the unowned remainder.
+                int index = (int)a.Team - 1;
+                if (index < 0 || index >= teamCount || index >= _planetCountsByTeam.Length)
+                    continue;
+                _planetCountsByTeam[index]++;
+            }
+
+            return seen;
+        }
+
+        /// <summary>
+        /// Sizes team-color tabs so the bar width is every capturable planet. Anchors are
+        /// fractions of <paramref name="capturableTotal"/> — four owned of twenty worlds is 20%
+        /// of the leaderboard width. A dim remainder slice is still-neutral worlds. The viewed
+        /// team is brighter so TAB still has a selected tab.
+        /// </summary>
+        /// <param name="teamCount">How many team slices to consider.</param>
+        /// <param name="viewedIndex">Selected team for the player list below.</param>
+        /// <param name="counts">Owned planets per team index (Team A = 0). May be longer than teamCount.</param>
+        /// <param name="capturableTotal">Planets that can be owned — the bar's 100%.</param>
+        void PaintPlanetControlBar(int teamCount, int viewedIndex, int[] counts, int capturableTotal)
+        {
+            if (_planetBarRoot == null || counts == null)
                 return;
 
-            while (_tabDotsRoot.childCount < teamCount)
-            {
-                var dot = new GameObject("Dot", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image), typeof(LayoutElement));
-                dot.transform.SetParent(_tabDotsRoot, false);
-                var le = dot.GetComponent<LayoutElement>();
-                le.preferredWidth = 9f;
-                le.preferredHeight = 9f;
-                var img = dot.GetComponent<Image>();
-                img.sprite = GetWhiteSprite();
-                img.raycastTarget = false;
-            }
+            teamCount = Mathf.Clamp(teamCount, 1, 5);
+            capturableTotal = Mathf.Max(1, capturableTotal);
 
-            for (int i = 0; i < _tabDotsRoot.childCount; i++)
+            // --- Owned vs leftover ---
+            int ownedTotal = 0;
+            for (int i = 0; i < teamCount && i < counts.Length; i++)
+                ownedTotal += Mathf.Max(0, counts[i]);
+
+            int unowned = Mathf.Max(0, capturableTotal - ownedTotal);
+
+            // One slice per team plus the leftover unowned worlds.
+            EnsurePlanetBarSegmentCount(teamCount + 1);
+
+            // Pixel width is only used to hide numbers on hairline slices.
+            float barWidth = _planetBarRoot.rect.width;
+            if (barWidth < 8f && _panelRect != null)
+                barWidth = Mathf.Max(8f, _panelRect.rect.width - PanelSidePad * 2f);
+
+            // --- Place slices left → right in Team A…E order, then unowned ---
+            float cursor = 0f;
+            for (int i = 0; i < _planetBarSegments.Count; i++)
             {
-                var child = _tabDotsRoot.GetChild(i).gameObject;
-                bool on = i < teamCount;
-                child.SetActive(on);
-                if (!on)
+                PlanetBarSegment seg = _planetBarSegments[i];
+                bool isNeutral = i == teamCount;
+                bool isTeam = i < teamCount;
+                int count = isNeutral
+                    ? unowned
+                    : (isTeam && i < counts.Length ? Mathf.Max(0, counts[i]) : 0);
+                bool viewed = isTeam && i == viewedIndex;
+                bool show = (isTeam || isNeutral) && count > 0;
+                seg.Root.SetActive(show);
+                if (!show)
                     continue;
-                var img = child.GetComponent<Image>();
-                if (img == null)
-                    continue;
-                TeamId t = IndexToTeam(i);
-                Color c = t.ToColor();
-                img.color = i == activeIndex
-                    ? new Color(activeColor.r, activeColor.g, activeColor.b, 1f)
-                    : new Color(c.r, c.g, c.b, 0.35f);
-                var le = child.GetComponent<LayoutElement>();
-                if (le != null)
+
+                float share = count / (float)capturableTotal;
+                PlacePlanetBarSlice(seg.Rect, cursor, share, viewed);
+                cursor += share;
+
+                if (isNeutral)
                 {
-                    le.preferredWidth = i == activeIndex ? 16f : 9f;
-                    le.preferredHeight = 9f;
+                    // Unowned remainder — dark ice so team colors stay the score read.
+                    seg.Fill.color = new Color(0.16f, 0.20f, 0.28f, 0.95f);
+                    bool showLabel = barWidth * share >= 22f;
+                    seg.CountText.text = showLabel ? count.ToString() : string.Empty;
+                    seg.CountText.color = new Color(0.62f, 0.72f, 0.84f, 0.85f);
+                }
+                else
+                {
+                    Color c = IndexToTeam(i).ToColor();
+                    float alpha = viewed ? 1f : 0.78f;
+                    seg.Fill.color = new Color(c.r, c.g, c.b, alpha);
+                    bool showLabel = barWidth * share >= 18f;
+                    seg.CountText.text = showLabel ? count.ToString() : string.Empty;
+                    seg.CountText.color = Color.white;
                 }
             }
+        }
+
+        /// <summary>
+        /// Stretches one slice across <paramref name="share"/> of the bar, starting at
+        /// <paramref name="start"/>. A 1px inset keeps neighboring team colors from bleeding.
+        /// The viewed team uses the full bar height; other teams inset slightly so TAB
+        /// still has a selected tab.
+        /// </summary>
+        static void PlacePlanetBarSlice(RectTransform rt, float start, float share, bool viewed)
+        {
+            if (rt == null)
+                return;
+
+            rt.anchorMin = new Vector2(start, viewed ? 0f : 0.12f);
+            rt.anchorMax = new Vector2(start + share, viewed ? 1f : 0.88f);
+            rt.offsetMin = new Vector2(1f, 0f);
+            rt.offsetMax = new Vector2(-1f, 0f);
+        }
+
+        /// <summary>Grows the planet-bar slice pool (teams + unowned remainder).</summary>
+        void EnsurePlanetBarSegmentCount(int count)
+        {
+            while (_planetBarSegments.Count < count)
+                _planetBarSegments.Add(CreatePlanetBarSegment(_planetBarSegments.Count));
+        }
+
+        /// <summary>
+        /// Builds one stretchy bar slice: tinted fill plus an optional planet-count label.
+        /// Anchors are assigned later by <see cref="PlacePlanetBarSlice"/>.
+        /// </summary>
+        PlanetBarSegment CreatePlanetBarSegment(int index)
+        {
+            // [UNITY] Image + TMP child; parent later assigns anchors as planet-share fractions.
+            var go = new GameObject("PlanetShare_" + index, typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
+            go.transform.SetParent(_planetBarRoot, false);
+            var rt = go.GetComponent<RectTransform>();
+            var img = go.GetComponent<Image>();
+            img.sprite = GetWhiteSprite();
+            img.raycastTarget = false;
+
+            var labelGo = new GameObject("Count", typeof(RectTransform));
+            labelGo.transform.SetParent(go.transform, false);
+            StretchFull(labelGo.GetComponent<RectTransform>());
+            var tmp = labelGo.AddComponent<TextMeshProUGUI>();
+            tmp.fontSize = 10f;
+            tmp.fontStyle = FontStyles.Bold;
+            tmp.alignment = TextAlignmentOptions.Center;
+            tmp.color = Color.white;
+            tmp.raycastTarget = false;
+            tmp.enableWordWrapping = false;
+            tmp.overflowMode = TextOverflowModes.Ellipsis;
+
+            return new PlanetBarSegment
+            {
+                Root = go,
+                Rect = rt,
+                Fill = img,
+                CountText = tmp,
+            };
         }
 
         // =========================================================================
@@ -648,17 +888,19 @@ namespace TitanOrbit.UI
         // =========================================================================
 
         /// <summary>
-        /// Builds the panel once: transparent black plate, team accent edge, compact title, player list.
+        /// Builds the panel once: transparent black plate, team accent edge, full-width planet-control
+        /// bar, compact title, and the player list.
         /// </summary>
         void EnsurePanelExists()
         {
-            if (_panelRoot != null && _titleText != null && _contentRect != null)
+            if (_panelRoot != null && _titleText != null && _contentRect != null && _planetBarRoot != null)
                 return;
 
             // Clean up a half-built tree after domain reload / script recompile.
             Transform existing = transform.Find("TeamLeaderboardPanel");
             if (existing != null)
                 Destroy(existing.gameObject);
+            _planetBarSegments.Clear();
 
             _panelRoot = new GameObject("TeamLeaderboardPanel", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image), typeof(CanvasGroup));
             _panelRoot.transform.SetParent(transform, false);
@@ -680,50 +922,51 @@ namespace TitanOrbit.UI
             stripeRt.anchoredPosition = Vector2.zero;
             stripeRt.sizeDelta = new Vector2(4f, 0f);
 
-            // --- Compact header: team name + [TAB] + dots (no ship widget / no column headers) ---
+            // --- Planet-control bar: full panel width = every capturable world ---
+            float planetBarTop = -TopChromePad;
+            _planetBarRoot = new GameObject("PlanetControlBar", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image)).GetComponent<RectTransform>();
+            _planetBarRoot.SetParent(_panelRoot.transform, false);
+            _planetBarRoot.anchorMin = new Vector2(0f, 1f);
+            _planetBarRoot.anchorMax = new Vector2(1f, 1f);
+            _planetBarRoot.pivot = new Vector2(0.5f, 1f);
+            _planetBarRoot.anchoredPosition = new Vector2(0f, planetBarTop);
+            _planetBarRoot.sizeDelta = new Vector2(-(PanelSidePad * 2f + 4f), PlanetControlBarHeight);
+            _planetBarRoot.offsetMin = new Vector2(PanelSidePad + 4f, _planetBarRoot.offsetMin.y);
+            _planetBarRoot.offsetMax = new Vector2(-PanelSidePad, _planetBarRoot.offsetMax.y);
+            var barTrack = _planetBarRoot.GetComponent<Image>();
+            barTrack.sprite = GetWhiteSprite();
+            barTrack.color = new Color(0.04f, 0.055f, 0.09f, 0.95f);
+            barTrack.raycastTarget = false;
+
+            // --- Compact header: viewed team name + [TAB] (tabs now live in the bar above) ---
+            float headerTop = planetBarTop - PlanetControlBarHeight - 3f;
             var header = new GameObject("Header", typeof(RectTransform));
             header.transform.SetParent(_panelRoot.transform, false);
             var headerRt = header.GetComponent<RectTransform>();
             headerRt.anchorMin = new Vector2(0f, 1f);
             headerRt.anchorMax = new Vector2(1f, 1f);
             headerRt.pivot = new Vector2(0.5f, 1f);
-            headerRt.anchoredPosition = new Vector2(0f, -4f);
+            headerRt.anchoredPosition = new Vector2(0f, headerTop);
             headerRt.sizeDelta = new Vector2(-(PanelSidePad * 2f + 4f), HeaderHeight);
             headerRt.offsetMin = new Vector2(PanelSidePad + 4f, headerRt.offsetMin.y);
             headerRt.offsetMax = new Vector2(-PanelSidePad, headerRt.offsetMax.y);
 
             _titleText = CreateTmp(header.transform, "Title", 15f, TextAlignmentOptions.MidlineLeft,
                 new Color(0.90f, 0.94f, 1f, 1f));
-            var titleRt = _titleText.rectTransform;
-            titleRt.anchorMin = new Vector2(0f, 0f);
-            titleRt.anchorMax = new Vector2(0.62f, 1f);
-            titleRt.offsetMin = Vector2.zero;
-            titleRt.offsetMax = Vector2.zero;
+            StretchFull(_titleText.rectTransform);
             _titleText.fontStyle = FontStyles.Bold;
             _titleText.richText = true;
             _titleText.text = "Team A  [TAB]";
 
-            _tabDotsRoot = new GameObject("TabDots", typeof(RectTransform), typeof(HorizontalLayoutGroup)).GetComponent<RectTransform>();
-            _tabDotsRoot.SetParent(header.transform, false);
-            _tabDotsRoot.anchorMin = new Vector2(0.62f, 0f);
-            _tabDotsRoot.anchorMax = new Vector2(1f, 1f);
-            _tabDotsRoot.offsetMin = Vector2.zero;
-            _tabDotsRoot.offsetMax = Vector2.zero;
-            var dotsLayout = _tabDotsRoot.GetComponent<HorizontalLayoutGroup>();
-            dotsLayout.childAlignment = TextAnchor.MiddleRight;
-            dotsLayout.spacing = 4f;
-            dotsLayout.childForceExpandWidth = false;
-            dotsLayout.childForceExpandHeight = false;
-            dotsLayout.padding = new RectOffset(0, 2, 0, 0);
-
-            // --- Scroll area fills everything under the compact header ---
+            // --- Scroll area fills everything under the planet bar + title ---
+            float scrollTop = TopChromePad + PlanetControlBarHeight + 3f + HeaderHeight + 2f;
             var scrollGo = new GameObject("Scroll", typeof(RectTransform), typeof(ScrollRect));
             scrollGo.transform.SetParent(_panelRoot.transform, false);
             var scrollRt = scrollGo.GetComponent<RectTransform>();
             scrollRt.anchorMin = Vector2.zero;
             scrollRt.anchorMax = Vector2.one;
             scrollRt.offsetMin = new Vector2(PanelSidePad + 2f, PanelSidePad);
-            scrollRt.offsetMax = new Vector2(-PanelSidePad, -(HeaderHeight + 6f));
+            scrollRt.offsetMax = new Vector2(-PanelSidePad, -scrollTop);
             _scrollRect = scrollGo.GetComponent<ScrollRect>();
             _scrollRect.horizontal = false;
             _scrollRect.vertical = true;
@@ -765,7 +1008,7 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// One pooled row: role icons | rank | name | combined score.
+        /// One pooled row: role icons | rank | profile badge | name | combined score.
         /// </summary>
         RowWidgets CreateRow(int index)
         {
@@ -798,6 +1041,13 @@ namespace TitanOrbit.UI
             var rank = CreateRowLabel(CreateCell(rowGo.transform, "Rank", 30f), 13, TextAlignmentOptions.Center);
             rank.color = new Color(0.85f, 0.90f, 1f);
 
+            var playerBadgeCell = CreateCell(rowGo.transform, "PlayerBadge", 0f);
+            var playerBadgeImage = playerBadgeCell.gameObject.AddComponent<Image>();
+            playerBadgeImage.preserveAspect = true;
+            playerBadgeImage.raycastTarget = false;
+            playerBadgeImage.enabled = false;
+            playerBadgeImage.color = Color.white;
+
             var nameCell = CreateCell(rowGo.transform, "Name", -1f);
             nameCell.GetComponent<LayoutElement>().flexibleWidth = 1f;
             var name = CreateRowLabel(nameCell, 14, TextAlignmentOptions.Left);
@@ -812,6 +1062,8 @@ namespace TitanOrbit.UI
                 Root = rowGo,
                 Background = bg,
                 BadgeContainer = badges,
+                PlayerBadgeCell = playerBadgeCell,
+                PlayerBadgeImage = playerBadgeImage,
                 RankText = rank,
                 NameText = name,
                 ScoreText = score,

@@ -10,8 +10,9 @@ using Unity.Transforms;
 namespace TitanOrbit.ECS
 {
     /// <summary>
-    /// Server-authoritative E mine place. Consumes one charge from the selected mine
-    /// equipment slot (unless <see cref="TitanOrbitDebugFlags.InfiniteMines"/>), then
+    /// Server-authoritative mine place (ALT while the loadout caret is on a mine pack).
+    /// Consumes one charge from the selected mine equipment slot
+    /// (unless <see cref="TitanOrbitDebugFlags.InfiniteMines"/>), then
     /// appends a <see cref="DeployedMineElement"/> on the owner ship ghost.
     /// <para>
     /// [TITAN-ORBIT] Drop cooldown comes from <see cref="MineCatalog.LevelStats.deployCooldown"/>.
@@ -71,6 +72,8 @@ namespace TitanOrbit.ECS
                     continue;
 
                 MineShotMath.Resolve(itemLevel, out var stats, out float damage, out float visualScale);
+                damage *= CardEffectQuery.GetMul(state.EntityManager, entity, CardEffectKind.MineDamageMul);
+                float blastMul = CardEffectQuery.GetMul(state.EntityManager, entity, CardEffectKind.MineBlastRadiusMul);
 
                 if (loadout.ValueRO.NextMinePlaceTime > serverElapsed + 0.0001)
                     continue;
@@ -86,7 +89,9 @@ namespace TitanOrbit.ECS
 
                 // --- Drop at the hull (flight-plane Y). Friendly ships do not trigger. ---
                 float3 pos = transform.ValueRO.Position;
-                pos.y = transform.ValueRO.Position.y;
+                pos.y = 0f;
+                if (ToroidalMapEcs.HasValidMapSize)
+                    pos = ToroidalMapEcs.Wrap(pos);
 
                 var mines = state.EntityManager.GetBuffer<DeployedMineElement>(entity);
                 mines.Add(new DeployedMineElement
@@ -100,7 +105,7 @@ namespace TitanOrbit.ECS
                     PlaceTime = serverElapsed,
                     Damage = math.max(0.1f, damage),
                     HitRadius = math.max(0.1f, stats.hitRadius),
-                    BlastRadius = math.max(0.1f, stats.blastRadius),
+                    BlastRadius = math.max(0.1f, stats.blastRadius * blastMul),
                     BlastForce = math.max(0.1f, stats.blastForce),
                     VisualScale = math.max(0.05f, visualScale),
                     ExplosionVfxScale = math.max(0.05f, stats.explosionVfxScale),

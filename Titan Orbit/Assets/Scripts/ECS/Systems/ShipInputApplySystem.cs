@@ -8,11 +8,12 @@ namespace TitanOrbit.ECS
     /// <summary>
     /// Copies the latest player input from <see cref="ShipPendingInput"/> onto the local ship
     /// ghost during <see cref="GhostInputSystemGroup"/> — before prediction runs this tick.
-    /// [NETCODE] Client-side instancy (Starblast pillar 1): the local ship executes
-    /// <see cref="ShipClientPredictedPhysicsDriveSystem"/> on the current tick immediately;
-    /// server reconciliation is silent via NetCode rollback/resim. Dedicated server reads
-    /// replicated <see cref="ShipInput"/> ghost commands instead. Paired with
-    /// <see cref="Game.ShipInputBridge"/>.
+    /// [NETCODE] Writes the latest command onto the owner ghost in
+    /// <see cref="GhostInputSystemGroup"/>. NetCode copies it into
+    /// <c>InputBufferData&lt;ShipInput&gt;</c> at <c>InputTargetTick</c>.
+    /// <see cref="TitanOrbit.NetCode.TitanOrbitClientTickRateSystem.ExperimentalForcedInputLatencyTicks"/>
+    /// is 0 (no extra delay). Dedicated server still reads the replicated command buffer.
+    /// Paired with <see cref="Game.ShipInputBridge"/>.
     /// </summary>
     [UpdateInGroup(typeof(GhostInputSystemGroup))]
     [WorldSystemFilter(WorldSystemFilterFlags.ClientSimulation)]

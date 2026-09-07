@@ -29,7 +29,7 @@ namespace TitanOrbit.ECS
                          .WithEntityAccess())
             {
                 PlayerNameAnnounceRpc row = rpc.ValueRO;
-                PlayerNameRosterCache.Upsert(row.NetworkId, row.DisplayName);
+                PlayerNameRosterCache.Upsert(row.NetworkId, row.DisplayName, row.BadgeId);
                 ecb.DestroyEntity(entity);
             }
 

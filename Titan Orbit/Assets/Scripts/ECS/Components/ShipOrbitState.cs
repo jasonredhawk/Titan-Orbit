@@ -4,11 +4,12 @@ using Unity.NetCode;
 namespace TitanOrbit.ECS
 {
     /// <summary>
-    /// [NETCODE] Replicated orbit context for HUD indicators and gameplay queries. Updated each
-    /// predicted motor tick by <see cref="ShipPhysicsDriveLogic"/> when the ship is inside a
-    /// planet's orbit ring (toroidal distance). Ghost-serialized so clients show orbit UI,
-    /// tractor-beam range bonuses, and so server <see cref="PeopleTransportDispatchSystem"/> can
-    /// dwell before load/unload — without MonoBehaviour reading raw sim.
+    /// [NETCODE] Replicated orbit context for HUD indicators, orbit-ring tint, and gameplay queries.
+    /// Updated each predicted motor tick by <see cref="ShipPhysicsDriveLogic"/> when the ship is
+    /// inside a planet's orbit ring (toroidal distance). Ghost-serialized so clients show orbit UI,
+    /// tractor-beam range bonuses, planet ring occupancy, and so server
+    /// <see cref="PeopleTransportDispatchSystem"/> can dwell before load/unload — without
+    /// MonoBehaviour reading raw sim.
     /// Paired with <see cref="ShipMoonDockState"/> for moon-specific actions inside the ring.
     /// </summary>
     public struct ShipOrbitState : IComponentData
@@ -31,5 +32,22 @@ namespace TitanOrbit.ECS
         /// Used by HUD to show orbit-mode indicator.
         /// </summary>
         [GhostField] public bool UsingOrbitMotor;
+
+        /// <summary>
+        /// [TITAN-ORBIT] True when the passive motor has actually captured this hull
+        /// (velocity close to the ring tangent). False while still flying into the annulus
+        /// or blending inbound speed. Ghosted so every client tints the planet ring only
+        /// for a positive lock — friendly or enemy.
+        /// </summary>
+        [GhostField] public bool OrbitLocked;
+
+        /// <summary>
+        /// [TITAN-ORBIT] True when this ship can load or unload troops (dwell complete and
+        /// cargo/planet allow a transfer, or inbound crew is still in flight). Written by
+        /// <c>PeopleTransportDispatchSystem</c>; the motor preserves it while
+        /// <see cref="UsingOrbitMotor"/> stays true and clears it on thrust / leave.
+        /// Ghosted so every client tints that planet's orbit ring for this lock.
+        /// </summary>
+        [GhostField] public bool IsTransferringPeople;
     }
 }

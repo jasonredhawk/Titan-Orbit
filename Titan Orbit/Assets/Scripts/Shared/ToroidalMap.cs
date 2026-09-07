@@ -65,27 +65,18 @@ namespace TitanOrbit.Generation
         public static float GetMapHeight() => mapHeight;
 
         /// <summary>
-        /// Returns the toroidal copy of <paramref name="logicalPos"/> closest to
-        /// <paramref name="cameraPos"/>. Supports the ship flying arbitrarily far from origin.
-        /// Returns logical position unchanged when map size is unset.
+        /// Identity. Movers wrap in sim, so the GameObject pose is the logical pose.
+        /// <paramref name="cameraPos"/> is unused (kept for call-site compatibility).
         /// </summary>
         public static Vector3 GetDisplayPosition(Vector3 logicalPos, Vector3 cameraPos)
         {
-            if (!HasValidMapSize)
-                return logicalPos;
-
-            // --- Same integer-tile formula as ToroidalMapEcs.GetDisplayPosition ---
-            float dx = cameraPos.x - logicalPos.x;
-            float dz = cameraPos.z - logicalPos.z;
-            int k = (int)Mathf.Round(dx / mapWidth);
-            int m = (int)Mathf.Round(dz / mapHeight);
-            return new Vector3(logicalPos.x + k * mapWidth, logicalPos.y, logicalPos.z + m * mapHeight);
+            _ = cameraPos;
+            return logicalPos;
         }
 
         /// <summary>
-        /// Like <see cref="GetDisplayPosition"/> but keeps the same map tile until another tile is
-        /// clearly closer — avoids pops near tile boundaries. Initialize tiles with int.MinValue.
-        /// Returns logical position unchanged when map size is unset.
+        /// Identity. Tile hysteresis is retired; <paramref name="tileK"/> / <paramref name="tileM"/>
+        /// are left unchanged for leftover callers.
         /// </summary>
         public static Vector3 GetDisplayPositionWithHysteresis(
             Vector3 logicalPos,
@@ -94,47 +85,23 @@ namespace TitanOrbit.Generation
             ref int tileM,
             float switchMarginFraction = 0.35f)
         {
+            _ = referencePos;
+            _ = tileK;
+            _ = tileM;
+            _ = switchMarginFraction;
+            return logicalPos;
+        }
+
+        /// <summary>
+        /// True when the XZ jump is larger than half a map side (canonical wrap or respawn).
+        /// </summary>
+        public static bool IsWrapJump(Vector3 from, Vector3 to)
+        {
             if (!HasValidMapSize)
-                return logicalPos;
-
-            // --- Candidate tile ---
-            float dx = referencePos.x - logicalPos.x;
-            float dz = referencePos.z - logicalPos.z;
-            int candidateK = (int)Mathf.Round(dx / mapWidth);
-            int candidateM = (int)Mathf.Round(dz / mapHeight);
-
-            if (tileK == int.MinValue)
-            {
-                tileK = candidateK;
-                tileM = candidateM;
-            }
-            else if (candidateK != tileK || candidateM != tileM)
-            {
-                // --- Hysteresis: switch only when clearly closer ---
-                Vector3 current = new Vector3(
-                    logicalPos.x + tileK * mapWidth,
-                    logicalPos.y,
-                    logicalPos.z + tileM * mapHeight);
-                Vector3 candidate = new Vector3(
-                    logicalPos.x + candidateK * mapWidth,
-                    logicalPos.y,
-                    logicalPos.z + candidateM * mapHeight);
-                float currentDistSq = (referencePos.x - current.x) * (referencePos.x - current.x)
-                    + (referencePos.z - current.z) * (referencePos.z - current.z);
-                float candidateDistSq = (referencePos.x - candidate.x) * (referencePos.x - candidate.x)
-                    + (referencePos.z - candidate.z) * (referencePos.z - candidate.z);
-                float margin = Mathf.Max(1f, switchMarginFraction * Mathf.Min(mapWidth, mapHeight));
-                if (candidateDistSq < currentDistSq - margin * margin)
-                {
-                    tileK = candidateK;
-                    tileM = candidateM;
-                }
-            }
-
-            return new Vector3(
-                logicalPos.x + tileK * mapWidth,
-                logicalPos.y,
-                logicalPos.z + tileM * mapHeight);
+                return false;
+            float dx = Mathf.Abs(to.x - from.x);
+            float dz = Mathf.Abs(to.z - from.z);
+            return dx > mapWidth * 0.5f || dz > mapHeight * 0.5f;
         }
 
         /// <summary>

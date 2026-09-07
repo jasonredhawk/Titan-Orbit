@@ -129,6 +129,16 @@ namespace TitanOrbit.ECS
                 ecb.AddComponent(entity, new ShipTurretControlState());
 
             foreach (var (_, entity) in SystemAPI.Query<RefRO<ShipTag>>()
+                         .WithNone<MegaShipState>()
+                         .WithEntityAccess())
+                ecb.AddComponent(entity, new MegaShipState());
+
+            foreach (var (_, entity) in SystemAPI.Query<RefRO<ShipTag>>()
+                         .WithNone<MegaShipGunnerSlotElement>()
+                         .WithEntityAccess())
+                ecb.AddBuffer<MegaShipGunnerSlotElement>(entity);
+
+            foreach (var (_, entity) in SystemAPI.Query<RefRO<ShipTag>>()
                          .WithNone<ShipDepositIntent>()
                          .WithEntityAccess())
                 ecb.AddComponent(entity, new ShipDepositIntent());
@@ -147,6 +157,11 @@ namespace TitanOrbit.ECS
                              .WithNone<ShipDepositBeatTimer>()
                              .WithEntityAccess())
                     ecb.AddComponent(entity, new ShipDepositBeatTimer());
+
+                foreach (var (_, entity) in SystemAPI.Query<RefRO<ShipTag>>()
+                             .WithNone<MegaShipAutoAimSlotElement>()
+                             .WithEntityAccess())
+                    ecb.AddBuffer<MegaShipAutoAimSlotElement>(entity);
 
                 // --- Server-only ramming contact sticky bookkeeping ---
                 foreach (var (_, entity) in SystemAPI.Query<RefRO<ShipTag>>().WithEntityAccess())
@@ -214,6 +229,13 @@ namespace TitanOrbit.ECS
                          .WithNone<ShipBurnOverTimeState>()
                          .WithEntityAccess())
                 ecb.AddComponent(entity, new ShipBurnOverTimeState());
+
+            // [NETCODE] Prefer baking ShipDeathVfxState. Runtime add covers older SubScenes;
+            // GhostField Packed will not replicate until the ship ghost is rebaked.
+            foreach (var (_, entity) in SystemAPI.Query<RefRO<ShipTag>>()
+                         .WithNone<ShipDeathVfxState>()
+                         .WithEntityAccess())
+                ecb.AddComponent(entity, new ShipDeathVfxState());
 
             foreach (var (_, entity) in SystemAPI.Query<RefRO<ShipTag>>()
                          .WithNone<BurnOverTimeElement>()

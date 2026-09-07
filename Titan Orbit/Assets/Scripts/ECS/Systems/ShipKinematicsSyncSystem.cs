@@ -27,30 +27,44 @@ namespace TitanOrbit.ECS
             if (state.World.IsClient() && ClientJoinSettleCache.ShouldSkipShipSimulation)
                 return;
 
-            foreach (var (velocity, kinematics, shipState) in SystemAPI
-                         .Query<RefRW<PhysicsVelocity>, RefRW<ShipKinematics>, RefRO<ShipState>>()
-                         .WithAll<ShipTag, Simulate>())
+            if (state.World.IsClient())
             {
-                if (shipState.ValueRO.IsDead || shipState.ValueRO.AwaitingTeamSelection)
-                {
-                    velocity.ValueRW = PhysicsVelocity.Zero;
-                    kinematics.ValueRW = new ShipKinematics { Velocity = float3.zero };
-                    continue;
-                }
-
-                // --- Capture post-collision planar velocity (including bounce) ---
-                float3 linear = velocity.ValueRO.Linear;
-                linear.y = 0f;
-
-                float yawRate = velocity.ValueRO.Angular.y;
-                velocity.ValueRW = new PhysicsVelocity
-                {
-                    Linear = linear,
-                    Angular = new float3(0f, yawRate, 0f),
-                };
-
-                kinematics.ValueRW = new ShipKinematics { Velocity = linear };
+                foreach (var (velocity, kinematics, shipState) in SystemAPI
+                             .Query<RefRW<PhysicsVelocity>, RefRW<ShipKinematics>, RefRO<ShipState>>()
+                             .WithAll<ShipTag, Simulate, PredictedGhost>())
+                    SyncKinematics(velocity, kinematics, shipState);
             }
+            else
+            {
+                foreach (var (velocity, kinematics, shipState) in SystemAPI
+                             .Query<RefRW<PhysicsVelocity>, RefRW<ShipKinematics>, RefRO<ShipState>>()
+                             .WithAll<ShipTag, Simulate>())
+                    SyncKinematics(velocity, kinematics, shipState);
+            }
+        }
+
+        /// <summary>Mirrors post-collision planar velocity into ghosted kinematics.</summary>
+        static void SyncKinematics(
+            RefRW<PhysicsVelocity> velocity,
+            RefRW<ShipKinematics> kinematics,
+            RefRO<ShipState> shipState)
+        {
+            if (shipState.ValueRO.IsDead || shipState.ValueRO.AwaitingTeamSelection)
+            {
+                velocity.ValueRW = PhysicsVelocity.Zero;
+                kinematics.ValueRW = new ShipKinematics { Velocity = float3.zero };
+                return;
+            }
+
+            float3 linear = velocity.ValueRO.Linear;
+            linear.y = 0f;
+            float yawRate = velocity.ValueRO.Angular.y;
+            velocity.ValueRW = new PhysicsVelocity
+            {
+                Linear = linear,
+                Angular = new float3(0f, yawRate, 0f),
+            };
+            kinematics.ValueRW = new ShipKinematics { Velocity = linear };
         }
     }
 }

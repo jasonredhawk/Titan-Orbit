@@ -20,7 +20,7 @@ Classify each `discoveredName` (prefab asset suffix). Return **ONLY** a JSON arr
 
 ## Mental model
 - `partType` = **broad group** (shared Part Profile stats + attribute mesh-scale bucket).
-- `Cockpit` and `Cockpit_Base` both → `Cockpit` so Max People scales together.
+- `Cockpit` and `Cockpit_Base` both → `Cockpit` so Troop Cap scales together.
 - Covers / plates / holders stay in the parent group (e.g. Thruster Cover → `Thruster`)
   but `contributesAbilityStats: false` and `enablePropulsionVfx: false` so they grow with
   thrusters visually without adding move stats or jet particles.

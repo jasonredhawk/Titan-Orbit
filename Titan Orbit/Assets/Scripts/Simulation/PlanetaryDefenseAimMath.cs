@@ -24,11 +24,12 @@ namespace TitanOrbit.Simulation
     /// </para>
     /// <para>
     /// [TITAN-ORBIT] Critical contract — <b>bulletSpeed must match spawn</b>:
-    /// the same per-level <c>stats.bulletSpeed</c> (from <c>PlanetaryDefenseConfig.GetLevelStats</c>)
-    /// is passed into this quadratic <b>and</b> written as
-    /// <c>BulletElement.Velocity = fireDir * bulletSpeed</c>. Using Level-1 / a hardcoded
-    /// default for aim while spawning at Level N (or the reverse) systematically under- or
-    /// over-leads. Client barrel aim must use that same level speed too.
+    /// the same per-level bank-scaled <c>stats.bulletSpeed</c> (from
+    /// <c>PlanetaryDefenseConfig.GetCombatLevelStats</c>) is passed into this quadratic
+    /// <b>and</b> written as <c>BulletElement.Velocity = fireDir * bulletSpeed</c>.
+    /// Using authored Level-1 / a hardcoded default for aim while spawning at the
+    /// bank-modified Level N (or the reverse) systematically under- or over-leads.
+    /// Client barrel aim must use that same combat speed too.
     /// </para>
     /// <para>
     /// [TITAN-ORBIT] Bug that made ships miss while transports looked fine (2026-08):

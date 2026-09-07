@@ -22,10 +22,18 @@ namespace TitanOrbit.UI
     /// (move + accel + OD drain together) — see ShipAttributeUpgradeLogic.
     /// <para>
     /// [TITAN-ORBIT] Optional quick-stat chips above each button show <b>current</b> and
-    /// <c>+per-buy</c> (toggle via a small STATS control). Bottom buttons keep name + gem cost
+    /// <c>+per-buy</c> (toggle via a small STATS control). Fire Power's chip is sustained
+    /// DPS (<c>firePower × fireRate</c>), not damage per shot — same score as the Orbit
+    /// Menu power-bar Fire Power lane. Bottom buttons keep name + gem cost
     /// and paint three purchase states: Ready (affordable), Locked (not enough gems), Maxed.
     /// Both rows share dark-glass + category-accent chrome (space-gamer HUD). Chip hover opens
     /// a calculation card from <see cref="ShipAbilityStatBreakdown"/> when the STATS row is on.
+    /// That card uses a nested Canvas (sort 150) so rockets, brakes, turret pad, and sibling HUD
+    /// cannot paint through it.
+    /// MEGA hulls keep the ten buttons visible but disabled (no Extra Level purchases) and hide
+    /// the little tick squares so the strip does not look like upgrades are still available.
+    /// MEGA identity is latched through gem Instantiates (plow destroy) so ticks/costs do not flicker.
+    /// Quick-stat chips and hover details use <see cref="MegaShipStatsCalculator"/> (no +per-buy).
     /// Chip values and tip bodies are rebuilt when the ship / ability snapshot key changes
     /// (new ship or ability purchase) — never every frame for live HP/speed/cargo.
     /// The snapshot key latches only after chassis stats <b>and</b> hull ComponentSize are ready
@@ -118,23 +126,34 @@ namespace TitanOrbit.UI
         const string StatsChipsPrefsKey = "TitanOrbit.AbilityStatsChipsVisible";
 
         /// <summary>
+        /// Nested-canvas sort for the hover calculation card.
+        /// Main HUD canvas is 0; rocket / space-brake overlays are 80; turret pad is 120;
+        /// orbit station is 200. 150 sits above gameplay HUD and below dock / death / match-end.
+        /// <see cref="Transform.SetAsLastSibling"/> only wins inside one canvas — it cannot beat
+        /// those overlay canvases.
+        /// </summary>
+        const int AbilityTipSortingOrder = 150;
+
+        /// <summary>
         /// Purchase affordance for one bottom upgrade slot.
-        /// Ready = can buy; Locked = room to level but not enough gems; Maxed = at ship-level cap.
+        /// Ready = can buy; Locked = room to level but not enough gems; Maxed = at ship-level cap;
+        /// Unavailable = MEGA hull — button stays visible but purchases and tick squares are off.
         /// </summary>
         enum UpgradeSlotVisualState
         {
             Ready = 0,
             Locked = 1,
-            Maxed = 2
+            Maxed = 2,
+            Unavailable = 3
         }
 
         private static readonly string[] Titles =
         {
             "Fire Power", "Bullet Speed",
-            "Max Health", "Health Regen",
+            "Health Cap", "Health Regen",
             "Energy Cap", "Energy Regen",
             "Move Speed", "Turn Speed",
-            "Max Gems", "Max People"
+            "Gem Cap", "Troop Cap"
         };
 
         private GameObject rootPanel;
@@ -185,6 +204,15 @@ namespace TitanOrbit.UI
         /// </summary>
         private int _statsSnapshotKey = int.MinValue;
 
+        /// <summary>Last painted cargo bucket (rounded gems). Grind changes this every pulse.</summary>
+        private int _lastGemBucket = int.MinValue;
+
+        /// <summary>Unscaled time of the last chip paint (cargo-only rebuilds are throttled).</summary>
+        private float _lastChipPaintTime = -999f;
+
+        /// <summary>Min seconds between gem-only STATS chip rebuilds while grinding.</summary>
+        const float CargoChipRepaintMinInterval = 0.4f;
+
         // --- STATS toggle (shows/hides chip row + hover tips) ---
         private RectTransform _statsToggleRect;
         private TextMeshProUGUI _statsToggleLabel;
@@ -208,6 +236,11 @@ namespace TitanOrbit.UI
         private int _lastCost = -1;
         private readonly string[] _lastCostText = new string[10];
         private bool _slotVisualsSeeded;
+        /// <summary>
+        /// Last MEGA vs regular hull we painted. Null until the first Update so a MEGA spawn
+        /// hides ticks immediately instead of waiting for a ship swap.
+        /// </summary>
+        private bool? _lastMegaHud;
 
         /// <summary>Cached minimap rect so layout dirty-checks do not FindFirstObjectByType every frame.</summary>
         private RectTransform _cachedMinimapRect;
@@ -309,10 +342,62 @@ namespace TitanOrbit.UI
                 return false;
             if (!TryGetUpgradeHudSnapshot(out var ship, out _))
                 return false;
-            return !ship.IsDead
-                && !ship.AwaitingTeamSelection
-                && ship.Team != TeamId.None
-                && !HUDController.ShipUpgradeTreeObscuresHud;
+            if (ship.IsDead || ship.AwaitingTeamSelection || ship.Team == TeamId.None)
+                return false;
+            if (HUDController.ShipUpgradeTreeObscuresHud || HUDController.MinimapExpandedObscuresHud)
+                return false;
+
+            return true;
+        }
+
+        /// <summary>
+        /// True when the local hull is a MEGA. Stats chips stay useful; Extra Level purchases
+        /// and the tick squares are blocked.
+        /// <para>
+        /// [TITAN-ORBIT] MEGA plow instantly destroys rocks → gem Instantiates →
+        /// <see cref="ClientJoinSettleCache.GhostSpawnBacklog"/>. A miss from
+        /// <see cref="TryGetLocalShipEntityOnWorld"/> used to read as “not MEGA” and flip the
+        /// bottom strip (ticks + gem costs) for a frame. Seeded
+        /// <see cref="EcsGameBridge.TryGetLocalMegaShipState"/> plus <see cref="_lastMegaHud"/>
+        /// keep chrome stable through that burst.
+        /// </para>
+        /// </summary>
+        bool IsLocalShipMega()
+        {
+            if (TryGetLocalMegaCatalogIndex(out _))
+                return true;
+
+            // --- Live regular hull ---
+            // [HYBRID] Seeded ship state without MegaShipState means this is not a MEGA.
+            if (EcsGameBridge.TryGetLocalShipState(out _))
+                return false;
+
+            // --- Instantiates miss: hold last painted identity ---
+            // [TITAN-ORBIT] Do not treat a gated entity lookup as “sold the MEGA”.
+            return _lastMegaHud == true;
+        }
+
+        /// <summary>
+        /// Reads the local owner's <see cref="MegaShipState.CatalogIndex"/> when the hull is a MEGA.
+        /// Uses the seeded local-ship lookup — no extra archetype gather (Join Team Crash!!! safe).
+        /// </summary>
+        /// <param name="catalogIndex">MEGA catalog row when this returns true.</param>
+        /// <returns>True when the local ghost is a MEGA with a readable catalog index.</returns>
+        static bool TryGetLocalMegaCatalogIndex(out ushort catalogIndex)
+        {
+            catalogIndex = 0;
+
+            // --- Seeded / cached owner (safe during GhostSpawnBacklog) ---
+            // [TITAN-ORBIT] TryGetLocalShipEntityOnWorld gathers and returns false while
+            // ShouldSkipShipEntityQueries — that is the MEGA-plow UI flicker. Prefer the
+            // Instantiates-hook seed the same way ShipState HUD reads do.
+            if (EcsGameBridge.TryGetLocalMegaShipState(out MegaShipState mega))
+            {
+                catalogIndex = mega.CatalogIndex;
+                return true;
+            }
+
+            return false;
         }
 
         private bool ShouldShowUpgradeBar() =>
@@ -805,8 +890,10 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// Paints one bottom upgrade button for Ready / Locked / Maxed.
+        /// Paints one bottom upgrade button for Ready / Locked / Maxed / Unavailable.
         /// We drive colours ourselves — Unity's default Button grey fade fights dark-glass chrome.
+        /// Called from Update when a slot's affordance changes (gems cross the cost, hit MAX, or
+        /// the local hull becomes a MEGA).
         /// </summary>
         void ApplyUpgradeSlotVisual(int index, UpgradeSlotVisualState state)
         {
@@ -850,6 +937,21 @@ namespace TitanOrbit.UI
                     interactable = false;
                     break;
 
+                case UpgradeSlotVisualState.Unavailable:
+                    // --- MEGA: visible but not purchasable ---
+                    // [TITAN-ORBIT] Same dim as Locked so the button reads "off", but no amber
+                    // “need more gems” — Extra Levels are not a MEGA feature at all.
+                    accent = Color.Lerp(category, new Color(0.35f, 0.38f, 0.42f, 1f), lockedDim);
+                    accent.a = 0.4f;
+                    fillCol = Color.Lerp(glassFillColor, accent, categoryFillBlend * 0.25f);
+                    fillCol.a = glassFillColor.a * 0.92f;
+                    titleCol = Color.Lerp(readyTitleColor, new Color(0.45f, 0.48f, 0.52f, 1f), lockedDim);
+                    keyCol = new Color(0.4f, 0.45f, 0.52f, 0.65f);
+                    costCol = new Color(0.5f, 0.55f, 0.6f, 0.7f);
+                    gemCol = costCol;
+                    interactable = false;
+                    break;
+
                 case UpgradeSlotVisualState.Locked:
                     // Dimmed category glass + amber cost (“need more gems”).
                     accent = Color.Lerp(category, new Color(0.35f, 0.38f, 0.42f, 1f), lockedDim);
@@ -889,7 +991,9 @@ namespace TitanOrbit.UI
             if (rail != null)
             {
                 Color r = accent;
-                r.a = state == UpgradeSlotVisualState.Locked ? 0.4f : 0.95f;
+                r.a = state == UpgradeSlotVisualState.Locked || state == UpgradeSlotVisualState.Unavailable
+                    ? 0.4f
+                    : 0.95f;
                 rail.color = r;
             }
 
@@ -902,7 +1006,9 @@ namespace TitanOrbit.UI
                 btn.interactable = interactable;
 
             // Tick marks: lit ticks match the slot accent (category colour when MAXED).
-            ApplyTickStateColors(index, state, category);
+            // Unavailable hides the whole column — do not paint squares the player cannot buy.
+            if (state != UpgradeSlotVisualState.Unavailable)
+                ApplyTickStateColors(index, state, category);
         }
 
         /// <summary>
@@ -912,6 +1018,8 @@ namespace TitanOrbit.UI
         void ApplyTickStateColors(int index, UpgradeSlotVisualState state, Color category)
         {
             if (tickContainers == null || index < 0 || index >= tickContainers.Length || tickContainers[index] == null)
+                return;
+            if (!tickContainers[index].activeSelf)
                 return;
 
             Color lit;
@@ -1012,6 +1120,38 @@ namespace TitanOrbit.UI
             if (_abilityTipLabel != null)
                 _abilityTipLabel.fontSize = F(11f);
 
+            ElevateAbilityTipDrawOrder();
+        }
+
+        /// <summary>
+        /// Gives the calculation card its own nested Canvas so it paints above other HUD.
+        /// Called once at build and again on hover in case a later HUD sibling stole hierarchy order.
+        /// </summary>
+        void ElevateAbilityTipDrawOrder()
+        {
+            if (_abilityTipPanel == null)
+                return;
+
+            // --- Nested canvas (beats overlay HUDs that sibling-order cannot) ---
+            // [UNITY] A child Canvas with overrideSorting is a separate draw batch. Without it,
+            // RocketLoadoutHUD / SpaceBrakesHUD (order 80) and the turret pad (120) always
+            // cover this tip even after SetAsLastSibling on the main canvas.
+            Canvas tipCanvas = _abilityTipPanel.GetComponent<Canvas>();
+            if (tipCanvas == null)
+                tipCanvas = _abilityTipPanel.AddComponent<Canvas>();
+
+            tipCanvas.overrideSorting = true;
+            tipCanvas.sortingOrder = AbilityTipSortingOrder;
+
+            // [UNITY] Nested canvases start with no extra shader channels. TMP needs TexCoord1
+            // (and usually Normal / Tangent) or the body text disappears.
+            tipCanvas.additionalShaderChannels =
+                AdditionalCanvasShaderChannels.TexCoord1
+                | AdditionalCanvasShaderChannels.Normal
+                | AdditionalCanvasShaderChannels.Tangent;
+
+            // Intentional: no GraphicRaycaster — fill/frame are already non-raycast so clicks
+            // still reach the chips and the world under the card.
             _abilityTipPanel.transform.SetAsLastSibling();
         }
 
@@ -1035,8 +1175,7 @@ namespace TitanOrbit.UI
             // Build once on enter — not every Update (LIVE vitals removed; body is static until upgrade).
             RefreshAbilityTipContent();
             PositionAbilityTipPanel(abilityIndex);
-            // Draw above leaderboard / other HUD so bars and names cannot bleed through.
-            _abilityTipPanel.transform.SetAsLastSibling();
+            ElevateAbilityTipDrawOrder();
             if (!_abilityTipPanel.activeSelf)
                 _abilityTipPanel.SetActive(true);
         }
@@ -1051,11 +1190,15 @@ namespace TitanOrbit.UI
         /// Hull ComponentSize used for mass tax. Included so MS/TS chips repaint when
         /// <see cref="ShipMotorConfig.HullMassReference"/> arrives after the first chassis paint.
         /// </param>
+        /// <param name="megaCatalogKey">
+        /// 0 for a regular hull; MEGA catalog index + 1 so chips rebuild when the MEGA row changes.
+        /// </param>
         /// <returns>Stable fingerprint for the current loadout matrix.</returns>
         static int ComputeStatsSnapshotKey(
             in ShipState ship,
             in ShipAttributeUpgradeState attrs,
-            float componentSize)
+            float componentSize,
+            int megaCatalogKey)
         {
             // [STANDARD] Unchecked hash combine — collisions are rare; worst case is one extra rebuild.
             unchecked
@@ -1077,10 +1220,14 @@ namespace TitanOrbit.UI
                 h = h * 31 + attrs.PeopleCapacity;
                 // Centi-units — ignores sub-0.01 noise, still catches MinMass → real hull size.
                 h = h * 31 + Mathf.RoundToInt(componentSize * 100f);
-                // [TITAN-ORBIT] Gems / people change mass tax → Move Speed and Turn chips must repaint.
-                h = h * 31 + Mathf.RoundToInt(ship.CurrentGems);
+                // People still in the identity key (rare). Gems are throttled in
+                // TryRefreshAbilityChipSnapshot — grind pulses used to rebuild all 10 TMP
+                // chips every 0.25s (Profiler ~9.6 ms hitch).
                 h = h * 31 + ship.CurrentPeople;
                 h = h * 31 + BulletBankHudCopy.SnapshotKey();
+                // MEGA catalog row — buying / swapping a MEGA must rebuild chips even when
+                // ship level and family stay at 7. 0 = regular hull.
+                h = h * 31 + megaCatalogKey;
                 return h;
             }
         }
@@ -1306,8 +1453,59 @@ namespace TitanOrbit.UI
                 OverdriveCapacityMult = odCap,
                 ComponentSize = hasComponentSize ? componentSize : 0f,
                 FirePowerAbilityLevel = attrs.FirePower,
+                Motor = new ShipMotorConfig { SkipMassTax = IsLocalShipMega() ? (byte)1 : (byte)0 },
             };
             BulletBankHudCopy.ApplyLoadout(ref live);
+
+            bool mega = IsLocalShipMega();
+            ushort megaIndex = 0;
+            if (mega)
+                TryGetLocalMegaCatalogIndex(out megaIndex);
+            else if (gotMobilityShared && mobilityShared.IsMega)
+            {
+                // Speedometer already latched MEGA this frame (entity lookup can miss during backlog).
+                mega = true;
+                megaIndex = mobilityShared.MegaCatalogIndex;
+            }
+
+            live.IsMega = mega;
+            if (mega && MegaShipStatsCalculator.TrySumForCatalogIndex(megaIndex, out ShipComponentAbilityStats megaStats))
+            {
+                // --- MEGA: catalog totals only ---
+                // [TITAN-ORBIT] Team+level+branch would resolve a regular L7 family chassis
+                // (same slot index as the MEGA planet slot) and Extra-Level it. MEGAs are
+                // static — no Extra Level, no +per-buy, gem cap stays 0.
+                live.MegaCatalogIndex = megaIndex;
+                live.EffectiveStats = megaStats;
+                live.ChassisMaxSpeed = megaStats.moveSpeed;
+                live.ChassisAccel = megaStats.accelerationCap > 0.1f
+                    ? megaStats.accelerationCap
+                    : megaStats.moveSpeed;
+                live.ChassisTurnDeg = ShipPropulsionAggregation.ConvertTurnDefinitionToDegreesPerSecond(
+                    megaStats.turnSpeed);
+                live.MoveStepPreview = 0f;
+                if (hasComponentSize)
+                {
+                    ShipMobilityResolution.TaxedMotorStats taxed = ShipMobilityResolution.ResolveLiveMotorStats(
+                        live.ChassisMaxSpeed,
+                        live.ChassisAccel,
+                        live.ChassisTurnDeg,
+                        ship.CurrentGems,
+                        ship.CurrentPeople,
+                        componentSize,
+                        skipMassTax: true);
+                    live.TotalMass = taxed.TotalMass;
+                    live.CruiseMaxSpeed = taxed.MaxSpeed;
+                    live.TaxedAccel = taxed.EngineThrust;
+                    live.TaxedTurnDeg = taxed.RotationSpeed;
+                    live.LiveMaxSpeed = taxed.MaxSpeed;
+                }
+
+                if (ramAst <= 0.0001f && megaStats.rammingPower > 0.01f)
+                    live.RamRating = megaStats.rammingPower;
+
+                return true;
+            }
 
             if (ShipStatApplyLogic.TryResolveChassisId(
                     ship.Team,
@@ -1329,12 +1527,21 @@ namespace TitanOrbit.UI
                         ship.ShipLevel,
                         in abilityCounts);
                     effective = ShipComponentExtraLevelMath.ApplyMobilityPenalties(effective, ship.ShipLevel);
-                    if (ShipStatApplyLogic.TryResolveFamilyForChassisId(chassisId, out ShipFamilyDefinition family)
+                    ShipFamilyDefinition family = null;
+                    if (ShipStatApplyLogic.TryResolveFamilyForChassisId(chassisId, out family)
                         && family != null)
                     {
                         effective = family.ApplyStatFallbacks(effective);
                         effective = family.ApplySpecialBonuses(effective);
                     }
+
+                    // --- All-gun DPS for the Fire Power chip ---
+                    float allGun = ShipWeaponDpsMath.SumAllGunDps(
+                        parts.Ids, parts.Stats, ship.ShipLevel, in abilityCounts);
+                    float allGunNext = ShipWeaponDpsMath.SumAllGunDpsAtNextFirePower(
+                        parts.Ids, parts.Stats, ship.ShipLevel, in abilityCounts);
+                    live.AllGunDps = ShipWeaponDpsMath.ApplyFamilyOffenseMuls(allGun, family);
+                    live.AllGunDpsNextStep = ShipWeaponDpsMath.ApplyFamilyOffenseMuls(allGunNext, family);
                 }
                 else if (ShipStatApplyLogic.TryGetBaseStatsForChassis(
                              chassisId, ship.ShipLevel, out ShipComponentAbilityStats levelOneSummed))
@@ -1367,13 +1574,14 @@ namespace TitanOrbit.UI
                 // so IsChipLiveContextReady keeps retrying (MS would look like chassis / no drag).
                 if (hasComponentSize)
                 {
-                    ShipMobilityResolution.TaxedMotorStats taxed = ShipMobilityResolution.ApplyMassTaxFromCargo(
+                    ShipMobilityResolution.TaxedMotorStats taxed = ShipMobilityResolution.ResolveLiveMotorStats(
                         live.ChassisMaxSpeed,
                         live.ChassisAccel,
                         live.ChassisTurnDeg,
                         ship.CurrentGems,
                         ship.CurrentPeople,
-                        componentSize);
+                        componentSize,
+                        skipMassTax: IsLocalShipMega());
                     live.TotalMass = taxed.TotalMass;
                     live.CruiseMaxSpeed = taxed.MaxSpeed;
                     live.TaxedAccel = taxed.EngineThrust;
@@ -1444,7 +1652,7 @@ namespace TitanOrbit.UI
             _ = abilityLv;
             var sb = new System.Text.StringBuilder(64);
             AppendCurrentAndPerBuy(sb, value, nextStep, unit, sizePercent: 100);
-            // Fire Power / Bullet Speed glance: live bullet type under the number.
+            // Fire Power chip is DPS (/s). Bullet type sits under the number.
             if (index == 0 || index == 1)
             {
                 string typeLine = BulletBankHudCopy.FormatChipTypeLine(in live);
@@ -1456,7 +1664,7 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// Appends <c>12.5/hit  +1.25</c> — the two glance stats on each top chip (not the bottom button).
+        /// Appends <c>12.5 DPS/s  +1.25</c> — the two glance stats on each top chip (not the bottom button).
         /// </summary>
         /// <param name="sb">TMP rich-text builder.</param>
         /// <param name="value">Current effective value.</param>
@@ -1680,10 +1888,48 @@ namespace TitanOrbit.UI
             }
         }
 
+        /// <summary>
+        /// Shows or hides the vertical Extra Level tick column on every bottom button.
+        /// MEGA hulls hide the squares (they cannot buy Extra Levels). Regular hulls restore them
+        /// and give the title its reserved right inset so text does not sit under the ticks.
+        /// </summary>
+        /// <param name="mega">True when the local ship is a MEGA this frame.</param>
+        void ApplyMegaButtonChrome(bool mega)
+        {
+            // --- Tick column + title inset ---
+            // [TITAN-ORBIT] The ticks are the 7×7 squares that show how many Extra Levels
+            // remain. Painting them as empty or MAXED on a MEGA looked like upgrades were
+            // still on offer. Buttons stay in the strip; only the squares go away.
+            for (int i = 0; i < 10; i++)
+            {
+                if (tickContainers[i] != null && tickContainers[i].activeSelf == mega)
+                    tickContainers[i].SetActive(!mega);
+
+                if (titleTexts[i] == null)
+                    continue;
+
+                // When ticks are gone, reclaim the right gutter so the ability name can center.
+                RectTransform titleRect = titleTexts[i].rectTransform;
+                float rightInset = mega ? E(4f) : E(tickColumnRightInset);
+                titleRect.offsetMax = new Vector2(-rightInset, -E(titleAreaTopInset));
+            }
+        }
+
+        /// <summary>
+        /// Rebuilds or retints the Extra Level squares on one bottom button.
+        /// Skipped while the column is hidden (MEGA). Called from Update for regular hulls only.
+        /// </summary>
+        /// <param name="index">Ability slot 0–9 (Fire Power … Troop Cap).</param>
+        /// <param name="currentLevel">Purchased Extra Levels for this ability.</param>
+        /// <param name="maxLevel">Ship-level cap (how many squares to show).</param>
+        /// <param name="slotState">Ready / Locked / Maxed — drives lit vs empty colours.</param>
         private void UpdateTickMarks(int index, int currentLevel, int maxLevel, UpgradeSlotVisualState slotState)
         {
             // --- Per-slot tick paint ---
             if (tickContainers == null || index < 0 || index >= tickContainers.Length || tickContainers[index] == null) return;
+            // MEGA chrome hides this column — do not spawn squares behind SetActive(false).
+            if (!tickContainers[index].activeSelf)
+                return;
             maxLevel = Mathf.Clamp(maxLevel, 0, 7);
             Transform container = tickContainers[index].transform;
             int childCount = container.childCount;
@@ -1710,6 +1956,10 @@ namespace TitanOrbit.UI
             ApplyTickStateColors(index, slotState, buttonCategoryColors[index]);
         }
 
+        /// <summary>
+        /// Client HUD tick: show/hide the strip, then paint each slot's cost and Ready/Locked/Maxed
+        /// (or Unavailable on a MEGA). Keyboard 1–0 is handled in LateUpdate via TryUpgrade.
+        /// </summary>
         private void Update()
         {
             // --- Per-frame refresh ---
@@ -1746,21 +1996,38 @@ namespace TitanOrbit.UI
             bool maxChanged = maxUpgrades != _lastMaxUpgrades;
             bool costChanged = cost != _lastCost;
 
+            // MEGA — Extra Levels are not sold. Keep the ten buttons, hide the tick squares.
+            bool mega = IsLocalShipMega();
+            if (_lastMegaHud != mega)
+            {
+                _lastMegaHud = mega;
+                _slotVisualsSeeded = false;
+                _statsSnapshotKey = int.MinValue;
+                ApplyMegaButtonChrome(mega);
+            }
+
             for (int i = 0; i < 10; i++)
             {
                 int current = ShipAttributeUpgradeLogic.GetAttributeLevel(attrs, i);
 
-                // --- Slot state: Ready (buyable) / Locked (broke) / Maxed (cap) ---
-                UpgradeSlotVisualState slotState = ResolveUpgradeSlotState(
-                    current, maxUpgrades, ship.CurrentGems, cost);
-                UpdateTickMarks(i, current, maxUpgrades, slotState);
+                // --- Slot state: Ready (buyable) / Locked (broke) / Maxed (cap) / Unavailable (MEGA) ---
+                UpgradeSlotVisualState slotState = mega
+                    ? UpgradeSlotVisualState.Unavailable
+                    : ResolveUpgradeSlotState(current, maxUpgrades, ship.CurrentGems, cost);
+                if (!mega)
+                    UpdateTickMarks(i, current, maxUpgrades, slotState);
 
                 if (costLabels[i] == null)
                     continue;
 
                 string costText;
                 bool showGemIcon;
-                if (slotState == UpgradeSlotVisualState.Maxed)
+                if (mega)
+                {
+                    costText = "—";
+                    showGemIcon = false;
+                }
+                else if (slotState == UpgradeSlotVisualState.Maxed)
                 {
                     // At cap — hide the gem; "MAX" is enough.
                     costText = "MAX";
@@ -1815,12 +2082,23 @@ namespace TitanOrbit.UI
             if (!TryResolveChipLiveContext(out _, out var live, out _) || !IsChipLiveContextReady(in live))
                 return;
 
-            // Key includes ComponentSize + CurrentGems/People so cargo mass tax repaints MS/TS.
-            int snapshotKey = ComputeStatsSnapshotKey(in ship, in attrs, live.ComponentSize);
-            if (snapshotKey == _statsSnapshotKey)
+            // Key includes ComponentSize + people so cargo mass tax repaints MS/TS.
+            // Gems are bucketed + throttled — 4 Hz grind expulsion must not ForceMeshUpdate
+            // every pulse (Profiler hitch ~9.6 ms on ShipAttributeUpgradeHUD.LateUpdate).
+            int snapshotKey = ComputeStatsSnapshotKey(
+                in ship, in attrs, live.ComponentSize, live.IsMega ? live.MegaCatalogIndex + 1 : 0);
+            int gemBucket = Mathf.RoundToInt(ship.CurrentGems);
+            bool identityChanged = snapshotKey != _statsSnapshotKey;
+            bool gemsChanged = gemBucket != _lastGemBucket;
+            if (!identityChanged && !gemsChanged)
+                return;
+            if (!identityChanged &&
+                Time.unscaledTime - _lastChipPaintTime < CargoChipRepaintMinInterval)
                 return;
 
             _statsSnapshotKey = snapshotKey;
+            _lastGemBucket = gemBucket;
+            _lastChipPaintTime = Time.unscaledTime;
             PaintChipValues(in live, in attrs);
             if (_activeAbilityTipIndex.HasValue)
                 RefreshAbilityTipContent();
@@ -1919,7 +2197,7 @@ namespace TitanOrbit.UI
         private void TryUpgrade(int index)
         {
             // --- Attempt resolution ---
-            if (!CanShowUpgradeBar())
+            if (!CanShowUpgradeBar() || IsLocalShipMega())
                 return;
             if (index < 0 || index > 9)
                 return;

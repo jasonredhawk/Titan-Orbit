@@ -27,12 +27,14 @@ namespace TitanOrbit.ECS
         /// <param name="team">New owner.</param>
         /// <param name="population">Population after the flip.</param>
         /// <param name="planetLevel">Level at flip time.</param>
+        /// <param name="topContributorNetworkId">Siege top troop contributor (0 = none).</param>
         public static void Send(
             ref EntityCommandBuffer ecb,
             int planetId,
             TeamId team,
             int population,
-            int planetLevel)
+            int planetLevel,
+            int topContributorNetworkId = 0)
         {
             if (planetId == 0 || team == TeamId.None)
                 return;
@@ -40,6 +42,7 @@ namespace TitanOrbit.ECS
             byte teamByte = (byte)team;
             int level = planetLevel < 1 ? 1 : planetLevel;
             int pop = population < 0 ? 0 : population;
+            int contributor = topContributorNetworkId < 0 ? 0 : topContributorNetworkId;
 
             // --- Host in-process (Editor / listen-server) ---
             // Apply before the remote RPC round-trip so local lines/minimap update this frame.
@@ -50,7 +53,8 @@ namespace TitanOrbit.ECS
                     planetId,
                     team,
                     pop,
-                    level);
+                    level,
+                    contributor);
             }
 
             // --- All remote clients (+ host client connection) ---
@@ -61,6 +65,7 @@ namespace TitanOrbit.ECS
                 Team = teamByte,
                 Population = pop,
                 PlanetLevel = level,
+                TopContributorNetworkId = contributor,
             });
             ecb.AddComponent(rpcEntity, new SendRpcCommandRequest { TargetConnection = Entity.Null });
         }
@@ -74,7 +79,8 @@ namespace TitanOrbit.ECS
             int planetId,
             TeamId team,
             int population,
-            int planetLevel)
+            int planetLevel,
+            int topContributorNetworkId = 0)
         {
             // --- Graph override (works even if the entity is not Instantiated yet) ---
             PlanetConnectionGraphCache.SetClientOwnershipOverride(planetId, team, population, planetLevel);
@@ -101,6 +107,7 @@ namespace TitanOrbit.ECS
                 state.Population = population < 0 ? 0 : population;
                 if (planetLevel > 0)
                     state.PlanetLevel = planetLevel;
+                state.TopContributorNetworkId = topContributorNetworkId < 0 ? 0 : topContributorNetworkId;
                 em.SetComponentData(entity, state);
                 break;
             }
@@ -145,7 +152,8 @@ namespace TitanOrbit.ECS
                         cmd.PlanetId,
                         (TeamId)cmd.Team,
                         cmd.Population,
-                        cmd.PlanetLevel);
+                        cmd.PlanetLevel,
+                        cmd.TopContributorNetworkId);
                 }
 
                 ecb.DestroyEntity(rpcEntity);

@@ -36,6 +36,11 @@ namespace TitanOrbit.ECS.Authoring
                 // replicate GhostFields. Length is managed at runtime by PlanetaryDefenseSlotSyncSystem.
                 AddBuffer<PlanetaryDefenseSlotElement>(entity);
 
+                // --- MEGA ship L7 slots (ghosted buffer) ---
+                // [NETCODE] Must bake — runtime AddBuffer does not replicate GhostFields.
+                // Length is always 3 (L7 tree branches; any MEGA hull per slot).
+                AddBuffer<PlanetMegaShipSlotElement>(entity);
+
                 // --- Client hybrid visual queue ---
                 // [NETCODE] Pending is GhostPrefabType.Client only — see MapBodyHybridVisualPending.
                 // [TITAN-ORBIT] Avoids join-time ToEntityArray mark scans (Windows Crash!!!).

@@ -69,21 +69,16 @@ namespace TitanOrbit.Game
             if (cyclePressed)
                 ShipPendingInput.LatchCycleBullet();
 
-            bool rocketPressed = _input.RocketPressed
+            // --- ALT activates the focused loadout pack ---
+            // [TITAN-ORBIT] One key for the whole left-side list. UP/DOWN (and clicks)
+            // move the caret across rocket levels and mine packs. When the caret sits on
+            // MINES, ALT places that mine. Otherwise ALT fires the selected rocket.
+            // E does not place mines — it used to, which made the HUD show two hotkeys.
+            bool activatePressed = _input.RocketPressed
                 && !MoonOrbitClientState.IsOrbitMenuVisible
                 && !PlanetaryDefenseTurretClientState.IsControlling;
-            bool minePressed = _input.MinePressed
-                && !MoonOrbitClientState.IsOrbitMenuVisible
-                && !PlanetaryDefenseTurretClientState.IsControlling;
-
-            // --- Selected pack owns ALT ---
-            // [TITAN-ORBIT] HUD caret on MINES: ALT places that mine pack. Otherwise ALT
-            // still fires rockets. E always places a mine when a pack (or infinite debug) exists.
-            if (MineSlotSelection.HudFocused && rocketPressed)
-            {
-                minePressed = true;
-                rocketPressed = false;
-            }
+            bool rocketPressed = activatePressed && !MineSlotSelection.HudFocused;
+            bool minePressed = activatePressed && MineSlotSelection.HudFocused;
 
             if (rocketPressed)
                 ShipPendingInput.LatchFireRocket();
@@ -109,6 +104,7 @@ namespace TitanOrbit.Game
                 _cachedCamera = UnityEngine.Camera.main;
             var cam = _cachedCamera;
             float2 aimDir = float2.zero;
+            float aimDistance = 0f;
             // [HYBRID] Prefer presentation pose (already synced) before ECS ship queries.
             // [TITAN-ORBIT] TryGet… — MPPM Player 2 often has NaN mouse until that Game view is focused;
             // leaving aimDir at zero keeps current facing (ShipPhysicsDriveLogic.AimWorldPoint).
@@ -128,7 +124,10 @@ namespace TitanOrbit.Game
                 toAim.y = 0f;
                 if (toAim.sqrMagnitude > 0.001f)
                 {
-                    Vector3 dir = toAim.normalized;
+                    // Unit direction for hull yaw; distance so MEGA barrels can
+                    // converge on the cursor instead of firing parallel.
+                    aimDistance = toAim.magnitude;
+                    Vector3 dir = toAim / aimDistance;
                     aimDir = new float2(dir.x, dir.z);
                 }
             }
@@ -155,9 +154,10 @@ namespace TitanOrbit.Game
             if (!turretControl && (minePressedThisFrame || ShipPendingInput.PlaceMineLatched))
                 placeMine.Set();
 
-            // [TITAN-ORBIT] OVERDRIVE intent = Shift alone (not AND thrust).
-            // Latch re-engages at ≥25% energy while Shift stays held; burst applies when thrusting.
-            // Clear while stowed so prediction does not fight turret possession.
+            // [TITAN-ORBIT] Shift alone (not AND thrust). Regular ships: OVERDRIVE
+            // latch + burst while thrusting. MEGAs: same bit is heading-lock / unoccupied
+            // auto-gun mouse-aim (no speed burst). Clear while stowed so prediction
+            // does not fight turret possession.
             bool overdrive = !turretControl && _input.OverdriveHeld;
 
             return new ShipInput
@@ -174,6 +174,7 @@ namespace TitanOrbit.Game
                 SelectedRocketSlot = RocketSlotSelection.SelectedIndex,
                 PlaceMine = placeMine,
                 SelectedMineSlot = MineSlotSelection.SelectedIndex,
+                AimDistance = aimDistance,
             };
         }
 
@@ -183,6 +184,9 @@ namespace TitanOrbit.Game
         /// </summary>
         void TryShowBulletCycleName()
         {
+            if (EcsGameBridge.TryGetLocalMegaShipState(out MegaShipState mega) && mega.IsMega)
+                return;
+
             // --- Resolve bank ---
             if (_bank == null)
                 _bank = BulletVfxBank.LoadDefault();

@@ -1,8 +1,6 @@
 using TitanOrbit.Data;
 using TitanOrbit.ECS;
 using Unity.Entities;
-using Unity.Mathematics;
-using Unity.Transforms;
 using UnityEngine;
 
 namespace TitanOrbit.Game
@@ -10,12 +8,12 @@ namespace TitanOrbit.Game
     /// <summary>
     /// Client-side roll banking on ship GameObject proxies (ported from legacy Starship ApplyVisualBanking).
     /// Root transform yaw comes from ECS presentation sync; roll is applied on a BankPivot child so
-    /// EcsWorldVisualizer does not overwrite it. Reads ShipKinematics for idle detection and yaw rate
-    /// from proxy rotation. Suppressed during moon dock. Cosmetic only — no sim effect.
+    /// EcsWorldVisualizer does not overwrite it. Bank follows yaw rate only — no forward thrust
+    /// required. Suppressed during moon dock. Cosmetic only — no sim effect.
     /// <para>
-    /// Tune Max Bank / Sensitivity / Smoothing on <see cref="ShipBankVisualSettings"/>
-    /// (family field or Resources default). Bound assets are sampled each frame so
-    /// Inspector tweaks apply without respawning.
+    /// Tune Max Bank / Sensitivity / Smoothing / Reference Turn on <see cref="ShipBankVisualSettings"/>
+    /// (family field, <see cref="MegaShipCatalog.bankVisualSettings"/>, or Resources default).
+    /// Bound assets are sampled each frame so Inspector tweaks apply without respawning.
     /// </para>
     /// </summary>
     [DefaultExecutionOrder(85)]
@@ -23,8 +21,8 @@ namespace TitanOrbit.Game
     {
         const string BankPivotName = "BankPivot";
         const string PrefabContainerName = "Prefab";
-        const float IdleVisualLinearSpeedThreshold = 0.12f;
-        const float IdleBankAngularVelDeadbandDegPerSec = 18f;
+        /// <summary>Ignore interpolation noise at rest. Intentional yaw (including slow MEGA turns) is above this.</summary>
+        const float RestBankAngularVelDeadbandDegPerSec = 2f;
 
         /// <summary>
         /// Optional per-proxy override for peak roll (°). ≤ 0 means use
@@ -155,14 +153,19 @@ namespace TitanOrbit.Game
                     return;
             }
 
-            // [TITAN-ORBIT] Moon dock cinematic owns transform — skip banking.
+            // [TITAN-ORBIT] Moon dock / takeoff own presentation — hold bank at 0 until
+            // the hull leaves the moon orbit zone (TakeoffPlanetId clears).
             if (em.HasComponent<ShipMoonDockState>(_shipEntity))
             {
                 var moonDock = em.GetComponentData<ShipMoonDockState>(_shipEntity);
-                if (moonDock.MoonPlanetId != 0 && moonDock.LandingProgress > 0.001f)
+                if (moonDock.IsTakingOff ||
+                    (moonDock.MoonPlanetId != 0 && moonDock.LandingProgress > 0.001f))
                 {
                     _bankPivot.localRotation = Quaternion.identity;
                     _currentBankAngle = 0f;
+                    _cachedBankAngularVelDegPerSec = 0f;
+                    _prevBankYawDeg = GetPlanarYawDegrees(transform.rotation);
+                    _bankYawInitialized = true;
                     return;
                 }
             }
@@ -198,6 +201,15 @@ namespace TitanOrbit.Game
             _settings != null
                 ? _settings.ClampedBankSensitivity
                 : ShipBankVisualSettingsCache.BankSensitivity;
+
+        /// <summary>
+        /// Yaw rate (°/s) treated as full turn. MEGA assets author a low reference so
+        /// slow hulls still reach peak roll.
+        /// </summary>
+        float ResolveReferenceTurn() =>
+            _settings != null
+                ? _settings.ResolveReferenceTurnDegreesPerSecond()
+                : ShipBankVisualSettingsCache.ReferenceTurnDegreesPerSecond;
 
         /// <summary>Smooths yaw rate from proxy root rotation (presentation pose).</summary>
         void SampleBankAngularVelocity(float dt, float smoothing)
@@ -236,25 +248,15 @@ namespace TitanOrbit.Game
 
             float signedAngularVelDegPerSec = _cachedBankAngularVelDegPerSec;
 
-            Vector3 velFlat = Vector3.zero;
-            var world = EcsGameBridge.GetVisualizationWorld();
-            if (world != null && world.IsCreated && world.EntityManager.HasComponent<ShipKinematics>(_shipEntity))
-            {
-                float3 vel = world.EntityManager.GetComponentData<ShipKinematics>(_shipEntity).Velocity;
-                velFlat = new Vector3(vel.x, 0f, vel.z);
-            }
-
-            // [TITAN-ORBIT] Zero bank when nearly stationary to avoid jitter at rest.
-            if (velFlat.sqrMagnitude < IdleVisualLinearSpeedThreshold * IdleVisualLinearSpeedThreshold
-                && Mathf.Abs(signedAngularVelDegPerSec) < IdleBankAngularVelDeadbandDegPerSec)
+            // [TITAN-ORBIT] Kill rest-pose interpolation noise only — rotating in place still banks.
+            if (Mathf.Abs(signedAngularVelDegPerSec) < RestBankAngularVelDeadbandDegPerSec)
                 signedAngularVelDegPerSec = 0f;
 
-            // --- Target bank from turn rate + family / shared asset sensitivity ---
-            float globalMaxTurnDegPerSec = ShipPropulsionAggregation.GetGlobalMaxTurnSpeedDegreesPerSecond();
+            // --- Target bank from turn rate + bound asset (MEGA catalog or family) ---
             float targetBankAngle = ShipPropulsionAggregation.ComputeVisualBankTargetAngle(
                 signedAngularVelDegPerSec,
                 ResolveMaxBankAngle(),
-                globalMaxTurnDegPerSec,
+                ResolveReferenceTurn(),
                 ResolveSensitivity());
 
             float bankT = 1f - Mathf.Exp(-smoothing * dt);

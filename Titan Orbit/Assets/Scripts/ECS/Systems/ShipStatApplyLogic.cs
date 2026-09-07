@@ -71,7 +71,7 @@ namespace TitanOrbit.ECS
         /// </summary>
         static PlanetShipFamilyConfig LoadConfig()
         {
-            return Resources.Load<PlanetShipFamilyConfig>("PlanetShipFamilyConfig");
+            return PlanetShipFamilyConfig.LoadDefault();
         }
 
         /// <summary>Clears cached config — call after hot-reload or editor asset changes.</summary>
@@ -151,6 +151,15 @@ namespace TitanOrbit.ECS
             if (em.Exists(shipEntity) && em.HasComponent<ShipState>(shipEntity))
                 familyIndex = em.GetComponentData<ShipState>(shipEntity).ShipFamilyConfigIndex;
 
+            if (em.Exists(shipEntity)
+                && em.HasComponent<MegaShipState>(shipEntity)
+                && em.GetComponentData<MegaShipState>(shipEntity).IsMega)
+            {
+                chassisId = MegaShipCatalog.FormatChassisId(
+                    em.GetComponentData<MegaShipState>(shipEntity).CatalogIndex);
+                return true;
+            }
+
             return TryResolveChassisId(team, shipLevel, branchIndex, out chassisId, allowFallback, familyIndex);
         }
 
@@ -195,6 +204,20 @@ namespace TitanOrbit.ECS
         {
             baseStats = default;
             _ = shipLevel;
+            if (MegaShipCatalog.IsMegaChassisId(chassisId))
+            {
+                var megaCatalog = MegaShipCatalog.Load();
+                if (megaCatalog != null
+                    && MegaShipCatalog.TryParseCatalogIndex(chassisId, out ushort megaIndex)
+                    && megaCatalog.TryGetEntry(megaIndex, out MegaShipCatalogEntry megaEntry)
+                    && megaEntry != null)
+                {
+                    return MegaShipStatsCalculator.SumFromEntry(megaEntry, megaCatalog, out baseStats);
+                }
+
+                return false;
+            }
+
             var config = Config;
             if (config == null || string.IsNullOrEmpty(chassisId))
                 return false;
@@ -278,6 +301,20 @@ namespace TitanOrbit.ECS
             if (em.Exists(shipEntity) && em.HasComponent<ShipState>(shipEntity))
                 familyIndex = em.GetComponentData<ShipState>(shipEntity).ShipFamilyConfigIndex;
 
+            // --- MEGA hulls use a frozen stat table (no Extra Level / attributes) ---
+            if (em.Exists(shipEntity)
+                && em.HasComponent<MegaShipState>(shipEntity)
+                && em.GetComponentData<MegaShipState>(shipEntity).IsMega)
+            {
+                MegaShipStatApplyLogic.ApplyToShip(
+                    em,
+                    shipEntity,
+                    em.GetComponentData<MegaShipState>(shipEntity),
+                    familyIndex,
+                    writeGhostedShipState);
+                return;
+            }
+
             if (!TryResolveChassisId(team, shipLevel, branchIndex, out string chassisId, allowFallback: true, familyIndex))
                 return;
 
@@ -286,7 +323,7 @@ namespace TitanOrbit.ECS
             // Weapons: Base + PerExtra × ((shipLevel−1) + ability) per barrel (no N stack).
             if (!TryGetChassisPartSum(em, shipEntity, chassisId, out ShipFamilyStatsCalculator.SumResult partSum))
             {
-                // Fallback: legacy flat sum when prefab parts are unavailable.
+                // Fallback: baked breakdown / family defaults when prefab parts are unavailable.
                 if (!TryGetBaseStatsForChassis(chassisId, shipLevel, out ShipComponentAbilityStats summedFallback))
                     return;
                 partSum = new ShipFamilyStatsCalculator.SumResult
@@ -295,6 +332,13 @@ namespace TitanOrbit.ECS
                     MatchedComponentIds = new System.Collections.Generic.List<string>(),
                     PerComponentStats = new System.Collections.Generic.List<ShipComponentAbilityStats>(),
                 };
+                Debug.LogWarning(
+                    "[ShipStatApply] chassis=" + chassisId +
+                    " used fallback stats (0 prefab parts). move=" +
+                    summedFallback.moveSpeed.ToString("F1") +
+                    " hp=" + summedFallback.healthCap.ToString("F1") +
+                    " gems=" + summedFallback.maxGems.ToString("F1") +
+                    " — expected familyId_* children on the chassis prefab.");
             }
 
             ShipComponentAbilityStats summed = partSum.TotalStats;
@@ -403,7 +447,8 @@ namespace TitanOrbit.ECS
                 weapon.FireRate = fireRate;
                 weapon.BulletSpeed = bulletSpeed;
                 weapon.BulletDamage = firePower;
-                weapon.EnergyCostPerShot = firePower;
+                weapon.EnergyCostPerShot = firePower
+                    * CardEffectQuery.GetMul(em, shipEntity, CardEffectKind.WeaponEnergyCostMul);
                 // [TITAN-ORBIT] Bullet travel range from family stats (ship-level scaled).
                 // Fallback to DefaultBulletMaxDistance when authored range is zero/missing.
                 // Lifetime is derived so MaxDistance wins before the timer for normal bullet speeds.
@@ -483,8 +528,13 @@ namespace TitanOrbit.ECS
                     : moveVal);
 
                 // --- ComponentSize (box × attribute grow × tier → HullMassReference) ---
-                float liveComponentSize = TryGetLiveHullComponentMass(
+                // Dedicated: never Instantiate the chassis (80–200ms, stripped meshes).
+                // Walk the prefab-asset transforms instead.
+                float liveComponentSize = 0f;
+#if !UNITY_SERVER || UNITY_EDITOR
+                liveComponentSize = TryGetLiveHullComponentMass(
                     chassisId, hasAttrs ? attrs : default, shipLevel, applyAttributeScale: true);
+#endif
                 if (liveComponentSize <= 0.0001f)
                     liveComponentSize = TryGetChassisComponentMass(chassisId);
 
@@ -527,6 +577,7 @@ namespace TitanOrbit.ECS
                 motor.OverdriveThrustMultiplier = odThrust;
                 // Absolute rate already baked into ThrustEnergyDrainPerSecond — mul stays 1.
                 motor.OverdriveEnergyDrainMultiplier = 1f;
+                motor.SkipMassTax = 0;
 
                 em.SetComponentData(shipEntity, motor);
             }
@@ -556,7 +607,7 @@ namespace TitanOrbit.ECS
             // --- Whole-hull tier size (+10% per ship level above 1) ---
             // [TITAN-ORBIT] Uniform LocalTransform.Scale — not per-component mesh grow.
             // Visual proxies use Scale × ShipPresentationScale; muzzles / hit radii read Scale too.
-            // Fire power is unchanged by this (family stats + authored weapon scale + attrs).
+            // Fire power is unchanged by this (family catalog stats + attrs).
             if (em.HasComponent<LocalTransform>(shipEntity))
             {
                 var lt = em.GetComponentData<LocalTransform>(shipEntity);
@@ -703,6 +754,8 @@ namespace TitanOrbit.ECS
 
                 CardData card = FindCardInFamily(family, cardId);
                 if (card == null)
+                    card = FindCardAnywhere(cardId);
+                if (card == null)
                     continue;
 
                 // [TITAN-ORBIT] CardData flat adds + combat multipliers (pre-ECS card cache parity).
@@ -721,7 +774,20 @@ namespace TitanOrbit.ECS
                     baseline.fireRate *= card.fireRateMultiplier;
                 if (card.bulletSpeedMultiplier > 0.01f && !Mathf.Approximately(card.bulletSpeedMultiplier, 1f))
                     baseline.bulletSpeed *= card.bulletSpeedMultiplier;
+
+                // Family-style overlay (only ≠1 fields change the hull). Stacks after family specialBonuses.
+                if (!card.familyBonusOverlay.IsIdentity)
+                    baseline = card.familyBonusOverlay.Apply(baseline);
             }
+
+            // Named CardEffect rows that map onto chassis stats (range, ram, tractor, overdrive).
+            baseline.bulletRange *= CardEffectQuery.GetMul(em, shipEntity, CardEffectKind.BulletRangeMul);
+            baseline.fireRate *= CardEffectQuery.GetMul(em, shipEntity, CardEffectKind.FireRateMul);
+            baseline.rammingPower *= CardEffectQuery.GetMul(em, shipEntity, CardEffectKind.RammingMul);
+            baseline.tractorBeamDistance *= CardEffectQuery.GetMul(em, shipEntity, CardEffectKind.TractorRangeMul);
+            baseline.tractorBeamPower *= CardEffectQuery.GetMul(em, shipEntity, CardEffectKind.TractorPowerMul);
+            baseline.extraSpeedPercent *= CardEffectQuery.GetMul(em, shipEntity, CardEffectKind.OverdriveSpeedMul);
+            baseline.extraSpeedEnergyDrain *= CardEffectQuery.GetMul(em, shipEntity, CardEffectKind.OverdriveDrainMul);
         }
 
         /// <summary>Looks up a CardData by stable id inside one ship family's upgrade deck.</summary>

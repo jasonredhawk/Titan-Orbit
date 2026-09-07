@@ -6,7 +6,7 @@ namespace TitanOrbit.Simulation
     /// <summary>
     /// Planet orbit ring geometry for ship passive orbit, gem-moon placement, and decorative level bands.
     /// Ring membership and <see cref="BuildOrbitMotorParams"/> use toroidal distance/offset so
-    /// wraparound seams stay correct while ships fly unbounded (see titan-orbit-toroidal-map rule).
+    /// wraparound seams stay correct after movers wrap (see titan-orbit-toroidal-map rule).
     /// <para>
     /// [TITAN-ORBIT] <see cref="GetOrbitRingSpeed"/> is the single tangential speed for a planet's
     /// ring — ships (passive motor) and gem moons (analytic offset) both use it so they co-orbit.
@@ -103,6 +103,22 @@ namespace TitanOrbit.Simulation
         public static bool IsInOrbitRing(float dist, float innerWorld, float outerWorld)
         {
             return dist >= innerWorld && dist <= outerWorld;
+        }
+
+        /// <summary>
+        /// Planet collision keep-out for a ship center. Natural hull+planet spheres must never
+        /// sit outside the orbit-ring inner radius — MEGA covering spheres are larger than the
+        /// surface→ring gap on small neutrals (size 9), which blocked ring entry.
+        /// </summary>
+        /// <param name="shipRadius">Ship collision sphere (world).</param>
+        /// <param name="planetRadius">Planet body radius (world).</param>
+        /// <param name="planetScale">Planet <c>LocalTransform.Scale</c> (orbit ring uses this).</param>
+        /// <returns>Distance the ship center must stay from the planet center.</returns>
+        public static float GetPlanetCollisionKeepOut(float shipRadius, float planetRadius, float planetScale)
+        {
+            float natural = math.max(0.01f, shipRadius + planetRadius);
+            GetRingRadiiWorld(math.max(0.25f, planetScale), 0, out float innerWorld, out _, out _);
+            return math.min(natural, innerWorld);
         }
 
         /// <summary>
@@ -259,7 +275,7 @@ namespace TitanOrbit.Simulation
         /// Radial spring is stronger near the inner/outer lips so coasting ships stay in the zone;
         /// thrust still cancels this motor entirely (player can always leave).
         /// </summary>
-        /// <param name="shipPos">Ship world position (may be unbounded — do not Wrap).</param>
+        /// <param name="shipPos">Ship world position (canonical wrap; still use toroidal range).</param>
         /// <param name="planetPos">Planet logical world position.</param>
         /// <param name="planetSize">Planet uniform scale (world radius proxy).</param>
         /// <param name="planetLevel">Planet level (ring radii currently ignore level; kept for API stability).</param>
@@ -283,8 +299,7 @@ namespace TitanOrbit.Simulation
             alignRate = 0f;
 
             // --- Toroidal distance into the annulus ---
-            // [TITAN-ORBIT] Never use Euclidean distance here — ships fly unbounded; planets stay in
-            // canonical tiles; seams must use shortest path (see titan-orbit-toroidal-map rule).
+            // [TITAN-ORBIT] Never use Euclidean distance here — a planet on +X still owns a ship on −X.
             float dist = ToroidalMapEcs.ToroidalDistance(shipPos, planetPos, mapWidth, mapHeight);
             if (dist < 0.01f)
                 return;
@@ -330,6 +345,36 @@ namespace TitanOrbit.Simulation
             float massFactor = math.sqrt(math.max(0.5f, shipMass));
             float captureScale = math.lerp(1f, OrbitEdgeCaptureMultiplier, edgeT);
             alignRate = (OrbitCaptureResponsiveness * gravityFactor * captureScale) / massFactor;
+        }
+
+        /// <summary>
+        /// True when the hull has actually captured the ring — velocity is close to the
+        /// motor's desired orbit velocity, not merely coasting through the annulus.
+        /// Hysteresis stops the lock from flickering while the radial spring trims.
+        /// </summary>
+        /// <param name="useOrbit">Passive orbit motor is running this tick (in ring, no thrust).</param>
+        /// <param name="velocity">Current planar ship velocity after the orbit lerp.</param>
+        /// <param name="desiredVelocity">Target from <see cref="BuildOrbitMotorParams"/>.</param>
+        /// <param name="wasLocked">Previous tick's lock (for hysteresis).</param>
+        public static bool EvaluatePositiveOrbitLock(
+            bool useOrbit,
+            float3 velocity,
+            float3 desiredVelocity,
+            bool wasLocked)
+        {
+            if (!useOrbit)
+                return false;
+
+            float desiredSpeed = math.length(desiredVelocity);
+            if (desiredSpeed < 0.05f)
+                return false;
+
+            float err = math.length(velocity - desiredVelocity);
+            // Acquire is tighter than release so a ship still dumping inbound speed
+            // does not light the ring, but a captured hull stays locked through small spring trims.
+            float acquire = math.max(0.12f, desiredSpeed * 0.18f);
+            float release = math.max(0.22f, desiredSpeed * 0.38f);
+            return wasLocked ? err <= release : err <= acquire;
         }
     }
 }

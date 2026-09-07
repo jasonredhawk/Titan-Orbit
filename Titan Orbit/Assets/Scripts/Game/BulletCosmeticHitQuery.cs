@@ -2,9 +2,11 @@ using System.Collections.Generic;
 using TitanOrbit.Core;
 using TitanOrbit.Data;
 using TitanOrbit.ECS;
+using TitanOrbit.Entities;
 using TitanOrbit.Generation;
 using TitanOrbit.NetCode;
 using TitanOrbit.Simulation;
+using Unity.Collections;
 using Unity.Entities;
 using Unity.Mathematics;
 using Unity.NetCode;
@@ -31,7 +33,7 @@ namespace TitanOrbit.Game
     /// </summary>
     public static class BulletCosmeticHitQuery
     {
-        /// <summary>One sphere (or moon orbiting a planet) the cosmetic tracer may collide with.</summary>
+        /// <summary>One sphere or MEGA hull box the cosmetic tracer may collide with.</summary>
         public struct Obstacle
         {
             /// <summary>
@@ -82,6 +84,23 @@ namespace TitanOrbit.Game
             /// Identifies which pad this sphere belongs to (kill skip uses the HitRpc HP store).
             /// </summary>
             public int SlotIndex;
+
+            /// <summary>
+            /// MEGA XZ half-extents. Zero means sphere-only (regular ships).
+            /// </summary>
+            public float2 BoxHalfExtents;
+
+            /// <summary>MEGA hull yaw around Y when <see cref="HasOrientedBox"/> is true.</summary>
+            public float BoxYawRadians;
+
+            /// <summary>
+            /// MEGA 3D AABB center height. Tracers/impacts lift to this so they do not
+            /// slide through the tall mesh on the Y=0 play plane.
+            /// </summary>
+            public float HullMidY;
+
+            /// <summary>True when this ship should use a yaw-aligned box instead of a covering sphere.</summary>
+            public bool HasOrientedBox => BoxHalfExtents.x > 0.01f && BoxHalfExtents.y > 0.01f;
         }
 
         /// <summary>Obstacle category — mirrors server <c>TryResolveBulletHit</c> order.</summary>
@@ -96,6 +115,10 @@ namespace TitanOrbit.Game
             /// <see cref="PlanetaryDefenseHitScan"/>.
             /// </summary>
             PlanetaryDefense = 4,
+            /// <summary>People-transport sphere from the client VFX driver (not a ghost).</summary>
+            Transport = 5,
+            /// <summary>Derived shield-drone sphere from owner ship equipment.</summary>
+            Drone = 6,
         }
 
         /// <summary>How often to rebuild the sphere list while tracers are flying (frames).</summary>
@@ -103,6 +126,37 @@ namespace TitanOrbit.Game
 
         static readonly List<Obstacle> Obstacles = new List<Obstacle>(512);
         static readonly List<Entity> ProxyScratch = new List<Entity>(512);
+        static readonly List<Entity> ShipProxyScratch = new List<Entity>(64);
+        static readonly List<DroneHitTarget> DroneScratch = new List<DroneHitTarget>(64);
+        static readonly List<int> DroneRearScratch = new List<int>(8);
+        static readonly List<int> DroneShieldScratch = new List<int>(8);
+        static readonly List<int> DroneEnemyIdsScratch = new List<int>(16);
+        static readonly Dictionary<int, float3> DroneEnemyPos = new Dictionary<int, float3>(16);
+        static readonly Dictionary<int, DroneSwarmPositioning.ShieldAssignment> DroneShieldAssign =
+            new Dictionary<int, DroneSwarmPositioning.ShieldAssignment>(8);
+
+        /// <summary>
+        /// Toroidal XZ grid of asteroids / ships / transports / drones / PD pads.
+        /// Planets and moons stay on a linear scan (few, and moons orbit).
+        /// </summary>
+        const float GridCellSize = 16f;
+        static readonly Dictionary<int, List<int>> s_Grid = new Dictionary<int, List<int>>(256);
+        static readonly List<int> s_GridScratch = new List<int>(64);
+        static readonly HashSet<int> s_GridSeen = new HashSet<int>();
+        static readonly List<int> s_TestIndices = new List<int>(128);
+        static readonly List<MegaShipCombatAim.MegaPartSweepShape> s_MegaPartScratch =
+            new List<MegaShipCombatAim.MegaPartSweepShape>(64);
+        static NativeList<CosmeticSweepBody> s_SweepBodies;
+        static NativeList<int> s_SweepAlways;
+        static NativeParallelMultiHashMap<int, int> s_SweepCells;
+        static NativeList<int> s_SweepNearby;
+        static NativeHashSet<int> s_SweepSeen;
+        static int s_SweepCellsX = 1;
+        static int s_SweepCellsZ = 1;
+        static bool s_GridHasEntries;
+        static int s_GridCellsX = 1;
+        static int s_GridCellsZ = 1;
+
         static int s_LastRefreshFrame = -1;
         // [TITAN-ORBIT] 0 = unset — never invent 1000×1000 for cosmetic hit tests.
         static float s_MapW;
@@ -150,6 +204,7 @@ namespace TitanOrbit.Game
 
             s_LastRefreshFrame = frame;
             Obstacles.Clear();
+            ShipProxyScratch.Clear();
 
             var world = EcsGameBridge.ClientWorld;
             if (world == null || !world.IsCreated)
@@ -239,12 +294,17 @@ namespace TitanOrbit.Game
                     if (em.HasComponent<AsteroidClientCulledTag>(entity))
                         continue;
 
+                    float asteroidRadius = visualizer.TryGetProxy(entity, out GameObject asteroidGo) &&
+                                           asteroidGo != null
+                        ? BulletImpactAttach.GetAsteroidVisualRadiusWorld(asteroidGo.transform)
+                        : BodyCollisionMath.GetAsteroidBodyRadiusWorld(lt.Scale)
+                          + BodyCollisionMath.AsteroidVisualDisplacementLocal * math.max(0.1f, lt.Scale);
                     Obstacles.Add(new Obstacle
                     {
                         Kind = ObstacleKind.Asteroid,
                         SourceEntity = entity,
                         LogicalCenter = lt.Position,
-                        Radius = BulletCollision.AsteroidHitRadius(lt.Scale),
+                        Radius = asteroidRadius,
                         Scale = lt.Scale,
                     });
                     continue;
@@ -262,14 +322,23 @@ namespace TitanOrbit.Game
                     if (em.HasComponent<GhostOwner>(entity))
                         networkId = em.GetComponentData<GhostOwner>(entity).NetworkId;
 
-                    // [TITAN-ORBIT] Match server BulletSimulationSystem — attribute-grown
-                    // PhysicsCollider XZ AABB (fallback tier sphere when collider missing).
+                    // [TITAN-ORBIT] Match server BulletSimulationSystem — MEGA uses the
+                    // collider box; regular ships keep the attribute-grown sphere.
                     float shipRadius;
-                    if (em.HasComponent<PhysicsCollider>(entity))
+                    float2 boxHe = float2.zero;
+                    float boxYaw = 0f;
+                    float hullMidY = lt.Position.y;
+                    float3 shipCenter = MegaShipCombatAim.GetAimPoint(em, entity, lt);
+                    if (MegaShipCombatAim.TryGetHitBoxWorld(
+                            em, entity, lt, out shipCenter, out boxHe, out boxYaw, out hullMidY))
+                    {
+                        shipRadius = math.length(boxHe);
+                    }
+                    else if (em.HasComponent<PhysicsCollider>(entity))
                     {
                         var physicsCollider = em.GetComponentData<PhysicsCollider>(entity);
-                        shipRadius = ShipToroidalWorldCollisionLogic.GetShipCollisionRadiusWorld(
-                            physicsCollider, lt.Scale);
+                        shipRadius = MegaShipCombatAim.GetHitRadiusWorld(
+                            em, entity, physicsCollider, lt.Scale);
                     }
                     else
                     {
@@ -280,16 +349,402 @@ namespace TitanOrbit.Game
                     {
                         Kind = ObstacleKind.Ship,
                         SourceEntity = entity,
-                        LogicalCenter = lt.Position,
+                        LogicalCenter = shipCenter,
                         Radius = shipRadius,
                         Scale = lt.Scale,
                         TeamOrOwnership = (byte)ship.Team,
                         OwnerNetworkId = networkId,
+                        BoxHalfExtents = boxHe,
+                        BoxYawRadians = boxYaw,
+                        HullMidY = hullMidY,
                     });
+                    ShipProxyScratch.Add(entity);
                 }
             }
 
+            PeopleTransportVfxDriver.AppendBulletObstacles(Obstacles);
+            AppendDroneObstacles(em);
+            RebuildObstacleGrid();
+            RebuildSweepBodies(em);
+
             return Obstacles.Count > 0;
+        }
+
+        /// <summary>
+        /// Derived shield-drone spheres from ship-proxy equipment (no drone ghosts).
+        /// Same <see cref="DroneSwarmHitScan.RebuildTargets"/> math as the server.
+        /// </summary>
+        static void AppendDroneObstacles(EntityManager em)
+        {
+            if (ShipProxyScratch.Count == 0)
+                return;
+
+            var ships = new NativeArray<Entity>(ShipProxyScratch.Count, Allocator.Temp);
+            for (int i = 0; i < ShipProxyScratch.Count; i++)
+                ships[i] = ShipProxyScratch[i];
+
+            double timeSeconds = PlanetGemMoonOrbitClock.TryGetElapsedSeconds(
+                out double elapsed, includeTickFraction: true)
+                ? elapsed
+                : Time.timeAsDouble;
+            DroneSwarmHitScan.RebuildTargets(
+                em,
+                ships,
+                ships,
+                timeSeconds,
+                s_MapW,
+                s_MapH,
+                DroneScratch,
+                DroneRearScratch,
+                DroneShieldScratch,
+                DroneEnemyIdsScratch,
+                DroneEnemyPos,
+                DroneShieldAssign);
+            ships.Dispose();
+
+            for (int i = 0; i < DroneScratch.Count; i++)
+            {
+                var d = DroneScratch[i];
+                float radius = DroneSwarmPositioning.DroneHitSphereRadius
+                    * math.max(0.25f, d.HitRadiusScale > 0.01f ? d.HitRadiusScale : 1f);
+                Obstacles.Add(new Obstacle
+                {
+                    Kind = ObstacleKind.Drone,
+                    SourceEntity = d.ShipEntity,
+                    LogicalCenter = d.Position,
+                    Radius = radius,
+                    TeamOrOwnership = d.Team,
+                    OwnerNetworkId = d.OwnerNetworkId,
+                });
+            }
+        }
+
+        /// <summary>
+        /// Inserts non-orbiting obstacles into a toroidal XZ grid.
+        /// Map size from the last <see cref="TryRefresh"/> (<c>s_MapW</c> / <c>s_MapH</c>).
+        /// </summary>
+        static void RebuildObstacleGrid()
+        {
+            foreach (var kv in s_Grid)
+                kv.Value.Clear();
+            s_GridHasEntries = false;
+            s_GridCellsX = 1;
+            s_GridCellsZ = 1;
+            if (!ToroidalMapEcs.IsValidMapSize(s_MapW, s_MapH))
+                return;
+
+            s_GridCellsX = math.max(1, (int)math.ceil(s_MapW / GridCellSize));
+            s_GridCellsZ = math.max(1, (int)math.ceil(s_MapH / GridCellSize));
+
+            for (int i = 0; i < Obstacles.Count; i++)
+            {
+                var o = Obstacles[i];
+                if (o.Kind == ObstacleKind.Planet || o.Kind == ObstacleKind.Moon)
+                    continue;
+
+                AddCoveringCells(i, o.LogicalCenter, o.Radius);
+                s_GridHasEntries = true;
+            }
+        }
+
+        /// <summary>
+        /// Copies hybrid spheres into a Burst-friendly list for mega volleys.
+        /// </summary>
+        static void EnsureSweepScratch()
+        {
+            if (!s_SweepBodies.IsCreated)
+                s_SweepBodies = new NativeList<CosmeticSweepBody>(512, Allocator.Persistent);
+            if (!s_SweepAlways.IsCreated)
+                s_SweepAlways = new NativeList<int>(16, Allocator.Persistent);
+            if (!s_SweepCells.IsCreated)
+                s_SweepCells = new NativeParallelMultiHashMap<int, int>(512, Allocator.Persistent);
+            if (!s_SweepNearby.IsCreated)
+                s_SweepNearby = new NativeList<int>(64, Allocator.Persistent);
+            if (!s_SweepSeen.IsCreated)
+                s_SweepSeen = new NativeHashSet<int>(64, Allocator.Persistent);
+        }
+
+        static void DisposeSweepScratch()
+        {
+            if (s_SweepBodies.IsCreated)
+                s_SweepBodies.Dispose();
+            if (s_SweepAlways.IsCreated)
+                s_SweepAlways.Dispose();
+            if (s_SweepCells.IsCreated)
+                s_SweepCells.Dispose();
+            if (s_SweepNearby.IsCreated)
+                s_SweepNearby.Dispose();
+            if (s_SweepSeen.IsCreated)
+                s_SweepSeen.Dispose();
+            s_SweepBodies = default;
+            s_SweepAlways = default;
+            s_SweepCells = default;
+            s_SweepNearby = default;
+            s_SweepSeen = default;
+        }
+
+        static void RebuildSweepBodies(EntityManager em)
+        {
+            EnsureSweepScratch();
+            s_SweepBodies.Clear();
+            s_SweepAlways.Clear();
+            s_SweepCells.Clear();
+            s_SweepCellsX = 1;
+            s_SweepCellsZ = 1;
+            if (ToroidalMapEcs.IsValidMapSize(s_MapW, s_MapH))
+            {
+                s_SweepCellsX = math.max(1, (int)math.ceil(s_MapW / BulletCosmeticSweepJob.CellSize));
+                s_SweepCellsZ = math.max(1, (int)math.ceil(s_MapH / BulletCosmeticSweepJob.CellSize));
+            }
+
+            for (int i = 0; i < Obstacles.Count; i++)
+            {
+                var o = Obstacles[i];
+                if (o.Kind == ObstacleKind.Ship &&
+                    o.HasOrientedBox &&
+                    TryAddMegaPartSweepBodies(em, in o))
+                    continue;
+
+                bool home = o.IsHomePlanet;
+                int bodyIndex = s_SweepBodies.Length;
+                s_SweepBodies.Add(new CosmeticSweepBody
+                {
+                    Position = o.LogicalCenter,
+                    Radius = o.Radius,
+                    BoxHalfExtents = o.Kind == ObstacleKind.Ship ? o.BoxHalfExtents : float2.zero,
+                    BoxYawRadians = o.Kind == ObstacleKind.Ship ? o.BoxYawRadians : 0f,
+                    Scale = o.Scale,
+                    MoonBodyRadius = PlanetGemMoonMath.GetMoonBodyRadiusWorld(o.Scale, home),
+                    MoonShieldRadius = PlanetGemMoonMath.GetMoonBulletHitRadiusWorld(
+                        o.Scale, home, o.CurrentShield, attackerFriendlyToMoon: false),
+                    CurrentShield = o.CurrentShield,
+                    PlanetLevel = o.PlanetLevel,
+                    PlanetId = o.PlanetId,
+                    OwnerNetworkId = o.OwnerNetworkId,
+                    SlotIndex = o.SlotIndex,
+                    Kind = (byte)o.Kind,
+                    Team = o.TeamOrOwnership,
+                    IsHome = home ? (byte)1 : (byte)0,
+                });
+
+                if (o.Kind == ObstacleKind.Planet || o.Kind == ObstacleKind.Moon)
+                {
+                    s_SweepAlways.Add(bodyIndex);
+                    continue;
+                }
+
+                AddSweepCoveringCells(bodyIndex, o.LogicalCenter, o.Radius);
+            }
+        }
+
+        /// <summary>
+        /// Burst cannot walk a PhysicsCollider, so each MEGA part is copied as its
+        /// own box/sphere. The covering hull sphere is what parked PD tracers in
+        /// empty space before they reached the mesh.
+        /// </summary>
+        static bool TryAddMegaPartSweepBodies(EntityManager em, in Obstacle o)
+        {
+            if (!em.Exists(o.SourceEntity) || !em.HasComponent<LocalTransform>(o.SourceEntity))
+                return false;
+
+            s_MegaPartScratch.Clear();
+            var xf = em.GetComponentData<LocalTransform>(o.SourceEntity);
+            if (!MegaShipCombatAim.TryAppendPartSweepShapes(em, o.SourceEntity, xf, s_MegaPartScratch))
+                return false;
+
+            for (int p = 0; p < s_MegaPartScratch.Count; p++)
+            {
+                var part = s_MegaPartScratch[p];
+                bool sphere = part.SphereRadius > 0.001f;
+                float cover = sphere
+                    ? part.SphereRadius
+                    : math.length(part.BoxHalfExtents);
+                int bodyIndex = s_SweepBodies.Length;
+                s_SweepBodies.Add(new CosmeticSweepBody
+                {
+                    Position = part.WorldCenter,
+                    Radius = cover,
+                    BoxHalfExtents = sphere ? float2.zero : part.BoxHalfExtents,
+                    BoxYawRadians = part.BoxYawRadians,
+                    Scale = o.Scale,
+                    OwnerNetworkId = o.OwnerNetworkId,
+                    Kind = (byte)ObstacleKind.Ship,
+                    Team = o.TeamOrOwnership,
+                });
+                AddSweepCoveringCells(bodyIndex, part.WorldCenter, cover);
+            }
+
+            return true;
+        }
+
+        static void AddSweepCoveringCells(int index, float3 pos, float radius)
+        {
+            int cellR = (int)math.ceil((radius + 0.85f) / BulletCosmeticSweepJob.CellSize);
+            float3 wrapped = ToroidalMapEcs.Wrap(pos, s_MapW, s_MapH);
+            float u = wrapped.x + s_MapW * 0.5f;
+            float v = wrapped.z + s_MapH * 0.5f;
+            int baseX = math.clamp((int)math.floor(u / BulletCosmeticSweepJob.CellSize), 0, s_SweepCellsX - 1);
+            int baseZ = math.clamp((int)math.floor(v / BulletCosmeticSweepJob.CellSize), 0, s_SweepCellsZ - 1);
+            if (cellR <= 0)
+            {
+                s_SweepCells.Add(baseX + baseZ * s_SweepCellsX, index);
+                return;
+            }
+
+            for (int dz = -cellR; dz <= cellR; dz++)
+            {
+                int cz = WrapGridCell(baseZ + dz, s_SweepCellsZ);
+                for (int dx = -cellR; dx <= cellR; dx++)
+                    s_SweepCells.Add(WrapGridCell(baseX + dx, s_SweepCellsX) + cz * s_SweepCellsX, index);
+            }
+        }
+
+        /// <summary>
+        /// Burst-advances every straight tracer in one job. Homing rockets stay managed.
+        /// </summary>
+        public static bool TryAdvanceStraightTracers(
+            NativeArray<CosmeticSweepRequest> requests,
+            NativeArray<CosmeticSweepResult> results)
+        {
+            if (!s_SweepBodies.IsCreated || s_SweepBodies.Length == 0 || requests.Length == 0)
+                return false;
+            if (!ToroidalMapEcs.IsValidMapSize(s_MapW, s_MapH))
+                return false;
+            if (requests.Length != results.Length)
+                return false;
+
+            double moonElapsed = PlanetGemMoonOrbitClock.TryGetElapsedSeconds(
+                out double elapsed, includeTickFraction: true)
+                ? elapsed
+                : Time.timeAsDouble;
+            int n = requests.Length;
+            int maxSubsteps = n >= 80 ? 2 : n >= 32 ? 4 : 8;
+            BulletCosmeticSweepJob.Run(
+                requests,
+                results,
+                s_SweepBodies.AsArray(),
+                s_SweepAlways.AsArray(),
+                s_SweepCells,
+                s_SweepNearby,
+                s_SweepSeen,
+                s_MapW,
+                s_MapH,
+                moonElapsed,
+                maxSubsteps,
+                s_SweepCellsX,
+                s_SweepCellsZ);
+            return true;
+        }
+
+        /// <summary>
+        /// Stamp a body into every cell its radius overlaps so queries stay
+        /// step-sized (a MEGA covering sphere must not inflate every tracer).
+        /// </summary>
+        static void AddCoveringCells(int index, float3 pos, float radius)
+        {
+            int cellR = (int)math.ceil((radius + 0.85f) / GridCellSize);
+            int baseX = GridCellX(pos.x);
+            int baseZ = GridCellZ(pos.z);
+            if (cellR <= 0)
+            {
+                AddGridIndex(baseX + baseZ * s_GridCellsX, index);
+                return;
+            }
+
+            for (int dz = -cellR; dz <= cellR; dz++)
+            {
+                int cz = WrapGridCell(baseZ + dz, s_GridCellsZ);
+                for (int dx = -cellR; dx <= cellR; dx++)
+                    AddGridIndex(WrapGridCell(baseX + dx, s_GridCellsX) + cz * s_GridCellsX, index);
+            }
+        }
+
+        static void AddGridIndex(int key, int index)
+        {
+            if (!s_Grid.TryGetValue(key, out var list))
+            {
+                list = new List<int>(8);
+                s_Grid[key] = list;
+            }
+
+            list.Add(index);
+        }
+
+        /// <summary>
+        /// Planets + moons always, plus nearby hashed bodies for this segment.
+        /// Falls back to a full scan when the grid is empty.
+        /// </summary>
+        static void CollectHitCandidates(float3 from, float3 to)
+        {
+            s_TestIndices.Clear();
+            bool haveGrid = s_GridHasEntries &&
+                            ToroidalMapEcs.IsValidMapSize(s_MapW, s_MapH);
+
+            for (int i = 0; i < Obstacles.Count; i++)
+            {
+                var k = Obstacles[i].Kind;
+                if (k == ObstacleKind.Planet || k == ObstacleKind.Moon)
+                    s_TestIndices.Add(i);
+                else if (!haveGrid)
+                    s_TestIndices.Add(i);
+            }
+
+            if (!haveGrid)
+                return;
+
+            s_GridScratch.Clear();
+            s_GridSeen.Clear();
+            float radius = math.distance(from, to) + 1.85f;
+            int cellRadius = (int)math.ceil(radius / GridCellSize) + 1;
+            int baseX = GridCellX(from.x);
+            int baseZ = GridCellZ(from.z);
+
+            for (int dz = -cellRadius; dz <= cellRadius; dz++)
+            {
+                int cz = WrapGridCell(baseZ + dz, s_GridCellsZ);
+                for (int dx = -cellRadius; dx <= cellRadius; dx++)
+                {
+                    int cx = WrapGridCell(baseX + dx, s_GridCellsX);
+                    int key = cx + cz * s_GridCellsX;
+                    if (!s_Grid.TryGetValue(key, out var list))
+                        continue;
+
+                    for (int i = 0; i < list.Count; i++)
+                    {
+                        int idx = list[i];
+                        if (!s_GridSeen.Add(idx))
+                            continue;
+                        s_GridScratch.Add(idx);
+                    }
+                }
+            }
+
+            for (int i = 0; i < s_GridScratch.Count; i++)
+                s_TestIndices.Add(s_GridScratch[i]);
+        }
+
+        static int GridCellX(float x)
+        {
+            float3 wrapped = ToroidalMapEcs.Wrap(new float3(x, 0f, 0f), s_MapW, s_MapH);
+            float u = wrapped.x + s_MapW * 0.5f;
+            int c = (int)math.floor(u / GridCellSize);
+            return math.clamp(c, 0, s_GridCellsX - 1);
+        }
+
+        static int GridCellZ(float z)
+        {
+            float3 wrapped = ToroidalMapEcs.Wrap(new float3(0f, 0f, z), s_MapW, s_MapH);
+            float v = wrapped.z + s_MapH * 0.5f;
+            int c = (int)math.floor(v / GridCellSize);
+            return math.clamp(c, 0, s_GridCellsZ - 1);
+        }
+
+        static int WrapGridCell(int c, int count)
+        {
+            if (count <= 0)
+                return 0;
+            int m = c % count;
+            return m < 0 ? m + count : m;
         }
 
         /// <summary>
@@ -334,7 +789,9 @@ namespace TitanOrbit.Game
             out int hitPlanetId,
             out int hitSlotIndex,
             byte damageFilter = 0,
-            float scaleMultiplier = 1f)
+            float scaleMultiplier = 1f,
+            int bankIndex = 0,
+            bool allowSelfHarm = false)
         {
             hitPoint = to;
             hitKind = ObstacleKind.Asteroid;
@@ -360,6 +817,7 @@ namespace TitanOrbit.Game
             float3 delta = to - from;
             float deltaLenSq = math.lengthsq(delta);
             var filter = (BulletDamageFilter)damageFilter;
+            bool healFriendly = BulletBankCombatLogic.HasHealFriendly(bankIndex);
 
             // --- Same-planet turret steal (mirrors server PreferDefenseOverPlanetBody) ---
             // Planet body often wins nearest-t by a hair because the pad sits on the hull.
@@ -371,10 +829,12 @@ namespace TitanOrbit.Game
             int bestDefenseSlotIndex = -1;
             bool anyDefense = false;
 
-            for (int i = 0; i < Obstacles.Count; i++)
+            CollectHitCandidates(from, to);
+            for (int n = 0; n < s_TestIndices.Count; n++)
             {
+                int i = s_TestIndices[n];
                 var o = Obstacles[i];
-                if (!PassesTeamFilter(in o, ownerTeam, ownerNetworkId))
+                if (!PassesTeamFilter(in o, ownerTeam, ownerNetworkId, healFriendly, allowSelfHarm))
                     continue;
                 if (!PassesDamageFilter(filter, o.Kind))
                     continue;
@@ -415,9 +875,35 @@ namespace TitanOrbit.Game
                         radius = PlanetaryDefenseHitScan.ExpandRadiusForBulletScale(
                             o.Radius, scaleMultiplier);
                     }
+                    else if (o.Kind == ObstacleKind.Ship)
+                    {
+                        radius += math.clamp(scaleMultiplier * 0.18f, 0f, 0.85f);
+                    }
 
-                    hit = BulletCollision.SegmentHitsSphereToroidal(
-                        from, to, o.LogicalCenter, radius, s_MapW, s_MapH, out hp);
+                    if (o.Kind == ObstacleKind.Ship && o.HasOrientedBox)
+                    {
+                        float pad = math.clamp(scaleMultiplier * 0.18f, 0f, 0.85f);
+                        hit = false;
+                        hp = to;
+                        var world = EcsGameBridge.ClientWorld ?? EcsGameBridge.ServerWorld;
+                        if (world != null && world.IsCreated)
+                        {
+                            var hitEm = world.EntityManager;
+                            if (hitEm.Exists(o.SourceEntity) &&
+                                hitEm.HasComponent<LocalTransform>(o.SourceEntity))
+                            {
+                                var shipXf = hitEm.GetComponentData<LocalTransform>(o.SourceEntity);
+                                hit = MegaShipCombatAim.TryHitBulletSegment(
+                                    hitEm, o.SourceEntity, shipXf,
+                                    from, to, pad, s_MapW, s_MapH, out hp, out _);
+                            }
+                        }
+                    }
+                    else
+                    {
+                        hit = BulletCollision.SegmentHitsSphereToroidal(
+                            from, to, o.LogicalCenter, radius, s_MapW, s_MapH, out hp);
+                    }
                 }
 
                 if (!hit)
@@ -478,6 +964,101 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
+        /// Nearest cached obstacle to a logical point (surface-fit). Used to parent
+        /// Sequence-0 burn / ram flashes to the body this observer sees.
+        /// </summary>
+        public static bool TryFindNearestObstacle(float3 logicalHit, out Obstacle obstacle)
+        {
+            obstacle = default;
+            if (Obstacles.Count == 0)
+                return false;
+
+            float3 hit = logicalHit;
+            hit.y = 0f;
+            float best = float.MaxValue;
+            int bestIndex = -1;
+            for (int i = 0; i < Obstacles.Count; i++)
+            {
+                var o = Obstacles[i];
+                float3 center = o.LogicalCenter;
+                center.y = 0f;
+                float dist;
+                float radius = math.max(0.05f, o.Radius);
+                float score;
+                if (o.Kind == ObstacleKind.Ship && o.HasOrientedBox)
+                {
+                    float3 boxCenter = o.LogicalCenter;
+                    if (ToroidalMapEcs.IsValidMapSize(s_MapW, s_MapH))
+                        boxCenter = BulletCollision.UnwrapCenterNear(hit, o.LogicalCenter, s_MapW, s_MapH);
+                    dist = BulletCollision.DistanceToOrientedBoxXZ(
+                        hit, boxCenter, o.BoxHalfExtents, o.BoxYawRadians);
+                    score = dist;
+                    if (dist > math.max(2f, math.length(o.BoxHalfExtents) * 0.35f))
+                        continue;
+                }
+                else
+                {
+                    dist = ToroidalMapEcs.IsValidMapSize(s_MapW, s_MapH)
+                        ? ToroidalMapEcs.ToroidalDistance(hit, center, s_MapW, s_MapH)
+                        : math.distance(hit, center);
+                    if (o.Kind == ObstacleKind.Moon)
+                    {
+                        radius = math.max(
+                            radius,
+                            PlanetGemMoonMath.GetMoonBulletHitRadiusWorld(
+                                o.Scale, o.IsHomePlanet, o.CurrentShield));
+                    }
+
+                    score = math.abs(dist - radius);
+                    if (dist > radius + math.max(2f, radius * 0.35f))
+                        continue;
+                }
+                if (score < best)
+                {
+                    best = score;
+                    bestIndex = i;
+                }
+            }
+
+            if (bestIndex < 0)
+                return false;
+            obstacle = Obstacles[bestIndex];
+            return true;
+        }
+
+        /// <summary>
+        /// Lifts a play-plane tracer toward a nearby MEGA hull midline so the slug
+        /// meets the 3D mesh instead of sliding through it at Y=0.
+        /// </summary>
+        public static bool TryGetMegaFlightLiftY(float3 logicalPos, out float hullMidY, out float blend)
+        {
+            hullMidY = 0f;
+            blend = 0f;
+            float best = float.MaxValue;
+            for (int i = 0; i < Obstacles.Count; i++)
+            {
+                var o = Obstacles[i];
+                if (o.Kind != ObstacleKind.Ship || !o.HasOrientedBox)
+                    continue;
+
+                float3 boxCenter = o.LogicalCenter;
+                if (ToroidalMapEcs.IsValidMapSize(s_MapW, s_MapH))
+                    boxCenter = BulletCollision.UnwrapCenterNear(logicalPos, o.LogicalCenter, s_MapW, s_MapH);
+                float dist = BulletCollision.DistanceToOrientedBoxXZ(
+                    logicalPos, boxCenter, o.BoxHalfExtents, o.BoxYawRadians);
+                if (dist >= best)
+                    continue;
+
+                best = dist;
+                hullMidY = o.HullMidY;
+                float fade = math.max(3f, math.cmax(o.BoxHalfExtents) * 0.45f);
+                blend = 1f - math.saturate(dist / fade);
+            }
+
+            return blend > 0.01f;
+        }
+
+        /// <summary>
         /// Overload kept for callers that only need the contact point.
         /// </summary>
         public static bool TryHitSegment(
@@ -490,7 +1071,7 @@ namespace TitanOrbit.Game
         {
             return TryHitSegment(
                 from, to, ownerTeam, ownerNetworkId, isDisplaySpace,
-                out hitPoint, out _, out _, out _, out _);
+                out hitPoint, out _, out _, out _, out _, 0, 1f, 0);
         }
 
         /// <summary>Keeps the contact closest to segment start (parameter t in [0,1]).</summary>
@@ -519,11 +1100,26 @@ namespace TitanOrbit.Game
         /// <summary>
         /// Team / self filters matching server <c>TryResolveBulletHit</c>.
         /// Planets/asteroids always collide; moons always test (friendly uses body-only radius);
-        /// ships and planetary-defense turrets skip friendlies / self.
+        /// ships and planetary-defense turrets skip friendlies / self unless
+        /// <paramref name="allowSelfHarm"/> (debug homing rockets after the arm delay).
         /// </summary>
-        static bool PassesTeamFilter(in Obstacle o, byte ownerTeam, int ownerNetworkId)
+        static bool PassesTeamFilter(
+            in Obstacle o, byte ownerTeam, int ownerNetworkId, bool healFriendly, bool allowSelfHarm)
         {
             if (o.Kind == ObstacleKind.Ship)
+            {
+                if (allowSelfHarm)
+                    return true;
+                if (ownerNetworkId > 0 && o.OwnerNetworkId == ownerNetworkId)
+                    return false;
+                if (healFriendly)
+                    return true;
+                if (o.TeamOrOwnership == ownerTeam)
+                    return false;
+                return true;
+            }
+
+            if (o.Kind == ObstacleKind.Transport || o.Kind == ObstacleKind.Drone)
             {
                 if (o.TeamOrOwnership == ownerTeam)
                     return false;
@@ -564,13 +1160,15 @@ namespace TitanOrbit.Game
                     // Mining: rocks only. Pass through ships, drones, and enemy turrets.
                     return kind == ObstacleKind.Asteroid;
                 case BulletDamageFilter.ShipsOnly:
-                    // Fighter: enemy ships + enemy planetary turrets (server also hits drones).
-                    return kind == ObstacleKind.Ship || kind == ObstacleKind.PlanetaryDefense;
+                    // Fighter: enemy ships + their drones + enemy planetary turrets.
+                    return kind == ObstacleKind.Ship
+                           || kind == ObstacleKind.Drone
+                           || kind == ObstacleKind.PlanetaryDefense;
                 case BulletDamageFilter.ShipsAndTransports:
-                    // PD: ships + asteroids. Transports are not in this hybrid list yet —
-                    // server BulletSimulation owns real transport hits. PD bolts do not
-                    // collide with other turrets (same as AllowsHitKind).
-                    return kind == ObstacleKind.Ship || kind == ObstacleKind.Asteroid;
+                    // PD: ships + people transports + asteroids (same as server AllowsHitKind).
+                    return kind == ObstacleKind.Ship
+                           || kind == ObstacleKind.Transport
+                           || kind == ObstacleKind.Asteroid;
                 default:
                     return true;
             }
@@ -695,7 +1293,16 @@ namespace TitanOrbit.Game
         {
             Obstacles.Clear();
             ProxyScratch.Clear();
+            ShipProxyScratch.Clear();
+            DroneScratch.Clear();
+            foreach (var kv in s_Grid)
+                kv.Value.Clear();
+            s_GridScratch.Clear();
+            s_GridSeen.Clear();
+            s_TestIndices.Clear();
+            s_GridHasEntries = false;
             s_LastRefreshFrame = -1;
+            DisposeSweepScratch();
         }
 
         /// <summary>
@@ -798,6 +1405,95 @@ namespace TitanOrbit.Game
                 return false;
 
             asteroidEntity = best;
+            return true;
+        }
+
+        /// <summary>
+        /// Finds the ship hull that best matches a server impact point (surface fit).
+        /// Same residual score as <see cref="TryFindAsteroidAtImpact"/> so a shot that
+        /// grazes one hull does not attribute damage to a neighbor.
+        /// Quarantine-safe — hybrid proxy keys only.
+        /// </summary>
+        /// <param name="hitDisplayPos">Server hit position converted to display space.</param>
+        /// <param name="shipEntity">Best surface-fit live ship, or Null.</param>
+        /// <returns>True when a live hull contains the impact.</returns>
+        public static bool TryFindShipAtImpact(Vector3 hitDisplayPos, out Entity shipEntity)
+        {
+            shipEntity = Entity.Null;
+            var visualizer = EcsWorldVisualizer.Active;
+            if (visualizer == null)
+                return false;
+
+            var world = EcsGameBridge.ClientWorld;
+            if (world == null || !world.IsCreated)
+                return false;
+
+            var em = world.EntityManager;
+            visualizer.CopyLiveProxyEntities(ProxyScratch);
+
+            bool hasRef = ToroidalDisplay.TryGetReferencePosition(out Vector3 reference);
+            float bestSurfaceError = float.MaxValue;
+            Entity best = Entity.Null;
+            float3 hit = new float3(hitDisplayPos.x, 0f, hitDisplayPos.z);
+
+            for (int i = 0; i < ProxyScratch.Count; i++)
+            {
+                Entity entity = ProxyScratch[i];
+                if (!em.Exists(entity) ||
+                    !em.HasComponent<ShipTag>(entity) ||
+                    !em.HasComponent<ShipState>(entity) ||
+                    !em.HasComponent<LocalTransform>(entity))
+                    continue;
+
+                var state = em.GetComponentData<ShipState>(entity);
+                if (state.IsDead)
+                    continue;
+                if (!visualizer.TryGetProxy(entity, out var proxyGo) ||
+                    proxyGo == null ||
+                    !proxyGo.activeSelf)
+                    continue;
+
+                var lt = em.GetComponentData<LocalTransform>(entity);
+                float3 shipCenter = MegaShipCombatAim.GetAimPoint(em, entity, lt);
+                float shipRadius;
+                if (MegaShipCombatAim.TryGetHitBoxWorld(
+                        em, entity, lt, out shipCenter, out float2 boxHe, out _, out _))
+                {
+                    shipRadius = math.length(boxHe);
+                }
+                else if (em.HasComponent<PhysicsCollider>(entity))
+                {
+                    var physicsCollider = em.GetComponentData<PhysicsCollider>(entity);
+                    shipRadius = MegaShipCombatAim.GetHitRadiusWorld(
+                        em, entity, physicsCollider, lt.Scale);
+                }
+                else
+                {
+                    shipRadius = BodyCollisionMath.GetShipHullRadiusWorld(lt.Scale);
+                }
+
+                float3 display = hasRef
+                    ? (float3)ToroidalDisplay.ToDisplayPosition(shipCenter, reference)
+                    : shipCenter;
+                display.y = 0f;
+
+                float maxDist = shipRadius + 0.35f;
+                float dist = math.distance(display, hit);
+                if (dist > maxDist)
+                    continue;
+
+                float surfaceError = math.abs(dist - shipRadius);
+                if (surfaceError >= bestSurfaceError)
+                    continue;
+
+                bestSurfaceError = surfaceError;
+                best = entity;
+            }
+
+            if (best == Entity.Null)
+                return false;
+
+            shipEntity = best;
             return true;
         }
 

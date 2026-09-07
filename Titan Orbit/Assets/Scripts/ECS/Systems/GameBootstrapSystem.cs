@@ -141,6 +141,7 @@ namespace TitanOrbit.ECS
         MapGenerationLogic.RolledParameters _rolled;
         Random _rng;
         int _spawnIndex;
+        int _asteroidLayoutSlot;
         int _nextNeutralPlanetId;
         int _totalSpawnSteps;
         int _claimIndex;
@@ -190,6 +191,7 @@ namespace TitanOrbit.ECS
                 if (!BeginGeneration(ref state))
                     return;
                 _spawnIndex = 0;
+                _asteroidLayoutSlot = 0;
                 _phase = Phase.Spawning;
             }
 
@@ -564,7 +566,8 @@ namespace TitanOrbit.ECS
                     });
                     SpawnAsteroid(
                         ref state, pending.Position, pending.Scale, pending.GemValue, pending.MaxHealth,
-                        pending.Size);
+                        pending.Size, _asteroidLayoutSlot);
+                    _asteroidLayoutSlot++;
                     break;
                 }
             }
@@ -608,6 +611,11 @@ namespace TitanOrbit.ECS
             mapState.NeutralPlanetCount = neutralCount;
             mapState.AsteroidCount = asteroidCount;
             em.SetComponentData(_mapEntity, mapState);
+
+            // --- MEGA L7 roll (any three catalog hulls per planet, without replacement) ---
+            // [TITAN-ORBIT] Uses the same map-seed RNG as family assignment so clients can
+            // reconstruct the same trio from ghosted PlanetMegaShipSlotElement buffers.
+            MegaShipMatchRoll.AssignAllPlanets(em, ref _rng);
 
             int claimCount = _claimQueue.IsCreated ? _claimQueue.Length : 0;
             UnityEngine.Debug.Log(
@@ -673,6 +681,8 @@ namespace TitanOrbit.ECS
                 em.AddComponent<HomePlanetTag>(e);
             if (isHome && !em.HasBuffer<ContributedGemsElement>(e))
                 em.AddBuffer<ContributedGemsElement>(e);
+            if (!em.HasBuffer<PlanetPeopleContributionElement>(e))
+                em.AddBuffer<PlanetPeopleContributionElement>(e);
             SetOrAddComponent(em, e, new PlanetGrowthState
             {
                 FractionalPopulation = maxPopulation,
@@ -714,7 +724,14 @@ namespace TitanOrbit.ECS
         /// Instantiates one asteroid from the map queue with gem capacity and max Health from
         /// <see cref="AsteroidSettings"/> ratios (via layout).
         /// </summary>
-        void SpawnAsteroid(ref SystemState state, float3 pos, float3 scale, float gemValue, float maxHealth, float size)
+        void SpawnAsteroid(
+            ref SystemState state,
+            float3 pos,
+            float3 scale,
+            float gemValue,
+            float maxHealth,
+            float size,
+            int layoutSlot)
         {
             if (!SystemAPI.TryGetSingleton<GamePrefabs>(out var prefabs) || prefabs.Asteroid == Entity.Null)
                 return;
@@ -727,7 +744,8 @@ namespace TitanOrbit.ECS
                 math.cmax(scale),
                 gemValue,
                 maxHealth,
-                size);
+                size,
+                layoutSlot);
         }
 
         /// <summary>

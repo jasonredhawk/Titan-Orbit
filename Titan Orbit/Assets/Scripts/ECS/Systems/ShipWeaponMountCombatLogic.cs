@@ -10,9 +10,9 @@ namespace TitanOrbit.ECS
     /// <summary>
     /// Fills each <see cref="ShipWeaponMountElement"/> with Extra Level fire power / fire rate.
     /// <para>
-    /// [TITAN-ORBIT] Each barrel keeps its own Base / PerExtra (prefab XY/Z scale) and evaluates
-    /// independently — weapons do <b>not</b> use the non-weapon <c>(N−1)</c> stack term:
-    /// <c>Base + PerExtra × ((shipLevel−1) + abilityLevel)</c>.
+    /// [TITAN-ORBIT] Each barrel keeps its own catalog Base / PerExtra (not prefab-scale
+    /// multiplied) and evaluates independently — weapons do <b>not</b> use the non-weapon
+    /// <c>(N−1)</c> stack term: <c>Base + PerExtra × ((shipLevel−1) + abilityLevel)</c>.
     /// </para>
     /// <para>
     /// Combat stats are read from a fresh Instantiates of the chassis prefab — never from the
@@ -35,16 +35,16 @@ namespace TitanOrbit.ECS
             /// <summary>Matches <see cref="ShipWeaponMountElement.CannonIndex"/> / bake order.</summary>
             public int CannonIndex;
 
-            /// <summary>Authored firePower × XY transform scale.</summary>
+            /// <summary>Authored catalog firePower (not multiplied by transform scale).</summary>
             public float FirePower;
 
-            /// <summary>Authored firePowerPerExtraLevel × XY transform scale.</summary>
+            /// <summary>Authored catalog firePowerPerExtraLevel (not multiplied by transform scale).</summary>
             public float FirePowerPerLevel;
 
-            /// <summary>Authored fireRate × (1/Z) transform scale.</summary>
+            /// <summary>Authored catalog fireRate (not multiplied by transform scale).</summary>
             public float FireRate;
 
-            /// <summary>Authored fireRatePerExtraLevel × (1/Z) transform scale.</summary>
+            /// <summary>Authored catalog fireRatePerExtraLevel (not multiplied by transform scale).</summary>
             public float FireRatePerLevel;
         }
 
@@ -152,7 +152,7 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// Instantiates the chassis prefab briefly and reads each Weapon child’s scaled stats.
+        /// Instantiates the chassis prefab briefly and reads each Weapon child’s catalog stats.
         /// Order / CannonIndex match <see cref="ShipChassisPrefabBakeUtility"/> mount bake.
         /// <para>
         /// [TITAN-ORBIT] Always uses a temporary Instantiates when the asset is not already a scene
@@ -172,62 +172,42 @@ namespace TitanOrbit.ECS
                 ? family.familyId.Trim()
                 : string.Empty;
 
-            GameObject instance = null;
-            bool destroyInstance = false;
-            try
+            // Walk the prefab asset. Do not clone — catalog apply used to Instantiates this
+            // hull every tick when a MEGA chassis id fought the Hawk fallback dirty flag.
+            Transform root = chassisPrefab.transform;
+            var mountAuthorings = root.GetComponentsInChildren<ShipWeaponMountAuthoring>(true);
+            if (mountAuthorings != null && mountAuthorings.Length > 0)
             {
-                // [UNITY] Prefab assets are not in a scene — instantiate so children are walkable.
-                // [TITAN-ORBIT] Never walk a live hybrid hull here: attribute scale has already
-                // grown those meshes for cosmetics and would double-count into firePower/fireRate.
-                if (!chassisPrefab.scene.IsValid())
+                for (int i = 0; i < mountAuthorings.Length; i++)
                 {
-                    instance = UnityEngine.Object.Instantiate(chassisPrefab);
-                    destroyInstance = true;
-                }
-                else
-                {
-                    // Scene object (rare) — still clone so we do not read mutated live scales.
-                    instance = UnityEngine.Object.Instantiate(chassisPrefab);
-                    destroyInstance = true;
-                }
-
-                Transform root = instance.transform;
-                var mountAuthorings = root.GetComponentsInChildren<ShipWeaponMountAuthoring>(true);
-                if (mountAuthorings != null && mountAuthorings.Length > 0)
-                {
-                    for (int i = 0; i < mountAuthorings.Length; i++)
-                    {
-                        var auth = mountAuthorings[i];
-                        if (auth == null || auth.transform == root)
-                            continue;
-                        if (!TryBuildCombatBase(family, familyId, auth.transform, auth.CannonIndex, out WeaponCombatBase b))
-                            continue;
-                        dst.Add(b);
-                    }
-
-                    if (dst.Count > 0)
-                        return;
-                }
-
-                // --- Name / family weapon id scan (same fallback as mount bake) ---
-                foreach (var t in root.GetComponentsInChildren<Transform>(true))
-                {
-                    if (t == root || !ShipChassisPrefabBakeUtility.LooksLikeWeaponChildForBake(t))
+                    var auth = mountAuthorings[i];
+                    if (auth == null || auth.transform == root)
                         continue;
-                    if (!TryBuildCombatBase(family, familyId, t, dst.Count, out WeaponCombatBase b))
+                    if (!TryBuildCombatBase(family, familyId, auth.transform, auth.CannonIndex, out WeaponCombatBase b))
                         continue;
                     dst.Add(b);
                 }
+
+                if (dst.Count > 0)
+                    return;
             }
-            finally
+
+            // --- Name / family weapon id scan (same fallback as mount bake) ---
+            var assemblies = new System.Collections.Generic.List<UnityEngine.Transform>(16);
+            MegaShipPartClassifier.CollectWeaponAssemblies(root, assemblies);
+            for (int i = 0; i < assemblies.Count; i++)
             {
-                if (destroyInstance && instance != null)
-                    UnityEngine.Object.Destroy(instance);
+                var t = assemblies[i];
+                if (t == root)
+                    continue;
+                if (!TryBuildCombatBase(family, familyId, t, dst.Count, out WeaponCombatBase b))
+                    continue;
+                dst.Add(b);
             }
         }
 
         /// <summary>
-        /// Resolves family component stats for a weapon transform and applies XY / Z scale rules.
+        /// Resolves family component stats for a weapon transform (catalog values, no scale multiply).
         /// </summary>
         static bool TryBuildCombatBase(
             ShipFamilyDefinition family,
@@ -243,8 +223,11 @@ namespace TitanOrbit.ECS
             string componentId = ResolveComponentId(weaponTransform.name, familyId);
             if (!family.TryGetStatsForComponent(componentId, out ShipComponentAbilityStats stats))
             {
-                // [TITAN-ORBIT] Prefab child may be named "Weapon" while the family entry is "Weapon".
-                if (!family.TryGetStatsForComponent("Weapon", out stats))
+                // [TITAN-ORBIT] Prefab child may be named "Weapon" while the family entry is FamilyId_Weapon.
+                if (!family.TryGetStatsForComponent(
+                        ShipFamilyDefinition.ComposeFamilyPrefixedComponentId(familyId, "Weapon"),
+                        out stats)
+                    && !family.TryGetStatsForComponent("Weapon", out stats))
                     return false;
             }
 
@@ -263,22 +246,18 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// Strips <c>FamilyId_</c> prefix when present so family lookup matches catalog component ids.
+        /// Keeps the family-prefixed prefab child name so catalog lookup matches Name Mapping ids.
         /// </summary>
         static string ResolveComponentId(string transformName, string familyId)
         {
             if (string.IsNullOrEmpty(transformName))
-                return "Weapon";
+                return ShipFamilyDefinition.ComposeFamilyPrefixedComponentId(familyId, "Weapon");
 
-            if (!string.IsNullOrEmpty(familyId) &&
-                transformName.StartsWith(familyId + "_", StringComparison.OrdinalIgnoreCase))
-                return transformName.Substring(familyId.Length + 1);
+            string normalized = ShipFamilyDefinition.NormalizeComponentId(transformName);
+            if (!string.IsNullOrEmpty(normalized))
+                return normalized;
 
-            int underscore = transformName.IndexOf('_');
-            if (underscore > 0 && underscore < transformName.Length - 1)
-                return transformName.Substring(underscore + 1);
-
-            return transformName;
+            return ShipFamilyDefinition.ComposeFamilyPrefixedComponentId(familyId, "Weapon");
         }
 
         /// <summary>

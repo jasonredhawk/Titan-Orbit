@@ -63,7 +63,7 @@ namespace TitanOrbit.Editor
                 EditorGUILayout.HelpBox(
                     "No stats found yet. Assign a ShipFamilyDefinition and ensure child names follow 'Family_ComponentId' (e.g. AstroEagle_Cockpit). " +
                     "Non-weapons: most stats scale by average scale (x+y+z)/3. Engines and thrusters use authored move speed and acceleration cap; thrusters also use turn speed (with Tail/Fin) — none scaled by part size. Engines own Energy Cap/Regen. " +
-                    "Weapons: fire power scales by average(x,y); fire rate by 1/z (smaller z = faster); bullet speed is not scaled by part size.",
+                    "Weapons: catalog fire power, fire rate, and bullet speed — not scaled by part size.",
                     MessageType.Info);
             }
 
@@ -168,10 +168,10 @@ namespace TitanOrbit.Editor
 
                 EditorGUILayout.Space(2);
                 EditorGUILayout.LabelField("Capacity", EditorStyles.miniBoldLabel);
-                EditorGUILayout.FloatField("Max Gems", total.maxGems);
-                EditorGUILayout.FloatField("Max Gems / Extra Level", total.maxGemsPerExtraLevel);
-                EditorGUILayout.FloatField("Max People", total.maxPeople);
-                EditorGUILayout.FloatField("Max People / Extra Level", total.maxPeoplePerExtraLevel);
+                EditorGUILayout.FloatField("Gem Cap", total.maxGems);
+                EditorGUILayout.FloatField("Gem Cap / Extra Level", total.maxGemsPerExtraLevel);
+                EditorGUILayout.FloatField("Troop Cap", total.maxPeople);
+                EditorGUILayout.FloatField("Troop Cap / Extra Level", total.maxPeoplePerExtraLevel);
 
                 if (preview != null)
                 {
@@ -209,7 +209,7 @@ namespace TitanOrbit.Editor
                     if (scales != null && i < scales.Count && scales[i] != 1f)
                         label += " (scale " + scales[i].ToString("F2") + "├ù)";
                     if (isWeapon)
-                        label += " [weapon: xy=power, 1/z=rate; offense only]";
+                        label += " [weapon: catalog stats, no scale; offense only]";
                     if (isPropulsion)
                         label += " [engine/thruster: primary Base; extras add Extra Level via count]";
                     EditorGUILayout.LabelField("- " + label);
@@ -281,10 +281,10 @@ namespace TitanOrbit.Editor
                                 s.turnSpeedPerExtraLevel);
 
                             EditorGUILayout.LabelField("Capacity", EditorStyles.miniBoldLabel);
-                            EditorGUILayout.FloatField("  Max Gems", s.maxGems);
-                            EditorGUILayout.FloatField("  Max Gems / Extra Level", s.maxGemsPerExtraLevel);
-                            EditorGUILayout.FloatField("  Max People", s.maxPeople);
-                            EditorGUILayout.FloatField("  Max People / Extra Level", s.maxPeoplePerExtraLevel);
+                            EditorGUILayout.FloatField("  Gem Cap", s.maxGems);
+                            EditorGUILayout.FloatField("  Gem Cap / Extra Level", s.maxGemsPerExtraLevel);
+                            EditorGUILayout.FloatField("  Troop Cap", s.maxPeople);
+                            EditorGUILayout.FloatField("  Troop Cap / Extra Level", s.maxPeoplePerExtraLevel);
                             EditorGUI.indentLevel--;
                         }
                     }

@@ -72,7 +72,7 @@ namespace TitanOrbit.UI
             /// <summary>
             /// Authored prefab child <c>localScale</c> parallel to <see cref="Ids"/>.
             /// Store extras are <c>(1,1,1)</c>. Ability details cards use this so Base / PerExtra
-            /// can show the starting-scale multiply (Cockpit at 3 → ×3 Health / Gems / People).
+            /// can show the starting-scale multiply (Cockpit at 3 → ×3 Health / Gems / Troops).
             /// </summary>
             public List<Vector3> LocalScales;
 
@@ -146,6 +146,29 @@ namespace TitanOrbit.UI
 
             /// <summary>Bottom-HUD Fire Power purchases (Extra Level steps with ship level).</summary>
             public int FirePowerAbilityLevel;
+
+            /// <summary>
+            /// Sum of every gun's Extra-Leveled <c>firePower × fireRate</c>.
+            /// Fire Power chip and hover DPS use this, not the primary-gun hull average.
+            /// </summary>
+            public float AllGunDps;
+
+            /// <summary>
+            /// All-gun DPS after one more Fire Power purchase (green + on the chip).
+            /// </summary>
+            public float AllGunDpsNextStep;
+
+            /// <summary>
+            /// True when the local hull is a MEGA. Chips hide +per-buy and the details card
+            /// shows catalog sums instead of Extra Level (MEGAs are not bottom-bar upgradable).
+            /// </summary>
+            public bool IsMega;
+
+            /// <summary>
+            /// <see cref="MegaShipCatalog"/> index when <see cref="IsMega"/> is true.
+            /// Details cards walk unique-component counts from this row.
+            /// </summary>
+            public ushort MegaCatalogIndex;
         }
 
         /// <summary>
@@ -184,6 +207,12 @@ namespace TitanOrbit.UI
             {
                 return true;
             }
+
+            // --- MEGA hulls: unique-component library, not family Extra Level ---
+            // [TITAN-ORBIT] MEGA_### is not an AstroEagle/CosmicShark chassis. Instantiating
+            // a family prefab here would list the wrong parts and Extra-Level them.
+            if (MegaShipCatalog.IsMegaChassisId(chassisId))
+                return TryRefreshMegaPartCache(chassisId, shipLevel, ref cache);
 
             // --- Resolve family + tier prefab ---
             if (!ShipStatApplyLogic.TryResolveFamilyForChassisId(chassisId, out ShipFamilyDefinition family)
@@ -248,6 +277,74 @@ namespace TitanOrbit.UI
             cache.ChassisId = chassisId;
             cache.ShipLevel = shipLevel;
             cache.EquipmentHash = equipmentHash;
+            cache.Valid = cache.Ids.Count > 0;
+            return cache.Valid;
+        }
+
+        /// <summary>
+        /// Fills <paramref name="cache"/> from the MEGA unique-component library × hull counts.
+        /// No prefab Instantiate, no Extra Level, no moon-store extras (MEGAs do not buy parts).
+        /// Each counted copy is one list row so the details card can show <c>3× Armor1</c>.
+        /// </summary>
+        /// <param name="chassisId">MEGA chassis id (<c>MEGA_007</c>).</param>
+        /// <param name="shipLevel">Unused for MEGA math — stored so the cache key stays stable.</param>
+        /// <param name="cache">In/out part cache for chip / tip grids.</param>
+        /// <returns>True when at least one unique component was listed.</returns>
+        static bool TryRefreshMegaPartCache(string chassisId, int shipLevel, ref PartCache cache)
+        {
+            // --- Catalog row ---
+            var catalog = MegaShipCatalog.Load();
+            if (catalog == null
+                || !catalog.TryGetEntryByChassisId(chassisId, out MegaShipCatalogEntry entry)
+                || entry == null)
+            {
+                cache.Valid = false;
+                return false;
+            }
+
+            if (cache.Ids == null)
+                cache.Ids = new List<string>(16);
+            else
+                cache.Ids.Clear();
+            if (cache.Stats == null)
+                cache.Stats = new List<ShipComponentAbilityStats>(16);
+            else
+                cache.Stats.Clear();
+            if (cache.LocalScales == null)
+                cache.LocalScales = new List<Vector3>(16);
+            else
+                cache.LocalScales.Clear();
+
+            // --- Unique names × how many times they appear on this hull ---
+            List<MegaShipComponentCount> counts = entry.componentCounts;
+            if (counts != null)
+            {
+                for (int i = 0; i < counts.Count; i++)
+                {
+                    MegaShipComponentCount row = counts[i];
+                    if (row == null || row.count <= 0 || string.IsNullOrEmpty(row.displayName))
+                        continue;
+                    if (!catalog.TryGetUniqueComponent(row.displayName, out MegaShipComponentEntry unique)
+                        || unique == null)
+                        continue;
+
+                    // Raw unique-component numbers — hull-level defaults/minimums apply only
+                    // to the summed chip total (MegaShipStatsCalculator), not each listed part.
+                    ShipComponentAbilityStats stats = unique.stats.ToAbilityStats();
+                    for (int n = 0; n < row.count; n++)
+                    {
+                        cache.Ids.Add(row.displayName);
+                        cache.Stats.Add(stats);
+                        cache.LocalScales.Add(Vector3.one);
+                    }
+                }
+            }
+
+            cache.Propulsion = default;
+            cache.Family = null;
+            cache.ChassisId = chassisId;
+            cache.ShipLevel = shipLevel;
+            cache.EquipmentHash = 0;
             cache.Valid = cache.Ids.Count > 0;
             return cache.Valid;
         }
@@ -337,7 +434,7 @@ namespace TitanOrbit.UI
         {
             AppendHeader(sb, "MASS — totalMass (mobility tax)");
             ShipStatTooltipChrome.AppendSectionBanner(sb, "BREAKDOWN", "C9A0FF");
-            sb.AppendLine("<color=#5B7A94>totalMass = gems x MassPerGem + people x MassPerPerson + size x MassPerComponentSize</color>");
+            sb.AppendLine("<color=#5B7A94>totalMass = gems x MassPerGem + troops x MassPerPerson + size x MassPerComponentSize</color>");
 
             ShipCargoMobilitySettings settings = ShipCargoMobilitySettingsCache.ResolveOrDefault();
             float mGem = settings != null ? settings.massPerGem : 0.01f;
@@ -351,7 +448,7 @@ namespace TitanOrbit.UI
             sb.Append("Gems  ").Append(F0(live.Ship.CurrentGems))
                 .Append(" x ").Append(F2(mGem))
                 .Append(" = ").Append(F2(gemMass)).AppendLine();
-            sb.Append("People  ").Append(F0(live.Ship.CurrentPeople))
+            sb.Append("Troops  ").Append(F0(live.Ship.CurrentPeople))
                 .Append(" x ").Append(F2(mPerson))
                 .Append(" = ").Append(F2(peopleMass)).AppendLine();
             sb.Append("ComponentSize  ").Append(F1(live.ComponentSize))
@@ -429,6 +526,15 @@ namespace TitanOrbit.UI
                 : live.EffectiveStats.rammingPower;
             float fullCruise = live.CruiseMaxSpeed > 0.01f ? live.CruiseMaxSpeed : live.ChassisMaxSpeed;
             ShipStatTooltipChrome.AppendSectionBanner(sb, "MAX IMPACT", "FFCC66");
+            if (live.IsMega)
+            {
+                float plowMul = MegaShipCatalog.DefaultAsteroidPlowDamageMultiplier;
+                var catalog = MegaShipCatalog.Load();
+                if (catalog != null)
+                    plowMul = catalog.GetAsteroidPlowDamageMultiplier();
+                sb.AppendLine("<color=#FFAA66>MEGA PLOW — rocks die on contact. Hull takes rock HP × catalog slider. Field does not slow the hull.</color>");
+                sb.Append("Plow slider  ").Append(F1(plowMul)).Append("×  <color=#5B7A94>(1 = equal rock HP)</color>").AppendLine();
+            }
             sb.Append("Motor Ramming  ").Append(F1(familyRam)).AppendLine();
             sb.Append("Rating  ").Append(F1(live.RamRating)).AppendLine();
             sb.Append("totalMass  ").Append(F1(live.TotalMass)).AppendLine();
@@ -503,6 +609,13 @@ namespace TitanOrbit.UI
             bool includeAccel)
         {
             ShipStatTooltipChrome.AppendSectionBanner(sb, "MASS TAX", "C9A0FF");
+            if (live.Motor.SkipMassTax != 0)
+            {
+                sb.AppendLine("<color=#AAEEDD>MEGA hulls ignore mass tax.</color>");
+                sb.Append("Cruise  ").Append(FResult(live.ChassisMaxSpeed)).AppendLine();
+                sb.Append("Accel  ").Append(FResult(live.ChassisAccel)).AppendLine();
+                return;
+            }
 
             ShipCargoMobilitySettings settings = ShipCargoMobilitySettingsCache.ResolveOrDefault();
             float mGem = settings != null ? settings.massPerGem : 0.01f;
@@ -521,7 +634,7 @@ namespace TitanOrbit.UI
             sb.Append("Gems  ").Append(F0(live.Ship.CurrentGems))
                 .Append(" x ").Append(F2(mGem))
                 .Append(" = ").Append(F2(gemMass)).AppendLine();
-            sb.Append("People  ").Append(F0(live.Ship.CurrentPeople))
+            sb.Append("Troops  ").Append(F0(live.Ship.CurrentPeople))
                 .Append(" x ").Append(F2(mPerson))
                 .Append(" = ").Append(F2(peopleMass)).AppendLine();
             sb.Append("Hull size  ").Append(F1(live.ComponentSize))

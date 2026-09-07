@@ -37,6 +37,14 @@ namespace TitanOrbit.Simulation
         public const float AsteroidMeshBaseRadius = 0.5f;
 
         /// <summary>
+        /// Max SgtPlanet vertex displacement on asteroid proxies
+        /// (<c>WorldBodyVisualApplier</c>). The physics sphere stays at
+        /// <see cref="AsteroidMeshBaseRadius"/> so ships bounce on the authored collider;
+        /// the drawn rock can puff this far past that sphere in mesh-local units.
+        /// </summary>
+        public const float AsteroidVisualDisplacementLocal = 0.32f;
+
+        /// <summary>
         /// Uniform ECS scale for a ship at <paramref name="shipLevel"/> (level 1 → 1.0, level 6 → 1.5).
         /// Written to <c>LocalTransform.Scale</c> by <c>ShipStatApplyLogic</c>.
         /// </summary>

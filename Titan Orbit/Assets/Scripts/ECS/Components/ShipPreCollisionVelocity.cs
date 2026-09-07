@@ -18,5 +18,15 @@ namespace TitanOrbit.ECS
     {
         /// <summary>Planar linear velocity captured before PhysicsSimulationGroup this fixed step.</summary>
         public float3 Linear;
+
+        /// <summary>
+        /// <see cref="Unity.Transforms.LocalTransform.Position"/> captured with <see cref="Linear"/>.
+        /// MEGA asteroid plow reconstructs unconstrained motion (position + velocity × dt) so
+        /// PhysX depenetration cannot shove the hull off its flight path.
+        /// </summary>
+        public float3 Position;
+
+        /// <summary>Hull rotation captured with <see cref="Position"/> (MEGA plow / sweep).</summary>
+        public quaternion Rotation;
     }
 }

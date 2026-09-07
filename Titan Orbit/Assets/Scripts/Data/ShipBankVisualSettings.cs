@@ -5,8 +5,8 @@ namespace TitanOrbit.Data
     /// <summary>
     /// Designer asset for client-only ship bank (roll-while-turning).
     /// Create via Assets → Create → Titan Orbit → Ship Bank Visual Settings.
-    /// Assign on each <see cref="ShipFamilyDefinition.bankVisualSettings"/> so families can share
-    /// one profile today and swap unique lean later. Consumed by
+    /// Assign on each <see cref="ShipFamilyDefinition.bankVisualSettings"/>, or on
+    /// <see cref="MegaShipCatalog.bankVisualSettings"/> for every MEGA hull. Consumed by
     /// <see cref="TitanOrbit.Game.ShipBankVisualApplier"/> and published into
     /// <see cref="ShipBankVisualSettingsCache"/> for Entities Graphics / turret bank — no sim impact.
     /// </summary>
@@ -22,6 +22,12 @@ namespace TitanOrbit.Data
         /// </summary>
         public const string DefaultResourcesName = "ShipBankVisualSettings";
 
+        /// <summary>
+        /// [UNITY] Resources name for the MEGA default
+        /// (<c>Assets/Resources/MegaShipBankVisualSettings.asset</c>).
+        /// </summary>
+        public const string MegaResourcesName = "MegaShipBankVisualSettings";
+
         [Header("Bank Angle")]
         [Tooltip(
             "Peak roll angle in degrees at full turn (when Bank Sensitivity is 1). " +
@@ -33,15 +39,23 @@ namespace TitanOrbit.Data
         [Tooltip(
             "How sensitive banking is to yaw rate. 1 = linear (old feel). " +
             "Higher values lean harder at partial turn stick. " +
-            "Lower toward 0.8–1.0 if banking feels too twitchy.")]
-        [Range(0.25f, 3f)]
+            "Slow hulls (MEGAs) should also set Reference Turn so modest yaw still reaches peak roll.")]
+        [Range(0.01f, 8f)]
         public float bankSensitivity = 1.35f;
 
         [Header("Smoothing")]
         [Tooltip(
-            "How quickly roll catches up to the target bank angle. Higher = snappier, lower = floatier.")]
-        [Range(1f, 24f)]
+            "How quickly roll catches up to the target bank angle. Higher = snappier, lower = floatier / heavier.")]
+        [Range(0.01f, 24f)]
         public float bankSmoothing = 8f;
+
+        [Header("Slow-hull reference")]
+        [Tooltip(
+            "Yaw rate (°/s) that reaches max bank when Sensitivity is 1. " +
+            "0 = use the fleet's global max turn (regular ships). " +
+            "Set a lower value for slow hulls so they bank hard without needing fighter turn speed.")]
+        [Min(0f)]
+        public float referenceTurnDegreesPerSecond = 0f;
 
         /// <summary>Peak roll (°), clamped for runtime consumers.</summary>
         public float ClampedMaxBankAngleDegrees => Mathf.Clamp(maxBankAngleDegrees, 1f, 180f);
@@ -53,11 +67,30 @@ namespace TitanOrbit.Data
         public float ClampedBankSmoothing => Mathf.Max(0.01f, bankSmoothing);
 
         /// <summary>
+        /// Denominator for the bank curve (°/s). Authored reference when set;
+        /// otherwise the fleet's global max turn.
+        /// </summary>
+        public float ResolveReferenceTurnDegreesPerSecond()
+        {
+            if (referenceTurnDegreesPerSecond > 0.01f)
+                return referenceTurnDegreesPerSecond;
+            return ShipPropulsionAggregation.GetGlobalMaxTurnSpeedDegreesPerSecond();
+        }
+
+        /// <summary>
         /// Loads the shared default from Resources (player builds). Editor can create one via the menu.
         /// </summary>
         public static ShipBankVisualSettings LoadDefault()
         {
             return Resources.Load<ShipBankVisualSettings>(DefaultResourcesName);
+        }
+
+        /// <summary>
+        /// Loads the MEGA default from Resources when <see cref="MegaShipCatalog.bankVisualSettings"/> is empty.
+        /// </summary>
+        public static ShipBankVisualSettings LoadMegaDefault()
+        {
+            return Resources.Load<ShipBankVisualSettings>(MegaResourcesName);
         }
 
         /// <summary>
@@ -71,6 +104,27 @@ namespace TitanOrbit.Data
             return LoadDefault();
         }
 
+        /// <summary>
+        /// MEGA chassis uses <see cref="MegaShipCatalog.bankVisualSettings"/>;
+        /// regular hulls use the family / shared default.
+        /// </summary>
+        /// <param name="chassisId">Live chassis id (<c>MEGA_007</c> or <c>AstroEagle_T2</c>).</param>
+        /// <param name="family">Store-planet family (ignored for MEGA ids).</param>
+        public static ShipBankVisualSettings ResolveForChassis(string chassisId, ShipFamilyDefinition family)
+        {
+            if (MegaShipCatalog.IsMegaChassisId(chassisId))
+            {
+                var catalog = MegaShipCatalog.Load();
+                ShipBankVisualSettings mega = catalog != null
+                    ? catalog.GetBankVisualSettings()
+                    : LoadMegaDefault();
+                if (mega != null)
+                    return mega;
+            }
+
+            return ResolveForFamily(family);
+        }
+
 #if UNITY_EDITOR
         /// <summary>
         /// [EDITOR] Keep knobs in range while scrubbing, and republish so Play Mode EG / turrets update live.
@@ -80,7 +134,11 @@ namespace TitanOrbit.Data
             maxBankAngleDegrees = Mathf.Clamp(maxBankAngleDegrees, 1f, 180f);
             bankSensitivity = Mathf.Max(0f, bankSensitivity);
             bankSmoothing = Mathf.Max(0.01f, bankSmoothing);
-            ShipBankVisualSettingsCache.Publish(this);
+            referenceTurnDegreesPerSecond = Mathf.Max(0f, referenceTurnDegreesPerSecond);
+            // Only the shared Resources default drives the process-wide cache (EG regular hulls /
+            // planetary turrets). MEGA and family-specific assets are sampled from the bound instance.
+            if (name == DefaultResourcesName)
+                ShipBankVisualSettingsCache.Publish(this);
         }
 #endif
     }

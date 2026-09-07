@@ -76,7 +76,7 @@ namespace TitanOrbit.Simulation
         public const float VisualRangeSlack = 1.25f;
 
         /// <summary>
-        /// Converts wing Max Gems Capacity (at current ship level) into tractor reach and pull strength.
+        /// Converts wing Gem Cap (at current ship level) into tractor reach and pull strength.
         /// Used when distance/power authoring fields are unset (legacy wing components).
         /// </summary>
         public static void GetTractorBeamFromMaxGems(float effectiveMaxGems, bool inOrbitZone, out float searchRadius, out float attractionSpeed)

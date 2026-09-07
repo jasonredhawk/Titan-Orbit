@@ -78,6 +78,9 @@ namespace TitanOrbit.ECS.Authoring
                 // [NETCODE] Deployed mines must bake so GhostFields replicate. Runtime-only
                 // AddBuffer from ShipEnsureComponentsSystem does not register them on the ghost.
                 AddBuffer<DeployedMineElement>(entity);
+                // Runtime hull bookkeeping — bake so predicted ghosts are not AddComponent'd
+                // every chassis pick (structural change + covering bake).
+                AddComponent(entity, new ShipHullColliderState());
                 AddComponent(entity, new ShipMotorConfig
                 {
                     EngineThrust = authoring.EngineThrust,
@@ -130,6 +133,9 @@ namespace TitanOrbit.ECS.Authoring
                 AddComponent(entity, new ShipMoonDockState());
                 // [NETCODE] Turret possession mode — must bake so IsControlling / PlanetId replicate.
                 AddComponent(entity, new ShipTurretControlState());
+                // [NETCODE] MEGA identity + per-mount aim slots — must bake so GhostFields replicate.
+                AddComponent(entity, new MegaShipState());
+                AddBuffer<MegaShipGunnerSlotElement>(entity);
                 AddComponent(entity, new ShipDepositIntent());
                 // [NETCODE] Server bumps BeatSequence each deposit chunk; clients play SFX/UI from it.
                 AddComponent(entity, new ShipDepositFeedback());
@@ -138,6 +144,8 @@ namespace TitanOrbit.ECS.Authoring
                 AddComponent(entity, new ShipMatchStats());
                 // [TITAN-ORBIT] Server-only last-damager for kill credit — not ghosted.
                 AddComponent(entity, new ShipCombatAttribution());
+                // [NETCODE] Death-explosion seed + impulse — must bake so GhostField replicates.
+                AddComponent(entity, new ShipDeathVfxState());
                 // [NETCODE] ShipInput is IInputComponentData — replicated from owner client each tick.
                 AddComponent(entity, new ShipInput { DisableSpaceBrakes = false });
                 AddComponent(entity, new ShipKinematics());
@@ -158,12 +166,7 @@ namespace TitanOrbit.ECS.Authoring
                 float radius = BodyCollisionMath.GetShipHullRadiusWorld(1f);
                 // [PHYSICS] Raise collision events so server ramming can see real hull contacts
                 // (not proximity). Combined with world materials via flag OR.
-                var material = Unity.Physics.Material.Default;
-                material.CollisionResponse = Unity.Physics.CollisionResponsePolicy.CollideRaiseCollisionEvents;
-                // [TITAN-ORBIT] Restitution 0 — ShipCollisionImpulseLogic owns bounce (mass-aware).
-                // PhysX still depenetrates and raises collision events for the custom impulse pass.
-                material.Restitution = 0f;
-                material.Friction = 0.05f;
+                var material = ShipHullColliderLogic.CreateHullMaterial();
 
                 var collider = Unity.Physics.SphereCollider.Create(
                     new SphereGeometry { Center = float3.zero, Radius = radius },
@@ -209,9 +212,12 @@ namespace TitanOrbit.ECS.Authoring
 
                 if (mounts.Length == 0)
                 {
-                    foreach (var t in authoring.GetComponentsInChildren<Transform>(true))
+                    var assemblies = new System.Collections.Generic.List<Transform>(16);
+                    MegaShipPartClassifier.CollectWeaponAssemblies(hullRoot, assemblies);
+                    for (int i = 0; i < assemblies.Count; i++)
                     {
-                        if (t == hullRoot || !ShipChassisPrefabBakeUtility.LooksLikeWeaponChildForBake(t))
+                        Transform t = assemblies[i];
+                        if (t == null || t == hullRoot)
                             continue;
 
                         ShipChassisPrefabBakeUtility.GetHullRootLocalPose(

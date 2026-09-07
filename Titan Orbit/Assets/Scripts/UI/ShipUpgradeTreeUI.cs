@@ -10,31 +10,37 @@ using UnityEditor;
 namespace TitanOrbit.UI
 {
     /// <summary>
-    /// Prefab-driven ship upgrade tree panel (hint line, node canvas, connectors). Assigned on a GameObject
-    /// under the orbit station ships tab; <see cref="OrbitStationUI"/> binds runtime state via <see cref="IOrbitStationHost"/>.
+    /// Prefab-driven ship upgrade tree panel (title + family caption, hint line, node canvas, connectors).
+    /// Assigned on a GameObject under the orbit station ships tab; <see cref="OrbitStationUI"/> binds
+    /// runtime state via <see cref="IOrbitStationHost"/>. The header shows the docked planet's ship
+    /// family (Astro Eagle, Cosmic Shark, …) so players can tell whose hull ladder they are buying.
     /// Supports horizontal moon-dock layout and vertical fallback. Optional <see cref="previewFamily"/> fills editor preview.
     /// </summary>
     public class ShipUpgradeTreeUI : MonoBehaviour
     {
         public const string PanelTitleText = "Ship Upgrade Tree";
-        public const string PanelDefaultSubtitle = "Green: tree slot. Blue: affordable upgrades. Cyan: free hull swap. Your ship is in the left panel.";
+        public const string PanelDefaultSubtitle = "Green: your path. Cyan: available next hulls. Dim: other routes. Your ship is in the left panel.";
 
         private const float CanvasInnerMargin = 8f;
         private const float MoonNodeHeight = 100f;
         private const float MoonMinNodeWidth = 74f;
-        private const float MoonLevelColGap = 12f;
-        private const float MoonBranchGapY = 8f;
+        private const float MoonMegaScale = 1.5f;
+        private const float MoonLevelColGap = 20f;
+        private const float MoonBranchGapY = 10f;
         private const float LayoutWidthBucketPixels = 32f;
         private const float MoonChromeHeightHint = 28f;
         private const float VerticalNodeHeight = 188f;
         private const float VerticalLevelSpacing = VerticalNodeHeight + 44f;
         private const float VerticalColGap = 6f;
-        private static readonly Color ConnectorDim = new Color(0.45f, 0.62f, 0.85f, 0.55f);
-        private static readonly Color ConnectorPath = new Color(0.35f, 0.98f, 0.62f, 0.92f);
+        private static readonly Color ConnectorDim = new Color(0.28f, 0.42f, 0.62f, 0.40f);
+        private static readonly Color ConnectorAvailable = new Color(0.32f, 0.92f, 1f, 0.94f);
+        private static readonly Color ConnectorPath = new Color(0.35f, 0.98f, 0.62f, 0.95f);
         private static readonly Vector3[] ConnectorCornerBuffer = new Vector3[4];
+        private readonly List<int> _connectorTargets = new List<int>(2);
 
         [Header("Template references (edit on prefab)")]
         [SerializeField] private TextMeshProUGUI titleText;
+        [SerializeField] private TextMeshProUGUI familyText;
         [SerializeField] private TextMeshProUGUI hintText;
         [SerializeField] private RectTransform centerRow;
         [SerializeField] private RectTransform nodesCanvas;
@@ -56,6 +62,7 @@ namespace TitanOrbit.UI
         private ShipUpgradeTreeNodeUI _currentShipNode;
 
         public TextMeshProUGUI Title => titleText;
+        public TextMeshProUGUI Family => familyText;
         public TextMeshProUGUI Hint => hintText;
         public RectTransform CenterRow => centerRow;
         public RectTransform NodesCanvas => nodesCanvas;
@@ -74,42 +81,156 @@ namespace TitanOrbit.UI
             EnsurePanelHeader();
         }
 
-        /// <summary>Creates a title row on older prefabs that only had a dynamic hint line.</summary>
+        /// <summary>
+        /// Creates the title + family header on older prefabs that only had a dynamic hint line.
+        /// Title stays "Ship Upgrade Tree"; family sits on the right of the same row so the
+        /// docked planet's lineage (Astro Eagle, Cosmic Shark, …) is visible without eating
+        /// extra tree height.
+        /// </summary>
         public void EnsurePanelHeader()
         {
-            // --- Ensure setup ---
+            // --- Title label ---
             if (titleText == null)
             {
-                var existing = transform.Find("Title");
+                var existing = transform.Find("HeaderRow/Title") ?? transform.Find("Title");
                 if (existing != null)
                     titleText = existing.GetComponent<TextMeshProUGUI>();
             }
 
-            if (titleText != null)
+            if (titleText == null)
             {
+                var titleGo = new GameObject("Title", typeof(RectTransform));
+                titleGo.transform.SetParent(transform, false);
+                titleGo.transform.SetAsFirstSibling();
+
+                titleText = titleGo.AddComponent<TextMeshProUGUI>();
                 titleText.text = PanelTitleText;
+                titleText.fontSize = 22;
+                titleText.fontStyle = FontStyles.Bold;
+                titleText.alignment = TextAlignmentOptions.Left;
+                titleText.color = new Color(0.94f, 0.96f, 1f, 1f);
+                titleText.enableWordWrapping = false;
+                titleText.raycastTarget = false;
+                if (TMP_Settings.defaultFontAsset != null)
+                    titleText.font = TMP_Settings.defaultFontAsset;
+
+                var titleLe = titleGo.AddComponent<LayoutElement>();
+                titleLe.preferredHeight = 34f;
+                titleLe.minHeight = 28f;
+                titleLe.flexibleHeight = 0f;
+            }
+            else
+                titleText.text = PanelTitleText;
+
+            // --- Family caption on the same header row ---
+            EnsureFamilyHeader();
+        }
+
+        /// <summary>
+        /// Writes the uppercase family name on the tree header (right side of the title row).
+        /// Uses the same caption as the sidebar / gear rail so Cosmic Shark reads as COSMIC SHARK.
+        /// Called from orbit hosts when the docked store planet (or editor preview family) is known.
+        /// </summary>
+        public void ApplyFamilyIdentity(ShipFamilyDefinition family)
+        {
+            // --- Apply caption ---
+            EnsurePanelHeader();
+            if (familyText == null)
                 return;
+            familyText.text = FamilyStatHudCopy.FormatFamilyCaption(family);
+        }
+
+        /// <summary>
+        /// Finds or builds the right-side family label. Older ShipUpgradeTree prefabs only had
+        /// Title as a direct child — we wrap that into HeaderRow so both labels share one line.
+        /// </summary>
+        void EnsureFamilyHeader()
+        {
+            // --- Reuse wired / existing label ---
+            if (familyText == null)
+            {
+                var existing = transform.Find("HeaderRow/Family") ?? transform.Find("Family");
+                if (existing != null)
+                    familyText = existing.GetComponent<TextMeshProUGUI>();
             }
 
-            var titleGo = new GameObject("Title", typeof(RectTransform));
-            titleGo.transform.SetParent(transform, false);
-            titleGo.transform.SetAsFirstSibling();
+            if (familyText != null)
+                return;
 
-            titleText = titleGo.AddComponent<TextMeshProUGUI>();
-            titleText.text = PanelTitleText;
-            titleText.fontSize = 22;
-            titleText.fontStyle = FontStyles.Bold;
+            // --- Header row (title left, family right) ---
+            RectTransform headerRt = FindOrCreateHeaderRow();
+            if (headerRt == null)
+                return;
+
+            var familyGo = new GameObject("Family", typeof(RectTransform));
+            familyGo.transform.SetParent(headerRt, false);
+            familyText = familyGo.AddComponent<TextMeshProUGUI>();
+            familyText.text = "FAMILY";
+            familyText.fontSize = 16f;
+            familyText.fontStyle = FontStyles.Bold;
+            familyText.characterSpacing = 1.6f;
+            familyText.alignment = TextAlignmentOptions.Right;
+            familyText.color = new Color(0.62f, 0.78f, 0.95f, 0.95f);
+            familyText.enableWordWrapping = false;
+            familyText.overflowMode = TextOverflowModes.Ellipsis;
+            familyText.raycastTarget = false;
+            if (titleText != null && titleText.font != null)
+                familyText.font = titleText.font;
+            else if (TMP_Settings.defaultFontAsset != null)
+                familyText.font = TMP_Settings.defaultFontAsset;
+
+            var familyLe = familyGo.AddComponent<LayoutElement>();
+            familyLe.flexibleWidth = 0.7f;
+            familyLe.minWidth = 120f;
+            familyLe.preferredHeight = 34f;
+            familyLe.minHeight = 28f;
+            familyLe.flexibleHeight = 0f;
+        }
+
+        /// <summary>
+        /// Returns the shared title/family row. Creates it when the prefab still has Title as a
+        /// top-level child of the vertical layout (Resources/ShipUpgradeTree).
+        /// </summary>
+        RectTransform FindOrCreateHeaderRow()
+        {
+            var existing = transform.Find("HeaderRow") as RectTransform;
+            if (existing != null)
+                return existing;
+
+            if (titleText == null)
+                return null;
+
+            var headerGo = new GameObject("HeaderRow", typeof(RectTransform));
+            headerGo.transform.SetParent(transform, false);
+            headerGo.transform.SetAsFirstSibling();
+            var headerRt = headerGo.GetComponent<RectTransform>();
+
+            var hlg = headerGo.AddComponent<HorizontalLayoutGroup>();
+            hlg.childAlignment = TextAnchor.MiddleLeft;
+            hlg.childControlWidth = true;
+            hlg.childControlHeight = true;
+            hlg.childForceExpandWidth = true;
+            hlg.childForceExpandHeight = false;
+            hlg.spacing = 12f;
+            hlg.padding = new RectOffset(0, 4, 0, 0);
+
+            var headerLe = headerGo.AddComponent<LayoutElement>();
+            headerLe.preferredHeight = 34f;
+            headerLe.minHeight = 28f;
+            headerLe.flexibleHeight = 0f;
+            headerLe.flexibleWidth = 1f;
+
+            // [UNITY] Reparent keeps the existing Title widget; only the layout parent changes.
+            titleText.transform.SetParent(headerRt, false);
             titleText.alignment = TextAlignmentOptions.Left;
-            titleText.color = new Color(0.94f, 0.96f, 1f, 1f);
-            titleText.enableWordWrapping = false;
-            titleText.raycastTarget = false;
-            if (TMP_Settings.defaultFontAsset != null)
-                titleText.font = TMP_Settings.defaultFontAsset;
-
-            var titleLe = titleGo.AddComponent<LayoutElement>();
+            var titleLe = titleText.GetComponent<LayoutElement>();
+            if (titleLe == null)
+                titleLe = titleText.gameObject.AddComponent<LayoutElement>();
+            titleLe.flexibleWidth = 1f;
             titleLe.preferredHeight = 34f;
             titleLe.minHeight = 28f;
             titleLe.flexibleHeight = 0f;
+            return headerRt;
         }
 
         /// <summary>
@@ -223,13 +344,18 @@ namespace TitanOrbit.UI
             if (nodesCanvas == null || nodePrefab == null)
                 return;
 
-            ShipPowerBarStatMaxes maxes = ShipFamilyPowerBarNorm.GetGlobalMaxPerStat();
+            // Regular L1–L6 nodes share one family-wide ceiling. L7 MEGA nodes share a
+            // second ceiling from the MEGA catalog so the two rosters never mix.
+            ShipPowerBarStatMaxes regularMaxes = ShipFamilyPowerBarNorm.GetGlobalMaxPerStat();
+            ShipPowerBarStatMaxes megaMaxes = ShipFamilyPowerBarNorm.GetMegaMaxPerStat();
 
             const int maxLevel = 7;
             PrepareHorizontalContainerLayout();
-            ComputeMoonHorizontalGeometry(out float nodeW, out float nodeH, out float canvasW, out float canvasH);
+            ComputeMoonHorizontalGeometry(out float nodeW, out float nodeH, out float megaH, out float canvasW, out float canvasH);
             ApplyHorizontalTreeCanvasLayout(canvasW, canvasH);
             float trackW = GetMoonPowerBarTrackWidth(nodeW);
+            float megaW = Mathf.Round(nodeW * MoonMegaScale);
+            float megaTrackW = GetMoonPowerBarTrackWidth(megaW);
 
             var byLevel = new Dictionary<int, List<ShipUpgradeTreeNodeUI>>();
             int tierIndex = 0;
@@ -237,6 +363,10 @@ namespace TitanOrbit.UI
             {
                 int count = UpgradeTree.GetShipCountForLevel(level);
                 var views = new List<ShipUpgradeTreeNodeUI>(count);
+                bool mega = level == 7;
+                float useW = mega ? megaW : nodeW;
+                float useH = mega ? megaH : nodeH;
+                float useTrack = mega ? megaTrackW : trackW;
                 float colX = 0f;
                 float nodeY = 0f;
                 for (int b = 0; b < count; b++)
@@ -248,26 +378,41 @@ namespace TitanOrbit.UI
                         tierIndex++;
 
                     var node = InstantiateNodeForPreview();
-                    node.BindSlot(level, b, null, nodeW, nodeH, trackW);
+                    node.BindSlot(level, b, null, useW, useH, useTrack);
                     node.ConfigureLayout(true);
-                    node.SetLevelLabel(level == 1 ? "Lv 1" : $"Lv {level}");
+                    node.SetLevelLabel(ShipUpgradeTreeNodeUI.FormatTreeLevelCaption(level, true));
                     string shipName = tier != null
-                        ? (string.IsNullOrEmpty(tier.upgradeTreeShipName) ? tier.chassisId : tier.upgradeTreeShipName)
+                        ? tier.ResolveUpgradeTreeShipName()
                         : $"Branch {b + 1}";
+                    if (string.IsNullOrWhiteSpace(shipName))
+                        shipName = $"Branch {b + 1}";
                     node.SetShipName(shipName);
-                    node.SetPrice(family != null ? "ΓÇö" : "Preview");
+                    node.SetFamilyName(FamilyStatHudCopy.FormatFamilyDisplayName(family));
+                    if (mega)
+                        node.ApplyMegaShipCardStyle(false, false, false, false);
+                    else
+                        node.ClearMegaShipCardStyle();
+                    node.SetPrice(family != null ? "—" : "Preview");
                     node.SetPreview(tier != null ? tier.menuPreviewSprite : null);
                     if (tier != null)
                     {
                         ShipFamilyPowerScoreBreakdown breakdown = ShipFamilyPowerBarNorm.GetBreakdownAtShipLevel(
                             family, tier, level);
-                        node.ApplyPowerBreakdown(breakdown, maxes);
+                        node.ApplyPowerBreakdown(breakdown, mega ? megaMaxes : regularMaxes);
                     }
                     else
-                        node.ApplyPowerBreakdown(default, maxes);
+                        node.ApplyPowerBreakdown(default, mega ? megaMaxes : regularMaxes);
 
-                    GetMoonNodePosition(level, b, count, nodeW, nodeH, canvasW, canvasH, ComputeMaxColumnStackHeight(nodeH),
-                        out colX, out nodeY);
+                    GetMoonNodePosition(level, b, count, nodeW, nodeH, megaW, canvasW, canvasH,
+                        ComputeMaxColumnStackHeight(nodeH), out colX, out nodeY);
+                    if (mega)
+                    {
+                        GetMoonNodePosition(6, b * 2, 6, nodeW, nodeH, megaW, canvasW, canvasH,
+                            ComputeMaxColumnStackHeight(nodeH), out _, out float y0);
+                        GetMoonNodePosition(6, b * 2 + 1, 6, nodeW, nodeH, megaW, canvasW, canvasH,
+                            ComputeMaxColumnStackHeight(nodeH), out _, out float y1);
+                        nodeY = (y0 + y1) * 0.5f;
+                    }
                     node.Rect.anchoredPosition = new Vector2(colX, nodeY);
                     views.Add(node);
                     _nodes.Add(node);
@@ -278,9 +423,10 @@ namespace TitanOrbit.UI
             }
 
             ForceLayoutBeforeConnectors();
-            EnforceUniformNodeSizes(nodeW, nodeH, trackW);
+            EnforceUniformNodeSizesExceptMega(nodeW, nodeH, trackW, megaW, megaH, megaTrackW);
             DrawConnectors(byLevel, null, moonHorizontal: true);
 
+            ApplyFamilyIdentity(family);
             if (hintText != null)
             {
                 hintText.text = family != null
@@ -316,26 +462,42 @@ namespace TitanOrbit.UI
             }
 
             const int maxLevel = 7;
-            ComputeMoonHorizontalGeometry(out float nodeW, out float nodeH, out float canvasW, out float canvasH);
+            ComputeMoonHorizontalGeometry(out float nodeW, out float nodeH, out float megaH, out float canvasW, out float canvasH);
             ApplyHorizontalTreeCanvasLayout(canvasW, canvasH);
             float trackW = GetMoonPowerBarTrackWidth(nodeW);
 
             _station.TryGetPlayerUpgradePathEdges(out HashSet<(int fL, int fB, int tL, int tB)> pathEdges);
             var byLevel = new Dictionary<int, List<ShipUpgradeTreeNodeUI>>();
 
+            float megaW = Mathf.Round(nodeW * MoonMegaScale);
+            float megaTrackW = GetMoonPowerBarTrackWidth(megaW);
+
             for (int level = 1; level <= maxLevel; level++)
             {
                 int count = UpgradeTree.GetShipCountForLevel(level);
                 var views = new List<ShipUpgradeTreeNodeUI>(count);
+                bool mega = level == 7;
+                float useW = mega ? megaW : nodeW;
+                float useH = mega ? megaH : nodeH;
+                float useTrack = mega ? megaTrackW : trackW;
                 float colX = 0f;
                 float nodeY = 0f;
                 for (int b = 0; b < count; b++)
                 {
                     ShipUpgradeNode upgradeNode = level == 1 ? null : tree.GetNodeForBranch(level, b);
-                    var view = SpawnNode(level, b, upgradeNode, nodeW, nodeH, trackW);
+                    var view = SpawnNode(level, b, upgradeNode, useW, useH, useTrack);
                     view.ConfigureLayout(true);
-                    GetMoonNodePosition(level, b, count, nodeW, nodeH, canvasW, canvasH, ComputeMaxColumnStackHeight(nodeH),
-                        out colX, out nodeY);
+                    GetMoonNodePosition(level, b, count, nodeW, nodeH, megaW, canvasW, canvasH,
+                        ComputeMaxColumnStackHeight(nodeH), out colX, out nodeY);
+                    if (mega)
+                    {
+                        // Align each mega to the midpoint of its L6 pair (1&2, 3&4, 5&6).
+                        GetMoonNodePosition(6, b * 2, 6, nodeW, nodeH, megaW, canvasW, canvasH,
+                            ComputeMaxColumnStackHeight(nodeH), out _, out float y0);
+                        GetMoonNodePosition(6, b * 2 + 1, 6, nodeW, nodeH, megaW, canvasW, canvasH,
+                            ComputeMaxColumnStackHeight(nodeH), out _, out float y1);
+                        nodeY = (y0 + y1) * 0.5f;
+                    }
                     view.Rect.anchoredPosition = new Vector2(colX, nodeY);
                     views.Add(view);
                 }
@@ -344,7 +506,7 @@ namespace TitanOrbit.UI
             }
 
             ForceLayoutBeforeConnectors();
-            EnforceUniformNodeSizes(nodeW, nodeH, trackW);
+            EnforceUniformNodeSizesExceptMega(nodeW, nodeH, trackW, megaW, megaH, megaTrackW);
             DrawConnectors(byLevel, pathEdges, moonHorizontal: true);
         }
 
@@ -404,6 +566,7 @@ namespace TitanOrbit.UI
             int branchCount,
             float nodeW,
             float nodeH,
+            float megaW,
             float canvasW,
             float canvasH,
             float maxColStackH,
@@ -413,10 +576,15 @@ namespace TitanOrbit.UI
             float halfW = canvasW * 0.5f;
             float halfH = canvasH * 0.5f;
             float margin = CanvasInnerMargin;
-            float stackH = branchCount * nodeH + (branchCount - 1) * MoonBranchGapY;
+            float gapY = ComputeMoonBranchGapY(nodeH);
+            float stackH = branchCount * nodeH + (branchCount - 1) * gapY;
             float stackTop = halfH - margin - (maxColStackH - stackH) * 0.5f;
-            x = Mathf.Round(-halfW + margin + nodeW * 0.5f + (level - 1) * (nodeW + MoonLevelColGap));
-            y = Mathf.Round(stackTop - nodeH * 0.5f - (branchCount - 1 - branch) * (nodeH + MoonBranchGapY));
+            float stride = nodeW + MoonLevelColGap;
+            if (level >= 7)
+                x = Mathf.Round(-halfW + margin + 6f * stride + Mathf.Max(nodeW, megaW) * 0.5f);
+            else
+                x = Mathf.Round(-halfW + margin + nodeW * 0.5f + (level - 1) * stride);
+            y = Mathf.Round(stackTop - nodeH * 0.5f - (branchCount - 1 - branch) * (nodeH + gapY));
         }
 
         private void ForceLayoutBeforeConnectors()
@@ -434,13 +602,23 @@ namespace TitanOrbit.UI
 
         private void EnforceUniformNodeSizes(float nodeW, float nodeH, float trackW)
         {
-            // --- EnforceUniformNodeSizes ---
+            EnforceUniformNodeSizesExceptMega(nodeW, nodeH, trackW, nodeW, nodeH, trackW);
+        }
+
+        /// <summary>Keeps L1–L6 uniform; L7 MEGA nodes stay larger so the final hulls read as bosses.</summary>
+        private void EnforceUniformNodeSizesExceptMega(
+            float nodeW, float nodeH, float trackW,
+            float megaW, float megaH, float megaTrackW)
+        {
             for (int i = 0; i < _nodes.Count; i++)
             {
                 var node = _nodes[i];
                 if (node == null)
                     continue;
-                node.EnforceLayoutSize(nodeW, nodeH, trackW);
+                if (node.Level == 7)
+                    node.EnforceLayoutSize(megaW, megaH, megaTrackW);
+                else
+                    node.EnforceLayoutSize(nodeW, nodeH, trackW);
             }
         }
 
@@ -473,31 +651,63 @@ namespace TitanOrbit.UI
             HashSet<(int fL, int fB, int tL, int tB)> pathEdges,
             bool moonHorizontal)
         {
+            int shipLevel = _station != null ? _station.ShipLevel : 0;
+            int shipBranch = _station != null ? _station.BranchIndex : -1;
+
             for (int level = 2; level <= 7; level++)
             {
                 if (!byLevel.TryGetValue(level, out var levelViews)) continue;
                 if (!byLevel.TryGetValue(level - 1, out var prevViews)) continue;
                 foreach (var prev in prevViews)
                 {
-                    foreach (var next in levelViews)
+                    if (prev == null) continue;
+                    UpgradeTree.GetNextLevelBranchTargets(prev.Level, prev.BranchIndex, _connectorTargets);
+                    bool fromCurrent = prev.Level == shipLevel && prev.BranchIndex == shipBranch;
+                    for (int t = 0; t < _connectorTargets.Count; t++)
                     {
-                        if (!UpgradeTree.IsValidUpgradeStep(level - 1, prev.BranchIndex, level, next.BranchIndex))
-                            continue;
-                        bool onPath = pathEdges != null && pathEdges.Contains((level - 1, prev.BranchIndex, level, next.BranchIndex));
-                        Vector2 from = moonHorizontal
-                            ? GetRectEdgeMidpoint(prev.Rect, rightEdge: true)
-                            : GetRectEdgeMidpoint(prev.Rect, rightEdge: false, verticalOut: true);
-                        Vector2 to = moonHorizontal
-                            ? GetRectEdgeMidpoint(next.Rect, rightEdge: false)
-                            : GetRectEdgeMidpoint(next.Rect, rightEdge: true, verticalIn: true);
-                        DrawConnector(from, to, onPath ? ConnectorPath : ConnectorDim, onPath ? 3.5f : 2f);
+                        ShipUpgradeTreeNodeUI next = FindNodeByBranch(levelViews, _connectorTargets[t]);
+                        if (next == null) continue;
+
+                        bool onPath = pathEdges != null
+                            && pathEdges.Contains((prev.Level, prev.BranchIndex, next.Level, next.BranchIndex));
+                        Color color = onPath
+                            ? ConnectorPath
+                            : fromCurrent ? ConnectorAvailable : ConnectorDim;
+                        float thickness = onPath ? 3.6f : fromCurrent ? 2.8f : 2f;
+
+                        Vector2 from;
+                        Vector2 to;
+                        if (!moonHorizontal)
+                        {
+                            from = GetRectPointInCanvas(prev.Rect, 0.5f, 0f);
+                            to = GetRectPointInCanvas(next.Rect, 0.5f, 1f);
+                        }
+                        else
+                        {
+                            from = GetRectPointInCanvas(prev.Rect, 1f, 0.5f);
+                            to = GetRectPointInCanvas(next.Rect, 0f, 0.5f);
+                        }
+
+                        DrawConnector(from, to, color, thickness);
                     }
                 }
             }
         }
 
+        private static ShipUpgradeTreeNodeUI FindNodeByBranch(List<ShipUpgradeTreeNodeUI> views, int branch)
+        {
+            if (views == null) return null;
+            for (int i = 0; i < views.Count; i++)
+            {
+                if (views[i] != null && views[i].BranchIndex == branch)
+                    return views[i];
+            }
+
+            return null;
+        }
+
         private static float GetMoonPowerBarTrackWidth(float nodeW) =>
-            Mathf.Max(48f, nodeW - 12f);
+            Mathf.Max(48f, nodeW - ShipUpgradeTreeNodeUI.TreeCardEdgePad * 2f);
 
         private void GetMoonContainerSize(out float width, out float height)
         {
@@ -512,7 +722,7 @@ namespace TitanOrbit.UI
             else
             {
                 float refNodeW = nodePrefab != null ? nodePrefab.LayoutWidth : 120f;
-                width = refNodeW * 7f + MoonLevelColGap * 6f + CanvasInnerMargin * 2f + 24f;
+                width = refNodeW * (6f + MoonMegaScale) + MoonLevelColGap * 6f + CanvasInnerMargin * 2f + 24f;
             }
 
             height = GetMoonRowAvailableHeight();
@@ -568,22 +778,28 @@ namespace TitanOrbit.UI
             return Mathf.Max(160f, h - 12f);
         }
 
+        /// <summary>
+        /// Tight vertical air between stacked family cards. MEGA hulls live in their own
+        /// column (centered on an L6 pair), so this gap does not need to reserve 1.5× height.
+        /// </summary>
+        private static float ComputeMoonBranchGapY(float _) => MoonBranchGapY;
+
         private static float ComputeMaxColumnStackHeight(float nodeH)
         {
             // --- Compute value ---
             int maxStack = 1;
             for (int level = 1; level <= 7; level++)
                 maxStack = Mathf.Max(maxStack, UpgradeTree.GetShipCountForLevel(level));
-            return maxStack * nodeH + (maxStack - 1) * MoonBranchGapY;
+            float gapY = ComputeMoonBranchGapY(nodeH);
+            return maxStack * nodeH + (maxStack - 1) * gapY;
         }
 
         /// <summary>
         /// Derives uniform node size from available row width. Prefab layout size is reference aspect only.
         /// </summary>
-        private void ComputeMoonHorizontalGeometry(out float nodeW, out float nodeH, out float canvasW, out float canvasH)
+        private void ComputeMoonHorizontalGeometry(out float nodeW, out float nodeH, out float megaH, out float canvasW, out float canvasH)
         {
             // --- Compute value ---
-            const int maxLevel = 7;
             float margin = CanvasInnerMargin;
             GetMoonContainerSize(out float containerW, out float containerH);
 
@@ -597,29 +813,41 @@ namespace TitanOrbit.UI
 
             float availableW = Mathf.Max(200f, containerW - rowPad);
             float innerW = availableW - margin * 2f;
-            nodeW = (innerW - (maxLevel - 1) * MoonLevelColGap) / maxLevel;
+            // Six regular columns plus a wider mega column, with a gap after each of the first six.
+            nodeW = (innerW - 6f * MoonLevelColGap) / (6f + MoonMegaScale);
             nodeW = Mathf.Round(Mathf.Max(MoonMinNodeWidth, nodeW));
             canvasW = availableW;
 
-            nodeH = nodePrefab != null ? nodePrefab.LayoutHeight : MoonNodeHeight;
-            nodeH = Mathf.Max(MoonNodeHeight, nodeH);
+            // Halfway between the old compact cards (~prefab 100px) and a full-row stretch.
+            // Full-row height hid ship names under the silhouette.
+            float compactH = nodePrefab != null ? nodePrefab.LayoutHeight : MoonNodeHeight;
+            compactH = Mathf.Max(MoonNodeHeight, compactH);
+            int maxStack = 1;
+            for (int level = 1; level <= 7; level++)
+                maxStack = Mathf.Max(maxStack, UpgradeTree.GetShipCountForLevel(level));
+            float gapY = ComputeMoonBranchGapY(compactH);
+            float maxCanvasH = Mathf.Max(160f, containerH - 4f);
+            float targetStackH = Mathf.Max(72f, maxCanvasH - margin * 2f);
+            float fillH = (targetStackH - (maxStack - 1) * gapY) / maxStack;
+            nodeH = Mathf.Max(72f, Mathf.Round(Mathf.Lerp(compactH, fillH, 0.5f) * 0.8f));
 
             float maxColStackH = ComputeMaxColumnStackHeight(nodeH);
             canvasH = margin * 2f + maxColStackH;
-
-            float maxCanvasH = Mathf.Max(160f, containerH - 4f);
             if (canvasH > maxCanvasH)
             {
-                float stackScale = (maxCanvasH - margin * 2f) / maxColStackH;
-                nodeH = Mathf.Max(72f, Mathf.Round(nodeH * stackScale));
+                nodeH = Mathf.Max(72f, Mathf.Round((targetStackH - (maxStack - 1) * gapY) / maxStack));
                 maxColStackH = ComputeMaxColumnStackHeight(nodeH);
                 canvasH = margin * 2f + maxColStackH;
             }
-            else if (canvasH < maxCanvasH - 8f)
+
+            // MEGA height stays on this snapshot. Regular L1–L6 cards grow 10%.
+            megaH = Mathf.Round(nodeH * MoonMegaScale);
+            nodeH = Mathf.Round(nodeH * 1.1f);
+            maxColStackH = ComputeMaxColumnStackHeight(nodeH);
+            canvasH = margin * 2f + maxColStackH;
+            if (canvasH > maxCanvasH)
             {
-                // --- if ---
-                float targetStackH = maxCanvasH - margin * 2f;
-                nodeH = Mathf.Max(72f, Mathf.Round(nodeH * (targetStackH / maxColStackH)));
+                nodeH = Mathf.Max(72f, Mathf.Round((targetStackH - (maxStack - 1) * gapY) / maxStack));
                 maxColStackH = ComputeMaxColumnStackHeight(nodeH);
                 canvasH = margin * 2f + maxColStackH;
             }
@@ -666,18 +894,24 @@ namespace TitanOrbit.UI
             ApplyCenterRowHeight(maxRowH);
         }
 
-        /// <summary>Edge midpoint in <paramref name="rt"/> parent local space (nodes canvas).</summary>
-        private static Vector2 GetRectEdgeMidpoint(RectTransform rt, bool rightEdge, bool verticalOut = false, bool verticalIn = false)
+        /// <summary>
+        /// Point on a node in <see cref="nodesCanvas"/> local space.
+        /// <paramref name="nx"/> / <paramref name="ny"/> are 0–1 from bottom-left (1,1 = top-right).
+        /// </summary>
+        private Vector2 GetRectPointInCanvas(RectTransform rt, float nx, float ny)
         {
-            // --- Compute value ---
-            rt.GetLocalCorners(ConnectorCornerBuffer);
-            if (verticalOut)
-                return new Vector2((ConnectorCornerBuffer[0].x + ConnectorCornerBuffer[3].x) * 0.5f, ConnectorCornerBuffer[0].y);
-            if (verticalIn)
-                return new Vector2((ConnectorCornerBuffer[1].x + ConnectorCornerBuffer[2].x) * 0.5f, ConnectorCornerBuffer[1].y);
-            if (rightEdge)
-                return new Vector2(ConnectorCornerBuffer[2].x, (ConnectorCornerBuffer[2].y + ConnectorCornerBuffer[3].y) * 0.5f);
-            return new Vector2(ConnectorCornerBuffer[1].x, (ConnectorCornerBuffer[1].y + ConnectorCornerBuffer[0].y) * 0.5f);
+            if (rt == null || nodesCanvas == null)
+                return Vector2.zero;
+
+            rt.GetWorldCorners(ConnectorCornerBuffer);
+            Vector3 bl = ConnectorCornerBuffer[0];
+            Vector3 tl = ConnectorCornerBuffer[1];
+            Vector3 tr = ConnectorCornerBuffer[2];
+            Vector3 br = ConnectorCornerBuffer[3];
+            Vector3 bottom = Vector3.Lerp(bl, br, nx);
+            Vector3 top = Vector3.Lerp(tl, tr, nx);
+            Vector3 world = Vector3.Lerp(bottom, top, ny);
+            return nodesCanvas.InverseTransformPoint(world);
         }
 
         private void DrawConnector(Vector2 from, Vector2 to, Color color, float thickness)
@@ -722,7 +956,8 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// Ten global catalog maxes for equal-slot bars (all families, each chassis at its tree level).
+        /// Regular-family (L1–L6) catalog maxes for equal-slot bars. MEGA nodes resolve
+        /// <see cref="ShipFamilyPowerBarNorm.GetMegaMaxPerStat"/> when they paint.
         /// </summary>
         ShipPowerBarStatMaxes ComputePowerBarStatMaxes()
         {

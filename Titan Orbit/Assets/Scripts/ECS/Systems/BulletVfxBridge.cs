@@ -64,6 +64,10 @@ namespace TitanOrbit.ECS
             public float3 HitPosition;
             public float Damage;
             public byte OwnerTeam;
+            /// <summary>Shooter NetworkId — orphan anticipation reconcile when Sequence is unbound.</summary>
+            public int OwnerNetworkId;
+            /// <summary>Firing mount (−1 unknown). Prefer this over nearest-tracer fallback.</summary>
+            public int MountIndex;
             public int BankIndex;
             public float ScaleMultiplier;
             /// <summary>
@@ -87,6 +91,12 @@ namespace TitanOrbit.ECS
             /// (0 = destroyed this hit). Ignored when PlanetId is 0.
             /// </summary>
             public float PlanetaryDefenseHealthAfter;
+
+            /// <summary>
+            /// <see cref="BulletHitRpc.AsteroidLayoutSlot"/> — −1 when not an asteroid hit.
+            /// VFX does not use this; HitRpc apply does.
+            /// </summary>
+            public int AsteroidLayoutSlot;
         }
 
         static readonly ConcurrentQueue<SpawnRequest> SpawnQueue = new ConcurrentQueue<SpawnRequest>();
@@ -117,14 +127,18 @@ namespace TitanOrbit.ECS
 
         /// <summary>
         /// Max live Sequence=0 anticipation tracers for the local player.
-        /// [TITAN-ORBIT] Enough for one multi-cannon volley (upgrade hulls up to ~8 weapons).
+        /// [TITAN-ORBIT] MEGA Shift volleys keep many long-travel tracers alive at once.
+        /// Cap=32 hid every muzzle after two fat volleys and looked like the guns jammed.
         /// Client fire still gates on FireCooldown + energy, so this is not an open RoF spam path.
-        /// Older Cap=1 hid every muzzle after the first in a volley.
         /// </summary>
-        public const int MaxLiveAnticipations = 8;
+        public const int MaxLiveAnticipations = 64;
 
         /// <summary>Live anticipation tracers (driver maintains; used to gate local enqueue).</summary>
         public static int LiveAnticipationCount { get; private set; }
+
+        /// <summary>How many Sequence=0 tracers may still be created this moment.</summary>
+        public static int AnticipationSlotsRemaining =>
+            math.max(0, MaxLiveAnticipations - LiveAnticipationCount);
 
         /// <summary>Allocates the next shot sequence id (server only).</summary>
         public static uint NextSequence() => s_NextSequence++;

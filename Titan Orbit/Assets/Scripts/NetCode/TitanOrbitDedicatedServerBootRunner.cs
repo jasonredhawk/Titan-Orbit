@@ -41,6 +41,7 @@ namespace TitanOrbit.NetCode
         {
             // --- Unity lifecycle ---
             DontDestroyOnLoad(gameObject);
+            TitanOrbitServerTickRateSystem.ApplyDedicatedHeadlessFramePacing();
             DedicatedServerFileLog.Append("boot", "BootRunner Start — ensuring session manager + boot.");
             Debug.Log("[TitanOrbitDedicatedServerBootRunner] Start — triggering dedicated boot.");
 

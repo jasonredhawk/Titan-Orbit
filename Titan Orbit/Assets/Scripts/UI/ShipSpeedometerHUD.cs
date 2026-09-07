@@ -47,6 +47,7 @@ namespace TitanOrbit.UI
     /// [TITAN-ORBIT] The speed bar always spans to OVERDRIVE top speed (motor baked capacity),
     /// even when Shift is not held. The right-hand band uses the fill colour at alpha 0.1 so
     /// players see unused overdrive headroom; the solid fill only enters that band while OD is active.
+    /// MEGA hulls have no overdrive — the bar stays at cruise and Shift does not open a zone.
     /// </para>
     /// <para>
     /// [TITAN-ORBIT] Pre–mass-tax baselines for SPD / ACC / turn are always chassis
@@ -163,6 +164,11 @@ namespace TitanOrbit.UI
         /// used to SetActive(false) the speedometer for a frame on asteroid destroy (gem Instantiates).
         /// </summary>
         bool _hasHudCache;
+        /// <summary>
+        /// Last MEGA vs regular hull used for the OVERDRIVE band. Held when gem Instantiates
+        /// skip the entity read so MEGA plow does not flash a fake OD zone.
+        /// </summary>
+        bool _latchedLocalMega;
         ShipState _cachedShip;
         ShipMotorConfig _cachedMotor;
         ShipKinematics _cachedKinematics;
@@ -1100,13 +1106,25 @@ namespace TitanOrbit.UI
 
             if (string.IsNullOrEmpty(chassisId))
             {
-                ShipStatApplyLogic.TryResolveChassisId(
-                    ship.Team,
-                    ship.ShipLevel,
-                    branchIndex,
-                    out chassisId,
-                    allowFallback: true,
-                    shipFamilyConfigIndex: familyIndex);
+                // MEGA ghosts store CatalogIndex on MegaShipState — do not map L7+slot
+                // onto a regular family ladder chassis (that was painting AstroEagle L7 numbers).
+                if (em.HasComponent<MegaShipState>(shipEntity)
+                    && em.GetComponentData<MegaShipState>(shipEntity).IsMega)
+                {
+                    chassisId = MegaShipCatalog.FormatChassisId(
+                        em.GetComponentData<MegaShipState>(shipEntity).CatalogIndex);
+                }
+                else
+                {
+                    ShipStatApplyLogic.TryResolveChassisId(
+                        ship.Team,
+                        ship.ShipLevel,
+                        branchIndex,
+                        out chassisId,
+                        allowFallback: true,
+                        shipFamilyConfigIndex: familyIndex);
+                }
+
                 _cachedChassisId = chassisId;
             }
 
@@ -1117,41 +1135,56 @@ namespace TitanOrbit.UI
                 ShipSpeedometerStatTooltips.TryRefreshPartCache(
                     em, shipEntity, chassisId, ship.ShipLevel, ref _partCache);
 
-                ShipAbilityLevelCounts abilityCounts = hasAttrs
-                    ? ShipAttributeUpgradeLogic.ToAbilityLevelCounts(in attrs)
-                    : default;
-
-                if (_partCache.Valid && _partCache.Ids != null && _partCache.Ids.Count > 0)
+                bool megaChassis = MegaShipCatalog.IsMegaChassisId(chassisId);
+                if (megaChassis)
                 {
-                    effectiveStats = ShipComponentExtraLevelMath.AggregateAndEvaluate(
-                        _partCache.Ids,
-                        _partCache.Stats,
-                        ship.ShipLevel,
-                        in abilityCounts);
-                    effectiveStats = ShipComponentExtraLevelMath.ApplyMobilityPenalties(
-                        effectiveStats, ship.ShipLevel);
-                    if (ShipStatApplyLogic.TryResolveFamilyForChassisId(chassisId, out ShipFamilyDefinition family)
-                        && family != null)
-                    {
-                        effectiveStats = family.ApplyStatFallbacks(effectiveStats);
-                        effectiveStats = family.ApplySpecialBonuses(effectiveStats);
-                    }
+                    // Static catalog sum — MEGAs have no Extra Level and no bottom-HUD purchases.
+                    // GetEffectiveStatsAtShipLevel would treat shipLevel 7 as six Extra Level steps
+                    // and inflate every chip far above the motor.
+                    if (MegaShipCatalog.TryParseCatalogIndex(chassisId, out ushort megaIdx))
+                        MegaShipStatsCalculator.TrySumForCatalogIndex(megaIdx, out effectiveStats);
+                    else
+                        ShipStatApplyLogic.TryGetBaseStatsForChassis(
+                            chassisId, ship.ShipLevel, out effectiveStats);
                 }
-                else if (ShipStatApplyLogic.TryGetBaseStatsForChassis(
-                             chassisId, ship.ShipLevel, out ShipComponentAbilityStats summed))
+                else
                 {
-                    // Fallback: single-pool Extra Level (count=1) when prefab parts are unavailable.
-                    effectiveStats = ShipComponentStoreData.GetEffectiveStatsAtShipLevel(
-                        summed, ship.ShipLevel);
-                    if (hasAttrs)
+                    ShipAbilityLevelCounts abilityCounts = hasAttrs
+                        ? ShipAttributeUpgradeLogic.ToAbilityLevelCounts(in attrs)
+                        : default;
+
+                    if (_partCache.Valid && _partCache.Ids != null && _partCache.Ids.Count > 0)
                     {
-                        // [LEGACY] ApplyMultipliers / ApplyMoveSpeedAbilitySteps are no-ops —
-                        // Extra Level already includes ability purchases when part lists exist.
-                        ShipAttributeUpgradeLogic.ApplyMultipliers(ref effectiveStats, attrs);
-                        ShipAttributeUpgradeLogic.ResolveMoveSpeedAbilitySteps(
-                            summed, out float moveStep, out float accelStep, out float odDrainStep);
-                        ShipAttributeUpgradeLogic.ApplyMoveSpeedAbilitySteps(
-                            ref effectiveStats, attrs, moveStep, accelStep, odDrainStep);
+                        effectiveStats = ShipComponentExtraLevelMath.AggregateAndEvaluate(
+                            _partCache.Ids,
+                            _partCache.Stats,
+                            ship.ShipLevel,
+                            in abilityCounts);
+                        effectiveStats = ShipComponentExtraLevelMath.ApplyMobilityPenalties(
+                            effectiveStats, ship.ShipLevel);
+                        if (ShipStatApplyLogic.TryResolveFamilyForChassisId(chassisId, out ShipFamilyDefinition family)
+                            && family != null)
+                        {
+                            effectiveStats = family.ApplyStatFallbacks(effectiveStats);
+                            effectiveStats = family.ApplySpecialBonuses(effectiveStats);
+                        }
+                    }
+                    else if (ShipStatApplyLogic.TryGetBaseStatsForChassis(
+                                 chassisId, ship.ShipLevel, out ShipComponentAbilityStats summed))
+                    {
+                        // Fallback: single-pool Extra Level (count=1) when prefab parts are unavailable.
+                        effectiveStats = ShipComponentStoreData.GetEffectiveStatsAtShipLevel(
+                            summed, ship.ShipLevel);
+                        if (hasAttrs)
+                        {
+                            // [LEGACY] ApplyMultipliers / ApplyMoveSpeedAbilitySteps are no-ops —
+                            // Extra Level already includes ability purchases when part lists exist.
+                            ShipAttributeUpgradeLogic.ApplyMultipliers(ref effectiveStats, attrs);
+                            ShipAttributeUpgradeLogic.ResolveMoveSpeedAbilitySteps(
+                                summed, out float moveStep, out float accelStep, out float odDrainStep);
+                            ShipAttributeUpgradeLogic.ApplyMoveSpeedAbilitySteps(
+                                ref effectiveStats, attrs, moveStep, accelStep, odDrainStep);
+                        }
                     }
                 }
             }
@@ -1273,6 +1306,11 @@ namespace TitanOrbit.UI
                 shiftHeld = input.Overdrive;
             }
             else
+                return 1f;
+
+            // MEGAs have no overdrive — Shift is heading-lock / mouse-aim only.
+            if (em.HasComponent<MegaShipState>(shipEntity)
+                && em.GetComponentData<MegaShipState>(shipEntity).IsMega)
                 return 1f;
 
             if (!ShipOverdriveTuning.IsBurstActive(
@@ -1473,7 +1511,7 @@ namespace TitanOrbit.UI
                         !ship.AwaitingTeamSelection &&
                         ship.Team != TeamId.None &&
                         !ClientTeamFlowState.ShouldSuppressLocalPlayerControl();
-            if (HUDController.ShipUpgradeTreeObscuresHud)
+            if (HUDController.ShipUpgradeTreeObscuresHud || HUDController.MinimapExpandedObscuresHud)
                 show = false;
 
             // --- Visibility and layout refresh ---
@@ -1527,16 +1565,18 @@ namespace TitanOrbit.UI
             float chassisTurnDeg = ResolveChassisTurnDeg(motor, effectiveStats);
 
             // --- Live subtractive mass tax (same formula as ShipPhysicsDriveLogic) ---
+            // MEGAs skip cargo / hull-size tax so cruise matches catalog motor numbers.
             float componentSize = motor.HullMassReference > 0f
                 ? motor.HullMassReference
                 : ShipMassLogic.MinMass;
-            ShipMobilityResolution.TaxedMotorStats taxed = ShipMobilityResolution.ApplyMassTaxFromCargo(
+            ShipMobilityResolution.TaxedMotorStats taxed = ShipMobilityResolution.ResolveLiveMotorStats(
                 chassisMove,
                 chassisAccel,
                 chassisTurnDeg,
                 ship.CurrentGems,
                 ship.CurrentPeople,
-                componentSize);
+                componentSize,
+                skipMassTax: motor.SkipMassTax != 0);
             float cruiseMax = taxed.MaxSpeed;
             float maxFwd = taxed.EngineThrust;
 
@@ -1551,9 +1591,20 @@ namespace TitanOrbit.UI
             // --- OVERDRIVE capacity (always) vs live burst (only while engaged) ---
             // [TITAN-ORBIT] Bar scale = cruise × baked OD mul so the faint OD zone is always visible.
             // Live cruise / "at max" / thrust use active overdrive only.
-            float overdriveCapacityMult = ResolveOverdriveCapacityMult(motor);
-            float overdriveActiveMult = 1f;
+            // MEGAs have no overdrive — keep the bar at cruise so Shift does not paint a fake OD zone.
             var vizWorld = EcsGameBridge.GetVisualizationWorld();
+            bool localMega = vizWorld != null && vizWorld.IsCreated
+                && shipEntity != Entity.Null
+                && vizWorld.EntityManager.Exists(shipEntity)
+                && vizWorld.EntityManager.HasComponent<MegaShipState>(shipEntity)
+                && vizWorld.EntityManager.GetComponentData<MegaShipState>(shipEntity).IsMega;
+            if (!localMega && EcsGameBridge.TryGetLocalMegaShipState(out _))
+                localMega = true;
+            else if (!localMega && ClientJoinSettleCache.ShouldSkipShipEntityQueries)
+                localMega = _latchedLocalMega;
+            _latchedLocalMega = localMega;
+            float overdriveCapacityMult = localMega ? 1f : ResolveOverdriveCapacityMult(motor);
+            float overdriveActiveMult = 1f;
             if (vizWorld != null && vizWorld.IsCreated)
                 overdriveActiveMult = ResolveOverdriveMovementMult(vizWorld.EntityManager, shipEntity, ship);
             bool overdriveActive = overdriveActiveMult > 1.001f;
@@ -1633,11 +1684,19 @@ namespace TitanOrbit.UI
                     RamSelfDamage = tipRamSelf,
                     RamRating = tipRamRating,
                     ComponentSize = componentSize,
-                    MoveSpeedAbilityLevel = _moveSpeedAbilityLevel,
-                    MoveStepPreview = _partCache.Valid
-                        ? Mathf.Max(0f, _partCache.Propulsion.moveSpeedPerExtraLevel)
-                        : 0f,
+                    MoveSpeedAbilityLevel = localMega ? 0 : _moveSpeedAbilityLevel,
+                    // MEGAs are not Extra-Level upgradable — hide the green +per-buy on chips.
+                    MoveStepPreview = localMega
+                        ? 0f
+                        : (_partCache.Valid
+                            ? Mathf.Max(0f, _partCache.Propulsion.moveSpeedPerExtraLevel)
+                            : 0f),
                     FirePowerAbilityLevel = _statsCacheAttrs.FirePower,
+                    IsMega = localMega,
+                    MegaCatalogIndex = localMega
+                        && MegaShipCatalog.TryParseCatalogIndex(_cachedChassisId, out ushort liveMegaIdx)
+                        ? liveMegaIdx
+                        : (ushort)0,
                 };
                 BulletBankHudCopy.ApplyLoadout(ref _liveTooltipContext);
             }

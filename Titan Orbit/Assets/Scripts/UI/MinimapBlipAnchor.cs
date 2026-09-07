@@ -18,7 +18,7 @@ namespace TitanOrbit.UI
     /// <summary>
     /// Hidden world-space anchor used as a blip key for ECS entities on the minimap.
     /// <see cref="MinimapEcsEntitySync"/> creates/updates these from ghost state; blip
-    /// renderers read Kind, Team, chassis, cargo, and match stats for icon shape and badges.
+    /// renderers read Kind, Team, IsMega, chassis, cargo, and match stats for icon shape and badges.
     /// [HYBRID] bridge between ECS entities and UGUI/minimap presentation — does not drive simulation.
     /// </summary>
     public sealed class MinimapBlipAnchor : MonoBehaviour
@@ -36,6 +36,13 @@ namespace TitanOrbit.UI
         /// <summary>True for the local player's ship blip.</summary>
         public bool IsLocalPlayer;
 
+        /// <summary>
+        /// True while this hull is a purchased MEGA (from <c>MegaShipState.IsMega</c>).
+        /// Minimap draws a team-color triangle outline (yellow troop fill) instead of
+        /// the regular Cross so every client can spot capital ships without opening a nameplate.
+        /// </summary>
+        public bool IsMega;
+
         /// <summary>True when player has not picked a team yet.</summary>
         public bool AwaitingTeamSelection;
 
@@ -47,8 +54,9 @@ namespace TitanOrbit.UI
         public int BranchIndex;
 
         /// <summary>
-        /// [TITAN-ORBIT] Index into <c>PlanetShipFamilyConfig.families</c>
-        /// (<c>ShipState.ShipFamilyConfigIndex</c>).
+        /// [TITAN-ORBIT] Index into <c>PlanetShipFamilyConfig.families</c>.
+        /// Ships copy <c>ShipState.ShipFamilyConfigIndex</c>; planets copy
+        /// <c>PlanetState.ShipFamilyConfigIndex</c> so the minimap hover tip can name the family.
         /// </summary>
         public byte ShipFamilyConfigIndex;
 
@@ -65,10 +73,10 @@ namespace TitanOrbit.UI
         /// <summary>[TITAN-ORBIT] Max gem cargo (<c>ShipState.GemCapacity</c>).</summary>
         public float GemCapacity;
 
-        /// <summary>[TITAN-ORBIT] People currently aboard (<c>ShipState.CurrentPeople</c>).</summary>
+        /// <summary>[TITAN-ORBIT] Troops currently aboard (<c>ShipState.CurrentPeople</c>).</summary>
         public int CurrentPeople;
 
-        /// <summary>[TITAN-ORBIT] Max people capacity (<c>ShipState.PeopleCapacity</c>).</summary>
+        /// <summary>[TITAN-ORBIT] Troop cap (<c>ShipState.PeopleCapacity</c>).</summary>
         public int PeopleCapacity;
 
         // --- Match-long scores (ghosted ShipMatchStats) ---
@@ -78,7 +86,7 @@ namespace TitanOrbit.UI
         /// <summary>[TITAN-ORBIT] Cumulative gems deposited this match.</summary>
         public int GemsDeposited;
 
-        /// <summary>[TITAN-ORBIT] Cumulative people delivered this match.</summary>
+        /// <summary>[TITAN-ORBIT] Cumulative troops delivered this match.</summary>
         public int PeopleDelivered;
 
         /// <summary>

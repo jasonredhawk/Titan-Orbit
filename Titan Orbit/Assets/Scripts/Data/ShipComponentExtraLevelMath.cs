@@ -13,7 +13,7 @@ namespace TitanOrbit.Data
         public int FirePower;
         /// <summary>Bullet Speed ability purchases.</summary>
         public int BulletSpeed;
-        /// <summary>Max Health ability purchases.</summary>
+        /// <summary>Health Cap ability purchases.</summary>
         public int MaxHealth;
         /// <summary>Health Regen ability purchases.</summary>
         public int HealthRegen;
@@ -25,9 +25,9 @@ namespace TitanOrbit.Data
         public int MovementSpeed;
         /// <summary>Turn / Rotation Speed ability purchases.</summary>
         public int RotationSpeed;
-        /// <summary>Gem Capacity ability purchases.</summary>
+        /// <summary>Gem Cap ability purchases.</summary>
         public int GemCapacity;
-        /// <summary>People Capacity ability purchases.</summary>
+        /// <summary>Troop Cap ability purchases.</summary>
         public int PeopleCapacity;
 
         /// <summary>All abilities maxed to <paramref name="shipLevel"/> (preview / power-score ceiling).</summary>
@@ -62,7 +62,7 @@ namespace TitanOrbit.Data
     /// <para>
     /// [TITAN-ORBIT] Callers pass Base / PerExtra already multiplied by prefab starting
     /// <c>localScale</c> (<see cref="ShipComponentAbilityStatsMath.ScaleStatsByTransform"/>).
-    /// A Cockpit at scale 3 is <c>3 ×</c> catalog Health / Gems / People. Ability details
+    /// A Cockpit at scale 3 is <c>3 ×</c> catalog Health / Gems / Troops. Ability details
     /// cards show that multiply as its own formula step.
     /// </para>
     /// </para>

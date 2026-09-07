@@ -150,6 +150,15 @@ namespace TitanOrbit.Data
             if (AliasToCanonical.TryGetValue(s, out string alias))
                 return alias;
 
+            // Family-prefixed ids: AstroEagle_Wing_1 → try Wing_1 aliases first.
+            int firstUnderscore = s.IndexOf('_');
+            if (firstUnderscore > 0 && firstUnderscore < s.Length - 1)
+            {
+                string suffix = s.Substring(firstUnderscore + 1);
+                if (AliasToCanonical.TryGetValue(suffix, out alias))
+                    return alias;
+            }
+
             string[] segments = s.Split(new[] { '_' }, StringSplitOptions.RemoveEmptyEntries);
             if (segments.Length >= 2 && TrailingDigitsRegex.IsMatch(segments[segments.Length - 1]))
             {
@@ -171,7 +180,18 @@ namespace TitanOrbit.Data
             string s = ShipFamilyDefinition.NormalizeComponentId(componentId);
             if (string.IsNullOrEmpty(s))
                 return string.Empty;
-            return AliasToCanonical.TryGetValue(s, out string alias) ? alias : s;
+            if (AliasToCanonical.TryGetValue(s, out string alias))
+                return alias;
+
+            int firstUnderscore = s.IndexOf('_');
+            if (firstUnderscore > 0 && firstUnderscore < s.Length - 1)
+            {
+                string suffix = s.Substring(firstUnderscore + 1);
+                if (AliasToCanonical.TryGetValue(suffix, out alias))
+                    return alias;
+            }
+
+            return s;
         }
 
         /// <summary>

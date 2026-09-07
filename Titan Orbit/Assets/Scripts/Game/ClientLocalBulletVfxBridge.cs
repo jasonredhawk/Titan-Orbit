@@ -58,6 +58,13 @@ namespace TitanOrbit.Game
         bool _energyPrimed;
 
         /// <summary>
+        /// Seconds predicted energy has sat below a stable (non-dropping) ghost pool.
+        /// MEGA Shift volleys can spend cosmetics on a tick the server never fires;
+        /// without a reconcile the predicted pool stays 0 and the guns look jammed.
+        /// </summary>
+        float _predictedBelowGhostStableTime;
+
+        /// <summary>
         /// [TITAN-ORBIT] Local energy-queue cursor mirroring server
         /// <see cref="ShipWeaponState.NextMountIndex"/>. Not ghosted — cosmetic only.
         /// </summary>
@@ -88,6 +95,7 @@ namespace TitanOrbit.Game
             _energyPrimed = false;
             _predictedEnergy = 0f;
             _lastGhostEnergy = 0f;
+            _predictedBelowGhostStableTime = 0f;
             _nextMountIndex = 0;
         }
 
@@ -126,6 +134,8 @@ namespace TitanOrbit.Game
             if (shipState.IsDead || shipState.AwaitingTeamSelection)
                 return;
 
+            float dt = Time.deltaTime;
+
             // --- Need ECS mounts for per-barrel cooldown + damage (live GO count alone is not enough) ---
             if (!world.EntityManager.HasBuffer<ShipWeaponMountElement>(shipEntity))
                 return;
@@ -134,9 +144,12 @@ namespace TitanOrbit.Game
             if (mounts.Length <= 0)
                 return;
 
-            float dt = Time.deltaTime;
             // Tick cooldowns even when Fire is released so barrels stay in sync with server cadence.
             ShipWeaponFireLogic.TickMountCooldowns(mounts, dt);
+
+            // Keep predicted energy aligned every frame — otherwise a stuck 0 pool
+            // (MEGA Shift cosmetics the server never spent) never reconciles.
+            SyncPredictedEnergy(shipState.CurrentEnergy, dt);
 
             if (!fireHeld)
                 return;
@@ -153,18 +166,38 @@ namespace TitanOrbit.Game
                     .IsActive(world.Time.ElapsedTime))
                 return;
 
-            // --- Sync predicted energy with ghost (before planning fire) ---
-            SyncPredictedEnergy(shipState.CurrentEnergy);
+            bool isMega = world.EntityManager.HasComponent<MegaShipState>(shipEntity)
+                          && world.EntityManager.GetComponentData<MegaShipState>(shipEntity).IsMega;
+
+            // [TITAN-ORBIT] MEGA Phase B only spends when ghosted Fire.IsSet. The
+            // ShootPressed fallback would dump every ready barrel of predicted energy
+            // on a tick the server ignores — after Shift-redirect that looks like a jam.
+            if (isMega
+                && (!world.EntityManager.HasComponent<ShipInput>(shipEntity)
+                    || !world.EntityManager.GetComponentData<ShipInput>(shipEntity).Fire.IsSet))
+                return;
 
             int firePowerAbilityLv = 0;
             if (world.EntityManager.HasComponent<ShipAttributeUpgradeState>(shipEntity))
                 firePowerAbilityLv = world.EntityManager.GetComponentData<ShipAttributeUpgradeState>(shipEntity).FirePower;
-            int firePowerExtras = BulletBankCombatLogic.CountFirePowerExtraLevels(
-                shipState.ShipLevel, firePowerAbilityLv);
-            float abilityEnergy = BulletBankCombatLogic.GetAbilityEnergyDrain(bankIndex, firePowerExtras);
+            int firePowerExtras = isMega
+                ? 0
+                : BulletBankCombatLogic.CountFirePowerExtraLevels(
+                    shipState.ShipLevel, firePowerAbilityLv);
+            float abilityEnergy = isMega
+                ? 0f
+                : BulletBankCombatLogic.GetAbilityEnergyDrain(bankIndex, firePowerExtras);
 
-            // --- Same planner + FireMode as BulletSimulationSystem (server) ---
-            if (!ShipWeaponFireLogic.TryPlanFire(
+            int shotCount;
+            float energySpend;
+            int nextMountIndexAfter = _nextMountIndex;
+            if (isMega)
+            {
+                if (!TryPlanMegaOwnerFire(world.EntityManager, shipEntity, mounts, weaponCfg,
+                        out shotCount, out energySpend))
+                    return;
+            }
+            else if (!ShipWeaponFireLogic.TryPlanFire(
                     _predictedEnergy,
                     mounts,
                     _nextMountIndex,
@@ -172,15 +205,20 @@ namespace TitanOrbit.Game
                     weaponCfg.FireRate,
                     weaponCfg.FireMode,
                     s_ShotScratch,
-                    out int shotCount,
-                    out float energySpend,
-                    out int nextMountIndexAfter,
+                    out shotCount,
+                    out energySpend,
+                    out nextMountIndexAfter,
                     abilityEnergy))
+            {
                 return;
+            }
 
-            // --- Cap pending anticipations — do not arm cooldowns / cursor if the queue is full ---
-            if (!BulletVfxBridge.CanEnqueueAnticipation(shotCount))
+            // --- Cap pending anticipations — fire what fits (do not mute the whole MEGA volley) ---
+            int room = BulletVfxBridge.AnticipationSlotsRemaining;
+            if (room <= 0)
                 return;
+            if (shotCount > room)
+                shotCount = room;
 
             float fallbackRefDamage = weaponCfg.ReferenceBulletDamage > 0f
                 ? weaponCfg.ReferenceBulletDamage
@@ -205,55 +243,77 @@ namespace TitanOrbit.Game
                 int mountIdx = planned.MountIndex;
                 if (!BulletMuzzlePresentation.TryResolveMuzzle(
                         world.EntityManager, shipEntity, mountIdx,
-                        out float3 fireOrigin, out float3 fireForward, out bool displaySpace,
+                        out float3 fireOrigin, out float3 fireForward, out _,
                         out float3 shipVel))
                     continue;
 
                 ShipWeaponMountElement mount = mounts[mountIdx];
+                int shotBank = isMega ? mount.BulletBankIndex : bankIndex;
+                if (shotBank < 0)
+                    shotBank = bankIndex;
+                float shotCategoryScale = vfxBank != null
+                    ? vfxBank.GetCategoryUpgradeVisualScaleMultiplier(shotBank)
+                    : categoryUpgradeScale;
                 float refDamage = mount.ReferenceFirePower > 0.01f
                     ? mount.ReferenceFirePower
                     : fallbackRefDamage;
-                float damage = planned.Damage;
-                float bulletSpeed = weaponCfg.BulletSpeed;
-                float maxDistance = weaponCfg.BulletMaxDistance;
-                float lifetime = weaponCfg.BulletLifetime;
-                float fireRate = weaponCfg.FireRate;
-                BulletBankCombatLogic.ApplyFireModifiers(
-                    bankIndex, ref damage, ref bulletSpeed, ref maxDistance, ref lifetime, ref fireRate,
-                    firePowerExtras);
-                float fireRateMul = fireRate / math.max(0.1f, weaponCfg.FireRate);
-
-                float visualScale = BulletVisualScale.ComputePerShotScale(
+                float muzzleSpeed = BulletShotMath.ResolveMuzzleSpeed(mount.BulletSpeed, weaponCfg.BulletSpeed);
+                float refMuzzleSpeed = mount.BulletSpeed > 0.01f ? mount.BulletSpeed : refSpeed;
+                float maxDistanceForLife = BulletShotMath.ResolveMaxDistance(
+                    mount.BulletRange, weaponCfg.BulletMaxDistance);
+                float lifetime = mount.BulletSpeed > 0.01f
+                    ? math.max(0.25f, maxDistanceForLife / math.max(1f, muzzleSpeed))
+                    : weaponCfg.BulletLifetime;
+                var plan = BulletShotMath.Build(
+                    fireOrigin,
+                    fireForward,
+                    shipVel,
+                    planned.Damage,
+                    muzzleSpeed,
+                    weaponCfg.BulletMaxDistance,
+                    lifetime,
+                    weaponCfg.FireRate,
+                    mount.BulletRange,
                     weaponCfg.BulletScale,
-                    damage,
-                    bulletSpeed,
                     refDamage,
-                    refSpeed,
-                    categoryUpgradeScale);
-
-                float3 bulletVel = BulletMuzzlePresentation.BuildBulletWorldVelocity(
-                    fireForward, bulletSpeed, shipVel);
+                    refMuzzleSpeed,
+                    shotBank,
+                    firePowerExtras,
+                    shotCategoryScale);
+                byte homing = 0;
+                float turnSpeedDeg = 0f;
+                float acquireRange = 0f;
+                if (RocketHomingFire.TryApply(
+                        shotBank, shipState.ShipLevel, fireForward, ref plan,
+                        out turnSpeedDeg, out acquireRange))
+                    homing = 1;
 
                 if (!BulletVfxBridge.TryEnqueueSpawn(new BulletVfxBridge.SpawnRequest
                 {
                     Sequence = 0,
-                    SpawnPosition = fireOrigin,
-                    Velocity = bulletVel,
-                    Lifetime = math.max(0.1f, lifetime),
-                    MaxDistance = math.max(10f, maxDistance),
-                    Damage = damage,
+                    SpawnPosition = plan.Origin,
+                    Velocity = plan.Velocity,
+                    Lifetime = plan.Lifetime,
+                    MaxDistance = plan.MaxDistance,
+                    Damage = plan.Damage,
                     OwnerTeam = (byte)shipState.Team,
                     OwnerNetworkId = ownerNetworkId,
-                    BankIndex = bankIndex,
-                    ScaleMultiplier = visualScale,
+                    BankIndex = shotBank,
+                    ScaleMultiplier = plan.VisualScale,
                     MountIndex = mountIdx,
                     IsAnticipation = true,
-                    IsDisplaySpace = displaySpace,
+                    IsDisplaySpace = false,
+                    Homing = homing,
+                    TurnSpeedDeg = turnSpeedDeg,
+                    AcquireRange = acquireRange,
                 }))
                     break;
 
                 // Arm this barrel’s client-side cooldown so we do not spam tracers faster than server.
-                mount.FireCooldown = planned.CooldownSeconds / math.max(0.05f, fireRateMul);
+                float clientCooldown = planned.CooldownSeconds / math.max(0.05f, plan.FireRateMul);
+                mount.FireCooldown = math.isfinite(clientCooldown)
+                    ? math.clamp(clientCooldown, 0f, 60f)
+                    : planned.CooldownSeconds;
                 mounts[mountIdx] = mount;
                 spent += planned.EnergyCost;
                 enqueued++;
@@ -261,13 +321,53 @@ namespace TitanOrbit.Game
 
             if (enqueued > 0)
             {
-                // Prefer planned energy when every shot queued; otherwise spend only what enqueued.
-                float spend = enqueued == shotCount ? energySpend : spent;
-                _predictedEnergy = math.max(0f, _predictedEnergy - spend);
+                // Spend only what actually queued — a clipped MEGA volley must not drain the
+                // full plan or predicted energy sticks at 0 and later shots never plan.
+                _predictedEnergy = math.max(0f, _predictedEnergy - spent);
                 // Only advance the energy-queue cursor when the full plan enqueued (avoids skips).
-                if (enqueued == shotCount)
+                if (!isMega && enqueued == shotCount)
                     _nextMountIndex = nextMountIndexAfter;
             }
+        }
+
+        /// <summary>
+        /// MEGA owner anticipation: every ready mount (same independent cadence
+        /// as server Phase B). Only the MEGA owner fires these barrels.
+        /// </summary>
+        bool TryPlanMegaOwnerFire(
+            EntityManager em,
+            Entity mega,
+            DynamicBuffer<ShipWeaponMountElement> mounts,
+            in ShipWeaponConfig weaponCfg,
+            out int shotCount,
+            out float energySpend)
+        {
+            shotCount = 0;
+            energySpend = 0f;
+
+            float energy = _predictedEnergy;
+            int cap = math.min(mounts.Length, ShipWeaponFireLogic.MaxShotsPerTick);
+            for (int m = 0; m < cap; m++)
+            {
+                var mount = mounts[m];
+                if (mount.FireCooldown > 0.001f || mount.FirePower <= 0.01f)
+                    continue;
+                if (energy < mount.FirePower)
+                    continue;
+
+                float fireRate = math.max(0.15f, mount.FireRate > 0.01f ? mount.FireRate : weaponCfg.FireRate);
+                s_ShotScratch[shotCount++] = new ShipWeaponFireLogic.MountShot
+                {
+                    MountIndex = m,
+                    Damage = mount.FirePower,
+                    EnergyCost = mount.FirePower,
+                    CooldownSeconds = 1f / fireRate,
+                };
+                energy -= mount.FirePower;
+                energySpend += mount.FirePower;
+            }
+
+            return shotCount > 0;
         }
 
         /// <summary>
@@ -275,23 +375,46 @@ namespace TitanOrbit.Game
         /// unlimited anticipation while the ghost value is still high after server spends.
         /// </summary>
         /// <param name="ghostEnergy">Current replicated <see cref="ShipState.CurrentEnergy"/>.</param>
-        void SyncPredictedEnergy(float ghostEnergy)
+        /// <param name="dt">Unity frame dt — used to time the stuck-below-ghost reconcile.</param>
+        void SyncPredictedEnergy(float ghostEnergy, float dt)
         {
             if (!_energyPrimed)
             {
                 _predictedEnergy = ghostEnergy;
                 _lastGhostEnergy = ghostEnergy;
+                _predictedBelowGhostStableTime = 0f;
                 _energyPrimed = true;
                 return;
             }
 
             // Server spent (or we overshot) — never stay above the ghost.
             if (ghostEnergy < _predictedEnergy - 0.01f)
+            {
                 _predictedEnergy = ghostEnergy;
-
-            // Regen / refill — ghost rose since last sample; adopt the new pool.
-            if (ghostEnergy > _lastGhostEnergy + 0.01f)
+                _predictedBelowGhostStableTime = 0f;
+            }
+            else if (ghostEnergy > _lastGhostEnergy + 0.01f)
+            {
+                // Regen / refill — ghost rose since last sample; adopt the new pool.
                 _predictedEnergy = ghostEnergy;
+                _predictedBelowGhostStableTime = 0f;
+            }
+            else if (ghostEnergy > _predictedEnergy + 0.01f)
+            {
+                // Predicted spent, ghost is stable and higher. Wait for the snapshot to
+                // drop (real server spend). If it never does — MEGA Shift cosmetics on a
+                // tick the server skipped — restore so Fire is not locked out.
+                _predictedBelowGhostStableTime += math.max(0f, dt);
+                if (_predictedBelowGhostStableTime >= 0.4f)
+                {
+                    _predictedEnergy = ghostEnergy;
+                    _predictedBelowGhostStableTime = 0f;
+                }
+            }
+            else
+            {
+                _predictedBelowGhostStableTime = 0f;
+            }
 
             _lastGhostEnergy = ghostEnergy;
         }

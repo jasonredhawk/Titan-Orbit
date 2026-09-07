@@ -189,10 +189,10 @@ namespace TitanOrbit.ECS
             for (int i = 0; i < s_PendingBurns.Count; i++)
             {
                 PendingBurn pending = s_PendingBurns[i];
-                if (pending.Entity == Entity.Null ||
-                    !em.Exists(pending.Entity) ||
-                    !em.HasBuffer<BurnOverTimeElement>(pending.Entity))
+                if (pending.Entity == Entity.Null || !em.Exists(pending.Entity))
                     continue;
+                if (!em.HasBuffer<BurnOverTimeElement>(pending.Entity))
+                    em.AddBuffer<BurnOverTimeElement>(pending.Entity);
 
                 var instances = em.GetBuffer<BurnOverTimeElement>(pending.Entity);
                 AddBurnInstance(instances, pending.Instance);
@@ -552,7 +552,8 @@ namespace TitanOrbit.ECS
                     ? TeamId.None
                     : (TeamId)ownerTeam;
                 var result = ShipDamageLogic.ApplyHullAndGemDamage(
-                    ref health, ref gems, ref isDead, splash,
+                    ref health, ref gems, ref isDead,
+                    CardEffectQuery.ScaleIncomingDamage(em, shipEntity, splash),
                     ship.Team, damageTeam, gemExpulsionPerHullDamage, isImmune: moonImmune);
                 ship.Health = health;
                 ship.CurrentGems = gems;
@@ -566,9 +567,13 @@ namespace TitanOrbit.ECS
                     em.SetComponentData(shipEntity, vitals);
                 }
 
-                if ((result.AppliedHullDamage || result.GemsToExpel > 0.0001f || result.BecameDead) &&
-                    ownerNet > 0)
-                    ShipMatchStatsLogic.SetLastDamager(em, shipEntity, ownerNet, (float)serverElapsed);
+                if (result.AppliedHullDamage || result.GemsToExpel > 0.0001f || result.BecameDead)
+                {
+                    float3 off = ToroidalMapEcs.ShortestOffsetXZ(center, pos, mapW, mapH);
+                    ShipMatchStatsLogic.SetLastDamager(
+                        em, shipEntity, ownerNet, (float)serverElapsed,
+                        new float2(off.x, off.z), splash);
+                }
 
                 if (result.GemsToExpel > 0.0001f && gemPrefab != Entity.Null)
                 {

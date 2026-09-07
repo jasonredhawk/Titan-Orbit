@@ -32,7 +32,7 @@ namespace TitanOrbit.ECS
         [GhostField] public int RotationSpeed;
         /// <summary>Levels invested in gem cargo capacity.</summary>
         [GhostField] public int GemCapacity;
-        /// <summary>Levels invested in crew / people transport capacity.</summary>
+        /// <summary>Levels invested in troop cap.</summary>
         [GhostField] public int PeopleCapacity;
     }
 }

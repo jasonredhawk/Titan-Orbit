@@ -109,9 +109,9 @@ namespace TitanOrbit.Editor
             EditorGUILayout.LabelField("Family Special Bonuses", EditorStyles.boldLabel);
             EditorGUILayout.HelpBox(
                 "Multipliers applied after component sum (shared profiles stay project-wide). " +
-                "OVERDRIVE: extraSpeedPercentMul / extraSpeedEnergyDrainMul scale engine " +
-                "ExtraSpeedPercent and ExtraSpeedEnergyDrain. OD drain/sec = ExtraSpeedEnergyDrain " +
-                "as authored (normal thrust is free).",
+                "Values can be below 1 (trade-offs). OVERDRIVE: extraSpeedPercentMul / " +
+                "extraSpeedEnergyDrainMul scale engine ExtraSpeedPercent and ExtraSpeedEnergyDrain. " +
+                "cameraHeightMul is presentation-only (CameraFollowEcs): >1 zooms out, <1 zooms in.",
                 MessageType.None);
 
             if (GUILayout.Button("Reset Family Bonuses To 1×"))
@@ -232,15 +232,15 @@ namespace TitanOrbit.Editor
 
             EditorGUILayout.Space(2);
             EditorGUILayout.BeginVertical(EditorStyles.helpBox);
-            EditorGUILayout.LabelField("Create New Card Deck", EditorStyles.boldLabel);
+            EditorGUILayout.LabelField("Create Unique Card Deck", EditorStyles.boldLabel); // unique overlay cards
             EditorGUILayout.LabelField(
-                "Same as Titan Orbit ΓåÆ Cards ΓåÆ Build Scaled Astro Eagle Deck: writes CardData assets, builds the scaled deck for this Family Id, and assigns Upgrade Card Deck.",
+                "Writes this family's unique 3-archetype overlay cards (levels 1–7) and assigns Upgrade Card Deck. Same as Redo in Titan Orbit → Card Decks.",
                 new GUIStyle(EditorStyles.miniLabel) { wordWrap = true });
             using (new EditorGUI.DisabledScope(def == null || string.IsNullOrWhiteSpace(def.familyId)))
             {
                 var prev = GUI.backgroundColor;
                 GUI.backgroundColor = new Color(0.55f, 0.82f, 1f, 1f);
-                if (GUILayout.Button("Create New Card Deck", GUILayout.Height(34)))
+                if (GUILayout.Button("Create Unique Card Deck", GUILayout.Height(34)))
                 {
                     if (def != null)
                         CardDeckScaledAssetGenerator.BuildScaledDeckForFamily(def, interactiveDialogs: true);
@@ -378,7 +378,7 @@ namespace TitanOrbit.Editor
                 MessageType.None);
             EditorGUILayout.Space();
             EditorGUILayout.HelpBox(
-                "Resort Upgrade Tree: recomputes power scores from prefabs and places ships into levels by ascending power score " +
+                "Resort Upgrade Tree: recomputes power scores from prefabs (all-gun DPS + energy sustain) and places ships into levels by ascending power score " +
                 "(weaker unlock earlier). Within each level, ships are sorted by purchase gem cost descending " +
                 "(most expensive → least expensive). Locked tiers keep their list index.",
                 MessageType.None);
@@ -387,7 +387,7 @@ namespace TitanOrbit.Editor
                 "Menu Preview Images: writes PNGs to MenuPreviews/<variant>/ next to this asset, imports them as Sprites, and assigns each tier's teamMenuPreviewSprites (plus legacy menuPreviewSprite). Variants come from ShipFamilyDefinition Team Materials. Re-run anytime after prefab/material changes.",
                 MessageType.None);
             EditorGUILayout.HelpBox(
-                "Theatrical Menu Preview Images: same assignment as top-down but uses a 3/4 hero camera. Overwrites PNGs in MenuPreviews/<variant>/ and replaces menuPreviewSprite / teamMenuPreviewSprites on each tier.",
+                "Theatrical Menu Preview Images: same assignment as top-down but uses a 3/4 hero camera and an opaque black clear (same as MEGA hull thumbs). Overwrites PNGs in MenuPreviews/<variant>/ and replaces menuPreviewSprite / teamMenuPreviewSprites on each tier.",
                 MessageType.None);
             EditorGUILayout.HelpBox(
                 "Component Menu Preview Images: renders each component entry from the strongest upgrade-tree prefab into ComponentMenuPreviews/<variant>/ and assigns menuPreviewSprite on each ShipFamilyComponentEntry (used by the moon dock equipment store).",
@@ -400,18 +400,37 @@ namespace TitanOrbit.Editor
             EditorGUILayout.BeginVertical(EditorStyles.helpBox);
             EditorGUILayout.LabelField("Upgrade Card Deck", EditorStyles.boldLabel);
             EditorGUILayout.LabelField(
-                "Optional: empty deck asset next to this file for hand-authored cards, or prefab-scanned pool (different folder than Create New Card Deck above).",
+                "Unique overlay cards (not extra hull parts). Redo rebuilds from the family archetype table + special bonuses.",
                 new GUIStyle(EditorStyles.miniLabel) { wordWrap = true });
 
-            if (GUILayout.Button("Create empty Card Deck Definition & assign", GUILayout.MinHeight(26)))
-                CreateEmptyCardDeckAndAssign(def);
+            IReadOnlyList<CardData> cards = def.GetUpgradeCards();
+            int shown = cards != null ? Mathf.Min(8, cards.Count) : 0;
+            EditorGUILayout.LabelField(cards != null && cards.Count > 0
+                ? $"{cards.Count} cards  (showing {shown})"
+                : "Procedural fallback — press Redo to author a deck.");
+            for (int i = 0; i < shown; i++)
+            {
+                if (cards[i] == null)
+                    continue;
+                EditorGUILayout.LabelField($"  {cards[i].GetDisplayNameOrDefault()}  Lv{cards[i].cardLevel}  {cards[i].rarity}");
+            }
+
+            if (GUILayout.Button("Open Card Decks window", GUILayout.MinHeight(24)))
+                ShipFamilyCardDeckEditorWindow.OpenFocused(def);
 
             using (new EditorGUI.DisabledScope(string.IsNullOrWhiteSpace(def.familyId)))
             {
                 var prevBg = GUI.backgroundColor;
                 GUI.backgroundColor = new Color(0.78f, 0.98f, 0.82f, 1f);
-                if (GUILayout.Button("Generate card pool ΓÇö from upgrade tree prefabs", GUILayout.MinHeight(26)))
-                    CardDeckFromPrefabStatsGenerator.BuildPrefabDerivedDeckForFamily(def, interactiveDialogs: true);
+                if (GUILayout.Button("Redo this family's unique card deck", GUILayout.MinHeight(26)))
+                {
+                    if (EditorUtility.DisplayDialog(
+                        "Redo card deck",
+                        $"Replace {def.familyId} cards from the unique-archetype table?",
+                        "Redo",
+                        "Cancel"))
+                        UniqueCardDeckGenerator.RebuildFamilyDeck(def, interactiveDialogs: true);
+                }
                 GUI.backgroundColor = prevBg;
             }
 
@@ -992,13 +1011,10 @@ namespace TitanOrbit.Editor
             return count;
         }
 
-        /// <summary>First integer in the suffix (e.g. Wing_3_L → 3, Weapon1 → 1); 1 if none.</summary>
+        /// <summary>First integer in the part suffix (e.g. AstroEagle_Wing_3 → 3, Weapon1 → 1); 1 if none.</summary>
         private static int ExtractFirstVersionNumberFromComponentRest(string rest)
         {
-            if (string.IsNullOrEmpty(rest)) return 1;
-            Match m = Regex.Match(rest, @"\d+");
-            if (!m.Success) return 1;
-            return int.TryParse(m.Value, out int v) ? Mathf.Max(1, v) : 1;
+            return ShipFamilyPartCalcProfileSet.ExtractVersion(rest);
         }
 
         private static void BuildUpgradeTreeFromFolder(ShipFamilyDefinition def)
@@ -1040,8 +1056,10 @@ namespace TitanOrbit.Editor
                 var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(path);
                 if (prefab == null) continue;
 
-                ShipComponentAbilityStats stats = SumStatsForPrefab(prefab, def, familyId);
-                ShipFamilyPowerScoreBreakdown breakdown = ShipFamilyPowerScoreBreakdown.FromSummedShipStats(stats);
+                if (!ShipFamilyPowerBarNorm.TryBuildBreakdown(
+                        prefab, def, shipLevel: 1, default,
+                        out _, out ShipFamilyPowerScoreBreakdown breakdown))
+                    continue;
                 float power = breakdown.GetUpgradeTreeSortPowerScore();
                 list.Add((prefab, power, breakdown));
             }
@@ -1094,7 +1112,10 @@ namespace TitanOrbit.Editor
                     minHomePlanetLevel = currentLevel,
                     componentMass = def.ComputeComponentMassFromPrefab(prefab)
                 };
-                ShipComponentAbilityStats stats = SumStatsForPrefab(prefab, def, familyId);
+                if (!ShipFamilyPowerBarNorm.TryBuildBreakdown(
+                        prefab, def, shipLevel: 1, default,
+                        out ShipComponentAbilityStats stats, out _))
+                    stats = default;
                 AssignTierPowerScores(entry, stats, breakdown);
                 def.upgradeTree.Add(entry);
                 assignedAtThisLevel++;
@@ -1161,8 +1182,10 @@ namespace TitanOrbit.Editor
                     continue;
                 }
 
-                ShipComponentAbilityStats stats = SumStatsForPrefab(tier.prefab, def, familyId);
-                ShipFamilyPowerScoreBreakdown breakdown = ShipFamilyPowerScoreBreakdown.FromSummedShipStats(stats);
+                if (!ShipFamilyPowerBarNorm.TryBuildBreakdown(
+                        tier.prefab, def, shipLevel: 1, default,
+                        out _, out ShipFamilyPowerScoreBreakdown breakdown))
+                    continue;
                 float power = breakdown.GetUpgradeTreeSortPowerScore();
                 tier.powerScoreBreakdown = breakdown;
                 tier.componentMass = def.ComputeComponentMassFromPrefab(tier.prefab);
@@ -1243,6 +1266,8 @@ namespace TitanOrbit.Editor
                 AssetDatabase.SaveAssets();
                 AssetDatabase.Refresh();
             }
+
+            ShipFamilyPowerBarNorm.InvalidateCache();
 
             result.success = true;
             result.resortedUnlocked = orderedUnlocked.Count;
@@ -1374,10 +1399,12 @@ namespace TitanOrbit.Editor
             {
                 ShipFamilyChassisTierEntry tier = def.upgradeTree[i];
                 if (tier?.prefab == null) continue;
-                ShipComponentAbilityStats stats = SumStatsForPrefab(tier.prefab, def, familyId);
-                int maxUpgrades = ShipFamilyPowerScoreBreakdown.GetMaxUpgradeCountForTier(tier.minHomePlanetLevel);
-                tier.powerScoreAtMaxLevel = ShipFamilyPowerScoreBreakdown.FromSummedShipStats(
-                    ShipFamilyPowerScoreBreakdown.ApplyMaxEffectiveLevels(stats, maxUpgrades)).Total;
+                int shipLevel = Mathf.Max(1, tier.minHomePlanetLevel);
+                ShipAbilityLevelCounts maxed = ShipAbilityLevelCounts.Maxed(shipLevel);
+                if (ShipFamilyPowerBarNorm.TryBuildBreakdown(
+                        tier.prefab, def, shipLevel, in maxed,
+                        out _, out ShipFamilyPowerScoreBreakdown atLevel))
+                    tier.powerScoreAtMaxLevel = atLevel.GetUpgradeTreeSortPowerScore();
                 // Extra Level at this chassis's tree level with every HUD ability maxed.
                 ShipFamilyPowerBarNorm.BakeAtShipLevel(tier, def);
             }
@@ -1391,15 +1418,13 @@ namespace TitanOrbit.Editor
             return ShipFamilyUpgradeTreeStatScanner.SumStatsForPrefabAsset(prefab, def, familyId);
         }
 
-        /// <summary>Second segment after splitting prefab root name on '_' (e.g. AstroEagle_Thumper ΓåÆ Thumper).</summary>
+        /// <summary>
+        /// Orbit Menu name from the prefab root: CamelCase, digits, and underscores
+        /// become spaces (SpaceExcalibur_7 → Space Excalibur 7).
+        /// </summary>
         private static string GetUpgradeTreeShipNameFromPrefabName(string prefabRootName)
         {
-            if (string.IsNullOrEmpty(prefabRootName))
-                return string.Empty;
-            string[] parts = prefabRootName.Split(new[] { '_' }, StringSplitOptions.RemoveEmptyEntries);
-            if (parts.Length < 2)
-                return string.Empty;
-            return parts[1];
+            return DisplayNameFormatting.FormatPrefabShipName(prefabRootName);
         }
 
         /// <summary>Per-level stat terms are ~25% of the base value (within the 20ΓÇô30% design band).</summary>
@@ -1712,7 +1737,7 @@ namespace TitanOrbit.Editor
                     && string.Equals(rest, rootShipSuffix, StringComparison.OrdinalIgnoreCase))
                     continue;
 
-                string canonicalId = ShipFamilyDefinition.NormalizeComponentId(rest);
+                string canonicalId = ShipFamilyDefinition.ComposeFamilyPrefixedComponentId(familyId, rest);
                 if (string.IsNullOrWhiteSpace(canonicalId)) continue;
 
                 string type = ShipComponentAbilityStats.ResolvePartTypeForSuggestedStats(canonicalId);
@@ -1990,6 +2015,24 @@ namespace TitanOrbit.Editor
                     ? $"Updated {totalUpdated} cockpit entries across {families} ShipFamilyDefinition asset(s)."
                     : "All ship families already use current ramming suggestions (no changes).",
                 "OK");
+        }
+
+        [MenuItem("Titan Orbit/Card Decks")]
+        private static void OpenCardDecksWindow()
+        {
+            ShipFamilyCardDeckEditorWindow.Open();
+        }
+
+        [MenuItem("Titan Orbit/Card Decks/Redo All Families")]
+        private static void RedoAllFamilyCardDecks()
+        {
+            UniqueCardDeckGenerator.RedoAllFromMenu();
+        }
+
+        [MenuItem("Titan Orbit/Store Items/Generate Theatrical Menu Previews")]
+        private static void GenerateStoreItemPreviews()
+        {
+            StoreItemMenuPreviewGenerator.GenerateFromMenu();
         }
 
         private readonly struct TeamMaterialSpec

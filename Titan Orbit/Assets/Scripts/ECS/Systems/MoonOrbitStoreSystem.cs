@@ -363,7 +363,14 @@ namespace TitanOrbit.ECS
                     return false;
                 }
 
-                if (targetLevel > storePlanet.PlanetLevel)
+                if (!UpgradeTree.IsValidUpgradeStep(ship.ShipLevel, ship.BranchIndex, targetLevel, targetBranchIndex))
+                {
+                    message = "Invalid upgrade path.";
+                    return false;
+                }
+
+                // Planets cap at 6; L7 MEGAs use the moon-full gate below, not planet level 7.
+                if (targetLevel < 7 && targetLevel > storePlanet.PlanetLevel)
                 {
                     message = "Planet level too low.";
                     return false;
@@ -396,7 +403,67 @@ namespace TitanOrbit.ECS
             // spawn; buying here switches the ship onto that family's upgrade tree (not AstroEagle).
             byte storeFamilyIndex = ResolveStoreFamilyConfigIndex(storePlanet);
 
-            if (!ShipStatApplyLogic.TryResolveChassisId(
+            bool buyingMega = targetLevel == 7;
+            ushort megaCatalogIndex = 0;
+            if (buyingMega)
+            {
+                if (!TryFindPlanetById(em, storePlanetId, out var storePlanetEntity, out _))
+                {
+                    message = "Planet not found.";
+                    return false;
+                }
+
+                if (!debugFree)
+                {
+                    var moon = em.HasComponent<PlanetGemMoonState>(storePlanetEntity)
+                        ? em.GetComponentData<PlanetGemMoonState>(storePlanetEntity)
+                        : default;
+                    if (!MegaShipPlanetLogic.IsMegaPurchaseUnlocked(
+                            storePlanet.PlanetLevel, moon.CurrentMoonGems, moon.MaxMoonGems))
+                    {
+                        message = "MEGA locked — planet must be level 6 with a full gem moon.";
+                        return false;
+                    }
+                }
+
+                if (!MegaShipPlanetLogic.TryGetSlot(
+                        em, storePlanetEntity, targetBranchIndex, out var megaSlot))
+                {
+                    message = "No MEGA assigned to that slot.";
+                    return false;
+                }
+
+                if (megaSlot.OccupiedByNetworkId != 0 && megaSlot.OccupiedByNetworkId != networkId)
+                {
+                    message = "That MEGA is already in service.";
+                    return false;
+                }
+
+                megaCatalogIndex = megaSlot.CatalogIndex;
+
+                // --- Unique hull across the match ---
+                // [TITAN-ORBIT] MEGAs are unique. Occupancy lives on this planet's slot, but
+                // the armed pool can wrap and assign the same catalog row to another planet.
+                // Reject a second buyer even when this slot still reads as free.
+                if (MegaShipPlanetLogic.TryFindCatalogOccupant(em, megaCatalogIndex, out int catalogOwner)
+                    && catalogOwner != 0
+                    && catalogOwner != networkId)
+                {
+                    message = "That MEGA is already owned.";
+                    return false;
+                }
+
+                // --- Unarmed hulls stay in the catalog, never in a match ---
+                // [TITAN-ORBIT] Match roll already skips firepower-0, but a stale slot or
+                // debug click must not spend gems or spawn an unarmed MEGA.
+                var megaCatalog = MegaShipCatalog.Load();
+                if (megaCatalog == null || !megaCatalog.IsEligibleForMatch(megaCatalogIndex))
+                {
+                    message = "That MEGA has no weapons.";
+                    return false;
+                }
+            }
+            else if (!ShipStatApplyLogic.TryResolveChassisId(
                     ship.Team,
                     targetLevel,
                     targetBranchIndex,
@@ -410,12 +477,60 @@ namespace TitanOrbit.ECS
 
             if (!debugFree)
             {
-                float cost = MoonOrbitStorePricing.GetShipUpgradeCost(targetLevel);
+                float cost = buyingMega
+                    ? (MegaShipCatalog.Load() != null
+                        ? MegaShipCatalog.Load().GetPurchaseGemCost()
+                        : MoonOrbitStorePricing.GetShipUpgradeCost(7))
+                    : MoonOrbitStorePricing.GetShipUpgradeCost(targetLevel);
                 if (!ContributedGemsLogic.TrySpend(em, homeEntity, networkId, cost))
                 {
                     message = "Not enough contributed gems.";
                     return false;
                 }
+            }
+
+            if (buyingMega)
+            {
+                if (!MegaShipPlanetLogic.TryOccupySlot(em, storePlanetId, targetBranchIndex, networkId))
+                {
+                    message = "That MEGA is already in service.";
+                    return false;
+                }
+
+                byte prevFamily = ship.ShipFamilyConfigIndex;
+                int prevLevel = math.max(1, ship.ShipLevel);
+                int prevBranch = math.max(0, ship.BranchIndex);
+                if (em.HasComponent<MegaShipState>(shipEntity))
+                {
+                    var existingMega = em.GetComponentData<MegaShipState>(shipEntity);
+                    if (existingMega.IsMega)
+                    {
+                        prevFamily = existingMega.PreviousFamilyIndex;
+                        prevLevel = math.max(1, existingMega.PreviousLevel);
+                        prevBranch = math.max(0, existingMega.PreviousBranch);
+                        MegaShipPlanetLogic.FreeSlot(em, existingMega.StorePlanetId, existingMega.MegaSlotIndex);
+                    }
+
+                    em.SetComponentData(shipEntity, new MegaShipState
+                    {
+                        IsMega = true,
+                        CatalogIndex = megaCatalogIndex,
+                        StorePlanetId = storePlanetId,
+                        MegaSlotIndex = (byte)math.clamp(targetBranchIndex, 0, 2),
+                        PreviousFamilyIndex = prevFamily,
+                        PreviousLevel = prevLevel,
+                        PreviousBranch = prevBranch,
+                    });
+                }
+            }
+            else
+            {
+                // --- Leave MEGA when buying a regular family hull ---
+                // [TITAN-ORBIT] Debug free-tree and same-tier family swaps can pick Cosmic
+                // Shark / etc. after a MEGA. ApplyToShip routes to MEGA stats while
+                // MegaShipState.IsMega is true and then writes ShipLevel 7 again — so
+                // the click looked like it did nothing. Drop occupancy first.
+                MegaShipStatApplyLogic.ClearMegaHull(em, shipEntity);
             }
 
             ship.ShipLevel = targetLevel;
@@ -682,13 +797,9 @@ namespace TitanOrbit.ECS
                 return false;
             }
 
-            int maxCardSlots = math.max(1, ship.ShipLevel);
-            int equippedCards = em.HasBuffer<EquippedCardElement>(shipEntity)
-                ? em.GetBuffer<EquippedCardElement>(shipEntity).Length
-                : 0;
-            if (equippedCards >= maxCardSlots)
+            if (!HasEmptyLoadoutSlot(em, shipEntity, ship.ShipLevel))
             {
-                message = "No empty card slot.";
+                message = "No empty loadout slot.";
                 return false;
             }
 
@@ -993,6 +1104,20 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
+        /// Cards and gear share one LOADOUT pool: used = card buffer + equipment buffer, cap = ship level.
+        /// </summary>
+        static bool HasEmptyLoadoutSlot(EntityManager em, Entity shipEntity, int shipLevel)
+        {
+            int cap = math.max(1, shipLevel);
+            int used = 0;
+            if (em.HasBuffer<EquippedCardElement>(shipEntity))
+                used += em.GetBuffer<EquippedCardElement>(shipEntity).Length;
+            if (em.HasBuffer<EquippedEquipmentElement>(shipEntity))
+                used += em.GetBuffer<EquippedEquipmentElement>(shipEntity).Length;
+            return used < cap;
+        }
+
+        /// <summary>
         /// Level the docked moon store may sell: <c>min(ship, that planet)</c>.
         /// Prefers the moon the ship is actually docked at (authoritative, not client-sent).
         /// Falls back to <paramref name="storePlanetIdHint"/> then the team's home planet.
@@ -1048,11 +1173,10 @@ namespace TitanOrbit.ECS
                 em.AddBuffer<EquippedEquipmentElement>(shipEntity);
 
             var buffer = em.GetBuffer<EquippedEquipmentElement>(shipEntity);
-            // Slot count follows the ship (a level-6 hull still has 6 slots on a level-3 moon).
-            int maxSlots = math.max(1, shipLevel);
-            if (buffer.Length >= maxSlots)
+            // [TITAN-ORBIT] Cards and gear share one LOADOUT pool capped at ship level.
+            if (!HasEmptyLoadoutSlot(em, shipEntity, shipLevel))
             {
-                message = "No empty equipment slot.";
+                message = "No empty loadout slot.";
                 return false;
             }
 
@@ -1060,6 +1184,15 @@ namespace TitanOrbit.ECS
             int charges = StoreItemData.IsDrone(itemType)
                 ? StoreItemData.GetDroneMaxHp(itemType, lockedLevel)
                 : StoreItemData.GetPackSize(itemType);
+            if (StoreItemData.IsDrone(itemType))
+            {
+                float hpMul = CardEffectQuery.GetMul(em, shipEntity, CardEffectKind.DroneHitPointsMul);
+                charges = math.max(1, (int)math.round(charges * hpMul));
+            }
+            else if (itemType == StoreItemType.SmallRockets || itemType == StoreItemType.LargeRockets)
+                charges += (int)math.round(CardEffectQuery.GetValue(em, shipEntity, CardEffectKind.RocketPackSizeAdd));
+            else if (itemType == StoreItemType.SmallMines || itemType == StoreItemType.LargeMines)
+                charges += (int)math.round(CardEffectQuery.GetValue(em, shipEntity, CardEffectKind.MinePackSizeAdd));
             // [TITAN-ORBIT] Drones, rockets, and mines lock ItemLevel to the store purchase
             // level (min of ship and planet). Damage/HP/cost already used this level; store
             // it so stats stay fixed after buy.
@@ -1096,10 +1229,9 @@ namespace TitanOrbit.ECS
                 em.AddBuffer<EquippedEquipmentElement>(shipEntity);
 
             var buffer = em.GetBuffer<EquippedEquipmentElement>(shipEntity);
-            int maxSlots = math.max(1, shipLevel);
-            if (buffer.Length >= maxSlots)
+            if (!HasEmptyLoadoutSlot(em, shipEntity, shipLevel))
             {
-                message = "No empty equipment slot.";
+                message = "No empty loadout slot.";
                 return false;
             }
 
@@ -1127,10 +1259,9 @@ namespace TitanOrbit.ECS
                 em.AddBuffer<EquippedCardElement>(shipEntity);
 
             var buffer = em.GetBuffer<EquippedCardElement>(shipEntity);
-            int maxSlots = math.max(1, shipLevel);
-            if (buffer.Length >= maxSlots)
+            if (!HasEmptyLoadoutSlot(em, shipEntity, shipLevel))
             {
-                message = "No empty card slot.";
+                message = "No empty loadout slot.";
                 return false;
             }
 

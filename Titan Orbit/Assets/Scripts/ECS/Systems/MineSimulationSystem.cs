@@ -1,5 +1,6 @@
 using TitanOrbit;
 using TitanOrbit.Core;
+using TitanOrbit.Data;
 using TitanOrbit.Generation;
 using TitanOrbit.Simulation;
 using Unity.Collections;
@@ -259,7 +260,8 @@ namespace TitanOrbit.ECS
                 // 1:1 leftover damage → cargo so hull 0 + remaining gems stays alive.
                 var damageTeam = selfHarm && ship.Team == attackerTeam ? TeamId.None : attackerTeam;
                 var result = ShipDamageLogic.ApplyHullAndGemDamage(
-                    ref health, ref gems, ref isDead, mine.Damage,
+                    ref health, ref gems, ref isDead,
+                    CardEffectQuery.ScaleIncomingDamage(em, contactShip, mine.Damage),
                     ship.Team, damageTeam,
                     gemExpulsionPerHullDamage: ShipDamageLogic.ExcessDamageGemExpulsionPerHullDamage,
                     isImmune: moonImmune);
@@ -275,11 +277,26 @@ namespace TitanOrbit.ECS
                     em.SetComponentData(contactShip, vitals);
                 }
 
-                if ((result.AppliedHullDamage || result.GemsToExpel > 0.0001f || result.BecameDead) &&
-                    mine.OwnerNetworkId > 0)
+                if (result.AppliedHullDamage || result.GemsToExpel > 0.0001f || result.BecameDead)
                 {
+                    float2 mineImpulse = float2.zero;
+                    if (em.HasComponent<LocalTransform>(contactShip))
+                    {
+                        float3 shipPos = em.GetComponentData<LocalTransform>(contactShip).Position;
+                        if (ToroidalMapEcs.IsValidMapSize(mapW, mapH))
+                        {
+                            float3 off = ToroidalMapEcs.ShortestOffsetXZ(hitPoint, shipPos, mapW, mapH);
+                            mineImpulse = new float2(off.x, off.z);
+                        }
+                        else
+                        {
+                            mineImpulse = new float2(shipPos.x - hitPoint.x, shipPos.z - hitPoint.z);
+                        }
+                    }
+
                     ShipMatchStatsLogic.SetLastDamager(
-                        em, contactShip, mine.OwnerNetworkId, (float)serverElapsed);
+                        em, contactShip, mine.OwnerNetworkId, (float)serverElapsed,
+                        mineImpulse, mine.Damage);
                 }
 
                 if (result.GemsToExpel > 0.0001f &&

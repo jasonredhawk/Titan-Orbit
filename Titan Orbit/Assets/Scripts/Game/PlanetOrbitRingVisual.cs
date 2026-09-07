@@ -7,6 +7,8 @@ namespace TitanOrbit.Game
 {
     /// <summary>
     /// Shapes immediate-mode people-transfer orbit ring and decorative level bands around an ECS planet proxy.
+    /// The soft orbit fill tints to each locked-in ship's team color (cycling when several
+    /// teams share the ring) — any player hull, friendly or enemy.
     /// </summary>
     [ExecuteAlways]
     public class PlanetOrbitRingVisual : ImmediateModeShapeDrawer
@@ -24,11 +26,11 @@ namespace TitanOrbit.Game
 
         [Header("Orbit Ring Fill")]
         [SerializeField] bool drawOrbitZoneFill = true;
-        [SerializeField] Color orbitZoneTint = new Color(0.5f, 0.7f, 0.95f);
+        [SerializeField] Color orbitZoneTint = Color.white; // unused at runtime — occupancy IdleTint is the shared idle RGB
         [Range(0f, 1f)]
         [SerializeField] float orbitZonePeakAlpha = 0.3f;
-        [Tooltip("Local Y offset for the people-transfer ring. 0 = planet equator / cross-section.")]
-        [SerializeField] float orbitZoneHeightBelowPlanet = 0f;
+        [Tooltip("World-unit drop for the troop-transfer ring. Matches turret-pad discs.")]
+        [SerializeField] float orbitZoneHeightBelowPlanet = PlanetOrbitRingOccupancy.ZoneDiscBelowFlightPlane;
 
         Transform _planetRoot;
         float _planetSize = 1f;
@@ -108,9 +110,15 @@ namespace TitanOrbit.Game
             if (drawOrbitZoneFill)
             {
                 Quaternion flatXZ = Quaternion.Euler(-90f, 0f, 0f);
+                // World-space drop (not planet-local) so every planet matches turret-pad discs.
                 Vector3 offsetBelow = new Vector3(0f, -orbitZoneHeightBelowPlanet, 0f);
-                Matrix4x4 zoneMatrix = planetMatrix * Matrix4x4.Translate(offsetBelow) * Matrix4x4.Rotate(flatXZ);
-                PlanetRingMeshBuilder.DrawShapesOrbitRing(cam, zoneMatrix, innerLocal, outerLocal, orbitZoneTint, orbitZonePeakAlpha);
+                Matrix4x4 zoneMatrix = Matrix4x4.Translate(offsetBelow) * planetMatrix * Matrix4x4.Rotate(flatXZ);
+                // Occupied tint is published by PlanetOrbitRingOccupancySystem from ghosted
+                // ShipOrbitState (any locked-in player ship). Several teams cycle ~1s each.
+                PlanetOrbitRingOccupancy.ResolveFill(
+                    _planetId, orbitZonePeakAlpha, out Color fillTint, out float fillAlpha);
+                PlanetRingMeshBuilder.DrawShapesOrbitRing(
+                    cam, zoneMatrix, innerLocal, outerLocal, fillTint, fillAlpha);
             }
 
             Color baseColor = _team != TeamId.None ? _team.ToColor() : new Color(0.75f, 0.75f, 0.8f);

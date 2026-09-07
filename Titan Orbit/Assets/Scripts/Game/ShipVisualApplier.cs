@@ -9,9 +9,10 @@ namespace TitanOrbit.Game
     /// <summary>
     /// Instantiates ship-family chassis prefabs as render-only GameObject proxies and applies
     /// team-colored materials. Called by EcsWorldVisualizer when spawning or respawning ship visuals.
-    /// Strips physics colliders, Rigidbodies, and NetCode MonoBehaviour components so the proxy
-    /// cannot affect simulation — authoritative hull colliders are built on the ECS ghost by
-    /// <see cref="ShipHullColliderLogic"/> from the same chassis prefab.
+    /// Strips Rigidbodies and NetCode MonoBehaviour components so the proxy cannot run a
+    /// second GameObject physics world. Authoritative hulls are one Unity.Physics
+    /// sphere on the ECS ghost. Authored Box/Mesh colliders on chassis parts are destroyed
+    /// on the proxy — they are not used for gameplay collision.
     /// <para>
     /// Prefers an exact chassis id from <see cref="PlanetShipFamilyConfig"/> (level + branch ladder)
     /// so moon-orbit upgrade-tree clicks load the hull that was selected, not a generic level placeholder.
@@ -69,6 +70,13 @@ namespace TitanOrbit.Game
                 if (config != null)
                     prefab = config.GetPrefabByChassisId(chassisId);
 
+                if (prefab == null && MegaShipCatalog.IsMegaChassisId(chassisId))
+                {
+                    var mega = MegaShipCatalog.Load();
+                    if (mega != null)
+                        prefab = mega.GetPrefabByChassisId(chassisId);
+                }
+
                 if (ShipStatApplyLogic.TryResolveFamilyForChassisId(chassisId, out ShipFamilyDefinition resolvedFamily)
                     && resolvedFamily != null)
                 {
@@ -86,7 +94,7 @@ namespace TitanOrbit.Game
             // --- Instantiate proxy ---
             instance = Object.Instantiate(prefab);
             instance.name = prefab.name + "Proxy";
-            StripPhysicsAndNetworking(instance);
+            StripPhysicsAndNetworking(instance, keepColliders: false);
             ApplyTeamMaterials(family, instance, team);
             return true;
         }
@@ -125,13 +133,38 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// [TITAN-ORBIT] Proxy must not participate in physics or NetCode — ECS ghost is authoritative.
+        /// [TITAN-ORBIT] Proxy must not participate in GameObject PhysX or NetCode.
+        /// Keep authored colliders (disabled) so the Inspector still shows the hull boxes.
         /// </summary>
         public static void StripPhysicsAndNetworking(GameObject root)
         {
-            // --- Strip components ---
+            StripPhysicsAndNetworking(root, keepColliders: false);
+        }
+
+        /// <summary>
+        /// [TITAN-ORBIT] Proxy must not participate in physics or NetCode — ECS ghost is authoritative.
+        /// </summary>
+        /// <param name="keepColliders">
+        /// When true, leave UnityEngine colliders on the hierarchy and disable them instead of
+        /// Destroy so they still show in the Inspector. Do not add a Rigidbody — that would
+        /// create a second physics world that fights ECS.
+        /// </param>
+        public static void StripPhysicsAndNetworking(GameObject root, bool keepColliders)
+        {
+            if (root == null)
+                return;
+
+            // --- Colliders ---
             foreach (var col in root.GetComponentsInChildren<Collider>(true))
-                Object.Destroy(col);
+            {
+                if (col == null)
+                    continue;
+                if (keepColliders)
+                    col.enabled = false;
+                else
+                    Object.Destroy(col);
+            }
+
             foreach (var rb in root.GetComponentsInChildren<Rigidbody>(true))
                 Object.Destroy(rb);
             foreach (var component in root.GetComponentsInChildren<Component>(true))
@@ -143,5 +176,6 @@ namespace TitanOrbit.Game
                     Object.Destroy(component);
             }
         }
+
     }
 }

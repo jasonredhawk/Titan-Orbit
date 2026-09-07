@@ -20,7 +20,9 @@ namespace TitanOrbit.UI
         int ShipLevel { get; }
         int BranchIndex { get; }
 
-        // --- Tree layout and node population (maxes = global per-stat ceilings for equal-slot bars) ---
+        // --- Tree layout and node population ---
+        // maxes = regular-family (L1–L6) per-stat ceilings. MEGA nodes resolve the
+        // MEGA catalog maxes themselves so the two rosters never share a denominator.
         bool IsTreeDataAvailable();
         float GetShipTreeLayoutBasisWidthPublic();
         bool TryGetPlayerUpgradePathEdges(out HashSet<(int fL, int fB, int tL, int tB)> edges);

@@ -116,6 +116,8 @@ namespace TitanOrbit.ECS
                 orbit.OrbitPlanetId = 0;
                 orbit.InOrbitRing = false;
                 orbit.UsingOrbitMotor = false;
+                orbit.OrbitLocked = false;
+                orbit.IsTransferringPeople = false;
                 ecb.SetComponent(ship, orbit);
             }
 
@@ -154,6 +156,9 @@ namespace TitanOrbit.ECS
                 var teamState = SystemAPI.GetSingletonRW<TeamStateSingleton>();
                 DecrementTeamCount(ref teamState.ValueRW, shipState.Team);
             }
+
+            // [TITAN-ORBIT] Abandoned MEGA returns to the planet store immediately.
+            MegaShipPlanetLogic.FreeSlotsOccupiedBy(em, networkId);
 
             ecb.DestroyEntity(ship);
             ClearCommandTarget(em, ecb, connection);

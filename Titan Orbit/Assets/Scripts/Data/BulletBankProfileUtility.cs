@@ -98,10 +98,59 @@ namespace TitanOrbit.Data
         }
 
         /// <summary>
-        /// Planetary defense always uses the owning family's default damage bank (never heal).
+        /// Multiplies planetary-defense recipe combat numbers by the bank profile
+        /// (fire power, fire rate, bullet speed, range). Same contract as
+        /// <see cref="ApplyProfileToComponentStats"/> for ships: authored defaults stay
+        /// on the recipe; the live bank scales them at resolve time.
+        /// Lightning’s 0.25 fire-rate / 0.9 fire-power rows are why a NightAye pad
+        /// must not keep the shared 5 shots/sec / 3 damage defaults.
+        /// </summary>
+        public static PlanetaryDefenseConfig.TurretLevelStats ApplyProfileToTurretLevelStats(
+            PlanetaryDefenseConfig.TurretLevelStats stats,
+            int bankIndex)
+        {
+            var bank = BulletVfxBank.LoadDefault();
+            if (bank == null || !bank.TryGetProfile(bankIndex, out BulletBankProfile profile) || profile == null)
+                return stats;
+
+            BulletBankStatModifiers m = profile.statModifiers;
+            stats.damage *= Mul(m.firePowerMultiplier);
+            stats.bulletSpeed *= Mul(m.bulletSpeedMultiplier);
+            stats.fireRate *= Mul(m.fireRateMultiplier);
+            stats.engageRange *= Mul(m.bulletRangeMultiplier);
+            stats.damage = Mathf.Max(0.05f, stats.damage);
+            stats.bulletSpeed = Mathf.Max(1f, stats.bulletSpeed);
+            stats.fireRate = Mathf.Max(0.05f, stats.fireRate);
+            stats.engageRange = Mathf.Max(0.5f, stats.engageRange);
+            return stats;
+        }
+
+        /// <summary>
+        /// Bank a planetary-defense pad fires. <paramref name="config"/> may pin a category;
+        /// <see cref="PlanetaryDefenseConfig.UseFamilyBulletBankIndex"/> (-1, the default)
+        /// inherits the owning family's damage bank. Heal and store-reserved (Rockets)
+        /// never win — those fall back to the family default.
+        /// </summary>
+        public static int ResolveBankIndexForPlanetaryDefense(
+            PlanetaryDefenseConfig config,
+            ShipFamilyDefinition family)
+        {
+            if (config != null && config.bulletBankIndex >= 0)
+            {
+                int authored = config.bulletBankIndex;
+                if (!IsHealBankIndex(authored) && !IsStoreReservedBankIndex(authored))
+                    return authored;
+            }
+
+            return Mathf.Max(0, ResolveBankIndexForFamily(family));
+        }
+
+        /// <summary>
+        /// Planetary defense uses the owning family's default damage bank (never heal)
+        /// when the turret recipe inherits the family bank.
         /// </summary>
         public static int ResolveBankIndexForPlanetaryDefense(ShipFamilyDefinition family) =>
-            Mathf.Max(0, ResolveBankIndexForFamily(family));
+            ResolveBankIndexForPlanetaryDefense(null, family);
 
         /// <summary>Prefix stamped on drone <c>EquippedEquipmentElement.ComponentId</c> at purchase.</summary>
         public const string DroneSourceFamilyIdPrefix = "DroneFam:";
@@ -128,7 +177,7 @@ namespace TitanOrbit.Data
         {
             if (TryParseDroneSourceFamilyId(componentId, out int familyIndex))
             {
-                var config = Resources.Load<PlanetShipFamilyConfig>("PlanetShipFamilyConfig");
+                var config = PlanetShipFamilyConfig.LoadDefault();
                 var entry = config != null ? config.GetFamilyByConfigIndex(familyIndex) : null;
                 if (entry?.shipFamilyDefinition != null)
                     return ResolveBankIndexForFamily(entry.shipFamilyDefinition);
@@ -187,7 +236,7 @@ namespace TitanOrbit.Data
             if (string.IsNullOrWhiteSpace(componentId))
                 return 0;
             if (config == null)
-                config = Resources.Load<PlanetShipFamilyConfig>("PlanetShipFamilyConfig");
+                config = PlanetShipFamilyConfig.LoadDefault();
             if (config?.families == null)
                 return 0;
 
@@ -214,7 +263,7 @@ namespace TitanOrbit.Data
             if (string.IsNullOrWhiteSpace(componentId))
                 return false;
             if (config == null)
-                config = Resources.Load<PlanetShipFamilyConfig>("PlanetShipFamilyConfig");
+                config = PlanetShipFamilyConfig.LoadDefault();
             if (config?.families == null)
                 return false;
 

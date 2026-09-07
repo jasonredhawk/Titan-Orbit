@@ -1,4 +1,5 @@
 using TitanOrbit.Core;
+using TitanOrbit.Generation;
 using TitanOrbit.Simulation;
 using Unity.Collections;
 using Unity.Entities;
@@ -55,6 +56,22 @@ namespace TitanOrbit.ECS
         /// </returns>
         public static float3 FindHomeSpawnPosition(EntityManager em, TeamId team, double elapsedSeconds)
         {
+            TryFindHomeSpawnPosition(em, team, elapsedSeconds, out float3 spawnPos);
+            return spawnPos;
+        }
+
+        /// <summary>
+        /// Same as <see cref="FindHomeSpawnPosition"/> but returns false when no home can be
+        /// resolved yet — callers must retry instead of treating origin as a spawn.
+        /// </summary>
+        public static bool TryFindHomeSpawnPosition(
+            EntityManager em,
+            TeamId team,
+            double elapsedSeconds,
+            out float3 spawnPos)
+        {
+            spawnPos = float3.zero;
+
             // --- Resolve home planet pose ---
             // We need position + scale + PlanetId so we can place on the ring and skip the moon.
             float3 homePos = float3.zero;
@@ -95,10 +112,10 @@ namespace TitanOrbit.ECS
             }
 
             if (!found)
-                return float3.zero;
+                return false;
 
             // --- Random ring spawn outside the moon dock wedge ---
-            return PickOrbitRingSpawnOutsideMoon(
+            spawnPos = PickOrbitRingSpawnOutsideMoon(
                 homePos,
                 planetSize,
                 planetLevel,
@@ -106,6 +123,7 @@ namespace TitanOrbit.ECS
                 isHomePlanet: true,
                 elapsedSeconds,
                 BuildSpawnRandomSeed(team, planetId, elapsedSeconds));
+            return true;
         }
 
         /// <summary>
@@ -254,9 +272,11 @@ namespace TitanOrbit.ECS
                 theta = moonTheta + minDeltaTheta + u;
             }
 
-            // --- World position on XZ (Y stays at planet height) ---
-            // [TITAN-ORBIT] Leave spawn unbounded — do not ToroidalMapEcs.Wrap the hull.
-            return planetPos + new float3(math.cos(theta), 0f, math.sin(theta)) * centerWorld;
+            // --- World position on XZ (Y stays at planet height), then wrap ---
+            float3 spawn = planetPos + new float3(math.cos(theta), 0f, math.sin(theta)) * centerWorld;
+            if (ToroidalMapEcs.HasValidMapSize)
+                spawn = ToroidalMapEcs.Wrap(spawn);
+            return spawn;
         }
 
         /// <summary>

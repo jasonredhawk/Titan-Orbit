@@ -116,6 +116,9 @@ namespace TitanOrbit.ECS
                     MoonBodyRadiusWorld = PlanetGemMoonMath.GetMoonBodyRadiusWorld(
                         planetSize,
                         planet.IsHomePlanet),
+                    MoonDockZoneRadiusWorld = PlanetGemMoonMath.GetMoonDockZoneRadiusWorld(
+                        planetSize,
+                        planet.IsHomePlanet),
                 };
                 return true;
             }

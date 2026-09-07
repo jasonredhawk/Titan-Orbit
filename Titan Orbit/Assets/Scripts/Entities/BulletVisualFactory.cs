@@ -159,15 +159,18 @@ namespace TitanOrbit.Entities
             int bankIndex,
             TeamId team,
             float damage,
-            float scaleMultiplier)
+            float scaleMultiplier,
+            Transform attachParent = null,
+            float duration = 0f)
         {
             // [TITAN-ORBIT] Isolation F1 — skip impact Instantiates/Rent to bisect destroy stutter.
             if (TitanOrbitDebugFlags.IsolateDisableImpactVfx)
                 return;
 
-            position.y = 0f;
+            // Keep the caller Y (drawn surface). Flattening to 0 put flashes under large rocks / moons.
             float impactScale = GetImpactScale(bank, scaleMultiplier, bankIndex);
             float pitch = GetImpactSoundPitch(damage);
+            float life = duration > 0.05f ? duration : DefaultImpactDuration;
 
             if (Application.isMobilePlatform)
             {
@@ -184,7 +187,7 @@ namespace TitanOrbit.Entities
                 return;
             }
 
-            SpawnImpactAt(position, prefab, pitch, impactScale, DefaultImpactDuration);
+            SpawnImpactAt(position, prefab, pitch, impactScale, life, attachParent);
             AudioManager.Instance?.PlayImpactSound(pitch);
         }
 
@@ -259,7 +262,13 @@ namespace TitanOrbit.Entities
         /// Places a one-shot impact flash. Rents from <see cref="BulletOneShotVfxPool"/> so
         /// asteroid kills do not Instantiates a fresh prefab every HitRpc.
         /// </summary>
-        public static void SpawnImpactAt(Vector3 position, GameObject prefab, float pitch, float scale, float duration)
+        public static void SpawnImpactAt(
+            Vector3 position,
+            GameObject prefab,
+            float pitch,
+            float scale,
+            float duration,
+            Transform attachParent = null)
         {
             // --- SpawnImpactAt (pooled) ---
             if (prefab == null)
@@ -274,6 +283,9 @@ namespace TitanOrbit.Entities
             // [UNITY] PrepareVfxInstance restarts ParticleSystems — required after pool Return cleared them.
             // Cold Instantiates also pays FixAllIn1 / light strip here once (marker after).
             VfxUrpCompat.PrepareVfxInstance(go);
+            // worldPositionStays — flash stays on the surface and rides a moving hull / moon / rock.
+            if (attachParent != null)
+                go.transform.SetParent(attachParent, true);
             BulletOneShotVfxPool.ScheduleReturn(go, duration);
         }
 

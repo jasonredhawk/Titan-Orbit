@@ -73,12 +73,19 @@ namespace TitanOrbit.Core
         [SerializeField] bool debugInfiniteRockets;
 
         [Header("Debug — Mines")]
-        [Tooltip("When enabled, E places a mine without consuming charges (and with an empty loadout). The deploy cooldown still applies. Local Editor / MPPM host only.")]
+        [Tooltip("When enabled, ALT places the focused mine pack without consuming charges (and with an empty loadout). The deploy cooldown still applies. Local Editor / MPPM host only.")]
         [SerializeField] bool debugInfiniteMines;
 
         [Header("Debug — Rocket / Mine Self-Harm")]
         [Tooltip("After 2 seconds, your own rockets and mines treat you (and your team) as an enemy so you can test hits and blasts on yourself. Local Editor / MPPM host only.")]
         [SerializeField] bool debugSelfHarmRocketsAndMines;
+
+        [Header("Debug — MEGA Ships")]
+        [Tooltip("When enabled, MEGA guns can auto-aim asteroids in damage mode — lowest priority after ships, planetary defense turrets, and moon shields. Heal mode is unchanged. Local Editor / MPPM host only.")]
+        [SerializeField] bool debugMegaShipsAutoFireAsteroids;
+
+        [Tooltip("Temporary isolate: skip MegaShipAutoFireSystem (no MEGA auto-aim / turret slew). Leave OFF for normal play. Shift+Fire still aims at the mouse in BulletSimulationSystem. Honored on dedicated after rebuild.")]
+        [SerializeField] bool debugDisableMegaShipAutoFire;
 
         [Header("Debug — Asteroid Destroy Hitch")]
         [Tooltip("Logs [AsteroidDestroy] timings in the Console when an asteroid explodes (local gem Instantiates + urgent gem proxies). Filter the Console with that tag.")]
@@ -208,6 +215,8 @@ namespace TitanOrbit.Core
                 TitanOrbitDebugFlags.InfiniteRockets = false;
                 TitanOrbitDebugFlags.InfiniteMines = false;
                 TitanOrbitDebugFlags.SelfHarmRocketsAndMines = false;
+                TitanOrbitDebugFlags.MegaShipsAutoFireAsteroids = false;
+                TitanOrbitDebugFlags.DisableMegaShipAutoFire = false;
                 TitanOrbitDebugFlags.LogAsteroidDestroyPerf = false;
                 TitanOrbitDebugFlags.InstructionImageCaptureEnabled = false;
                 TitanOrbitDebugFlags.StutterIsolatorEnabled = false;
@@ -229,10 +238,20 @@ namespace TitanOrbit.Core
             TitanOrbitDebugFlags.InfiniteRockets = false;
             TitanOrbitDebugFlags.InfiniteMines = false;
             TitanOrbitDebugFlags.SelfHarmRocketsAndMines = false;
+            TitanOrbitDebugFlags.MegaShipsAutoFireAsteroids = false;
 #else
             TitanOrbitDebugFlags.InfiniteRockets = debugInfiniteRockets;
             TitanOrbitDebugFlags.InfiniteMines = debugInfiniteMines;
             TitanOrbitDebugFlags.SelfHarmRocketsAndMines = debugSelfHarmRocketsAndMines;
+            TitanOrbitDebugFlags.MegaShipsAutoFireAsteroids = debugMegaShipsAutoFireAsteroids;
+#endif
+            // Isolate MEGA auto-aim in the Editor only. Dedicated Docker / Edgegap must
+            // keep turret slew — a baked-on isolate left MEGA Phase B hull-forward with
+            // client tracers at the mouse (no damage).
+#if UNITY_SERVER && !UNITY_EDITOR
+            TitanOrbitDebugFlags.DisableMegaShipAutoFire = false;
+#else
+            TitanOrbitDebugFlags.DisableMegaShipAutoFire = debugDisableMegaShipAutoFire;
 #endif
             TitanOrbitDebugFlags.LogAsteroidDestroyPerf = debugLogAsteroidDestroyPerf;
             // [TITAN-ORBIT] Instruction capture stays OFF unless you flip this for art rebuilds —
