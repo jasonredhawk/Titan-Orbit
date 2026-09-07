@@ -6,7 +6,8 @@ using UnityEngine;
 namespace TitanOrbit.ECS
 {
     /// <summary>
-    /// Maps bottom-bar attribute upgrade levels to per-component scale factors on ship parts.
+    /// Maps bottom-bar attribute upgrade levels (and optional moon-store purchase grow) to
+    /// per-component scale factors on ship parts.
     /// Each chassis part group grows by its Part Profile <b>per-level percent of base</b>
     /// (<c>perLevel / base</c> from <c>ShipFamilyPartCalcProfileSet.asset</c>
     /// <c>EvaluateAtVersion(1)</c>). Multiple bottom-bar drivers on one part <b>share</b> growth
@@ -432,6 +433,12 @@ namespace TitanOrbit.ECS
         /// [TITAN-ORBIT] OVERDRIVE visual boost (usually 1). Scales <b>thruster</b> mounts only to match
         /// the burst speed feel (<see cref="ShipOverdriveTuning.SpeedMultiplier"/>). Pass 1 for colliders.
         /// </param>
+        /// <param name="storeFactors">
+        /// [TITAN-ORBIT] Moon-store extra-component grow from
+        /// <see cref="ShipComponentStoreVisualScaleLogic"/>. Default / zeros = identity (×1).
+        /// Applied after attribute compute and before territory / overdrive. Combat stats are
+        /// unchanged — this is mesh + collider size only.
+        /// </param>
         public static void Apply(
             in ShipAttributeUpgradeState attrs,
             in ProfileScaleRates rates,
@@ -443,7 +450,8 @@ namespace TitanOrbit.ECS
             ScaleGroup tail,
             ScaleGroup part,
             float territoryMovementMult = 1f,
-            float overdriveThrusterMult = 1f)
+            float overdriveThrusterMult = 1f,
+            ShipComponentStoreVisualScaleLogic.StoreVisualScaleFactors storeFactors = default)
         {
             ComputeScaleFactors(
                 attrs,
@@ -455,6 +463,16 @@ namespace TitanOrbit.ECS
                 out float thrusterScale,
                 out float tailScale,
                 out float partScale);
+
+            // --- Orbit store extras (stat-ratio grow, same groups) ---
+            var store = ShipComponentStoreVisualScaleLogic.Resolve(storeFactors);
+            cockpitScale *= store.Cockpit;
+            wingScale *= store.Wing;
+            weaponScale *= store.Weapon;
+            engineScale *= store.Engine;
+            thrusterScale *= store.Thruster;
+            tailScale *= store.Tail;
+            partScale *= store.Part;
 
             // --- Territory speed feedback (Engine + Thruster mounts) ---
             // [TITAN-ORBIT] Faster in friendly triangles → bigger propulsion meshes.
@@ -487,12 +505,16 @@ namespace TitanOrbit.ECS
         /// <param name="territoryMovementMult">
         /// Pass 1 for collider bake. Presentation may pass friendly-triangle speed mult.
         /// </param>
+        /// <param name="storeFactors">
+        /// Moon-store visual grow. Pass default for attribute-only bake.
+        /// </param>
         /// <returns>True when at least one part group was found and scaled.</returns>
         public static bool ApplyToHierarchy(
             Transform root,
             string familyPrefix,
             in ShipAttributeUpgradeState attrs,
-            float territoryMovementMult = 1f)
+            float territoryMovementMult = 1f,
+            ShipComponentStoreVisualScaleLogic.StoreVisualScaleFactors storeFactors = default)
         {
             if (root == null)
                 return false;
@@ -534,7 +556,9 @@ namespace TitanOrbit.ECS
                 thruster,
                 tail,
                 part,
-                territoryMovementMult);
+                territoryMovementMult,
+                overdriveThrusterMult: 1f,
+                storeFactors);
             return true;
         }
 

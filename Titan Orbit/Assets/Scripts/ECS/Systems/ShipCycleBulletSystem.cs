@@ -6,9 +6,11 @@ using Unity.NetCode;
 namespace TitanOrbit.ECS
 {
     /// <summary>
-    /// B-key bullet bank cycle. Default: owned damage banks only (hull family + purchased
-    /// foreign weapons). Heal mode ignores B. Debug <c>CycleAllBulletBanks</c> wraps every
-    /// <see cref="BulletVfxBank"/> category including EnergySpheres.
+    /// B-key and bullet-type HUD selection. Production: owned damage banks only (hull family +
+    /// purchased foreign weapons). Heal mode ignores B and HUD clicks. GameManager
+    /// <c>CycleAllBulletBanks</c> wraps every <see cref="BulletVfxBank"/> category including
+    /// EnergySpheres. HUD clicks arrive as <see cref="ShipInput.SetBulletBank"/> and jump to
+    /// <see cref="ShipInput.SelectedBulletBank"/> when that index is selectable.
     /// </summary>
     [UpdateInGroup(typeof(PredictedSimulationSystemGroup))]
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation | WorldSystemFilterFlags.ClientSimulation)]
@@ -26,9 +28,9 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// For each simulated ship with CycleBullet pressed this tick, advance RuntimeBulletIndex.
-        /// Client uses <see cref="NetworkTime.IsFirstTimeFullyPredictingTick"/> so rollback/resim
-        /// does not increment the index multiple times for one press.
+        /// For each simulated ship with CycleBullet or SetBulletBank this tick, update
+        /// RuntimeBulletIndex. Client uses <see cref="NetworkTime.IsFirstTimeFullyPredictingTick"/>
+        /// so rollback/resim does not apply the same press twice.
         /// </summary>
         public void OnUpdate(ref SystemState state)
         {
@@ -52,13 +54,32 @@ namespace TitanOrbit.ECS
                          .WithAll<ShipTag, Simulate>()
                          .WithEntityAccess())
             {
-                if (!input.ValueRO.CycleBullet.IsSet)
+                bool setBank = input.ValueRO.SetBulletBank.IsSet;
+                bool cycle = input.ValueRO.CycleBullet.IsSet;
+                if (!setBank && !cycle)
                     continue;
 
-                // MEGA mounts each fire a catalog bank — B-key must not retarget the volley.
+                // MEGA mounts each fire a catalog bank — B-key / HUD must not retarget the volley.
                 if (SystemAPI.HasComponent<MegaShipState>(entity) &&
                     SystemAPI.GetComponentRO<MegaShipState>(entity).ValueRO.IsMega)
                     continue;
+
+                // --- HUD click: jump to a specific bank ---
+                // [TITAN-ORBIT] Applied before B so a click and a B on the same tick
+                // keep the tile the player tapped.
+                if (setBank)
+                {
+                    int requested = input.ValueRO.SelectedBulletBank;
+                    if (BulletBankOwnership.IsSelectableBank(state.EntityManager, entity, requested))
+                    {
+                        loadout.ValueRW.RuntimeBulletIndex = requested;
+                        if (TitanOrbitDebugFlags.CycleAllBulletBanks)
+                            loadout.ValueRW.HealingBulletsActive =
+                                BulletBankProfileUtility.IsHealBankIndex(requested);
+                    }
+
+                    continue;
+                }
 
                 if (TitanOrbitDebugFlags.CycleAllBulletBanks)
                 {

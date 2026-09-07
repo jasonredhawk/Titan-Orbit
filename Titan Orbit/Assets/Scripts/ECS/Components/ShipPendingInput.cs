@@ -6,9 +6,10 @@ namespace TitanOrbit.ECS
     /// (<see cref="ShipInputApplySystem"/>). Bridges Unity's frame-rate Update loop and NetCode's
     /// fixed-step input group — they run on different schedules and threads.
     /// <para>
-    /// One-shot actions (B-key cycle) are latched until <see cref="ShipInputApplySystem"/> copies
-    /// them onto the ghost. Without a latch, <c>WasPressedThisFrame</c> is cleared on the next
-    /// Unity Update before GhostInputSystemGroup runs — the server never sees the press.
+    /// One-shot actions (B-key cycle, HUD SetBulletBank) are latched until
+    /// <see cref="ShipInputApplySystem"/> copies them onto the ghost. Without a latch,
+    /// <c>WasPressedThisFrame</c> is cleared on the next Unity Update before
+    /// GhostInputSystemGroup runs — the server never sees the press.
     /// </para>
     /// </summary>
     public static class ShipPendingInput
@@ -44,6 +45,12 @@ namespace TitanOrbit.ECS
         static bool s_placeMineLatched;
 
         /// <summary>
+        /// [TITAN-ORBIT] Latched bullet-type HUD click. Same reason as CycleBullet — Unity
+        /// Update can finish before GhostInputSystemGroup copies the one-shot onto the ghost.
+        /// </summary>
+        static bool s_setBulletBankLatched;
+
+        /// <summary>
         /// [HYBRID] Called from ShipInputBridge.Update each frame. Stores input for the next
         /// GhostInputSystemGroup fixed tick. Preserves latched CycleBullet across frames until
         /// the input apply system consumes it.
@@ -73,6 +80,16 @@ namespace TitanOrbit.ECS
                 var mine = new Unity.NetCode.InputEvent();
                 mine.Set();
                 input.PlaceMine = mine;
+            }
+
+            // HUD tile click — one-shot, same latch rule as B. Copy the requested
+            // category so the predicted cycle system can jump instead of increment.
+            if (s_setBulletBankLatched)
+            {
+                var setBank = new Unity.NetCode.InputEvent();
+                setBank.Set();
+                input.SetBulletBank = setBank;
+                input.SelectedBulletBank = BulletBankSelection.RequestedBankIndex;
             }
 
             Latest = input;
@@ -129,6 +146,42 @@ namespace TitanOrbit.ECS
 
         /// <summary>True while a mine press is waiting to be applied.</summary>
         public static bool PlaceMineLatched => s_placeMineLatched;
+
+        /// <summary>Call when the bullet-type HUD click picks a bank. Stays true until consumed.</summary>
+        public static void LatchSetBulletBank()
+        {
+            s_setBulletBankLatched = true;
+        }
+
+        /// <summary>Clears the HUD-click latch after ShipInput has been copied onto the local ghost.</summary>
+        public static void ConsumeSetBulletBankLatch()
+        {
+            s_setBulletBankLatched = false;
+        }
+
+        /// <summary>True while a HUD bank click is waiting to be applied.</summary>
+        public static bool SetBulletBankLatched => s_setBulletBankLatched;
+    }
+
+    /// <summary>
+    /// Client-side bank the bullet-type HUD wants to fire. Tile clicks write this;
+    /// <c>ShipInputBridge</c> copies it onto <see cref="ShipInput.SelectedBulletBank"/> only
+    /// on the latched SetBulletBank tick so B-key increment is not overwritten every frame.
+    /// </summary>
+    public static class BulletBankSelection
+    {
+        /// <summary><c>BulletVfxBank</c> category index from the last HUD click (−1 = none).</summary>
+        public static int RequestedBankIndex { get; private set; } = -1;
+
+        /// <summary>
+        /// Records a tile click and latches the one-shot so NetCode's next fixed tick sees it.
+        /// </summary>
+        /// <param name="bankIndex">Category index the player tapped.</param>
+        public static void Request(int bankIndex)
+        {
+            RequestedBankIndex = bankIndex;
+            ShipPendingInput.LatchSetBulletBank();
+        }
     }
 
     /// <summary>

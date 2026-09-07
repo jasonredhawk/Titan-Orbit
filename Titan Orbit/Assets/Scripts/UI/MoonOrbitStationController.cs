@@ -11,6 +11,8 @@ namespace TitanOrbit.UI
     /// Shows/hides the moon orbit station menu when the local ship lands on a friendly gem moon.
     /// Opens <see cref="OrbitStationUI"/> with the docked store planet and the team's home planet id
     /// (needed for Bank / contributed-gem RPC polls). Client-only presentation controller.
+    /// While the ship is in a gem-moon dock zone we tick <see cref="OrbitStationUI.TickHiddenWarmup"/>
+    /// so chrome + the ship tree are built before the 0.5s cinematic pause ends.
     /// <para>
     /// [TITAN-ORBIT] Deposit intent stays on while truly docked. Failed ECS reads and brief
     /// <c>LandingProgress</c> dips use hysteresis — they must not call <see cref="HideMenuImmediate"/>
@@ -67,8 +69,9 @@ namespace TitanOrbit.UI
         int _latchedHomePlanetId;
 
         /// <summary>
-        /// Each frame: if the local ship is fully landed on a friendly moon (and not thrusting),
-        /// open the orbit station after a short delay; otherwise hide and clear deposit intent.
+        /// Each frame: while the local ship is in a gem-moon dock zone, tick hidden Orbit Menu
+        /// warmup; if the ship is fully landed on a friendly moon (and not thrusting), open the
+        /// overlay after a short cinematic pause; otherwise hide and clear deposit intent.
         /// </summary>
         void Update()
         {
@@ -132,6 +135,15 @@ namespace TitanOrbit.UI
                 HideMenuImmediate();
                 return;
             }
+
+            // --- Hidden Orbit Menu warmup ---
+            // [TITAN-ORBIT] Approach delay (0.5s) + landing (1s) + cinematic pause (0.5s)
+            // is ~2s. We spend that building chrome + the ship tree one phase per frame
+            // so ShowFromEcs is a fade-in, not a layout storm.
+            int warmupHomePlanetId = 0;
+            if (EcsGameBridge.TryGetPlanetStateByPlanetId(moonDock.MoonPlanetId, out var warmupPlanet))
+                warmupHomePlanetId = ResolveHomePlanetId(ship.Team, warmupPlanet, moonDock.MoonPlanetId);
+            GetOrCreateUi().TickHiddenWarmup(moonDock.MoonPlanetId, warmupHomePlanetId);
 
             // Soft undock: landing progress dipped — hysteresis while session active.
             if (moonDock.LandingProgress < GemEconomyConstants.MoonLandingCompleteThreshold)
@@ -230,7 +242,11 @@ namespace TitanOrbit.UI
             _menuVisible = false;
         }
 
-        /// <summary>Returns the cached <see cref="OrbitStationUI"/>, creating it on first use.</summary>
+        /// <summary>
+        /// Returns the cached <see cref="OrbitStationUI"/>, creating the empty host on first use.
+        /// Widget construction is deferred to <see cref="OrbitStationUI.TickHiddenWarmup"/> so
+        /// GetOrCreate itself stays cheap.
+        /// </summary>
         OrbitStationUI GetOrCreateUi()
         {
             if (_ui == null)

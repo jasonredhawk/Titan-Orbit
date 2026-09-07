@@ -622,9 +622,20 @@ namespace TitanOrbit.UI
             }
         }
 
+        /// <summary>
+        /// Instantiates one upgrade-tree card under the nodes canvas and registers it.
+        /// Paint (name, preview, price, power bars) happens later in
+        /// <see cref="RefreshVisualState"/> so first dock does not populate twice.
+        /// </summary>
+        /// <param name="level">Ship tree level 1–7.</param>
+        /// <param name="branch">Branch index at that level (0-based).</param>
+        /// <param name="node">Legacy UpgradeTree asset row, or null for the level-1 hull.</param>
+        /// <param name="w">Card width in pixels.</param>
+        /// <param name="h">Card height in pixels.</param>
+        /// <param name="trackW">Power-bar track width for this card size.</param>
         private ShipUpgradeTreeNodeUI SpawnNode(int level, int branch, ShipUpgradeNode node, float w, float h, float trackW)
         {
-            // --- SpawnNode ---
+            // --- Instantiate card ---
             var view = Instantiate(nodePrefab, nodesCanvas);
             view.gameObject.SetActive(true);
             if (nodeBackgroundSprite != null)
@@ -639,7 +650,9 @@ namespace TitanOrbit.UI
 
             view.BindSlot(level, branch, node, w, h, trackW);
             view.EnsureStableButtonRendering();
-            _station.PopulateTreeNode(view, ComputePowerBarStatMaxes());
+            // [TITAN-ORBIT] Do not PopulateTreeNode here. RebuildIfNeeded always calls
+            // RefreshVisualState afterwards, which paints every node once. Doing both
+            // doubled sprite / power-bar work on first dock (24 nodes).
             view.SetPriceClickHandler(() => _station.OnUpgradeTreeNodeClicked(view.Level, view.BranchIndex));
             _nodes.Add(view);
             _visuals.Add(view.gameObject);

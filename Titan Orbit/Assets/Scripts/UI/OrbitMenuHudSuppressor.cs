@@ -57,7 +57,7 @@ namespace TitanOrbit.UI
 
         /// <summary>
         /// Alpha-zeros gameplay canvases so the Orbit Menu reads as the only HUD.
-        /// Skips rocket/brakes HUDs (they hide themselves) and the Escape command overlay.
+        /// Skips rocket/brakes/fire-type HUDs (they hide themselves) and the Escape command overlay.
         /// </summary>
         void HideGameplayHud()
         {
@@ -78,10 +78,12 @@ namespace TitanOrbit.UI
                 if (canvas == null)
                     continue;
 
-                // Rocket / brakes HUDs hide their own panels — do not alpha-zero a shared parent canvas.
+                // Rocket / brakes / fire-type HUDs hide their own panels — do not alpha-zero a shared parent canvas.
                 if (canvas.GetComponent<RocketLoadoutHUD>() != null)
                     continue;
                 if (canvas.GetComponent<SpaceBrakesHUD>() != null)
+                    continue;
+                if (canvas.GetComponent<BulletTypeHUD>() != null)
                     continue;
                 // Escape command card must stay visible while the Orbit Menu is also up.
                 if (canvas.GetComponentInParent<InGameEscapeMenuController>() != null)

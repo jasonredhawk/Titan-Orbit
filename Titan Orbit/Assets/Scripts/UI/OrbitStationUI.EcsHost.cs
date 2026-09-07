@@ -71,6 +71,22 @@ namespace TitanOrbit.UI
 
         public void ShowFromEcs(int storePlanetId, int homePlanetId)
         {
+            // --- Bind adapters, then reveal ---
+            BindEcsViews(storePlanetId, homePlanetId);
+            MoonOrbitClientState.SetOrbitMenuVisible(true);
+            Show(_ecsShipView, _ecsStorePlanetView);
+        }
+
+        /// <summary>
+        /// Mirrors the docked moon + home planet + local ship into the legacy
+        /// <see cref="Planet"/> / <see cref="Starship"/> adapters the Orbit Menu still
+        /// reads. Does not show the overlay — hidden warmup calls this so the ship
+        /// tree can resolve a family ladder before <see cref="ShowFromEcs"/>.
+        /// </summary>
+        /// <param name="storePlanetId">Planet id of the gem moon the ship is docking on.</param>
+        /// <param name="homePlanetId">Team home planet id for Bank / contributed-gem RPCs.</param>
+        void BindEcsViews(int storePlanetId, int homePlanetId)
+        {
             // --- Cache planet ids and sync legacy views from ECS ---
             _ecsStorePlanetId = storePlanetId;
             _ecsHomePlanetId = homePlanetId;
@@ -98,12 +114,12 @@ namespace TitanOrbit.UI
                 _ecsShipView.BranchIndex);
 
             Instance = this;
-            MoonOrbitClientState.SetOrbitMenuVisible(true);
             // [TITAN-ORBIT] Pass store + home explicitly so Show does not rediscover a wrong HomePlanet
             // via AllHomePlanets and treat the docked captured moon as AstroEagle.
             currentHomePlanet = _ecsHomePlanetView;
+            currentShip = _ecsShipView;
+            currentPlanet = _ecsStorePlanetView;
             _lastHomePlanetLookupTime = Time.time;
-            Show(_ecsShipView, _ecsStorePlanetView);
         }
 
         static T GetOrCreatePlanetView<T>(string objectName) where T : Planet

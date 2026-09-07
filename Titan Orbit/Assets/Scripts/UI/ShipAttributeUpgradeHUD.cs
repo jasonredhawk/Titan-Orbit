@@ -1134,7 +1134,7 @@ namespace TitanOrbit.UI
 
             // --- Nested canvas (beats overlay HUDs that sibling-order cannot) ---
             // [UNITY] A child Canvas with overrideSorting is a separate draw batch. Without it,
-            // RocketLoadoutHUD / SpaceBrakesHUD (order 80) and the turret pad (120) always
+            // RocketLoadoutHUD / SpaceBrakesHUD / BulletTypeHUD (order 80) and the turret pad (120) always
             // cover this tip even after SetAsLastSibling on the main canvas.
             Canvas tipCanvas = _abilityTipPanel.GetComponent<Canvas>();
             if (tipCanvas == null)

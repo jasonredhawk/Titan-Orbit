@@ -27,7 +27,8 @@ namespace TitanOrbit.ECS
 
         /// <summary>
         /// Write pending keyboard/mouse onto the owner ghost, then clear one-shot latches
-        /// (CycleBullet) so the next Unity frame does not re-send the same B press forever.
+        /// (CycleBullet, SetBulletBank, rockets, mines) so the next Unity frame does not
+        /// re-send the same press forever.
         /// </summary>
         public void OnUpdate(ref SystemState state)
         {
@@ -65,6 +66,8 @@ namespace TitanOrbit.ECS
                         ShipPendingInput.ConsumeFireRocketLatch();
                     if (cmd.PlaceMine.IsSet)
                         ShipPendingInput.ConsumePlaceMineLatch();
+                    if (cmd.SetBulletBank.IsSet)
+                        ShipPendingInput.ConsumeSetBulletBankLatch();
                 }
 
                 return;
@@ -98,6 +101,8 @@ namespace TitanOrbit.ECS
                 ShipPendingInput.ConsumeFireRocketLatch();
             if (cmd.PlaceMine.IsSet)
                 ShipPendingInput.ConsumePlaceMineLatch();
+            if (cmd.SetBulletBank.IsSet)
+                ShipPendingInput.ConsumeSetBulletBankLatch();
         }
     }
 }

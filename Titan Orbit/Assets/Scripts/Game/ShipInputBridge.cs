@@ -88,7 +88,13 @@ namespace TitanOrbit.Game
             if (cyclePressed)
                 TryShowBulletCycleName();
 
-            ShipPendingInput.Set(BuildInput(cyclePressed, rocketPressed, minePressed), localHostMode: false);
+            bool setBankPressed = ShipPendingInput.SetBulletBankLatched
+                && !MoonOrbitClientState.IsOrbitMenuVisible
+                && !PlanetaryDefenseTurretClientState.IsControlling;
+
+            ShipPendingInput.Set(
+                BuildInput(cyclePressed, rocketPressed, minePressed, setBankPressed),
+                localHostMode: false);
         }
 
         /// <summary>
@@ -96,7 +102,12 @@ namespace TitanOrbit.Game
         /// Aim direction is computed from mouse world position relative to local ship.
         /// </summary>
         /// <param name="cyclePressedThisFrame">True when B was pressed this Unity frame (also latched).</param>
-        ShipInput BuildInput(bool cyclePressedThisFrame, bool rocketPressedThisFrame, bool minePressedThisFrame)
+        /// <param name="setBankPressedThisFrame">True when the bullet-type HUD latched a click.</param>
+        ShipInput BuildInput(
+            bool cyclePressedThisFrame,
+            bool rocketPressedThisFrame,
+            bool minePressedThisFrame,
+            bool setBankPressedThisFrame)
         {
             // --- Build data ---
             // Cache Camera.main — looking it up every frame was part of a ~4ms Update (Profiler 41220).
@@ -154,6 +165,12 @@ namespace TitanOrbit.Game
             if (!turretControl && (minePressedThisFrame || ShipPendingInput.PlaceMineLatched))
                 placeMine.Set();
 
+            // [TITAN-ORBIT] HUD tile click — one-shot set, not a sticky every-tick index.
+            // Sticky SelectedBulletBank would fight B-key increment on the next ticks.
+            var setBulletBank = new InputEvent();
+            if (!turretControl && (setBankPressedThisFrame || ShipPendingInput.SetBulletBankLatched))
+                setBulletBank.Set();
+
             // [TITAN-ORBIT] Shift alone (not AND thrust). Regular ships: OVERDRIVE
             // latch + burst while thrusting. MEGAs: same bit is heading-lock / unoccupied
             // auto-gun mouse-aim (no speed burst). Clear while stowed so prediction
@@ -175,6 +192,8 @@ namespace TitanOrbit.Game
                 PlaceMine = placeMine,
                 SelectedMineSlot = MineSlotSelection.SelectedIndex,
                 AimDistance = aimDistance,
+                SetBulletBank = setBulletBank,
+                SelectedBulletBank = BulletBankSelection.RequestedBankIndex,
             };
         }
 

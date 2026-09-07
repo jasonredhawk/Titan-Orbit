@@ -19,6 +19,9 @@ namespace TitanOrbit.UI
     /// <summary>
     /// Combined orbit station UI: ship loadout grids (stacked vertically) at top, orbit actions and store below.
     /// Single left-anchored panel. Optional Shift Sci-Fi UI sprites/font assignable in inspector.
+    /// Gem-moon docking uses the full-screen moon-dock chrome (sidebar + SHIPS / GEAR / CARDS).
+    /// Construction is spread across dock-zone frames via <see cref="TickHiddenWarmup"/> so the
+    /// overlay can appear without a main-thread hitch.
     /// </summary>
     public partial class OrbitStationUI : MonoBehaviour, IOrbitStationHost
     {
@@ -185,6 +188,36 @@ namespace TitanOrbit.UI
 
         private bool _moonDockLayoutActive;
         private bool _moonDockChromeReady;
+        /// <summary>
+        /// How far hidden Orbit Menu construction has gotten. The moon-dock controller
+        /// advances this one step per frame while the ship is in a gem-moon dock zone so
+        /// <see cref="Show"/> only has to fade the overlay in.
+        /// </summary>
+        enum MoonDockWarmupPhase
+        {
+            /// <summary>Nothing built yet (or we only created the empty host GameObject).</summary>
+            None = 0,
+            /// <summary>Legacy slot / store widgets from <see cref="EnsurePanelExists"/> exist.</summary>
+            Panel = 1,
+            /// <summary>Full-screen sidebar + SHIPS / GEAR / CARDS hosts exist.</summary>
+            Chrome = 2,
+            /// <summary>Widgets are reparented into the moon-dock split and ECS views are bound.</summary>
+            Layout = 3,
+            /// <summary>Ship upgrade tree nodes are instantiated at the real dock width.</summary>
+            Tree = 4,
+            /// <summary>GEAR purchase tiles exist so the first Gear tab click does not hitch.</summary>
+            Store = 5
+        }
+
+        /// <summary>Next hidden-warmup step. Stays at <see cref="MoonDockWarmupPhase.Tree"/> after the first successful build.</summary>
+        MoonDockWarmupPhase _moonDockWarmupPhase;
+        /// <summary>True after the 24-node moon-dock ship tree has been spawned once (structure is shared across families).</summary>
+        bool _moonDockTreeWarmed;
+        /// <summary>
+        /// [UNITY] Alpha / raycast gate on the full-screen dock backdrop. Warmup activates the
+        /// hierarchy at alpha 0 so layout can measure width without the player seeing the menu.
+        /// </summary>
+        CanvasGroup _moonDockBackdropGroup;
         private bool _moonDockShipTreeHorizontal;
         private enum MoonDockCenterView { None, Ships, Gear, Cards }
         private MoonDockCenterView _moonDockCenterView = MoonDockCenterView.None;
@@ -342,8 +375,8 @@ namespace TitanOrbit.UI
             }
 
             // --- Dedicated canvas ---
-            // [TITAN-ORBIT] Do not parent under RocketLoadoutHUD (or any other AfterSceneLoad
-            // overlay). That HUD hides itself on the moon; sharing its Canvas hid Orbit Menu.
+            // [TITAN-ORBIT] Do not parent under RocketLoadoutHUD / BulletTypeHUD (or any other
+            // AfterSceneLoad overlay). Those HUDs hide themselves on the moon; sharing a Canvas hid Orbit Menu.
             var canvasGo = new GameObject("OrbitStationCanvas");
             var canvas = canvasGo.AddComponent<Canvas>();
             canvas.renderMode = RenderMode.ScreenSpaceOverlay;
@@ -397,9 +430,11 @@ namespace TitanOrbit.UI
         private void Awake()
         {
             // --- Unity lifecycle ---
+            // [TITAN-ORBIT] Do not call EnsurePanelExists here. That method creates dozens of
+            // TextMesh Pro widgets (loadout slots, store rows). Doing it in Awake on first
+            // land made the Orbit Menu hitch. MoonOrbitStationController spreads the build
+            // across dock-zone frames via TickHiddenWarmup; Show still builds as a fallback.
             OnOrbitStationEcsAwake();
-            EnsurePanelExists();
-            if (rootPanel != null) rootPanel.SetActive(false);
         }
 
         void OnDestroy()
@@ -700,6 +735,9 @@ namespace TitanOrbit.UI
 
         public void Show(Starship ship, Planet planet)
         {
+            // --- Bind this dock session ---
+            // Starship / Planet here are lightweight MonoBehaviour adapters (not ghosts).
+            // ShowFromEcs already synced them; a second Show (Escape reopen) passes the same refs.
             UnsubscribeEquipmentUiWatch();
             currentShip = ship;
             SubscribeEquipmentUiWatch(ship);
@@ -725,12 +763,26 @@ namespace TitanOrbit.UI
             pendingGemsRequest = true;
             if (HomePlanetStoreSystem.Instance != null)
                 HomePlanetStoreSystem.Instance.RequestContributedGemsServerRpc();
-            RefreshAll();
+
+            // --- Reveal ---
+            // [TITAN-ORBIT] Hidden warmup already built chrome + the 24-node ship tree.
+            // A cold Show used to RefreshAll (store labels → sidebar → full GEAR grid),
+            // ForceRebuild the cards host, then SetMoonDockCenterView which spawned the
+            // tree and rebuilt the store again — that was the landing hitch.
+            bool warmed = IsMoonDockWarmForInstantShow;
             if (_moonDockLayoutActive)
             {
-                RebuildMoonDockLayoutsAfterShow();
-                if (!_moonDockMenuClosedByUser)
-                    SetMoonDockCenterView(MoonDockCenterView.Ships);
+                if (warmed)
+                    RevealWarmedShipsView();
+                else
+                {
+                    RefreshSlots();
+                    RefreshEquipmentSlots();
+                    RefreshSidebar(includeStore: false);
+                    RebuildMoonDockLayoutsAfterShow();
+                    if (!_moonDockMenuClosedByUser)
+                        SetMoonDockCenterView(MoonDockCenterView.Ships);
+                }
             }
             else
             {
@@ -753,15 +805,225 @@ namespace TitanOrbit.UI
 
         public void Hide()
         {
+            // --- Conceal, keep widgets ---
+            // [TITAN-ORBIT] Do not tear the moon-dock split back into the legacy stacked
+            // panel. Reparent + tree rebuild on the next land is what made the second
+            // docking hitch. Widgets stay assembled; we only hide the backdrop.
             HideCardRemoveConfirm();
             _moonDockMenuClosedByUser = false;
-            ExitMoonDockLayout();
+            ConcealMoonDockMenu();
             UnsubscribeEquipmentUiWatch();
             currentShip = null;
             currentPlanet = null;
             currentHomePlanet = null; // Clear so next Show does fresh lookup
             if (rootPanel != null) rootPanel.SetActive(false);
             OnOrbitStationEcsHide();
+        }
+
+        /// <summary>
+        /// Builds Orbit Menu widgets off-screen, one phase per call, so the landing
+        /// cinematic can absorb construction cost. The moon-dock controller ticks this
+        /// while the local ship is in a gem-moon dock zone (approach + land + 0.5s pause).
+        /// </summary>
+        /// <param name="storePlanetId">Docked moon's planet id, or 0 to only build chrome.</param>
+        /// <param name="homePlanetId">Team home planet id for Bank RPCs (0 if unknown yet).</param>
+        public void TickHiddenWarmup(int storePlanetId, int homePlanetId)
+        {
+            // --- Already ready ---
+            // Tree geometry is the same on every moon (1+2+3+4+5+6+3 nodes). Family
+            // names / previews refresh on Show; we do not rebuild for a new planet id.
+            if (_moonDockWarmupPhase >= MoonDockWarmupPhase.Store)
+                return;
+
+            switch (_moonDockWarmupPhase)
+            {
+                case MoonDockWarmupPhase.None:
+                    // --- Phase 1: slot grids + store scroll (lots of TextMesh Pro) ---
+                    EnsurePanelExists();
+                    if (rootPanel != null)
+                        rootPanel.SetActive(false);
+                    _moonDockWarmupPhase = MoonDockWarmupPhase.Panel;
+                    return;
+
+                case MoonDockWarmupPhase.Panel:
+                    // --- Phase 2: full-screen dock chrome + catalog caches ---
+                    // [UNITY] First GetGlobalMaxPerStat walks every family chassis — do it
+                    // here so the later tree populate does not pay that scan on Show.
+                    EnsureMoonDockChromeExists();
+                    CreateMoonDockGearHost();
+                    PrimeOrbitMenuStaticCaches();
+                    _moonDockWarmupPhase = MoonDockWarmupPhase.Chrome;
+                    return;
+
+                case MoonDockWarmupPhase.Chrome:
+                    // --- Phase 3: reparent into the split + bind ECS adapters ---
+                    // Need a store planet so the tree host can resolve a family ladder.
+                    if (storePlanetId <= 0)
+                        return;
+                    BindEcsViews(storePlanetId, homePlanetId);
+                    EnterMoonDockLayout();
+                    // EnterMoonDockLayout flags the dock as "active" for layout math.
+                    // Update() would then rebuild store/slots every 0.35s while the ship
+                    // is still landing — keep the widgets assembled but the session closed.
+                    _moonDockLayoutActive = false;
+                    _moonDockWarmupPhase = MoonDockWarmupPhase.Layout;
+                    return;
+
+                case MoonDockWarmupPhase.Layout:
+                    // --- Phase 4: spawn tree nodes at the real dock width ---
+                    if (storePlanetId <= 0 || currentShip == null)
+                    {
+                        if (storePlanetId > 0)
+                            BindEcsViews(storePlanetId, homePlanetId);
+                        return;
+                    }
+
+                    BuildShipTreeHidden();
+                    // Stay on Layout if the tree could not spawn (UpgradeSystem / CardShop
+                    // not ready yet) so a later dock-zone frame retries.
+                    if (_moonDockTreeWarmed)
+                        _moonDockWarmupPhase = MoonDockWarmupPhase.Tree;
+                    return;
+
+                case MoonDockWarmupPhase.Tree:
+                    // --- Phase 5: GEAR grid (after the tree, still during the cinematic) ---
+                    // Show opens on SHIPS. Building store here keeps the first Gear click cheap
+                    // without putting that work on the reveal frame.
+                    if (storePlanetId > 0)
+                        BindEcsViews(storePlanetId, homePlanetId);
+                    PrimeMoonDockStoreHidden();
+                    _moonDockWarmupPhase = MoonDockWarmupPhase.Store;
+                    return;
+            }
+        }
+
+        /// <summary>
+        /// True when hidden warmup finished the ship tree, so <see cref="Show"/> can
+        /// skip store rebuilds and node Instantiate.
+        /// </summary>
+        public bool IsMoonDockWarmForInstantShow =>
+            _moonDockTreeWarmed && _moonDockReparentDone;
+
+        /// <summary>
+        /// Loads ScriptableObject catalogs and the regular-family power-bar ceiling
+        /// so the first tree paint does not hitch on Resources.Load / family scans.
+        /// </summary>
+        void PrimeOrbitMenuStaticCaches()
+        {
+            // --- Catalog + bar-pool caches ---
+            // MegaShipCatalog and PlanetShipFamilyConfig are ScriptableObjects under Resources.
+            MegaShipCatalog.Load();
+            _ = ShipFamilyPowerBarNorm.GetGlobalMaxPerStat();
+            _ = ShipFamilyPowerBarNorm.GetMegaMaxPerStat();
+            if (shipUpgradeTreePrefab == null)
+                shipUpgradeTreePrefab = Resources.Load<ShipUpgradeTreeUI>("ShipUpgradeTree");
+        }
+
+        /// <summary>
+        /// Instantiates the horizontal moon-dock ship tree while the backdrop is
+        /// active at alpha 0. Unity only reports a real RectTransform width when the
+        /// hierarchy is active — building while disabled used to spawn at a fallback
+        /// width, then rebuild again on Show (second hitch).
+        /// </summary>
+        void BuildShipTreeHidden()
+        {
+            // --- Invisible layout pass ---
+            if (moonDockCenterBackdrop == null || shipUpgradeTree == null)
+                return;
+
+            EnsureMoonDockBackdropGroup();
+            _moonDockBackdropGroup.alpha = 0f;
+            _moonDockBackdropGroup.blocksRaycasts = false;
+            _moonDockBackdropGroup.interactable = false;
+
+            moonDockCenterBackdrop.SetActive(true);
+            if (moonDockCenterShipsHost != null)
+                moonDockCenterShipsHost.gameObject.SetActive(true);
+            if (moonDockCardsScroll != null)
+                moonDockCardsScroll.gameObject.SetActive(false);
+            if (moonDockGearScroll != null)
+                moonDockGearScroll.gameObject.SetActive(false);
+
+            // [TITAN-ORBIT] RefreshShipsTab reads these flags to pick the horizontal layout key.
+            _moonDockLayoutActive = true;
+            _moonDockShipTreeHorizontal = true;
+            activeStoreTab = 1;
+            if (shipsTabContent != null)
+                shipsTabContent.SetActive(true);
+
+            Canvas.ForceUpdateCanvases();
+            RefreshShipsTab(scrollToActiveShipNode: false);
+
+            moonDockCenterBackdrop.SetActive(false);
+            // Hide must not leave Update() refreshing store/slots every frame.
+            _moonDockLayoutActive = false;
+            _moonDockTreeWarmed = shipUpgradeTree.Nodes != null && shipUpgradeTree.Nodes.Count > 0;
+        }
+
+        /// <summary>
+        /// Builds the moon-dock GEAR purchase grid off-screen. <see cref="RefreshMoonDockStore"/>
+        /// requires <see cref="_moonDockLayoutActive"/>; we flip it only for this call.
+        /// </summary>
+        void PrimeMoonDockStoreHidden()
+        {
+            // --- Hidden GEAR build ---
+            if (currentShip == null || currentPlanet == null)
+                return;
+
+            EnsureMoonDockStoreSection();
+            bool wasActive = _moonDockLayoutActive;
+            _moonDockLayoutActive = true;
+            RefreshMoonDockStore();
+            _moonDockLayoutActive = wasActive;
+        }
+
+        /// <summary>
+        /// Opens the already-built SHIPS view: paint current hull / Bank, then fade the
+        /// backdrop in. Does not spawn tree nodes or rebuild the GEAR grid.
+        /// </summary>
+        void RevealWarmedShipsView()
+        {
+            // --- Light paint ---
+            RefreshSlots();
+            RefreshEquipmentSlots();
+            RefreshSidebar(includeStore: false);
+            if (!_moonDockMenuClosedByUser)
+                SetMoonDockCenterView(MoonDockCenterView.Ships, reuseWarmedTree: true);
+        }
+
+        /// <summary>
+        /// Hides the Orbit Menu overlay without dismantling the moon-dock split.
+        /// Next land reuses chrome + tree; only visual state is refreshed.
+        /// </summary>
+        void ConcealMoonDockMenu()
+        {
+            // --- Conceal ---
+            ApplyShipTreeHudObscuring(false);
+            _moonDockLayoutActive = false;
+            _moonDockCenterView = MoonDockCenterView.None;
+            if (moonDockCenterBackdrop != null)
+                moonDockCenterBackdrop.SetActive(false);
+            if (_moonDockBackdropGroup != null)
+            {
+                _moonDockBackdropGroup.alpha = 0f;
+                _moonDockBackdropGroup.blocksRaycasts = false;
+                _moonDockBackdropGroup.interactable = false;
+            }
+        }
+
+        /// <summary>
+        /// Adds a <see cref="CanvasGroup"/> on the dock backdrop so warmup can keep the
+        /// hierarchy active (for layout) while alpha 0 hides it from the player.
+        /// </summary>
+        void EnsureMoonDockBackdropGroup()
+        {
+            // --- CanvasGroup ---
+            if (moonDockCenterBackdrop == null)
+                return;
+            if (_moonDockBackdropGroup == null)
+                _moonDockBackdropGroup = moonDockCenterBackdrop.GetComponent<CanvasGroup>();
+            if (_moonDockBackdropGroup == null)
+                _moonDockBackdropGroup = moonDockCenterBackdrop.AddComponent<CanvasGroup>();
         }
 
         public void RefreshFromReceivedGems()
@@ -1348,20 +1610,26 @@ namespace TitanOrbit.UI
         {
             if (_moonDockLayoutActive && _moonDockShipTreeHorizontal)
             {
+                // [TITAN-ORBIT] Prefer the already-laid-out width. ForceUpdateCanvases here
+                // used to run from CheckShipTreeLayoutBasisChanged every 0.25s and from
+                // tree RebuildIfNeeded — a layout storm on every dock open.
                 if (shipUpgradeTree != null)
                 {
                     var treeRt = (RectTransform)shipUpgradeTree.transform;
+                    if (treeRt.rect.width > 80f)
+                        return treeRt.rect.width;
                     LayoutRebuilder.ForceRebuildLayoutImmediate(treeRt);
-                    Canvas.ForceUpdateCanvases();
                     if (treeRt.rect.width > 80f)
                         return treeRt.rect.width;
                 }
 
                 if (moonDockCenterShipsHost != null && moonDockCenterShipsHost.gameObject.activeInHierarchy)
                 {
-                    LayoutRebuilder.ForceRebuildLayoutImmediate(moonDockCenterShipsHost);
-                    Canvas.ForceUpdateCanvases();
                     float w = moonDockCenterShipsHost.rect.width;
+                    if (w > 80f)
+                        return Mathf.Max(120f, w - 24f);
+                    LayoutRebuilder.ForceRebuildLayoutImmediate(moonDockCenterShipsHost);
+                    w = moonDockCenterShipsHost.rect.width;
                     if (w > 80f)
                         return Mathf.Max(120f, w - 24f);
                 }
@@ -3308,7 +3576,8 @@ namespace TitanOrbit.UI
                 gemsText.text = $"Your contributed gems: {contributedGems:F0}";
                 gemsText.gameObject.SetActive(!_moonDockLayoutActive);
             }
-            RefreshSidebar();
+            // Ships / Cards tabs do not need the GEAR purchase grid rebuilt every 0.35s.
+            RefreshSidebar(includeStore: _moonDockCenterView == MoonDockCenterView.Gear);
 
             if (cardRoots == null || cardButtons == null || currentShip == null || currentPlanet == null) return;
             if (CardShopSystem.Instance == null)
@@ -3464,7 +3733,13 @@ namespace TitanOrbit.UI
                 RefreshShipTreeVisualStateOnly();
         }
 
-        private void RefreshSidebar()
+        /// <summary>
+        /// Paints the left dock: Bank / ship cargo, auto-deposit, current-ship card, family rail.
+        /// <paramref name="includeStore"/> rebuilds the GEAR purchase grid — only do that
+        /// when the Gear tab is visible. Ships-open used to rebuild the store three times.
+        /// </summary>
+        /// <param name="includeStore">True to refresh / rebuild moon-dock equipment store tiles.</param>
+        private void RefreshSidebar(bool includeStore = true)
         {
             if (!_moonDockLayoutActive || orbitDockSidebar == null)
                 return;
@@ -3571,7 +3846,8 @@ namespace TitanOrbit.UI
             orbitDockSidebar.RefreshFamilyIdentity(sidebarFamily, currentShip != null ? currentShip.ShipLevel : 1);
             if (_moonDockFamilyRail != null)
                 _moonDockFamilyRail.text = FamilyStatHudCopy.FormatFamilyCaption(sidebarFamily);
-            RefreshMoonDockStore();
+            if (includeStore)
+                RefreshMoonDockStore();
         }
 
         private static bool GetSavedAutoDepositGems()
@@ -6301,6 +6577,11 @@ namespace TitanOrbit.UI
             ApplyShipTreeHudObscuring(false);
         }
 
+        /// <summary>
+        /// Full teardown: hide the dock overlay and move widgets back to the legacy stacked
+        /// panel. <see cref="Hide"/> no longer calls this — it uses <see cref="ConcealMoonDockMenu"/>
+        /// so the next land reuses chrome + tree. Kept if we ever need to leave moon-dock layout.
+        /// </summary>
         private void ExitMoonDockLayout()
         {
             if (!_moonDockLayoutActive) return;
@@ -6457,12 +6738,11 @@ namespace TitanOrbit.UI
             shipsRt.sizeDelta = Vector2.zero;
 
             _moonDockReparentDone = true;
-            RebuildUpgradeSpinOfferRowIfNeeded();
+            // [TITAN-ORBIT] Do not refresh slots / spin / cards layout here. Reparent runs
+            // during hidden warmup; painting cards + GEAR on that frame stole the landing
+            // budget. Cards / Gear tabs refresh themselves when the player opens them.
             SetUpgradeCardSlotLayoutMode(true);
             SetEquipmentSlotLayoutMode(true);
-            RefreshSlots();
-            RefreshEquipmentSlots();
-            ApplyMoonDockCardsHostLayout();
         }
 
         private void ApplyMoonDockCardsHostLayout()
@@ -6669,16 +6949,29 @@ namespace TitanOrbit.UI
         /// <paramref name="view"/> <see cref="MoonDockCenterView.None"/> is a dismiss:
         /// the ship can stay on the moon, and gameplay HUD must return.
         /// </summary>
-        private void SetMoonDockCenterView(MoonDockCenterView view)
+        /// <param name="view">Which center panel to show, or None to conceal.</param>
+        /// <param name="reuseWarmedTree">
+        /// True when hidden warmup already spawned tree nodes. Skips Instantiate /
+        /// ForceRebuild and only refreshes colors, prices, and the current-ship card.
+        /// </param>
+        private void SetMoonDockCenterView(MoonDockCenterView view, bool reuseWarmedTree = false)
         {
             _moonDockCenterView = view;
             bool show = view != MoonDockCenterView.None;
 
-            // [TITAN-ORBIT] OrbitMenuHudSuppressor, rockets, brakes, and fire input all
+            // [TITAN-ORBIT] OrbitMenuHudSuppressor, rockets, brakes, fire-type HUD, and fire input all
             // key off this flag. Closing the × button must clear it even while still docked.
             MoonOrbitClientState.SetOrbitMenuVisible(show);
 
             if (moonDockCenterBackdrop == null) return;
+
+            EnsureMoonDockBackdropGroup();
+            if (_moonDockBackdropGroup != null)
+            {
+                _moonDockBackdropGroup.alpha = show ? 1f : 0f;
+                _moonDockBackdropGroup.blocksRaycasts = show;
+                _moonDockBackdropGroup.interactable = show;
+            }
 
             moonDockCenterBackdrop.SetActive(show);
             if (!show)
@@ -6713,7 +7006,7 @@ namespace TitanOrbit.UI
                 RefreshSlots();
                 RefreshEquipmentSlots();
                 RefreshStoreLabels();
-                RefreshSidebar();
+                RefreshSidebar(includeStore: false);
             }
             else if (gear)
             {
@@ -6728,16 +7021,29 @@ namespace TitanOrbit.UI
                 RefreshSlots();
                 RefreshEquipmentSlots();
                 RefreshMoonDockStore();
-                RefreshSidebar();
+                RefreshSidebar(includeStore: false);
+            }
+            else if (reuseWarmedTree && shipUpgradeTree != null && shipUpgradeTree.Nodes.Count > 0)
+            {
+                // --- Warmed SHIPS ---
+                // Nodes already exist. RefreshStoreTabVisibility → EnsureShipsTabPopulated
+                // would call RefreshShipsTab and ForceUpdateCanvases again.
+                activeStoreTab = 1;
+                _moonDockShipTreeHorizontal = true;
+                if (shipsTabContent != null)
+                    shipsTabContent.SetActive(true);
+                if (cardsTabContent != null)
+                    cardsTabContent.SetActive(false);
+                RefreshShipTreeVisualStateOnly();
+                RefreshSidebar(includeStore: false);
             }
             else
             {
                 activeStoreTab = 1;
                 _moonDockShipTreeHorizontal = true;
-                _shipTreeStructureKey = "";
                 RefreshStoreTabVisibility();
                 RefreshShipsTab(scrollToActiveShipNode: false);
-                RefreshSidebar();
+                RefreshSidebar(includeStore: false);
             }
 
             if (cards && moonDockCardsScroll != null) moonDockCardsScroll.verticalNormalizedPosition = 1f;
@@ -6745,7 +7051,8 @@ namespace TitanOrbit.UI
             if (moonDockCenterBackdrop != null) moonDockCenterBackdrop.transform.SetAsLastSibling();
             if (moonDockCloseButton != null) moonDockCloseButton.transform.SetAsLastSibling();
             ApplyMoonDockShipTreeRowLayout();
-            Canvas.ForceUpdateCanvases();
+            if (!reuseWarmedTree)
+                Canvas.ForceUpdateCanvases();
         }
 
         private void RebuildMoonDockLayoutsAfterShow()

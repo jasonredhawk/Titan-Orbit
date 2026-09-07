@@ -9,8 +9,9 @@ namespace TitanOrbit.Game
 {
     /// <summary>
     /// Client-side component mesh scaling on ship proxies when bottom-bar attribute upgrades change,
-    /// when the ship is inside a friendly territory triangle (Engine/Thruster mounts grow), and when
-    /// OVERDRIVE is active (Thruster mounts bloom with the baked overdrive speed mul).
+    /// when moon-dock store extras of the same part type raise visual scale, when the ship is
+    /// inside a friendly territory triangle (Engine/Thruster mounts grow), and when OVERDRIVE is
+    /// active (Thruster mounts bloom with the baked overdrive speed mul).
     /// Attached by EcsWorldVisualizer.
     /// <para>
     /// Growth rates come from <c>ShipFamilyPartCalcProfileSet.asset</c> Part Profiles
@@ -56,6 +57,12 @@ namespace TitanOrbit.Game
 
         ShipAttributeUpgradeState _lastApplied;
 
+        /// <summary>
+        /// Last equipment-buffer hash from <see cref="ShipComponentStoreVisualScaleLogic"/>.
+        /// -1 means "never applied" so Bind always writes once.
+        /// </summary>
+        int _lastStoreKey = -1;
+
         /// <summary>Instant target from ECS / graph cache (may jump).</summary>
         float _targetTerritoryMult = 1f;
         /// <summary>Instant OVERDRIVE target (1 or baked speed mul).</summary>
@@ -85,6 +92,7 @@ namespace TitanOrbit.Game
             // Family is unused for rates — ProfileSet Part Profiles are the shared source of truth.
             _ = family;
             _lastApplied = default;
+            _lastStoreKey = -1;
             _targetTerritoryMult = 1f;
             _targetOverdriveMult = 1f;
             _displayTerritoryMult = 1f;
@@ -156,6 +164,9 @@ namespace TitanOrbit.Game
                 return;
 
             var attrs = em.GetComponentData<ShipAttributeUpgradeState>(_shipEntity);
+
+            // [NETCODE] Equipment buffer is ghosted — purchase / discard replicates here.
+            int storeKey = ShipComponentStoreVisualScaleLogic.ComputeEquipmentScaleKey(em, _shipEntity);
 
             // --- Resolve instant targets (local owner only) ---
             float targetTerritory = 1f;
@@ -233,6 +244,7 @@ namespace TitanOrbit.Game
             }
 
             bool attrsSame = attrs.Equals(_lastApplied);
+            bool storeSame = storeKey == _lastStoreKey;
             bool displaySettled =
                 math.abs(_displayTerritoryMult - _targetTerritoryMult) < BoostDisplayEpsilon &&
                 math.abs(_displayOverdriveMult - _targetOverdriveMult) < BoostDisplayEpsilon;
@@ -240,15 +252,18 @@ namespace TitanOrbit.Game
                 math.abs(_displayTerritoryMult - _lastAppliedTerritoryMult) < BoostDisplayEpsilon &&
                 math.abs(_displayOverdriveMult - _lastAppliedOverdriveMult) < BoostDisplayEpsilon;
 
-            // Skip Transform writes when upgrades idle and display already matches last apply.
-            if (!force && attrsSame && displaySettled && displayUnchanged)
+            // Skip Transform writes when upgrades / store extras idle and display already matches.
+            if (!force && attrsSame && storeSame && displaySettled && displayUnchanged)
                 return;
 
             bool attrsChanged = !attrsSame;
+            bool storeChanged = !storeSame;
             _lastApplied = attrs;
+            _lastStoreKey = storeKey;
             _lastAppliedTerritoryMult = _displayTerritoryMult;
             _lastAppliedOverdriveMult = _displayOverdriveMult;
 
+            var storeFactors = ShipComponentStoreVisualScaleLogic.ComputeForShip(em, _shipEntity);
             ShipComponentAttributeScaleLogic.Apply(
                 attrs,
                 _rates,
@@ -260,13 +275,14 @@ namespace TitanOrbit.Game
                 _tail,
                 _part,
                 _displayTerritoryMult,
-                _displayOverdriveMult);
+                _displayOverdriveMult,
+                storeFactors);
 
             // --- VFX: never ForceRefresh on boost lerp ---
             // [TITAN-ORBIT] ForceRefreshEmission Stop+Clear+Play caused thruster blink whenever
             // territory/overdrive stepped. Propulsion LateUpdate already restarts stopped particles
-            // while thrust is held. Only nudge after attribute mesh grow (upgrade tick / bind).
-            if (attrsChanged || force)
+            // while thrust is held. Only nudge after attribute / store mesh grow (upgrade tick / bind).
+            if (attrsChanged || storeChanged || force)
                 NotifyPropulsionAfterMountScale();
         }
 

@@ -65,7 +65,7 @@ namespace TitanOrbit.Core
         [SerializeField] bool debugFreeShipUpgradeTree;
 
         [Header("Debug — Bullet Banks")]
-        [Tooltip("When enabled, B-key cycles every bullet bank category including healing EnergySpheres. Leave OFF so B only cycles owned damage banks.")]
+        [Tooltip("ON (Test): B-key and the bullet-type HUD walk every BulletVfxBank category, even if that family's weapon is not in the loadout (includes healing EnergySpheres). OFF (Production): only the hull default plus purchased weapon components in the loadout. Dedicated server always stays Production.")]
         [SerializeField] bool debugCycleAllBulletBanks;
 
         [Header("Debug — Rockets")]
@@ -120,7 +120,10 @@ namespace TitanOrbit.Core
         /// <summary>True when designers enabled free upgrades in the Inspector (client + local-host convenience).</summary>
         public bool DebugFreeShipUpgradeTree => debugFreeShipUpgradeTree;
 
-        /// <summary>True when B-key cycles every bullet bank including heal.</summary>
+        /// <summary>
+        /// True when B-key and the bullet-type HUD cycle every bank (Test).
+        /// False is Production: purchased / loadout weapons only.
+        /// </summary>
         public bool DebugCycleAllBulletBanks => debugCycleAllBulletBanks;
 
         /// <summary>True when asteroid-destroy hitch logging is enabled in the Inspector.</summary>
@@ -233,13 +236,17 @@ namespace TitanOrbit.Core
         {
             // [TITAN-ORBIT] ECS MoonOrbitStoreSystem cannot reference TitanOrbit.Core — Shared bridge.
             TitanOrbitDebugFlags.FreeShipUpgradeTree = debugFreeShipUpgradeTree;
-            TitanOrbitDebugFlags.CycleAllBulletBanks = debugCycleAllBulletBanks;
+            // [TITAN-ORBIT] Cycle-all / infinite ordnance are local Editor / MPPM conveniences.
+            // Dedicated GCE stays Production so a baked-on Inspector tick cannot unlock
+            // every bank or free rockets for remote clients.
 #if UNITY_SERVER && !UNITY_EDITOR
+            TitanOrbitDebugFlags.CycleAllBulletBanks = false;
             TitanOrbitDebugFlags.InfiniteRockets = false;
             TitanOrbitDebugFlags.InfiniteMines = false;
             TitanOrbitDebugFlags.SelfHarmRocketsAndMines = false;
             TitanOrbitDebugFlags.MegaShipsAutoFireAsteroids = false;
 #else
+            TitanOrbitDebugFlags.CycleAllBulletBanks = debugCycleAllBulletBanks;
             TitanOrbitDebugFlags.InfiniteRockets = debugInfiniteRockets;
             TitanOrbitDebugFlags.InfiniteMines = debugInfiniteMines;
             TitanOrbitDebugFlags.SelfHarmRocketsAndMines = debugSelfHarmRocketsAndMines;

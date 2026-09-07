@@ -108,7 +108,25 @@ namespace TitanOrbit.ECS
         [GhostField(Quantization = 10)]
         public float AimDistance;
 
+        /// <summary>
+        /// [NETCODE] InputEvent — bullet-type HUD tile click. Server
+        /// <c>ShipCycleBulletSystem</c> writes <see cref="ShipLoadoutState.RuntimeBulletIndex"/>
+        /// to <see cref="SelectedBulletBank"/> when the index is legal (owned loadout, or
+        /// every catalog bank when GameManager cycle-all is on).
+        /// Appended after <see cref="AimDistance"/> so older command layouts still line up.
+        /// </summary>
+        [GhostField]
+        public InputEvent SetBulletBank;
+
+        /// <summary>
+        /// <c>BulletVfxBank</c> category index requested by a HUD click. Only applied on
+        /// the tick <see cref="SetBulletBank"/> is set — sticky every-tick writes would
+        /// fight B-key increment.
+        /// </summary>
+        [GhostField]
+        public int SelectedBulletBank;
+
         public FixedString512Bytes ToFixedString() =>
-            $"ShipInput[t={Thrust},o={Overdrive},f={Fire.Count},c={CycleBullet.Count},r={FireRocket.Count},m={PlaceMine.Count},b={!DisableSpaceBrakes},d={WantDepositGems},s={SelectedRocketSlot},n={SelectedMineSlot},ad={AimDistance}]";
+            $"ShipInput[t={Thrust},o={Overdrive},f={Fire.Count},c={CycleBullet.Count},r={FireRocket.Count},m={PlaceMine.Count},b={!DisableSpaceBrakes},d={WantDepositGems},s={SelectedRocketSlot},n={SelectedMineSlot},ad={AimDistance},sb={SetBulletBank.Count},bb={SelectedBulletBank}]";
     }
 }

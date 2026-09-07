@@ -114,10 +114,12 @@ namespace TitanOrbit.UI
                     continue;
                 if (canvas.renderMode != RenderMode.ScreenSpaceOverlay)
                     continue;
-                // Rocket / brakes HUDs hide their panels; never steal those canvases for Orbit Menu.
+                // Rocket / brakes / fire-type HUDs hide their panels; never steal those canvases for Orbit Menu.
                 if (canvas.GetComponent<RocketLoadoutHUD>() != null)
                     continue;
                 if (canvas.GetComponent<SpaceBrakesHUD>() != null)
+                    continue;
+                if (canvas.GetComponent<BulletTypeHUD>() != null)
                     continue;
                 if (best == null || canvas.sortingOrder > best.sortingOrder)
                     best = canvas;

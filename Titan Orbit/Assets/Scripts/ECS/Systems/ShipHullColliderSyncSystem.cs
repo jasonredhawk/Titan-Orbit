@@ -12,8 +12,8 @@ namespace TitanOrbit.ECS
 {
     /// <summary>
     /// Ensures each ship keeps a single covering ellipsoid that fits every chassis box after
-    /// attribute grow (X/Y/Z radii independent). Cached until chassis / attributes change.
-    /// Tier / MEGA size is <c>LocalTransform.Scale</c>.
+    /// attribute grow and moon-store component grow (X/Y/Z radii independent). Cached until
+    /// chassis / attributes / equipped extras change. Tier / MEGA size is <c>LocalTransform.Scale</c>.
     /// </summary>
     [UpdateInGroup(typeof(SimulationSystemGroup))]
     [UpdateAfter(typeof(ShipStatApplySystem))]
@@ -152,12 +152,13 @@ namespace TitanOrbit.ECS
             if (!em.HasComponent<ShipHullColliderState>(entity))
                 return true;
 
+            int equipmentKey = ShipComponentStoreVisualScaleLogic.ComputeEquipmentScaleKey(em, entity);
             var applied = em.GetComponentData<ShipHullColliderState>(entity);
             var chassisKey = new FixedString64Bytes(chassisId);
             bool isMega = em.HasComponent<MegaShipState>(entity)
                 && em.GetComponentData<MegaShipState>(entity).IsMega;
             return ShipHullColliderLogic.NeedsCoveringRecompute(
-                       applied, chassisKey, branchIndex, attributeSum, isMega)
+                       applied, chassisKey, branchIndex, attributeSum, isMega, equipmentKey)
                 || applied.AppliedTeam != (byte)ship.Team;
         }
 
@@ -198,6 +199,11 @@ namespace TitanOrbit.ECS
             if (isMega)
                 motorMass = math.max(motorMass, MegaShipCatalog.DefaultHullCollisionMass);
 
+            int equipmentKey = ShipComponentStoreVisualScaleLogic.ComputeEquipmentScaleKey(em, entity);
+            var storeFactors = isMega
+                ? default
+                : ShipComponentStoreVisualScaleLogic.ComputeForShip(em, entity);
+
             var chassisKey = new FixedString64Bytes(chassisId);
             bool recompute = true;
             float3 cachedExtents = new float3(-1f);
@@ -208,7 +214,7 @@ namespace TitanOrbit.ECS
                 var prev = em.GetComponentData<ShipHullColliderState>(entity);
                 megaRevision = prev.AppliedMegaColliderRevision;
                 recompute = ShipHullColliderLogic.NeedsCoveringRecompute(
-                    prev, chassisKey, branchIndex, attributeSum, isMega);
+                    prev, chassisKey, branchIndex, attributeSum, isMega, equipmentKey);
                 if (!recompute)
                 {
                     cachedExtents = ShipHullColliderLogic.GetCachedCoveringExtents(prev);
@@ -220,7 +226,8 @@ namespace TitanOrbit.ECS
             string familyPrefix = ResolveFamilyPrefix(chassisId);
             ShipHullColliderLogic.TryApplyCoveringHull(
                 em, entity, chassisPrefab, motorMass, attrs, familyPrefix, isMega,
-                cachedExtents, cachedCenter, out float3 usedCenter, out float3 usedExtents);
+                cachedExtents, cachedCenter, out float3 usedCenter, out float3 usedExtents,
+                storeFactors);
 
             var hullState = new ShipHullColliderState
             {
@@ -228,6 +235,7 @@ namespace TitanOrbit.ECS
                 AppliedShipLevel = ship.ShipLevel,
                 AppliedBranchIndex = branchIndex,
                 AppliedAttributeSum = attributeSum,
+                AppliedEquipmentScaleKey = equipmentKey,
                 AppliedMegaColliderRevision = isMega
                     ? MegaShipCatalog.HullColliderRevision
                     : megaRevision,

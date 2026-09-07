@@ -45,6 +45,13 @@ namespace TitanOrbit.Entities
         /// <summary>Last loadout fingerprint — skip buffer rebuild when equipment/cards unchanged.</summary>
         int _lastLoadoutFingerprint = int.MinValue;
 
+        /// <summary>
+        /// Cached <c>Resources/PlanetShipFamilyConfig</c>. SyncFromEcs used to
+        /// <see cref="Resources.Load{T}(string)"/> every refresh (including every Orbit Menu
+        /// frame) — Unity caches the asset, but the lookup still showed up on the dock hitch.
+        /// </summary>
+        static PlanetShipFamilyConfig s_familyConfig;
+
         /// <summary>Singleton accessor — finds existing view or creates the DontDestroyOnLoad adapter.</summary>
         public static Starship GetOrCreate()
         {
@@ -106,7 +113,15 @@ namespace TitanOrbit.Entities
                 return;
             }
 
-            var config = Resources.Load<PlanetShipFamilyConfig>("PlanetShipFamilyConfig");
+            // [UNITY] Resources.Load is cached on the asset, but we keep our own static
+            // so SyncFromEcs (every Orbit Menu refresh) does not keep hashing the path.
+            var config = s_familyConfig;
+            if (config == null)
+            {
+                config = Resources.Load<PlanetShipFamilyConfig>("PlanetShipFamilyConfig");
+                s_familyConfig = config;
+            }
+
             if (config == null)
                 return;
 

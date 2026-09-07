@@ -15,8 +15,10 @@ namespace TitanOrbit
         public static bool FreeShipUpgradeTree;
 
         /// <summary>
-        /// When true, B-key cycles every <c>BulletVfxBank</c> category including heal.
-        /// Written by GameManager; dedicated server stays false.
+        /// When true (GameManager Test), B-key and the bullet-type HUD cycle every
+        /// <c>BulletVfxBank</c> category including heal, even without that weapon in the loadout.
+        /// When false (Production), only hull default plus purchased weapon components.
+        /// Written by GameManager; dedicated server is forced false.
         /// </summary>
         public static bool CycleAllBulletBanks;
 

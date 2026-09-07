@@ -15,8 +15,8 @@ namespace TitanOrbit.ECS
 {
     /// <summary>
     /// Tracks which chassis visual prefab last built the ship's <see cref="PhysicsCollider"/>.
-    /// Compared each frame by <see cref="ShipHullColliderSyncSystem"/> so chassis and
-    /// bottom-bar attribute upgrades rebuild hull shape.
+    /// Compared each frame by <see cref="ShipHullColliderSyncSystem"/> so chassis,
+    /// bottom-bar attribute upgrades, and moon-store component grow rebuild hull shape.
     /// </summary>
     public struct ShipHullColliderState : IComponentData
     {
@@ -31,6 +31,12 @@ namespace TitanOrbit.ECS
         /// When this changes, part meshes and collider children must grow together.
         /// </summary>
         public int AppliedAttributeSum;
+        /// <summary>
+        /// Hash of moon-store ship-component ids + item levels at last bake
+        /// (<see cref="ShipComponentStoreVisualScaleLogic.ComputeEquipmentScaleKey"/>).
+        /// 0 = no extras. Purchase / discard must rebuild covering colliders with the new grow.
+        /// </summary>
+        public int AppliedEquipmentScaleKey;
         /// <summary>
         /// Last <see cref="MegaShipCatalog.HullColliderRevision"/> baked for a MEGA.
         /// 0 on older hulls so the next catalog pass rebuilds from each part's authored colliders.
@@ -102,14 +108,19 @@ namespace TitanOrbit.ECS
         {
             public int PrefabId;
             public int AttrHash;
+            public int EquipmentHash;
             public byte Mega;
 
             public bool Equals(CoveringBakeKey other) =>
-                PrefabId == other.PrefabId && AttrHash == other.AttrHash && Mega == other.Mega;
+                PrefabId == other.PrefabId
+                && AttrHash == other.AttrHash
+                && EquipmentHash == other.EquipmentHash
+                && Mega == other.Mega;
 
             public override bool Equals(object obj) => obj is CoveringBakeKey other && Equals(other);
 
-            public override int GetHashCode() => PrefabId * 397 ^ AttrHash * 17 ^ Mega;
+            public override int GetHashCode() =>
+                PrefabId * 397 ^ AttrHash * 17 ^ EquipmentHash * 13 ^ Mega;
         }
 
         struct CoveringBakeValue
@@ -132,7 +143,8 @@ namespace TitanOrbit.ECS
         /// [TITAN-ORBIT] Bake uses level-1 <see cref="BodyCollisionMath.ShipPresentationScale"/> only
         /// for the whole-hull presentation shrink. Tier growth lives on <c>LocalTransform.Scale</c>
         /// (+10%/level via <see cref="BodyCollisionMath.GetShipTierScale"/>).
-        /// Bottom-bar attribute grow is applied to the temporary prefab hierarchy first
+        /// Bottom-bar attribute grow and moon-store stat-ratio grow are applied to the
+        /// temporary prefab hierarchy first
         /// (<see cref="ShipComponentAttributeScaleLogic.ApplyToHierarchy"/>) so child collider
         /// sizes/poses match the grown proxy meshes on server and client.
         /// </para>
@@ -173,7 +185,7 @@ namespace TitanOrbit.ECS
             return TryApplyCoveringHull(
                 em, shipEntity, chassisPrefab, motorMass, attrs, familyPrefix,
                 megaParts: false, cachedExtents: new float3(-1f), cachedCenter: float3.zero,
-                out _, out _);
+                out _, out _, default);
         }
 
         /// <summary>
@@ -238,10 +250,14 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// Measures chassis part colliders (with attribute grow), caches a covering ellipsoid,
-        /// and applies it. Uses <paramref name="cachedExtents"/> when the prefab walk fails
-        /// so a prior bake is not lost.
+        /// Measures chassis part colliders (with attribute grow and optional store grow),
+        /// caches a covering ellipsoid, and applies it. Uses <paramref name="cachedExtents"/>
+        /// when the prefab walk fails so a prior bake is not lost.
         /// </summary>
+        /// <param name="storeFactors">
+        /// Moon-store visual grow from <see cref="ShipComponentStoreVisualScaleLogic"/>.
+        /// Default = attribute-only size.
+        /// </param>
         public static bool TryApplyCoveringHull(
             EntityManager em,
             Entity shipEntity,
@@ -253,14 +269,16 @@ namespace TitanOrbit.ECS
             float3 cachedExtents,
             float3 cachedCenter,
             out float3 usedCenter,
-            out float3 usedExtents)
+            out float3 usedExtents,
+            ShipComponentStoreVisualScaleLogic.StoreVisualScaleFactors storeFactors = default)
         {
             usedCenter = cachedCenter;
             usedExtents = cachedExtents;
 
             if (chassisPrefab != null
                 && TryComputeCoveringHull(
-                    chassisPrefab, attrs, familyPrefix, megaParts, out float3 measuredCenter, out float3 measuredExtents)
+                    chassisPrefab, attrs, familyPrefix, megaParts, storeFactors,
+                    out float3 measuredCenter, out float3 measuredExtents)
                 && math.cmax(measuredExtents) > 0.01f)
             {
                 usedCenter = measuredCenter;
@@ -279,7 +297,7 @@ namespace TitanOrbit.ECS
         /// <summary>
         /// Presentation-space ellipsoid that fits every enabled non-trigger collider on the
         /// chassis after <see cref="ShipComponentAttributeScaleLogic.ApplyToHierarchy"/>.
-        /// Instantiates once (nested MEGA modules + attribute grow). Call only when
+        /// Instantiates once (nested MEGA modules + attribute / store grow). Call only when
         /// <see cref="NeedsCoveringRecompute"/> is true.
         /// </summary>
         public static bool TryComputeCoveringHull(
@@ -290,15 +308,35 @@ namespace TitanOrbit.ECS
             out float3 localCenter,
             out float3 localExtents)
         {
+            return TryComputeCoveringHull(
+                chassisPrefab, attrs, familyPrefix, megaParts, default,
+                out localCenter, out localExtents);
+        }
+
+        /// <summary>
+        /// Same as <see cref="TryComputeCoveringHull(GameObject, in ShipAttributeUpgradeState, string, bool, out float3, out float3)"/>
+        /// plus moon-store per-group grow so covering colliders match hybrid proxy meshes.
+        /// </summary>
+        public static bool TryComputeCoveringHull(
+            GameObject chassisPrefab,
+            in ShipAttributeUpgradeState attrs,
+            string familyPrefix,
+            bool megaParts,
+            ShipComponentStoreVisualScaleLogic.StoreVisualScaleFactors storeFactors,
+            out float3 localCenter,
+            out float3 localExtents)
+        {
             localCenter = float3.zero;
             localExtents = float3.zero;
             if (chassisPrefab == null)
                 return false;
 
+            var store = ShipComponentStoreVisualScaleLogic.Resolve(storeFactors);
             var key = new CoveringBakeKey
             {
                 PrefabId = chassisPrefab.GetInstanceID(),
                 AttrHash = megaParts ? 0 : HashAttributes(attrs),
+                EquipmentHash = megaParts ? 0 : HashStoreFactors(store),
                 Mega = megaParts ? (byte)1 : (byte)0,
             };
             if (CoveringBakeCache.TryGetValue(key, out var cached))
@@ -312,9 +350,11 @@ namespace TitanOrbit.ECS
             GameObject instance = null;
             try
             {
-                // Walk the prefab asset unless we must mutate it (attribute grow) or MEGA
-                // nested module colliders are stripped until Instantiate.
-                bool needClone = megaParts || ShipStatApplyLogic.SumAttributeLevels(attrs) > 0;
+                // Walk the prefab asset unless we must mutate it (attribute / store grow)
+                // or MEGA nested module colliders are stripped until Instantiate.
+                bool needClone = megaParts
+                    || ShipStatApplyLogic.SumAttributeLevels(attrs) > 0
+                    || store.HasAnyGrow;
                 Transform root;
                 if (needClone)
                 {
@@ -327,7 +367,7 @@ namespace TitanOrbit.ECS
                     {
                         string prefix = ResolveFamilyPrefix(chassisPrefab, familyPrefix);
                         ShipComponentAttributeScaleLogic.ApplyToHierarchy(
-                            root, prefix, attrs, territoryMovementMult: 1f);
+                            root, prefix, attrs, territoryMovementMult: 1f, store);
                     }
                 }
                 else
@@ -388,6 +428,28 @@ namespace TitanOrbit.ECS
                 return hash;
             }
         }
+
+        /// <summary>
+        /// Quantizes store factors so the covering-bake cache keys match across tiny float noise.
+        /// </summary>
+        static int HashStoreFactors(in ShipComponentStoreVisualScaleLogic.StoreVisualScaleFactors store)
+        {
+            unchecked
+            {
+                int hash = 17;
+                hash = hash * 31 + QuantizeScale(store.Cockpit);
+                hash = hash * 31 + QuantizeScale(store.Wing);
+                hash = hash * 31 + QuantizeScale(store.Weapon);
+                hash = hash * 31 + QuantizeScale(store.Engine);
+                hash = hash * 31 + QuantizeScale(store.Thruster);
+                hash = hash * 31 + QuantizeScale(store.Tail);
+                hash = hash * 31 + QuantizeScale(store.Part);
+                return hash;
+            }
+        }
+
+        static int QuantizeScale(float value) =>
+            (int)math.round(math.max(1f, value) * 1000f);
 
         static void DestroyCoveringInstance(GameObject instance)
         {
@@ -540,20 +602,24 @@ namespace TitanOrbit.ECS
             return TryApplyCoveringHull(
                 em, shipEntity, chassisPrefab, motorMass, zeroAttrs, familyPrefix: null,
                 megaParts: true, cachedExtents: new float3(-1f), cachedCenter: float3.zero,
-                out _, out _);
+                out _, out _, default);
         }
 
         /// <summary>
-        /// True when chassis, branch, attribute grow, or bake revision changed — walk the
-        /// prefab again. Ship level alone is not enough: tier size lives on
+        /// True when chassis, branch, attribute grow, store extras, or bake revision changed —
+        /// walk the prefab again. Ship level alone is not enough: tier size lives on
         /// <c>LocalTransform.Scale</c>. Team-only filter updates reuse the cache.
         /// </summary>
+        /// <param name="equipmentScaleKey">
+        /// Current <see cref="ShipComponentStoreVisualScaleLogic.ComputeEquipmentScaleKey"/> (0 = none).
+        /// </param>
         public static bool NeedsCoveringRecompute(
             in ShipHullColliderState applied,
             in FixedString64Bytes chassisKey,
             int branchIndex,
             int attributeSum,
-            bool isMega)
+            bool isMega,
+            int equipmentScaleKey = 0)
         {
             if (math.cmax(GetCachedCoveringExtents(applied)) <= 0.01f)
                 return true;
@@ -562,6 +628,8 @@ namespace TitanOrbit.ECS
             if (applied.AppliedBranchIndex != branchIndex)
                 return true;
             if (applied.AppliedAttributeSum != attributeSum)
+                return true;
+            if (applied.AppliedEquipmentScaleKey != equipmentScaleKey)
                 return true;
             if (applied.AppliedHullMaterialRevision != HullMaterialRevision)
                 return true;

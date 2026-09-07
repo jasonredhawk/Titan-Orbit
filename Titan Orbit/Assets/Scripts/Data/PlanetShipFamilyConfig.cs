@@ -103,6 +103,58 @@ namespace TitanOrbit.Data
         }
 
         /// <summary>
+        /// Player-facing family label for a config list slot (AstroEagle → "Astro Eagle").
+        /// Prefers designer <see cref="ShipFamilyEntry.familyName"/>, then camel-splits familyId.
+        /// </summary>
+        /// <param name="configIndex">Index into <see cref="families"/> (0 = home).</param>
+        public string GetFamilyDisplayName(int configIndex)
+        {
+            return FormatFamilyDisplayName(GetFamilyByConfigIndex(configIndex));
+        }
+
+        /// <summary>
+        /// Family label whose default gun bank is <paramref name="bankIndex"/>, or empty
+        /// when no family authored that category (FireballsV2 / Liquid / Ring2 have none).
+        /// </summary>
+        /// <param name="bankIndex"><c>BulletVfxBank</c> category the HUD tile represents.</param>
+        public string GetFamilyDisplayNameForDefaultBank(int bankIndex)
+        {
+            if (families == null || bankIndex < 0)
+                return string.Empty;
+
+            // --- First family whose default gun matches ---
+            // [TITAN-ORBIT] Each gameplay family authors a unique bulletPrefabIndex.
+            // Unassigned catalog rows (FireballsV2, Liquid, Ring2) return empty.
+            for (int i = 0; i < families.Count; i++)
+            {
+                var entry = families[i];
+                var family = entry != null ? entry.shipFamilyDefinition : null;
+                if (family == null)
+                    continue;
+                if (BulletBankProfileUtility.ResolveBankIndexForFamily(family) == bankIndex)
+                    return FormatFamilyDisplayName(entry);
+            }
+
+            return string.Empty;
+        }
+
+        /// <summary>Designer name, else spaced familyId (AstroEagle → Astro Eagle).</summary>
+        static string FormatFamilyDisplayName(ShipFamilyEntry entry)
+        {
+            if (entry == null)
+                return string.Empty;
+
+            // Inspector override wins so "Cosmic Shark" can differ from familyId CosmicShark.
+            if (!string.IsNullOrWhiteSpace(entry.familyName))
+                return entry.familyName.Trim();
+
+            string familyId = entry.shipFamilyDefinition != null ? entry.shipFamilyDefinition.familyId : null;
+            if (string.IsNullOrWhiteSpace(familyId))
+                return string.Empty;
+            return DisplayNameFormatting.SplitCamelCase(familyId.Trim());
+        }
+
+        /// <summary>
         /// Planet surface material authored on the family entry at <paramref name="configIndex"/>.
         /// Returns null for missing entries or when the designer left <see cref="ShipFamilyEntry.planetMaterial"/> empty
         /// (caller should fall back to <see cref="PlanetMaterialPool"/>).

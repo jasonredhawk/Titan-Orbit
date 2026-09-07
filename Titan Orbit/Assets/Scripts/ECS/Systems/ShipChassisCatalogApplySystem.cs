@@ -227,7 +227,9 @@ namespace TitanOrbit.ECS
             // Do NOT treat empty wing buffers as full catalog dirty here — Pass 3 refills
             // attachments without collider Instantiates (empty-as-dirty used to stall join).
             if (TitanOrbitPresentationConfig.UseEntitiesGraphicsForShips
-                && applied.AppliedAttributeSum != attributeSum)
+                && (applied.AppliedAttributeSum != attributeSum
+                    || applied.AppliedEquipmentScaleKey
+                        != ShipComponentStoreVisualScaleLogic.ComputeEquipmentScaleKey(em, entity)))
                 return true;
 
             // MEGA collider bake revision — rebuild once when the part-collider path changes.
@@ -410,6 +412,11 @@ namespace TitanOrbit.ECS
             if (isMega)
                 motorMass = math.max(motorMass, MegaShipCatalog.DefaultHullCollisionMass);
 
+            int equipmentKey = ShipComponentStoreVisualScaleLogic.ComputeEquipmentScaleKey(em, entity);
+            var storeFactors = isMega
+                ? default
+                : ShipComponentStoreVisualScaleLogic.ComputeForShip(em, entity);
+
             var chassisKey = new FixedString64Bytes(chassisId);
             bool recompute = true;
             float3 cachedExtents = new float3(-1f);
@@ -418,7 +425,7 @@ namespace TitanOrbit.ECS
             {
                 var prev = em.GetComponentData<ShipHullColliderState>(entity);
                 recompute = ShipHullColliderLogic.NeedsCoveringRecompute(
-                    prev, chassisKey, branchIndex, attributeSum, isMega);
+                    prev, chassisKey, branchIndex, attributeSum, isMega, equipmentKey);
                 if (!recompute)
                 {
                     cachedExtents = ShipHullColliderLogic.GetCachedCoveringExtents(prev);
@@ -429,7 +436,8 @@ namespace TitanOrbit.ECS
             GameObject prefabToWalk = recompute ? chassisPrefab : null;
             ShipHullColliderLogic.TryApplyCoveringHull(
                 em, entity, prefabToWalk, motorMass, attrs, ResolveFamilyPrefix(chassisId),
-                isMega, cachedExtents, cachedCenter, out float3 usedCenter, out float3 usedExtents);
+                isMega, cachedExtents, cachedCenter, out float3 usedCenter, out float3 usedExtents,
+                storeFactors);
 
             var hullState = new ShipHullColliderState
             {
@@ -437,6 +445,7 @@ namespace TitanOrbit.ECS
                 AppliedShipLevel = ship.ShipLevel,
                 AppliedBranchIndex = branchIndex,
                 AppliedAttributeSum = attributeSum,
+                AppliedEquipmentScaleKey = equipmentKey,
                 AppliedMegaColliderRevision = isMega ? MegaShipCatalog.HullColliderRevision : 0,
                 AppliedHullMaterialRevision = ShipHullColliderLogic.HullMaterialRevision,
                 AppliedTeam = (byte)ship.Team,

@@ -1,12 +1,27 @@
 using System.Collections.Generic;
+using TitanOrbit;
 using TitanOrbit.Data;
 using Unity.Entities;
 
 namespace TitanOrbit.ECS
 {
     /// <summary>
+    /// One HUD / cycle row: a <c>BulletVfxBank</c> category the ship may show, plus whether
+    /// production mode would allow it (hull default or a purchased weapon).
+    /// </summary>
+    public struct VisibleBankRow
+    {
+        /// <summary>Category index into <see cref="BulletVfxBank"/>.</summary>
+        public int BankIndex;
+
+        /// <summary>True when this bank is on the hull or a purchased weapon component.</summary>
+        public bool IsOwned;
+    }
+
+    /// <summary>
     /// Owned damage banks: hull family default plus each equipped weapon's source-family bank.
-    /// Heal / EnergySpheres is never in this set.
+    /// Heal / EnergySpheres is never in the production set. Cycle-all (GameManager Test) adds
+    /// every non-reserved catalog category so B and the HUD walk the full bank list.
     /// </summary>
     public static class BulletBankOwnership
     {
@@ -51,6 +66,100 @@ namespace TitanOrbit.ECS
             return count;
         }
 
+        /// <summary>
+        /// Banks the HUD and B-key should show right now. Production = owned damage only.
+        /// Cycle-all = every non-reserved catalog category (including EnergySpheres), with
+        /// <see cref="VisibleBankRow.IsOwned"/> marked so testers see what Production allows.
+        /// </summary>
+        /// <param name="em">World that owns <paramref name="shipEntity"/> (client ghost or server).</param>
+        /// <param name="shipEntity">Local ship whose loadout we read.</param>
+        /// <param name="dest">Caller-owned buffer. Writes stop at dest.Length.</param>
+        /// <returns>How many rows were written.</returns>
+        public static int CollectVisibleBankRows(
+            EntityManager em,
+            Entity shipEntity,
+            VisibleBankRow[] dest)
+        {
+            if (dest == null || dest.Length == 0)
+                return 0;
+
+            int[] owned = s_OwnedScratch;
+            int ownedCount = CollectOwnedDamageBanks(em, shipEntity, owned);
+
+            if (!TitanOrbitDebugFlags.CycleAllBulletBanks)
+            {
+                int count = 0;
+                for (int i = 0; i < ownedCount && count < dest.Length; i++)
+                {
+                    dest[count++] = new VisibleBankRow
+                    {
+                        BankIndex = owned[i],
+                        IsOwned = true
+                    };
+                }
+
+                return count;
+            }
+
+            // --- Test / cycle-all ---
+            // Walk the catalog so B and tiles share one list. Skip store Rockets.
+            var bank = BulletVfxBank.LoadDefault();
+            int categoryCount = bank != null ? bank.CategoryCount : 0;
+            int written = 0;
+            for (int i = 0; i < categoryCount && written < dest.Length; i++)
+            {
+                if (BulletBankProfileUtility.IsStoreReservedBankIndex(i))
+                    continue;
+
+                bool isOwned = false;
+                for (int o = 0; o < ownedCount; o++)
+                {
+                    if (owned[o] == i)
+                    {
+                        isOwned = true;
+                        break;
+                    }
+                }
+
+                dest[written++] = new VisibleBankRow
+                {
+                    BankIndex = i,
+                    IsOwned = isOwned
+                };
+            }
+
+            return written;
+        }
+
+        /// <summary>
+        /// True when a HUD click / SetBulletBank may write this index onto the ship.
+        /// Cycle-all accepts any non-reserved catalog bank. Production requires ownership.
+        /// </summary>
+        public static bool IsSelectableBank(EntityManager em, Entity shipEntity, int bankIndex)
+        {
+            if (bankIndex < 0)
+                return false;
+            if (BulletBankProfileUtility.IsStoreReservedBankIndex(bankIndex))
+                return false;
+
+            if (TitanOrbitDebugFlags.CycleAllBulletBanks)
+            {
+                var bank = BulletVfxBank.LoadDefault();
+                int categoryCount = bank != null ? bank.CategoryCount : 0;
+                return bankIndex < categoryCount;
+            }
+
+            int[] owned = s_OwnedScratch;
+            int ownedCount = CollectOwnedDamageBanks(em, shipEntity, owned);
+            for (int i = 0; i < ownedCount; i++)
+            {
+                if (owned[i] == bankIndex)
+                    return true;
+            }
+
+            return false;
+        }
+
         /// <summary>Next owned damage bank after <paramref name="current"/>, or current when only one.</summary>
         public static int NextOwnedDamageBank(EntityManager em, Entity shipEntity, int current)
         {
@@ -75,6 +184,9 @@ namespace TitanOrbit.ECS
         }
 
         static readonly int[] s_NextScratch = new int[16];
+
+        /// <summary>Scratch for ownership checks shared by visible-row and selectable helpers.</summary>
+        static readonly int[] s_OwnedScratch = new int[16];
 
         static void AddUniqueDamageBank(List<int> list, int bankIndex)
         {
