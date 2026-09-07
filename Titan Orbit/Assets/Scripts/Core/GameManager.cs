@@ -245,8 +245,14 @@ namespace TitanOrbit.Core
             TitanOrbitDebugFlags.SelfHarmRocketsAndMines = debugSelfHarmRocketsAndMines;
             TitanOrbitDebugFlags.MegaShipsAutoFireAsteroids = debugMegaShipsAutoFireAsteroids;
 #endif
-            // Isolate MEGA auto-aim on Editor host and dedicated (not stripped on UNITY_SERVER).
+            // Isolate MEGA auto-aim in the Editor only. Dedicated Docker / Edgegap must
+            // keep turret slew — a baked-on isolate left MEGA Phase B hull-forward with
+            // client tracers at the mouse (no damage).
+#if UNITY_SERVER && !UNITY_EDITOR
+            TitanOrbitDebugFlags.DisableMegaShipAutoFire = false;
+#else
             TitanOrbitDebugFlags.DisableMegaShipAutoFire = debugDisableMegaShipAutoFire;
+#endif
             TitanOrbitDebugFlags.LogAsteroidDestroyPerf = debugLogAsteroidDestroyPerf;
             // [TITAN-ORBIT] Instruction capture stays OFF unless you flip this for art rebuilds —
             // otherwise F8/F9 and the bottom status banner stay inactive during normal play.

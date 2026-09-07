@@ -21,6 +21,9 @@ namespace TitanOrbit.ECS
     {
         static readonly List<Transform> WeaponAssemblyScratch = new List<Transform>(16);
 
+        /// <summary>One-shot dedicated log when MEGA barrels had to use type-table / count fallback.</summary>
+        static bool s_LoggedDedicatedWeaponFallback;
+
         /// <summary>
         /// Applies frozen MEGA stats and resizes the ghosted aim-slot buffer to match weapon mounts.
         /// </summary>
@@ -190,6 +193,11 @@ namespace TitanOrbit.ECS
         /// Overwrites each MEGA mount's firePower / fireRate / bulletRange / bulletSpeed from
         /// the unique component named like that prefab child. Family combat apply runs first
         /// and would otherwise stamp regular-ship numbers onto MEGA barrels.
+        /// <para>
+        /// Dedicated IL2CPP (Docker / Edgegap) cannot use Editor PrefabUtility names. If the
+        /// unique-row lookup misses, type-table stats (or <c>componentCounts</c> when the
+        /// hull prefab was stripped) still arm the barrels so Phase B can spawn damage.
+        /// </para>
         /// </summary>
         public static void ApplyCatalogWeaponMountStats(
             EntityManager em,
@@ -197,10 +205,60 @@ namespace TitanOrbit.ECS
             MegaShipCatalog catalog,
             MegaShipCatalogEntry entry)
         {
-            if (!em.HasBuffer<ShipWeaponMountElement>(shipEntity) || catalog == null || entry?.prefab == null)
+            if (!em.HasBuffer<ShipWeaponMountElement>(shipEntity) || catalog == null || entry == null)
                 return;
 
             var mounts = em.GetBuffer<ShipWeaponMountElement>(shipEntity);
+            if (mounts.Length == 0)
+                return;
+
+            int armed = 0;
+            bool usedFallback = false;
+            if (entry.prefab != null)
+                armed = ApplyWeaponStatsFromPrefabAssemblies(
+                    em, shipEntity, catalog, entry, mounts, out usedFallback);
+
+            if (armed <= 0)
+            {
+                armed = ApplyWeaponStatsFromComponentCounts(em, shipEntity, catalog, entry, mounts);
+                usedFallback = usedFallback || armed > 0;
+            }
+
+            if (usedFallback && !s_LoggedDedicatedWeaponFallback)
+            {
+                s_LoggedDedicatedWeaponFallback = true;
+                Debug.Log(
+                    "[MegaShip] Dedicated/player weapon name miss — armed " + armed +
+                    "/" + mounts.Length + " barrels from type-table or componentCounts (chassis " +
+                    MegaShipCatalog.FormatChassisId(entry.catalogIndex) + ").");
+            }
+
+            for (int m = 0; m < mounts.Length; m++)
+            {
+                var mount = mounts[m];
+                if (mount.BulletRange > 0.5f)
+                    continue;
+                mount.BulletRange = math.min(
+                    MegaShipCatalog.MaxBulletTravelDistance,
+                    MegaShipCatalog.DefaultBulletAcquireRange);
+                mounts[m] = mount;
+            }
+        }
+
+        /// <summary>
+        /// Walks tagged weapon assemblies on the hull prefab. Unique-row lookup uses
+        /// prefab-source name in Editor and instance name on dedicated; type-table
+        /// fills misses so FirePower is not left at 0.
+        /// </summary>
+        static int ApplyWeaponStatsFromPrefabAssemblies(
+            EntityManager em,
+            Entity shipEntity,
+            MegaShipCatalog catalog,
+            MegaShipCatalogEntry entry,
+            DynamicBuffer<ShipWeaponMountElement> mounts,
+            out bool usedTypeTableFallback)
+        {
+            usedTypeTableFallback = false;
             var root = entry.prefab.transform;
             MegaShipPartClassifier.CollectWeaponAssemblies(root, WeaponAssemblyScratch);
             int w = 0;
@@ -210,42 +268,90 @@ namespace TitanOrbit.ECS
                 if (!MegaShipComponentInventory.TryClassifyChild(t, root, out _, out bool isWeapon) || !isWeapon)
                     continue;
 
-                string id = MegaShipPartClassifier.GetPrefabAssetName(t);
-                if (!catalog.TryGetUniqueComponent(id, out MegaShipComponentEntry row) || row == null)
+                if (!catalog.TryResolveWeaponCombat(
+                        t, out MegaShipComponentEntry row, out MegaShipPartStats raw, out string partType))
                     continue;
 
-                // Resolve traverse / cadence / range through catalog defaults; firePower stays raw
-                // so a 0 unique-component row is an unarmed mount (no 0.1 floor, no hull-sum stamp).
-                MegaShipPartStats resolved = catalog.ResolveRuntimeStats(row.stats);
-                var mount = mounts[w];
-                mount.FirePower = math.max(0f, row.stats.firePower);
-                mount.FireRate = math.max(0.15f, resolved.fireRate > 0.01f ? resolved.fireRate : row.stats.fireRate);
-                mount.BulletRange = math.min(
-                    MegaShipCatalog.MaxBulletTravelDistance,
-                    math.max(4f, resolved.bulletRange > 0.5f ? resolved.bulletRange : row.stats.bulletRange));
-                float partSpeed = resolved.bulletSpeed > 0.01f ? resolved.bulletSpeed : row.stats.bulletSpeed;
-                mount.BulletSpeed = math.max(0.1f, partSpeed);
-                mount.ReferenceFirePower = math.max(0f, row.stats.firePower);
-                mount.WeaponRotationSpeed = 0f;
-                mount.BulletBankIndex = catalog.ResolveWeaponBankIndex(row);
-                mounts[w] = mount;
-                if (em.HasBuffer<MegaShipGunnerSlotElement>(shipEntity))
-                {
-                    var gunners = em.GetBuffer<MegaShipGunnerSlotElement>(shipEntity);
-                    MegaShipWeaponAim.WriteGhostedYaw(gunners, w, mount);
-                }
+                if (row == null)
+                    usedTypeTableFallback = true;
+
+                WriteMountCombat(catalog, em, shipEntity, mounts, w, row, raw, partType);
                 w++;
             }
 
-            for (int m = w; m < mounts.Length; m++)
+            return w;
+        }
+
+        /// <summary>
+        /// Prefab-free arming from the catalogued part list. Used when Dedicated Server
+        /// stripping leaves <c>entry.prefab</c> null, or the prefab walk armed nothing.
+        /// </summary>
+        static int ApplyWeaponStatsFromComponentCounts(
+            EntityManager em,
+            Entity shipEntity,
+            MegaShipCatalog catalog,
+            MegaShipCatalogEntry entry,
+            DynamicBuffer<ShipWeaponMountElement> mounts)
+        {
+            if (entry.componentCounts == null)
+                return 0;
+
+            int w = 0;
+            for (int i = 0; i < entry.componentCounts.Count && w < mounts.Length; i++)
             {
-                var mount = mounts[m];
-                if (mount.BulletRange > 0.5f)
+                MegaShipComponentCount count = entry.componentCounts[i];
+                if (count == null || count.count <= 0 || string.IsNullOrEmpty(count.displayName))
                     continue;
-                mount.BulletRange = math.min(
-                    MegaShipCatalog.MaxBulletTravelDistance,
-                    MegaShipCatalog.DefaultBulletAcquireRange);
-                mounts[m] = mount;
+                if (!catalog.TryGetUniqueComponent(count.displayName, out MegaShipComponentEntry row)
+                    || row == null)
+                    continue;
+                if (!row.isWeapon && !ShipFamilyPartTypes.IsWeapon(row.partType))
+                    continue;
+
+                int copies = math.max(1, count.count);
+                for (int c = 0; c < copies && w < mounts.Length; c++)
+                {
+                    WriteMountCombat(
+                        catalog, em, shipEntity, mounts, w, row, row.stats, row.partType);
+                    w++;
+                }
+            }
+
+            return w;
+        }
+
+        /// <summary>Writes one barrel's catalog / type-table combat fields and ghosted park yaw.</summary>
+        static void WriteMountCombat(
+            MegaShipCatalog catalog,
+            EntityManager em,
+            Entity shipEntity,
+            DynamicBuffer<ShipWeaponMountElement> mounts,
+            int mountIndex,
+            MegaShipComponentEntry row,
+            in MegaShipPartStats raw,
+            string partType)
+        {
+            // Unique-row firePower stays raw (0 = authored unarmed). Type-table fallback
+            // uses the resolved type numbers so dedicated barrels are never mute.
+            MegaShipPartStats resolved = catalog.ResolveRuntimeStats(raw);
+            var mount = mounts[mountIndex];
+            mount.FirePower = math.max(0f, raw.firePower);
+            mount.FireRate = math.max(0.15f, resolved.fireRate > 0.01f ? resolved.fireRate : raw.fireRate);
+            mount.BulletRange = math.min(
+                MegaShipCatalog.MaxBulletTravelDistance,
+                math.max(4f, resolved.bulletRange > 0.5f ? resolved.bulletRange : raw.bulletRange));
+            float partSpeed = resolved.bulletSpeed > 0.01f ? resolved.bulletSpeed : raw.bulletSpeed;
+            mount.BulletSpeed = math.max(0.1f, partSpeed);
+            mount.ReferenceFirePower = math.max(0f, raw.firePower);
+            mount.WeaponRotationSpeed = 0f;
+            mount.BulletBankIndex = row != null
+                ? catalog.ResolveWeaponBankIndex(row)
+                : catalog.GetTypeTableBankIndex(partType);
+            mounts[mountIndex] = mount;
+            if (em.HasBuffer<MegaShipGunnerSlotElement>(shipEntity))
+            {
+                var gunners = em.GetBuffer<MegaShipGunnerSlotElement>(shipEntity);
+                MegaShipWeaponAim.WriteGhostedYaw(gunners, mountIndex, mount);
             }
         }
 

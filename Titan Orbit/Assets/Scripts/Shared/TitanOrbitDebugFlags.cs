@@ -66,8 +66,8 @@ namespace TitanOrbit
 
         /// <summary>
         /// When true, <c>MegaShipAutoFireSystem</c> returns immediately (no auto-aim / MEGA
-        /// turret slew). Temporary Docker / hitch isolate — MEGA Fire still uses hull-forward
-        /// Phase B in <c>BulletSimulationSystem</c>. Honored on dedicated too (not a cheat).
+        /// turret slew). Editor hitch isolate only — dedicated Docker / Edgegap forces this
+        /// off so Phase B is not left hull-forward while client tracers aim at the mouse.
         /// </summary>
         public static bool DisableMegaShipAutoFire;
 

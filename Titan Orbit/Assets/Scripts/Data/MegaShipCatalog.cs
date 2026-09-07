@@ -588,6 +588,54 @@ namespace TitanOrbit.Data
         }
 
         /// <summary>
+        /// Resolves combat numbers for a live MEGA barrel. Editor can use
+        /// <see cref="MegaShipPartClassifier.GetPrefabAssetName"/> (PrefabUtility source).
+        /// Dedicated / IL2CPP only has the instance name — if that misses the unique row,
+        /// fall back to the type-table so the barrel stays armed (Local Host damage,
+        /// Docker/Edgegap no-damage).
+        /// </summary>
+        public bool TryResolveWeaponCombat(
+            Transform weapon,
+            out MegaShipComponentEntry uniqueRow,
+            out MegaShipPartStats rawStats,
+            out string partType)
+        {
+            uniqueRow = null;
+            rawStats = default;
+            partType = MegaShipPartClassifier.ResolvePartType(weapon);
+
+            if (weapon != null)
+            {
+                string assetId = MegaShipPartClassifier.GetPrefabAssetName(weapon);
+                if (TryGetUniqueComponent(assetId, out uniqueRow) && uniqueRow != null)
+                {
+                    rawStats = uniqueRow.stats;
+                    if (!string.IsNullOrEmpty(uniqueRow.partType))
+                        partType = uniqueRow.partType;
+                    return true;
+                }
+
+                string instanceId = MegaShipPartClassifier.StripUnityDuplicateSuffix(weapon.name);
+                if (!string.IsNullOrEmpty(instanceId)
+                    && !string.Equals(instanceId, assetId, StringComparison.OrdinalIgnoreCase)
+                    && TryGetUniqueComponent(instanceId, out uniqueRow) && uniqueRow != null)
+                {
+                    rawStats = uniqueRow.stats;
+                    if (!string.IsNullOrEmpty(uniqueRow.partType))
+                        partType = uniqueRow.partType;
+                    return true;
+                }
+            }
+
+            uniqueRow = null;
+            if (!ShipFamilyPartTypes.IsWeapon(partType))
+                return false;
+
+            rawStats = GetStatsForPartType(partType);
+            return rawStats.firePower > 0.01f || rawStats.fireRate > 0.01f;
+        }
+
+        /// <summary>
         /// Static power-bar breakdown for a MEGA hull: sum the catalogued component stats
         /// (or walk the prefab with the type table if the list is empty), then force gem cap to 0.
         /// <para>
