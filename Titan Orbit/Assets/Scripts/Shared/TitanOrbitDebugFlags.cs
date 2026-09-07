@@ -69,7 +69,7 @@ namespace TitanOrbit
         /// turret slew). Temporary Docker / hitch isolate — MEGA Fire still uses hull-forward
         /// Phase B in <c>BulletSimulationSystem</c>. Honored on dedicated too (not a cheat).
         /// </summary>
-        public static bool DisableMegaShipAutoFire = true;
+        public static bool DisableMegaShipAutoFire;
 
         /// <summary>
         /// When true, asteroid-destroy paths log millisecond timings (local gem burst, urgent gem

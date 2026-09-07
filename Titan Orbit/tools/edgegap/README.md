@@ -54,7 +54,9 @@ Output: `Builds/EdgegapServer/ServerBuild.x86_64` (+ `ServerBuild_Data/`).
 
 This uses the same IL2CPP Dedicated Server settings as the GCE build, but names the binary `ServerBuild` so it matches Edgegap’s default Dockerfile and our custom one.
 
-Alternatively, use **Build server** inside the Edgegap window (same folder if you keep defaults).
+Do **not** click **Build server** inside the Edgegap window until the Editor is already on
+**Linux Dedicated Server** (File → Build Profiles). That button skips Titan Orbit's platform-switch
+wait and can fail IL2CPP with empty `Building Library\Bee\...\*.o failed with output:` lines.
 
 **Build settings checklist:**
 
@@ -166,6 +168,7 @@ You can keep GCE for a permanent “latest” lobby and use Edgegap for on-deman
 | Container exits immediately | `docker logs <container>` — IL2CPP missing `.so`, wrong binary path, or boot timeout |
 | No lobbies in Join Game | Deployment logs for lobby publish errors; wait after Ready; check UGS project matches client |
 | `Port verification failed` | Ignore for Relay architecture unless you add direct LAN listen; ensure app version UDP 7777 anyway |
+| `Building Library\Bee\artifacts\LinuxPlayerBuildProgram\...\*.o failed with output:` (empty) | Linux clang was killed while compiling IL2CPP (`GenericMethods__*.cpp`), usually RAM + parallel Bee/Burst — not a missing toolchain. Use **TitanOrbit → Build → Headless Server (Linux — Edgegap)** with Linux Dedicated Server already active. Close other apps and retry. If it fails again, quit Unity, delete `Titan Orbit/Library/Bee/artifacts/LinuxPlayerBuildProgram`, reopen, and rebuild from the TitanOrbit menu (not Edgegap's Build server button). |
 | Docker build huge / slow | `.dockerignore` excludes `Library/`, `Assets/`, etc. — only `Builds/EdgegapServer` + `tools/edgegap` sent to daemon |
 | `missing script on Asteroid` in Docker logs | Fixed: headless server no longer runs `EcsWorldVisualizer` (rebuild server after pull) |
 | Free tier limits | 2 apps / 2 versions — delete old versions in dashboard |

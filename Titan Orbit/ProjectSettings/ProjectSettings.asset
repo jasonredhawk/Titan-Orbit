@@ -848,8 +848,10 @@ PlayerSettings:
   scriptingBackend:
     Android: 1
     Server: 1
-  il2cppCompilerConfiguration: {}
-  il2cppCodeGeneration: {}
+  il2cppCompilerConfiguration:
+    Server: 2
+  il2cppCodeGeneration:
+    Server: 1
   il2cppStacktraceInformation: {}
   managedStrippingLevel: {}
   incrementalIl2cppBuild: {}

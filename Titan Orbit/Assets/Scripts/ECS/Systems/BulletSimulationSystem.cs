@@ -390,7 +390,7 @@ namespace TitanOrbit.ECS
                 {
                     FireMegaReadyMountsAlongBarrel(
                         ref state, ref ecb, bulletEntity, entity,
-                        mounts, ownerMayFire, weaponCfg.ValueRO, ref shipState.ValueRW,
+                        mounts, ownerMayFire, input.ValueRO, weaponCfg.ValueRO, ref shipState.ValueRW,
                         transform.ValueRO, ghostOwner.ValueRO,
                         bankIndex, vfxBankForScale, shipVel,
                         dt, mapW, mapH, moonElapsed, serverElapsed,
@@ -457,9 +457,12 @@ namespace TitanOrbit.ECS
         /// <summary>
         /// MEGA Phase B: same <see cref="ResolveFirePose"/> + <see cref="SpawnAndCollideShipBullet"/>
         /// as regular hulls (barrel origin + barrel forward). Only the MEGA owner may fire.
-        /// Owner Shift changes where guns point (mouse). Per-mount FirePower / energy stay.
-        /// Lead intercept distance from <see cref="MegaShipAutoAimSlotElement"/> grows
-        /// <c>MaxDistance</c> so fleeing shots are not culled early.
+        /// Owner Shift aims each muzzle at the mouse point here — not only in
+        /// <see cref="MegaShipAutoFireSystem"/> — so tracers and damage stay on the
+        /// same ray when auto-aim is isolated. Per-mount FirePower / energy stay.
+        /// Lead intercept distance from <see cref="MegaShipAutoAimSlotElement"/> (or
+        /// muzzle→mouse while Shift is held) grows <c>MaxDistance</c> so shots are
+        /// not culled early.
         /// </summary>
         void FireMegaReadyMountsAlongBarrel(
             ref SystemState state,
@@ -468,6 +471,7 @@ namespace TitanOrbit.ECS
             Entity mega,
             DynamicBuffer<ShipWeaponMountElement> mounts,
             bool ownerMayFire,
+            in ShipInput input,
             in ShipWeaponConfig weaponCfg,
             ref ShipState shipState,
             in LocalTransform transform,
@@ -485,6 +489,7 @@ namespace TitanOrbit.ECS
         {
             int megaOwnerNet = ghostOwner.NetworkId;
             float energy = shipState.CurrentEnergy;
+            bool shiftMouseAim = input.Overdrive;
 
             var aims = state.EntityManager.HasBuffer<MegaShipAutoAimSlotElement>(mega)
                 ? state.EntityManager.GetBuffer<MegaShipAutoAimSlotElement>(mega)
@@ -507,11 +512,35 @@ namespace TitanOrbit.ECS
                     ? vfxBankForScale.GetCategoryUpgradeVisualScaleMultiplier(mountBank)
                     : 1f;
 
-                float interceptDistance = 0f;
-                if (aims.IsCreated && m < aims.Length)
-                    interceptDistance = aims[m].InterceptDistance;
+                // [TITAN-ORBIT] Presentation already overlays Shift mouse-aim on a local
+                // mount copy. AutoFire may be isolated (DisableMegaShipAutoFire) and then
+                // bake LocalRotation stays hull-forward — tracers hit the cursor, sim
+                // does not. Apply the same per-muzzle mouse ray at spawn time.
+                if (shiftMouseAim
+                    && MegaShipWeaponAim.TryGetMuzzleDirToMousePoint(
+                        in transform, in mount, in input, mapW, mapH, out float3 toCursor))
+                {
+                    MegaShipWeaponAim.RotateMountTowardWorldDir(
+                        in transform, ref mount, toCursor, 0f);
+                }
 
                 ResolveFirePose(transform, in mount, out float3 fireOrigin, out float3 fireForward);
+
+                float interceptDistance = 0f;
+                if (shiftMouseAim
+                    && MegaShipWeaponAim.TryGetOwnerMouseAimPoint(
+                        in transform, in input, out float3 mousePoint))
+                {
+                    float3 toMouse = ToroidalMapEcs.ShortestOffsetXZ(
+                        fireOrigin, mousePoint, mapW, mapH);
+                    toMouse.y = 0f;
+                    interceptDistance = math.length(toMouse);
+                }
+                else if (aims.IsCreated && m < aims.Length)
+                {
+                    interceptDistance = aims[m].InterceptDistance;
+                }
+
                 float fireRateMul = SpawnAndCollideShipBullet(
                     ref state, ref ecb, bulletEntity, m,
                     fireOrigin, fireForward, mount.FirePower,

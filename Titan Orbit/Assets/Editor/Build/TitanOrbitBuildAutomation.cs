@@ -614,6 +614,16 @@ namespace TitanOrbit.Editor.Build
         }
 
         /// <summary>
+        /// Deletes incremental Linux IL2CPP Bee output so the next server build regenerates C++ from scratch.
+        /// Use after empty <c>failed with output:</c> clang errors.
+        /// </summary>
+        [MenuItem("TitanOrbit/Build/Clean Linux IL2CPP Bee Artifacts", false, 61)]
+        public static void CleanLinuxIl2CppBeeArtifactsMenu()
+        {
+            TitanOrbitLinuxServerIl2CppBuildGuard.CleanLinuxIl2CppBeeArtifacts();
+        }
+
+        /// <summary>
         /// Shared IL2CPP Linux Dedicated Server build used by GCE and Edgegap menu items, and by
         /// the batchmode PowerShell pipeline.
         /// </summary>
@@ -836,11 +846,12 @@ namespace TitanOrbit.Editor.Build
         /// <returns>True when <see cref="BuildResult.Succeeded"/>.</returns>
         static bool ExecuteLinuxDedicatedServerBuild(string outputBasePath, string label, string nextStepDocPath)
         {
-            // --- Scripting backend ---
+            // --- Scripting backend + IL2CPP clang mitigations ---
             // GCE Debian images often fail to load MonoBleedingEdge native libs ("Unable to load mono library" / exit 1).
             // Dedicated Server player target supports IL2CPP — no Mono .so chain on the VM/container.
-            PlayerSettings.SetScriptingBackend(NamedBuildTarget.Server, ScriptingImplementation.IL2CPP);
-            Debug.Log("[TitanOrbitBuild] Dedicated Server scripting backend set to IL2CPP for this Linux server build (" + label + ").");
+            // Master + OptimizeSize + Bee job cap: Edgegap's plugin Build server can otherwise die in
+            // C_Linux_x64_Clang on GenericMethods__*.cpp with an empty "failed with output:".
+            TitanOrbitLinuxServerIl2CppBuildGuard.ApplyDedicatedServerIl2CppSettings(label);
 
             // --- BuildPlayer ---
             var options = new BuildPlayerOptions
@@ -862,7 +873,10 @@ namespace TitanOrbit.Editor.Build
 
             Debug.LogError(
                 $"[TitanOrbitBuild] Linux server build failed ({label}): {report.summary.result} — " +
-                $"{report.summary.totalErrors} error(s). See Console / Build steps. " +
+                $"{report.summary.totalErrors} error(s). See Console / Editor.log. " +
+                "Empty 'Building Library\\Bee\\...\\.o failed with output:' means Linux clang was killed " +
+                "(usually RAM during parallel IL2CPP + Burst), not a C# compile error — close other apps, " +
+                "delete Library/Bee/artifacts/LinuxPlayerBuildProgram, and retry. " +
                 "If errors mention missing Linux sysroot/toolchain packages, confirm " +
                 "com.unity.toolchain.win-x86_64-linux and com.unity.sdk.linux-x86_64 are in Packages/manifest.json, " +
                 "then use File → Build Profiles → Linux Dedicated Server → Switch Platform and retry.");

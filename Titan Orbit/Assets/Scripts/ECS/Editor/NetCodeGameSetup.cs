@@ -158,6 +158,18 @@ namespace TitanOrbit.ECS.Editor
         {
             ApplyTestMode();
             ForceMppmLocalTwoPlayerRoles();
+            if (!MppmBuildProfileSetup.TrySwitchEditorToWindowsPlayer())
+            {
+                EditorUtility.DisplayDialog(
+                    "Titan Orbit — switching to Windows Player",
+                    "The Main Editor was still on Dedicated Server (MPPM would launch Player 2 " +
+                    "with UNITY_SERVER and ghost schemas would not match).\n\n" +
+                    "Wait for the platform switch to finish, then toggle Player 2 off and on in " +
+                    "Window > Play Mode > Scenarios, and Play from the Main Editor only.",
+                    "OK");
+                return;
+            }
+
             MppmBuildProfileSetup.CreateMppmClientBuildProfile();
         }
 

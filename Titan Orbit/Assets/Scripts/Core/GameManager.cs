@@ -84,8 +84,8 @@ namespace TitanOrbit.Core
         [Tooltip("When enabled, MEGA guns can auto-aim asteroids in damage mode — lowest priority after ships, planetary defense turrets, and moon shields. Heal mode is unchanged. Local Editor / MPPM host only.")]
         [SerializeField] bool debugMegaShipsAutoFireAsteroids;
 
-        [Tooltip("Temporary isolate: skip MegaShipAutoFireSystem (no MEGA auto-aim / turret slew). MEGA still fires hull-forward from BulletSimulationSystem. Honored on dedicated after rebuild — check this, rebuild Linux/Docker, look for [MegaShipAutoFire] disabled.")]
-        [SerializeField] bool debugDisableMegaShipAutoFire = true;
+        [Tooltip("Temporary isolate: skip MegaShipAutoFireSystem (no MEGA auto-aim / turret slew). Leave OFF for normal play. Shift+Fire still aims at the mouse in BulletSimulationSystem. Honored on dedicated after rebuild.")]
+        [SerializeField] bool debugDisableMegaShipAutoFire;
 
         [Header("Debug — Asteroid Destroy Hitch")]
         [Tooltip("Logs [AsteroidDestroy] timings in the Console when an asteroid explodes (local gem Instantiates + urgent gem proxies). Filter the Console with that tag.")]
