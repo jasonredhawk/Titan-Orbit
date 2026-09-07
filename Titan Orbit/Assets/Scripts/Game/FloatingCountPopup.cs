@@ -62,11 +62,21 @@ namespace TitanOrbit.Game
         float _textRight;
         float _bodyRadius;
         float _cachedTargetHeight;
+        float _cachedHullLift;
+        bool _hasCachedHullLift;
         Vector3 _lockedWorldPos;
         bool _hasLockedWorldPos;
         bool _clearShipHull;
+        bool _layoutDirty;
+        bool _iconMaterialReady;
+        string _cachedMessage;
+        float _cachedAlpha = -1f;
+        float _cachedZoom = -1f;
+        bool _popScaleSettled;
+        Sprite _cachedIcon;
 
         public Action<FloatingCountPopup> OnFinished;
+        public bool IsHot => _phase == Phase.Hot;
 
         void EnsureTextAndIcon()
         {
@@ -112,6 +122,14 @@ namespace TitanOrbit.Game
             ApplySettings(settings);
             _hasLockedWorldPos = false;
             _cachedTargetHeight = 0f;
+            _cachedHullLift = 0f;
+            _hasCachedHullLift = false;
+            _cachedMessage = null;
+            _cachedAlpha = -1f;
+            _cachedZoom = -1f;
+            _cachedIcon = null;
+            _popScaleSettled = false;
+            _layoutDirty = true;
             _clearShipHull = clearShipHull;
             SetFollow(followAnchor, followWorldOffset, stackLane, stackSpacing, bodyRadius);
             worldMotionOffset = Vector3.zero;
@@ -156,10 +174,6 @@ namespace TitanOrbit.Game
                 ApplyReadableTextMaterial(tmpText);
                 _materialReady = true;
             }
-            else
-            {
-                ApplyNoOutlineStyle(tmpText);
-            }
 
             ApplyIcon(iconSprite, 0f);
             ApplyZoomScale();
@@ -176,9 +190,9 @@ namespace TitanOrbit.Game
             float stackSpacing,
             Sprite iconSprite = null,
             float bodyRadius = -1f,
-            bool clearShipHull = false)
+            bool clearShipHull = false,
+            bool replayPop = true)
         {
-            PullLiveSettings();
             _clearShipHull = clearShipHull;
             SetFollow(followAnchor, followWorldOffset, stackLane, stackSpacing, bodyRadius);
             worldMotionOffset = Vector3.zero;
@@ -187,19 +201,18 @@ namespace TitanOrbit.Game
             fadeDuration = 0f;
             _hotAge = 0f;
             baseColor = color;
-            PlayPop();
-
-            if (tmpText != null)
+            _cachedAlpha = -1f;
+            if (replayPop)
             {
-                tmpText.text = message ?? string.Empty;
-                tmpText.alignment = TextAlignmentOptions.Left;
-                tmpText.ForceMeshUpdate();
-                CacheTextLeft();
+                PlayPop();
+                _popScaleSettled = false;
             }
+
+            ApplyMessageIfChanged(message, forceMesh: true);
 
             if (iconSprite != null)
                 ApplyIcon(iconSprite, 1f);
-            else
+            else if (_layoutDirty)
                 LayoutCenteredGroup();
 
             if (followAnchor == null)
@@ -278,9 +291,15 @@ namespace TitanOrbit.Game
             }
 
             _cachedTargetHeight = _bodyRadius;
+            _cachedHullLift = 0f;
+            _hasCachedHullLift = false;
             if (_clearShipHull &&
                 ShipWeaponProxyRegistry.TryGetCachedHullClearance(anchor, out float liftFromPivot, out _))
+            {
+                _hasCachedHullLift = true;
+                _cachedHullLift = liftFromPivot;
                 _cachedTargetHeight = Mathf.Max(_cachedTargetHeight, liftFromPivot);
+            }
         }
 
         void LockAtCurrentPose()
@@ -307,10 +326,8 @@ namespace TitanOrbit.Game
         float ResolveLiftY()
         {
             float height = Mathf.Max(_bodyRadius, _cachedTargetHeight);
-            if (_clearShipHull &&
-                IsUsableAnchor(followAnchor) &&
-                ShipWeaponProxyRegistry.TryGetCachedHullClearance(followAnchor, out float liftFromPivot, out _))
-                height = Mathf.Max(height, liftFromPivot);
+            if (_hasCachedHullLift)
+                height = Mathf.Max(height, _cachedHullLift);
 
             return height + Mathf.Max(0f, _extraHeight) +
                    (_clearShipHull ? Mathf.Max(0f, _shipExtraHeight) : 0f);
@@ -346,7 +363,6 @@ namespace TitanOrbit.Game
 
         void ApplyMessage(string message, TMP_FontAsset font, float fontSize)
         {
-            tmpText.text = message ?? string.Empty;
             if (font != null)
                 tmpText.font = font;
             _fontSize = Mathf.Max(1f, fontSize);
@@ -356,8 +372,29 @@ namespace TitanOrbit.Game
             tmpText.alignment = TextAlignmentOptions.Left;
             tmpText.enableWordWrapping = false;
             tmpText.richText = false;
-            tmpText.ForceMeshUpdate();
+            ApplyMessageIfChanged(message, forceMesh: true);
+        }
+
+        /// <summary>
+        /// Skip TMP assign + ForceMeshUpdate when the visible string did not change.
+        /// [TITAN-ORBIT] Profiler: heal / remaining-HP ticks rebuilt the mesh on every +N.
+        /// </summary>
+        void ApplyMessageIfChanged(string message, bool forceMesh)
+        {
+            if (tmpText == null)
+                return;
+
+            string next = message ?? string.Empty;
+            if (string.Equals(next, _cachedMessage, StringComparison.Ordinal))
+                return;
+
+            _cachedMessage = next;
+            tmpText.text = next;
+            tmpText.alignment = TextAlignmentOptions.Left;
+            if (forceMesh)
+                tmpText.ForceMeshUpdate();
             CacheTextLeft();
+            _layoutDirty = true;
         }
 
         void PlayPop()
@@ -372,22 +409,45 @@ namespace TitanOrbit.Game
 
             if (iconSprite == null)
             {
-                iconRenderer.enabled = false;
+                if (iconRenderer.enabled)
+                {
+                    iconRenderer.enabled = false;
+                    _cachedIcon = null;
+                    _layoutDirty = true;
+                }
                 return;
             }
 
-            iconRenderer.sprite = iconSprite;
-            iconRenderer.enabled = true;
-            iconRenderer.sortingOrder = IconSortingOrder;
-            LayoutCenteredGroup();
-            iconRenderer.color = WithAlpha(baseColor, alpha);
+            bool spriteChanged = _cachedIcon != iconSprite || iconRenderer.sprite != iconSprite || !iconRenderer.enabled;
+            if (spriteChanged)
+            {
+                iconRenderer.sprite = iconSprite;
+                iconRenderer.enabled = true;
+                iconRenderer.sortingOrder = IconSortingOrder;
+                _cachedIcon = iconSprite;
+                _layoutDirty = true;
+                EnsureIconOverlayMaterial();
+            }
 
+            if (_layoutDirty)
+                LayoutCenteredGroup();
+            iconRenderer.color = WithAlpha(baseColor, alpha);
+        }
+
+        void EnsureIconOverlayMaterial()
+        {
+            if (_iconMaterialReady || iconRenderer == null)
+                return;
+
+            // .material instances; do this once per pooled popup, not on every +N refresh.
             Material iconMat = iconRenderer.material;
             if (iconMat != null)
             {
                 iconMat.renderQueue = RenderQueueOverlay;
                 iconMat.SetInt("_ZTest", (int)CompareFunction.Always);
             }
+
+            _iconMaterialReady = true;
         }
 
         void CacheTextLeft()
@@ -407,8 +467,8 @@ namespace TitanOrbit.Game
         /// </summary>
         void LayoutCenteredGroup()
         {
-            PullLiveSettings();
             _iconScale = Mathf.Max(0.05f, _iconScale);
+            _layoutDirty = false;
 
             if (tmpText != null)
                 tmpText.transform.localPosition = Vector3.zero;
@@ -489,9 +549,17 @@ namespace TitanOrbit.Game
 
             if (_phase == Phase.Hot)
             {
-                _hotAge += Time.deltaTime;
-                float fadeIn = FadeInDuration <= 0.001f ? 1f : Mathf.Clamp01(_hotAge / FadeInDuration);
-                ApplyAlpha(fadeIn);
+                if (_hotAge < FadeInDuration)
+                {
+                    _hotAge += Time.deltaTime;
+                    float fadeIn = FadeInDuration <= 0.001f ? 1f : Mathf.Clamp01(_hotAge / FadeInDuration);
+                    ApplyAlpha(fadeIn);
+                }
+                else if (_cachedAlpha < 1f)
+                {
+                    _hotAge = FadeInDuration;
+                    ApplyAlpha(1f);
+                }
             }
             else
             {
@@ -543,7 +611,8 @@ namespace TitanOrbit.Game
                 }
             }
 
-            LayoutCenteredGroup();
+            if (_layoutDirty)
+                LayoutCenteredGroup();
             ApplyPopScale();
         }
 
@@ -590,18 +659,30 @@ namespace TitanOrbit.Game
         void ApplyZoomScale()
         {
             float zoom = WorldFloatingCountManager.ResolveCameraZoomScale();
+            if (Mathf.Abs(zoom - _cachedZoom) < 0.0001f)
+                return;
+            _cachedZoom = zoom;
             transform.localScale = Vector3.one * (_baseWorldScale * zoom);
         }
 
         void ApplyPopScale()
         {
-            float pop = 1f;
-            if (_popElapsed < PopDuration)
+            if (_popElapsed >= PopDuration)
             {
-                float t = Mathf.Clamp01(_popElapsed / PopDuration);
-                float eased = 1f - (1f - t) * (1f - t);
-                pop = Mathf.Lerp(PopPeakScale, 1f, eased);
+                if (_popScaleSettled)
+                    return;
+                _popScaleSettled = true;
+                if (tmpText != null)
+                    tmpText.transform.localScale = Vector3.one;
+                if (iconRenderer != null && iconRenderer.enabled)
+                    iconRenderer.transform.localScale = Vector3.one * _iconScale;
+                return;
             }
+
+            _popScaleSettled = false;
+            float t = Mathf.Clamp01(_popElapsed / PopDuration);
+            float eased = 1f - (1f - t) * (1f - t);
+            float pop = Mathf.Lerp(PopPeakScale, 1f, eased);
 
             if (tmpText != null)
                 tmpText.transform.localScale = Vector3.one * pop;
@@ -612,6 +693,9 @@ namespace TitanOrbit.Game
         void ApplyAlpha(float alpha)
         {
             alpha = Mathf.Clamp01(alpha);
+            if (Mathf.Abs(alpha - _cachedAlpha) < 0.001f)
+                return;
+            _cachedAlpha = alpha;
             Color c = WithAlpha(baseColor, alpha);
             if (tmpText != null)
                 tmpText.color = c;

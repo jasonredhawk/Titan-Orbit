@@ -1,3 +1,4 @@
+using TitanOrbit.NetCode;
 using TitanOrbit.Systems;
 using UnityEngine;
 
@@ -13,11 +14,15 @@ namespace TitanOrbit.UI
     {
         /// <summary>
         /// [UNITY] AfterSceneLoad — ensures DontDestroyOnLoad shop helpers exist before orbit UI opens.
+        /// Dedicated / Edgegap servers skip this: CardShopSystem.Awake loads every ship prefab.
         /// </summary>
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         static void EnsureShopSystems()
         {
             // --- Ensure setup ---
+            if (!TitanOrbitDedicatedServerAutoBoot.ShouldRunClientPresentation())
+                return;
+
             EnsureSystem<UpgradeSystem>("UpgradeSystem");
             EnsureSystem<CardShopSystem>("CardShopSystem");
             EnsureSystem<HomePlanetStoreSystem>("HomePlanetStoreSystem");

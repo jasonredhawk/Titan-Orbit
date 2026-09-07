@@ -115,7 +115,10 @@ In the plugin, **Upload image and create App version**:
 
 Titan Orbit uses Relay for player traffic; this port satisfies Edgegap’s mapping and matches `--serverPort` defaults. Internal port can be overridden at runtime via `ARBITRIUM_PORT_GAMEPORT_INTERNAL`.
 
-**Resources (free tier):** 1.5 vCPU, 3 GB RAM — increase in app version if you see `OOM kill` in deployment logs.
+**Resources (do not use 1 GB):** set the app version to **1.5 vCPU / 3 GB RAM**. Edgegap’s
+`ARBITRIUM_DEPLOYMENT_MEMORY_MB=1024` default will stall UGS lobby publish (client visualizer /
+shop prefab load on an older image, or map gen on a tight cgroup). Local Docker works because it
+is not capped at 1 GB.
 
 ### 6. Deploy to cloud
 
@@ -166,7 +169,8 @@ You can keep GCE for a permanent “latest” lobby and use Edgegap for on-deman
 |---------|----------------|
 | `PrepareDedicatedRelay failed: UGS not ready` | Container outbound HTTPS; `cloudProjectId` baked in build (`ProjectSettings`); Unity Dashboard services enabled |
 | Container exits immediately | `docker logs <container>` — IL2CPP missing `.so`, wrong binary path, or boot timeout |
-| No lobbies in Join Game | Deployment logs for lobby publish errors; wait after Ready; check UGS project matches client |
+| No lobbies in Join Game | Wait for `[TitanOrbitSessionManager] Dedicated server live` in **container** logs (not Edgegap Ready). If you see `EcsWorldVisualizer` / `CardShopSystem` spam and no live line, RAM is 1 GB or the image predates server presentation skips — set 3 GB and rebuild. |
+| Stale heartbeat “Celestial” | Leftover UGS lobby after a stalled/killed process; not joinable. Fix the live server, then Refresh. |
 | `Port verification failed` | Ignore for Relay architecture unless you add direct LAN listen; ensure app version UDP 7777 anyway |
 | `Building Library\Bee\artifacts\LinuxPlayerBuildProgram\...\*.o failed with output:` (empty) | Linux clang was killed while compiling IL2CPP (`GenericMethods__*.cpp`), usually RAM + parallel Bee/Burst — not a missing toolchain. Use **TitanOrbit → Build → Headless Server (Linux — Edgegap)** with Linux Dedicated Server already active. Close other apps and retry. If it fails again, quit Unity, delete `Titan Orbit/Library/Bee/artifacts/LinuxPlayerBuildProgram`, reopen, and rebuild from the TitanOrbit menu (not Edgegap's Build server button). |
 | Docker build huge / slow | `.dockerignore` excludes `Library/`, `Assets/`, etc. — only `Builds/EdgegapServer` + `tools/edgegap` sent to daemon |

@@ -846,12 +846,13 @@ namespace TitanOrbit.Editor.Build
         /// <returns>True when <see cref="BuildResult.Succeeded"/>.</returns>
         static bool ExecuteLinuxDedicatedServerBuild(string outputBasePath, string label, string nextStepDocPath)
         {
-            // --- Scripting backend + IL2CPP clang mitigations ---
+            // --- Scripting backend ---
             // GCE Debian images often fail to load MonoBleedingEdge native libs ("Unable to load mono library" / exit 1).
             // Dedicated Server player target supports IL2CPP — no Mono .so chain on the VM/container.
-            // Master + OptimizeSize + Bee job cap: Edgegap's plugin Build server can otherwise die in
-            // C_Linux_x64_Clang on GenericMethods__*.cpp with an empty "failed with output:".
-            TitanOrbitLinuxServerIl2CppBuildGuard.ApplyDedicatedServerIl2CppSettings(label);
+            // Do not set Il2CppCompilerConfiguration.Master here: Master enables LTO and makes every
+            // incremental Edgegap build spend ~28 minutes linking GameAssembly.so.
+            PlayerSettings.SetScriptingBackend(NamedBuildTarget.Server, ScriptingImplementation.IL2CPP);
+            Debug.Log("[TitanOrbitBuild] Dedicated Server scripting backend set to IL2CPP for this Linux server build (" + label + ").");
 
             // --- BuildPlayer ---
             var options = new BuildPlayerOptions

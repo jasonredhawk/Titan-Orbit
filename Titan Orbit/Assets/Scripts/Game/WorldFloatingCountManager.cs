@@ -47,7 +47,14 @@ namespace TitanOrbit.Game
     /// [HYBRID] Client-side world floating +/- popups. Tunables and icons live on
     /// <see cref="FloatingText"/>. One live popup per target+channel+sign; hits inside
     /// a rolling streak window accumulate. Pools <see cref="FloatingCountPopup"/> GameObjects.
+    /// <para>
+    /// Rapid +N ticks (heal, mining, remaining HP) only mark the slot dirty. TMP mesh
+    /// rebuilds flush once per frame (and at most ~20 Hz) so a burst cannot ForceMeshUpdate
+    /// on every hit. LateUpdate is 67049 so the flush lands before
+    /// <see cref="FloatingCountPopup"/> (67050) billsboards.
+    /// </para>
     /// </summary>
+    [DefaultExecutionOrder(67049)]
     public class WorldFloatingCountManager : MonoBehaviour
     {
         public static WorldFloatingCountManager Instance { get; private set; }
@@ -72,16 +79,66 @@ namespace TitanOrbit.Game
             public TeamId Team;
             public Transform Anchor;
             public Vector3 ParkWorld;
+            public float BodyRadius;
+            public bool ClearShipHull;
+            public bool WorldParked;
+            public bool VisualDirty;
+            public bool PendingWorldRelocate;
+            public string LabeledMessage;
+            public Sprite PendingIcon;
+            public Color PendingColor;
+            public float LastVisualFlushTime;
+            public float LastPopTime;
+            public int LastFormatKey;
+
+            public void Reset()
+            {
+                Popup = null;
+                Accumulated = 0f;
+                StreakDeadline = 0f;
+                Expired = false;
+                Channel = FloatingCountChannel.GemPickup;
+                Team = TeamId.None;
+                Anchor = null;
+                ParkWorld = Vector3.zero;
+                BodyRadius = 0f;
+                ClearShipHull = false;
+                WorldParked = false;
+                VisualDirty = false;
+                PendingWorldRelocate = false;
+                LabeledMessage = null;
+                PendingIcon = null;
+                PendingColor = Color.white;
+                LastVisualFlushTime = 0f;
+                LastPopTime = 0f;
+                LastFormatKey = int.MinValue;
+            }
         }
 
+        /// <summary>
+        /// [TITAN-ORBIT] Profiler: heal / mining bursts called Refresh + ForceMeshUpdate per hit.
+        /// Coalesce to one mesh rebuild per slot, and never faster than this while the streak is hot.
+        /// </summary>
+        const float MinVisualRefreshSeconds = 0.05f;
+        const float MinPopReplaySeconds = 0.15f;
+
         readonly Stack<FloatingCountPopup> _popupPool = new Stack<FloatingCountPopup>(16);
+        readonly Stack<LiveSlot> _slotPool = new Stack<LiveSlot>(16);
         readonly Dictionary<FloatingCountKey, LiveSlot> _slots = new Dictionary<FloatingCountKey, LiveSlot>(32);
         readonly Dictionary<FloatingCountPopup, FloatingCountKey> _keyByPopup =
             new Dictionary<FloatingCountPopup, FloatingCountKey>(32);
         readonly List<FloatingCountKey> _expireScratch = new List<FloatingCountKey>(8);
+        readonly List<LiveSlot> _flushScratch = new List<LiveSlot>(16);
 
         Camera _cachedCamera;
         FloatingText _runtimeFallback;
+
+        int _frameCacheTick = -1;
+        float _frameZoom = 1f;
+        bool _frameHasShipClearance;
+        Vector3 _frameShipPos;
+        float _frameShipTopY;
+        float _frameShipRadius;
 
         public FloatingCountChannelVisibility FloatingCountVisibility =>
             Settings != null ? Settings.show : null;
@@ -104,6 +161,18 @@ namespace TitanOrbit.Game
         /// L1 → 1; clamped so MEGA framing does not produce giant type.
         /// </summary>
         public static float ResolveCameraZoomScale()
+        {
+            var inst = Instance;
+            if (inst != null)
+            {
+                inst.EnsureFrameCache();
+                return inst._frameZoom;
+            }
+
+            return ResolveCameraZoomScaleUncached();
+        }
+
+        static float ResolveCameraZoomScaleUncached()
         {
             var follow = CameraFollowEcs.Instance;
             if (follow == null)
@@ -151,6 +220,15 @@ namespace TitanOrbit.Game
         /// </summary>
         public bool TryGetLocalShipVisualClearance(out Vector3 shipPos, out float visualTopY, out float xzRadius)
         {
+            EnsureFrameCache();
+            shipPos = _frameShipPos;
+            visualTopY = _frameShipTopY;
+            xzRadius = _frameShipRadius;
+            return _frameHasShipClearance;
+        }
+
+        bool TryGetLocalShipVisualClearanceUncached(out Vector3 shipPos, out float visualTopY, out float xzRadius)
+        {
             shipPos = Vector3.zero;
             visualTopY = 0f;
             xzRadius = 0f;
@@ -165,6 +243,18 @@ namespace TitanOrbit.Game
             shipPos = hull.position;
             visualTopY = hull.position.y + liftFromPivot;
             return true;
+        }
+
+        void EnsureFrameCache()
+        {
+            int tick = Time.frameCount;
+            if (_frameCacheTick == tick)
+                return;
+
+            _frameCacheTick = tick;
+            _frameZoom = ResolveCameraZoomScaleUncached();
+            _frameHasShipClearance = TryGetLocalShipVisualClearanceUncached(
+                out _frameShipPos, out _frameShipTopY, out _frameShipRadius);
         }
 
         void Awake()
@@ -189,7 +279,14 @@ namespace TitanOrbit.Game
 
         void Update()
         {
+            EnsureFrameCache();
             ExpireStaleSlots();
+        }
+
+        void LateUpdate()
+        {
+            EnsureFrameCache();
+            FlushDirtyVisuals(force: false);
         }
 
         Sprite ResolveTypeIcon(FloatingCountChannel channel)
@@ -272,8 +369,6 @@ namespace TitanOrbit.Game
             var settings = Settings;
             float now = Time.unscaledTime;
             float window = settings != null ? settings.AccumulationWindowSeconds : 1f;
-            int lane = ResolveStackLane(channel);
-            float spacing = settings != null ? settings.StackLineSpacing : 1.25f;
 
             if (_slots.TryGetValue(key, out LiveSlot slot) && slot.Popup != null)
             {
@@ -288,13 +383,11 @@ namespace TitanOrbit.Game
                 slot.Channel = channel;
                 slot.Anchor = anchor;
                 slot.ParkWorld = park;
-
-                if (!TryBuildFloatingCountVisual(channel, slot.Accumulated, team, out string message, out Sprite refreshIcon,
-                        out Color color, out _, ignoreChannelVisibility))
-                    return;
-
-                slot.Popup.Refresh(message, color, anchor, Vector3.zero, lane, spacing, refreshIcon, bodyRadius,
-                    clearShipHull);
+                slot.BodyRadius = bodyRadius;
+                slot.ClearShipHull = clearShipHull;
+                slot.WorldParked = false;
+                slot.LabeledMessage = null;
+                slot.VisualDirty = true;
                 return;
             }
 
@@ -302,16 +395,22 @@ namespace TitanOrbit.Game
                     out Color spawnColor, out TMP_FontAsset fontToUse, ignoreChannelVisibility))
                 return;
 
-            slot = new LiveSlot
-            {
-                Accumulated = signedAmount,
-                StreakDeadline = now + window,
-                Expired = false,
-                Channel = channel,
-                Team = team,
-                Anchor = anchor,
-                ParkWorld = park,
-            };
+            int lane = ResolveStackLane(channel);
+            float spacing = settings != null ? settings.StackLineSpacing : 1.25f;
+
+            slot = RentSlot();
+            slot.Accumulated = signedAmount;
+            slot.StreakDeadline = now + window;
+            slot.Expired = false;
+            slot.Channel = channel;
+            slot.Team = team;
+            slot.Anchor = anchor;
+            slot.ParkWorld = park;
+            slot.BodyRadius = bodyRadius;
+            slot.ClearShipHull = clearShipHull;
+            slot.WorldParked = false;
+            slot.LastVisualFlushTime = now;
+            slot.LastPopTime = now;
 
             var popup = SpawnPopupAttached(
                 spawnMessage,
@@ -326,7 +425,10 @@ namespace TitanOrbit.Game
                 bodyRadius,
                 clearShipHull);
             if (popup == null)
+            {
+                ReturnSlot(slot);
                 return;
+            }
 
             slot.Popup = popup;
             _slots[key] = slot;
@@ -381,6 +483,9 @@ namespace TitanOrbit.Game
                 flipped.Popup.RelocateWorld(spawnPos, bodyRadius: 0f);
                 flipped.Popup.Refresh(flipMessage, flipColor, followAnchor: null, followWorldOffset: Vector3.zero,
                     stackLane: 0, stackSpacing: 0f, flipIcon, bodyRadius: 0f);
+                flipped.VisualDirty = false;
+                flipped.LastVisualFlushTime = now;
+                flipped.LastPopTime = now;
                 _slots[key] = flipped;
                 _keyByPopup[flipped.Popup] = key;
                 return;
@@ -398,14 +503,12 @@ namespace TitanOrbit.Game
                 slot.Team = team;
                 slot.Channel = channel;
                 slot.ParkWorld = spawnPos;
-
-                if (!TryBuildFloatingCountVisual(channel, slot.Accumulated, team, out string message, out Sprite refreshIcon,
-                        out Color color, out _))
-                    return;
-
-                slot.Popup.RelocateWorld(spawnPos, bodyRadius: 0f);
-                slot.Popup.Refresh(message, color, followAnchor: null, followWorldOffset: Vector3.zero,
-                    stackLane: 0, stackSpacing: 0f, refreshIcon, bodyRadius: 0f);
+                slot.BodyRadius = 0f;
+                slot.ClearShipHull = false;
+                slot.WorldParked = true;
+                slot.PendingWorldRelocate = true;
+                slot.LabeledMessage = null;
+                slot.VisualDirty = true;
                 return;
             }
 
@@ -424,16 +527,18 @@ namespace TitanOrbit.Game
             if (popup == null)
                 return;
 
-            slot = new LiveSlot
-            {
-                Popup = popup,
-                Accumulated = signedAmount,
-                StreakDeadline = now + window,
-                Expired = false,
-                Channel = channel,
-                Team = team,
-                ParkWorld = spawnPos,
-            };
+            slot = RentSlot();
+            slot.Popup = popup;
+            slot.Accumulated = signedAmount;
+            slot.StreakDeadline = now + window;
+            slot.Expired = false;
+            slot.Channel = channel;
+            slot.Team = team;
+            slot.ParkWorld = spawnPos;
+            slot.BodyRadius = 0f;
+            slot.WorldParked = true;
+            slot.LastVisualFlushTime = now;
+            slot.LastPopTime = now;
             _slots[key] = slot;
             _keyByPopup[popup] = key;
         }
@@ -610,8 +715,6 @@ namespace TitanOrbit.Game
             var key = new FloatingCountKey(targetId, keyChannel, 1);
             float now = Time.unscaledTime;
             float window = settings != null ? settings.AccumulationWindowSeconds : 1f;
-            int lane = ResolveStackLane(keyChannel);
-            float spacing = settings != null ? settings.StackLineSpacing : 1.25f;
 
             if (_slots.TryGetValue(key, out LiveSlot slot) && slot.Popup != null)
             {
@@ -619,20 +722,33 @@ namespace TitanOrbit.Game
                 slot.StreakDeadline = now + window;
                 slot.Anchor = anchor;
                 slot.ParkWorld = parkWorld;
-                slot.Popup.Refresh(message, color, anchor, Vector3.zero, lane, spacing, icon, bodyRadius,
-                    clearShipHull);
+                slot.BodyRadius = bodyRadius;
+                slot.ClearShipHull = clearShipHull;
+                slot.WorldParked = false;
+                slot.LabeledMessage = message;
+                slot.PendingColor = color;
+                slot.PendingIcon = icon;
+                slot.VisualDirty = true;
                 return;
             }
 
-            slot = new LiveSlot
-            {
-                Accumulated = 0f,
-                StreakDeadline = now + window,
-                Expired = false,
-                Channel = keyChannel,
-                Anchor = anchor,
-                ParkWorld = parkWorld,
-            };
+            int lane = ResolveStackLane(keyChannel);
+            float spacing = settings != null ? settings.StackLineSpacing : 1.25f;
+
+            slot = RentSlot();
+            slot.Accumulated = 0f;
+            slot.StreakDeadline = now + window;
+            slot.Expired = false;
+            slot.Channel = keyChannel;
+            slot.Anchor = anchor;
+            slot.ParkWorld = parkWorld;
+            slot.BodyRadius = bodyRadius;
+            slot.ClearShipHull = clearShipHull;
+            slot.LabeledMessage = message;
+            slot.PendingColor = color;
+            slot.PendingIcon = icon;
+            slot.LastVisualFlushTime = now;
+            slot.LastPopTime = now;
 
             var popup = SpawnPopupAttached(
                 message,
@@ -647,7 +763,10 @@ namespace TitanOrbit.Game
                 bodyRadius,
                 clearShipHull);
             if (popup == null)
+            {
+                ReturnSlot(slot);
                 return;
+            }
 
             slot.Popup = popup;
             _slots[key] = slot;
@@ -790,13 +909,121 @@ namespace TitanOrbit.Game
             {
                 _keyByPopup.Remove(popup);
                 if (_slots.TryGetValue(key, out LiveSlot slot) && slot.Popup == popup)
+                {
                     _slots.Remove(key);
+                    ReturnSlot(slot);
+                }
             }
 
             popup.OnFinished = null;
             popup.gameObject.SetActive(false);
             popup.transform.SetParent(transform, false);
             _popupPool.Push(popup);
+        }
+
+        LiveSlot RentSlot()
+        {
+            if (_slotPool.Count > 0)
+            {
+                LiveSlot rented = _slotPool.Pop();
+                rented.Reset();
+                return rented;
+            }
+
+            return new LiveSlot();
+        }
+
+        void ReturnSlot(LiveSlot slot)
+        {
+            if (slot == null)
+                return;
+            slot.Reset();
+            _slotPool.Push(slot);
+        }
+
+        void FlushDirtyVisuals(bool force)
+        {
+            if (_slots.Count == 0)
+                return;
+
+            _flushScratch.Clear();
+            foreach (var kv in _slots)
+            {
+                if (kv.Value.VisualDirty)
+                    _flushScratch.Add(kv.Value);
+            }
+
+            for (int i = 0; i < _flushScratch.Count; i++)
+                FlushSlotVisual(_flushScratch[i], force);
+        }
+
+        void FlushSlotVisual(LiveSlot slot, bool force)
+        {
+            if (slot == null || slot.Popup == null || !slot.VisualDirty)
+                return;
+
+            float now = Time.unscaledTime;
+            bool restartingFade = !slot.Popup.IsHot;
+            if (!force && !restartingFade &&
+                slot.LastVisualFlushTime > 0f &&
+                now - slot.LastVisualFlushTime < MinVisualRefreshSeconds)
+                return;
+
+            int formatKey = slot.LabeledMessage != null
+                ? slot.LabeledMessage.GetHashCode()
+                : Mathf.RoundToInt(slot.Accumulated * 10f);
+            if (!force && !restartingFade && formatKey == slot.LastFormatKey)
+            {
+                slot.VisualDirty = false;
+                return;
+            }
+
+            string message;
+            Sprite icon;
+            Color color;
+            if (slot.LabeledMessage != null)
+            {
+                message = slot.LabeledMessage;
+                icon = slot.PendingIcon;
+                color = slot.PendingColor;
+            }
+            else if (!TryBuildFloatingCountVisual(slot.Channel, slot.Accumulated, slot.Team,
+                         out message, out icon, out color, out _))
+            {
+                slot.VisualDirty = false;
+                return;
+            }
+
+            if (slot.PendingWorldRelocate)
+            {
+                slot.Popup.RelocateWorld(slot.ParkWorld, slot.BodyRadius);
+                slot.PendingWorldRelocate = false;
+            }
+
+            var settings = Settings;
+            int lane = slot.WorldParked ? 0 : ResolveStackLane(slot.Channel);
+            float spacing = slot.WorldParked ? 0f : (settings != null ? settings.StackLineSpacing : 1.25f);
+            bool replayPop = restartingFade ||
+                             slot.LastPopTime <= 0f ||
+                             now - slot.LastPopTime >= MinPopReplaySeconds;
+            if (replayPop)
+                slot.LastPopTime = now;
+
+            slot.Popup.Refresh(
+                message,
+                color,
+                slot.WorldParked ? null : slot.Anchor,
+                Vector3.zero,
+                lane,
+                spacing,
+                icon,
+                slot.BodyRadius,
+                slot.ClearShipHull,
+                replayPop);
+
+            slot.LastVisualFlushTime = now;
+            slot.LastFormatKey = formatKey;
+            slot.VisualDirty = false;
         }
 
         void ExpireStaleSlots()
@@ -819,6 +1046,9 @@ namespace TitanOrbit.Game
                 FloatingCountKey key = _expireScratch[i];
                 if (!_slots.TryGetValue(key, out LiveSlot slot))
                     continue;
+
+                if (slot.VisualDirty)
+                    FlushSlotVisual(slot, force: true);
 
                 slot.Expired = true;
                 slot.Accumulated = 0f;

@@ -1,4 +1,5 @@
 using TitanOrbit.Game;
+using TitanOrbit.NetCode;
 using TitanOrbit.Shared;
 using UnityEngine;
 
@@ -60,6 +61,14 @@ namespace TitanOrbit.Camera
         private void Awake()
         {
             // --- Unity lifecycle ---
+            // Headless dedicated (Edgegap/GCE): no shaders in the server player. Creating a
+            // background quad only logs "Dedicated Server Optimizations" and wastes a frame.
+            if (!TitanOrbitDedicatedServerAutoBoot.ShouldRunClientPresentation())
+            {
+                enabled = false;
+                return;
+            }
+
             ResolveTargetCamera();
             if (targetCamera == null)
             {

@@ -5,6 +5,7 @@ using TitanOrbit.Data;
 using TitanOrbit.ECS;
 using TitanOrbit.Entities;
 using TitanOrbit.Game;
+using TitanOrbit.NetCode;
 using TitanOrbit.UI;
 using UnityEngine;
 
@@ -31,6 +32,14 @@ namespace TitanOrbit.Systems
         void Awake()
         {
             // --- Unity lifecycle ---
+            // Dedicated server has no orbit-station UI. Older builds loaded every chassis
+            // prefab here and printed thousands of "referenced script is missing" lines.
+            if (!TitanOrbitDedicatedServerAutoBoot.ShouldRunClientPresentation())
+            {
+                enabled = false;
+                return;
+            }
+
             if (Instance != null && Instance != this)
             {
                 Destroy(gameObject);
