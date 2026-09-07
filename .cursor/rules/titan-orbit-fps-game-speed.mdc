@@ -1,0 +1,62 @@
+---
+description: Warn when a request would hurt FPS or game speed, then prefer a cheaper Titan Orbit-safe path unless the user insists
+alwaysApply: true
+---
+
+# Titan Orbit — FPS / game-speed warning
+
+Evaluate **every** request that would change **runtime** client or server work. Judge two costs:
+
+| Cost | Feels like | Typical cause |
+|------|------------|---------------|
+| **FPS** | Client hitch, stutter, dropped frames | Render work, `GC.Alloc`, main-thread loops |
+| **Game speed** | Whole match slows / ticks hitch | Server sim overrun, fat ghosts, extra RPCs, prediction cost |
+
+Sim is a fixed ~60 Hz NetCode step. A server hitch is not “prettier visuals” — it is the game running late.
+
+---
+
+## When to warn
+
+If the request implies any of these, **lead with the warning block**, then implement a **cheaper alternative**. Do not wait for the user to notice.
+
+- **Tick / hot-path allocations** — `new`, LINQ, strings, boxing, or `GC.Alloc` in ECS sim, prediction, or `Update`/`LateUpdate`. HUD already throttles this (`ShipSpeedometerHUD`).
+- **Main-thread / managed loops over many bodies** — per-frame `EntityManager` gathers, `Find`/`GetComponent`, or nested ship×planet scans instead of a cached query + Burst `IJobEntity`.
+- **Extra GameObjects / colliders / visual copies** — wrap tiles, per-body proxies, or Instantiates that fight `EcsWorldVisualizer` per-frame spawn caps and the toroidal “one entity, one collider” rule.
+- **Fat ghosts / extra RPCs / extra sim work** — new serialized fields, per-tick broadcasts, or work that makes the ~60 Hz step miss.
+- **Render-rate sim or double presentation** — driving motors from MonoBehaviour `Update`, extra LateUpdate lerps on top of NetCode, or bypassing `ClientJoinSettleCache.ShouldSkipMapBodyQueries`.
+
+**Prefer:** Burst jobs, cached queries, pooling, presentation-only work at a capped rate, lean ghost fields, existing visualizer/HUD budgets.
+
+If the user **insists** on the expensive path after the warning, do it and keep the cost note.
+
+---
+
+## When to stay silent
+
+Do **not** add a warning footer on every reply. Silence is correct for:
+
+- Docs, comments, Cursor rules, `.mdc`, editor-only / `#if UNITY_EDITOR`
+- One-shot load, bake, or init (not per tick / per frame)
+- Reusing an existing cheap path (cached query, pool, Burst job, visualizer cap)
+
+---
+
+## Response shape (only when warning)
+
+Put this **first**, then continue with the cheaper plan:
+
+```markdown
+## FPS / game speed
+**Risk:** High | Medium
+**Why:** One sentence (what would hitch: render, GC, or server tick).
+**Cheaper path:** What I will do instead. Say to insist if you still want the expensive version.
+```
+
+```csharp
+// ❌ BAD — alloc + managed gather every tick (GC stutter + main-thread hitch)
+foreach (var e in em.GetAllEntities()) { names.Add(em.GetName(e)); }
+
+// ✅ GOOD — cached query, Burst job, no managed alloc in the hot path
+Entities.WithAll<ShipTag, Simulate>().ForEach(/* Burst-safe math */).ScheduleParallel();
+```
