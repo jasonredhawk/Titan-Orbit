@@ -459,10 +459,11 @@ namespace TitanOrbit.ECS
         /// as regular hulls (barrel origin + barrel forward). Only the MEGA owner may fire.
         /// Owner Shift aims each muzzle at the mouse point here — not only in
         /// <see cref="MegaShipAutoFireSystem"/> — so tracers and damage stay on the
-        /// same ray when auto-aim is isolated. Per-mount FirePower / energy stay.
-        /// Lead intercept distance from <see cref="MegaShipAutoAimSlotElement"/> (or
-        /// muzzle→mouse while Shift is held) grows <c>MaxDistance</c> so shots are
-        /// not culled early.
+        /// same ray when auto-aim is isolated. The mouse yaw is applied to a spawn
+        /// copy only (mount pose / FireCooldown stay independent). Per-mount
+        /// FirePower / energy stay. Lead intercept distance from
+        /// <see cref="MegaShipAutoAimSlotElement"/> (or muzzle→mouse while Shift is
+        /// held) grows <c>MaxDistance</c> so shots are not culled early.
         /// </summary>
         void FireMegaReadyMountsAlongBarrel(
             ref SystemState state,
@@ -512,19 +513,21 @@ namespace TitanOrbit.ECS
                     ? vfxBankForScale.GetCategoryUpgradeVisualScaleMultiplier(mountBank)
                     : 1f;
 
-                // [TITAN-ORBIT] Presentation already overlays Shift mouse-aim on a local
-                // mount copy. AutoFire may be isolated (DisableMegaShipAutoFire) and then
-                // bake LocalRotation stays hull-forward — tracers hit the cursor, sim
-                // does not. Apply the same per-muzzle mouse ray at spawn time.
+                // [TITAN-ORBIT] Presentation overlays Shift mouse-aim on a local copy.
+                // AutoFire may be isolated (DisableMegaShipAutoFire) and then bake
+                // LocalRotation stays hull-forward — tracers hit the cursor, sim does not.
+                // Aim on a spawn copy only — do not persist that yaw onto the mount or a
+                // NaN/degenerate mouse sample can stick FireCooldown + pose and mute the guns.
+                var fireMount = mount;
                 if (shiftMouseAim
                     && MegaShipWeaponAim.TryGetMuzzleDirToMousePoint(
-                        in transform, in mount, in input, mapW, mapH, out float3 toCursor))
+                        in transform, in fireMount, in input, mapW, mapH, out float3 toCursor))
                 {
                     MegaShipWeaponAim.RotateMountTowardWorldDir(
-                        in transform, ref mount, toCursor, 0f);
+                        in transform, ref fireMount, toCursor, 0f);
                 }
 
-                ResolveFirePose(transform, in mount, out float3 fireOrigin, out float3 fireForward);
+                ResolveFirePose(transform, in fireMount, out float3 fireOrigin, out float3 fireForward);
 
                 float interceptDistance = 0f;
                 if (shiftMouseAim
@@ -535,25 +538,31 @@ namespace TitanOrbit.ECS
                         fireOrigin, mousePoint, mapW, mapH);
                     toMouse.y = 0f;
                     interceptDistance = math.length(toMouse);
+                    if (!math.isfinite(interceptDistance))
+                        interceptDistance = 0f;
                 }
                 else if (aims.IsCreated && m < aims.Length)
                 {
                     interceptDistance = aims[m].InterceptDistance;
+                    if (!math.isfinite(interceptDistance))
+                        interceptDistance = 0f;
                 }
 
                 float fireRateMul = SpawnAndCollideShipBullet(
                     ref state, ref ecb, bulletEntity, m,
                     fireOrigin, fireForward, mount.FirePower,
-                    weaponCfg, in mount, mountBank, firePowerExtras: 0,
+                    weaponCfg, in fireMount, mountBank, firePowerExtras: 0,
                     categoryUpgradeScale, shipVel,
                     megaOwnerNet, (byte)shipState.Team,
                     shipState.ShipLevel,
                     dt, gemPrefab, gemSpawnServerTime, mapW, mapH,
                     moonElapsed, serverElapsed,
                     interceptDistance);
+                if (!math.isfinite(fireRateMul) || fireRateMul < 0.05f)
+                    fireRateMul = 0.05f;
 
                 float fireRate = math.max(0.15f, mount.FireRate > 0.01f ? mount.FireRate : weaponCfg.FireRate);
-                mount.FireCooldown = (1f / fireRate) / math.max(0.05f, fireRateMul);
+                mount.FireCooldown = (1f / fireRate) / fireRateMul;
                 mounts[m] = mount;
                 energy -= mount.FirePower;
             }

@@ -104,6 +104,8 @@ namespace TitanOrbit.ECS
             var culledLookup = SystemAPI.GetComponentLookup<AsteroidClientCulledTag>(true);
             var velocityLookup = SystemAPI.GetComponentLookup<PhysicsVelocity>(false);
             var kinematicsLookup = SystemAPI.GetComponentLookup<ShipKinematics>(true);
+            var moonPlanetRefLookup = SystemAPI.GetComponentLookup<PlanetGemMoonColliderPlanetRef>(true);
+            var planetStateLookup = SystemAPI.GetComponentLookup<PlanetState>(true);
             bool isClient = state.World.IsClient();
 
             // Working velocities start from the pre-collision snapshot so multiple contacts
@@ -172,6 +174,22 @@ namespace TitanOrbit.ECS
                 {
                     if (IsTakingOffMoon(pair.Ship, moonDockLookup))
                         continue;
+
+                    // Friendly moon rock/shield must not wall-bounce — that kick plus the
+                    // moving dock shell is why landing took several approaches. Keep the
+                    // pre-collision (co-orbit) velocity; PhysX depenetration still separates
+                    // the hull to the surface, which stays inside the dock zone.
+                    if (IsFriendlyMoonContact(
+                            pair.Ship,
+                            pair.Other,
+                            shipStateLookup,
+                            moonPlanetRefLookup,
+                            planetStateLookup))
+                    {
+                        _working[pair.Ship] = GetWorkingOrSnapshot(
+                            pair.Ship, ref _working, snapshotLookup);
+                        continue;
+                    }
 
                     ApplyShipVsInfiniteWall(pair, ref _working, snapshotLookup);
                     _megaKeepPhysX.Add(pair.Ship);
@@ -288,6 +306,27 @@ namespace TitanOrbit.ECS
         static bool IsTakingOffMoon(Entity ship, ComponentLookup<ShipMoonDockState> moonDock)
         {
             return moonDock.HasComponent(ship) && moonDock[ship].IsTakingOff;
+        }
+
+        /// <summary>
+        /// True when this moon/shield body belongs to the ship's team (landing pad, not a wall).
+        /// </summary>
+        static bool IsFriendlyMoonContact(
+            Entity ship,
+            Entity moonOrShield,
+            ComponentLookup<ShipState> ships,
+            ComponentLookup<PlanetGemMoonColliderPlanetRef> planetRefs,
+            ComponentLookup<PlanetState> planets)
+        {
+            if (!ships.HasComponent(ship) || !planetRefs.HasComponent(moonOrShield))
+                return false;
+
+            Entity planetEntity = planetRefs[moonOrShield].PlanetEntity;
+            if (planetEntity == Entity.Null || !planets.HasComponent(planetEntity))
+                return false;
+
+            return PlanetGemMoonCombatLogic.IsTeamFriendlyToMoon(
+                planets[planetEntity].Ownership, ships[ship].Team);
         }
 
         /// <summary>

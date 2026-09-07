@@ -1,3 +1,4 @@
+using TitanOrbit.Core;
 using TitanOrbit.Data;
 using TitanOrbit.Generation;
 using TitanOrbit.Simulation;
@@ -44,6 +45,13 @@ namespace TitanOrbit.ECS
         /// Raw PIT mult must exceed this to count as "inside" (avoids float noise around 1.0).
         /// </summary>
         const float TerritoryBoostInsideEpsilon = 1.001f;
+
+        /// <summary>
+        /// How quickly approach velocity steers toward the moon's orbital velocity (1/s).
+        /// [TITAN-ORBIT] Same ballpark as orbit capture. Space brakes used to zero world
+        /// speed while the moon kept moving, so a rim entry left the dock shell in ~1s.
+        /// </summary>
+        const float MoonApproachCoOrbitResponsiveness = 5f;
 
         /// <summary>
         /// Applies player input before <see cref="Unity.Physics.Systems.PhysicsSystemGroup"/>.
@@ -272,12 +280,34 @@ namespace TitanOrbit.ECS
             // not (weapons are locked in the ring by BulletSimulationSystem). Ring flag stays
             // true while still inside the annulus (tractor / HUD / dwell can still see it).
             // While moon-docking (approach / land), skip the orbit motor so radial pull cannot yank
-            // the hull out of the dock sphere mid-landing.
+            // the hull out of the dock sphere mid-landing. Detect the friendly zone from snapshots
+            // this tick — MoonPlanetId is written later by ShipMoonDockSystem, so waiting on it
+            // left one (or more) orbit/brake ticks that shoved the ship off the pad.
             bool inOrbitRing = TryFindOrbitPlanet(
                 transform.Position, mapW, mapH, in planets,
                 out PlanetState orbitPlanetState, out LocalTransform orbitPlanetTransform);
-            bool moonDocking = moonDock.MoonPlanetId != 0 && !input.Thrust;
+            float megaDockPad = isMegaShip
+                ? BodyCollisionMath.GetShipHullRadiusWorld(transform.Scale)
+                : 0f;
+            bool inFriendlyMoonZone = TryFindFriendlyMoonDockZone(
+                transform.Position,
+                shipState.Team,
+                in planets,
+                mapW,
+                mapH,
+                elapsedSeconds,
+                megaDockPad,
+                out _,
+                out float3 friendlyMoonVel);
+            bool moonDocking = !input.Thrust && (moonDock.MoonPlanetId != 0 || inFriendlyMoonZone);
             bool useOrbit = inOrbitRing && !input.Thrust && !moonDocking;
+            float3 moonApproachVel = friendlyMoonVel;
+            if (moonDocking && !inFriendlyMoonZone &&
+                TryGetMoonOrbitalVelocity(
+                    moonDock.MoonPlanetId, in planets, elapsedSeconds, out float3 latchedMoonVel))
+            {
+                moonApproachVel = latchedMoonVel;
+            }
 
             // --- Friendly territory speed (1 + 0.05 × homeLevel) — not ship MovementSpeed attributes ---
             // [TITAN-ORBIT] Instant PIT can flicker at edges; latch matches presentation sticky so
@@ -368,6 +398,18 @@ namespace TitanOrbit.ECS
                 float t = math.saturate(alignRate * dt);
                 vel = math.lerp(vel, orbitDesiredVel, t);
                 vel.y = 0f;
+            }
+            else if (moonDocking)
+            {
+                // --- Approach co-orbit (not yet fully landed) ---
+                // [TITAN-ORBIT] Fully-landed attach already matches moon velocity. During the
+                // 0.5s + 1s landing dwell, space brakes used to freeze the hull in world space
+                // while the moon kept sliding along the ring — rim entries left the dock zone
+                // before LandingProgress could latch. Steer toward moon velocity instead.
+                float t = math.saturate(MoonApproachCoOrbitResponsiveness * dt);
+                vel = math.lerp(vel, moonApproachVel, t);
+                vel.y = 0f;
+                ApplyRecoilDecay(ref vel, maxSpeed, movementMass, motor.RecoilDecayPerSecond, dt);
             }
             else
             {
@@ -660,6 +702,86 @@ namespace TitanOrbit.ECS
             }
 
             return found;
+        }
+
+        /// <summary>
+        /// True when the hull pivot is inside a same-team moon dock shell.
+        /// mapW/mapH from <c>MapStateSingleton</c>; moon pose uses the shared ServerTick clock.
+        /// Regular-ship pad (snapshot <c>MoonDockZoneRadiusWorld</c>). MEGA adds
+        /// <paramref name="extraZoneRadius"/> so a long hull starts co-orbit when a wing
+        /// can already reach the drawn shell (pivot-only would be late).
+        /// </summary>
+        static bool TryFindFriendlyMoonDockZone(
+            float3 shipPos,
+            TeamId team,
+            in NativeArray<PlanetMotorSnapshot> planets,
+            float mapW,
+            float mapH,
+            double elapsedSeconds,
+            float extraZoneRadius,
+            out int planetId,
+            out float3 moonOrbitalVelocity)
+        {
+            planetId = 0;
+            moonOrbitalVelocity = float3.zero;
+            if (team == TeamId.None)
+                return false;
+
+            for (int i = 0; i < planets.Length; i++)
+            {
+                var snapshot = planets[i];
+                if (!PlanetGemMoonCombatLogic.IsTeamFriendlyToMoon(snapshot.Planet.Ownership, team))
+                    continue;
+
+                float zone = snapshot.MoonDockZoneRadiusWorld + math.max(0f, extraZoneRadius);
+                if (zone <= 0.0001f)
+                    continue;
+
+                float planetSize = math.max(0.25f, snapshot.Transform.Scale);
+                float3 moonPos = PlanetOrbitMath.GetMoonWorldPositionNear(
+                    shipPos,
+                    snapshot.Transform.Position,
+                    planetSize,
+                    snapshot.Planet.PlanetLevel,
+                    snapshot.Planet.PlanetId,
+                    elapsedSeconds,
+                    mapW,
+                    mapH);
+                if (ToroidalMapEcs.ToroidalDistance(shipPos, moonPos, mapW, mapH) > zone)
+                    continue;
+
+                planetId = snapshot.Planet.PlanetId;
+                moonOrbitalVelocity = PlanetOrbitMath.GetMoonOrbitalVelocity(
+                    planetSize,
+                    snapshot.Planet.PlanetLevel,
+                    snapshot.Planet.PlanetId,
+                    elapsedSeconds);
+                return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// Moon orbital velocity for a latched <see cref="PlanetState.PlanetId"/>.
+        /// </summary>
+        static bool TryGetMoonOrbitalVelocity(
+            int planetId,
+            in NativeArray<PlanetMotorSnapshot> planets,
+            double elapsedSeconds,
+            out float3 moonOrbitalVelocity)
+        {
+            moonOrbitalVelocity = float3.zero;
+            if (!TryFindPlanetById(planetId, in planets, out PlanetMotorSnapshot snapshot))
+                return false;
+
+            float planetSize = math.max(0.25f, snapshot.Transform.Scale);
+            moonOrbitalVelocity = PlanetOrbitMath.GetMoonOrbitalVelocity(
+                planetSize,
+                snapshot.Planet.PlanetLevel,
+                snapshot.Planet.PlanetId,
+                elapsedSeconds);
+            return true;
         }
 
         /// <summary>

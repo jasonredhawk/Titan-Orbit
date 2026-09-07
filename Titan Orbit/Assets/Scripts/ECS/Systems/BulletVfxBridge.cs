@@ -127,14 +127,18 @@ namespace TitanOrbit.ECS
 
         /// <summary>
         /// Max live Sequence=0 anticipation tracers for the local player.
-        /// [TITAN-ORBIT] Enough for one multi-cannon volley (upgrade hulls up to ~8 weapons).
+        /// [TITAN-ORBIT] MEGA Shift volleys keep many long-travel tracers alive at once.
+        /// Cap=32 hid every muzzle after two fat volleys and looked like the guns jammed.
         /// Client fire still gates on FireCooldown + energy, so this is not an open RoF spam path.
-        /// Older Cap=1 hid every muzzle after the first in a volley.
         /// </summary>
-        public const int MaxLiveAnticipations = 32;
+        public const int MaxLiveAnticipations = 64;
 
         /// <summary>Live anticipation tracers (driver maintains; used to gate local enqueue).</summary>
         public static int LiveAnticipationCount { get; private set; }
+
+        /// <summary>How many Sequence=0 tracers may still be created this moment.</summary>
+        public static int AnticipationSlotsRemaining =>
+            math.max(0, MaxLiveAnticipations - LiveAnticipationCount);
 
         /// <summary>Allocates the next shot sequence id (server only).</summary>
         public static uint NextSequence() => s_NextSequence++;

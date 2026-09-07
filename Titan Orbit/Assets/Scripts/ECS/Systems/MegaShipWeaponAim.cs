@@ -84,7 +84,8 @@ namespace TitanOrbit.ECS
         {
             _ = dt;
             desiredWorldDir.y = 0f;
-            if (math.lengthsq(desiredWorldDir) < MinDirectionSq)
+            if (!math.isfinite(desiredWorldDir.x) || !math.isfinite(desiredWorldDir.z)
+                || math.lengthsq(desiredWorldDir) < MinDirectionSq)
                 return;
 
             desiredWorldDir = math.normalize(desiredWorldDir);
@@ -94,7 +95,8 @@ namespace TitanOrbit.ECS
             // is never wrapped; aim must already be a toroidal shortest-path direction.
             float3 hullFwd = math.rotate(hull.Rotation, new float3(0f, 0f, 1f));
             hullFwd.y = 0f;
-            if (math.lengthsq(hullFwd) < MinDirectionSq)
+            if (!math.isfinite(hullFwd.x) || !math.isfinite(hullFwd.z)
+                || math.lengthsq(hullFwd) < MinDirectionSq)
                 return;
             hullFwd = math.normalize(hullFwd);
 
@@ -175,7 +177,8 @@ namespace TitanOrbit.ECS
             aimPoint = hull.Position;
             float3 mouseDir = new float3(input.AimPlanarDir.x, 0f, input.AimPlanarDir.y);
             float dist = input.AimDistance;
-            if (math.lengthsq(mouseDir) < 0.01f || dist <= 0.05f)
+            if (!math.isfinite(dist) || !math.isfinite(mouseDir.x) || !math.isfinite(mouseDir.z)
+                || math.lengthsq(mouseDir) < 0.01f || dist <= 0.05f)
                 return false;
 
             mouseDir = math.normalize(mouseDir);

@@ -22,8 +22,9 @@ namespace TitanOrbit.ECS
     /// part of the collider box is inside the moon orbit shell (pivot-only tests missed long ships).
     /// Thrust while fully landed starts a forced takeoff — <see cref="ShipPhysicsDriveLogic"/>
     /// drives the hull out of the moon orbit zone away from the planet; this system does not
-    /// rewrite dock state during that window. Runs before <see cref="GemDepositSystem"/> so
-    /// deposit sees the latest dock flags.
+    /// rewrite dock state during that window. Approach speed is measured relative to the
+    /// moving moon so co-orbit during the landing dwell does not look like "too fast."
+    /// Runs before <see cref="GemDepositSystem"/> so deposit sees the latest dock flags.
     /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation)]
     [UpdateInGroup(typeof(SimulationSystemGroup))]
@@ -129,8 +130,7 @@ namespace TitanOrbit.ECS
 
                 if (!shipInput.ValueRO.Thrust && shipState.ValueRO.Team != TeamId.None)
                 {
-                    float speed = math.length(new float2(shipKinematics.ValueRO.Velocity.x, shipKinematics.ValueRO.Velocity.z));
-                    bool disruptLanding = IsDisruptingLanding(shipInput.ValueRO, speed);
+                    float3 shipVel = shipKinematics.ValueRO.Velocity;
 
                     // Tight MEGA collider box (half-extents). Regular ships leave this false
                     // and keep the pivot + 0.8 pad. mapW/mapH from MapStateSingleton.
@@ -219,18 +219,22 @@ namespace TitanOrbit.ECS
                         // [TITAN-ORBIT] Once fully landed, never treat co-orbit speed / shield bumps as
                         // "disrupt" — zeroing LandingApproachDelay made the client cinematic drop
                         // (ship pops to full size beside the moon) while MoonPlanetId stayed set.
+                        // Speed is relative to the moving pad — world-space speed includes moon
+                        // orbit (~0.8–1.1) and used to fight a still-looking approach.
                         bool alreadyLanded =
                             landingProgress >= GemEconomyConstants.MoonLandingCompleteThreshold;
                         if (inThisMoon && !alreadyLanded)
                         {
-                            if (disruptLanding)
+                            float3 relVel = shipVel - dockedMoonOrbitalVelocity;
+                            float padSpeed = math.length(new float2(relVel.x, relVel.z));
+                            if (IsDisruptingLanding(shipInput.ValueRO, padSpeed))
                             {
                                 approachDelay = 0f;
                             }
                             else
                             {
                                 approachDelay = math.min(approachDelayRequired, approachDelay + dt);
-                                if (approachDelay >= approachDelayRequired && speed <= MaxLandingSpeed)
+                                if (approachDelay >= approachDelayRequired && padSpeed <= MaxLandingSpeed)
                                     landingProgress = math.min(1f, landingProgress + dt / LandingDurationSeconds);
                             }
                         }

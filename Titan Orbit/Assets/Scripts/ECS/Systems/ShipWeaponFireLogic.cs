@@ -186,6 +186,15 @@ namespace TitanOrbit.ECS
             for (int i = 0; i < mounts.Length; i++)
             {
                 ShipWeaponMountElement m = mounts[i];
+                // NaN / +Inf cooldown never ticks down — MEGA Shift-aim once wrote a bad
+                // value and the barrel stayed mute until respawn.
+                if (!math.isfinite(m.FireCooldown) || m.FireCooldown > 60f)
+                {
+                    m.FireCooldown = 0f;
+                    mounts[i] = m;
+                    continue;
+                }
+
                 if (m.FireCooldown <= 0f)
                     continue;
                 m.FireCooldown = math.max(0f, m.FireCooldown - dt);

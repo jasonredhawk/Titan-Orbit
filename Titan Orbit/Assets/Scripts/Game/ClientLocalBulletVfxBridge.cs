@@ -58,6 +58,13 @@ namespace TitanOrbit.Game
         bool _energyPrimed;
 
         /// <summary>
+        /// Seconds predicted energy has sat below a stable (non-dropping) ghost pool.
+        /// MEGA Shift volleys can spend cosmetics on a tick the server never fires;
+        /// without a reconcile the predicted pool stays 0 and the guns look jammed.
+        /// </summary>
+        float _predictedBelowGhostStableTime;
+
+        /// <summary>
         /// [TITAN-ORBIT] Local energy-queue cursor mirroring server
         /// <see cref="ShipWeaponState.NextMountIndex"/>. Not ghosted — cosmetic only.
         /// </summary>
@@ -88,6 +95,7 @@ namespace TitanOrbit.Game
             _energyPrimed = false;
             _predictedEnergy = 0f;
             _lastGhostEnergy = 0f;
+            _predictedBelowGhostStableTime = 0f;
             _nextMountIndex = 0;
         }
 
@@ -139,6 +147,10 @@ namespace TitanOrbit.Game
             // Tick cooldowns even when Fire is released so barrels stay in sync with server cadence.
             ShipWeaponFireLogic.TickMountCooldowns(mounts, dt);
 
+            // Keep predicted energy aligned every frame — otherwise a stuck 0 pool
+            // (MEGA Shift cosmetics the server never spent) never reconciles.
+            SyncPredictedEnergy(shipState.CurrentEnergy, dt);
+
             if (!fireHeld)
                 return;
 
@@ -154,11 +166,16 @@ namespace TitanOrbit.Game
                     .IsActive(world.Time.ElapsedTime))
                 return;
 
-            // --- Sync predicted energy with ghost (before planning fire) ---
-            SyncPredictedEnergy(shipState.CurrentEnergy);
-
             bool isMega = world.EntityManager.HasComponent<MegaShipState>(shipEntity)
                           && world.EntityManager.GetComponentData<MegaShipState>(shipEntity).IsMega;
+
+            // [TITAN-ORBIT] MEGA Phase B only spends when ghosted Fire.IsSet. The
+            // ShootPressed fallback would dump every ready barrel of predicted energy
+            // on a tick the server ignores — after Shift-redirect that looks like a jam.
+            if (isMega
+                && (!world.EntityManager.HasComponent<ShipInput>(shipEntity)
+                    || !world.EntityManager.GetComponentData<ShipInput>(shipEntity).Fire.IsSet))
+                return;
 
             int firePowerAbilityLv = 0;
             if (world.EntityManager.HasComponent<ShipAttributeUpgradeState>(shipEntity))
@@ -196,9 +213,12 @@ namespace TitanOrbit.Game
                 return;
             }
 
-            // --- Cap pending anticipations — do not arm cooldowns / cursor if the queue is full ---
-            if (!BulletVfxBridge.CanEnqueueAnticipation(shotCount))
+            // --- Cap pending anticipations — fire what fits (do not mute the whole MEGA volley) ---
+            int room = BulletVfxBridge.AnticipationSlotsRemaining;
+            if (room <= 0)
                 return;
+            if (shotCount > room)
+                shotCount = room;
 
             float fallbackRefDamage = weaponCfg.ReferenceBulletDamage > 0f
                 ? weaponCfg.ReferenceBulletDamage
@@ -290,7 +310,10 @@ namespace TitanOrbit.Game
                     break;
 
                 // Arm this barrel’s client-side cooldown so we do not spam tracers faster than server.
-                mount.FireCooldown = planned.CooldownSeconds / math.max(0.05f, plan.FireRateMul);
+                float clientCooldown = planned.CooldownSeconds / math.max(0.05f, plan.FireRateMul);
+                mount.FireCooldown = math.isfinite(clientCooldown)
+                    ? math.clamp(clientCooldown, 0f, 60f)
+                    : planned.CooldownSeconds;
                 mounts[mountIdx] = mount;
                 spent += planned.EnergyCost;
                 enqueued++;
@@ -298,11 +321,11 @@ namespace TitanOrbit.Game
 
             if (enqueued > 0)
             {
-                // Prefer planned energy when every shot queued; otherwise spend only what enqueued.
-                float spend = enqueued == shotCount ? energySpend : spent;
-                _predictedEnergy = math.max(0f, _predictedEnergy - spend);
+                // Spend only what actually queued — a clipped MEGA volley must not drain the
+                // full plan or predicted energy sticks at 0 and later shots never plan.
+                _predictedEnergy = math.max(0f, _predictedEnergy - spent);
                 // Only advance the energy-queue cursor when the full plan enqueued (avoids skips).
-                if (enqueued == shotCount)
+                if (!isMega && enqueued == shotCount)
                     _nextMountIndex = nextMountIndexAfter;
             }
         }
@@ -352,23 +375,46 @@ namespace TitanOrbit.Game
         /// unlimited anticipation while the ghost value is still high after server spends.
         /// </summary>
         /// <param name="ghostEnergy">Current replicated <see cref="ShipState.CurrentEnergy"/>.</param>
-        void SyncPredictedEnergy(float ghostEnergy)
+        /// <param name="dt">Unity frame dt — used to time the stuck-below-ghost reconcile.</param>
+        void SyncPredictedEnergy(float ghostEnergy, float dt)
         {
             if (!_energyPrimed)
             {
                 _predictedEnergy = ghostEnergy;
                 _lastGhostEnergy = ghostEnergy;
+                _predictedBelowGhostStableTime = 0f;
                 _energyPrimed = true;
                 return;
             }
 
             // Server spent (or we overshot) — never stay above the ghost.
             if (ghostEnergy < _predictedEnergy - 0.01f)
+            {
                 _predictedEnergy = ghostEnergy;
-
-            // Regen / refill — ghost rose since last sample; adopt the new pool.
-            if (ghostEnergy > _lastGhostEnergy + 0.01f)
+                _predictedBelowGhostStableTime = 0f;
+            }
+            else if (ghostEnergy > _lastGhostEnergy + 0.01f)
+            {
+                // Regen / refill — ghost rose since last sample; adopt the new pool.
                 _predictedEnergy = ghostEnergy;
+                _predictedBelowGhostStableTime = 0f;
+            }
+            else if (ghostEnergy > _predictedEnergy + 0.01f)
+            {
+                // Predicted spent, ghost is stable and higher. Wait for the snapshot to
+                // drop (real server spend). If it never does — MEGA Shift cosmetics on a
+                // tick the server skipped — restore so Fire is not locked out.
+                _predictedBelowGhostStableTime += math.max(0f, dt);
+                if (_predictedBelowGhostStableTime >= 0.4f)
+                {
+                    _predictedEnergy = ghostEnergy;
+                    _predictedBelowGhostStableTime = 0f;
+                }
+            }
+            else
+            {
+                _predictedBelowGhostStableTime = 0f;
+            }
 
             _lastGhostEnergy = ghostEnergy;
         }
