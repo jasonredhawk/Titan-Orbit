@@ -44,11 +44,11 @@ namespace TitanOrbit.Simulation
         public const float HealthPerPeopleAmount = 4f;
         /// <summary>Legacy PeopleTransportProjectile amount → scale curve range.</summary>
         public const float PeopleAmountScaleMin = 1f;
-        public const float PeopleAmountScaleMax = 12f;
+        public const float PeopleAmountScaleMax = 36f;
         public const float VisualScaleMinMultiplier = 0.9f;
         /// <summary>
-        /// Max scale at <see cref="PeopleAmountScaleMax"/>. Raised above the old 2.1 so packed
-        /// +N spheres (e.g. L6 unload = one +6) read clearly larger than a lone +1.
+        /// Max scale at <see cref="PeopleAmountScaleMax"/>. Packed batches are
+        /// <c>shipLevel × planetLevel</c> (L6×L3 = +18, L6×L6 = +36).
         /// </summary>
         public const float VisualScaleMaxMultiplier = 2.7f;
 
@@ -85,10 +85,20 @@ namespace TitanOrbit.Simulation
         }
 
         /// <summary>
+        /// People packed into one load or unload sphere: <c>shipLevel × planetLevel</c>
+        /// (L6 ship at L3 planet → 18). Callers may still send a smaller partial when
+        /// surplus, cargo space, or remaining crew is tight.
+        /// </summary>
+        public static int GetTransferChunk(int shipLevel, int planetLevel)
+        {
+            return math.max(1, math.max(1, shipLevel) * math.max(1, planetLevel));
+        }
+
+        /// <summary>
         /// Multiplier on the prefab's authored localScale from carried people amount.
-        /// Dispatch packs each load/unload batch into one sphere: load Amount =
-        /// <c>min(ship, planet)</c>, unload Amount = ship level. Higher Amount → larger visual
-        /// (e.g. +1 ≈ 0.9×, +6 ≈ 1.7×, +12 ≈ 2.7× on the prefab's 0.25 base scale).
+        /// Dispatch packs each load/unload batch into one sphere: Amount =
+        /// <c>shipLevel × planetLevel</c>. Higher Amount → larger visual
+        /// (e.g. +1 ≈ 0.9×, +18 ≈ 1.7×, +36 ≈ 2.7× on the prefab's 0.25 base scale).
         /// </summary>
         public static float GetVisualScaleMultiplier(float peopleAmount)
         {

@@ -12,6 +12,8 @@ namespace TitanOrbit.UI
     /// <summary>
     /// Bottom-HUD / speedometer copy for the ship's live bullet type (Fireballs, Rift, …).
     /// Shows authored multipliers and Extra-Level-scaled abilities (burn, pull, push, …).
+    /// <see cref="ApplyLiveCombatMuls"/> writes those same fire-time multipliers onto
+    /// chip glance numbers so Fire Power / Bullet Speed change with the type name.
     /// Presentation-only — never writes ECS.
     /// </summary>
     public static class BulletBankHudCopy
@@ -45,6 +47,54 @@ namespace TitanOrbit.UI
                 return;
             live.FireBankIndex = BulletBankFireResolve.ResolveFireBankIndex(in loadout);
             live.HealingBulletsActive = loadout.HealingBulletsActive;
+        }
+
+        /// <summary>
+        /// Multiplies glance combat numbers by the live B-key / heal bank.
+        /// Chassis Extra Level stays on the hull; fire-time combat applies the same
+        /// <see cref="BulletBankStatModifiers"/> in <see cref="BulletBankCombatLogic.ApplyFireModifiers"/>.
+        /// Call after EffectiveStats / AllGunDps are filled — B-key changes the name
+        /// and these numbers together.
+        /// </summary>
+        public static void ApplyLiveCombatMuls(ref ShipSpeedometerStatTooltips.LiveContext live)
+        {
+            if (!BulletBankCombatLogic.TryGetProfile(live.FireBankIndex, out BulletBankProfile profile)
+                || profile == null)
+                return;
+
+            BulletBankStatModifiers m = profile.statModifiers;
+            float fp = SafeMul(m.firePowerMultiplier);
+            float spd = SafeMul(m.bulletSpeedMultiplier);
+            float rate = SafeMul(m.fireRateMultiplier);
+            float ram = SafeMul(m.rammingPowerMultiplier);
+            float range = SafeMul(m.bulletRangeMultiplier);
+            if (Mathf.Approximately(fp, 1f)
+                && Mathf.Approximately(spd, 1f)
+                && Mathf.Approximately(rate, 1f)
+                && Mathf.Approximately(ram, 1f)
+                && Mathf.Approximately(range, 1f))
+                return;
+
+            // --- Hull pools + next-buy steps ---
+            // PerExtra must scale too or the green + stays on the previous type.
+            ShipComponentAbilityStats s = live.EffectiveStats;
+            s.firePower *= fp;
+            s.firePowerPerExtraLevel *= fp;
+            s.bulletSpeed *= spd;
+            s.bulletSpeedPerExtraLevel *= spd;
+            s.fireRate *= rate;
+            s.fireRatePerExtraLevel *= rate;
+            s.rammingPower *= ram;
+            s.rammingPowerPerExtraLevel *= ram;
+            s.bulletRange *= range;
+            s.bulletRangePerExtraLevel *= range;
+            live.EffectiveStats = s;
+
+            // Fire Power chip is all-gun DPS (FP × rate). Both muls apply.
+            float dpsMul = fp * rate;
+            live.AllGunDps *= dpsMul;
+            live.AllGunDpsNextStep *= dpsMul;
+            live.RamRating *= ram;
         }
 
         /// <summary>One-line chip glance, e.g. <c>Fireballs</c> or <c>EnergySpheres  HEAL</c>.</summary>
@@ -428,10 +478,35 @@ namespace TitanOrbit.UI
         /// </summary>
         public static string BuildFamilyOrdnanceTooltip(ShipFamilyDefinition family, int shipLevel)
         {
+            return BuildOrdnanceTooltip(
+                BulletBankProfileUtility.ResolveBankIndexForFamily(family),
+                shipLevel);
+        }
+
+        /// <summary>
+        /// Gear-tab hover copy for one weapon part: that row's authored bank when set,
+        /// otherwise the family default. Same Extra-Level preview as the family rail.
+        /// </summary>
+        public static string BuildComponentOrdnanceTooltip(
+            ShipFamilyComponentEntry entry,
+            ShipFamilyDefinition family,
+            int shipLevel)
+        {
+            return BuildOrdnanceTooltip(
+                BulletBankProfileUtility.ResolveBankIndexForComponentEntry(entry, family),
+                shipLevel);
+        }
+
+        /// <summary>
+        /// Builds the WEAPON TYPE tooltip for a resolved bank index at this ship level
+        /// (no Fire Power purchases — store / family-rail preview).
+        /// </summary>
+        static string BuildOrdnanceTooltip(int bankIndex, int shipLevel)
+        {
             var sb = new StringBuilder(384);
             var live = new ShipSpeedometerStatTooltips.LiveContext
             {
-                FireBankIndex = BulletBankProfileUtility.ResolveBankIndexForFamily(family),
+                FireBankIndex = bankIndex,
                 Ship = new ShipState { ShipLevel = Mathf.Max(1, shipLevel) },
                 FirePowerAbilityLevel = 0,
             };

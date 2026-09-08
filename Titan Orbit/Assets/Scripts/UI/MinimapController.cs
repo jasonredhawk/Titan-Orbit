@@ -2046,11 +2046,13 @@ namespace TitanOrbit.UI
                 float dist = Mathf.Sqrt(dx * dx + dz * dz);
                 if (dist > minimapRadius)
                 {
-                    kv.Value.gameObject.SetActive(false);
+                    if (kv.Value.gameObject.activeSelf)
+                        kv.Value.gameObject.SetActive(false);
                     continue;
                 }
 
-                kv.Value.gameObject.SetActive(true);
+                if (!kv.Value.gameObject.activeSelf)
+                    kv.Value.gameObject.SetActive(true);
 
                 float normX = dx / minimapRadius;
                 float normZ = dz / minimapRadius;
@@ -2061,11 +2063,17 @@ namespace TitanOrbit.UI
                     // Asteroids can animate scale (e.g. respawn grow); keep blip size in sync — not only at first create.
                     float physicalSize = (kv.Key.localScale.x + kv.Key.localScale.y + kv.Key.localScale.z) / 3f;
                     float asteroidBlipSize = physicalSize * worldToMinimapScale * sizeScaleFactor * asteroidBlipScaleFactor;
-                    UpdateBlip(kv.Key, asteroidColor, asteroidBlipSize);
 
                     int instanceId = kv.Key.GetInstanceID();
                     asteroidLastWorldPosByInstanceId[instanceId] = worldPos;
-                    asteroidBlipPixelSizeByInstanceId[instanceId] = asteroidBlipSize;
+                    // [TITAN-ORBIT] Writing Image.color / sizeDelta every asteroid every frame
+                    // dirtied the HUD canvas while grinding (profiler: Minimap ~16 KB/frame).
+                    if (!asteroidBlipPixelSizeByInstanceId.TryGetValue(instanceId, out float prevSize) ||
+                        Mathf.Abs(prevSize - asteroidBlipSize) > 0.25f)
+                    {
+                        UpdateBlip(kv.Key, asteroidColor, asteroidBlipSize);
+                        asteroidBlipPixelSizeByInstanceId[instanceId] = asteroidBlipSize;
+                    }
                 }
             }
         }

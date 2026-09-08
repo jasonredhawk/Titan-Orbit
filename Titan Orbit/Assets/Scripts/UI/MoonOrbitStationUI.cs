@@ -17,6 +17,8 @@ namespace TitanOrbit.UI
     /// Client-only hybrid UI. Ship-tree unlock / purchase rules live here; when
     /// <see cref="GameManager.DebugFreeShipUpgradeTree"/> is enabled in the Inspector
     /// (NceGameRoot → Game Manager), every tree node is free to click for local testing.
+    /// <see cref="GameManager.DebugFreeGear"/> and <see cref="GameManager.DebugFreeCards"/>
+    /// skip gem prices on the store / spin path the same way.
     /// Unique MEGA cards disable after purchase and show the owner's name so every
     /// docked player can see who holds that hull.
     /// Paired with <see cref="MoonOrbitStoreSystem"/> on the server for purchase validation.
@@ -602,7 +604,10 @@ namespace TitanOrbit.UI
             }
         }
 
-        /// <summary>Builds the store button caption for the store purchase level (min of ship and planet).</summary>
+        /// <summary>
+        /// Builds the store button caption for the store purchase level (min of ship and planet).
+        /// When <see cref="GameManager.DebugFreeGear"/> is on, the gem price reads as Free.
+        /// </summary>
         static string FormatStoreRowLabel(StoreItemType item, int shipLevel)
         {
             int level = Mathf.Max(1, shipLevel);
@@ -611,9 +616,11 @@ namespace TitanOrbit.UI
                 ? StoreItemData.GetDisplayName(item, level)
                 : StoreItemData.GetDisplayName(item);
             string desc = StoreItemData.GetDescription(item, level);
+            // [TITAN-ORBIT] Same GameManager Gear toggle the moon-dock GEAR tab uses.
+            string priceText = GameManager.IsDebugFreeGearActive ? "Free" : $"{price:0}g";
             return string.IsNullOrEmpty(desc)
-                ? $"{name} — {price:0}g"
-                : $"{name} — {price:0}g\n<size=12>{desc}</size>";
+                ? $"{name} — {priceText}"
+                : $"{name} — {priceText}\n<size=12>{desc}</size>";
         }
 
         void OnNavSelected(OrbitDockSidebarPanelUI.NavTarget target)

@@ -15,12 +15,33 @@ namespace TitanOrbit
         public static bool FreeShipUpgradeTree;
 
         /// <summary>
+        /// When true, moon-orbit GEAR purchases (drones, rockets, mines, extra components)
+        /// skip the contributed-gem debit. Written by GameManager; read by
+        /// MoonOrbitStoreSystem and the Orbit Menu GEAR tab.
+        /// </summary>
+        public static bool FreeGear;
+
+        /// <summary>
+        /// When true, moon-orbit card spins skip the contributed-gem debit.
+        /// Written by GameManager; read by MoonOrbitStoreSystem and the Orbit Menu CARDS tab.
+        /// Take-card still requires a loadout slot and a matching spin offer.
+        /// </summary>
+        public static bool FreeCards;
+
+        /// <summary>
         /// When true (GameManager Test), B-key and the bullet-type HUD cycle every
         /// <c>BulletVfxBank</c> category including heal, even without that weapon in the loadout.
         /// When false (Production), only hull default plus purchased weapon components.
         /// Written by GameManager; dedicated server is forced false.
         /// </summary>
         public static bool CycleAllBulletBanks;
+
+        /// <summary>
+        /// When true (GameManager Test), T-key walks every <c>ThrusterVfxBank</c> family
+        /// flame on live ship proxies so you can compare / tune jets. When false, mounts
+        /// keep their purchased or host-family look. Dedicated server is forced false.
+        /// </summary>
+        public static bool CycleAllThrusterVfx;
 
         /// <summary>
         /// When true, ALT rocket fire does not consume equipment charges and works with an

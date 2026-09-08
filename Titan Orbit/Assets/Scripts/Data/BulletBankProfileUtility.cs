@@ -229,7 +229,76 @@ namespace TitanOrbit.Data
         }
 
         /// <summary>
+        /// Bank this store-row fires: authored <see cref="ShipFamilyComponentEntry.bulletPrefabIndex"/>
+        /// when set, otherwise the family's default gun bank.
+        /// Heal-authored weapons remap to the family gun — heal is a B-key toggle, not a Gear-tab type.
+        /// </summary>
+        /// <param name="entry">Weapon (or other) component row from a <see cref="ShipFamilyDefinition"/>.</param>
+        /// <param name="family">Family that owns the row; used when the part inherits the default bank.</param>
+        /// <returns>Zero-based <see cref="BulletVfxBank"/> category index (0 when both inputs are missing).</returns>
+        public static int ResolveBankIndexForComponentEntry(
+            ShipFamilyComponentEntry entry,
+            ShipFamilyDefinition family)
+        {
+            // --- Authored override ---
+            // [TITAN-ORBIT] -1 (default) means "same bank as this family's hull guns."
+            // A heal bank on a store weapon is remapped: players buy a gun, then toggle heal with B.
+            if (entry != null && entry.bulletPrefabIndex >= 0)
+            {
+                if (IsHealBankIndex(entry.bulletPrefabIndex))
+                    return ResolveBankIndexForFamily(family);
+                return entry.bulletPrefabIndex;
+            }
+
+            // --- Family default ---
+            return ResolveBankIndexForFamily(family);
+        }
+
+        /// <summary>
+        /// Player-facing default gun bank name for a ship family (Fireballs, Rift, Laserbolt, …).
+        /// Same string planet world labels and the Gear tab use. Empty when the family or bank is missing.
+        /// </summary>
+        public static string FormatFamilyBulletTypeName(ShipFamilyDefinition family)
+        {
+            if (family == null)
+                return string.Empty;
+
+            // --- Family default bank ---
+            // [TITAN-ORBIT] Each gameplay family authors one bulletPrefabIndex. Planet labels
+            // show that type under the family name so players can spot the gun from orbit.
+            int bankIndex = ResolveBankIndexForFamily(family);
+            return FormatBankCategoryName(bankIndex);
+        }
+
+        /// <summary>
+        /// Player-facing bank name for a Gear-tab weapon card (Fireballs, Rift, Laserbolt, …).
+        /// Empty when the VFX bank asset is missing or the resolved index has no category name.
+        /// </summary>
+        public static string FormatComponentBulletTypeName(
+            ShipFamilyComponentEntry entry,
+            ShipFamilyDefinition family)
+        {
+            // --- Resolve then look up ---
+            // Same index combat uses for this part; name matches Bullet Type HUD / B-key cycle.
+            int bankIndex = ResolveBankIndexForComponentEntry(entry, family);
+            return FormatBankCategoryName(bankIndex);
+        }
+
+        /// <summary>
+        /// Looks up the VFX-bank category name for <paramref name="bankIndex"/>.
+        /// Cached <see cref="BulletVfxBank.LoadDefault"/> — safe to call from UI refresh, not a hot sim tick.
+        /// </summary>
+        static string FormatBankCategoryName(int bankIndex)
+        {
+            var bank = BulletVfxBank.LoadDefault();
+            if (bank == null || !bank.TryGetCategoryName(bankIndex, out string name))
+                return string.Empty;
+            return name;
+        }
+
+        /// <summary>
         /// Bank for a purchased component: authored override, else the part's source family default.
+        /// Walks every family in the planet config until the component id is found.
         /// </summary>
         public static int ResolveBankIndexForComponent(string componentId, PlanetShipFamilyConfig config = null)
         {
@@ -240,14 +309,14 @@ namespace TitanOrbit.Data
             if (config?.families == null)
                 return 0;
 
+            // --- Find the authored row ---
+            // Component ids are unique across families in PlanetShipFamilyConfig.
             for (int i = 0; i < config.families.Count; i++)
             {
                 var family = config.families[i]?.shipFamilyDefinition;
                 if (family == null || !family.TryGetComponentEntry(componentId, out ShipFamilyComponentEntry entry))
                     continue;
-                if (entry.bulletPrefabIndex >= 0)
-                    return IsHealBankIndex(entry.bulletPrefabIndex) ? ResolveBankIndexForFamily(family) : entry.bulletPrefabIndex;
-                return ResolveBankIndexForFamily(family);
+                return ResolveBankIndexForComponentEntry(entry, family);
             }
 
             return 0;

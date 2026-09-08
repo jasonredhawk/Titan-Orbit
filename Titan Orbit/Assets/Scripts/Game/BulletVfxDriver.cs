@@ -41,9 +41,9 @@ namespace TitanOrbit.Game
     /// <see cref="PlanetaryDefenseClientHealthSync"/> — this driver does not write pad Health.
     /// </para>
     /// <para>
-    /// [TITAN-ORBIT] Sequence 0 HitRpcs are ram/grind (no tracer). Contact-enter and kill
-    /// still play the ship's bullet explosion. Grind pulses at 4 Hz are throttled so a
-    /// 3-second prefab does not stack ~12 lights/particles (Profiler GPU 9→26 ms while grinding).
+    /// [TITAN-ORBIT] Sequence 0 HitRpcs are ram/grind (no tracer). Non-kill pulses drive
+    /// <see cref="ShipRamSparksDriver"/> (one looping stream copied from the focused
+    /// bank's impact particles). Kill / plow still play the ship's bullet explosion once.
     /// </para>
     /// <para>
     /// [TITAN-ORBIT] Homing rockets (local-fired and incoming remote) dead-reckon on the
@@ -177,18 +177,6 @@ namespace TitanOrbit.Game
         /// <summary>Display-space radius for matching HitRpc to a recent predicted impact (no Sequence yet).</summary>
         const float PredictedImpactMatchRadius = 14f;
 
-        /// <summary>
-        /// Min seconds between Sequence-0 impact prefabs at the same rock. Grind pulses at
-        /// 4 Hz; each flash lives <see cref="BulletVisualFactory.DefaultImpactDuration"/> (3s).
-        /// </summary>
-        const float RamImpactVfxMinInterval = 1f;
-
-        /// <summary>XZ slop (world units) for treating two ram hits as the same rock.</summary>
-        const float RamImpactVfxPosSlop = 4f;
-
-        /// <summary>Shorter than the bullet default so a throttled grind flash does not linger.</summary>
-        const float RamGrindImpactDuration = 1.25f;
-
         readonly List<Tracer> _tracers = new List<Tracer>(64);
         readonly Dictionary<uint, int> _indexBySequence = new Dictionary<uint, int>(64);
 
@@ -213,12 +201,6 @@ namespace TitanOrbit.Game
         bool _hasLastObserverHull;
         /// <summary>Increments per anticipation CreateTracer so FIFO adopt survives RemoveAtSwap.</summary>
         int _nextAnticipationOrder;
-
-        /// <summary>Last Sequence-0 impact flash time (unscaled) for grind VFX throttle.</summary>
-        float _lastRamImpactVfxTime = -999f;
-
-        /// <summary>Last Sequence-0 flash XZ (logical / display flattened).</summary>
-        float3 _lastRamImpactVfxPos;
 
         /// <summary>[UNITY] Attach to session manager when the scene loads.</summary>
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
@@ -734,26 +716,32 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// True when this Sequence-0 flash should Instantiates (first contact / spaced grind).
-        /// Kill booms skip this and always play.
+        /// Spray direction for grind sparks: toward the local hull when this flash is ours,
+        /// else outward from the nearest cached obstacle center.
         /// </summary>
-        bool ShouldPlayRamImpactVfx(float3 hitPos)
+        static float3 EstimateRamSparkNormal(float3 displayPos, float3 logicalHit)
         {
-            float now = Time.unscaledTime;
-            if (now - _lastRamImpactVfxTime >= RamImpactVfxMinInterval)
-                return true;
+            if (ShipDisplayPose.HasLocalPose)
+            {
+                Vector3 p = ShipDisplayPose.LocalPosition;
+                float3 toShip = new float3(p.x - displayPos.x, 0f, p.z - displayPos.z);
+                float distSq = math.lengthsq(toShip);
+                if (distSq > 0.05f && distSq < 18f * 18f)
+                    return toShip * math.rsqrt(distSq);
+            }
 
-            float3 delta = hitPos - _lastRamImpactVfxPos;
-            delta.y = 0f;
-            return math.lengthsq(delta) > RamImpactVfxPosSlop * RamImpactVfxPosSlop;
-        }
+            if (BulletCosmeticHitQuery.TryFindNearestObstacle(logicalHit, out var obstacle))
+            {
+                float3 center = obstacle.LogicalCenter;
+                if (ToroidalDisplay.TryGetReferencePosition(out var reference))
+                    center = ToroidalDisplay.ToDisplayPosition(center, reference);
+                float3 n = displayPos - center;
+                n.y = 0f;
+                if (math.lengthsq(n) > 1e-6f)
+                    return math.normalize(n);
+            }
 
-        /// <summary>Latch the last Sequence-0 flash so nearby grind pulses can skip VFX.</summary>
-        void RememberRamImpactVfx(float3 hitPos)
-        {
-            _lastRamImpactVfxTime = Time.unscaledTime;
-            hitPos.y = 0f;
-            _lastRamImpactVfxPos = hitPos;
+            return new float3(0f, 0f, 1f);
         }
 
         /// <summary>
@@ -763,8 +751,9 @@ namespace TitanOrbit.Game
         /// Skips duplicate impact flash when client already predicted this Sequence / nearby impact.
         /// Mining floats always use HitRpc <c>AsteroidHealthAfter</c> (never cosmetic-predicted HP).
         /// Turret HP is written in <see cref="BulletHitRpcClientSystem"/> (not here).
-        /// Sequence 0 (ram/grind) plays VFX only — never adopts a tracer.
-        /// Grind pulses reuse Sequence 0; VFX is throttled (kill / first contact always play).
+        /// Sequence 0 (ram/grind) plays a looping impact-particle stream via
+        /// <see cref="ShipRamSparksDriver"/> — never adopts a tracer. Kill / plow still
+        /// rent the bullet impact once.
         /// </summary>
         void DrainHits()
         {
@@ -777,23 +766,26 @@ namespace TitanOrbit.Game
                 hitPos.y = 0f;
 
                 // --- Ram / grind: Sequence 0 means there is no tracer ---
-                // [TITAN-ORBIT] Reusing BulletHitRpc so every client gets the ship's bullet
-                // explosion scaled by ram damage. Nearest-tracer fallback would eat a live shot
-                // if you ram while firing. Predicted-bullet suppress would hide the ram boom.
+                // [TITAN-ORBIT] Non-kill pulses drive one looping stream copied from this
+                // ship's focused impact prefab. Renting the full explosion every pulse
+                // stacked Sci-Fi shells (GPU 9→26 ms). Kill / plow still play that boom
+                // once. Do not nearest-tracer-adopt — that ate live shots while ramming
+                // and firing.
                 if (hit.Sequence == 0)
                 {
                     var ramTeam = (TeamId)hit.OwnerTeam;
                     int ramBank = math.max(0, hit.BankIndex);
                     float ramScale = hit.ScaleMultiplier > 0f ? hit.ScaleMultiplier : 1f;
                     bool killBoom = hit.AsteroidHealthAfter >= 0f && hit.AsteroidHealthAfter <= 0.01f;
-                    if (killBoom || ShouldPlayRamImpactVfx(hitPos))
+                    float3 display = new float3(hitPos.x, 0f, hitPos.z);
+                    float3 sparkNormal = EstimateRamSparkNormal(display, hit.HitPosition);
+                    ShipRamSparksDriver.NotifyRamContact(
+                        display, sparkNormal, ramScale, killBoom, ramBank, ramTeam);
+                    if (killBoom)
                     {
-                        float duration = killBoom
-                            ? BulletVisualFactory.DefaultImpactDuration
-                            : RamGrindImpactDuration;
                         BulletImpactAttach.PlayAtLogicalPoint(
-                            hit.HitPosition, _bank, ramBank, ramTeam, hit.Damage, ramScale, duration);
-                        RememberRamImpactVfx(hitPos);
+                            hit.HitPosition, _bank, ramBank, ramTeam, hit.Damage, ramScale,
+                            BulletVisualFactory.DefaultImpactDuration);
                     }
 
                     var ramSynth = new Tracer { OwnerNetworkId = 0, IsAnticipation = false };

@@ -92,6 +92,28 @@ namespace TitanOrbit.Data
             return GetFamilyByConfigIndex(configIndex);
         }
 
+        /// <summary>
+        /// Family definition whose <see cref="ShipFamilyDefinition.familyId"/> matches
+        /// <paramref name="familyId"/> (AstroEagle, CosmicShark, …).
+        /// </summary>
+        public ShipFamilyDefinition GetFamilyDefinitionByFamilyId(string familyId)
+        {
+            if (string.IsNullOrWhiteSpace(familyId) || families == null)
+                return null;
+
+            string want = familyId.Trim();
+            for (int i = 0; i < families.Count; i++)
+            {
+                ShipFamilyDefinition family = families[i]?.shipFamilyDefinition;
+                if (family == null || string.IsNullOrWhiteSpace(family.familyId))
+                    continue;
+                if (string.Equals(family.familyId.Trim(), want, StringComparison.OrdinalIgnoreCase))
+                    return family;
+            }
+
+            return null;
+        }
+
         /// <summary>Gets a family entry by config list index (0 = home / AstroEagle).</summary>
         public ShipFamilyEntry GetFamilyByConfigIndex(int configIndex)
         {
@@ -136,6 +158,31 @@ namespace TitanOrbit.Data
             }
 
             return string.Empty;
+        }
+
+        /// <summary>
+        /// Family whose default gun bank is <paramref name="bankIndex"/>
+        /// (unique <c>bulletPrefabIndex</c> per gameplay family).
+        /// </summary>
+        public bool TryGetFamilyForDefaultBank(int bankIndex, out ShipFamilyDefinition family)
+        {
+            family = null;
+            if (families == null || bankIndex < 0)
+                return false;
+
+            for (int i = 0; i < families.Count; i++)
+            {
+                ShipFamilyDefinition candidate = families[i]?.shipFamilyDefinition;
+                if (candidate == null)
+                    continue;
+                if (BulletBankProfileUtility.ResolveBankIndexForFamily(candidate) == bankIndex)
+                {
+                    family = candidate;
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         /// <summary>Designer name, else spaced familyId (AstroEagle → Astro Eagle).</summary>
@@ -256,6 +303,21 @@ namespace TitanOrbit.Data
         /// <param name="planetId">Stable <c>PlanetState.PlanetId</c>.</param>
         public string GetPlanetDisplayNameFromFamilyId(int planetId) =>
             GetPlanetDisplayName(planetId, isHomePlanet: false, shipFamilyConfigIndex: -1);
+
+        /// <summary>
+        /// Default gun type for this planet's family (Fireballs, Rift, …).
+        /// World planet labels show this under the family name. Empty when the family or bank is missing.
+        /// </summary>
+        /// <param name="planetId">Stable <c>PlanetState.PlanetId</c>.</param>
+        /// <param name="isHomePlanet">True for team home worlds — forces config index 0.</param>
+        /// <param name="shipFamilyConfigIndex">Ghosted <c>PlanetState.ShipFamilyConfigIndex</c> (−1 = infer).</param>
+        public string GetPlanetBulletTypeName(int planetId, bool isHomePlanet, int shipFamilyConfigIndex = -1)
+        {
+            // --- Same family row as the planet name ---
+            ShipFamilyEntry entry = GetFamilyForPlanet(planetId, isHomePlanet, shipFamilyConfigIndex);
+            ShipFamilyDefinition family = entry != null ? entry.shipFamilyDefinition : null;
+            return BulletBankProfileUtility.FormatFamilyBulletTypeName(family);
+        }
 
         /// <summary>
         /// Resolves the player-facing planet name using home flag + ghosted family index.

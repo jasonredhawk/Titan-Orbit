@@ -26,7 +26,7 @@ namespace TitanOrbit.ECS
 
         /// <summary>
         /// Fractional accumulator toward the next load batch.
-        /// Ideal batch size is <c>min(shipLevel, planetLevel)</c> people in one packed sphere.
+        /// Ideal batch size is <c>shipLevel × planetLevel</c> people in one packed sphere.
         /// When surplus above the 50% reserve is smaller, dispatch still fires a partial amount
         /// (often +1) so multiple orbiting ships can share trickle people.
         /// </summary>
@@ -34,7 +34,7 @@ namespace TitanOrbit.ECS
 
         /// <summary>
         /// Fractional accumulator toward the next unload batch.
-        /// Batch size is ship level only — one packed transport sphere carrying that many people.
+        /// Ideal batch size is <c>shipLevel × planetLevel</c> — one packed transport sphere.
         /// </summary>
         public float UnloadAccumulator;
     }

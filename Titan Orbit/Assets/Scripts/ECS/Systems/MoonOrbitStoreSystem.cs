@@ -18,7 +18,10 @@ namespace TitanOrbit.ECS
     /// Validates team, planet id, and contributed gem balances before mutating ship/planet state.
     /// [TITAN-ORBIT] Drones, extra components, and card spins sell at
     /// <c>min(ship level, docked planet level)</c> — a high-level ship on a low-level moon
-    /// cannot buy max-tier gear there.
+    /// cannot buy max-tier gear there. GameManager debug toggles
+    /// (<see cref="TitanOrbitDebugFlags.FreeShipUpgradeTree"/>,
+    /// <see cref="TitanOrbitDebugFlags.FreeGear"/>,
+    /// <see cref="TitanOrbitDebugFlags.FreeCards"/>) skip gem debits for local Editor testing.
     /// Local Host also calls the public <c>Try*ForNetworkId</c> helpers directly (SendRpc on
     /// ServerWorld never becomes <see cref="ReceiveRpcCommandRequest"/>).
     /// Paired with <see cref="MoonOrbitRpcClientSystem"/> on the client.
@@ -594,7 +597,8 @@ namespace TitanOrbit.ECS
         /// <summary>
         /// Buys a drone / rocket / mine pack into an empty equipment slot.
         /// Drones stamp <c>ItemLevel = min(ship, docked planet)</c>.
-        /// Local Host calls this directly — do not SendRpc on ServerWorld.
+        /// When <see cref="TitanOrbitDebugFlags.FreeGear"/> is on, skips the gem debit
+        /// (slot limits still apply). Local Host calls this directly — do not SendRpc on ServerWorld.
         /// </summary>
         public static bool TryPurchaseStoreItemForNetworkId(
             EntityManager em,
@@ -640,7 +644,11 @@ namespace TitanOrbit.ECS
             // on a level-3 moon can only buy a level-3 drone (price, HP, and damage).
             int purchaseLevel = ResolveStorePurchaseLevel(em, shipEntity, ship, storePlanetIdHint: 0);
             float cost = StoreItemData.GetPrice(itemType, purchaseLevel);
-            if (!ContributedGemsLogic.TrySpend(em, homeEntity, networkId, cost))
+
+            // [TITAN-ORBIT] GameManager "Debug — Gear" publishes TitanOrbitDebugFlags.FreeGear
+            // so local Editor / MPPM hosts can fill a loadout without a gem bank.
+            bool debugFree = TitanOrbitDebugFlags.FreeGear;
+            if (!debugFree && !ContributedGemsLogic.TrySpend(em, homeEntity, networkId, cost))
             {
                 message = "Not enough contributed gems.";
                 return false;
@@ -649,7 +657,8 @@ namespace TitanOrbit.ECS
             byte sourceFamilyIndex = ResolveDroneSourceFamilyIndex(em, shipEntity);
             if (!TryAddEquipmentItem(em, shipEntity, itemType, ship.ShipLevel, purchaseLevel, sourceFamilyIndex, out message))
             {
-                ContributedGemsLogic.Refund(em, homeEntity, networkId, cost);
+                if (!debugFree)
+                    ContributedGemsLogic.Refund(em, homeEntity, networkId, cost);
                 return false;
             }
 
@@ -664,6 +673,8 @@ namespace TitanOrbit.ECS
         /// <summary>
         /// Buys a ship-family extra component by stable id into an empty equipment slot.
         /// Price and stamped ItemLevel use <c>min(ship, docked planet)</c>.
+        /// When <see cref="TitanOrbitDebugFlags.FreeGear"/> is on, skips the gem debit
+        /// (already-equipped and slot limits still apply).
         /// </summary>
         public static bool TryPurchaseStoreComponentForNetworkId(
             EntityManager em,
@@ -729,7 +740,11 @@ namespace TitanOrbit.ECS
             // min(ship, docked planet) so a high-level hull cannot buy max-tier parts on a weak world.
             int purchaseLevel = ResolveStorePurchaseLevel(em, shipEntity, ship, storePlanetIdHint: 0);
             float cost = ShipComponentStoreData.GetComponentGemPrice(entry, purchaseLevel);
-            if (!ContributedGemsLogic.TrySpend(em, homeEntity, networkId, cost))
+
+            // [TITAN-ORBIT] Same GameManager Gear toggle as drones — skip the gem debit only.
+            // Already-equipped and empty-slot checks still run so debug cannot stack duplicates.
+            bool debugFree = TitanOrbitDebugFlags.FreeGear;
+            if (!debugFree && !ContributedGemsLogic.TrySpend(em, homeEntity, networkId, cost))
             {
                 message = "Not enough contributed gems.";
                 return false;
@@ -737,7 +752,8 @@ namespace TitanOrbit.ECS
 
             if (!TryAddShipComponentItem(em, shipEntity, componentId, ship.ShipLevel, purchaseLevel, out message))
             {
-                ContributedGemsLogic.Refund(em, homeEntity, networkId, cost);
+                if (!debugFree)
+                    ContributedGemsLogic.Refund(em, homeEntity, networkId, cost);
                 return false;
             }
 
@@ -750,7 +766,8 @@ namespace TitanOrbit.ECS
         /// Pays spin cost, rolls three weighted cards, stores a pending offer for take-card.
         /// Spin tier is <c>min(ship, store planet)</c> so a high-level ship on a low-level moon
         /// only sees that planet's card tier. On Local Host the caller also mirrors offer ids
-        /// into <see cref="MoonOrbitClientState"/>.
+        /// into <see cref="MoonOrbitClientState"/>. When <see cref="TitanOrbitDebugFlags.FreeCards"/>
+        /// is on, skips the gem debit (empty-slot and pool checks still apply).
         /// </summary>
         public static bool TryCardSpinForNetworkId(
             EntityManager em,
@@ -822,7 +839,12 @@ namespace TitanOrbit.ECS
             }
 
             float spinCost = GetCardSpinCost(spinTier);
-            if (!ContributedGemsLogic.TrySpend(em, homeEntity, networkId, spinCost))
+
+            // [TITAN-ORBIT] GameManager "Debug — Cards" publishes TitanOrbitDebugFlags.FreeCards
+            // so local Editor / MPPM hosts can spin without a gem bank. Empty-slot and pool
+            // checks still apply; take-card still has to match this offer.
+            bool debugFree = TitanOrbitDebugFlags.FreeCards;
+            if (!debugFree && !ContributedGemsLogic.TrySpend(em, homeEntity, networkId, spinCost))
             {
                 message = "Not enough contributed gems.";
                 return false;

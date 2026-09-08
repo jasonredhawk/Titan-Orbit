@@ -11,8 +11,9 @@ namespace TitanOrbit.UI
     /// Shows/hides the moon orbit station menu when the local ship lands on a friendly gem moon.
     /// Opens <see cref="OrbitStationUI"/> with the docked store planet and the team's home planet id
     /// (needed for Bank / contributed-gem RPC polls). Client-only presentation controller.
-    /// While the ship is in a gem-moon dock zone we tick <see cref="OrbitStationUI.TickHiddenWarmup"/>
-    /// so chrome + the ship tree are built before the 0.5s cinematic pause ends.
+    /// While the ship is flying (not in a dock zone) we tick
+    /// <see cref="OrbitStationUI.TickIdleOrbitMenuCache"/> so every planet family's Orbit Menu
+    /// is already built. Landing must not construct widgets — that made the approach hitch.
     /// <para>
     /// [TITAN-ORBIT] Deposit intent stays on while truly docked. Failed ECS reads and brief
     /// <c>LandingProgress</c> dips use hysteresis — they must not call <see cref="HideMenuImmediate"/>
@@ -31,6 +32,12 @@ namespace TitanOrbit.UI
         /// Prevents one-frame LandingProgress / planet-cache gaps from killing deposit.
         /// </summary>
         const float UndockHysteresisSeconds = 0.75f;
+
+        /// <summary>
+        /// In-game frames to wait after join Instantiates before idle Orbit Menu caching.
+        /// Gives spawn / camera a quiet window so the cache does not hitch the first flight.
+        /// </summary>
+        const int IdleCacheMinInGameFrames = 90;
 
         /// <summary>
         /// [UNITY] Ensures one controller exists after scene load so moon dock can open the store
@@ -69,9 +76,9 @@ namespace TitanOrbit.UI
         int _latchedHomePlanetId;
 
         /// <summary>
-        /// Each frame: while the local ship is in a gem-moon dock zone, tick hidden Orbit Menu
-        /// warmup; if the ship is fully landed on a friendly moon (and not thrusting), open the
-        /// overlay after a short cinematic pause; otherwise hide and clear deposit intent.
+        /// Each frame: while flying, cache Orbit Menus for every known planet; if the ship is
+        /// fully landed on a friendly moon (and not thrusting), open the overlay after a short
+        /// cinematic pause; otherwise hide and clear deposit intent.
         /// </summary>
         void Update()
         {
@@ -126,6 +133,7 @@ namespace TitanOrbit.UI
                     return;
                 }
 
+                MaybeTickIdleOrbitMenuCache(inDockZone: false);
                 return;
             }
 
@@ -133,17 +141,12 @@ namespace TitanOrbit.UI
             if (moonDock.MoonPlanetId == 0)
             {
                 HideMenuImmediate();
+                MaybeTickIdleOrbitMenuCache(inDockZone: false);
                 return;
             }
 
-            // --- Hidden Orbit Menu warmup ---
-            // [TITAN-ORBIT] Approach delay (0.5s) + landing (1s) + cinematic pause (0.5s)
-            // is ~2s. We spend that building chrome + the ship tree one phase per frame
-            // so ShowFromEcs is a fade-in, not a layout storm.
-            int warmupHomePlanetId = 0;
-            if (EcsGameBridge.TryGetPlanetStateByPlanetId(moonDock.MoonPlanetId, out var warmupPlanet))
-                warmupHomePlanetId = ResolveHomePlanetId(ship.Team, warmupPlanet, moonDock.MoonPlanetId);
-            GetOrCreateUi().TickHiddenWarmup(moonDock.MoonPlanetId, warmupHomePlanetId);
+            // [TITAN-ORBIT] Do not build Orbit Menu widgets in the dock zone. That was the
+            // laggy landing. Caching happens only while flying (MaybeTickIdleOrbitMenuCache).
 
             // Soft undock: landing progress dipped — hysteresis while session active.
             if (moonDock.LandingProgress < GemEconomyConstants.MoonLandingCompleteThreshold)
@@ -243,8 +246,36 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
+        /// Builds Orbit Menu chrome + every planet family's GEAR grid while the ship is flying.
+        /// Skips during join Instantiates and during any dock / landing so approach stays smooth.
+        /// </summary>
+        /// <param name="inDockZone">True when <c>ShipMoonDockState.MoonPlanetId</c> is set.</param>
+        void MaybeTickIdleOrbitMenuCache(bool inDockZone)
+        {
+            // --- Idle cache gate ---
+            // [TITAN-ORBIT] Landing used to Instantiates the tree and store on approach frames.
+            // That made the cinematic hitch. We only construct while free-flying.
+            if (inDockZone)
+                return;
+            if (_menuVisible || _landingCompleteTime >= 0f)
+                return;
+            if (ClientJoinSettleCache.Settling || ClientJoinSettleCache.ShouldSkipMapBodyQueries)
+                return;
+            if (ClientJoinSettleCache.InGameFrames < IdleCacheMinInGameFrames)
+                return;
+            if (!EcsGameBridge.TryGetLocalShipState(out var ship))
+                return;
+            if (ship.Team == TeamId.None || ship.AwaitingTeamSelection || ship.IsDead)
+                return;
+
+            int homePlanetId = 0;
+            EcsGameBridge.TryGetHomePlanetIdForTeam(ship.Team, out homePlanetId);
+            GetOrCreateUi().TickIdleOrbitMenuCache(homePlanetId, homePlanetId);
+        }
+
+        /// <summary>
         /// Returns the cached <see cref="OrbitStationUI"/>, creating the empty host on first use.
-        /// Widget construction is deferred to <see cref="OrbitStationUI.TickHiddenWarmup"/> so
+        /// Widget construction is deferred to <see cref="OrbitStationUI.TickIdleOrbitMenuCache"/> so
         /// GetOrCreate itself stays cheap.
         /// </summary>
         OrbitStationUI GetOrCreateUi()

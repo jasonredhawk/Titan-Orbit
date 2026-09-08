@@ -9,9 +9,9 @@ using UnityEngine.Rendering;
 namespace TitanOrbit.Game
 {
     /// <summary>
-    /// World-space label floating above a planet body: ship family name (title), optional
-    /// capture-contributor name, plus population.
-    /// Layout reads top-to-bottom as family title, a small "Captured by" caption, the
+    /// World-space label floating above a planet body: ship family name (title), that family's
+    /// default bullet type in a smaller line, optional capture-contributor name, plus population.
+    /// Layout reads top-to-bottom as family title, bullet type, a small "Captured by" caption, the
     /// player who delivered the most troops during capture, then <b>current people</b>,
     /// then the population <b>capacity</b>
     /// (base size/level max, and when territory triangles apply, <c>base + bonus</c>).
@@ -31,6 +31,7 @@ namespace TitanOrbit.Game
         int _cachedContributorNetworkId = int.MinValue;
         bool _hasCachedPaint;
         string _cachedTitle;
+        string _cachedBulletType;
         string _cachedContributorName;
         bool _legacyIconRemoved;
         /// <summary>
@@ -52,6 +53,9 @@ namespace TitanOrbit.Game
         /// <summary>Ship family title uses the same size as the capacity line.</summary>
         const float TitleFontSize = MaxFontSize;
 
+        /// <summary>Family gun type under the planet name — smaller subtitle, still readable in orbit.</summary>
+        const float BulletTypeFontSize = TitleFontSize * 0.62f;
+
         /// <summary>Player name on the capture credit — smaller than the family title.</summary>
         const float ContributorNameFontSize = TitleFontSize * 0.55f;
 
@@ -60,6 +64,9 @@ namespace TitanOrbit.Game
 
         /// <summary>Local-space gap between family title and the population stack.</summary>
         const float TitleGapLocal = 2f;
+
+        /// <summary>Tight gap between the family name and the bullet-type subtitle.</summary>
+        const float TitleToBulletTypeGapLocal = 0.28f;
 
         /// <summary>Local-space gap around the capture-contributor line.</summary>
         const float ContributorGapLocal = 0.35f;
@@ -79,6 +86,9 @@ namespace TitanOrbit.Game
         /// <summary>TMP face dilate paired with outline so glyphs stay solid.</summary>
         const float FaceDilate = 0.12f;
 
+        /// <summary>Bullet-type subtitle is a bit dimmer than the family name above it.</summary>
+        const float BulletTypeAlpha = 0.72f;
+
         /// <summary>Capacity-line alpha vs full team color (current stays opaque).</summary>
         const float MaxLineAlpha = 0.6f;
 
@@ -92,6 +102,7 @@ namespace TitanOrbit.Game
 
         Transform _labelRoot;
         TextMeshPro _titleText;
+        TextMeshPro _bulletTypeText;
         CaptureCreditRow _captureCredit;
         StatRow _populationRow;
 
@@ -134,6 +145,7 @@ namespace TitanOrbit.Game
             if (_labelReady &&
                 _labelRoot != null &&
                 _titleText != null &&
+                _bulletTypeText != null &&
                 _captureCredit.CaptionText != null &&
                 _captureCredit.NameText != null &&
                 _populationRow.CurrentText != null &&
@@ -151,6 +163,7 @@ namespace TitanOrbit.Game
 
             _labelRoot = CreateLabelRoot("PlanetStatsLabel", transform);
             _titleText = CreateValueText(_labelRoot, "FamilyTitle", TitleFontSize, Color.white);
+            _bulletTypeText = CreateValueText(_labelRoot, "BulletType", BulletTypeFontSize, Color.white);
             _captureCredit = CreateCaptureCreditRow(_labelRoot, "CaptureCredit");
             _populationRow = CreatePopulationRow(_labelRoot, "PopulationRow");
 
@@ -177,6 +190,9 @@ namespace TitanOrbit.Game
 
             if (_titleText == null)
                 _titleText = _labelRoot.Find("FamilyTitle")?.GetComponent<TextMeshPro>();
+
+            if (_bulletTypeText == null)
+                _bulletTypeText = _labelRoot.Find("BulletType")?.GetComponent<TextMeshPro>();
 
             if (_captureCredit.Root == null)
             {
@@ -206,6 +222,10 @@ namespace TitanOrbit.Game
 
             RemoveLegacySingleLineContributor(_labelRoot);
 
+            // Play Mode recompile: older labels have no BulletType child — add it once.
+            if (_bulletTypeText == null)
+                _bulletTypeText = CreateValueText(_labelRoot, "BulletType", BulletTypeFontSize, Color.white);
+
             if (_captureCredit.CaptionText == null || _captureCredit.NameText == null)
                 _captureCredit = CreateCaptureCreditRow(_labelRoot, "CaptureCredit");
 
@@ -213,6 +233,7 @@ namespace TitanOrbit.Game
             _populationRow.MaxText.richText = true;
 
             ApplyReadableTextMaterial(_titleText);
+            ApplyReadableTextMaterial(_bulletTypeText);
             ApplyReadableTextMaterial(_captureCredit.CaptionText);
             ApplyReadableTextMaterial(_captureCredit.NameText);
             ApplyReadableTextMaterial(_populationRow.CurrentText);
@@ -234,6 +255,7 @@ namespace TitanOrbit.Game
                 Destroy(_labelRoot.gameObject);
                 _labelRoot = null;
                 _titleText = null;
+                _bulletTypeText = null;
                 _captureCredit = default;
                 _populationRow = default;
             }
@@ -454,13 +476,15 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Centers title, capture-contributor, and population row as one block on the planet label.
+        /// Centers family name, smaller bullet-type subtitle, capture credit, and population
+        /// as one vertical block on the planet label.
         /// </summary>
         /// <param name="showTitle">False when this planet has no ship family name.</param>
+        /// <param name="showBulletType">False when the family has no named gun bank.</param>
         /// <param name="showContributor">False when this planet has no capture contributor.</param>
-        void LayoutLabelBlock(bool showTitle, bool showContributor)
+        void LayoutLabelBlock(bool showTitle, bool showBulletType, bool showContributor)
         {
-            // --- LayoutLabelBlock ---
+            // --- Measure each visible row ---
             if (_titleText == null)
                 return;
 
@@ -474,6 +498,14 @@ namespace TitanOrbit.Game
                 titleHeight = _titleText.preferredHeight;
             }
 
+            float bulletTypeHeight = 0f;
+            if (showBulletType && _bulletTypeText != null)
+            {
+                _bulletTypeText.fontSize = BulletTypeFontSize;
+                _bulletTypeText.ForceMeshUpdate();
+                bulletTypeHeight = _bulletTypeText.preferredHeight;
+            }
+
             float creditHeight = 0f;
             if (showContributor && _captureCredit.Root != null)
             {
@@ -481,17 +513,23 @@ namespace TitanOrbit.Game
                 creditHeight = GetCaptureCreditHeight(_captureCredit);
             }
 
-            bool hasHeader = showTitle || showContributor;
-            float nameGap = showTitle && showContributor ? ContributorGapLocal : 0f;
+            // --- Stack heights ---
+            // Name block = family title + optional gun-type subtitle. Credit sits under that.
+            bool hasNameBlock = showTitle || showBulletType;
+            bool hasHeader = hasNameBlock || showContributor;
+            float titleTypeGap = showTitle && showBulletType ? TitleToBulletTypeGapLocal : 0f;
+            float nameToCreditGap = hasNameBlock && showContributor ? ContributorGapLocal : 0f;
             float headerGap = hasHeader ? TitleGapLocal : 0f;
             float populationHeight = GetStatRowHeight(_populationRow);
             float headerHeight = (showTitle ? titleHeight : 0f)
+                + (showBulletType ? bulletTypeHeight : 0f)
                 + (showContributor ? creditHeight : 0f)
-                + nameGap
+                + titleTypeGap
+                + nameToCreditGap
                 + headerGap;
             float totalHeight = populationHeight + headerHeight;
 
-            // Stack: family title + capture credit as one identity, then the population numbers.
+            // --- Place from the top of the centered stack ---
             float cursor = totalHeight * 0.5f;
             if (showTitle)
             {
@@ -500,7 +538,21 @@ namespace TitanOrbit.Game
                     0f,
                     cursor - titleHeight * 0.5f,
                     0f);
-                cursor -= titleHeight + nameGap;
+                cursor -= titleHeight + titleTypeGap;
+            }
+
+            if (showBulletType && _bulletTypeText != null)
+            {
+                _bulletTypeText.fontStyle = FontStyles.Bold;
+                _bulletTypeText.transform.localPosition = new Vector3(
+                    0f,
+                    cursor - bulletTypeHeight * 0.5f,
+                    0f);
+                cursor -= bulletTypeHeight + nameToCreditGap;
+            }
+            else if (showTitle && showContributor)
+            {
+                cursor -= nameToCreditGap;
             }
 
             if (showContributor && _captureCredit.Root != null)
@@ -511,7 +563,7 @@ namespace TitanOrbit.Game
                     0f);
                 cursor -= creditHeight + headerGap;
             }
-            else if (showTitle)
+            else if (hasNameBlock)
             {
                 cursor -= headerGap;
             }
@@ -606,6 +658,22 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
+        /// Resolves this planet family's default gun type (Fireballs, Rift, …).
+        /// Same string the Gear tab and Bullet Type HUD show for that family.
+        /// </summary>
+        static string ResolveShipFamilyBulletType(in PlanetState state)
+        {
+            var config = ShipFamilyConfig;
+            if (config == null)
+                return string.Empty;
+
+            return config.GetPlanetBulletTypeName(
+                state.PlanetId,
+                state.IsHomePlanet,
+                state.ShipFamilyConfigIndex);
+        }
+
+        /// <summary>
         /// Formats the capacity line under current population.
         /// No bonus → just the base max digits. With triangle bonus → <c>base + bonus</c>
         /// (no words — large current above / smaller capacity below already reads as now vs max).
@@ -652,7 +720,8 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Pulls planet state + triangle bonus, then writes title / current / capacity when dirty.
+        /// Pulls planet state + triangle bonus, then writes family name, bullet type,
+        /// capture credit, and population when dirty.
         /// </summary>
         /// <returns>True when TMP / layout need ApplyLayout.</returns>
         bool Refresh()
@@ -663,6 +732,7 @@ namespace TitanOrbit.Game
 
             EnsureLabel();
             if (_titleText == null ||
+                _bulletTypeText == null ||
                 _captureCredit.CaptionText == null ||
                 _captureCredit.NameText == null ||
                 _populationRow.CurrentText == null ||
@@ -726,7 +796,9 @@ namespace TitanOrbit.Game
             }
 
             string familyTitle = ResolveShipFamilyTitle(state);
+            string bulletType = ResolveShipFamilyBulletType(state);
             bool hasTitle = !string.IsNullOrEmpty(familyTitle);
+            bool hasBulletType = hasTitle && !string.IsNullOrEmpty(bulletType);
 
             _hasCachedPaint = true;
             _cachedPopulation = state.Population;
@@ -737,6 +809,7 @@ namespace TitanOrbit.Game
             _cachedIsHomePlanet = state.IsHomePlanet;
             _cachedContributorNetworkId = contributorId;
             _cachedTitle = familyTitle;
+            _cachedBulletType = bulletType;
             _cachedContributorName = contributorName;
 
             Color teamColor = state.Ownership.ToColor();
@@ -744,6 +817,11 @@ namespace TitanOrbit.Game
             _titleText.gameObject.SetActive(hasTitle);
             _titleText.text = hasTitle ? familyTitle : string.Empty;
             _titleText.color = teamColor;
+
+            // Subtitle under the family name — same bank that family fires as its default gun.
+            _bulletTypeText.gameObject.SetActive(hasBulletType);
+            _bulletTypeText.text = hasBulletType ? bulletType : string.Empty;
+            _bulletTypeText.color = WithAlpha(teamColor, BulletTypeAlpha);
 
             if (_captureCredit.Root != null)
                 _captureCredit.Root.gameObject.SetActive(hasContributor);
@@ -759,7 +837,7 @@ namespace TitanOrbit.Game
             _populationRow.MaxText.text = FormatCapacityLine(baseMax, bonusAmount, teamColor);
             _populationRow.MaxText.color = WithAlpha(teamColor, MaxLineAlpha);
 
-            LayoutLabelBlock(hasTitle, hasContributor);
+            LayoutLabelBlock(hasTitle, hasBulletType, hasContributor);
             return true;
         }
     }

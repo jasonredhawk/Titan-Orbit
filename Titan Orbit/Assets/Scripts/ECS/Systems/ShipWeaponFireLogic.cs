@@ -203,6 +203,27 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
+        /// Clears every barrel’s <see cref="ShipWeaponMountElement.FireCooldown"/>.
+        /// B-key / HUD bank changes must do this — cooldown lives on the mount, not the
+        /// bank, so a slow Lightning / cannon shot would otherwise mute every owned gun
+        /// until that leftover timer expired.
+        /// </summary>
+        public static void ResetMountCooldowns(DynamicBuffer<ShipWeaponMountElement> mounts)
+        {
+            if (mounts.Length <= 0)
+                return;
+
+            for (int i = 0; i < mounts.Length; i++)
+            {
+                ShipWeaponMountElement m = mounts[i];
+                if (m.FireCooldown == 0f)
+                    continue;
+                m.FireCooldown = 0f;
+                mounts[i] = m;
+            }
+        }
+
+        /// <summary>
         /// Resolves per-barrel damage, fire rate, and energy cost (energy = firePower + ability drain).
         /// </summary>
         static void ResolveMountCombat(

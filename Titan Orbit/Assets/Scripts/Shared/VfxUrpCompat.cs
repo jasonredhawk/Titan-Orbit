@@ -158,8 +158,11 @@ namespace TitanOrbit.Core
         /// <summary>
         /// One-time material/light fix on first use, then restart particles every Rent.
         /// Pooled shells keep the marker so destroy frames skip GrabPass walks.
+        /// Pass <paramref name="playParticles"/> false for thruster jets — those are
+        /// driven by the thrust button, and Play-on-prepare left foreign JetFlames
+        /// visible while idle (looked inverted).
         /// </summary>
-        public static void PrepareVfxInstance(GameObject root)
+        public static void PrepareVfxInstance(GameObject root, bool playParticles = true)
         {
             if (root == null)
                 return;
@@ -173,8 +176,8 @@ namespace TitanOrbit.Core
                 marker = root.AddComponent<VfxPreparedMarker>();
             }
 
-            // --- Hot path every Rent: restart particles only ---
-            PlayParticleSystemsInHierarchy(root);
+            if (playParticles)
+                PlayParticleSystemsInHierarchy(root);
         }
 
         /// <summary>
@@ -188,16 +191,21 @@ namespace TitanOrbit.Core
             if (root == null)
                 return;
 
-            // Sci-Fi Arsenal flicker scripts keep running after the Light is destroyed and
-            // spam MissingComponentException (gravity-well / rift impacts).
+            // Sci-Fi Arsenal fade/flicker keep running after the Light is destroyed.
+            // Flicker threw MissingComponentException; Fade called GetComponent every
+            // Update on every live tracer/muzzle/impact (profiler: ~10 KB GC while firing).
             MonoBehaviour[] behaviours = root.GetComponentsInChildren<MonoBehaviour>(true);
             for (int i = 0; i < behaviours.Length; i++)
             {
                 MonoBehaviour behaviour = behaviours[i];
                 if (behaviour == null)
                     continue;
-                if (behaviour.GetType().Name == "SciFiLightFlicker")
+                string typeName = behaviour.GetType().Name;
+                if (typeName == "SciFiLightFlicker" || typeName == "SciFiLightFade")
+                {
+                    behaviour.enabled = false;
                     UnityEngine.Object.Destroy(behaviour);
+                }
             }
 
             Light[] lights = root.GetComponentsInChildren<Light>(true);

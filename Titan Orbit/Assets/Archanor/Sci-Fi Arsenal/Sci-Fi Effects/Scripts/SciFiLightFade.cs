@@ -1,6 +1,5 @@
 ﻿using UnityEngine;
-using System.Collections;
- 
+
 namespace SciFiArsenal
 {
     public class SciFiLightFade : MonoBehaviour
@@ -8,30 +7,40 @@ namespace SciFiArsenal
         [Header("Seconds to dim the light")]
         public float life = 0.2f;
         public bool killAfterLife = true;
- 
-        private Light li;
-        private float initIntensity;
- 
-        // Use this for initialization
-        void Start()
+
+        Light li;
+        float initIntensity;
+
+        void Awake()
         {
-            if (gameObject.GetComponent<Light>())
+            // Cache once. GetComponent<Light>() every Update allocated in the Editor
+            // and stayed alive on pooled muzzle/impact shells after VfxUrpCompat
+            // stripped the Light (profiler: SciFiLightFade ~10 KB/frame while firing).
+            li = GetComponent<Light>();
+            if (li == null)
             {
-                li = gameObject.GetComponent<Light>();
-                initIntensity = li.intensity;
+                enabled = false;
+                return;
             }
-            else
-                print("No light object found on " + gameObject.name);
+
+            initIntensity = li.intensity;
         }
- 
-        // Update is called once per frame
+
         void Update()
         {
-            if (gameObject.GetComponent<Light>())
+            if (li == null)
             {
-                li.intensity -= initIntensity * (Time.deltaTime / life);
-                if (killAfterLife && li.intensity <= 0)
-                    Destroy(gameObject);
+                enabled = false;
+                return;
+            }
+
+            float duration = life > 1e-5f ? life : 1e-5f;
+            li.intensity -= initIntensity * (Time.deltaTime / duration);
+            if (killAfterLife && li.intensity <= 0f)
+            {
+                // Disable only — Destroy broke BulletOneShotVfxPool shells (child Light gone).
+                li.enabled = false;
+                enabled = false;
             }
         }
     }

@@ -35,7 +35,9 @@ namespace TitanOrbit.UI
     /// MEGA identity is latched through gem Instantiates (plow destroy) so ticks/costs do not flicker.
     /// Quick-stat chips and hover details use <see cref="MegaShipStatsCalculator"/> (no +per-buy).
     /// Chip values and tip bodies are rebuilt when the ship / ability snapshot key changes
-    /// (new ship or ability purchase) — never every frame for live HP/speed/cargo.
+    /// (new ship, ability purchase, or B-key bullet type) — never every frame for live
+    /// HP/speed/cargo. Fire Power / Bullet Speed numbers include the live bank's
+    /// fire-time multipliers so they change with the type name under the chip.
     /// The snapshot key latches only after chassis stats <b>and</b> hull ComponentSize are ready
     /// (mass tax for MS/TS). Painting with a MinMass placeholder froze an untaxed Move Speed until
     /// the player toggled [STATS]. ComponentSize is part of the snapshot key so late hull refs repaint.
@@ -234,6 +236,8 @@ namespace TitanOrbit.UI
         private readonly int[] _lastTickLevels = { -1, -1, -1, -1, -1, -1, -1, -1, -1, -1 };
         private int _lastMaxUpgrades = -1;
         private int _lastCost = -1;
+        /// <summary>Cached <c>cost.ToString()</c> so Update does not allocate 10 number strings per frame.</summary>
+        private string _cachedCostNumberText = "";
         private readonly string[] _lastCostText = new string[10];
         private bool _slotVisualsSeeded;
         /// <summary>
@@ -1504,6 +1508,7 @@ namespace TitanOrbit.UI
                 if (ramAst <= 0.0001f && megaStats.rammingPower > 0.01f)
                     live.RamRating = megaStats.rammingPower;
 
+                BulletBankHudCopy.ApplyLiveCombatMuls(ref live);
                 return true;
             }
 
@@ -1604,6 +1609,9 @@ namespace TitanOrbit.UI
             if (live.MoveStepPreview <= 0.0001f)
                 live.MoveStepPreview = Mathf.Max(0f, live.EffectiveStats.moveSpeedPerExtraLevel);
 
+            // [TITAN-ORBIT] SnapshotKey already includes the B-key bank so chips rebuild.
+            // Apply the same fire-time muls combat uses or FP / speed / range stay hull-only.
+            BulletBankHudCopy.ApplyLiveCombatMuls(ref live);
             return true;
         }
 
@@ -1995,6 +2003,9 @@ namespace TitanOrbit.UI
             int cost = ShipAttributeUpgradeLogic.GetUpgradeCost(ship.ShipLevel);
             bool maxChanged = maxUpgrades != _lastMaxUpgrades;
             bool costChanged = cost != _lastCost;
+            if (costChanged || string.IsNullOrEmpty(_cachedCostNumberText))
+                _cachedCostNumberText = cost.ToString();
+            bool hasGemIcon = ResolveGemCostIcon() != null;
 
             // MEGA — Extra Levels are not sold. Keep the ten buttons, hide the tick squares.
             bool mega = IsLocalShipMega();
@@ -2035,8 +2046,8 @@ namespace TitanOrbit.UI
                 }
                 else
                 {
-                    costText = cost.ToString();
-                    showGemIcon = ResolveGemCostIcon() != null;
+                    costText = _cachedCostNumberText;
+                    showGemIcon = hasGemIcon;
                 }
 
                 // Dirty-check TMP / icon — farming asteroids changes gems every frame; skip when text identical.

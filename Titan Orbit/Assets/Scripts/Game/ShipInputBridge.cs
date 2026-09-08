@@ -20,6 +20,8 @@ namespace TitanOrbit.Game
     /// B-key cycles the bullet bank: latches the press (so fixed-tick NetCode does not miss
     /// <c>WasPressedThisFrame</c>), shows floating category name, and relies on
     /// <see cref="ShipCycleBulletSystem"/> + baked <see cref="ShipLoadoutState"/> for the sticky index.
+    /// T-key (when GameManager Cycle All Thruster VFX is on) walks
+    /// <see cref="ThrusterVfxBank"/> on live ship proxies only — no ghost / RPC.
     /// </para>
     /// </summary>
     [DefaultExecutionOrder(-10000)]
@@ -30,6 +32,7 @@ namespace TitanOrbit.Game
 
         PlayerInputHandler _input;
         BulletVfxBank _bank;
+        ThrusterVfxBank _thrusterBank;
         Camera _cachedCamera;
 
         /// <summary>
@@ -38,12 +41,35 @@ namespace TitanOrbit.Game
         /// <see cref="ShipLoadoutState.RuntimeBulletIndex"/> when not actively cycling.
         /// </summary>
         int _displayBankIndex = -1;
+        static GameObject s_ThrusterCycleLabel;
+        static int s_LastThrusterCycleFrame = -1;
+        static ShipInputBridge s_Active;
+
+        void Awake()
+        {
+            // SampleScene had a leftover ShipInputBridge plus NceGameRoot — both
+            // saw T and spawned overlapping family / prefab labels.
+            if (s_Active != null && s_Active != this)
+            {
+                enabled = false;
+                return;
+            }
+
+            s_Active = this;
+        }
+
+        void OnDestroy()
+        {
+            if (s_Active == this)
+                s_Active = null;
+        }
 
         /// <summary>[UNITY] Resolve input handler + optional bullet-name prefab.</summary>
         void Start()
         {
             _input = FindAnyObjectByType<PlayerInputHandler>();
             _bank = BulletVfxBank.LoadDefault();
+            _thrusterBank = ThrusterVfxBank.LoadDefault();
 
 #if UNITY_EDITOR
             // --- Editor convenience: wire floating text prefab without scene plumbing ---
@@ -87,6 +113,13 @@ namespace TitanOrbit.Game
 
             if (cyclePressed)
                 TryShowBulletCycleName();
+
+            if (TitanOrbitDebugFlags.CycleAllThrusterVfx
+                && _input.CycleThrusterVfxPressed
+                && !MoonOrbitClientState.IsOrbitMenuVisible)
+            {
+                TryCycleThrusterVfx();
+            }
 
             bool setBankPressed = ShipPendingInput.SetBulletBankLatched
                 && !MoonOrbitClientState.IsOrbitMenuVisible
@@ -259,6 +292,100 @@ namespace TitanOrbit.Game
             Vector3 pos = shipPos + Vector3.up * 5f;
             GameObject go = Instantiate(bulletNameTextPrefab, pos, Quaternion.identity);
             TryInitializeFloatingText(go, name, Color.white, 2f);
+        }
+
+        /// <summary>
+        /// Advances <see cref="ThrusterVfxBank.DebugCycleIndex"/> and rebuilds live jets.
+        /// Client presentation only — does not write ship input or ghosts.
+        /// </summary>
+        void TryCycleThrusterVfx()
+        {
+            if (s_LastThrusterCycleFrame == Time.frameCount)
+                return;
+            s_LastThrusterCycleFrame = Time.frameCount;
+
+            if (_thrusterBank == null)
+                _thrusterBank = ThrusterVfxBank.LoadDefault();
+            if (_thrusterBank == null || _thrusterBank.EntryCount < 1)
+                return;
+
+            int index = _thrusterBank.CycleDebugIndex();
+            ShipPropulsionVisualApplier.RebuildAllLive();
+            string familyName = _thrusterBank.GetDisplayName(index);
+            string thrusterName = _thrusterBank.GetThrusterPrefabDisplayName(index);
+            if (string.IsNullOrEmpty(familyName) && string.IsNullOrEmpty(thrusterName))
+                return;
+
+            if (bulletNameTextPrefab == null)
+            {
+                Debug.Log($"[ThrusterVfx] {index}: {familyName} / {thrusterName}");
+                return;
+            }
+
+            if (!EcsGameBridge.TryGetLocalShipPosition(out Vector3 shipPos))
+                return;
+
+            DestroyThrusterCycleLabel();
+
+            Vector3 pos = shipPos + Vector3.up * 5f;
+            s_ThrusterCycleLabel = Instantiate(bulletNameTextPrefab, pos, Quaternion.identity);
+            s_ThrusterCycleLabel.name = "_ThrusterCycleLabel";
+            if (!TryInitializeFloatingText(s_ThrusterCycleLabel, familyName, thrusterName, Color.white, 2.4f))
+                TryInitializeFloatingText(s_ThrusterCycleLabel, familyName, Color.white, 2.4f);
+        }
+
+        static void DestroyThrusterCycleLabel()
+        {
+            if (s_ThrusterCycleLabel != null)
+            {
+                s_ThrusterCycleLabel.SetActive(false);
+                Destroy(s_ThrusterCycleLabel);
+                s_ThrusterCycleLabel = null;
+            }
+
+            // Orphans from a second ShipInputBridge or a deferred Destroy.
+            // Hide + rename so Find cannot see the same object again this frame.
+            GameObject leftover = GameObject.Find("_ThrusterCycleLabel");
+            while (leftover != null)
+            {
+                leftover.SetActive(false);
+                leftover.name = "_ThrusterCycleLabel_Dead";
+                Destroy(leftover);
+                leftover = GameObject.Find("_ThrusterCycleLabel");
+            }
+        }
+
+        /// <summary>
+        /// Invokes two-line <c>SimpleFloatingText.Initialize(title, subtitle, …)</c> when present.
+        /// </summary>
+        static bool TryInitializeFloatingText(
+            GameObject go,
+            string title,
+            string subtitle,
+            Color color,
+            float duration)
+        {
+            if (go == null)
+                return false;
+
+            foreach (MonoBehaviour script in go.GetComponents<MonoBehaviour>())
+            {
+                if (script == null || script.GetType().Name != "SimpleFloatingText")
+                    continue;
+
+                MethodInfo init = script.GetType().GetMethod(
+                    "Initialize",
+                    BindingFlags.Instance | BindingFlags.Public,
+                    binder: null,
+                    types: new[] { typeof(string), typeof(string), typeof(Color), typeof(float) },
+                    modifiers: null);
+                if (init == null)
+                    return false;
+                init.Invoke(script, new object[] { title, subtitle, color, duration });
+                return true;
+            }
+
+            return false;
         }
 
         /// <summary>

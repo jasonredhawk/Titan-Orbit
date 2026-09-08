@@ -2612,7 +2612,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!114 &566081329
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -8622,13 +8622,16 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 98bebdf998b96a64c8683982a44e3e5b, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::TitanOrbit.Core.GameManager
-  editorMultiplayerMode: 0
+  editorMultiplayerMode: 1
   showSpeedometer: 1
   debugFreeShipUpgradeTree: 1
-  debugCycleAllBulletBanks: 1
+  debugFreeGear: 1
+  debugFreeCards: 1
+  debugCycleAllBulletBanks: 0
+  debugCycleAllThrusterVfx: 1
   debugInfiniteRockets: 1
   debugInfiniteMines: 1
-  debugSelfHarmRocketsAndMines: 1
+  debugSelfHarmRocketsAndMines: 0
   debugMegaShipsAutoFireAsteroids: 0
   debugDisableMegaShipAutoFire: 0
   debugLogAsteroidDestroyPerf: 0

@@ -226,11 +226,15 @@ namespace TitanOrbit.ECS
             // leaves attribute dirty to ShipHullColliderSyncSystem to avoid double Instantiates.
             // Do NOT treat empty wing buffers as full catalog dirty here — Pass 3 refills
             // attachments without collider Instantiates (empty-as-dirty used to stall join).
-            if (TitanOrbitPresentationConfig.UseEntitiesGraphicsForShips
-                && (applied.AppliedAttributeSum != attributeSum
+            if (TitanOrbitPresentationConfig.UseEntitiesGraphicsForShips)
+            {
+                // B-key bank is not catalog identity — do not Clear() weapon mounts
+                // on every cycle (that left ships unarmed when the live bake missed).
+                if (applied.AppliedAttributeSum != attributeSum
                     || applied.AppliedEquipmentScaleKey
-                        != ShipComponentStoreVisualScaleLogic.ComputeEquipmentScaleKey(em, entity)))
-                return true;
+                        != ShipComponentStoreVisualScaleLogic.ComputeEquipmentScaleKey(em, entity))
+                    return true;
+            }
 
             // MEGA collider bake revision — rebuild once when the part-collider path changes.
             if (em.HasComponent<MegaShipState>(entity)
@@ -413,6 +417,9 @@ namespace TitanOrbit.ECS
                 motorMass = math.max(motorMass, MegaShipCatalog.DefaultHullCollisionMass);
 
             int equipmentKey = ShipComponentStoreVisualScaleLogic.ComputeEquipmentScaleKey(em, entity);
+            int bankIndex = 0;
+            if (em.HasComponent<ShipLoadoutState>(entity))
+                bankIndex = em.GetComponentData<ShipLoadoutState>(entity).RuntimeBulletIndex;
             var storeFactors = isMega
                 ? default
                 : ShipComponentStoreVisualScaleLogic.ComputeForShip(em, entity);
@@ -425,7 +432,7 @@ namespace TitanOrbit.ECS
             {
                 var prev = em.GetComponentData<ShipHullColliderState>(entity);
                 recompute = ShipHullColliderLogic.NeedsCoveringRecompute(
-                    prev, chassisKey, branchIndex, attributeSum, isMega, equipmentKey);
+                    prev, chassisKey, branchIndex, attributeSum, isMega, equipmentKey, bankIndex);
                 if (!recompute)
                 {
                     cachedExtents = ShipHullColliderLogic.GetCachedCoveringExtents(prev);
@@ -446,6 +453,7 @@ namespace TitanOrbit.ECS
                 AppliedBranchIndex = branchIndex,
                 AppliedAttributeSum = attributeSum,
                 AppliedEquipmentScaleKey = equipmentKey,
+                AppliedRuntimeBulletIndex = bankIndex,
                 AppliedMegaColliderRevision = isMega ? MegaShipCatalog.HullColliderRevision : 0,
                 AppliedHullMaterialRevision = ShipHullColliderLogic.HullMaterialRevision,
                 AppliedTeam = (byte)ship.Team,

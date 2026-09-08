@@ -21,10 +21,23 @@ namespace TitanOrbit.Systems
         private float elapsed;
         private Color baseColor;
 
+        /// <summary>
+        /// Two-line label: <paramref name="title"/> on top,
+        /// smaller <paramref name="subtitle"/> underneath (TMP rich text).
+        /// </summary>
+        public void Initialize(string title, string subtitle, Color color, float duration)
+        {
+            string message = title ?? string.Empty;
+            if (!string.IsNullOrWhiteSpace(subtitle))
+                message = message + "\n<size=55%>" + subtitle.Trim() + "</size>";
+            Initialize(message, color, duration);
+        }
+
         public void Initialize(string message, Color color, float duration)
         {
             // --- Initialize ---
             lifetime = Mathf.Max(0.1f, duration);
+            elapsed = 0f;
 
             // Prefer assigned TMP_Text, else find one in children.
             if (tmpText == null)
@@ -32,11 +45,18 @@ namespace TitanOrbit.Systems
 
             if (tmpText != null)
             {
+                tmpText.richText = true;
                 tmpText.text = message;
+                tmpText.alignment = TextAlignmentOptions.Center;
+                tmpText.lineSpacing = message.IndexOf('\n') >= 0 ? 24f : 0f;
+                tmpText.overflowMode = TextOverflowModes.Overflow;
+                tmpText.textWrappingMode = TextWrappingModes.NoWrap;
+                var rect = tmpText.rectTransform;
+                if (rect != null && message.IndexOf('\n') >= 0)
+                    rect.sizeDelta = new Vector2(Mathf.Max(rect.sizeDelta.x, 8f), Mathf.Max(rect.sizeDelta.y, 4f));
                 baseColor = color;
                 baseColor.a = 0f;
                 tmpText.color = baseColor;
-                tmpText.alignment = TextAlignmentOptions.Center;
                 return;
             }
 

@@ -20,8 +20,10 @@ namespace TitanOrbit.UI
     /// Combined orbit station UI: ship loadout grids (stacked vertically) at top, orbit actions and store below.
     /// Single left-anchored panel. Optional Shift Sci-Fi UI sprites/font assignable in inspector.
     /// Gem-moon docking uses the full-screen moon-dock chrome (sidebar + SHIPS / GEAR / CARDS).
-    /// Construction is spread across dock-zone frames via <see cref="TickHiddenWarmup"/> so the
-    /// overlay can appear without a main-thread hitch.
+    /// Chrome + one GEAR grid per ship family are cached while flying
+    /// (<see cref="TickIdleOrbitMenuCache"/>). Landing only reveals the already-built overlay. GameManager debug toggles
+    /// (<see cref="GameManager.DebugFreeShipUpgradeTree"/>, <see cref="GameManager.DebugFreeGear"/>,
+    /// <see cref="GameManager.DebugFreeCards"/>) paint Free prices and skip gem afford checks.
     /// </summary>
     public partial class OrbitStationUI : MonoBehaviour, IOrbitStationHost
     {
@@ -189,9 +191,9 @@ namespace TitanOrbit.UI
         private bool _moonDockLayoutActive;
         private bool _moonDockChromeReady;
         /// <summary>
-        /// How far hidden Orbit Menu construction has gotten. The moon-dock controller
-        /// advances this one step per frame while the ship is in a gem-moon dock zone so
-        /// <see cref="Show"/> only has to fade the overlay in.
+        /// How far idle Orbit Menu construction has gotten. The moon-dock controller
+        /// advances this one step per frame while the ship is flying so landing never
+        /// Instantiates widgets.
         /// </summary>
         enum MoonDockWarmupPhase
         {
@@ -205,14 +207,36 @@ namespace TitanOrbit.UI
             Layout = 3,
             /// <summary>Ship upgrade tree nodes are instantiated at the real dock width.</summary>
             Tree = 4,
-            /// <summary>GEAR purchase tiles exist so the first Gear tab click does not hitch.</summary>
+            /// <summary>At least one family GEAR grid is cached; idle ticks keep filling the rest.</summary>
             Store = 5
         }
 
-        /// <summary>Next hidden-warmup step. Stays at <see cref="MoonDockWarmupPhase.Tree"/> after the first successful build.</summary>
+        /// <summary>Next idle-cache step. After <see cref="MoonDockWarmupPhase.Store"/> we keep filling missing families.</summary>
         MoonDockWarmupPhase _moonDockWarmupPhase;
         /// <summary>True after the 24-node moon-dock ship tree has been spawned once (structure is shared across families).</summary>
         bool _moonDockTreeWarmed;
+        /// <summary>Planet ids scratch for idle family-store caching. Filled from <see cref="EcsGameBridge.CopyKnownPlanetIds"/>.</summary>
+        readonly List<int> _idlePlanetIdScratch = new List<int>(16);
+
+        /// <summary>
+        /// One prebuilt GEAR panel per ship family (Astro Eagle, Cosmic Shark, …).
+        /// Landing on a moon only swaps the visible section — it does not Destroy/Instantiate cards.
+        /// </summary>
+        sealed class CachedFamilyStore
+        {
+            public string FamilyKey;
+            public GameObject Section;
+            public RectTransform GridContent;
+            public GridLayoutGroup Grid;
+            public RectTransform ScrollViewport;
+            /// <summary>Card-layout version this section was last rebuilt at. Stale entries rebuild in place.</summary>
+            public int LayoutVersion;
+            public readonly List<MoonDockStoreCardBinding> Cards = new List<MoonDockStoreCardBinding>(32);
+        }
+
+        /// <summary>Family id → prebuilt GEAR section. Survives hide / next land.</summary>
+        readonly Dictionary<string, CachedFamilyStore> _familyStoreCache =
+            new Dictionary<string, CachedFamilyStore>(12);
         /// <summary>
         /// [UNITY] Alpha / raycast gate on the full-screen dock backdrop. Warmup activates the
         /// hierarchy at alpha 0 so layout can measure width without the player seeing the menu.
@@ -230,7 +254,7 @@ namespace TitanOrbit.UI
         private GridLayoutGroup _moonDockStoreGrid;
         private string _moonDockStoreBuiltForFamilyKey;
         private int _moonDockEquipmentCardLayoutVersionBuilt = -1;
-        private const int MoonDockEquipmentCardLayoutVersion = 9;
+        private const int MoonDockEquipmentCardLayoutVersion = 10;
 
         private sealed class MoonDockStoreCardBinding
         {
@@ -344,7 +368,6 @@ namespace TitanOrbit.UI
         private RectTransform moonDockCenterGearHost;
         private ScrollRect moonDockGearScroll;
         private RectTransform moonDockCenterShipsHost;
-        private TextMeshProUGUI _moonDockFamilyRail;
         private Button moonDockCloseButton;
         private Transform _moonDockSavedSlotPanelParent;
         private int _moonDockSavedSlotPanelSibling;
@@ -433,7 +456,7 @@ namespace TitanOrbit.UI
             // [TITAN-ORBIT] Do not call EnsurePanelExists here. That method creates dozens of
             // TextMesh Pro widgets (loadout slots, store rows). Doing it in Awake on first
             // land made the Orbit Menu hitch. MoonOrbitStationController spreads the build
-            // across dock-zone frames via TickHiddenWarmup; Show still builds as a fallback.
+            // across flight frames via TickIdleOrbitMenuCache; Show still builds as a fallback.
             OnOrbitStationEcsAwake();
         }
 
@@ -821,19 +844,16 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// Builds Orbit Menu widgets off-screen, one phase per call, so the landing
-        /// cinematic can absorb construction cost. The moon-dock controller ticks this
-        /// while the local ship is in a gem-moon dock zone (approach + land + 0.5s pause).
+        /// Builds Orbit Menu widgets off-screen, one phase per call, while the ship is flying.
+        /// After the shared tree exists, each later tick caches one planet family's GEAR grid
+        /// so landing on any moon is a swap, not a rebuild.
         /// </summary>
-        /// <param name="storePlanetId">Docked moon's planet id, or 0 to only build chrome.</param>
+        /// <param name="storePlanetHint">Home or any known planet id used to bind adapters; 0 = pick first known.</param>
         /// <param name="homePlanetId">Team home planet id for Bank RPCs (0 if unknown yet).</param>
-        public void TickHiddenWarmup(int storePlanetId, int homePlanetId)
+        public void TickIdleOrbitMenuCache(int storePlanetHint, int homePlanetId)
         {
-            // --- Already ready ---
-            // Tree geometry is the same on every moon (1+2+3+4+5+6+3 nodes). Family
-            // names / previews refresh on Show; we do not rebuild for a new planet id.
-            if (_moonDockWarmupPhase >= MoonDockWarmupPhase.Store)
-                return;
+            // --- Shared shell first ---
+            int bindPlanetId = ResolveIdleBindPlanetId(storePlanetHint);
 
             switch (_moonDockWarmupPhase)
             {
@@ -846,9 +866,7 @@ namespace TitanOrbit.UI
                     return;
 
                 case MoonDockWarmupPhase.Panel:
-                    // --- Phase 2: full-screen dock chrome + catalog caches ---
-                    // [UNITY] First GetGlobalMaxPerStat walks every family chassis — do it
-                    // here so the later tree populate does not pay that scan on Show.
+                    // --- Phase 2: full-screen dock chrome + catalog + preview sprites ---
                     EnsureMoonDockChromeExists();
                     CreateMoonDockGearHost();
                     PrimeOrbitMenuStaticCaches();
@@ -857,44 +875,49 @@ namespace TitanOrbit.UI
 
                 case MoonDockWarmupPhase.Chrome:
                     // --- Phase 3: reparent into the split + bind ECS adapters ---
-                    // Need a store planet so the tree host can resolve a family ladder.
-                    if (storePlanetId <= 0)
+                    if (bindPlanetId <= 0)
                         return;
-                    BindEcsViews(storePlanetId, homePlanetId);
+                    BindEcsViews(bindPlanetId, homePlanetId);
                     EnterMoonDockLayout();
-                    // EnterMoonDockLayout flags the dock as "active" for layout math.
-                    // Update() would then rebuild store/slots every 0.35s while the ship
-                    // is still landing — keep the widgets assembled but the session closed.
                     _moonDockLayoutActive = false;
                     _moonDockWarmupPhase = MoonDockWarmupPhase.Layout;
                     return;
 
                 case MoonDockWarmupPhase.Layout:
-                    // --- Phase 4: spawn tree nodes at the real dock width ---
-                    if (storePlanetId <= 0 || currentShip == null)
+                    // --- Phase 4: spawn tree nodes once (same 24-node DAG on every moon) ---
+                    if (bindPlanetId <= 0 || currentShip == null)
                     {
-                        if (storePlanetId > 0)
-                            BindEcsViews(storePlanetId, homePlanetId);
+                        if (bindPlanetId > 0)
+                            BindEcsViews(bindPlanetId, homePlanetId);
                         return;
                     }
 
                     BuildShipTreeHidden();
-                    // Stay on Layout if the tree could not spawn (UpgradeSystem / CardShop
-                    // not ready yet) so a later dock-zone frame retries.
                     if (_moonDockTreeWarmed)
                         _moonDockWarmupPhase = MoonDockWarmupPhase.Tree;
                     return;
 
                 case MoonDockWarmupPhase.Tree:
-                    // --- Phase 5: GEAR grid (after the tree, still during the cinematic) ---
-                    // Show opens on SHIPS. Building store here keeps the first Gear click cheap
-                    // without putting that work on the reveal frame.
-                    if (storePlanetId > 0)
-                        BindEcsViews(storePlanetId, homePlanetId);
-                    PrimeMoonDockStoreHidden();
-                    _moonDockWarmupPhase = MoonDockWarmupPhase.Store;
+                case MoonDockWarmupPhase.Store:
+                    // --- Per-planet family stores ---
+                    // One family per idle frame so flight stays smooth. After the first
+                    // family is cached we mark Store so Show can reveal immediately.
+                    if (TryCacheNextFamilyStore(homePlanetId))
+                        _moonDockWarmupPhase = MoonDockWarmupPhase.Store;
                     return;
             }
+        }
+
+        /// <summary>
+        /// Picks a planet id for idle adapter bind: the hint if valid, else the first
+        /// id from this frame's planet cache.
+        /// </summary>
+        int ResolveIdleBindPlanetId(int storePlanetHint)
+        {
+            if (storePlanetHint > 0)
+                return storePlanetHint;
+            EcsGameBridge.CopyKnownPlanetIds(_idlePlanetIdScratch);
+            return _idlePlanetIdScratch.Count > 0 ? _idlePlanetIdScratch[0] : 0;
         }
 
         /// <summary>
@@ -913,10 +936,47 @@ namespace TitanOrbit.UI
             // --- Catalog + bar-pool caches ---
             // MegaShipCatalog and PlanetShipFamilyConfig are ScriptableObjects under Resources.
             MegaShipCatalog.Load();
+            _ = PlanetShipFamilyConfig.LoadDefault();
             _ = ShipFamilyPowerBarNorm.GetGlobalMaxPerStat();
             _ = ShipFamilyPowerBarNorm.GetMegaMaxPerStat();
             if (shipUpgradeTreePrefab == null)
                 shipUpgradeTreePrefab = Resources.Load<ShipUpgradeTreeUI>("ShipUpgradeTree");
+            PreloadFamilyMenuPreviewSprites();
+        }
+
+        /// <summary>
+        /// Touches every family / MEGA menu thumbnail so the first tree paint does not
+        /// hitch on texture upload when the player lands.
+        /// </summary>
+        void PreloadFamilyMenuPreviewSprites()
+        {
+            // --- Warm sprites ---
+            TeamManager.Team team = TeamManager.Team.None;
+            if (EcsGameBridge.TryGetLocalShipState(out var ship))
+                team = TeamManager.FromTeamId(ship.Team);
+
+            var config = PlanetShipFamilyConfig.LoadDefault();
+            if (config?.families != null)
+            {
+                for (int i = 0; i < config.families.Count; i++)
+                {
+                    ShipFamilyDefinition family = config.families[i]?.shipFamilyDefinition;
+                    if (family?.upgradeTree == null)
+                        continue;
+                    for (int t = 0; t < family.upgradeTree.Count; t++)
+                    {
+                        ShipFamilyChassisTierEntry tier = family.upgradeTree[t];
+                        if (tier != null)
+                            tier.GetMenuPreviewSprite(team);
+                    }
+                }
+            }
+
+            MegaShipCatalog mega = MegaShipCatalog.Load();
+            if (mega?.entries == null)
+                return;
+            for (int i = 0; i < mega.entries.Count; i++)
+                mega.GetMenuPreviewSprite(i, team);
         }
 
         /// <summary>
@@ -961,20 +1021,264 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// Builds the moon-dock GEAR purchase grid off-screen. <see cref="RefreshMoonDockStore"/>
-        /// requires <see cref="_moonDockLayoutActive"/>; we flip it only for this call.
+        /// Builds the next missing planet-family GEAR grid and keeps it in
+        /// <see cref="_familyStoreCache"/>. Returns true when at least one family is cached.
         /// </summary>
-        void PrimeMoonDockStoreHidden()
+        /// <param name="homePlanetId">Team home planet id for adapter bind.</param>
+        /// <returns>True if the cache has at least one family after this tick.</returns>
+        bool TryCacheNextFamilyStore(int homePlanetId)
         {
-            // --- Hidden GEAR build ---
-            if (currentShip == null || currentPlanet == null)
+            // --- Find an uncached family ---
+            if (CardShopSystem.Instance == null)
+                return _familyStoreCache.Count > 0;
+
+            EcsGameBridge.CopyKnownPlanetIds(_idlePlanetIdScratch);
+            if (homePlanetId > 0 && !_idlePlanetIdScratch.Contains(homePlanetId))
+                _idlePlanetIdScratch.Insert(0, homePlanetId);
+            else if (homePlanetId > 0)
+            {
+                _idlePlanetIdScratch.Remove(homePlanetId);
+                _idlePlanetIdScratch.Insert(0, homePlanetId);
+            }
+
+            for (int i = 0; i < _idlePlanetIdScratch.Count; i++)
+            {
+                int planetId = _idlePlanetIdScratch[i];
+                ShipFamilyDefinition family = CardShopSystem.Instance.GetShipFamilyForStorePlanet(planetId, currentShip);
+                string key = family != null ? family.familyId : string.Empty;
+                if (string.IsNullOrEmpty(key) || _familyStoreCache.ContainsKey(key))
+                    continue;
+
+                BindEcsViews(planetId, homePlanetId);
+                bool wasActive = _moonDockLayoutActive;
+                _moonDockLayoutActive = true;
+                BuildAndCacheFamilyStore(family);
+                _moonDockLayoutActive = wasActive;
+                return _familyStoreCache.Count > 0;
+            }
+
+            return _familyStoreCache.Count > 0;
+        }
+
+        /// <summary>
+        /// Shows exactly one GEAR section for <paramref name="family"/>. Reuses the cached
+        /// GameObject when that family was already built so we never stack two grids.
+        /// </summary>
+        void BuildAndCacheFamilyStore(ShipFamilyDefinition family)
+        {
+            // --- One visible grid ---
+            // [TITAN-ORBIT] Creating a new MoonDockStoreSection without hiding leftovers
+            // stacked every family's cards in the Gear scroll (the "big Family panel").
+            string key = family != null ? family.familyId : string.Empty;
+            if (TryShowExistingFamilyStoreSection(key))
+            {
+                RebuildMoonDockEquipmentStore(family);
+                SyncCachedFamilyStoreCards(key);
+                return;
+            }
+
+            HideEveryGearStoreSection();
+            StashLiveFamilyStoreIfNeeded();
+            CreateMoonDockStoreSection();
+            RebuildMoonDockEquipmentStore(family);
+            StashLiveFamilyStoreIfNeeded();
+        }
+
+        /// <summary>
+        /// Snapshots the live GEAR section into <see cref="_familyStoreCache"/> if it is
+        /// a finished family grid we have not stored yet. Hides that section after the snapshot
+        /// so the next family's build cannot sit on top of it.
+        /// </summary>
+        void StashLiveFamilyStoreIfNeeded()
+        {
+            if (moonDockStoreSection == null)
+                return;
+            if (_moonDockEquipmentCardLayoutVersionBuilt != MoonDockEquipmentCardLayoutVersion)
+                return;
+            if (_moonDockStoreCards.Count == 0 && string.IsNullOrEmpty(_moonDockStoreBuiltForFamilyKey))
                 return;
 
-            EnsureMoonDockStoreSection();
-            bool wasActive = _moonDockLayoutActive;
-            _moonDockLayoutActive = true;
-            RefreshMoonDockStore();
-            _moonDockLayoutActive = wasActive;
+            string key = _moonDockStoreBuiltForFamilyKey ?? string.Empty;
+            if (_familyStoreCache.TryGetValue(key, out CachedFamilyStore existing) && existing != null)
+            {
+                // --- Refresh an already-cached row ---
+                // Rebuild-in-place updates the card list; do not leave a second Section allocated.
+                existing.Section = moonDockStoreSection;
+                existing.GridContent = _moonDockStoreGridContent;
+                existing.Grid = _moonDockStoreGrid;
+                existing.ScrollViewport = _moonDockStoreScrollViewport;
+                existing.LayoutVersion = MoonDockEquipmentCardLayoutVersion;
+                existing.Cards.Clear();
+                for (int i = 0; i < _moonDockStoreCards.Count; i++)
+                    existing.Cards.Add(_moonDockStoreCards[i]);
+                moonDockStoreSection.SetActive(false);
+                return;
+            }
+
+            var cached = new CachedFamilyStore
+            {
+                FamilyKey = key,
+                Section = moonDockStoreSection,
+                GridContent = _moonDockStoreGridContent,
+                Grid = _moonDockStoreGrid,
+                ScrollViewport = _moonDockStoreScrollViewport,
+                LayoutVersion = MoonDockEquipmentCardLayoutVersion,
+            };
+            for (int i = 0; i < _moonDockStoreCards.Count; i++)
+                cached.Cards.Add(_moonDockStoreCards[i]);
+            _familyStoreCache[key] = cached;
+            moonDockStoreSection.SetActive(false);
+        }
+
+        /// <summary>Copies the live card list onto the cache entry for <paramref name="familyKey"/>.</summary>
+        void SyncCachedFamilyStoreCards(string familyKey)
+        {
+            if (familyKey == null)
+                familyKey = string.Empty;
+            if (!_familyStoreCache.TryGetValue(familyKey, out CachedFamilyStore cached) || cached == null)
+            {
+                StashLiveFamilyStoreIfNeeded();
+                if (moonDockStoreSection != null)
+                    moonDockStoreSection.SetActive(true);
+                return;
+            }
+
+            cached.Section = moonDockStoreSection;
+            cached.GridContent = _moonDockStoreGridContent;
+            cached.Grid = _moonDockStoreGrid;
+            cached.ScrollViewport = _moonDockStoreScrollViewport;
+            cached.LayoutVersion = MoonDockEquipmentCardLayoutVersion;
+            cached.Cards.Clear();
+            for (int i = 0; i < _moonDockStoreCards.Count; i++)
+                cached.Cards.Add(_moonDockStoreCards[i]);
+        }
+
+        /// <summary>Hides every cached GEAR section so only the docked family is visible.</summary>
+        void HideAllCachedFamilyStores()
+        {
+            foreach (var pair in _familyStoreCache)
+            {
+                if (pair.Value?.Section != null)
+                    pair.Value.Section.SetActive(false);
+            }
+        }
+
+        /// <summary>
+        /// Hides cached grids, the live section, and any leftover MoonDockStoreSection
+        /// children under the Gear host (orphans from an earlier double-create).
+        /// </summary>
+        void HideEveryGearStoreSection()
+        {
+            HideAllCachedFamilyStores();
+            if (moonDockStoreSection != null)
+                moonDockStoreSection.SetActive(false);
+            HideOrphanGearStoreSections(destroyUntracked: true);
+        }
+
+        /// <summary>
+        /// Walks Gear-host children named MoonDockStoreSection and hides them.
+        /// When <paramref name="destroyUntracked"/> is true, destroys sections that are not
+        /// the live ref and not in <see cref="_familyStoreCache"/> (duplicate leftovers).
+        /// </summary>
+        void HideOrphanGearStoreSections(bool destroyUntracked)
+        {
+            if (moonDockCenterGearHost == null)
+                return;
+
+            for (int i = moonDockCenterGearHost.childCount - 1; i >= 0; i--)
+            {
+                Transform child = moonDockCenterGearHost.GetChild(i);
+                if (child == null || child.name != "MoonDockStoreSection")
+                    continue;
+
+                GameObject go = child.gameObject;
+                bool tracked = go == moonDockStoreSection || IsCachedFamilyStoreSection(go);
+                if (!tracked && destroyUntracked)
+                {
+                    Destroy(go);
+                    continue;
+                }
+
+                HideLegacyFamilyRail(go);
+                go.SetActive(false);
+            }
+        }
+
+        /// <summary>
+        /// Older Gear sections painted a FAMILY caption under GEAR. Hide that leftover —
+        /// the left dock already names the hull, and weapon cards now show their bullet type.
+        /// </summary>
+        static void HideLegacyFamilyRail(GameObject section)
+        {
+            if (section == null)
+                return;
+            Transform rail = section.transform.Find("FamilyRail");
+            if (rail != null)
+                rail.gameObject.SetActive(false);
+        }
+
+        /// <summary>True when <paramref name="section"/> is one of the cached family grids.</summary>
+        bool IsCachedFamilyStoreSection(GameObject section)
+        {
+            if (section == null)
+                return false;
+            foreach (var pair in _familyStoreCache)
+            {
+                if (pair.Value != null && pair.Value.Section == section)
+                    return true;
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// Makes the cached GEAR grid for <paramref name="familyKey"/> the only visible section.
+        /// Returns false when that family has not been built, or its card layout is stale.
+        /// </summary>
+        bool TryApplyCachedFamilyStore(string familyKey)
+        {
+            if (familyKey == null)
+                familyKey = string.Empty;
+            if (!_familyStoreCache.TryGetValue(familyKey, out CachedFamilyStore cached) || cached?.Section == null)
+                return false;
+            // Stale layout (weapon-card copy, tile metrics) must rebuild — do not stamp a new version here.
+            if (cached.LayoutVersion != MoonDockEquipmentCardLayoutVersion)
+                return false;
+
+            return ShowCachedFamilyStore(cached);
+        }
+
+        /// <summary>
+        /// Shows an existing cached section even when its layout version is stale so a rebuild
+        /// can reuse the GameObject instead of stacking a second grid.
+        /// </summary>
+        bool TryShowExistingFamilyStoreSection(string familyKey)
+        {
+            if (familyKey == null)
+                familyKey = string.Empty;
+            if (!_familyStoreCache.TryGetValue(familyKey, out CachedFamilyStore cached) || cached?.Section == null)
+                return false;
+            return ShowCachedFamilyStore(cached);
+        }
+
+        /// <summary>Hides every other family grid, then wires live refs to <paramref name="cached"/>.</summary>
+        bool ShowCachedFamilyStore(CachedFamilyStore cached)
+        {
+            if (cached?.Section == null)
+                return false;
+
+            HideEveryGearStoreSection();
+            cached.Section.SetActive(true);
+            HideLegacyFamilyRail(cached.Section);
+            moonDockStoreSection = cached.Section;
+            _moonDockStoreGridContent = cached.GridContent;
+            _moonDockStoreGrid = cached.Grid;
+            _moonDockStoreScrollViewport = cached.ScrollViewport;
+            _moonDockStoreBuiltForFamilyKey = cached.FamilyKey;
+            _moonDockEquipmentCardLayoutVersionBuilt = cached.LayoutVersion;
+            _moonDockStoreCards.Clear();
+            for (int i = 0; i < cached.Cards.Count; i++)
+                _moonDockStoreCards.Add(cached.Cards[i]);
+            return true;
         }
 
         /// <summary>
@@ -984,11 +1288,35 @@ namespace TitanOrbit.UI
         void RevealWarmedShipsView()
         {
             // --- Light paint ---
+            // Swap the prebuilt GEAR grid for this moon's family so the first Gear click
+            // does not Instantiate cards. Then paint Bank / hull and fade the overlay in.
+            ApplyCachedStoreForBoundPlanet();
             RefreshSlots();
             RefreshEquipmentSlots();
             RefreshSidebar(includeStore: false);
             if (!_moonDockMenuClosedByUser)
                 SetMoonDockCenterView(MoonDockCenterView.Ships, reuseWarmedTree: true);
+        }
+
+        /// <summary>
+        /// Points the live GEAR host at the cached section for the bound store planet's family.
+        /// Builds that family now only if idle cache never reached it (rushed first land).
+        /// </summary>
+        void ApplyCachedStoreForBoundPlanet()
+        {
+            Planet storePlanet = GetShipUpgradeStorePlanet();
+            ShipFamilyDefinition family = null;
+            if (CardShopSystem.Instance != null && storePlanet != null)
+                family = CardShopSystem.Instance.GetShipFamilyForStorePlanet(storePlanet.PlanetId, currentShip);
+            string key = family != null ? family.familyId : string.Empty;
+            if (TryApplyCachedFamilyStore(key))
+                return;
+
+            bool wasActive = _moonDockLayoutActive;
+            _moonDockLayoutActive = true;
+            BuildAndCacheFamilyStore(family);
+            TryApplyCachedFamilyStore(key);
+            _moonDockLayoutActive = wasActive;
         }
 
         /// <summary>
@@ -3411,25 +3739,6 @@ namespace TitanOrbit.UI
             }
         }
 
-        static TextMeshProUGUI CreateMoonDockFamilyRail(Transform parent)
-        {
-            var go = new GameObject("FamilyRail");
-            go.transform.SetParent(parent, false);
-            var le = go.AddComponent<LayoutElement>();
-            le.preferredHeight = 18f;
-            le.minHeight = 16f;
-            le.flexibleHeight = 0f;
-            var tmp = go.AddComponent<TextMeshProUGUI>();
-            tmp.text = "FAMILY";
-            tmp.fontSize = 11f;
-            tmp.fontStyle = FontStyles.Bold;
-            tmp.characterSpacing = 1.4f;
-            tmp.alignment = TextAlignmentOptions.Left;
-            tmp.color = new Color(0.62f, 0.78f, 0.95f, 0.92f);
-            tmp.raycastTarget = false;
-            return tmp;
-        }
-
         private static void ApplyMoonDockSectionHeaderMetrics(Transform headerRoot)
         {
             if (headerRoot == null)
@@ -3601,11 +3910,14 @@ namespace TitanOrbit.UI
             int spinTier = CardShopSystem.GetSpinCardTier(shipLevel, storePlanetLevel);
             float spinCost = CardShopSystem.Instance.GetCardSpinCost(spinTier);
             int poolCount = CardShopSystem.Instance.GetCardPoolCountForSpin(currentShip, spinTier, homeLevel, isHomeStore, currentPlanet.PlanetId, currentShip.ShipTeam);
+            // [TITAN-ORBIT] GameManager.DebugFreeCards — Inspector toggle on NceGameRoot.
+            // Same convenience as the free ship-tree: skip the gem check, keep slot / pool gates.
+            bool debugFreeCards = GameManager.IsDebugFreeCardsActive;
 
             if (cardSpinButton != null)
             {
                 cardSpinButton.gameObject.SetActive(true);
-                cardSpinButton.interactable = poolCount > 0 && contributedGems >= spinCost && hasEmptySlot;
+                cardSpinButton.interactable = poolCount > 0 && (debugFreeCards || contributedGems >= spinCost) && hasEmptySlot;
                 if (cardSpinButtonImage != null)
                 {
                     cardSpinButtonImage.color = cardSpinButton.interactable
@@ -3614,9 +3926,11 @@ namespace TitanOrbit.UI
                 }
             }
             if (cardSpinButtonLabel != null)
-                cardSpinButtonLabel.text = hasEmptySlot
-                    ? $"Spin — {spinCost:F0} g"
-                    : "No loadout slot";
+                cardSpinButtonLabel.text = !hasEmptySlot
+                    ? "No loadout slot"
+                    : debugFreeCards
+                        ? "Spin — Free"
+                        : $"Spin — {spinCost:F0} g";
 
             for (int i = 0; i < cardRoots.Length; i++)
             {
@@ -3844,8 +4158,6 @@ namespace TitanOrbit.UI
                 ? CardShopSystem.Instance.GetShipFamilyForShip(currentShip)
                 : null;
             orbitDockSidebar.RefreshFamilyIdentity(sidebarFamily, currentShip != null ? currentShip.ShipLevel : 1);
-            if (_moonDockFamilyRail != null)
-                _moonDockFamilyRail.text = FamilyStatHudCopy.FormatFamilyCaption(sidebarFamily);
             if (includeStore)
                 RefreshMoonDockStore();
         }
@@ -3881,10 +4193,9 @@ namespace TitanOrbit.UI
 
         private void RefreshMoonDockStore()
         {
-            if (!_moonDockLayoutActive || moonDockStoreSection == null)
+            if (!_moonDockLayoutActive)
                 return;
 
-            EnsureMoonDockStoreSection();
             Planet storePlanet = GetShipUpgradeStorePlanet();
             ShipFamilyDefinition family = null;
             if (CardShopSystem.Instance != null && storePlanet != null)
@@ -3892,6 +4203,11 @@ namespace TitanOrbit.UI
             else if (CardShopSystem.Instance != null && currentShip != null)
                 family = CardShopSystem.Instance.GetShipFamilyForShip(currentShip);
             string familyKey = family != null ? family.familyId : string.Empty;
+            if (TryApplyCachedFamilyStore(familyKey))
+            {
+                // Live refs now point at the prebuilt family grid. Fall through to price paint.
+            }
+
             bool needsEquipmentRebuild = !string.Equals(familyKey, _moonDockStoreBuiltForFamilyKey, StringComparison.Ordinal)
                 || _moonDockEquipmentCardLayoutVersionBuilt != MoonDockEquipmentCardLayoutVersion;
             if (!needsEquipmentRebuild && family?.components != null && family.components.Count > 0)
@@ -3908,9 +4224,16 @@ namespace TitanOrbit.UI
             }
 
             if (needsEquipmentRebuild)
-                RebuildMoonDockEquipmentStore(family);
+            {
+                // Reuse the cached section for this family — never add a second grid beside it.
+                BuildAndCacheFamilyStore(family);
+                TryShowExistingFamilyStoreSection(familyKey);
+            }
 
             int shipLevel = GetStorePurchaseLevel();
+            // [TITAN-ORBIT] GameManager.DebugFreeGear — Inspector toggle on NceGameRoot.
+            // Same convenience as the free ship-tree: skip the gem check, keep slot / owned gates.
+            bool debugFreeGear = GameManager.IsDebugFreeGearActive;
             for (int i = 0; i < _moonDockStoreCards.Count; i++)
             {
                 MoonDockStoreCardBinding card = _moonDockStoreCards[i];
@@ -3928,11 +4251,17 @@ namespace TitanOrbit.UI
                         ? ShipComponentStoreData.GetComponentGemPrice(componentEntry, shipLevel)
                         : 999f;
                     bool owned = currentShip != null && currentShip.HasComponentEquipped(card.componentId);
-                    canBuy = currentShip != null && !owned && contributedGems >= price && currentShip.HasEmptyEquipmentSlot;
+                    canBuy = currentShip != null && !owned && (debugFreeGear || contributedGems >= price) && currentShip.HasEmptyEquipmentSlot;
                     float power = componentEntry != null
                         ? ShipComponentStoreData.GetComponentPowerScore(componentEntry, shipLevel, family)
                         : 0f;
                     subline = FormatMoonDockEquipmentSubline(shipLevel, power, owned);
+                    if (ShipComponentAbilityStats.IsWeaponComponent(card.componentId))
+                    {
+                        string bankName = BulletBankProfileUtility.FormatComponentBulletTypeName(componentEntry, family);
+                        if (!string.IsNullOrEmpty(bankName))
+                            subline = bankName + " · " + subline;
+                    }
                     if (card.descriptionText != null && componentEntry != null)
                         ApplyEquipmentCardAbilityDescription(card.descriptionText, componentEntry, shipLevel, family);
                     if (card.powerBar != null && componentEntry != null)
@@ -3951,7 +4280,7 @@ namespace TitanOrbit.UI
                 {
                     price = StoreItemData.GetPrice(card.supportItem, shipLevel);
                     int count = CountSupportItem(currentShip, card.supportItem);
-                    canBuy = currentShip != null && contributedGems >= price && currentShip.HasEmptyEquipmentSlot;
+                    canBuy = currentShip != null && (debugFreeGear || contributedGems >= price) && currentShip.HasEmptyEquipmentSlot;
                     string supportDesc = StoreItemData.GetDescription(card.supportItem, shipLevel);
                     string supportName = StoreItemData.IsLeveledStoreGood(card.supportItem)
                         ? StoreItemData.GetDisplayName(card.supportItem, shipLevel)
@@ -3974,7 +4303,7 @@ namespace TitanOrbit.UI
                 if (card.sublineText != null)
                     card.sublineText.text = subline;
                 if (card.buyLabel != null)
-                    card.buyLabel.text = $"{price:F0}g";
+                    card.buyLabel.text = debugFreeGear ? "Free" : $"{price:F0}g";
                 if (card.buyButton != null)
                 {
                     card.buyButton.interactable = canBuy;
@@ -4131,10 +4460,28 @@ namespace TitanOrbit.UI
                 _cardSpinBlockVlg = block.GetComponent<VerticalLayoutGroup>();
         }
 
+        /// <summary>
+        /// Gear grids are created per family by <see cref="BuildAndCacheFamilyStore"/>.
+        /// Do not spawn an empty MoonDockStoreSection here — that leftover sat beside the
+        /// real family list and looked like a second FAMILY panel.
+        /// </summary>
         private void EnsureMoonDockStoreSection()
         {
             if (moonDockStoreSection != null || (moonDockCenterGearHost == null && moonDockCenterCardsHost == null))
                 return;
+            ApplyCachedStoreForBoundPlanet();
+        }
+
+        /// <summary>
+        /// Creates a new GEAR section under the gear host after hiding leftover family grids.
+        /// Idle cache calls this once per family that is not already cached.
+        /// </summary>
+        void CreateMoonDockStoreSection()
+        {
+            if (moonDockCenterGearHost == null && moonDockCenterCardsHost == null)
+                return;
+
+            HideEveryGearStoreSection();
 
             moonDockStoreSection = new GameObject("MoonDockStoreSection");
             Transform storeParent = moonDockCenterGearHost != null ? moonDockCenterGearHost : moonDockCenterCardsHost;
@@ -4156,7 +4503,6 @@ namespace TitanOrbit.UI
                 "GEAR",
                 "Components, drones, rockets, and mines — they share LOADOUT slots.",
                 OrbitDockSidebarPanelUI.EquipmentAccent);
-            _moonDockFamilyRail = CreateMoonDockFamilyRail(moonDockStoreSection.transform);
 
             var scrollGo = new GameObject("EquipmentStoreScroll");
             scrollGo.transform.SetParent(moonDockStoreSection.transform, false);
@@ -4286,11 +4632,9 @@ namespace TitanOrbit.UI
             if (sublineTmp != null)
             {
                 string sub = FormatMoonDockEquipmentSubline(shipLevel, power, owned: false);
-                if (ShipComponentAbilityStats.IsWeaponComponent(entry.componentId) && family != null)
+                if (ShipComponentAbilityStats.IsWeaponComponent(entry.componentId))
                 {
-                    var bank = BulletVfxBank.LoadDefault();
-                    int bankIndex = BulletBankProfileUtility.ResolveBankIndexForFamily(family);
-                    string bankName = bank != null ? bank.GetCategoryName(bankIndex) : null;
+                    string bankName = BulletBankProfileUtility.FormatComponentBulletTypeName(entry, family);
                     if (!string.IsNullOrEmpty(bankName))
                         sub = bankName + " · " + sub;
                 }
@@ -4308,8 +4652,8 @@ namespace TitanOrbit.UI
                 tip = root.AddComponent<MoonDockHoverTip>();
             tip.Caption = "GEAR";
             var extra = ShipComponentStoreData.BuildExtraLevelTooltipRichText(entry, shipLevel, family);
-            if (ShipComponentAbilityStats.IsWeaponComponent(entry.componentId) && family != null)
-                extra = extra + "\n\n" + BulletBankHudCopy.BuildFamilyOrdnanceTooltip(family, shipLevel);
+            if (ShipComponentAbilityStats.IsWeaponComponent(entry.componentId))
+                extra = extra + "\n\n" + BulletBankHudCopy.BuildComponentOrdnanceTooltip(entry, family, shipLevel);
             tip.Body = extra;
 
             if (powerBar != null)
@@ -6672,7 +7016,8 @@ namespace TitanOrbit.UI
             cardsTabContent.transform.SetParent(moonDockCenterCardsHost, false);
             cardsTabContent.transform.SetAsFirstSibling();
 
-            EnsureMoonDockStoreSection();
+            // Gear cards are built per planet family by idle cache / first Gear click.
+            // Do not spawn an empty store section here — it stacked under the real grid.
 
             if (_moonDockCardsToEquipmentDivider == null && moonDockCenterCardsHost != null)
             {
@@ -7012,7 +7357,7 @@ namespace TitanOrbit.UI
             {
                 activeStoreTab = 0;
                 _moonDockShipTreeHorizontal = false;
-                EnsureMoonDockStoreSection();
+                ApplyCachedStoreForBoundPlanet();
                 if (moonDockStoreSection != null && moonDockCenterGearHost != null)
                     moonDockStoreSection.transform.SetParent(moonDockCenterGearHost, false);
                 RefreshStoreTabVisibility();

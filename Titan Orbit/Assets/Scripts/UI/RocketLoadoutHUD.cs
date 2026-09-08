@@ -81,6 +81,12 @@ namespace TitanOrbit.UI
         static readonly Color CaretColor = new Color(0.45f, 0.95f, 1f, 1f);
         static readonly Color LabelOutline = new Color(0.02f, 0.04f, 0.08f, 0.95f);
 
+        /// <summary>
+        /// Live overlay instance. <see cref="BulletTypeHUD"/> reads this after we paint
+        /// so the fire-type strip can sit under the rocket column.
+        /// </summary>
+        static RocketLoadoutHUD _instance;
+
         Canvas _canvas;
         RectTransform _panel;
         GameObject _mainMenuPanel;
@@ -154,8 +160,52 @@ namespace TitanOrbit.UI
         /// <summary>Builds the left-middle overlay canvas and empty gear-slot rows.</summary>
         void Awake()
         {
+            _instance = this;
             BuildUi();
             SetVisible(false);
+        }
+
+        /// <summary>Drops the static dock pointer so a leftover HUD cannot park bullets under a destroyed panel.</summary>
+        void OnDestroy()
+        {
+            if (_instance == this)
+                _instance = null;
+        }
+
+        /// <summary>
+        /// Bottom edge of the rocket / mine glass in the shared 1920×1080 overlay
+        /// (left-center anchor space). <see cref="BulletTypeHUD"/> calls this after we
+        /// LateUpdate so the fire-type strip docks 8px under this column.
+        /// </summary>
+        /// <param name="y">
+        /// Overlay Y of the panel bottom when visible, or 0 when the column is hidden
+        /// so bullets occupy the mid-left slot rockets would have used.
+        /// </param>
+        /// <param name="visible">True when at least one rocket or mine tile is showing.</param>
+        /// <returns>True when this HUD exists and has a panel to measure.</returns>
+        public static bool TryGetOverlayDockBottomY(out float y, out bool visible)
+        {
+            y = 0f;
+            visible = false;
+            if (_instance == null || _instance._panel == null)
+                return false;
+
+            // --- Hidden column ---
+            // No packs (or menus hid us). BulletTypeHUD parks at mid-left like we do.
+            visible = _instance._panel.gameObject.activeSelf;
+            if (!visible)
+                return true;
+
+            y = OverlayPanelBottomY(_instance._panel);
+            return true;
+        }
+
+        /// <summary>Bottom edge in the panel's parent (left-center overlay) using the current pivot.</summary>
+        internal static float OverlayPanelBottomY(RectTransform panel)
+        {
+            if (panel == null)
+                return 0f;
+            return panel.anchoredPosition.y - panel.sizeDelta.y * panel.pivot.y;
         }
 
         /// <summary>

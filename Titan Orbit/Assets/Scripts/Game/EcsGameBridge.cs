@@ -2732,6 +2732,29 @@ namespace TitanOrbit.Game
             return false;
         }
 
+        /// <summary>
+        /// Copies planet ids from this frame's planet-state cache into <paramref name="dest"/>.
+        /// Used by the Orbit Menu idle cache so every moon's family store can be prebuilt
+        /// while the player is flying — not during landing.
+        /// </summary>
+        /// <param name="dest">Caller-owned list. Cleared then filled. Must not be null.</param>
+        /// <returns>Number of ids written (same as <paramref name="dest"/>.Count).</returns>
+        public static int CopyKnownPlanetIds(List<int> dest)
+        {
+            // --- Read this frame's planet map ---
+            // [TITAN-ORBIT] EnsurePlanetStateCacheForFrame already respects join-settle
+            // (no extra map-body gather). Orbit Menu warmup must use this, not a new query.
+            dest.Clear();
+            EnsurePlanetStateCacheForFrame();
+            foreach (var pair in s_PlanetStateByIdCache)
+            {
+                if (pair.Key > 0)
+                    dest.Add(pair.Key);
+            }
+
+            return dest.Count;
+        }
+
         /// <summary><see cref="PlanetState"/> by stable <see cref="PlanetState.PlanetId"/> across host/client worlds.</summary>
         public static bool TryGetPlanetStateByPlanetId(int planetId, out PlanetState state)
         {

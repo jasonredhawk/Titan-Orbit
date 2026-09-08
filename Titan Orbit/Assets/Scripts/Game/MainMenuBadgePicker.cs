@@ -67,10 +67,6 @@ namespace TitanOrbit.Game
             if (_chipRing != null)
                 _chipRing.color = Color.clear;
 
-            Transform clearTf = transform.Find("Clear");
-            if (clearTf != null)
-                clearTf.gameObject.SetActive(hasSprite);
-
             if (_caption != null)
                 _caption.text = hasSprite ? "Change badge" : "No badge";
         }

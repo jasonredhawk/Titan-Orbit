@@ -257,8 +257,10 @@ namespace TitanOrbit.Data
         }
 
         /// <summary>
-        /// Builds a short ability list: authored value, and for propulsion also the real hull gain
+        /// Builds the Gear-tab card description: weapon bullet type (when this part is a gun),
+        /// then authored Extra-Level stats. Propulsion also shows real hull gain
         /// (e.g. <c>+6 base Move → +1.5 cumulative</c>). No long stacking essays.
+        /// Called when a card is created and again when the Gear tab refreshes prices.
         /// </summary>
         static string BuildAbilityDescription(
             ShipFamilyComponentEntry entry,
@@ -270,6 +272,7 @@ namespace TitanOrbit.Data
             if (entry == null)
                 return string.Empty;
 
+            // Extra Level + family specials + bank multipliers — same numbers as the power bar.
             ShipComponentAbilityStats s = GetEffectiveStatsForDisplay(entry, shipLevel, family);
             entry.EnsureStatCategories();
             if (entry.statCategories == null || entry.statCategories.Count == 0)
@@ -278,6 +281,12 @@ namespace TitanOrbit.Data
             var lines = new List<AbilityLine>(16);
             bool isPropulsion = ShipComponentAbilityStats.IsPropulsionComponent(entry.componentId);
             bool isEngine = ShipFamilyPartTypes.IsEngineLikeName(entry.componentId);
+
+            // --- Weapon bullet type ---
+            // [TITAN-ORBIT] Gear-tab weapon cards list which bullet bank this part fires
+            // (Fireballs, Rift, …) next to Fire Power / Speed / Range. Authored
+            // entry.bulletPrefabIndex overrides the family default when set.
+            TryQueueWeaponBulletType(lines, entry, family);
 
             // --- Offense / Health / Energy (full gain = authored; they sum) ---
             TryQueue(lines, s.firePower, "Fire Power", 0);
@@ -329,6 +338,9 @@ namespace TitanOrbit.Data
             if (lines.Count == 0)
                 return richText ? "<color=#888888>—</color>" : "No stat bonus";
 
+            // --- Compile visible lines ---
+            // TMP cards use category tints; legacy callers ask for plain text.
+            // maxLines is a card-height budget (14 on Gear, 8 on short tooltips).
             var sb = new StringBuilder(256);
             int written = 0;
             for (int i = 0; i < lines.Count && written < maxLines; i++)
@@ -464,6 +476,26 @@ namespace TitanOrbit.Data
         {
             public string Text;
             public int ColorIndex;
+        }
+
+        /// <summary>
+        /// Adds <c>Bullet Type  Fireballs</c> (offense tint) when this part is a weapon
+        /// and the VFX bank has a category name for it. Non-weapons skip this line.
+        /// </summary>
+        static void TryQueueWeaponBulletType(
+            List<AbilityLine> lines,
+            ShipFamilyComponentEntry entry,
+            ShipFamilyDefinition family)
+        {
+            if (entry == null || !ShipComponentAbilityStats.IsWeaponComponent(entry.componentId))
+                return;
+
+            string typeName = BulletBankProfileUtility.FormatComponentBulletTypeName(entry, family);
+            if (string.IsNullOrEmpty(typeName))
+                return;
+
+            // Color index 1 = offense orange — same rail as Bullet Speed / Fire Rate.
+            TryQueueNote(lines, "Bullet Type  " + typeName, 1);
         }
 
         static void TryQueue(List<AbilityLine> lines, float value, string label, int colorIndex)

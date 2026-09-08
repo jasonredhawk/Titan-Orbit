@@ -16,20 +16,26 @@ namespace TitanOrbit.ECS
 
         /// <summary>True when this bank is on the hull or a purchased weapon component.</summary>
         public bool IsOwned;
+
+        /// <summary>
+        /// True for the hull family's default gun (always the first owned row).
+        /// The HUD labels this tile with the local ship family, not "whoever authored the bank first".
+        /// </summary>
+        public bool IsHullDefault;
     }
 
     /// <summary>
-    /// Owned damage banks: hull family default plus each equipped weapon's source-family bank.
-    /// Heal / EnergySpheres is never in the production set. Cycle-all (GameManager Test) adds
-    /// every non-reserved catalog category so B and the HUD walk the full bank list.
+    /// Owned damage banks: hull family default first, then each purchased weapon's bank.
+    /// Heal / EnergySpheres is never in the production set. Cycle-all (GameManager Test)
+    /// walks every non-reserved catalog category so B and the HUD stay on the same list.
     /// </summary>
     public static class BulletBankOwnership
     {
         static readonly List<int> s_Scratch = new List<int>(8);
 
         /// <summary>
-        /// Fills <paramref name="dest"/> with unique owned damage bank indices (sorted).
-        /// Returns how many were written.
+        /// Fills <paramref name="dest"/> with unique owned damage bank indices
+        /// (hull default first, then purchases). Returns how many were written.
         /// </summary>
         public static int CollectOwnedDamageBanks(
             EntityManager em,
@@ -40,26 +46,34 @@ namespace TitanOrbit.ECS
                 return 0;
 
             s_Scratch.Clear();
-            var config = UnityEngine.Resources.Load<PlanetShipFamilyConfig>("PlanetShipFamilyConfig");
+            var config = PlanetShipFamilyConfig.LoadDefault();
             ShipFamilyDefinition hullFamily = ResolveHullFamily(em, shipEntity, config);
+
+            // --- Hull default first ---
+            // [TITAN-ORBIT] Do not sort. The HUD and B-key walk hull, then purchases.
+            // ResolveBankIndexForFamily remaps heal / rocket authors to 0 so this always
+            // yields a damage bank. Force-add 0 if the unique filter still rejects it.
             int hullBank = BulletBankProfileUtility.ResolveBankIndexForFamily(hullFamily);
             AddUniqueDamageBank(s_Scratch, hullBank);
+            if (s_Scratch.Count == 0)
+                s_Scratch.Add(0);
 
             if (em.HasBuffer<EquippedEquipmentElement>(shipEntity))
             {
                 var equipment = em.GetBuffer<EquippedEquipmentElement>(shipEntity);
                 for (int i = 0; i < equipment.Length; i++)
                 {
-                    string id = equipment[i].ComponentId.ToString();
-                    if (string.IsNullOrWhiteSpace(id))
+                    EquippedEquipmentElement item = equipment[i];
+                    if ((StoreItemType)item.ItemType != StoreItemType.ShipComponent)
                         continue;
-                    if (!ShipComponentAbilityStats.IsWeaponComponent(id))
+
+                    string id = item.ComponentId.ToString();
+                    if (!IsPurchasedWeaponComponent(id))
                         continue;
                     AddUniqueDamageBank(s_Scratch, BulletBankProfileUtility.ResolveBankIndexForComponent(id, config));
                 }
             }
 
-            s_Scratch.Sort();
             int count = 0;
             for (int i = 0; i < s_Scratch.Count && count < dest.Length; i++)
                 dest[count++] = s_Scratch[i];
@@ -67,9 +81,8 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// Banks the HUD and B-key should show right now. Production = owned damage only.
-        /// Cycle-all = every non-reserved catalog category (including EnergySpheres), with
-        /// <see cref="VisibleBankRow.IsOwned"/> marked so testers see what Production allows.
+        /// Banks the HUD lists right now. Production = hull default + purchased weapons.
+        /// Cycle-all = every non-reserved catalog category (same walk as B).
         /// </summary>
         /// <param name="em">World that owns <paramref name="shipEntity"/> (client ghost or server).</param>
         /// <param name="shipEntity">Local ship whose loadout we read.</param>
@@ -94,7 +107,8 @@ namespace TitanOrbit.ECS
                     dest[count++] = new VisibleBankRow
                     {
                         BankIndex = owned[i],
-                        IsOwned = true
+                        IsOwned = true,
+                        IsHullDefault = i == 0
                     };
                 }
 
@@ -102,7 +116,9 @@ namespace TitanOrbit.ECS
             }
 
             // --- Test / cycle-all ---
-            // Walk the catalog so B and tiles share one list. Skip store Rockets.
+            // B and the HUD must walk the same catalog. Owned-only tiles parked the
+            // caret on the hull gun while fire used EnergySpheres / empty banks —
+            // looked like every owned weapon had jammed.
             var bank = BulletVfxBank.LoadDefault();
             int categoryCount = bank != null ? bank.CategoryCount : 0;
             int written = 0;
@@ -124,7 +140,8 @@ namespace TitanOrbit.ECS
                 dest[written++] = new VisibleBankRow
                 {
                     BankIndex = i,
-                    IsOwned = isOwned
+                    IsOwned = isOwned,
+                    IsHullDefault = ownedCount > 0 && owned[0] == i
                 };
             }
 
@@ -187,6 +204,22 @@ namespace TitanOrbit.ECS
 
         /// <summary>Scratch for ownership checks shared by visible-row and selectable helpers.</summary>
         static readonly int[] s_OwnedScratch = new int[16];
+
+        /// <summary>
+        /// True for a Moon Orbit extra part that should add a fire-type row.
+        /// Name match plus Part Profile (Weapon Bullet / Cannon / …) so family-prefixed
+        /// store ids like CosmicShark_Gun_2 still count.
+        /// </summary>
+        static bool IsPurchasedWeaponComponent(string componentId)
+        {
+            if (string.IsNullOrWhiteSpace(componentId))
+                return false;
+            if (ShipComponentAbilityStats.IsWeaponComponent(componentId))
+                return true;
+
+            string partType = ShipComponentAbilityStats.ResolvePartTypeForSuggestedStats(componentId);
+            return ShipFamilyPartTypes.IsWeapon(partType);
+        }
 
         static void AddUniqueDamageBank(List<int> list, int bankIndex)
         {

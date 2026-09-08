@@ -2339,9 +2339,6 @@ namespace TitanOrbit.Game
                 }
             }
 
-            ShipWeaponMountCollector.EnsureWeaponMountsOnHierarchy(go.transform, muzzleOffset);
-            ShipWingTractorBeamCollector.EnsureWingTractorBeamsOnHierarchy(go.transform);
-
             if (networkId > 0)
                 _proxyNetworkIds[entity] = networkId;
 
@@ -2352,15 +2349,6 @@ namespace TitanOrbit.Game
             _proxyTeams[entity] = team;
             _proxies[entity] = go;
             RegisterProxyKind(entity, ProxyVisualKind.Ship);
-
-            var moonDockVisual = go.GetComponent<ShipMoonDockVisualApplier>();
-            if (moonDockVisual == null)
-                moonDockVisual = go.AddComponent<ShipMoonDockVisualApplier>();
-            moonDockVisual.Bind(entity, scale);
-
-            var propulsionVisual = go.GetComponent<ShipPropulsionVisualApplier>();
-            if (propulsionVisual == null)
-                propulsionVisual = go.AddComponent<ShipPropulsionVisualApplier>();
 
             // Family prefix from chassis id (AstroEagle_T2 → AstroEagle) when available.
             ShipFamilyDefinition bindFamily = shipFamily;
@@ -2373,7 +2361,28 @@ namespace TitanOrbit.Game
                 familyPrefix = resolved.familyId;
             }
 
+            // --- Cross-family part remaps before collectors / scale Bind ---
+            var swapVisual = go.GetComponent<ShipComponentVisualSwapApplier>();
+            if (swapVisual == null)
+                swapVisual = go.AddComponent<ShipComponentVisualSwapApplier>();
+            swapVisual.Bind(entity, familyPrefix, bindFamily, team, networkId, muzzleOffset);
+
+            ShipWeaponMountCollector.EnsureWeaponMountsOnHierarchy(go.transform, muzzleOffset);
+            ShipWingTractorBeamCollector.EnsureWingTractorBeamsOnHierarchy(go.transform);
+
+            var moonDockVisual = go.GetComponent<ShipMoonDockVisualApplier>();
+            if (moonDockVisual == null)
+                moonDockVisual = go.AddComponent<ShipMoonDockVisualApplier>();
+            moonDockVisual.Bind(entity, scale);
+
+            var propulsionVisual = go.GetComponent<ShipPropulsionVisualApplier>();
+            if (propulsionVisual == null)
+                propulsionVisual = go.AddComponent<ShipPropulsionVisualApplier>();
+
+            // Scene / ModularJetFlame2 settings are the fallback. RebuildVfx prefers
+            // ThrusterVfxBank by family id; remapped mounts use ShipPartVisualSource.
             propulsionVisual.Bind(entity, familyPrefix, propulsionVfxSettings, bindFamily);
+            swapVisual.CapturePropulsionBind(familyPrefix, propulsionVfxSettings, bindFamily);
 
             // --- Cosmetic bank (roll while turning) ---
             // [HYBRID] MEGA hulls use MegaShipCatalog.bankVisualSettings; regular families

@@ -241,12 +241,35 @@ namespace TitanOrbit.Data
                 Transform t = transforms[i];
                 if (t == null || t == root)
                     continue;
+                if (t.name == ThrusterVfxBank.JetInstanceName)
+                    continue;
+                if (IsUnderJetInstance(t))
+                    continue;
+                if (IsUnderOriginalStash(t))
+                    continue;
+                // Soft JetFlame "ExhaustDust" classifies as Thruster via "exhaust".
+                // A rebuild while jets are parented would add one fake mount per real one (4→8).
+                if (IsJetFlameHierarchy(t))
+                    continue;
 
                 if (!TryGetComponentIdFromName(t.name, familyPrefix, out string componentId))
                     continue;
 
                 float scale = 1f;
                 bool enable = false;
+
+                // MEGA modules are unprefixed. Use the instance's own name (not
+                // Editor GetPrefabAssetName — that makes every child look like the
+                // thruster prefab). Engines stay dark; only outermost Thruster.
+                if (family == null && string.IsNullOrEmpty(familyPrefix))
+                {
+                    if (!IsMegaThrusterVfxMount(t, root))
+                        continue;
+
+                    stats.thrusterVfxTransforms.Add(t);
+                    stats.thrusterVfxScales.Add(1f);
+                    continue;
+                }
 
                 // Prefer baked family entry (populated by Scan).
                 if (family != null && family.TryGetComponentEntry(componentId, out ShipFamilyComponentEntry entry)
@@ -269,23 +292,145 @@ namespace TitanOrbit.Data
                 }
 
                 if (!enable)
-                {
-                    // MEGA StarSparrow names (Thruster, Engine) are not family-prefixed.
-                    string megaType = MegaShipPartClassifier.ResolvePartType(t.name);
-                    if (ShipFamilyPartTypes.IsThrusterProfile(megaType)
-                        || ShipFamilyPartTypes.IsEngineProfile(megaType))
-                    {
-                        enable = true;
-                        scale = 1f;
-                    }
-                }
-
-                if (!enable)
                     continue;
 
                 stats.thrusterVfxTransforms.Add(t);
                 stats.thrusterVfxScales.Add(scale);
             }
+
+            // Nested remaps keep a source-family child (CosmicShark_Thruster) under the
+            // host slot. Both names enable VFX — keep only the outermost slot.
+            PruneNestedPropulsionVfxMounts(stats);
+        }
+
+        static bool IsUnderJetInstance(Transform t)
+        {
+            Transform walk = t != null ? t.parent : null;
+            while (walk != null)
+            {
+                if (walk.name == ThrusterVfxBank.JetInstanceName)
+                    return true;
+                walk = walk.parent;
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// Particle systems and JetFlame child names (ExhaustDust / Fire / Dust).
+        /// These are not hull parts — "exhaust" would otherwise map to Thruster.
+        /// </summary>
+        static bool IsJetFlameHierarchy(Transform t)
+        {
+            if (t == null)
+                return false;
+            if (t.GetComponent<ParticleSystem>() != null)
+                return true;
+            if (t.GetComponent<ParticleSystemRenderer>() != null)
+                return true;
+            return IsJetFlameChildName(t.name);
+        }
+
+        static bool IsJetFlameChildName(string name)
+        {
+            if (string.IsNullOrEmpty(name))
+                return false;
+            if (name == ThrusterVfxBank.JetInstanceName)
+                return true;
+            return name.IndexOf("Exhaust", System.StringComparison.OrdinalIgnoreCase) >= 0
+                || name.IndexOf("Dust", System.StringComparison.OrdinalIgnoreCase) >= 0
+                || name.IndexOf("Fire", System.StringComparison.OrdinalIgnoreCase) >= 0
+                || name.IndexOf("Flame", System.StringComparison.OrdinalIgnoreCase) >= 0
+                || name.IndexOf("Smoke", System.StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        /// <summary>
+        /// Outermost MEGA module whose <b>own</b> name is a Thruster (not Engine, not ExhaustDust).
+        /// </summary>
+        static bool IsMegaThrusterVfxMount(Transform t, Transform hullRoot)
+        {
+            if (t == null || t == hullRoot)
+                return false;
+            if (MegaShipPartClassifier.IsHelperChildName(t.name)
+                || MegaShipPartClassifier.ShouldIgnore(t.name)
+                || ShipFamilyPartCalcProfileSet.IsCosmeticPartName(t.name)
+                || IsJetFlameChildName(t.name))
+                return false;
+
+            string nameType = MegaShipPartClassifier.ResolvePartType(
+                MegaShipPartClassifier.StripUnityDuplicateSuffix(t.name));
+            if (!ShipFamilyPartTypes.IsThrusterProfile(nameType))
+                return false;
+
+            Transform walk = t.parent;
+            while (walk != null && walk != hullRoot)
+            {
+                if (IsJetFlameChildName(walk.name) || MegaShipPartClassifier.IsHelperChildName(walk.name))
+                {
+                    walk = walk.parent;
+                    continue;
+                }
+
+                string parentType = MegaShipPartClassifier.ResolvePartType(
+                    MegaShipPartClassifier.StripUnityDuplicateSuffix(walk.name));
+                if (ShipFamilyPartTypes.IsThrusterProfile(parentType))
+                    return false;
+                walk = walk.parent;
+            }
+
+            return true;
+        }
+
+        static void PruneNestedPropulsionVfxMounts(ChassisComponentStats stats)
+        {
+            if (stats == null)
+                return;
+
+            for (int i = stats.thrusterVfxTransforms.Count - 1; i >= 0; i--)
+            {
+                Transform candidate = stats.thrusterVfxTransforms[i];
+                if (candidate == null)
+                {
+                    stats.thrusterVfxTransforms.RemoveAt(i);
+                    if (i < stats.thrusterVfxScales.Count)
+                        stats.thrusterVfxScales.RemoveAt(i);
+                    continue;
+                }
+
+                bool nested = false;
+                for (int j = 0; j < stats.thrusterVfxTransforms.Count; j++)
+                {
+                    if (i == j)
+                        continue;
+                    Transform other = stats.thrusterVfxTransforms[j];
+                    if (other == null || other == candidate)
+                        continue;
+                    if (!candidate.IsChildOf(other))
+                        continue;
+                    nested = true;
+                    break;
+                }
+
+                if (!nested)
+                    continue;
+
+                stats.thrusterVfxTransforms.RemoveAt(i);
+                if (i < stats.thrusterVfxScales.Count)
+                    stats.thrusterVfxScales.RemoveAt(i);
+            }
+        }
+
+        static bool IsUnderOriginalStash(Transform t)
+        {
+            Transform walk = t;
+            while (walk != null)
+            {
+                if (walk.name == ShipFamilyPartMatch.OriginalStashName)
+                    return true;
+                walk = walk.parent;
+            }
+
+            return false;
         }
 
         /// <summary>Resolves the family-prefixed component id (strips Unity <c>(N)</c> duplicate suffix).</summary>

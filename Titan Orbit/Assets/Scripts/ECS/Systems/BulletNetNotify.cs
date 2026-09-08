@@ -153,8 +153,10 @@ namespace TitanOrbit.ECS
         /// <summary>
         /// [TITAN-ORBIT] Broadcasts a ram / grind asteroid impact using the existing
         /// <see cref="BulletHitRpc"/> wire layout (no new RPC type — Linux headless stays compatible).
-        /// <c>Sequence = 0</c> means there is no tracer to adopt; clients play the ship's bullet
-        /// explosion and apply <paramref name="asteroidHealthAfter"/> onto the seed-hydrated rock.
+        /// <c>Sequence = 0</c> means there is no tracer to adopt; clients play a looping
+        /// stream copied from this ship's focused impact prefab (kill / plow still use
+        /// the bullet explosion) and apply
+        /// <paramref name="asteroidHealthAfter"/> onto the seed-hydrated rock.
         /// </summary>
         /// <param name="ecb">Server ECB for the broadcast RPC entity.</param>
         /// <param name="hitPosition">Contact point on the asteroid surface (logical XZ).</param>

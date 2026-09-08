@@ -376,6 +376,11 @@ namespace TitanOrbit.ECS
                 float abilityEnergy = isMega
                     ? 0f
                     : BulletBankCombatLogic.GetAbilityEnergyDrain(bankIndex, firePowerExtras);
+                // Keep one shot payable from a full clip. Heal / shock drain scales with
+                // Extra Level and can exceed MaxEnergy — TryPlanFire then returns false
+                // for every owned gun until the player dies and respawns.
+                if (!isMega && shipState.ValueRO.MaxEnergy > 1.05f)
+                    abilityEnergy = math.min(abilityEnergy, shipState.ValueRO.MaxEnergy - 1.05f);
 
                 // Per-category Upgrade Visual Scale (default 1). Global category scale is applied
                 // later in BulletVisualFactory — ScaleMultiplier is fire-power upgrade only.

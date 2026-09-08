@@ -1699,6 +1699,7 @@ namespace TitanOrbit.UI
                         : (ushort)0,
                 };
                 BulletBankHudCopy.ApplyLoadout(ref _liveTooltipContext);
+                BulletBankHudCopy.ApplyLiveCombatMuls(ref _liveTooltipContext);
             }
 
             // --- Accel bar from frame-to-frame speed delta ---

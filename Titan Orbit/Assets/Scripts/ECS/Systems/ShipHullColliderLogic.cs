@@ -38,6 +38,11 @@ namespace TitanOrbit.ECS
         /// </summary>
         public int AppliedEquipmentScaleKey;
         /// <summary>
+        /// Last B-key <see cref="ShipLoadoutState.RuntimeBulletIndex"/> baked into covering hull
+        /// (weapon mesh remaps). -1 = unset.
+        /// </summary>
+        public int AppliedRuntimeBulletIndex;
+        /// <summary>
         /// Last <see cref="MegaShipCatalog.HullColliderRevision"/> baked for a MEGA.
         /// 0 on older hulls so the next catalog pass rebuilds from each part's authored colliders.
         /// </summary>
@@ -109,18 +114,20 @@ namespace TitanOrbit.ECS
             public int PrefabId;
             public int AttrHash;
             public int EquipmentHash;
+            public int BankIndex;
             public byte Mega;
 
             public bool Equals(CoveringBakeKey other) =>
                 PrefabId == other.PrefabId
                 && AttrHash == other.AttrHash
                 && EquipmentHash == other.EquipmentHash
+                && BankIndex == other.BankIndex
                 && Mega == other.Mega;
 
             public override bool Equals(object obj) => obj is CoveringBakeKey other && Equals(other);
 
             public override int GetHashCode() =>
-                PrefabId * 397 ^ AttrHash * 17 ^ EquipmentHash * 13 ^ Mega;
+                PrefabId * 397 ^ AttrHash * 17 ^ EquipmentHash * 13 ^ BankIndex * 7 ^ Mega;
         }
 
         struct CoveringBakeValue
@@ -278,6 +285,7 @@ namespace TitanOrbit.ECS
             if (chassisPrefab != null
                 && TryComputeCoveringHull(
                     chassisPrefab, attrs, familyPrefix, megaParts, storeFactors,
+                    em, shipEntity,
                     out float3 measuredCenter, out float3 measuredExtents)
                 && math.cmax(measuredExtents) > 0.01f)
             {
@@ -310,12 +318,14 @@ namespace TitanOrbit.ECS
         {
             return TryComputeCoveringHull(
                 chassisPrefab, attrs, familyPrefix, megaParts, default,
+                default, Entity.Null,
                 out localCenter, out localExtents);
         }
 
         /// <summary>
         /// Same as <see cref="TryComputeCoveringHull(GameObject, in ShipAttributeUpgradeState, string, bool, out float3, out float3)"/>
-        /// plus moon-store per-group grow so covering colliders match hybrid proxy meshes.
+        /// plus moon-store grow and cross-family part remaps so covering colliders match
+        /// the hybrid proxy silhouette.
         /// </summary>
         public static bool TryComputeCoveringHull(
             GameObject chassisPrefab,
@@ -323,6 +333,8 @@ namespace TitanOrbit.ECS
             string familyPrefix,
             bool megaParts,
             ShipComponentStoreVisualScaleLogic.StoreVisualScaleFactors storeFactors,
+            EntityManager em,
+            Entity shipEntity,
             out float3 localCenter,
             out float3 localExtents)
         {
@@ -332,11 +344,45 @@ namespace TitanOrbit.ECS
                 return false;
 
             var store = ShipComponentStoreVisualScaleLogic.Resolve(storeFactors);
+            int bankIndex = 0;
+            bool healing = false;
+            bool canRemap = !megaParts && shipEntity != Entity.Null && em != default && em.Exists(shipEntity);
+            if (canRemap && em.HasComponent<ShipLoadoutState>(shipEntity))
+            {
+                var loadout = em.GetComponentData<ShipLoadoutState>(shipEntity);
+                bankIndex = loadout.RuntimeBulletIndex;
+                healing = loadout.HealingBulletsActive;
+            }
+
+            ShipFamilyDefinition hostFamily = null;
+            string prefix = ResolveFamilyPrefix(chassisPrefab, familyPrefix);
+            if (canRemap
+                && em.HasComponent<ShipState>(shipEntity)
+                && ShipStatApplyLogic.TryResolveChassisId(
+                    em, shipEntity,
+                    em.GetComponentData<ShipState>(shipEntity).Team,
+                    em.GetComponentData<ShipState>(shipEntity).ShipLevel,
+                    em.GetComponentData<ShipState>(shipEntity).BranchIndex,
+                    out string chassisId,
+                    allowFallback: true)
+                && !string.IsNullOrEmpty(chassisId))
+            {
+                ShipStatApplyLogic.TryResolveFamilyForChassisId(chassisId, out hostFamily);
+            }
+
+            bool remap = false;
+            if (canRemap)
+            {
+                ShipComponentStoreVisualScaleLogic.CollectExtraComponentIds(em, shipEntity, out var extras);
+                remap = ShipComponentVisualSwapLogic.WouldRemap(hostFamily, extras, bankIndex, healing);
+            }
+
             var key = new CoveringBakeKey
             {
                 PrefabId = chassisPrefab.GetInstanceID(),
                 AttrHash = megaParts ? 0 : HashAttributes(attrs),
                 EquipmentHash = megaParts ? 0 : HashStoreFactors(store),
+                BankIndex = megaParts ? 0 : bankIndex,
                 Mega = megaParts ? (byte)1 : (byte)0,
             };
             if (CoveringBakeCache.TryGetValue(key, out var cached))
@@ -354,7 +400,8 @@ namespace TitanOrbit.ECS
                 // or MEGA nested module colliders are stripped until Instantiate.
                 bool needClone = megaParts
                     || ShipStatApplyLogic.SumAttributeLevels(attrs) > 0
-                    || store.HasAnyGrow;
+                    || store.HasAnyGrow
+                    || remap;
                 Transform root;
                 if (needClone)
                 {
@@ -365,7 +412,13 @@ namespace TitanOrbit.ECS
                     root = instance.transform;
                     if (!megaParts)
                     {
-                        string prefix = ResolveFamilyPrefix(chassisPrefab, familyPrefix);
+                        if (canRemap)
+                        {
+                            ShipComponentVisualSwapLogic.ApplyFromShip(
+                                root, em, shipEntity, prefix, hostFamily, TeamId.None,
+                                originalStash: null, stripColliders: false);
+                        }
+
                         ShipComponentAttributeScaleLogic.ApplyToHierarchy(
                             root, prefix, attrs, territoryMovementMult: 1f, store);
                     }
@@ -619,7 +672,8 @@ namespace TitanOrbit.ECS
             int branchIndex,
             int attributeSum,
             bool isMega,
-            int equipmentScaleKey = 0)
+            int equipmentScaleKey = 0,
+            int runtimeBulletIndex = 0)
         {
             if (math.cmax(GetCachedCoveringExtents(applied)) <= 0.01f)
                 return true;
@@ -631,6 +685,10 @@ namespace TitanOrbit.ECS
                 return true;
             if (applied.AppliedEquipmentScaleKey != equipmentScaleKey)
                 return true;
+            // B-key bank is presentation (weapon mesh). Rebuilding the covering
+            // collider every cycle physics-ejected ships into planet orbit rings
+            // and locked every gun (InOrbitRing). Collision stays host + store extras.
+            _ = runtimeBulletIndex;
             if (applied.AppliedHullMaterialRevision != HullMaterialRevision)
                 return true;
             if (isMega && applied.AppliedMegaColliderRevision != MegaShipCatalog.HullColliderRevision)

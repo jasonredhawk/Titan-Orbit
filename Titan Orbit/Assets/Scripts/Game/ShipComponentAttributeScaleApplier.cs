@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using TitanOrbit.Data;
 using TitanOrbit.ECS;
 using Unity.Entities;
@@ -103,11 +104,45 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
+        /// Re-scans part groups after a mesh swap. Transforms that still exist keep their
+        /// authored bind-time base scale/position so B-key weapon swaps cannot compound
+        /// grow onto engines / wings. New instances (the swapped mesh) use the scale they
+        /// were just given (source authored size).
+        /// </summary>
+        public void ForceRebuildAfterHierarchyChange()
+        {
+            _lastApplied = default;
+            _lastStoreKey = -1;
+            RebuildCache(preserveLiveAuthoredBases: true);
+        }
+
+        /// <summary>
         /// Scans hull hierarchy via shared <see cref="ShipComponentAttributeScaleLogic.BuildGroupsFromHierarchy"/>
         /// (same grouping as PhysicsCollider bake), loads ProfileSet rates, stores base scales/positions.
         /// </summary>
-        void RebuildCache()
+        /// <param name="preserveLiveAuthoredBases">
+        /// When true, reuse BaseScale/BasePosition for Transform instances that survived the
+        /// swap. Without this, RebuildCache would snapshot already-grown localScale and the
+        /// next Apply would multiply again (engines ballooning on every B press).
+        /// </param>
+        void RebuildCache(bool preserveLiveAuthoredBases = false)
         {
+            // --- Remember authored bases on live instances before the rescan ---
+            Dictionary<int, Vector3> keptScales = null;
+            Dictionary<int, Vector3> keptPositions = null;
+            if (preserveLiveAuthoredBases)
+            {
+                keptScales = new Dictionary<int, Vector3>(32);
+                keptPositions = new Dictionary<int, Vector3>(32);
+                SnapshotAuthoredBases(_cockpit, keptScales, keptPositions);
+                SnapshotAuthoredBases(_wing, keptScales, keptPositions);
+                SnapshotAuthoredBases(_weapon, keptScales, keptPositions);
+                SnapshotAuthoredBases(_engine, keptScales, keptPositions);
+                SnapshotAuthoredBases(_thruster, keptScales, keptPositions);
+                SnapshotAuthoredBases(_tail, keptScales, keptPositions);
+                SnapshotAuthoredBases(_part, keptScales, keptPositions);
+            }
+
             // --- ProfileSet percent-of-base rates (version 1) ---
             var profileSet = ShipFamilyPartCalcProfileSet.LoadShared();
             _rates = ShipComponentAttributeScaleLogic.BuildRatesFromProfileSet(profileSet);
@@ -124,6 +159,17 @@ namespace TitanOrbit.Game
                 out _tail,
                 out _part);
 
+            if (preserveLiveAuthoredBases && keptScales != null)
+            {
+                RestoreAuthoredBases(ref _cockpit, keptScales, keptPositions);
+                RestoreAuthoredBases(ref _wing, keptScales, keptPositions);
+                RestoreAuthoredBases(ref _weapon, keptScales, keptPositions);
+                RestoreAuthoredBases(ref _engine, keptScales, keptPositions);
+                RestoreAuthoredBases(ref _thruster, keptScales, keptPositions);
+                RestoreAuthoredBases(ref _tail, keptScales, keptPositions);
+                RestoreAuthoredBases(ref _part, keptScales, keptPositions);
+            }
+
             _initialized = (_cockpit.Transforms != null && _cockpit.Transforms.Count > 0)
                 || (_wing.Transforms != null && _wing.Transforms.Count > 0)
                 || (_weapon.Transforms != null && _weapon.Transforms.Count > 0)
@@ -133,6 +179,55 @@ namespace TitanOrbit.Game
                 || (_part.Transforms != null && _part.Transforms.Count > 0);
 
             TryApplyAttributeScale(force: true);
+        }
+
+        /// <summary>Copies bind-time bases keyed by Transform instance id.</summary>
+        static void SnapshotAuthoredBases(
+            in ShipComponentAttributeScaleLogic.ScaleGroup group,
+            Dictionary<int, Vector3> scales,
+            Dictionary<int, Vector3> positions)
+        {
+            if (group.Transforms == null || scales == null)
+                return;
+
+            for (int i = 0; i < group.Transforms.Count; i++)
+            {
+                Transform t = group.Transforms[i];
+                if (t == null)
+                    continue;
+                int id = t.GetInstanceID();
+                if (i < group.BaseScales.Count)
+                    scales[id] = group.BaseScales[i];
+                if (positions != null && i < group.BasePositions.Count)
+                    positions[id] = group.BasePositions[i];
+            }
+        }
+
+        /// <summary>
+        /// Puts saved authored bases back on surviving instances. New swapped meshes
+        /// keep the localScale captured from the template (not in the snapshot).
+        /// </summary>
+        static void RestoreAuthoredBases(
+            ref ShipComponentAttributeScaleLogic.ScaleGroup group,
+            Dictionary<int, Vector3> scales,
+            Dictionary<int, Vector3> positions)
+        {
+            if (group.Transforms == null || scales == null)
+                return;
+
+            for (int i = 0; i < group.Transforms.Count; i++)
+            {
+                Transform t = group.Transforms[i];
+                if (t == null)
+                    continue;
+                int id = t.GetInstanceID();
+                if (scales.TryGetValue(id, out Vector3 baseScale) && i < group.BaseScales.Count)
+                    group.BaseScales[i] = baseScale;
+                if (positions != null
+                    && positions.TryGetValue(id, out Vector3 basePos)
+                    && i < group.BasePositions.Count)
+                    group.BasePositions[i] = basePos;
+            }
         }
 
         /// <summary>

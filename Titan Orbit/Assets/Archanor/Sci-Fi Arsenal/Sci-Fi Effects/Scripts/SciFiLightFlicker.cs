@@ -15,23 +15,23 @@ namespace SciFiArsenal
 		 
 		// Keep a copy of the original color
 		private Color originalColor;
+		Light cachedLight;
 		 
 		// Store the original color
 		void Start ()
 		{
-			Light light = GetComponent<Light>();
-			if (light == null)
+			cachedLight = GetComponent<Light>();
+			if (cachedLight == null)
 			{
 				enabled = false;
 				return;
 			}
-			originalColor = light.color;
+			originalColor = cachedLight.color;
 		}
 		 
 		void Update ()
 		{
-			Light light = GetComponent<Light>();
-			if (light == null)
+			if (cachedLight == null)
 			{
 				enabled = false;
 				return;
@@ -43,7 +43,7 @@ namespace SciFiArsenal
 			newColor.g = Mathf.Clamp(newColor.g, 0f, 1f);
 			newColor.b = Mathf.Clamp(newColor.b, 0f, 1f);
 
-			light.color = newColor;
+			cachedLight.color = newColor;
 		}
 		 
 		float EvalWave ()

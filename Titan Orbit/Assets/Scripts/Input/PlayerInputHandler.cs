@@ -98,6 +98,26 @@ namespace TitanOrbit.Input
             }
         }
 
+        /// <summary>
+        /// True the frame the player presses T to cycle debug thruster VFX
+        /// (GameManager Cycle All Thruster VFX).
+        /// </summary>
+        public bool CycleThrusterVfxPressed
+        {
+            get
+            {
+                var k = Keyboard.current;
+                if (k == null)
+                {
+                    foreach (var d in InputSystem.devices)
+                    {
+                        if (d is Keyboard kb) { k = kb; break; }
+                    }
+                }
+                return k != null && k.tKey.wasPressedThisFrame;
+            }
+        }
+
         /// <summary>True the frame the player presses B (or CycleBullet action) to cycle bullet prefab.</summary>
         public bool CycleBulletPressed
         {

@@ -1,0 +1,183 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 7e4c91a2b8d64f0e9c3a15d6e8f0b247, type: 3}
+  m_Name: ThrusterVfxBank
+  m_EditorClassIdentifier: TitanOrbit.Data::TitanOrbit.Data.ThrusterVfxBank
+  entries:
+  - familyId: AstroEagle
+    displayName: AstroEagle
+    prefab: {fileID: 102282, guid: 7c08e62c3101ac14690b6d195b05d46d, type: 3}
+    colorPrefabs:
+    - colorName: Blue
+      prefab: {fileID: 186012, guid: 76669db9a2fd1f54cb72f1683b19daf7, type: 3}
+    - colorName: Green
+      prefab: {fileID: 127778, guid: 02b9f508da441f8488afe035bd5b660f, type: 3}
+    - colorName: Purple
+      prefab: {fileID: 116864, guid: ecf8688379cd96f4d828079c0b84798f, type: 3}
+    - colorName: Red
+      prefab: {fileID: 161394, guid: 8834f1c7fd93cde4b8adb8a52eb0cc04, type: 3}
+    - colorName: Yellow
+      prefab: {fileID: 143470, guid: 43c25e70f07456d46a553d462f530c0a, type: 3}
+  - familyId: CosmicShark
+    displayName: CosmicShark
+    prefab: {fileID: 6328573611464784865, guid: d1e81076e9f0c964d9050d76b01a0604, type: 3}
+    colorPrefabs:
+    - colorName: Blue
+      prefab: {fileID: 8385955637955674844, guid: f028f3a8c820c1a428001f70cbb56571, type: 3}
+    - colorName: Green
+      prefab: {fileID: 9059502746843487136, guid: 3071191874ca6c4488513ab997a684a9, type: 3}
+    - colorName: Purple
+      prefab: {fileID: 8682424422371376111, guid: 8da69a404f023434da12ac72f4e969bd, type: 3}
+    - colorName: Red
+      prefab: {fileID: 4683905124986225912, guid: c46eb59a824f3bc42a8a3c2377df2076, type: 3}
+    - colorName: Yellow
+      prefab: {fileID: 6978563393326299349, guid: 8f6155f28afd4bc4a8c0af018702ea8a, type: 3}
+  - familyId: ForceBadger
+    displayName: ForceBadger
+    prefab: {fileID: 138478, guid: ef170f857bc0ae5469cdc84a49d51139, type: 3}
+    colorPrefabs:
+    - colorName: Blue
+      prefab: {fileID: 173532, guid: 88916fd98022e8444982c17edb6ddaed, type: 3}
+    - colorName: Green
+      prefab: {fileID: 165310, guid: 51d48e42f86fbc54d80f3d9a303a9fb8, type: 3}
+    - colorName: Purple
+      prefab: {fileID: 104454, guid: e0c3e0fa6d9ce554a8872579c5c2c27c, type: 3}
+    - colorName: Red
+      prefab: {fileID: 138478, guid: ef170f857bc0ae5469cdc84a49d51139, type: 3}
+    - colorName: Yellow
+      prefab: {fileID: 132708, guid: 67b38d41eb9cfca4384bef11fcec50b3, type: 3}
+  - familyId: GalaxyRaptor
+    displayName: GalaxyRaptor
+    prefab: {fileID: 8682424422371376111, guid: 8da69a404f023434da12ac72f4e969bd, type: 3}
+    colorPrefabs:
+    - colorName: Blue
+      prefab: {fileID: 8385955637955674844, guid: f028f3a8c820c1a428001f70cbb56571, type: 3}
+    - colorName: Green
+      prefab: {fileID: 9059502746843487136, guid: 3071191874ca6c4488513ab997a684a9, type: 3}
+    - colorName: Purple
+      prefab: {fileID: 8682424422371376111, guid: 8da69a404f023434da12ac72f4e969bd, type: 3}
+    - colorName: Red
+      prefab: {fileID: 4683905124986225912, guid: c46eb59a824f3bc42a8a3c2377df2076, type: 3}
+    - colorName: Yellow
+      prefab: {fileID: 6978563393326299349, guid: 8f6155f28afd4bc4a8c0af018702ea8a, type: 3}
+  - familyId: HyperFalcon
+    displayName: HyperFalcon
+    prefab: {fileID: 143470, guid: 43c25e70f07456d46a553d462f530c0a, type: 3}
+    colorPrefabs:
+    - colorName: Blue
+      prefab: {fileID: 186012, guid: 76669db9a2fd1f54cb72f1683b19daf7, type: 3}
+    - colorName: Green
+      prefab: {fileID: 127778, guid: 02b9f508da441f8488afe035bd5b660f, type: 3}
+    - colorName: Purple
+      prefab: {fileID: 116864, guid: ecf8688379cd96f4d828079c0b84798f, type: 3}
+    - colorName: Red
+      prefab: {fileID: 161394, guid: 8834f1c7fd93cde4b8adb8a52eb0cc04, type: 3}
+    - colorName: Yellow
+      prefab: {fileID: 143470, guid: 43c25e70f07456d46a553d462f530c0a, type: 3}
+  - familyId: LightFox
+    displayName: LightFox
+    prefab: {fileID: 191994, guid: a72a2c6436ec48147a9aa1f951f4c31a, type: 3}
+    colorPrefabs:
+    - colorName: Blue
+      prefab: {fileID: 187430, guid: 0ff1ecdce20828d458d7847261ff49d2, type: 3}
+    - colorName: Green
+      prefab: {fileID: 168162, guid: 893fa4a8432e4a3489daa0453eafa704, type: 3}
+    - colorName: Purple
+      prefab: {fileID: 156514, guid: cdd9028c0986fee4199ac03e649edebb, type: 3}
+    - colorName: Red
+      prefab: {fileID: 198354, guid: 3a639ae7a7e61064cb158d2b625e308b, type: 3}
+    - colorName: Yellow
+      prefab: {fileID: 191994, guid: a72a2c6436ec48147a9aa1f951f4c31a, type: 3}
+  - familyId: MeteorMantis
+    displayName: MeteorMantis
+    prefab: {fileID: 168162, guid: 893fa4a8432e4a3489daa0453eafa704, type: 3}
+    colorPrefabs:
+    - colorName: Blue
+      prefab: {fileID: 187430, guid: 0ff1ecdce20828d458d7847261ff49d2, type: 3}
+    - colorName: Green
+      prefab: {fileID: 168162, guid: 893fa4a8432e4a3489daa0453eafa704, type: 3}
+    - colorName: Purple
+      prefab: {fileID: 156514, guid: cdd9028c0986fee4199ac03e649edebb, type: 3}
+    - colorName: Red
+      prefab: {fileID: 198354, guid: 3a639ae7a7e61064cb158d2b625e308b, type: 3}
+    - colorName: Yellow
+      prefab: {fileID: 191994, guid: a72a2c6436ec48147a9aa1f951f4c31a, type: 3}
+  - familyId: NightAye
+    displayName: NightAye
+    prefab: {fileID: 104454, guid: e0c3e0fa6d9ce554a8872579c5c2c27c, type: 3}
+    colorPrefabs:
+    - colorName: Blue
+      prefab: {fileID: 173532, guid: 88916fd98022e8444982c17edb6ddaed, type: 3}
+    - colorName: Green
+      prefab: {fileID: 165310, guid: 51d48e42f86fbc54d80f3d9a303a9fb8, type: 3}
+    - colorName: Purple
+      prefab: {fileID: 104454, guid: e0c3e0fa6d9ce554a8872579c5c2c27c, type: 3}
+    - colorName: Red
+      prefab: {fileID: 138478, guid: ef170f857bc0ae5469cdc84a49d51139, type: 3}
+    - colorName: Yellow
+      prefab: {fileID: 132708, guid: 67b38d41eb9cfca4384bef11fcec50b3, type: 3}
+  - familyId: ProtonLegacy
+    displayName: ProtonLegacy
+    prefab: {fileID: 161394, guid: 8834f1c7fd93cde4b8adb8a52eb0cc04, type: 3}
+    colorPrefabs:
+    - colorName: Blue
+      prefab: {fileID: 186012, guid: 76669db9a2fd1f54cb72f1683b19daf7, type: 3}
+    - colorName: Green
+      prefab: {fileID: 127778, guid: 02b9f508da441f8488afe035bd5b660f, type: 3}
+    - colorName: Purple
+      prefab: {fileID: 116864, guid: ecf8688379cd96f4d828079c0b84798f, type: 3}
+    - colorName: Red
+      prefab: {fileID: 161394, guid: 8834f1c7fd93cde4b8adb8a52eb0cc04, type: 3}
+    - colorName: Yellow
+      prefab: {fileID: 143470, guid: 43c25e70f07456d46a553d462f530c0a, type: 3}
+  - familyId: SpaceExcalibur
+    displayName: SpaceExcalibur
+    prefab: {fileID: 108214, guid: cda62685c1bd22148933e193e12a4425, type: 3}
+    colorPrefabs:
+    - colorName: Blue
+      prefab: {fileID: 173532, guid: 88916fd98022e8444982c17edb6ddaed, type: 3}
+    - colorName: Green
+      prefab: {fileID: 165310, guid: 51d48e42f86fbc54d80f3d9a303a9fb8, type: 3}
+    - colorName: Purple
+      prefab: {fileID: 104454, guid: e0c3e0fa6d9ce554a8872579c5c2c27c, type: 3}
+    - colorName: Red
+      prefab: {fileID: 138478, guid: ef170f857bc0ae5469cdc84a49d51139, type: 3}
+    - colorName: Yellow
+      prefab: {fileID: 132708, guid: 67b38d41eb9cfca4384bef11fcec50b3, type: 3}
+  - familyId: StarForce
+    displayName: StarForce
+    prefab: {fileID: 8385955637955674844, guid: f028f3a8c820c1a428001f70cbb56571, type: 3}
+    colorPrefabs:
+    - colorName: Blue
+      prefab: {fileID: 8385955637955674844, guid: f028f3a8c820c1a428001f70cbb56571, type: 3}
+    - colorName: Green
+      prefab: {fileID: 9059502746843487136, guid: 3071191874ca6c4488513ab997a684a9, type: 3}
+    - colorName: Purple
+      prefab: {fileID: 8682424422371376111, guid: 8da69a404f023434da12ac72f4e969bd, type: 3}
+    - colorName: Red
+      prefab: {fileID: 4683905124986225912, guid: c46eb59a824f3bc42a8a3c2377df2076, type: 3}
+    - colorName: Yellow
+      prefab: {fileID: 6978563393326299349, guid: 8f6155f28afd4bc4a8c0af018702ea8a, type: 3}
+  - familyId: StriderOx
+    displayName: StriderOx
+    prefab: {fileID: 165310, guid: 51d48e42f86fbc54d80f3d9a303a9fb8, type: 3}
+    colorPrefabs:
+    - colorName: Blue
+      prefab: {fileID: 173532, guid: 88916fd98022e8444982c17edb6ddaed, type: 3}
+    - colorName: Green
+      prefab: {fileID: 165310, guid: 51d48e42f86fbc54d80f3d9a303a9fb8, type: 3}
+    - colorName: Purple
+      prefab: {fileID: 104454, guid: e0c3e0fa6d9ce554a8872579c5c2c27c, type: 3}
+    - colorName: Red
+      prefab: {fileID: 138478, guid: ef170f857bc0ae5469cdc84a49d51139, type: 3}
+    - colorName: Yellow
+      prefab: {fileID: 132708, guid: 67b38d41eb9cfca4384bef11fcec50b3, type: 3}

@@ -70,6 +70,12 @@ namespace TitanOrbit.Game
         /// </summary>
         int _nextMountIndex;
 
+        /// <summary>
+        /// Last fire bank we planned against. B-key changes reset predicted energy
+        /// and mount cooldowns so a costly / slow bank cannot jam every owned gun.
+        /// </summary>
+        int _lastFireBankIndex = int.MinValue;
+
         /// <summary>Cached reference to scene input — resolved in Start.</summary>
         PlayerInputHandler _input;
 
@@ -97,6 +103,7 @@ namespace TitanOrbit.Game
             _lastGhostEnergy = 0f;
             _predictedBelowGhostStableTime = 0f;
             _nextMountIndex = 0;
+            _lastFireBankIndex = int.MinValue;
         }
 
         /// <summary>
@@ -144,6 +151,18 @@ namespace TitanOrbit.Game
             if (mounts.Length <= 0)
                 return;
 
+            // B-key / HUD bank change — drop leftover client timers and adopt ghost energy
+            // so a Lightning / heal clip cannot mute anticipation for every owned gun.
+            if (_lastFireBankIndex != bankIndex)
+            {
+                _lastFireBankIndex = bankIndex;
+                _nextMountIndex = 0;
+                _predictedEnergy = shipState.CurrentEnergy;
+                _lastGhostEnergy = shipState.CurrentEnergy;
+                _predictedBelowGhostStableTime = 0f;
+                ShipWeaponFireLogic.ResetMountCooldowns(mounts);
+            }
+
             // Tick cooldowns even when Fire is released so barrels stay in sync with server cadence.
             ShipWeaponFireLogic.TickMountCooldowns(mounts, dt);
 
@@ -187,6 +206,8 @@ namespace TitanOrbit.Game
             float abilityEnergy = isMega
                 ? 0f
                 : BulletBankCombatLogic.GetAbilityEnergyDrain(bankIndex, firePowerExtras);
+            if (!isMega && shipState.MaxEnergy > 1.05f)
+                abilityEnergy = math.min(abilityEnergy, shipState.MaxEnergy - 1.05f);
 
             int shotCount;
             float energySpend;

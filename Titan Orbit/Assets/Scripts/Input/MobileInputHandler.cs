@@ -81,15 +81,12 @@ namespace TitanOrbit.Input
         public static MobileInputHandler Resolve()
         {
             // --- Resolve value ---
-            if (Instance != null && Instance.isActiveAndEnabled && Instance.touchUiActive)
-                return Instance;
-            var handlers = Object.FindObjectsByType<MobileInputHandler>(FindObjectsInactive.Include, FindObjectsSortMode.None);
-            for (int i = 0; i < handlers.Length; i++)
-            {
-                MobileInputHandler h = handlers[i];
-                if (h != null && h.isActiveAndEnabled && h.touchUiActive)
-                    return h;
-            }
+            // [TITAN-ORBIT] Desktop Instance.touchUiActive is false, so the old
+            // FindObjectsByType fallback ran twice per frame (PlayerInputHandler +
+            // ShipInputBridge aim). Profiler 41538–42200: 5–8 ms each, ~12 ms total.
+            var inst = Instance;
+            if (inst != null && inst.isActiveAndEnabled && inst.touchUiActive)
+                return inst;
             return null;
         }
 

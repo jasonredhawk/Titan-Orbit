@@ -7,10 +7,10 @@ namespace TitanOrbit.ECS
 {
     /// <summary>
     /// B-key and bullet-type HUD selection. Production: owned damage banks only (hull family +
-    /// purchased foreign weapons). Heal mode ignores B and HUD clicks. GameManager
-    /// <c>CycleAllBulletBanks</c> wraps every <see cref="BulletVfxBank"/> category including
-    /// EnergySpheres. HUD clicks arrive as <see cref="ShipInput.SetBulletBank"/> and jump to
-    /// <see cref="ShipInput.SelectedBulletBank"/> when that index is selectable.
+    /// purchased foreign weapons). Orbit Menu heal mode ignores B and HUD clicks.
+    /// GameManager <c>CycleAllBulletBanks</c> wraps every <see cref="BulletVfxBank"/> category
+    /// including EnergySpheres, but does <b>not</b> latch <c>HealingBulletsActive</c> —
+    /// that flag is Orbit Menu only. HUD clicks arrive as <see cref="ShipInput.SetBulletBank"/>.
     /// </summary>
     [UpdateInGroup(typeof(PredictedSimulationSystemGroup))]
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation | WorldSystemFilterFlags.ClientSimulation)]
@@ -64,6 +64,8 @@ namespace TitanOrbit.ECS
                     SystemAPI.GetComponentRO<MegaShipState>(entity).ValueRO.IsMega)
                     continue;
 
+                int previousBank = loadout.ValueRO.RuntimeBulletIndex;
+
                 // --- HUD click: jump to a specific bank ---
                 // [TITAN-ORBIT] Applied before B so a click and a B on the same tick
                 // keep the tile the player tapped.
@@ -73,20 +75,23 @@ namespace TitanOrbit.ECS
                     if (BulletBankOwnership.IsSelectableBank(state.EntityManager, entity, requested))
                     {
                         loadout.ValueRW.RuntimeBulletIndex = requested;
-                        if (TitanOrbitDebugFlags.CycleAllBulletBanks)
-                            loadout.ValueRW.HealingBulletsActive =
-                                BulletBankProfileUtility.IsHealBankIndex(requested);
+                        // Heal mode is Orbit Menu only. B / tiles must not latch
+                        // HealingBulletsActive or Production then ignores B and every
+                        // owned gun looks jammed (heal drain can exceed the clip).
                     }
 
+                    if (loadout.ValueRO.RuntimeBulletIndex != previousBank)
+                        ResetMountCooldowns(state.EntityManager, entity);
                     continue;
                 }
 
                 if (TitanOrbitDebugFlags.CycleAllBulletBanks)
                 {
                     int current = loadout.ValueRO.RuntimeBulletIndex;
-                    int next = BulletBankProfileUtility.NextDebugCycleBankIndex(current, _categoryCount);
-                    loadout.ValueRW.RuntimeBulletIndex = next;
-                    loadout.ValueRW.HealingBulletsActive = BulletBankProfileUtility.IsHealBankIndex(next);
+                    loadout.ValueRW.RuntimeBulletIndex =
+                        BulletBankProfileUtility.NextDebugCycleBankIndex(current, _categoryCount);
+                    if (loadout.ValueRO.RuntimeBulletIndex != previousBank)
+                        ResetMountCooldowns(state.EntityManager, entity);
                     continue;
                 }
 
@@ -95,7 +100,21 @@ namespace TitanOrbit.ECS
 
                 loadout.ValueRW.RuntimeBulletIndex = BulletBankOwnership.NextOwnedDamageBank(
                     state.EntityManager, entity, loadout.ValueRO.RuntimeBulletIndex);
+                if (loadout.ValueRO.RuntimeBulletIndex != previousBank)
+                    ResetMountCooldowns(state.EntityManager, entity);
             }
+        }
+
+        /// <summary>
+        /// Bank-swap: clear leftover per-barrel timers so the newly selected type can fire
+        /// immediately. Cooldown is stored on the mount, not on the bank index.
+        /// </summary>
+        static void ResetMountCooldowns(EntityManager em, Entity ship)
+        {
+            if (!em.HasBuffer<ShipWeaponMountElement>(ship))
+                return;
+
+            ShipWeaponFireLogic.ResetMountCooldowns(em.GetBuffer<ShipWeaponMountElement>(ship));
         }
     }
 }
