@@ -9,8 +9,8 @@ namespace TitanOrbit.ECS
     /// Retired seam sphere-resolve helpers. Canonical wrap + Unity.Physics own hull contacts.
     /// <see cref="GetShipCollisionRadiusWorld"/> is still used for MEGA aim radius.
     /// <para>
-    /// Asteroids use <see cref="ShipCollisionImpulseLogic"/> with virtual mass (rocks stay static).
-    /// Planets / moons keep infinite-mass wall reflect. Ship↔ship seam pairs use two-body impulse.
+    /// Asteroids / planets / moons use infinite-mass wall reflect (rocks stay static).
+    /// Ship↔ship seam pairs use two-body impulse.
     /// </para>
     /// </summary>
     public static class ShipToroidalWorldCollisionLogic
@@ -190,7 +190,7 @@ namespace TitanOrbit.ECS
             vel.y = 0f;
             if (bodyMass > 0f && shipMass > 0f)
             {
-                // [TITAN-ORBIT] Finite virtual mass — rock does not move; mass still shapes rebound.
+                // Retired seam path still accepts a finite bodyMass; live bounce uses wall reflect.
                 ShipCollisionImpulseLogic.ApplyShipVsStaticMassiveImpulse(
                     ref vel, normal, shipMass, bodyMass, restitution);
             }

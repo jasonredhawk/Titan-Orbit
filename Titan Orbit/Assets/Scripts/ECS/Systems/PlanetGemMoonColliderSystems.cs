@@ -93,7 +93,8 @@ namespace TitanOrbit.ECS
                 float moonBodyRadiusLocal = PlanetGemMoonMath.GetMoonBodyRadiusLocal(planetScale, isHome);
 
                 var material = Unity.Physics.Material.Default;
-                material.Restitution = 0.5f;
+                // PhysX e = 0 — custom wall bounce owns rebound (same as asteroids).
+                material.Restitution = 0f;
 
                 var collider = SphereCollider.Create(
                     new SphereGeometry { Center = float3.zero, Radius = moonBodyRadiusLocal },
@@ -141,7 +142,7 @@ namespace TitanOrbit.ECS
 
                 Entity shieldEntity = ecb.CreateEntity();
                 var material = Unity.Physics.Material.Default;
-                material.Restitution = 0.5f;
+                material.Restitution = 0f;
                 var owner = planetState.ValueRO.Ownership;
                 var collider = Unity.Physics.SphereCollider.Create(
                     new SphereGeometry { Center = float3.zero, Radius = math.max(0.05f, shieldLocal) },
@@ -201,7 +202,7 @@ namespace TitanOrbit.ECS
                     float shieldLocal = PlanetGemMoonMath.GetMoonShieldOuterRadiusLocal(
                         planetScale, planetState.IsHomePlanet);
                     var material = Unity.Physics.Material.Default;
-                    material.Restitution = 0.5f;
+                    material.Restitution = 0f;
                     var collider = Unity.Physics.SphereCollider.Create(
                         new SphereGeometry { Center = float3.zero, Radius = math.max(0.05f, shieldLocal) },
                         TitanOrbitPhysicsLayers.MoonShieldForOwner(owner),
@@ -317,7 +318,7 @@ namespace TitanOrbit.ECS
                     float shieldLocal = PlanetGemMoonMath.GetMoonShieldOuterRadiusLocal(
                         planetScale, planetState.IsHomePlanet);
                     var material = Unity.Physics.Material.Default;
-                    material.Restitution = 0.5f;
+                    material.Restitution = 0f;
                     var collider = Unity.Physics.SphereCollider.Create(
                         new SphereGeometry { Center = float3.zero, Radius = math.max(0.05f, shieldLocal) },
                         TitanOrbitPhysicsLayers.MoonShieldForOwner(planetState.Ownership),

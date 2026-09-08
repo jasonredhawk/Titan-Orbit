@@ -5,11 +5,10 @@ using UnityEngine;
 namespace TitanOrbit.UI
 {
     /// <summary>
-    /// Join-load Orbit Menu warmup. The loading screen ticks this while the galaxy overlay
-    /// is up so chrome, the shared ship tree, and every planet-family GEAR grid exist
-    /// <b>before</b> Join Team. First spawn used to hitch because
-    /// <see cref="MoonOrbitStationController"/> waited 90 in-game frames and a flying ship
-    /// before building those widgets.
+    /// Join-load Orbit Menu + minimap warmup. The loading screen ticks this while the galaxy
+    /// overlay is up so chrome, the shared ship tree, every planet-family GEAR grid, and
+    /// minimap blips exist <b>before</b> Join Team. First spawn used to hitch because those
+    /// widgets built after the ship appeared.
     /// <para>
     /// Dedicated servers skip this — they have no Orbit Menu. A 15s timeout still dismisses
     /// loading if a prefab is missing so Join Team cannot soft-lock.
@@ -62,30 +61,43 @@ namespace TitanOrbit.UI
             s_JoinWarmupCompleteLogged = false;
         }
 
-        /// <summary>Session-leave reset plus a republish so the Game gate matches UI flags.</summary>
+        /// <summary>
+        /// Session-leave reset plus a republish so the Game gate matches UI flags.
+        /// Also resets minimap warmup timeout.
+        /// </summary>
         static void ResetJoinWarmupSessionGateAndPublish()
         {
             ResetJoinWarmupSessionGate();
+            MinimapJoinWarmup.ResetSession();
             PublishJoinWarmupToGate();
         }
 
-        /// <summary>One warmup step, then copy complete / progress / status onto the Game gate.</summary>
+        /// <summary>One Orbit Menu step + one minimap step, then copy combined progress onto the Game gate.</summary>
         static void TickJoinLoadWarmupAndPublish()
         {
             TickJoinLoadWarmup();
+            MinimapJoinWarmup.Tick();
             PublishJoinWarmupToGate();
         }
 
         /// <summary>
-        /// Mirrors UI warmup onto <see cref="OrbitMenuJoinWarmupGate"/> so Join Team and the
-        /// loading bar do not need a TitanOrbit.UI assembly reference.
+        /// Mirrors Orbit Menu + minimap warmup onto <see cref="OrbitMenuJoinWarmupGate"/> so
+        /// Join Team and the loading bar do not need a TitanOrbit.UI assembly reference.
         /// </summary>
         static void PublishJoinWarmupToGate()
         {
-            OrbitMenuJoinWarmupGate.Publish(
-                IsJoinLoadWarmupCompleteOrNotNeeded(),
-                GetJoinLoadWarmupProgress(),
-                GetJoinLoadWarmupStatusLabel());
+            bool orbitReady = IsJoinLoadWarmupCompleteOrNotNeeded();
+            bool minimapReady = MinimapJoinWarmup.IsCompleteOrNotNeeded();
+            float progress = 0.5f * GetJoinLoadWarmupProgress() + 0.5f * MinimapJoinWarmup.GetProgress();
+            string status;
+            if (!orbitReady)
+                status = GetJoinLoadWarmupStatusLabel();
+            else if (!minimapReady)
+                status = MinimapJoinWarmup.GetStatusLabel();
+            else
+                status = "Ready";
+
+            OrbitMenuJoinWarmupGate.Publish(orbitReady && minimapReady, progress, status);
         }
 
         /// <summary>

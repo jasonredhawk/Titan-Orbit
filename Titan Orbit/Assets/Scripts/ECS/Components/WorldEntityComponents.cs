@@ -55,9 +55,9 @@ namespace TitanOrbit.ECS
         [GhostField] public float Health;
 
         /// <summary>
-        /// [TITAN-ORBIT] Designer Size rolled at spawn (drives HP, gems, visual scale, and
-        /// virtual collision mass for ship bounce). Ghosted so client prediction uses the same
-        /// mass as the server when applying <c>ShipCollisionImpulseLogic</c>.
+        /// [TITAN-ORBIT] Designer Size rolled at spawn (drives HP, gems, and visual scale).
+        /// Ghosted so client prediction matches the server. Live bounce treats rocks as
+        /// immovable walls — Size does not scale rebound.
         /// </summary>
         [GhostField] public float Size;
 

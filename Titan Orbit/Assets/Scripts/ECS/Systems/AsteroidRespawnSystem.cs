@@ -157,9 +157,9 @@ namespace TitanOrbit.ECS
             float gems = math.max(GemEconomyConstants.MinGemSpawnValue, gemValue);
             float health = math.max(1f, maxHealth);
 
-            // --- Designer Size (virtual collision mass + respawn identity) ---
+            // --- Designer Size (HP / gems / visual + respawn identity) ---
             // Prefer the explicit Size from map gen / pending respawn. Older callers that only
-            // pass MaxHealth recover Size ≈ MaxHealth / HealthPerSize so bounce still works.
+            // pass MaxHealth recover Size ≈ MaxHealth / HealthPerSize.
             float designerSize = size;
             if (designerSize <= 0f)
             {

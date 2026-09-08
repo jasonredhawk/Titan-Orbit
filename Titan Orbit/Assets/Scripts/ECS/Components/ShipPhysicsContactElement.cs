@@ -14,6 +14,7 @@ namespace TitanOrbit.ECS
         public const byte Ship = 1;
         public const byte Planet = 2;
         public const byte Moon = 3;
+        public const byte Shield = 4;
     }
 
     /// <summary>Singleton tag for the per-tick classified contact buffer.</summary>

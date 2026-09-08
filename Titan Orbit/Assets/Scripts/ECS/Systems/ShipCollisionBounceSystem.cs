@@ -11,20 +11,21 @@ using Unity.Transforms;
 namespace TitanOrbit.ECS
 {
     /// <summary>
-    /// After Unity Physics exports contacts, applies mass-aware bounce from
-    /// <see cref="ShipCollisionImpulseLogic"/> for asteroids (virtual rock mass) and
-    /// planets/moons (infinite-mass wall). Server ship↔ship stays on the Unity Physics
-    /// two-body solver. Client remotes have no <see cref="PhysicsVelocity"/>, so a local
-    /// ram would otherwise bounce off a frozen interpolated hull — rewrite that contact
-    /// as a moving wall from ghosted <see cref="ShipKinematics"/> (real events only).
+    /// After Unity Physics exports contacts, applies bounce from
+    /// <see cref="ShipCollisionImpulseLogic"/>. Asteroids, planets, and moons are immovable
+    /// walls: incoming XZ speed reflects along the contact normal (rocks stay put).
+    /// Predicted ship↔ship uses snapshot two-body impulse (ramming mass, equal-and-opposite)
+    /// instead of leaving rebound to PhysX. Client remotes have no <see cref="PhysicsVelocity"/>,
+    /// so a local ram would otherwise bounce off a frozen interpolated hull — rewrite that
+    /// contact as a moving wall from ghosted <see cref="ShipKinematics"/> (real events only).
     /// MEGA hulls plow asteroids: restore pre-collision motion (no bounce) so a field does
     /// not slow the ship. MEGA vs planet also restores pose — the covering sphere must not
     /// park the hull outside a small planet's orbit ring; capped keep-out runs after this.
-    /// Friendly gem-moon rocks keep velocity <b>and</b> undo PhysX depenetration while the
-    /// player flies through the dock / orbit-menu disc — the solver shove felt like a
-    /// camera snap-back even though FPS stayed high. Landing attach and the moon cinematic
-    /// own surface pose; enemy/neutral moons still wall-bounce. Server ram damage + client
-    /// soft-destroy happen elsewhere.
+    /// Moon hulls wall-bounce for every team (friendly included). Friendly shields stay
+    /// pass-through: PhysX usually omits the pair, and leftover contacts undo depenetration
+    /// so the orbit-menu disc does not snap the hull. Enemy/neutral shields still wall-bounce.
+    /// Landing attach and the moon cinematic own surface pose after dock. Server ram damage
+    /// + client soft-destroy happen elsewhere.
     /// <para>
     /// Runs on ServerSimulation and ClientSimulation (predicted). Collision-event stream only —
     /// no asteroid/planet <c>ToEntityArray</c> (join-crash safe). Tangential grip stays in
@@ -88,10 +89,9 @@ namespace TitanOrbit.ECS
             if (fixedDt <= 0f)
                 fixedDt = 1f / 60f;
 
-            // --- Designer asteroid bounce tuning ---
+            // --- Designer asteroid wall bounce (immovable rock; e from Inspector) ---
             var settings = AsteroidSettingsCache.ResolveOrDefault();
             settings.ClampValues();
-            float asteroidMassPerSize = settings.CollisionMassPerSize;
             float asteroidRestitution = settings.BounceRestitution;
 
             if (!SystemAPI.TryGetSingletonBuffer<ShipPhysicsContactElement>(out var pairs) ||
@@ -135,23 +135,20 @@ namespace TitanOrbit.ECS
                     long key = PackEntityPairKey(pair.Ship, pair.Other);
                     if (!_seenShipPairs.Add(key))
                         continue;
-                    // Server / two predicted hulls: PhysX already bounced. Do not two-body
-                    // rewrite (that felt like a magnet). Client remotes have no PhysicsVelocity,
-                    // so PhysX treats them as a frozen wall — replace that with a moving wall
-                    // from ghosted kinematics. Keep MEGA plow from undoing the solver pose.
+                    // Keep MEGA plow from undoing the solver pose. Predicted pairs get a
+                    // snapshot two-body rewrite (not stacked on PhysX). Interpolated remotes
+                    // have no PhysicsVelocity — moving wall from ghosted kinematics.
                     _megaKeepPhysX.Add(pair.Ship);
                     _megaKeepPhysX.Add(pair.Other);
-                    if (isClient)
-                    {
-                        ApplyLocalVsInterpolatedRemote(
-                            pair, ref _working, snapshotLookup, velocityLookup, kinematicsLookup, megaLookup);
-                    }
+                    ApplyShipVsShip(
+                        pair, ref _working, snapshotLookup, velocityLookup, kinematicsLookup,
+                        motorLookup, shipStateLookup, megaLookup, isClient);
                 }
                 else if (pair.Kind == ShipPhysicsContactKind.Asteroid)
                 {
                     bool plowed = ApplyShipVsAsteroid(
-                        pair, ref _working, snapshotLookup, motorLookup, shipStateLookup,
-                        megaLookup, asteroidStateLookup, culledLookup, asteroidMassPerSize, asteroidRestitution);
+                        pair, ref _working, snapshotLookup, shipStateLookup,
+                        megaLookup, asteroidStateLookup, culledLookup, asteroidRestitution);
                     if (plowed)
                         _megaUnconstrained.Add(pair.Ship);
                 }
@@ -171,7 +168,8 @@ namespace TitanOrbit.ECS
                     }
                     else
                     {
-                        ApplyShipVsInfiniteWall(pair, ref _working, snapshotLookup);
+                        ApplyShipVsInfiniteWall(
+                            pair, ref _working, snapshotLookup, asteroidRestitution);
                     }
                 }
                 else if (pair.Kind == ShipPhysicsContactKind.Moon)
@@ -179,16 +177,20 @@ namespace TitanOrbit.ECS
                     if (IsTakingOffMoon(pair.Ship, moonDockLookup))
                         continue;
 
-                    // --- Friendly moon rock / leftover shield pair ---
-                    // [TITAN-ORBIT] Same-team shields already omit the PhysX pair
-                    // (TitanOrbitPhysicsLayers.ShipForTeam). The solid moon hull is still
-                    // World-layer, so a ship flying through the orbit-menu disc keeps
-                    // overlapping it. Keeping only velocity left Unity Physics free to
-                    // depenetrate LocalTransform every tick — the hull (and the camera
-                    // locked to it) snapped back toward the rock while thrust continued.
-                    // Restore the pre-physics pose like MEGA vs planet. Dock attach
-                    // (ShipPhysicsDriveLogic) and ShipMoonDockVisualApplier own the
-                    // landed surface; this path is fly-through / approach only.
+                    // Same wall reflect as asteroids / planets (shared BounceRestitution).
+                    ApplyShipVsInfiniteWall(
+                        pair, ref _working, snapshotLookup, asteroidRestitution);
+                    _megaKeepPhysX.Add(pair.Ship);
+                }
+                else if (pair.Kind == ShipPhysicsContactKind.Shield)
+                {
+                    if (IsTakingOffMoon(pair.Ship, moonDockLookup))
+                        continue;
+
+                    // --- Leftover friendly shield pair ---
+                    // Same-team shields already omit the PhysX pair
+                    // (TitanOrbitPhysicsLayers.ShipForTeam). A stale or filter-miss contact
+                    // must not wall-bounce — restore pose like MEGA vs planet.
                     if (IsFriendlyMoonContact(
                             pair.Ship,
                             pair.Other,
@@ -202,7 +204,8 @@ namespace TitanOrbit.ECS
                         continue;
                     }
 
-                    ApplyShipVsInfiniteWall(pair, ref _working, snapshotLookup);
+                    ApplyShipVsInfiniteWall(
+                        pair, ref _working, snapshotLookup, asteroidRestitution);
                     _megaKeepPhysX.Add(pair.Ship);
                 }
             }
@@ -218,7 +221,7 @@ namespace TitanOrbit.ECS
                 velocityLookup[e] = pv;
             }
 
-            // --- Undo PhysX depenetration (MEGA plow / planet, friendly moon fly-through) ---
+            // --- Undo PhysX depenetration (MEGA plow / planet, leftover friendly shield) ---
             // Reconstruct unconstrained pose from the pre-physics snapshot (drive already applied).
             // [PHYSICS] The solver already wrote LocalTransform. Writing it back here is what
             // stops the visible snap; velocity restore alone is not enough.
@@ -322,7 +325,8 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// True when this moon/shield body belongs to the ship's team (landing pad, not a wall).
+        /// True when this moon/shield body belongs to the ship's team (friendly shield
+        /// fly-through; moon hull bounce does not use this).
         /// </summary>
         static bool IsFriendlyMoonContact(
             Entity ship,
@@ -340,6 +344,55 @@ namespace TitanOrbit.ECS
 
             return PlanetGemMoonCombatLogic.IsTeamFriendlyToMoon(
                 planets[planetEntity].Ownership, ships[ship].Team);
+        }
+
+        /// <summary>
+        /// Predicted ship↔ship: snapshot two-body impulse (ramming mass). Client local vs an
+        /// interpolated remote (no <see cref="PhysicsVelocity"/>) stays a moving-wall reflect.
+        /// Starts from pre-collision velocity so this replaces PhysX restitution, not stacks on it.
+        /// </summary>
+        static void ApplyShipVsShip(
+            ShipPhysicsContactElement pair,
+            ref NativeHashMap<Entity, float3> working,
+            ComponentLookup<ShipPreCollisionVelocity> snapshots,
+            ComponentLookup<PhysicsVelocity> velocities,
+            ComponentLookup<ShipKinematics> kinematics,
+            ComponentLookup<ShipMotorConfig> motors,
+            ComponentLookup<ShipState> shipStates,
+            ComponentLookup<MegaShipState> megas,
+            bool isClient)
+        {
+            bool shipHasVel = velocities.HasComponent(pair.Ship);
+            bool otherHasVel = velocities.HasComponent(pair.Other);
+            if (shipHasVel != otherHasVel)
+            {
+                if (isClient)
+                {
+                    ApplyLocalVsInterpolatedRemote(
+                        pair, ref working, snapshots, velocities, kinematics, megas);
+                }
+
+                return;
+            }
+
+            if (!shipHasVel)
+                return;
+            if (shipStates.HasComponent(pair.Ship) && shipStates[pair.Ship].IsDead)
+                return;
+            if (shipStates.HasComponent(pair.Other) && shipStates[pair.Other].IsDead)
+                return;
+
+            float3 vA = GetWorkingOrSnapshot(pair.Ship, ref working, snapshots);
+            float3 vB = GetWorkingOrSnapshot(pair.Other, ref working, snapshots);
+            float mA = GetShipCollisionMass(pair.Ship, motors, shipStates, megas);
+            float mB = GetShipCollisionMass(pair.Other, motors, shipStates, megas);
+            if (!ShipCollisionImpulseLogic.ApplyTwoBodyImpulse(
+                    ref vA, ref vB, pair.NormalShipFromOther, mA, mB,
+                    ShipCollisionImpulseLogic.DefaultShipShipRestitution))
+                return;
+
+            working[pair.Ship] = vA;
+            working[pair.Other] = vB;
         }
 
         /// <summary>
@@ -423,8 +476,8 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// Mass-aware bounce off one asteroid. Skips dead / client-culled rocks so a leftover
-        /// PhysX contact after the mesh hid cannot keep shoving the hull.
+        /// Wall-reflect off one asteroid (rock stays put). Skips dead / client-culled rocks so a
+        /// leftover PhysX contact after the mesh hid cannot keep shoving the hull.
         /// MEGAs restore the pre-collision snapshot instead of bouncing (plow).
         /// </summary>
         /// <returns>True when this pair was a MEGA plow (caller may restore unconstrained pose).</returns>
@@ -432,12 +485,10 @@ namespace TitanOrbit.ECS
             ShipPhysicsContactElement pair,
             ref NativeHashMap<Entity, float3> working,
             ComponentLookup<ShipPreCollisionVelocity> snapshots,
-            ComponentLookup<ShipMotorConfig> motors,
             ComponentLookup<ShipState> shipStates,
             ComponentLookup<MegaShipState> megas,
             ComponentLookup<AsteroidState> asteroidStates,
             ComponentLookup<AsteroidClientCulledTag> culled,
-            float massPerSize,
             float restitution)
         {
             Entity ship = pair.Ship;
@@ -465,11 +516,9 @@ namespace TitanOrbit.ECS
                 return true;
             }
 
-            float mShip = GetShipCollisionMass(ship, motors, shipStates, megas);
-            float mRock = ShipCollisionImpulseLogic.ComputeAsteroidCollisionMass(rock.Size, massPerSize);
-
-            if (!ShipCollisionImpulseLogic.ApplyShipVsStaticMassiveImpulse(
-                    ref vShip, pair.NormalShipFromOther, mShip, mRock, restitution))
+            // Immovable rock: reflect incoming speed along the contact normal.
+            if (!ShipCollisionImpulseLogic.ApplyInfiniteMassWallImpulse(
+                    ref vShip, pair.NormalShipFromOther, restitution))
                 return false;
 
             working[ship] = vShip;
@@ -479,13 +528,13 @@ namespace TitanOrbit.ECS
         static void ApplyShipVsInfiniteWall(
             ShipPhysicsContactElement pair,
             ref NativeHashMap<Entity, float3> working,
-            ComponentLookup<ShipPreCollisionVelocity> snapshots)
+            ComponentLookup<ShipPreCollisionVelocity> snapshots,
+            float restitution)
         {
             Entity ship = pair.Ship;
             float3 vShip = GetWorkingOrSnapshot(ship, ref working, snapshots);
             if (!ShipCollisionImpulseLogic.ApplyInfiniteMassWallImpulse(
-                    ref vShip, pair.NormalShipFromOther,
-                    ShipCollisionImpulseLogic.DefaultInfiniteMassRestitution))
+                    ref vShip, pair.NormalShipFromOther, restitution))
                 return;
             working[ship] = vShip;
         }

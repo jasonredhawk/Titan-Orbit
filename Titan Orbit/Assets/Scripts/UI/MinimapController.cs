@@ -210,6 +210,15 @@ namespace TitanOrbit.UI
         private int skippedNullMarkers = 0;
         private const int MaxAsteroidBlips = 80;
 
+        /// <summary>Planet / home blips created per join-warmup tick (TMP + orbit ring).</summary>
+        const int JoinWarmupPlanetBlipsPerTick = 3;
+
+        /// <summary>Gem-moon discs created per join-warmup tick.</summary>
+        const int JoinWarmupMoonBlipsPerTick = 4;
+
+        /// <summary>Asteroid discs created per join-warmup tick (each stamps a texture).</summary>
+        const int JoinWarmupAsteroidBlipsPerTick = 8;
+
         private readonly List<Transform> blipsToRemove = new List<Transform>();
         private readonly List<Transform> edgeMarkersToRemoveList = new List<Transform>();
         private readonly List<Transform> markerEdgeMarkersToRemoveList = new List<Transform>();
@@ -819,6 +828,271 @@ namespace TitanOrbit.UI
             originalMinimapRadius = _baseCollapsedMinimapRadius > 0.01f
                 ? _baseCollapsedMinimapRadius
                 : minimapRadius;
+        }
+
+        /// <summary>
+        /// True when hidden join warmup created a blip for every known planet / home / moon
+        /// and enough asteroid discs (capped at <see cref="MaxAsteroidBlips"/>).
+        /// </summary>
+        public bool IsJoinLoadWarmupComplete
+        {
+            get
+            {
+                CountJoinWarmupTargets(
+                    out int planetTargets, out int planetDone,
+                    out int moonTargets, out int moonDone,
+                    out int asteroidTargets, out int asteroidDone);
+                if (planetTargets <= 0)
+                    return false;
+                return planetDone >= planetTargets &&
+                       moonDone >= moonTargets &&
+                       asteroidDone >= asteroidTargets;
+            }
+        }
+
+        /// <summary>0–1 construction progress for the loading bar.</summary>
+        public float GetJoinLoadWarmupProgress()
+        {
+            CountJoinWarmupTargets(
+                out int planetTargets, out int planetDone,
+                out int moonTargets, out int moonDone,
+                out int asteroidTargets, out int asteroidDone);
+            int total = planetTargets + moonTargets + asteroidTargets;
+            if (total <= 0)
+                return 0f;
+            int done = planetDone + moonDone + asteroidDone;
+            return Mathf.Clamp01((float)done / total);
+        }
+
+        /// <summary>Honest in-bar counts while blips Instantiates under the loading overlay.</summary>
+        public string GetJoinLoadWarmupStatusLabel()
+        {
+            CountJoinWarmupTargets(
+                out int planetTargets, out int planetDone,
+                out int moonTargets, out int moonDone,
+                out int asteroidTargets, out int asteroidDone);
+            if (planetDone < planetTargets)
+                return "Preparing minimap  planets " + planetDone + " / " + planetTargets;
+            if (moonDone < moonTargets)
+                return "Preparing minimap  moons " + moonDone + " / " + moonTargets;
+            if (asteroidDone < asteroidTargets)
+                return "Preparing minimap  asteroids " + asteroidDone + " / " + asteroidTargets;
+            return "Preparing minimap";
+        }
+
+        /// <summary>
+        /// Join-load step: wake inactive HUD parents, upsert map-body anchors, then
+        /// Instantiates a budgeted batch of blips. Minimap stays alpha-0 until a team ship exists.
+        /// </summary>
+        public void TickJoinLoadWarmup()
+        {
+            // --- Wake HUD so Start() / canvas exist (parent is inactive until spawn) ---
+            EnsureHierarchyActiveForJoinWarmup();
+            if (MinimapEcsEntitySync.Instance == null)
+                gameObject.AddComponent<MinimapEcsEntitySync>();
+
+            MinimapEcsEntitySync.Instance?.TickJoinLoadWarmup();
+            RefreshEntityCache(true);
+
+            if (minimapContent == null || displaySize < 1f)
+                return;
+
+            float radius = Mathf.Max(minimapRadius, 1f);
+            float worldToMinimapScale = displaySize * 0.5f / radius;
+            int created = 0;
+
+            created += CreateMissingPlanetBlips(cachedPlanets, false, worldToMinimapScale, JoinWarmupPlanetBlipsPerTick);
+            if (created >= JoinWarmupPlanetBlipsPerTick)
+                return;
+
+            created += CreateMissingPlanetBlips(
+                cachedHomePlanets, true, worldToMinimapScale, JoinWarmupPlanetBlipsPerTick - created);
+            if (created >= JoinWarmupPlanetBlipsPerTick)
+                return;
+
+            created += CreateMissingMoonBlips(worldToMinimapScale, JoinWarmupMoonBlipsPerTick);
+            if (created >= JoinWarmupMoonBlipsPerTick)
+                return;
+
+            CreateMissingAsteroidBlips(worldToMinimapScale, JoinWarmupAsteroidBlipsPerTick);
+        }
+
+        /// <summary>
+        /// Walks parents and SetActive(true) so an inactive HUD still Instantiates blips.
+        /// Adds a CanvasGroup at alpha 0 on the HUD root so chrome does not show through
+        /// the slightly transparent loading backdrop.
+        /// </summary>
+        void EnsureHierarchyActiveForJoinWarmup()
+        {
+            Transform t = transform;
+            Transform hudRoot = null;
+            while (t != null)
+            {
+                if (!t.gameObject.activeSelf)
+                    t.gameObject.SetActive(true);
+                if (t.gameObject.name == "HUD")
+                    hudRoot = t;
+                t = t.parent;
+            }
+
+            if (hudRoot == null)
+                hudRoot = transform.root;
+            var group = hudRoot.GetComponent<CanvasGroup>();
+            if (group == null)
+                group = hudRoot.gameObject.AddComponent<CanvasGroup>();
+            if (group.alpha > 0.01f)
+            {
+                group.alpha = 0f;
+                group.interactable = false;
+                group.blocksRaycasts = false;
+            }
+
+            SetMinimapVisible(false);
+        }
+
+        /// <summary>How many map-body blips we still need vs how many already exist.</summary>
+        void CountJoinWarmupTargets(
+            out int planetTargets, out int planetDone,
+            out int moonTargets, out int moonDone,
+            out int asteroidTargets, out int asteroidDone)
+        {
+            planetTargets = CountLiveAnchors(cachedPlanets) + CountLiveAnchors(cachedHomePlanets);
+            planetDone = CountExistingBlips(cachedPlanets) + CountExistingBlips(cachedHomePlanets);
+            moonTargets = CountLiveAnchors(cachedGemMoons);
+            moonDone = CountExistingBlips(cachedGemMoons);
+
+            int liveAsteroids = 0;
+            if (cachedAsteroids != null)
+            {
+                for (int i = 0; i < cachedAsteroids.Length; i++)
+                {
+                    if (cachedAsteroids[i] != null && !cachedAsteroids[i].IsDestroyed)
+                        liveAsteroids++;
+                }
+            }
+
+            asteroidTargets = Mathf.Min(liveAsteroids, MaxAsteroidBlips);
+            asteroidDone = CountExistingBlips(cachedAsteroids);
+            if (asteroidDone > asteroidTargets)
+                asteroidDone = asteroidTargets;
+        }
+
+        static int CountLiveAnchors(MinimapBlipAnchor[] anchors)
+        {
+            if (anchors == null)
+                return 0;
+            int n = 0;
+            for (int i = 0; i < anchors.Length; i++)
+            {
+                if (anchors[i] != null)
+                    n++;
+            }
+
+            return n;
+        }
+
+        int CountExistingBlips(MinimapBlipAnchor[] anchors)
+        {
+            if (anchors == null)
+                return 0;
+            int n = 0;
+            for (int i = 0; i < anchors.Length; i++)
+            {
+                MinimapBlipAnchor a = anchors[i];
+                if (a == null)
+                    continue;
+                if (blips.ContainsKey(a.transform))
+                    n++;
+            }
+
+            return n;
+        }
+
+        /// <summary>Creates up to <paramref name="budget"/> missing planet / home discs.</summary>
+        int CreateMissingPlanetBlips(
+            MinimapBlipAnchor[] anchors,
+            bool isHome,
+            float worldToMinimapScale,
+            int budget)
+        {
+            if (anchors == null || budget <= 0)
+                return 0;
+
+            int created = 0;
+            for (int i = 0; i < anchors.Length && created < budget; i++)
+            {
+                MinimapBlipAnchor p = anchors[i];
+                if (p == null || blips.ContainsKey(p.transform))
+                    continue;
+
+                Color color = p.Team == TeamId.None
+                    ? (isHome ? homePlanetColor : planetColor)
+                    : GetTeamColor(p.Team);
+                float actualSize = (p.transform.localScale.x + p.transform.localScale.y + p.transform.localScale.z) / 3f;
+                if (actualSize < 0.1f)
+                    actualSize = p.BodySize;
+                float blipSize = actualSize * worldToMinimapScale * sizeScaleFactor;
+                EnsureBlip(p.transform, () => CreatePlanetBlip(p, color, blipSize, worldToMinimapScale));
+                created++;
+            }
+
+            return created;
+        }
+
+        /// <summary>Creates up to <paramref name="budget"/> missing gem-moon discs.</summary>
+        int CreateMissingMoonBlips(float worldToMinimapScale, int budget)
+        {
+            if (cachedGemMoons == null || budget <= 0)
+                return 0;
+
+            int created = 0;
+            for (int i = 0; i < cachedGemMoons.Length && created < budget; i++)
+            {
+                MinimapBlipAnchor moon = cachedGemMoons[i];
+                if (moon == null || blips.ContainsKey(moon.transform))
+                    continue;
+
+                Color moonBlipColor = moon.Team == TeamId.None ? moonColor : GetTeamColor(moon.Team);
+                float moonBlipSize = GetGemMoonBlipSize(moon, worldToMinimapScale);
+                EnsureBlip(moon.transform, () => CreateBlip(moonBlipColor, moonBlipSize, BlipType.Circle));
+                created++;
+            }
+
+            return created;
+        }
+
+        /// <summary>Creates up to <paramref name="budget"/> missing asteroid discs (capped).</summary>
+        int CreateMissingAsteroidBlips(float worldToMinimapScale, int budget)
+        {
+            if (cachedAsteroids == null || budget <= 0)
+                return 0;
+
+            int existing = CountExistingBlips(cachedAsteroids);
+            int live = 0;
+            for (int i = 0; i < cachedAsteroids.Length; i++)
+            {
+                if (cachedAsteroids[i] != null && !cachedAsteroids[i].IsDestroyed)
+                    live++;
+            }
+
+            int target = Mathf.Min(live, MaxAsteroidBlips);
+            if (existing >= target)
+                return 0;
+
+            int created = 0;
+            for (int i = 0; i < cachedAsteroids.Length && created < budget && existing + created < target; i++)
+            {
+                MinimapBlipAnchor a = cachedAsteroids[i];
+                if (a == null || a.IsDestroyed || blips.ContainsKey(a.transform))
+                    continue;
+
+                float physicalSize = (a.transform.localScale.x + a.transform.localScale.y + a.transform.localScale.z) / 3f;
+                float asteroidBlipSize = physicalSize * worldToMinimapScale * sizeScaleFactor * asteroidBlipScaleFactor;
+                EnsureBlip(a.transform, () => CreateBlip(asteroidColor, asteroidBlipSize, BlipType.Irregular));
+                created++;
+            }
+
+            return created;
         }
 
         /// <summary>Show or hide minimap using CanvasGroup so Update() keeps running and we can show again after team is chosen.</summary>

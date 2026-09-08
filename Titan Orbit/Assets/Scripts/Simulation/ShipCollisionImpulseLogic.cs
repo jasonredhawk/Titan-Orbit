@@ -5,17 +5,17 @@ namespace TitanOrbit.Simulation
     /// <summary>
     /// Shared 1D contact-impulse math for ship bounce. Owns normal energy transfer so
     /// mass and closing speed produce the correct rebound — Unity Physics only depenetrates
-    /// (material restitution is 0) and raises collision events.
+    /// (asteroid material restitution is 0) and raises collision events.
     /// <para>
-    /// Used by same-tile <c>ShipCollisionBounceSystem</c> and cross-seam
+    /// Used by same-tile <c>ShipCollisionBounceSystem</c> and retired cross-seam
     /// <c>ShipToroidalWorldCollisionLogic</c> so predicted client and server stay in lockstep.
     /// Tangential grip stays in <c>AsteroidColliderMaterialLogic.ApplyTangentialFriction</c>
     /// (orthogonal to this normal response).
     /// </para>
     /// <para>
     /// [STANDARD] Classical contact impulse along a unit normal with coefficient of restitution
-    /// <c>e</c>. [TITAN-ORBIT] Asteroids stay WorldStatic (do not move) but still contribute a
-    /// finite virtual mass so light ships rebound harder off heavy rocks.
+    /// <c>e</c>. [TITAN-ORBIT] Asteroids, planets, and moons stay put — bounce is an infinite-mass
+    /// wall reflect of the ship's incoming XZ speed. Ship↔ship uses two-body ramming mass.
     /// </para>
     /// </summary>
     public static class ShipCollisionImpulseLogic
@@ -59,7 +59,8 @@ namespace TitanOrbit.Simulation
 
         /// <summary>
         /// Virtual asteroid collision mass from designer Size × mass-per-size.
-        /// Rocks never move, but this mass still shapes how hard the ship rebounds.
+        /// Kept for retired seam helpers and Inspector assets — live bounce treats rocks as
+        /// immovable walls (<see cref="ApplyInfiniteMassWallImpulse"/>).
         /// </summary>
         /// <param name="asteroidSize">Designer Size stored on <c>AsteroidState.Size</c>.</param>
         /// <param name="massPerSize">From <c>AsteroidSettings.CollisionMassPerSize</c>.</param>
@@ -166,9 +167,9 @@ namespace TitanOrbit.Simulation
         }
 
         /// <summary>
-        /// Ship hits a static-but-massive body (asteroid). The body does not move; only the ship
-        /// velocity is rewritten. Finite <paramref name="bodyMass"/> still shapes the rebound:
-        /// light ship vs heavy rock ≈ full bounce; heavy ship vs pebble ≈ soft kick.
+        /// Legacy finite-mass rock impulse (retired seam path). Live asteroid bounce uses
+        /// <see cref="ApplyInfiniteMassWallImpulse"/> so a static rock always reflects incoming speed.
+        /// The body does not move; only the ship velocity is rewritten.
         /// </summary>
         /// <param name="shipVelocity">Ship linear velocity — written on bounce.</param>
         /// <param name="normalShipFromBody">Unit normal from body toward ship.</param>

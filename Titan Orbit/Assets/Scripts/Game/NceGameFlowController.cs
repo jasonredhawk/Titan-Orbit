@@ -1024,6 +1024,32 @@ namespace TitanOrbit.Game
 
         bool IsInGameFlow() => EcsGameBridge.IsNetworkInGame();
 
+        /// <summary>
+        /// Turns the gameplay HUD on for play, or keeps it alive-but-invisible during
+        /// join warmup so <c>MinimapController</c> can Instantiates blips under the loading
+        /// overlay. Restores CanvasGroup alpha when the ship actually appears.
+        /// </summary>
+        /// <param name="showGameplayHud">True when the player should see HUD chrome.</param>
+        /// <param name="keepAliveForWarmup">True while hidden minimap / menu warmup still needs the HUD object.</param>
+        void ApplyGameplayHudRoot(bool showGameplayHud, bool keepAliveForWarmup)
+        {
+            if (gameplayRoot == null)
+                return;
+
+            gameplayRoot.SetActive(showGameplayHud || keepAliveForWarmup);
+
+            var group = gameplayRoot.GetComponent<CanvasGroup>();
+            if (group == null && keepAliveForWarmup)
+                group = gameplayRoot.AddComponent<CanvasGroup>();
+            if (group == null)
+                return;
+
+            bool visible = showGameplayHud;
+            group.alpha = visible ? 1f : 0f;
+            group.interactable = visible;
+            group.blocksRaycasts = visible;
+        }
+
         void RefreshUi()
         {
             if (TitanOrbitPlayModeUtility.IsMppmAdditionalEditorInstance() && IsInGameFlow() && _mppmConnectedSince < 0f)
@@ -1239,9 +1265,12 @@ namespace TitanOrbit.Game
             bool matchWon = EcsGameBridge.TryGetMatchState(out var match) && match.WinningTeam != TeamId.None;
             bool showGameplayHud = connected && mapReady && hasShip && !showRejoinChoice &&
                                    !ClientTeamFlowState.IsRejoinChoicePending && !matchWon;
+            // Keep HUD alive (hidden) while join warmup Instantiates minimap blips — the HUD
+            // used to stay inactive until spawn, then the first visible frame created every disc.
+            bool keepHudAliveForWarmup =
+                (connecting || connected) && !OrbitMenuJoinWarmupGate.IsCompleteOrNotNeeded;
 
-            if (gameplayRoot != null)
-                gameplayRoot.SetActive(showGameplayHud);
+            ApplyGameplayHudRoot(showGameplayHud, keepHudAliveForWarmup);
 
             if (shipStatsPanel != null)
                 shipStatsPanel.SetActive(showGameplayHud);

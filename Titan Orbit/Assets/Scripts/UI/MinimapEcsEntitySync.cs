@@ -19,9 +19,11 @@ namespace TitanOrbit.UI
     /// Rebuilds anchor cache periodically; updates positions every LateUpdate.
     /// World: visualization world via EcsGameBridge. Paired with MinimapController.
     /// <para>
-    /// [TITAN-ORBIT] While Settling, this component does nothing (loading screen).
-    /// After settle, <see cref="ClientJoinSettleCache.TransformQuarantine"/> stays on for the
-    /// whole Windows in-game session — map-body <c>ToEntityArray</c> still Crash!!! then
+    /// [TITAN-ORBIT] LateUpdate still no-ops while <see cref="ClientJoinSettleCache.ShouldSkipShipEntityQueries"/>
+    /// (loading + post–Join Team ship Instantiates). Join-load warmup calls
+    /// <see cref="TickJoinLoadWarmup"/> instead — planets/asteroids from hybrid proxies only,
+    /// never a ship <c>ToEntityArray</c>. After settle, <see cref="ClientJoinSettleCache.TransformQuarantine"/>
+    /// stays on for the whole Windows in-game session — map-body <c>ToEntityArray</c> still Crash!!! then
     /// (Player.log 2026-07-18 14:24). Under quarantine we rebuild planet/asteroid blips from
     /// <see cref="EcsWorldVisualizer"/> hybrid proxies (managed dictionary walk). Ship queries
     /// stay small and match the visualizer's own ship <c>ToEntityArray</c> path.
@@ -49,6 +51,8 @@ namespace TitanOrbit.UI
         /// Reused to avoid per-rebuild List allocations on the hot path.
         /// </summary>
         readonly List<Entity> _proxyEntityScratch = new List<Entity>(256);
+        /// <summary>Reuse for join-warmup planet/asteroid upserts (ApplyPlanetAnchor wants an alive set).</summary>
+        readonly HashSet<Entity> _joinWarmupAliveScratch = new HashSet<Entity>();
 
         Transform _root;
         MinimapBlipAnchor _localPlayer;
@@ -123,6 +127,45 @@ namespace TitanOrbit.UI
                 // Position-only: iterates known anchors with Exists/GetComponentData — no gather.
                 UpdateAnchorPositions(world.EntityManager);
             }
+        }
+
+        /// <summary>
+        /// Join-load: upsert planet / home / asteroid / gem-moon anchors from hybrid proxies.
+        /// Safe during Settling — no ship queries. Does not prune existing ship anchors.
+        /// </summary>
+        public void TickJoinLoadWarmup()
+        {
+            // --- Map bodies only (loading overlay covers this walk) ---
+            var world = EcsGameBridge.GetVisualizationWorld();
+            if (world == null || !world.IsCreated)
+                return;
+
+            var em = world.EntityManager;
+            SyncMapSize(em);
+
+            var visualizer = EcsWorldVisualizer.Active;
+            if (visualizer == null)
+                return;
+
+            visualizer.CopyLiveProxyEntities(_proxyEntityScratch);
+            double elapsed = PlanetGemMoonOrbitClock.TryGetElapsedSeconds(out double orbitElapsed, includeTickFraction: true)
+                ? orbitElapsed
+                : Time.timeAsDouble;
+
+            _joinWarmupAliveScratch.Clear();
+            for (int i = 0; i < _proxyEntityScratch.Count; i++)
+            {
+                Entity entity = _proxyEntityScratch[i];
+                if (!em.Exists(entity) || !em.HasComponent<LocalTransform>(entity))
+                    continue;
+
+                if (em.HasComponent<PlanetTag>(entity) && em.HasComponent<PlanetState>(entity))
+                    SyncOnePlanet(em, entity, _joinWarmupAliveScratch, elapsed);
+                else if (em.HasComponent<AsteroidTag>(entity) && em.HasComponent<AsteroidState>(entity))
+                    SyncOneAsteroid(em, entity, _joinWarmupAliveScratch);
+            }
+
+            RebuildLists();
         }
 
         /// <summary>Local player blip for minimap centering and team tint.</summary>

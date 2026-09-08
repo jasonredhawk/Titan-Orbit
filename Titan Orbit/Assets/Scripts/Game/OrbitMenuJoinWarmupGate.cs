@@ -4,12 +4,13 @@ using UnityEngine;
 namespace TitanOrbit.Game
 {
     /// <summary>
-    /// Join-load Orbit Menu progress that <c>TitanOrbit.Game</c> can read without referencing
+    /// Join-load presentation progress that <c>TitanOrbit.Game</c> can read without referencing
     /// the default UI assembly (Assembly-CSharp). <c>OrbitStationUI</c> registers tick / reset
-    /// handlers after scene load and publishes complete / progress / status each tick.
+    /// handlers after scene load and publishes complete / progress / status each tick
+    /// (Orbit Menu chrome + family stores <b>and</b> minimap blips).
     /// <para>
     /// Loading screen and Join Team wait on <see cref="IsCompleteOrNotNeeded"/> so first spawn
-    /// does not Instantiates Orbit Menu widgets. Dedicated servers have no Orbit Menu — this
+    /// does not Instantiates those widgets. Dedicated servers have no client HUD — this
     /// gate reports complete immediately.
     /// </para>
     /// </summary>
@@ -30,8 +31,8 @@ namespace TitanOrbit.Game
         /// <summary>0–1 menu slice for the loading bar.</summary>
         static float s_Progress;
 
-        /// <summary>In-bar status, e.g. "Preparing orbit menus  3 / 12".</summary>
-        static string s_Status = "Preparing orbit menus";
+        /// <summary>In-bar status, e.g. "Preparing orbit menus  3 / 12" or minimap counts.</summary>
+        static string s_Status = "Preparing menus";
 
         /// <summary>
         /// True when Join Team may appear: dedicated / headless skip, or UI finished

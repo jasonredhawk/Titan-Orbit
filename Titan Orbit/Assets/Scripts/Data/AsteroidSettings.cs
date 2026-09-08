@@ -17,8 +17,9 @@ namespace TitanOrbit.Data
     /// Contact <see cref="Friction"/> controls how sticky rams/grinds feel against the rock.
     /// <see cref="GrindPulseIntervalSeconds"/> is how often a thrusting hull chips the rock
     /// (0.25 = 4 Hz; each pulse spawns one gem worth that pulse's ship damage).
-    /// <see cref="CollisionMassPerSize"/> and <see cref="BounceRestitution"/> drive mass-aware
-    /// ship bounce (rocks stay static; virtual mass still shapes rebound).
+    /// <see cref="BounceRestitution"/> is the wall coefficient for ship↔asteroid rebound
+    /// (rocks stay put; incoming speed reflects along the contact normal).
+    /// <see cref="CollisionMassPerSize"/> is kept on the asset but does not drive rebound.
     /// Cosmetic tumble uses <see cref="MinSpinSpeed"/>–<see cref="MaxSpinSpeed"/>
     /// (<see cref="Game.AsteroidSpinVisualProxy"/>) — presentation only, not sim physics.
     /// </para>
@@ -92,18 +93,17 @@ namespace TitanOrbit.Data
             "Values below 0.05 fall back to 0.25 (protects old assets that serialized as 0).")]
         public float GrindPulseIntervalSeconds = 0.25f;
 
-        [Header("Collision bounce (mass-aware)")]
+        [Header("Collision bounce")]
         [Tooltip(
-            "Virtual collision mass = Size × this. Asteroids stay static (do not slide), but " +
-            "this mass still shapes ship rebound: light ships bounce hard off heavy rocks; " +
-            "heavy ships get a softer kick off pebbles. Default 1 ≈ Size 10 rock has mass 10.")]
+            "Unused by live bounce (rocks are immovable walls). Kept so existing AsteroidSettings " +
+            "assets do not churn. Virtual mass = Size × this if a later system needs it.")]
         [Min(0.01f)]
         public float CollisionMassPerSize = 1f;
 
         [Tooltip(
-            "Coefficient of restitution for custom ship↔asteroid bounce (0 = inelastic stick along " +
-            "the normal, 1 = perfectly elastic). PhysX asteroid restitution is 0 so this system " +
-            "owns bounce — raise toward 0.7 for snappier rebounds, lower toward 0.3 for heavier feel.")]
+            "Coefficient of restitution for ship↔asteroid wall bounce (0 = inelastic stick along " +
+            "the normal, 1 = perfectly elastic). Incoming speed reflects along the contact angle; " +
+            "the rock does not move. PhysX asteroid restitution is 0 so this system owns bounce.")]
         [Range(0f, 1f)]
         public float BounceRestitution = 0.55f;
 
@@ -144,8 +144,8 @@ namespace TitanOrbit.Data
         }
 
         /// <summary>
-        /// Virtual collision mass for ship bounce from designer Size.
-        /// Rocks do not move; mass only shapes the ship's rebound impulse.
+        /// Virtual collision mass from designer Size. Live bounce does not use this —
+        /// rocks are immovable walls. Kept for assets and retired seam helpers.
         /// </summary>
         public float ComputeCollisionMass(float size)
         {

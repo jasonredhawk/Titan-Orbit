@@ -133,8 +133,10 @@ namespace TitanOrbit.ECS
                         kind = ShipPhysicsContactKind.Asteroid;
                     else if (Planets.HasComponent(other))
                         kind = ShipPhysicsContactKind.Planet;
-                    else if (Moons.HasComponent(other) || Shields.HasComponent(other))
+                    else if (Moons.HasComponent(other))
                         kind = ShipPhysicsContactKind.Moon;
+                    else if (Shields.HasComponent(other))
+                        kind = ShipPhysicsContactKind.Shield;
                     else
                         return;
                 }

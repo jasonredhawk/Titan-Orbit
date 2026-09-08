@@ -12,9 +12,9 @@ namespace TitanOrbit.Game
     /// the top/bottom edges): HOW TO PLAY → five instruction cards → BUILDING GALAXY →
     /// one progress bar (live status + % drawn inside the track).
     /// <para>
-    /// Fill is world sync + map visuals + hidden Orbit Menu warmup (chrome, ship tree,
-    /// every planet-family GEAR grid). Join Team stays hidden until
-    /// JoinWorldReadyCache.IsComplete <b>and</b> Orbit Menu join warmup finishes
+    /// Fill is world sync + map visuals + hidden join warmup (Orbit Menu chrome / family
+    /// stores + minimap blips). Join Team stays hidden until
+    /// JoinWorldReadyCache.IsComplete <b>and</b> that warmup finishes
     /// so first spawn does not Instantiates those widgets.
     /// </para>
     /// <para>
@@ -210,9 +210,9 @@ namespace TitanOrbit.Game
             EcsGameBridge.TryGetProxyJoinLoadProgress(out proxyProgress);
             float mapCombined = Mathf.Clamp01(0.5f * networkProgress + 0.5f * proxyProgress);
             float menuProgress = OrbitMenuJoinWarmupGate.Progress;
-            // Last 12% is menu chrome + family GEAR grids (honest — bar does not sit at 100%
-            // while those widgets are still Instantiating).
-            float combined = Mathf.Clamp01(0.88f * mapCombined + 0.12f * menuProgress);
+            // Last 16% is Orbit Menu chrome + family GEAR grids + minimap blips (honest —
+            // bar does not sit at 100% while those widgets are still Instantiating).
+            float combined = Mathf.Clamp01(0.84f * mapCombined + 0.16f * menuProgress);
 
             // --- Stuck hint after a few seconds (recipe / prefabs vs Instantiates drain) ---
             string mapHint = null;

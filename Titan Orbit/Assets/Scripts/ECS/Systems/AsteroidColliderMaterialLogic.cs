@@ -15,7 +15,7 @@ namespace TitanOrbit.ECS
     {
         /// <summary>
         /// Bake / fallback PhysX restitution. Always 0 — custom
-        /// <c>ShipCollisionImpulseLogic</c> owns bounce so mass ratios are correct.
+        /// <c>ShipCollisionImpulseLogic</c> owns wall bounce after Export.
         /// </summary>
         public const float DefaultRestitution = 0f;
 
@@ -40,7 +40,7 @@ namespace TitanOrbit.ECS
         {
             var material = Material.Default;
             material.Friction = math.max(0f, friction);
-            // [TITAN-ORBIT] Always 0 — mass-aware bounce is not PhysX restitution.
+            // [TITAN-ORBIT] Always 0 — wall bounce is not PhysX restitution.
             material.Restitution = 0f;
             // [PHYSICS] Maximum — combined friction = max(ship, asteroid) instead of sqrt(0.05×μ).
             material.FrictionCombinePolicy = Material.CombinePolicy.Maximum;

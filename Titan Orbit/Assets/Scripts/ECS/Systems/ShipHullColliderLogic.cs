@@ -782,10 +782,9 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// Unity Physics hull material. Ship↔ship bounce is the solver (restitution / friction),
-        /// not a post-pass impulse. Collision events still fire for ramming damage.
-        /// Asteroid materials keep restitution 0 so custom rock bounce is unchanged
-        /// (GeometricMean with this value is still 0).
+        /// Unity Physics hull material. Collision events still fire for ramming damage and
+        /// the post-Export bounce pass. Asteroid materials keep restitution 0 so custom
+        /// wall bounce is unchanged (GeometricMean with this value is still 0).
         /// </summary>
         public static Material CreateHullMaterial()
         {
