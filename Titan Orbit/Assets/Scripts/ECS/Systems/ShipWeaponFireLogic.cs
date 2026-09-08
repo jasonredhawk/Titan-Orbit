@@ -19,6 +19,8 @@ namespace TitanOrbit.ECS
     /// Each mount still keeps its own <see cref="ShipWeaponMountElement.FirePower"/> /
     /// <see cref="ShipWeaponMountElement.FireRate"/> / cooldown.
     /// </para>
+    /// MEGA hulls use <see cref="TryPlanMegaFire"/>: never volley. One barrel in
+    /// the energy queue charges, fires, then the next barrel charges.
     /// Paired with <see cref="BulletSimulationSystem"/> (server) and
     /// <c>ClientLocalBulletVfxBridge</c> (client cosmetics).
     /// </summary>
@@ -43,9 +45,9 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// Maximum shots planned in one tick (hard cap — mount counts are tiny, usually ≤ 8).
+        /// Maximum shots planned in one tick. Regular hulls are ≤ 8; MEGAs can exceed 40.
         /// </summary>
-        public const int MaxShotsPerTick = 32;
+        public const int MaxShotsPerTick = 96;
 
         /// <summary>
         /// Plans which mounts fire this tick according to <paramref name="fireMode"/>.
@@ -172,6 +174,122 @@ namespace TitanOrbit.ECS
             totalEnergySpend = dripCost;
             nextMountIndexAfter = (mountIdx + 1) % mountCount;
             return true;
+        }
+
+        /// <summary>
+        /// MEGA energy queue: exactly one barrel. The cursor gun waits until the
+        /// shared pool covers <b>its</b> firePower — cheaper guns behind it do not
+        /// sneak a shot. After it fires the caller charges for the next barrel
+        /// (<see cref="ComputeMegaChargeSeconds"/>).
+        /// </summary>
+        public static bool TryPlanMegaFire(
+            float currentEnergy,
+            DynamicBuffer<ShipWeaponMountElement> mounts,
+            int nextMountIndex,
+            float fallbackFireRate,
+            MountShot[] shots,
+            out int shotCount,
+            out float totalEnergySpend,
+            out int nextMountIndexAfter)
+        {
+            shotCount = 0;
+            totalEnergySpend = 0f;
+            nextMountIndexAfter = nextMountIndex;
+
+            if (mounts.Length <= 0 || shots == null || shots.Length <= 0)
+                return false;
+
+            if (!TryGetNextArmedMegaMount(mounts, nextMountIndex, out int mountIdx))
+                return false;
+
+            ShipWeaponMountElement mount = mounts[mountIdx];
+            // This barrel's turn — wait for its own cooldown and energy. Do not
+            // scan ahead for a cheaper ready gun.
+            if (mount.FireCooldown > 0.001f)
+                return false;
+            if (currentEnergy < mount.FirePower)
+                return false;
+
+            shots[0] = BuildMegaShot(mountIdx, mount, fallbackFireRate);
+            shotCount = 1;
+            totalEnergySpend = mount.FirePower;
+            nextMountIndexAfter = NextArmedMegaMountIndex(mounts, mountIdx + 1);
+            return true;
+        }
+
+        /// <summary>
+        /// Seconds the next MEGA barrel must charge at hull regen before it may fire.
+        /// Zero when regen is unset (pool check alone is enough).
+        /// </summary>
+        public static float ComputeMegaChargeSeconds(float nextShotCost, float energyRegenPerSecond)
+        {
+            if (nextShotCost <= 0.01f || energyRegenPerSecond < 0.01f)
+                return 0f;
+            return nextShotCost / energyRegenPerSecond;
+        }
+
+        /// <summary>FirePower of the next armed MEGA barrel at or after <paramref name="startIndex"/>.</summary>
+        public static float GetNextArmedMegaShotCost(
+            DynamicBuffer<ShipWeaponMountElement> mounts,
+            int startIndex)
+        {
+            if (!TryGetNextArmedMegaMount(mounts, startIndex, out int mountIdx))
+                return 0f;
+            return mounts[mountIdx].FirePower;
+        }
+
+        /// <summary>Next armed MEGA mount index, wrapping. False when the hull is unarmed.</summary>
+        public static bool TryGetNextArmedMegaMount(
+            DynamicBuffer<ShipWeaponMountElement> mounts,
+            int startIndex,
+            out int mountIndex)
+        {
+            mountIndex = 0;
+            int mountCount = mounts.Length;
+            if (mountCount <= 0)
+                return false;
+
+            int start = startIndex;
+            if (start < 0)
+                start = 0;
+            start %= mountCount;
+
+            for (int n = 0; n < mountCount; n++)
+            {
+                int i = (start + n) % mountCount;
+                if (mounts[i].FirePower <= 0.01f)
+                    continue;
+                mountIndex = i;
+                return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>Wrap-around index of the next armed MEGA barrel, or 0 when none.</summary>
+        public static int NextArmedMegaMountIndex(
+            DynamicBuffer<ShipWeaponMountElement> mounts,
+            int startIndex)
+        {
+            if (!TryGetNextArmedMegaMount(mounts, startIndex, out int mountIndex))
+                return 0;
+            return mountIndex;
+        }
+
+        /// <summary>One MEGA shot — energy cost is that barrel’s firePower.</summary>
+        static MountShot BuildMegaShot(
+            int mountIndex,
+            in ShipWeaponMountElement mount,
+            float fallbackFireRate)
+        {
+            float fireRate = math.max(0.15f, mount.FireRate > 0.01f ? mount.FireRate : fallbackFireRate);
+            return new MountShot
+            {
+                MountIndex = mountIndex,
+                Damage = mount.FirePower,
+                EnergyCost = mount.FirePower,
+                CooldownSeconds = 1f / fireRate,
+            };
         }
 
         /// <summary>

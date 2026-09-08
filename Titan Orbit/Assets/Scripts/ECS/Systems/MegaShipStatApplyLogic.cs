@@ -13,9 +13,10 @@ namespace TitanOrbit.ECS
     /// <summary>
     /// Writes static MEGA motor / weapon / vitals onto a ship. No Extra Level, no attribute
     /// upgrades, gem cap forced to 0. Each mount fires the catalog unique-component (or
-    /// type-table) bullet bank — not the store planet's gameplay family. Fire mode still
-    /// comes from that family. Paired with <see cref="ShipStatApplyLogic.ApplyToShip"/>
-    /// which routes here when <see cref="MegaShipState.IsMega"/> is true.
+    /// type-table) bullet bank — not the store planet's gameplay family. Fire mode is
+    /// Always Round-Robin; Phase B uses <see cref="ShipWeaponFireLogic.TryPlanMegaFire"/>.
+    /// Paired with <see cref="ShipStatApplyLogic.ApplyToShip"/> which routes here when
+    /// <see cref="MegaShipState.IsMega"/> is true.
     /// </summary>
     public static class MegaShipStatApplyLogic
     {
@@ -96,9 +97,8 @@ namespace TitanOrbit.ECS
                 weapon.BulletLifetime = Mathf.Max(0.25f, weapon.BulletMaxDistance / Mathf.Max(1f, bulletSpeed));
                 weapon.ReferenceBulletDamage = firePower;
                 weapon.ReferenceBulletSpeed = bulletSpeed;
-                weapon.FireMode = ShipWeaponFireMode.EnergyHybrid;
-                if (TryGetFamily(familyIndex, out ShipFamilyDefinition family) && family != null)
-                    weapon.FireMode = family.weaponFireMode;
+                // [TITAN-ORBIT] MEGA Phase B cycles one barrel: charge, fire, next.
+                weapon.FireMode = ShipWeaponFireMode.AlwaysRoundRobin;
                 em.SetComponentData(shipEntity, weapon);
             }
 
@@ -471,17 +471,6 @@ namespace TitanOrbit.ECS
                     TargetGhostId = 0,
                 });
             }
-        }
-
-        static bool TryGetFamily(int familyIndex, out ShipFamilyDefinition family)
-        {
-            family = null;
-            var config = ShipStatApplyLogic.Config;
-            if (config == null)
-                return false;
-            var entry = config.GetFamilyByConfigIndex(familyIndex);
-            family = entry != null ? entry.shipFamilyDefinition : null;
-            return family != null;
         }
     }
 }
