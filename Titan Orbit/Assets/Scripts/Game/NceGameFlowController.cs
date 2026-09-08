@@ -1033,10 +1033,19 @@ namespace TitanOrbit.Game
         /// <param name="keepAliveForWarmup">True while hidden minimap / menu warmup still needs the HUD object.</param>
         void ApplyGameplayHudRoot(bool showGameplayHud, bool keepAliveForWarmup)
         {
+            // --- Repair a shared-canvas fade from the first minimap-warmup bug ---
+            // Fading Transform.root hid LoadingScreen + Join Team. Undo that every frame
+            // until those overlays are visible again.
+            RestoreSharedUiCanvasIfFaded();
+
             if (gameplayRoot == null)
                 return;
 
             gameplayRoot.SetActive(showGameplayHud || keepAliveForWarmup);
+
+            // Never attach CanvasGroup to a root that also owns loading / team panels.
+            if (GameplayRootHostsJoinFlowUi())
+                return;
 
             var group = gameplayRoot.GetComponent<CanvasGroup>();
             if (group == null && keepAliveForWarmup)
@@ -1050,8 +1059,78 @@ namespace TitanOrbit.Game
             group.blocksRaycasts = visible;
         }
 
+        /// <summary>
+        /// True when <see cref="gameplayRoot"/> is actually the shared canvas (or otherwise
+        /// contains loading / team UI). Fading that object hides Join Team.
+        /// </summary>
+        bool GameplayRootHostsJoinFlowUi()
+        {
+            if (gameplayRoot == null)
+                return false;
+            if (gameplayRoot.GetComponentInChildren<LoadingScreenControllerNce>(true) != null)
+                return true;
+            Transform tr = gameplayRoot.transform;
+            return tr.Find("TeamSelectionPanel") != null ||
+                   tr.Find("LobbyPanel") != null ||
+                   tr.Find("MainMenuPanel") != null ||
+                   tr.Find("LoadingScreenController") != null;
+        }
+
+        /// <summary>
+        /// If a CanvasGroup on the shared UI canvas was set to alpha 0, restore it.
+        /// The HUD object named HUD may stay faded until gameplay.
+        /// </summary>
+        void RestoreSharedUiCanvasIfFaded()
+        {
+            RestoreCanvasGroupIfFaded(loadingRoot);
+            RestoreCanvasGroupIfFaded(teamSelectionPanel);
+            RestoreCanvasGroupIfFaded(lobbyPanel);
+            RestoreCanvasGroupIfFaded(mainMenuPanel);
+            if (_loadingScreen != null)
+                RestoreCanvasGroupIfFaded(_loadingScreen.gameObject);
+
+            Canvas canvas = null;
+            if (_loadingScreen != null)
+                canvas = _loadingScreen.GetComponentInParent<Canvas>();
+            if (canvas == null && loadingRoot != null)
+                canvas = loadingRoot.GetComponentInParent<Canvas>();
+            if (canvas == null && teamSelectionPanel != null)
+                canvas = teamSelectionPanel.GetComponentInParent<Canvas>();
+            if (canvas == null)
+                return;
+
+            Transform t = canvas.transform;
+            while (t.parent != null)
+            {
+                var parentCanvas = t.parent.GetComponentInParent<Canvas>();
+                if (parentCanvas == null)
+                    break;
+                t = parentCanvas.transform;
+            }
+
+            if (t.gameObject.name == "HUD")
+                return;
+
+            RestoreCanvasGroupIfFaded(t.gameObject);
+        }
+
+        /// <summary>Un-hides a join-flow object that still has a leftover alpha-0 CanvasGroup.</summary>
+        static void RestoreCanvasGroupIfFaded(GameObject go)
+        {
+            if (go == null || go.name == "HUD")
+                return;
+            var group = go.GetComponent<CanvasGroup>();
+            if (group == null || group.alpha >= 0.99f)
+                return;
+            group.alpha = 1f;
+            group.interactable = true;
+            group.blocksRaycasts = true;
+        }
+
         void RefreshUi()
         {
+            RestoreSharedUiCanvasIfFaded();
+
             if (TitanOrbitPlayModeUtility.IsMppmAdditionalEditorInstance() && IsInGameFlow() && _mppmConnectedSince < 0f)
                 _mppmConnectedSince = Time.time;
 

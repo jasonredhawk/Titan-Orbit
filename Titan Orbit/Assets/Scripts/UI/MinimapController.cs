@@ -918,36 +918,61 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// Walks parents and SetActive(true) so an inactive HUD still Instantiates blips.
-        /// Adds a CanvasGroup at alpha 0 on the HUD root so chrome does not show through
-        /// the slightly transparent loading backdrop.
+        /// Wakes the HUD object so Start() / canvas exist while it is normally inactive
+        /// until spawn. Only the GameObject named HUD is faded — never
+        /// <see cref="Transform.root"/> (that is the shared UI canvas; fading it hid
+        /// the loading screen and Join Team).
         /// </summary>
         void EnsureHierarchyActiveForJoinWarmup()
         {
+            // --- Find HUD ancestor; do not climb to the shared canvas ---
             Transform t = transform;
             Transform hudRoot = null;
             while (t != null)
             {
-                if (!t.gameObject.activeSelf)
-                    t.gameObject.SetActive(true);
                 if (t.gameObject.name == "HUD")
+                {
                     hudRoot = t;
+                    break;
+                }
+
                 t = t.parent;
             }
 
+            if (hudRoot != null)
+            {
+                if (!hudRoot.gameObject.activeSelf)
+                    hudRoot.gameObject.SetActive(true);
+                HideOnlyHudChrome(hudRoot);
+            }
+
+            if (!gameObject.activeSelf)
+                gameObject.SetActive(true);
+
+            SetMinimapVisible(false);
+        }
+
+        /// <summary>
+        /// Alpha-zeros the HUD object only. Skips if this object also hosts loading / team
+        /// panels (wrong wiring) so Join Team cannot disappear.
+        /// </summary>
+        static void HideOnlyHudChrome(Transform hudRoot)
+        {
             if (hudRoot == null)
-                hudRoot = transform.root;
+                return;
+            if (hudRoot.GetComponentInChildren<LoadingScreenControllerNce>(true) != null)
+                return;
+            if (hudRoot.Find("TeamSelectionPanel") != null ||
+                hudRoot.Find("LobbyPanel") != null ||
+                hudRoot.Find("MainMenuPanel") != null)
+                return;
+
             var group = hudRoot.GetComponent<CanvasGroup>();
             if (group == null)
                 group = hudRoot.gameObject.AddComponent<CanvasGroup>();
-            if (group.alpha > 0.01f)
-            {
-                group.alpha = 0f;
-                group.interactable = false;
-                group.blocksRaycasts = false;
-            }
-
-            SetMinimapVisible(false);
+            group.alpha = 0f;
+            group.interactable = false;
+            group.blocksRaycasts = false;
         }
 
         /// <summary>How many map-body blips we still need vs how many already exist.</summary>
