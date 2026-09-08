@@ -108,6 +108,22 @@ namespace TitanOrbit.Simulation
             return moonOrbitWorld + Mathf.Max(0.01f, planetSize) * orbitRingHalfThicknessLocal;
         }
 
+        /// <summary>
+        /// Outermost XZ radius of a planet's orbit ring plus gem moon (body / shield shell).
+        /// Map generation keeps this disc inside the canonical rectangle so rings and moons
+        /// never straddle a wrap seam.
+        /// </summary>
+        public static float ComputeMapEdgeKeepInRadiusWorld(float planetSize, int planetLevel, float homeScaleMultiplier = 1f)
+        {
+            // --- Keep-in disc (orbit ring + moon at every angle) ---
+            const float clearanceMarginWorld = 0.4f;
+            planetSize = math.max(0.01f, planetSize);
+            PlanetOrbitMath.GetRingRadiiWorld(planetSize, planetLevel, out _, out float orbitOuter, out float orbitCenter);
+            bool isHome = homeScaleMultiplier > 1.01f;
+            float moonOuter = GetMoonVisualShellOuterRadiusWorld(planetSize, isHome);
+            return math.max(orbitOuter, orbitCenter + moonOuter) + clearanceMarginWorld;
+        }
+
         public static float GetMoonDockRadiusWorld(float planetSize, bool isHomePlanet)
         {
             // --- Compute value ---

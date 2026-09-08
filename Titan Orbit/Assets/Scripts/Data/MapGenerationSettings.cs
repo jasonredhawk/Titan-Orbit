@@ -65,7 +65,7 @@ namespace TitanOrbit.Data
         public bool randomizeNeutralStartingLevel = true;
         public int minNeutralStartingLevel = 1;
         public int maxNeutralStartingLevel = 3;
-        [Tooltip("Extra world-space gap between planet orbit/ring zones when placing homes, neutrals, and asteroids.")]
+        [Tooltip("Extra world-space gap between planet orbit/moon discs, and extra inset from the map edge so rings and moons stay fully inside the map.")]
         public float planetRingPlacementMargin = 3f;
 
         [Header("Asteroids")]

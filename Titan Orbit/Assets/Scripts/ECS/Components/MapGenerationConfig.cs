@@ -75,7 +75,10 @@ namespace TitanOrbit.ECS
         /// <summary>Maximum neutral starting level when randomization is enabled.</summary>
         public int MaxNeutralStartingLevel;
 
-        /// <summary>Padding from map edge when placing neutral planet ring.</summary>
+        /// <summary>
+        /// Extra gap between planet orbit/moon discs, and extra inset from the map edge
+        /// so rings and gem moons stay fully inside the canonical rectangle.
+        /// </summary>
         public float PlanetRingPlacementMargin;
 
         /// <summary>Target asteroid count when map size is at minimum (lerped toward max with map size).</summary>

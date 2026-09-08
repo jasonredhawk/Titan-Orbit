@@ -165,6 +165,8 @@ namespace TitanOrbit.ECS
 
         /// <summary>
         /// Places home planets on a toroidal map as a regular polygon with separation scoring.
+        /// Each home + orbit ring + gem moon stays fully inside the canonical rectangle
+        /// (mapW/mapH from <paramref name="rolled"/>).
         /// Clears and fills <paramref name="output"/> and seeds <paramref name="planetPlacements"/>.
         /// </summary>
         public static void BuildHomePlanets(
@@ -182,9 +184,12 @@ namespace TitanOrbit.ECS
             int homeLevel = math.max(1, config.HomePlanetLevel);
             float homeInfluence = PlanetGemMoonMath.ComputeMapPlacementInfluenceRadiusWorld(
                 homeScale, homeLevel, HomeGemMoonScaleMultiplier);
+            float homeKeepIn = PlanetGemMoonMath.ComputeMapEdgeKeepInRadiusWorld(
+                homeScale, homeLevel, HomeGemMoonScaleMultiplier);
 
             var positions = new NativeList<float3>(teamCount, Allocator.Temp);
-            BuildRandomHomePositions(config, rolled.MapWidth, rolled.MapHeight, homeInfluence, teamCount, ref rng, positions);
+            BuildRandomHomePositions(
+                config, rolled.MapWidth, rolled.MapHeight, homeInfluence, homeKeepIn, teamCount, ref rng, positions);
 
             for (int i = 0; i < positions.Length; i++)
             {
@@ -206,7 +211,9 @@ namespace TitanOrbit.ECS
 
         /// <summary>
         /// Places neutral planets avoiding existing planet influence rings; randomizes starting level
-        /// when configured. Appends to <paramref name="planetPlacements"/> for asteroid placement.
+        /// when configured. Each planet + orbit ring + gem moon is inset so it fits fully inside
+        /// the canonical rectangle (mapW/mapH from <paramref name="rolled"/>).
+        /// Appends to <paramref name="planetPlacements"/> for asteroid placement.
         /// </summary>
         public static void BuildNeutralPlanets(
             in MapGenerationConfig config,
@@ -228,8 +235,9 @@ namespace TitanOrbit.ECS
                 float size = rng.NextFloat(planetLo, planetHi);
                 int level = levels[i];
                 float influence = PlanetGemMoonMath.ComputeMapPlacementInfluenceRadiusWorld(size, level);
+                float keepIn = PlanetGemMoonMath.ComputeMapEdgeKeepInRadiusWorld(size, level);
                 float3 position = GetRandomMapPositionAvoidingPlanetRings(
-                    config, rolled.MapWidth, rolled.MapHeight, planetPlacements, influence, ref rng);
+                    config, rolled.MapWidth, rolled.MapHeight, planetPlacements, influence, ref rng, keepIn);
 
                 output.Add(new NeutralPlanetLayout
                 {
@@ -448,6 +456,7 @@ namespace TitanOrbit.ECS
             float mapWidth,
             float mapHeight,
             float homeInfluence,
+            float homeKeepIn,
             int teamCount,
             ref Random rng,
             NativeList<float3> output)
@@ -455,7 +464,8 @@ namespace TitanOrbit.ECS
             output.Clear();
             float ringPairSep = 2f * homeInfluence + math.max(0f, config.PlanetRingPlacementMargin);
             float minSep = math.max(25f, math.max(config.MinHomePlanetPairSeparation, ringPairSep));
-            float maxRadius = GetMaxHomePlanetRingRadius(config, mapWidth, mapHeight, homeInfluence);
+            float maxRadius = GetMaxHomePlanetRingRadius(config, mapWidth, mapHeight, homeKeepIn);
+            float edgeKeepIn = homeKeepIn + math.max(0f, config.PlanetRingPlacementMargin);
             float baseRot = rng.NextFloat(0f, math.PI * 2f);
 
             const int radiusSteps = 24;
@@ -478,7 +488,8 @@ namespace TitanOrbit.ECS
                     {
                         float rot = baseRot + (math.PI * 2f * ti) / rotationSteps;
                         var candidate = BuildRegularHomePolygon(teamCount, r, rot);
-                        if (!MeetsMinToroidalPairSeparation(candidate, mapWidth, mapHeight, requiredMin))
+                        if (!MeetsMinToroidalPairSeparation(candidate, mapWidth, mapHeight, requiredMin)
+                            || !FitsPlanetSystemInsideMap(candidate, mapWidth, mapHeight, edgeKeepIn))
                         {
                             candidate.Dispose();
                             continue;
@@ -513,7 +524,7 @@ namespace TitanOrbit.ECS
             if (bestLayout.IsCreated)
                 bestLayout.Dispose();
 
-            PlaceHomePlanetsFallbackRing(config, mapWidth, mapHeight, homeInfluence, teamCount, ref rng, output);
+            PlaceHomePlanetsFallbackRing(config, mapWidth, mapHeight, homeInfluence, homeKeepIn, teamCount, ref rng, output);
         }
 
         static void PlaceHomePlanetsFallbackRing(
@@ -521,6 +532,7 @@ namespace TitanOrbit.ECS
             float mapWidth,
             float mapHeight,
             float homeInfluence,
+            float homeKeepIn,
             int teamCount,
             ref Random rng,
             NativeList<float3> output)
@@ -528,7 +540,8 @@ namespace TitanOrbit.ECS
             output.Clear();
             float ringPairSep = 2f * homeInfluence + math.max(0f, config.PlanetRingPlacementMargin);
             float minSep = math.max(28f, math.max(config.MinHomePlanetPairSeparation * 0.55f, ringPairSep));
-            float maxRadius = GetMaxHomePlanetRingRadius(config, mapWidth, mapHeight, homeInfluence);
+            float maxRadius = GetMaxHomePlanetRingRadius(config, mapWidth, mapHeight, homeKeepIn);
+            float edgeKeepIn = homeKeepIn + math.max(0f, config.PlanetRingPlacementMargin);
             float rot = rng.NextFloat(0f, math.PI * 2f);
             float chosenRadius = math.min(maxRadius, math.max(35f, config.HomePlanetDistance * 0.45f));
 
@@ -536,7 +549,8 @@ namespace TitanOrbit.ECS
             {
                 float r = maxRadius * (ri + 1f) / 41f;
                 var candidate = BuildRegularHomePolygon(teamCount, r, rot);
-                bool ok = MeetsMinToroidalPairSeparation(candidate, mapWidth, mapHeight, minSep);
+                bool ok = MeetsMinToroidalPairSeparation(candidate, mapWidth, mapHeight, minSep)
+                    && FitsPlanetSystemInsideMap(candidate, mapWidth, mapHeight, edgeKeepIn);
                 candidate.Dispose();
                 if (ok)
                 {
@@ -603,17 +617,84 @@ namespace TitanOrbit.ECS
             return minD * 2f - spread - spreadRatio * 10f;
         }
 
-        static float GetMaxHomePlanetRingRadius(in MapGenerationConfig config, float mapWidth, float mapHeight, float homeInfluence)
+        static float GetMaxHomePlanetRingRadius(in MapGenerationConfig config, float mapWidth, float mapHeight, float homeKeepIn)
         {
-            float margin = math.max(
+            float ringMargin = math.max(0f, config.PlanetRingPlacementMargin);
+            float keepInPad = math.max(0f, homeKeepIn) + ringMargin;
+            float designerPad = math.max(
                 28f,
                 math.max(
                     config.ClearanceRadiusAroundHomePlanet + 20f,
-                    math.max(config.MinHomePlanetPairSeparation * 0.35f, homeInfluence + 8f)));
-            float halfSpace = math.min(mapWidth, mapHeight) * 0.5f - margin;
+                    math.max(config.MinHomePlanetPairSeparation * 0.35f, homeKeepIn + 8f)));
+            float edgePad = math.max(designerPad, keepInPad);
+            const float seamEpsilon = 0.01f;
+            float halfSpace = math.min(mapWidth, mapHeight) * 0.5f - edgePad - seamEpsilon;
             if (halfSpace < 20f)
-                halfSpace = math.max(15f, math.min(mapWidth, mapHeight) * 0.5f - 10f);
-            return math.max(20f, halfSpace);
+                halfSpace = math.max(0.01f, math.min(mapWidth, mapHeight) * 0.5f - keepInPad - seamEpsilon);
+            return math.max(0.01f, halfSpace);
+        }
+
+        /// <summary>
+        /// True when every planet center plus <paramref name="outerRadius"/> stays inside the
+        /// canonical rectangle (mapW/mapH from <see cref="RolledParameters"/>).
+        /// </summary>
+        static bool FitsPlanetSystemInsideMap(
+            NativeList<float3> positions,
+            float mapWidth,
+            float mapHeight,
+            float outerRadius)
+        {
+            for (int i = 0; i < positions.Length; i++)
+            {
+                if (!FitsPlanetSystemInsideMap(positions[i], mapWidth, mapHeight, outerRadius))
+                    return false;
+            }
+
+            return true;
+        }
+
+        /// <summary>
+        /// True when a planet's orbit ring + gem moon disc stays inside
+        /// <c>[-mapWidth/2, mapWidth/2) × [-mapHeight/2, mapHeight/2)</c>.
+        /// </summary>
+        static bool FitsPlanetSystemInsideMap(float3 position, float mapWidth, float mapHeight, float outerRadius)
+        {
+            float halfW = mapWidth * 0.5f;
+            float halfH = mapHeight * 0.5f;
+            float r = math.max(0f, outerRadius);
+            const float seamEpsilon = 0.01f;
+            return math.abs(position.x) + r <= halfW - seamEpsilon
+                && math.abs(position.z) + r <= halfH - seamEpsilon;
+        }
+
+        /// <summary>
+        /// Uniform sample inside the canonical rectangle inset by <paramref name="inset"/> so a
+        /// disc of that radius cannot cross a map edge. mapW/mapH from <see cref="RolledParameters"/>.
+        /// </summary>
+        static float3 SampleInsetMapPosition(float mapWidth, float mapHeight, float inset, ref Random rng)
+        {
+            float halfW = mapWidth * 0.5f;
+            float halfH = mapHeight * 0.5f;
+            const float seamEpsilon = 0.01f;
+            float insetW = math.clamp(inset, 0f, math.max(0f, halfW - seamEpsilon));
+            float insetH = math.clamp(inset, 0f, math.max(0f, halfH - seamEpsilon));
+            float xLo = -halfW + insetW;
+            float xHi = halfW - insetW;
+            float zLo = -halfH + insetH;
+            float zHi = halfH - insetH;
+            if (xHi < xLo)
+            {
+                xLo = 0f;
+                xHi = 0f;
+            }
+
+            if (zHi < zLo)
+            {
+                zLo = 0f;
+                zHi = 0f;
+            }
+
+            return new float3(rng.NextFloat(xLo, xHi), 0f, rng.NextFloat(zLo, zHi));
         }
 
         static float3 GetRandomMapPositionAvoidingPlanetRings(
@@ -623,22 +704,25 @@ namespace TitanOrbit.ECS
             NativeList<PlanetPlacement> planetPlacements,
             float candidateInfluenceRadius,
             ref Random rng,
+            float edgeKeepInRadius = 0f,
             int maxAttempts = 250)
         {
+            float edgeInset = math.max(0f, edgeKeepInRadius) + math.max(0f, config.PlanetRingPlacementMargin);
             for (int attempt = 0; attempt < maxAttempts; attempt++)
             {
-                float3 pos = new float3(
-                    rng.NextFloat(-mapWidth * 0.5f, mapWidth * 0.5f),
-                    0f,
-                    rng.NextFloat(-mapHeight * 0.5f, mapHeight * 0.5f));
+                float3 pos = edgeInset > 0.01f
+                    ? SampleInsetMapPosition(mapWidth, mapHeight, edgeInset, ref rng)
+                    : new float3(
+                        rng.NextFloat(-mapWidth * 0.5f, mapWidth * 0.5f),
+                        0f,
+                        rng.NextFloat(-mapHeight * 0.5f, mapHeight * 0.5f));
+                if (edgeInset > 0.01f && !FitsPlanetSystemInsideMap(pos, mapWidth, mapHeight, edgeInset))
+                    continue;
                 if (!OverlapsPlanetOrbitRings(config, planetPlacements, mapWidth, mapHeight, pos, candidateInfluenceRadius))
                     return pos;
             }
 
-            return new float3(
-                rng.NextFloat(-mapWidth * 0.5f, mapWidth * 0.5f),
-                0f,
-                rng.NextFloat(-mapHeight * 0.5f, mapHeight * 0.5f));
+            return SampleInsetMapPosition(mapWidth, mapHeight, edgeInset, ref rng);
         }
 
         static bool OverlapsPlanetOrbitRings(
