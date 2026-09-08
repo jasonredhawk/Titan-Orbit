@@ -357,8 +357,9 @@ namespace TitanOrbit.Game
 
         /// <summary>
         /// Snaps / ends one flight from an authoritative pose update.
-        /// On Consumed: shows the arrive +N float and plays the people transfer SFX
-        /// (load vs unload + N-based pitch) before destroying the cosmetic sphere.
+        /// On Consumed / Returned: shows the arrive +N float (ship or planet) and plays
+        /// the people transfer SFX (load vs unload + N-based pitch) before destroying
+        /// the cosmetic sphere.
         /// </summary>
         /// <param name="index">Index into <see cref="_flights"/>.</param>
         /// <param name="pose">Latest pose / end packet from the VFX bridge.</param>
@@ -371,17 +372,30 @@ namespace TitanOrbit.Game
             if (f.Sequence != pose.Sequence)
                 return;
 
-            // --- Consumed: delivery complete (legacy NGO timing for float + SFX) ---
-            // [NETCODE] Consumed arrives via PeopleTransportPoseRpc after the server applies people.
+            // --- End-of-life: delivery or planet refund (legacy NGO timing for float + SFX) ---
+            // [NETCODE] Consumed / Returned arrive via PeopleTransportPoseRpc after the server applies people.
             // [TITAN-ORBIT] Pitch math lives in AudioManager.PlayPeopleLoad/UnloadSound(amount) —
             // higher N → slightly lower pitch. Destroyed (shot down) stays silent like before.
-            if (pose.Status == PeopleTransportPoseStatus.Consumed)
+            if (pose.Status == PeopleTransportPoseStatus.Consumed ||
+                pose.Status == PeopleTransportPoseStatus.Returned)
             {
-                // Return-to-planet already showed +N on the planet — don't also +N the ship.
-                if (f.Go != null && !f.ReturnPopupShown)
-                    ShowArrivePeoplePopup(in f);
+                // Leftover load spheres that fly home must +N the planet, never the ship.
+                // Returned is authoritative; consume-at-planet covers older Consumed refunds.
+                bool loadReturnedToPlanet =
+                    pose.Status == PeopleTransportPoseStatus.Returned ||
+                    f.ReturnPopupShown ||
+                    IsLoadConsumeAtSourcePlanet(in f, pose.Position) ||
+                    IsLoadReturningToPlanet(in f);
 
-                PlayPeopleArriveSound(in f);
+                if (f.Go != null && !f.ReturnPopupShown)
+                {
+                    if (loadReturnedToPlanet)
+                        ShowLoadReturnedPopup(in f);
+                    else
+                        ShowArrivePeoplePopup(in f);
+                }
+
+                PlayPeopleArriveSound(in f, loadReturnedToPlanet);
                 DestroyFlightAt(index, showArrivePopup: false);
                 return;
             }
@@ -519,34 +533,48 @@ namespace TitanOrbit.Game
             if (!IsLoadReturningToPlanet(in f))
                 return;
 
-            Vector3 hint = f.Go != null
-                ? f.Go.transform.position
-                : new Vector3(f.LogicalPos.x, LiftY, f.LogicalPos.z);
-            ShowPlanetPeoplePopup(f.Amount, (TeamId)f.Team, in f, hint);
+            ShowLoadReturnedPopup(in f);
             f.ReturnPopupShown = true;
+        }
+
+        /// <summary>
+        /// True when a load flight's end pose is on the source planet surface (refund consume).
+        /// </summary>
+        static bool IsLoadConsumeAtSourcePlanet(in Flight f, float3 consumePos)
+        {
+            if (f.IsLoad == 0 || f.SourcePlanetId == 0)
+                return false;
+            if (!EcsGameBridge.TryGetPlanetPoseByPlanetId(f.SourcePlanetId, out float3 planetPos, out float planetScale, out _))
+                return false;
+            if (!ToroidalMapEcs.TryGetMapSize(out float mapW, out float mapH))
+                return false;
+
+            float planetSize = math.max(0.5f, planetScale);
+            float surfaceReach = math.max(0.85f, planetSize * 0.12f) * 1.5f;
+            float3 surface = PeopleTransportMath.GetPlanetSurfaceToward(
+                planetPos, planetSize, consumePos, mapW, mapH);
+            return ToroidalMapEcs.ToroidalDistance(consumePos, surface, mapW, mapH) <= surfaceReach;
         }
 
         static bool IsLoadReturningToPlanet(in Flight f)
         {
-            if (!f.HasServerPose || f.SourcePlanetId == 0)
+            if (!f.HasServerPose || f.IsLoad == 0 || f.SourcePlanetId == 0)
                 return false;
 
-            bool notEligible = false;
+            // Still chasing the ship — not a recall. Missing eligibility data must not
+            // block the toward-planet test (ghost orbit can lag a tick behind leave).
             if (f.TargetShipNetworkId > 0 &&
                 EcsGameBridge.TryIsShipEligibleForPeopleLoad(
-                    f.TargetShipNetworkId, f.SourcePlanetId, out bool eligible))
-            {
-                if (eligible)
-                    return false;
-                notEligible = true;
-            }
+                    f.TargetShipNetworkId, f.SourcePlanetId, out bool eligible) &&
+                eligible)
+                return false;
 
             if (math.lengthsq(f.Velocity) < 0.05f)
-                return notEligible;
+                return false;
             if (!EcsGameBridge.TryGetPlanetPoseByPlanetId(f.SourcePlanetId, out float3 planetPos, out _, out _))
-                return notEligible;
+                return false;
             if (!ToroidalMapEcs.TryGetMapSize(out float mapW, out float mapH))
-                return notEligible;
+                return false;
 
             float3 toPlanet = ToroidalMapEcs.ShortestOffsetXZ(f.LogicalPos, planetPos, mapW, mapH);
             toPlanet.y = 0f;
@@ -554,8 +582,16 @@ namespace TitanOrbit.Game
                 return false;
             float3 vel = f.Velocity;
             vel.y = 0f;
-            bool towardPlanet = math.dot(math.normalizesafe(vel), math.normalizesafe(toPlanet)) > 0.45f;
-            return notEligible && towardPlanet;
+            return math.dot(math.normalizesafe(vel), math.normalizesafe(toPlanet)) > 0.45f;
+        }
+
+        /// <summary>Refunded load people land on the planet — +N at the surface, not the hull.</summary>
+        void ShowLoadReturnedPopup(in Flight flight)
+        {
+            Vector3 hint = flight.Go != null
+                ? flight.Go.transform.position
+                : new Vector3(flight.LogicalPos.x, LiftY, flight.LogicalPos.z);
+            ShowPlanetPeoplePopup(flight.Amount, (TeamId)flight.Team, in flight, hint);
         }
 
         void ShowLeavePeoplePopup(in Flight flight, Vector3 hintPos)
@@ -622,12 +658,13 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Plays the people transfer one-shot at arrive (Consumed).
+        /// Plays the people transfer one-shot at arrive (Consumed / Returned).
         /// Load and unload share one clip; <see cref="AudioManager"/> picks base pitch from
         /// direction and scales further by N (<see cref="Flight.Amount"/>).
         /// </summary>
         /// <param name="flight">Flight that just delivered — Amount and IsLoad drive pitch.</param>
-        static void PlayPeopleArriveSound(in Flight flight)
+        /// <param name="returnedToPlanet">True when leftover load people refunded the planet.</param>
+        static void PlayPeopleArriveSound(in Flight flight, bool returnedToPlanet)
         {
             // --- Arrive transfer SFX ---
             // [HYBRID] Presentation-only — server never plays audio in headless builds.
@@ -637,10 +674,10 @@ namespace TitanOrbit.Game
             if (audio == null)
                 return;
 
-            if (flight.IsLoad != 0)
-                audio.PlayPeopleLoadSound(flight.Amount);
-            else
+            if (returnedToPlanet || flight.IsLoad == 0)
                 audio.PlayPeopleUnloadSound(flight.Amount);
+            else
+                audio.PlayPeopleLoadSound(flight.Amount);
         }
 
         /// <summary>

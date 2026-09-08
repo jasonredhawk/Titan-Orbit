@@ -24,8 +24,9 @@ namespace TitanOrbit.ECS
     /// per-barrel firePower / fireRate. Regular hulls follow <see cref="ShipWeaponConfig.FireMode"/>
     /// (from <see cref="ShipFamilyDefinition.weaponFireMode"/>): Energy Hybrid volleys when
     /// affordable else round-robins; Always Fire Together waits for a full bank; Always Round-Robin
-    /// never volleys. MEGAs use <see cref="ShipWeaponFireLogic.TryPlanMegaFire"/> — one
-    /// barrel charges from regen, fires, then the next barrel charges. Empty mount buffer = unarmed.
+    /// never volleys. MEGAs use <see cref="ShipWeaponFireLogic.TryPlanMegaFire"/> —
+    /// volley when the pool covers the whole bank, else cycle one gun. A drip then
+    /// charges the next barrel at regen (regular and MEGA). Empty mount buffer = unarmed.
     /// </para>
     /// <para>
     /// [TITAN-ORBIT] Ships cannot fire while <see cref="ShipOrbitState.InOrbitRing"/> is true —
@@ -334,6 +335,8 @@ namespace TitanOrbit.ECS
                 // [TITAN-ORBIT] Cooldowns keep ticking in the ring so leaving orbit does not dump
                 // a stale "all barrels ready" volley the moment Fire becomes legal again.
                 ShipWeaponFireLogic.TickMountCooldowns(mounts, dt);
+                if (weaponState.ValueRO.FireCooldown > 0f)
+                    weaponState.ValueRW.FireCooldown = math.max(0f, weaponState.ValueRO.FireCooldown - dt);
 
                 bool isMega = SystemAPI.HasComponent<MegaShipState>(entity) &&
                               SystemAPI.GetComponentRO<MegaShipState>(entity).ValueRO.IsMega;
@@ -383,6 +386,11 @@ namespace TitanOrbit.ECS
                 if (!isMega && shipState.ValueRO.MaxEnergy > 1.05f)
                     abilityEnergy = math.min(abilityEnergy, shipState.ValueRO.MaxEnergy - 1.05f);
 
+                float energyRegen = 0f;
+                if (SystemAPI.HasComponent<ShipVitalsConfig>(entity))
+                    energyRegen = SystemAPI.GetComponentRO<ShipVitalsConfig>(entity).ValueRO
+                        .EnergyRegenPerSecond;
+
                 // Per-category Upgrade Visual Scale (default 1). Global category scale is applied
                 // later in BulletVisualFactory — ScaleMultiplier is fire-power upgrade only.
                 float categoryUpgradeScale = vfxBankForScale != null
@@ -401,7 +409,7 @@ namespace TitanOrbit.ECS
                         transform.ValueRO, ghostOwner.ValueRO,
                         bankIndex, vfxBankForScale, shipVel,
                         dt, mapW, mapH, moonElapsed, serverElapsed,
-                        gemPrefab, gemSpawnServerTime);
+                        gemPrefab, gemSpawnServerTime, energyRegen);
                     continue;
                 }
 
@@ -417,7 +425,8 @@ namespace TitanOrbit.ECS
                         out int shotCount,
                         out float energySpend,
                         out int nextMountIndexAfter,
-                        abilityEnergy))
+                        abilityEnergy,
+                        weaponState.ValueRO.FireCooldown))
                     continue;
 
                 // --- Spawn each planned barrel with that mount’s own damage / VFX scale ---
@@ -447,6 +456,20 @@ namespace TitanOrbit.ECS
                 shipState.ValueRW.CurrentEnergy = math.max(0f, shipState.ValueRO.CurrentEnergy - energySpend);
                 // Advance energy-queue cursor (0 after full volley; +1 after a drip shot).
                 weaponState.ValueRW.NextMountIndex = nextMountIndexAfter;
+                if (shotCount == 1)
+                {
+                    float nextCost = ShipWeaponFireLogic.GetMountEnergyCost(
+                        mounts[nextMountIndexAfter],
+                        weaponCfg.ValueRO.BulletDamage,
+                        weaponCfg.ValueRO.FireRate,
+                        abilityEnergy);
+                    weaponState.ValueRW.FireCooldown = ShipWeaponFireLogic.ComputeEnergyChargeSeconds(
+                        nextCost, energyRegen);
+                }
+                else
+                {
+                    weaponState.ValueRW.FireCooldown = 0f;
+                }
             }
 
             ecb.Playback(state.EntityManager);
@@ -468,8 +491,8 @@ namespace TitanOrbit.ECS
         /// <see cref="MegaShipAutoFireSystem"/> — so tracers and damage stay on the
         /// same ray when auto-aim is isolated. The mouse yaw is applied to a spawn
         /// copy only (mount pose / FireCooldown stay independent). Energy uses
-        /// <see cref="ShipWeaponFireLogic.TryPlanMegaFire"/> — one barrel at a time,
-        /// then a regen charge for the next. Lead intercept
+        /// <see cref="ShipWeaponFireLogic.TryPlanMegaFire"/> — full volley when the
+        /// pool covers every armed gun, otherwise one gun in cycle. Lead intercept
         /// distance from <see cref="MegaShipAutoAimSlotElement"/> (or muzzle→mouse
         /// while Shift is held) grows <c>MaxDistance</c> so shots are not culled early.
         /// </summary>
@@ -495,17 +518,10 @@ namespace TitanOrbit.ECS
             double moonElapsed,
             double serverElapsed,
             Entity gemPrefab,
-            float gemSpawnServerTime)
+            float gemSpawnServerTime,
+            float energyRegen)
         {
-            // Ship-level charge: the next barrel fills at hull regen before it may fire.
-            // Reuses unused ShipWeaponState.FireCooldown so we do not add a ghost field.
-            if (weaponState.FireCooldown > 0f)
-                weaponState.FireCooldown = math.max(0f, weaponState.FireCooldown - dt);
-
             if (!ownerMayFire)
-                return;
-
-            if (weaponState.FireCooldown > 0.001f)
                 return;
 
             if (!ShipWeaponFireLogic.TryPlanMegaFire(
@@ -516,7 +532,8 @@ namespace TitanOrbit.ECS
                     s_ShotScratch,
                     out int shotCount,
                     out float energySpend,
-                    out int nextMountIndexAfter))
+                    out int nextMountIndexAfter,
+                    weaponState.FireCooldown))
                 return;
 
             int megaOwnerNet = ghostOwner.NetworkId;
@@ -596,12 +613,17 @@ namespace TitanOrbit.ECS
 
             shipState.CurrentEnergy = math.max(0f, shipState.CurrentEnergy - energySpend);
             weaponState.NextMountIndex = nextMountIndexAfter;
-
-            float regen = 0f;
-            if (state.EntityManager.HasComponent<ShipVitalsConfig>(mega))
-                regen = state.EntityManager.GetComponentData<ShipVitalsConfig>(mega).EnergyRegenPerSecond;
-            float nextCost = ShipWeaponFireLogic.GetNextArmedMegaShotCost(mounts, nextMountIndexAfter);
-            weaponState.FireCooldown = ShipWeaponFireLogic.ComputeMegaChargeSeconds(nextCost, regen);
+            if (shotCount == 1)
+            {
+                float nextCost = ShipWeaponFireLogic.GetNextArmedMegaShotCost(
+                    mounts, nextMountIndexAfter);
+                weaponState.FireCooldown = ShipWeaponFireLogic.ComputeEnergyChargeSeconds(
+                    nextCost, energyRegen);
+            }
+            else
+            {
+                weaponState.FireCooldown = 0f;
+            }
         }
 
         /// <summary>

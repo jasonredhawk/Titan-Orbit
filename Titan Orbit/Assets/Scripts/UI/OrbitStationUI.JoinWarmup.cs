@@ -75,6 +75,12 @@ namespace TitanOrbit.UI
         /// <summary>One Orbit Menu step + one minimap step, then copy combined progress onto the Game gate.</summary>
         static void TickJoinLoadWarmupAndPublish()
         {
+            // --- In-game: warmup already published complete — do not Find or build ---
+            // [TITAN-ORBIT] NceGameFlowController used to Tick this every frame after spawn.
+            // Each tick scene-scanned OrbitStationUI + MinimapController (~18 ms self time).
+            if (OrbitMenuJoinWarmupGate.IsCompleteOrNotNeeded)
+                return;
+
             TickJoinLoadWarmup();
             MinimapJoinWarmup.Tick();
             PublishJoinWarmupToGate();
@@ -118,8 +124,6 @@ namespace TitanOrbit.UI
                 return true;
 
             OrbitStationUI ui = Instance;
-            if (ui == null)
-                ui = FindFirstObjectByType<OrbitStationUI>();
             if (ui == null)
                 return false;
 

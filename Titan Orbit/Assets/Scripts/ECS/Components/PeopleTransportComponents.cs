@@ -72,11 +72,17 @@ namespace TitanOrbit.ECS
         /// <summary>Server sim pose for this tick — client snaps / dead-reckons the float.</summary>
         public const byte Active = 0;
 
-        /// <summary>Delivered or returned successfully — client shows +N and despawns.</summary>
+        /// <summary>Delivered to the intended target (ship for load, planet for unload).</summary>
         public const byte Consumed = 1;
 
         /// <summary>Shot down or aborted — client despawns without +N.</summary>
         public const byte Destroyed = 2;
+
+        /// <summary>
+        /// Load flight refunded to the source planet (ship left orbit / destination gone).
+        /// Client shows +N on the planet, never on the ship.
+        /// </summary>
+        public const byte Returned = 3;
     }
 
     /// <summary>

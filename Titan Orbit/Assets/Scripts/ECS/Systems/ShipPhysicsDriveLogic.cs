@@ -299,7 +299,11 @@ namespace TitanOrbit.ECS
                 megaDockPad,
                 out _,
                 out float3 friendlyMoonVel);
-            bool moonDocking = !input.Thrust && (moonDock.MoonPlanetId != 0 || inFriendlyMoonZone);
+            // Co-orbit only after a calm landing has started. Being in the zone (or a bounce
+            // off the moon rock) must not steal the motor — that felt like a shove to the rim.
+            bool landingActive = moonDock.MoonPlanetId != 0
+                                 && (moonDock.LandingProgress > 0.001f || moonDock.IsFullyLanded);
+            bool moonDocking = !input.Thrust && landingActive;
             bool useOrbit = inOrbitRing && !input.Thrust && !moonDocking;
             float3 moonApproachVel = friendlyMoonVel;
             if (moonDocking && !inFriendlyMoonZone &&

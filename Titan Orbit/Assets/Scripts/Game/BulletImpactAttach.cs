@@ -88,12 +88,24 @@ namespace TitanOrbit.Game
         public static bool TryResolveAtLogicalPoint(
             float3 logicalHit,
             out Transform parent,
+            out Vector3 worldPos) =>
+            TryResolveAtLogicalPoint(logicalHit, excludeShips: false, out parent, out worldPos);
+
+        /// <summary>
+        /// Same as <see cref="TryResolveAtLogicalPoint(float3, out Transform, out Vector3)"/>.
+        /// Ram / hull-collision flashes pass <paramref name="excludeShips"/> so the impact
+        /// stays on the rock instead of parenting to the ramming ship (muzzle look).
+        /// </summary>
+        public static bool TryResolveAtLogicalPoint(
+            float3 logicalHit,
+            bool excludeShips,
+            out Transform parent,
             out Vector3 worldPos)
         {
             parent = null;
             worldPos = new Vector3(logicalHit.x, 0f, logicalHit.z);
             BulletCosmeticHitQuery.TryRefresh();
-            if (!BulletCosmeticHitQuery.TryFindNearestObstacle(logicalHit, out var obstacle))
+            if (!BulletCosmeticHitQuery.TryFindNearestObstacle(logicalHit, excludeShips, out var obstacle))
                 return false;
             return TryResolve(in obstacle, logicalHit, out parent, out worldPos);
         }
@@ -124,6 +136,13 @@ namespace TitanOrbit.Game
         /// Seconds the pooled flash stays alive. 0 or less uses
         /// <see cref="BulletVisualFactory.DefaultImpactDuration"/>.
         /// </param>
+        /// <param name="preferNonShip">
+        /// True for hull ram / grind — parent to the rock, not the ramming ship.
+        /// </param>
+        /// <param name="surfaceNormal">
+        /// Contact normal for Sci-Fi impact orientation (authored +Y = surface).
+        /// Zero keeps <c>Quaternion.identity</c>.
+        /// </param>
         public static void PlayAtLogicalPoint(
             float3 logicalHit,
             BulletVfxBank bank,
@@ -131,14 +150,17 @@ namespace TitanOrbit.Game
             TeamId team,
             float damage,
             float scaleMultiplier,
-            float duration = 0f)
+            float duration = 0f,
+            bool preferNonShip = false,
+            float3 surfaceNormal = default)
         {
-            TryResolveAtLogicalPoint(logicalHit, out Transform parent, out Vector3 worldPos);
+            TryResolveAtLogicalPoint(logicalHit, preferNonShip, out Transform parent, out Vector3 worldPos);
             if (parent == null && ToroidalDisplay.TryGetReferencePosition(out var reference))
                 worldPos = ToroidalDisplay.ToDisplayPosition(logicalHit, reference);
 
+            Vector3 normal = new Vector3(surfaceNormal.x, surfaceNormal.y, surfaceNormal.z);
             BulletVisualFactory.SpawnBulletImpactVfx(
-                worldPos, bank, bankIndex, team, damage, scaleMultiplier, parent, duration);
+                worldPos, bank, bankIndex, team, damage, scaleMultiplier, parent, duration, normal);
         }
 
         static float GetAsteroidRadius(in BulletCosmeticHitQuery.Obstacle obstacle)

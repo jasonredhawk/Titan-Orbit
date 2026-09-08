@@ -32,6 +32,12 @@ namespace TitanOrbit.UI
         static bool s_TimedOut;
 
         /// <summary>
+        /// Cached HUD minimap. <see cref="FindFirstObjectByType"/> is a full-scene walk and
+        /// must not run every in-game frame (that hitch lived on NceGameFlowController.Update).
+        /// </summary>
+        static MinimapController s_CachedMinimap;
+
+        /// <summary>
         /// Join-presentation gate piece: dedicated / timed-out / missing HUD are ready.
         /// Otherwise the live minimap must finish hidden blip construction.
         /// </summary>
@@ -114,12 +120,20 @@ namespace TitanOrbit.UI
         {
             s_StartedRealtime = -1f;
             s_TimedOut = false;
+            s_CachedMinimap = null;
         }
 
-        /// <summary>Finds the scene minimap even while the HUD root is inactive.</summary>
+        /// <summary>
+        /// Finds the scene minimap even while the HUD root is inactive.
+        /// Caches the first hit so later ticks (and IsComplete checks) do not scene-scan.
+        /// </summary>
         static MinimapController FindMinimap()
         {
-            return Object.FindFirstObjectByType<MinimapController>(FindObjectsInactive.Include);
+            if (s_CachedMinimap != null)
+                return s_CachedMinimap;
+
+            s_CachedMinimap = Object.FindFirstObjectByType<MinimapController>(FindObjectsInactive.Include);
+            return s_CachedMinimap;
         }
 
 #if UNITY_EDITOR

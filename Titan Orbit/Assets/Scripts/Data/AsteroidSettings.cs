@@ -101,9 +101,9 @@ namespace TitanOrbit.Data
         public float CollisionMassPerSize = 1f;
 
         [Tooltip(
-            "Coefficient of restitution for ship↔asteroid wall bounce (0 = inelastic stick along " +
-            "the normal, 1 = perfectly elastic). Incoming speed reflects along the contact angle; " +
-            "the rock does not move. PhysX asteroid restitution is 0 so this system owns bounce.")]
+            "One bounce coefficient for ships, asteroids, planets, moons, and moon shields " +
+            "(0 = inelastic stick along the normal, 1 = perfectly elastic). PhysX materials " +
+            "are restitution 0 so ShipCollisionBounceSystem owns rebound.")]
         [Range(0f, 1f)]
         public float BounceRestitution = 0.55f;
 

@@ -19,8 +19,10 @@ namespace TitanOrbit.ECS
     /// Each mount still keeps its own <see cref="ShipWeaponMountElement.FirePower"/> /
     /// <see cref="ShipWeaponMountElement.FireRate"/> / cooldown.
     /// </para>
-    /// MEGA hulls use <see cref="TryPlanMegaFire"/>: never volley. One barrel in
-    /// the energy queue charges, fires, then the next barrel charges.
+    /// MEGA hulls use <see cref="TryPlanMegaFire"/>: volley every ready barrel when
+    /// energy covers the <b>whole bank</b>; otherwise cycle one gun at a time.
+    /// After a drip, the next gun charges at hull regen so leftover energy cannot
+    /// empty the cycle across a few ticks or client frames.
     /// Paired with <see cref="BulletSimulationSystem"/> (server) and
     /// <c>ClientLocalBulletVfxBridge</c> (client cosmetics).
     /// </summary>
@@ -88,7 +90,8 @@ namespace TitanOrbit.ECS
             out int shotCount,
             out float totalEnergySpend,
             out int nextMountIndexAfter,
-            float abilityEnergyPerShot = 0f)
+            float abilityEnergyPerShot = 0f,
+            float chargeCooldown = 0f)
         {
             shotCount = 0;
             totalEnergySpend = 0f;
@@ -119,6 +122,7 @@ namespace TitanOrbit.ECS
             // --- Full volley (pool covers every weapon and all are off cooldown) ---
             // [TITAN-ORBIT] Same-tick multi-fire only when energy can feed the whole bank at once.
             // EnergyHybrid and AlwaysFireTogether both use this gate; AlwaysRoundRobin never does.
+            // A leftover drip-charge does not block this — enough energy means fire all.
             if (allowVolley && allReady && currentEnergy >= totalCost && totalCost > 0f)
             {
                 int capacity = math.min(mountCount, math.min(shots.Length, MaxShotsPerTick));
@@ -144,6 +148,10 @@ namespace TitanOrbit.ECS
             // --- Always Fire Together: wait for full bank — no single-barrel drip ---
             // [TITAN-ORBIT] EnergyHybrid falls through to round-robin when volley is unaffordable.
             if (fireMode == ShipWeaponFireMode.AlwaysFireTogether)
+                return false;
+
+            // Leftover pool must not pay the next gun on the very next tick / frame.
+            if (chargeCooldown > 0.001f)
                 return false;
 
             // --- Energy queue — only NextMountIndex may spend / fire ---
@@ -177,10 +185,9 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// MEGA energy queue: exactly one barrel. The cursor gun waits until the
-        /// shared pool covers <b>its</b> firePower — cheaper guns behind it do not
-        /// sneak a shot. After it fires the caller charges for the next barrel
-        /// (<see cref="ComputeMegaChargeSeconds"/>).
+        /// MEGA energy hybrid: volley every ready barrel only when the pool covers
+        /// <b>every armed gun</b> (not just the ones off cooldown). Otherwise fire
+        /// exactly the cursor gun — cheaper ready barrels do not sneak a shot.
         /// </summary>
         public static bool TryPlanMegaFire(
             float currentEnergy,
@@ -190,7 +197,8 @@ namespace TitanOrbit.ECS
             MountShot[] shots,
             out int shotCount,
             out float totalEnergySpend,
-            out int nextMountIndexAfter)
+            out int nextMountIndexAfter,
+            float chargeCooldown = 0f)
         {
             shotCount = 0;
             totalEnergySpend = 0f;
@@ -199,33 +207,81 @@ namespace TitanOrbit.ECS
             if (mounts.Length <= 0 || shots == null || shots.Length <= 0)
                 return false;
 
+            int mountCount = mounts.Length;
+            float bankCost = 0f;
+            int armedCount = 0;
+            for (int i = 0; i < mountCount; i++)
+            {
+                if (mounts[i].FirePower <= 0.01f)
+                    continue;
+                bankCost += mounts[i].FirePower;
+                armedCount++;
+            }
+
+            if (armedCount <= 0)
+                return false;
+
+            int capacity = math.min(mountCount, math.min(shots.Length, MaxShotsPerTick));
+
+            // --- Full bank volley — pool must pay every armed gun, not the ready subset ---
+            // [TITAN-ORBIT] Gating on ready-only cost let a low tank dump whatever
+            // happened to be off cooldown. Capacity for the whole bank is the rule.
+            if (currentEnergy >= bankCost && bankCost > 0f)
+            {
+                for (int i = 0; i < mountCount && shotCount < capacity; i++)
+                {
+                    ShipWeaponMountElement mount = mounts[i];
+                    if (mount.FirePower <= 0.01f || mount.FireCooldown > 0.001f)
+                        continue;
+                    shots[shotCount++] = BuildMegaShot(i, mount, fallbackFireRate);
+                    totalEnergySpend += mount.FirePower;
+                }
+
+                nextMountIndexAfter = 0;
+                return shotCount > 0;
+            }
+
+            if (chargeCooldown > 0.001f)
+                return false;
+
+            // --- Energy queue — this barrel's turn only ---
             if (!TryGetNextArmedMegaMount(mounts, nextMountIndex, out int mountIdx))
                 return false;
 
-            ShipWeaponMountElement mount = mounts[mountIdx];
-            // This barrel's turn — wait for its own cooldown and energy. Do not
-            // scan ahead for a cheaper ready gun.
-            if (mount.FireCooldown > 0.001f)
+            ShipWeaponMountElement drip = mounts[mountIdx];
+            if (drip.FireCooldown > 0.001f)
                 return false;
-            if (currentEnergy < mount.FirePower)
+            if (currentEnergy < drip.FirePower)
                 return false;
 
-            shots[0] = BuildMegaShot(mountIdx, mount, fallbackFireRate);
+            shots[0] = BuildMegaShot(mountIdx, drip, fallbackFireRate);
             shotCount = 1;
-            totalEnergySpend = mount.FirePower;
+            totalEnergySpend = drip.FirePower;
             nextMountIndexAfter = NextArmedMegaMountIndex(mounts, mountIdx + 1);
             return true;
         }
 
         /// <summary>
-        /// Seconds the next MEGA barrel must charge at hull regen before it may fire.
-        /// Zero when regen is unset (pool check alone is enough).
+        /// Seconds the next drip barrel must charge at hull regen. Zero when regen
+        /// is unset. Callers skip this wait when a full-bank volley is affordable.
         /// </summary>
-        public static float ComputeMegaChargeSeconds(float nextShotCost, float energyRegenPerSecond)
+        public static float ComputeEnergyChargeSeconds(float nextShotCost, float energyRegenPerSecond)
         {
             if (nextShotCost <= 0.01f || energyRegenPerSecond < 0.01f)
                 return 0f;
             return nextShotCost / energyRegenPerSecond;
+        }
+
+        /// <summary>Energy cost of one regular-hull barrel (firePower + ability drain).</summary>
+        public static float GetMountEnergyCost(
+            in ShipWeaponMountElement mount,
+            float fallbackDamage,
+            float fallbackFireRate,
+            float abilityEnergyPerShot = 0f)
+        {
+            ResolveMountCombat(mount, fallbackDamage, fallbackFireRate,
+                out _, out _, out float energyCost, abilityEnergyPerShot);
+            return energyCost;
         }
 
         /// <summary>FirePower of the next armed MEGA barrel at or after <paramref name="startIndex"/>.</summary>

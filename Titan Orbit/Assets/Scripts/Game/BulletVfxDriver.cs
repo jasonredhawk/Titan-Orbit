@@ -785,7 +785,9 @@ namespace TitanOrbit.Game
                     {
                         BulletImpactAttach.PlayAtLogicalPoint(
                             hit.HitPosition, _bank, ramBank, ramTeam, hit.Damage, ramScale,
-                            BulletVisualFactory.DefaultImpactDuration);
+                            BulletVisualFactory.DefaultImpactDuration,
+                            preferNonShip: true,
+                            surfaceNormal: sparkNormal);
                     }
 
                     var ramSynth = new Tracer { OwnerNetworkId = 0, IsAnticipation = false };
@@ -1138,6 +1140,40 @@ namespace TitanOrbit.Game
             return index >= 0;
         }
 
+        /// <summary>
+        /// True when this spawn dies on the first half-unit of flight (nose-touch /
+        /// spawned-inside). Those collisions should play the impact animation only —
+        /// <see cref="BulletVisualFactory.PlayMuzzleVfx"/> at the barrel stacked a gun
+        /// flash on top of the hit. Uses last frame's cosmetic cache — no extra
+        /// <see cref="BulletCosmeticHitQuery.TryRefresh"/> (volley FPS).
+        /// </summary>
+        static bool IsImmediateCollisionSpawn(in BulletVfxBridge.SpawnRequest req)
+        {
+            float3 from = req.SpawnPosition;
+            float3 vel = req.Velocity;
+            vel.y = 0f;
+            float speedSq = math.lengthsq(vel);
+            if (speedSq < 1e-6f)
+                return false;
+
+            float3 dir = vel * math.rsqrt(speedSq);
+            float3 to = from + dir * 0.5f;
+            return BulletCosmeticHitQuery.TryHitSegment(
+                from,
+                to,
+                req.OwnerTeam,
+                req.OwnerNetworkId,
+                req.IsDisplaySpace,
+                out _,
+                out _,
+                out _,
+                out _,
+                out _,
+                req.DamageFilter,
+                req.ScaleMultiplier,
+                req.BankIndex);
+        }
+
         void CreateTracer(in BulletVfxBridge.SpawnRequest req)
         {
             EnsureBank();
@@ -1155,17 +1191,22 @@ namespace TitanOrbit.Game
             spawnDisplay.y = mountY;
 
             // --- Muzzle flash at fire origin ---
+            // Skip when the bolt dies at the barrel (nose-touch / spawned inside).
+            // Hull collision should show the impact animation, not a gun flash on the ship.
             float cameraScale = ResolveMegaCameraVisualScale();
-            BulletVisualFactory.PlayMuzzleVfx(
-                spawnDisplay,
-                req.Velocity,
-                _bank,
-                bankIndex,
-                team,
-                scaleMul * cameraScale,
-                bulletSpeed);
-            AudioManager.Instance?.PlayWeaponShootSound(
-                BulletVisualFactory.GetProjectileSoundPitchBySpeed(bulletSpeed));
+            if (!IsImmediateCollisionSpawn(in req))
+            {
+                BulletVisualFactory.PlayMuzzleVfx(
+                    spawnDisplay,
+                    req.Velocity,
+                    _bank,
+                    bankIndex,
+                    team,
+                    scaleMul * cameraScale,
+                    bulletSpeed);
+                AudioManager.Instance?.PlayWeaponShootSound(
+                    BulletVisualFactory.GetProjectileSoundPitchBySpeed(bulletSpeed));
+            }
 
             // --- Pooled tracer shell (destroy-probe: spawnMs ~14 ms was Instantiates here) ---
             GameObject projectilePrefab = null;

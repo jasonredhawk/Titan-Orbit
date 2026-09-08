@@ -267,8 +267,9 @@ namespace TitanOrbit.Game
             else
                 n = math.normalize(n);
 
-            // Contact sits on the rock: from the ship, step back along the outward normal.
-            float3 displayPos = shipPos - n * hullRadius;
+            // Contact crease toward the rock — not the barrel. Sitting on the hull
+            // with a +Z cone read as a muzzle flash from the ship.
+            float3 displayPos = shipPos - n * (hullRadius + 0.25f);
             displayPos.y = 0f;
 
             // Focused bullet type — same index the HUD tile / B-key cycle uses.
@@ -392,10 +393,11 @@ namespace TitanOrbit.Game
                 n = new float3(0f, 0f, 1f);
             else
                 n = math.normalize(n);
-            // Tilt up so sparks read in a top-down camera (pure XZ sits on the play plane).
+            // Sci-Fi impact prefabs emit along +Y (surface normal), not +Z (muzzle).
+            // LookRotation made Fire/Glow cones read as a gun flash from the hull.
             float3 spray = math.normalize(n + new float3(0f, 0.45f, 0f));
-            e.Go.transform.rotation = Quaternion.LookRotation(
-                new Vector3(spray.x, spray.y, spray.z), Vector3.up);
+            e.Go.transform.rotation = Quaternion.FromToRotation(
+                Vector3.up, new Vector3(spray.x, spray.y, spray.z));
 
             float rate = BaseEmitRate * intensity;
             SetEmitRate(e.Systems, rate);
@@ -685,7 +687,10 @@ namespace TitanOrbit.Game
             return ContainsIgnoreCase(name, "ring")
                    || ContainsIgnoreCase(name, "shock")
                    || ContainsIgnoreCase(name, "wave")
-                   || ContainsIgnoreCase(name, "distort");
+                   || ContainsIgnoreCase(name, "distort")
+                   || ContainsIgnoreCase(name, "muzzle")
+                   || ContainsIgnoreCase(name, "flash")
+                   || ContainsIgnoreCase(name, "flare");
         }
 
         static bool ContainsIgnoreCase(string haystack, string needle)

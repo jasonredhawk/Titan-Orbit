@@ -413,7 +413,7 @@ MonoBehaviour:
       energyRegen: 3
       energyRegenPerExtraLevel: 1
       moveSpeed: 6
-      moveSpeedPerExtraLevel: 0.5
+      moveSpeedPerExtraLevel: 0.2
       accelerationCap: 6
       accelerationCapPerExtraLevel: 1
       extraSpeedPercent: 0.25
@@ -644,15 +644,15 @@ MonoBehaviour:
       energyRegen: 0
       energyRegenPerExtraLevel: 0
       moveSpeed: 6
-      moveSpeedPerExtraLevel: 0.5
+      moveSpeedPerExtraLevel: 0.2
       accelerationCap: 3
-      accelerationCapPerExtraLevel: 0.6
+      accelerationCapPerExtraLevel: 0.1
       extraSpeedPercent: 0
       extraSpeedPercentPerExtraLevel: 0
       extraSpeedEnergyDrain: 0
       extraSpeedEnergyDrainPerExtraLevel: 0
       turnSpeed: 10
-      turnSpeedPerExtraLevel: 2
+      turnSpeedPerExtraLevel: 0.5
       maxGems: 0
       maxGemsPerExtraLevel: 0
       tractorBeamDistance: 0
@@ -891,13 +891,13 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 0aa0eea6471610e4aa7ccbda0fa07440, type: 3}
     minHomePlanetLevel: 1
-    powerScore: 162.94499
-    powerScoreAtMaxLevel: 208.825
+    powerScore: 161.925
+    powerScoreAtMaxLevel: 207.55
     powerScoreBreakdown:
       offense: 49.25
       defense: 26.144999
       energy: 67
-      mobility: 40.8
+      mobility: 39.78
       capacity: 18
       firePower: 3
       bulletSpeed: 12
@@ -908,7 +908,7 @@ MonoBehaviour:
       healthRegen: 0.7875
       energyCap: 60
       energyRegen: 7
-      moveSpeed: 6.8
+      moveSpeed: 5.78
       turnSpeed: 24
       gemCap: 8
       peopleCap: 10
@@ -916,7 +916,7 @@ MonoBehaviour:
       offense: 53
       defense: 37.350002
       energy: 83
-      mobility: 46.225
+      mobility: 44.95
       capacity: 27
       firePower: 3.75
       bulletSpeed: 15
@@ -927,7 +927,7 @@ MonoBehaviour:
       healthRegen: 1.125
       energyCap: 75
       energyRegen: 8
-      moveSpeed: 7.2250004
+      moveSpeed: 5.9500003
       turnSpeed: 28
       gemCap: 12
       peopleCap: 15
@@ -971,13 +971,13 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 5bc1c441f7459b743b4dd06a257a4795, type: 3}
     minHomePlanetLevel: 2
-    powerScore: 163.945
-    powerScoreAtMaxLevel: 290.245
+    powerScore: 162.925
+    powerScoreAtMaxLevel: 288.46
     powerScoreBreakdown:
       offense: 19.25
       defense: 26.145
       energy: 49
-      mobility: 30.8
+      mobility: 29.78
       capacity: 47
       firePower: 3
       bulletSpeed: 12
@@ -988,7 +988,7 @@ MonoBehaviour:
       healthRegen: 0.7875
       energyCap: 42
       energyRegen: 7
-      moveSpeed: 6.8
+      moveSpeed: 5.78
       turnSpeed: 14
       gemCap: 28
       peopleCap: 19
@@ -996,7 +996,7 @@ MonoBehaviour:
       offense: 19.5625
       defense: 82.17
       energy: 70
-      mobility: 35.075
+      mobility: 33.29
       capacity: 95
       firePower: 3
       bulletSpeed: 12
@@ -1007,7 +1007,7 @@ MonoBehaviour:
       healthRegen: 2.475
       energyCap: 60
       energyRegen: 10
-      moveSpeed: 8.075
+      moveSpeed: 6.2900004
       turnSpeed: 14
       gemCap: 52
       peopleCap: 43
@@ -1051,13 +1051,13 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 1e8ec4bd0ef215b47860b8bff654fc1c, type: 3}
     minHomePlanetLevel: 2
-    powerScore: 163.05124
-    powerScoreAtMaxLevel: 316.66675
+    powerScore: 162.54123
+    powerScoreAtMaxLevel: 315.39175
     powerScoreBreakdown:
       offense: 49.25
       defense: 36.99211
       energy: 33.777195
-      mobility: 37.95
+      mobility: 37.44
       capacity: 44.13762
       firePower: 3
       bulletSpeed: 12
@@ -1068,7 +1068,7 @@ MonoBehaviour:
       healthRegen: 1.1142203
       energyCap: 31.52331
       energyRegen: 2.2538848
-      moveSpeed: 5.9500003
+      moveSpeed: 5.44
       turnSpeed: 24
       gemCap: 25.425081
       peopleCap: 18.71254
@@ -1076,7 +1076,7 @@ MonoBehaviour:
       offense: 65.3125
       defense: 86.87778
       energy: 70.243515
-      mobility: 54.225
+      mobility: 52.95
       capacity: 86.38457
       firePower: 5.25
       bulletSpeed: 18
@@ -1087,7 +1087,7 @@ MonoBehaviour:
       healthRegen: 2.6168005
       energyCap: 66.6373
       energyRegen: 3.606216
-      moveSpeed: 7.2250004
+      moveSpeed: 5.9500003
       turnSpeed: 36
       gemCap: 46.13762
       peopleCap: 40.246944
@@ -1131,13 +1131,13 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: a5b6a682a542edf4390429791d47e587, type: 3}
     minHomePlanetLevel: 3
-    powerScore: 170.02203
-    powerScoreAtMaxLevel: 450.6504
+    powerScore: 169.51202
+    powerScoreAtMaxLevel: 448.86542
     powerScoreBreakdown:
       offense: 49.25
       defense: 29.072027
       energy: 53
-      mobility: 27.95
+      mobility: 27.44
       capacity: 47
       firePower: 3
       bulletSpeed: 12
@@ -1148,7 +1148,7 @@ MonoBehaviour:
       healthRegen: 0.8756635
       energyCap: 48
       energyRegen: 5
-      moveSpeed: 5.9500003
+      moveSpeed: 5.44
       turnSpeed: 14
       gemCap: 28
       peopleCap: 19
@@ -1156,7 +1156,7 @@ MonoBehaviour:
       offense: 77.625
       defense: 127.32541
       energy: 133
-      mobility: 35.075
+      mobility: 33.29
       capacity: 127
       firePower: 6.75
       bulletSpeed: 21
@@ -1167,7 +1167,7 @@ MonoBehaviour:
       healthRegen: 3.8351026
       energyCap: 123
       energyRegen: 10
-      moveSpeed: 8.075
+      moveSpeed: 6.2900004
       turnSpeed: 14
       gemCap: 68
       peopleCap: 59
@@ -1211,13 +1211,13 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: d937319cc77c8a944a5f91960451cf7d, type: 3}
     minHomePlanetLevel: 3
-    powerScore: 169.7667
-    powerScoreAtMaxLevel: 455.57837
+    powerScore: 169.25668
+    powerScoreAtMaxLevel: 453.7934
     powerScoreBreakdown:
       offense: 49.25
       defense: 29.88
       energy: 42.549347
-      mobility: 37.95
+      mobility: 37.44
       capacity: 47
       firePower: 3
       bulletSpeed: 12
@@ -1228,7 +1228,7 @@ MonoBehaviour:
       healthRegen: 0.90000004
       energyCap: 39.042297
       energyRegen: 3.50705
-      moveSpeed: 5.9500003
+      moveSpeed: 5.44
       turnSpeed: 24
       gemCap: 28
       peopleCap: 19
@@ -1236,7 +1236,7 @@ MonoBehaviour:
       offense: 77.625
       defense: 123.255005
       energy: 112.098694
-      mobility: 65.075
+      mobility: 63.29
       capacity: 127
       firePower: 6.75
       bulletSpeed: 21
@@ -1247,7 +1247,7 @@ MonoBehaviour:
       healthRegen: 3.7125
       energyCap: 105.084595
       energyRegen: 7.0141
-      moveSpeed: 8.075
+      moveSpeed: 6.2900004
       turnSpeed: 44
       gemCap: 68
       peopleCap: 59
@@ -1291,13 +1291,13 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 0deda9d33d49b3f4c8781a8000f306b2, type: 3}
     minHomePlanetLevel: 3
-    powerScore: 171.12532
-    powerScoreAtMaxLevel: 432.7213
+    powerScore: 170.36032
+    powerScoreAtMaxLevel: 430.6813
     powerScoreBreakdown:
       offense: 49.25
       defense: 35.27337
       energy: 41.84294
-      mobility: 39.375
+      mobility: 38.61
       capacity: 43.42327
       firePower: 3
       bulletSpeed: 12
@@ -1308,7 +1308,7 @@ MonoBehaviour:
       healthRegen: 1.0624509
       energyCap: 38.436806
       energyRegen: 3.4061341
-      moveSpeed: 6.375
+      moveSpeed: 5.61
       turnSpeed: 24
       gemCap: 24.948847
       peopleCap: 18.474422
@@ -1316,7 +1316,7 @@ MonoBehaviour:
       offense: 77.625
       defense: 120.56591
       energy: 106.71205
-      mobility: 66.5
+      mobility: 64.46
       capacity: 113.140335
       firePower: 6.75
       bulletSpeed: 21
@@ -1327,7 +1327,7 @@ MonoBehaviour:
       healthRegen: 3.631503
       energyCap: 100.467476
       energyRegen: 6.2445793
-      moveSpeed: 8.5
+      moveSpeed: 6.46
       turnSpeed: 44
       gemCap: 59.072887
       peopleCap: 54.06745
@@ -1371,13 +1371,13 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 82c9b2d123d60bc4281c5c051b327d11, type: 3}
     minHomePlanetLevel: 4
-    powerScore: 186.26314
-    powerScoreAtMaxLevel: 603.81635
+    powerScore: 185.75314
+    powerScoreAtMaxLevel: 601.5213
     powerScoreBreakdown:
       offense: 49.25
       defense: 38.27656
       energy: 46.629265
-      mobility: 33.95
+      mobility: 33.44
       capacity: 54
       firePower: 3
       bulletSpeed: 12
@@ -1388,7 +1388,7 @@ MonoBehaviour:
       healthRegen: 1.1529086
       energyCap: 42.539368
       energyRegen: 4.0898952
-      moveSpeed: 5.9500003
+      moveSpeed: 5.44
       turnSpeed: 20
       gemCap: 32
       peopleCap: 22
@@ -1396,7 +1396,7 @@ MonoBehaviour:
       offense: 89.9375
       defense: 179.87854
       energy: 149.71024
-      mobility: 71.925
+      mobility: 69.63
       capacity: 166
       firePower: 8.25
       bulletSpeed: 24
@@ -1407,7 +1407,7 @@ MonoBehaviour:
       healthRegen: 5.4180284
       energyCap: 139.89449
       energyRegen: 9.815748
-      moveSpeed: 8.925
+      moveSpeed: 6.63
       turnSpeed: 48
       gemCap: 88
       peopleCap: 78
@@ -1451,13 +1451,13 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 15d1a43a886d41e479020f361c821b1f, type: 3}
     minHomePlanetLevel: 4
-    powerScore: 173.05
-    powerScoreAtMaxLevel: 496
+    powerScore: 172.54001
+    powerScoreAtMaxLevel: 493.705
     powerScoreBreakdown:
       offense: 19.25
       defense: 37.350002
       energy: 35
-      mobility: 33.95
+      mobility: 33.44
       capacity: 54
       firePower: 3
       bulletSpeed: 12
@@ -1468,7 +1468,7 @@ MonoBehaviour:
       healthRegen: 1.125
       energyCap: 30
       energyRegen: 5
-      moveSpeed: 5.9500003
+      moveSpeed: 5.44
       turnSpeed: 20
       gemCap: 32
       peopleCap: 22
@@ -1476,7 +1476,7 @@ MonoBehaviour:
       offense: 20.1875
       defense: 168.075
       energy: 84
-      mobility: 71.925
+      mobility: 69.63
       capacity: 166
       firePower: 3
       bulletSpeed: 12
@@ -1487,7 +1487,7 @@ MonoBehaviour:
       healthRegen: 5.0625
       energyCap: 72
       energyRegen: 12
-      moveSpeed: 8.925
+      moveSpeed: 6.63
       turnSpeed: 48
       gemCap: 88
       peopleCap: 78
@@ -1531,13 +1531,13 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: a5c9794b6aa986d4c807c9dd1254d785, type: 3}
     minHomePlanetLevel: 4
-    powerScore: 171.6451
-    powerScoreAtMaxLevel: 525.9365
+    powerScore: 171.39009
+    powerScoreAtMaxLevel: 523.89655
     powerScoreBreakdown:
       offense: 49.25
       defense: 44.79613
       energy: 36.99498
-      mobility: 26.525
+      mobility: 26.27
       capacity: 51.33024
       firePower: 3
       bulletSpeed: 12
@@ -1548,7 +1548,7 @@ MonoBehaviour:
       healthRegen: 1.3492812
       energyCap: 34.28141
       energyRegen: 2.713568
-      moveSpeed: 5.525
+      moveSpeed: 5.27
       turnSpeed: 14
       gemCap: 30.81344
       peopleCap: 20.5168
@@ -1556,7 +1556,7 @@ MonoBehaviour:
       offense: 89.9375
       defense: 169.03026
       energy: 133.23619
-      mobility: 36.5
+      mobility: 34.46
       capacity: 153.98608
       firePower: 8.25
       bulletSpeed: 24
@@ -1567,7 +1567,7 @@ MonoBehaviour:
       healthRegen: 5.0912724
       energyCap: 125.77387
       energyRegen: 7.4623117
-      moveSpeed: 8.5
+      moveSpeed: 6.46
       turnSpeed: 14
       gemCap: 82.66048
       peopleCap: 71.3256
@@ -1611,13 +1611,13 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: f616c26f3dc4ddf46949b9b1085f06cd, type: 3}
     minHomePlanetLevel: 4
-    powerScore: 176.5806
-    powerScoreAtMaxLevel: 576.4105
+    powerScore: 175.8156
+    powerScoreAtMaxLevel: 573.8605
     powerScoreBreakdown:
       offense: 49.25
       defense: 29.88
       energy: 47.660484
-      mobility: 39.375
+      mobility: 38.61
       capacity: 47
       firePower: 3
       bulletSpeed: 12
@@ -1628,7 +1628,7 @@ MonoBehaviour:
       healthRegen: 0.90000004
       energyCap: 43.42327
       energyRegen: 4.2372117
-      moveSpeed: 6.375
+      moveSpeed: 5.61
       turnSpeed: 24
       gemCap: 28
       peopleCap: 19
@@ -1636,7 +1636,7 @@ MonoBehaviour:
       offense: 89.9375
       defense: 160.60501
       energy: 145.26437
-      mobility: 77.35
+      mobility: 74.8
       capacity: 159
       firePower: 8.25
       bulletSpeed: 24
@@ -1647,7 +1647,7 @@ MonoBehaviour:
       healthRegen: 4.8374996
       energyCap: 136.08376
       energyRegen: 9.180626
-      moveSpeed: 9.35
+      moveSpeed: 6.8
       turnSpeed: 52
       gemCap: 84
       peopleCap: 75
@@ -1691,13 +1691,13 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: d49615e0f742c694180fedfb156f453a, type: 3}
     minHomePlanetLevel: 5
-    powerScore: 205.218
-    powerScoreAtMaxLevel: 745.0485
+    powerScore: 204.453
+    powerScoreAtMaxLevel: 741.9885
     powerScoreBreakdown:
       offense: 49.25
       defense: 51.543003
       energy: 39
-      mobility: 39.375
+      mobility: 38.61
       capacity: 64.8
       firePower: 3
       bulletSpeed: 12
@@ -1708,7 +1708,7 @@ MonoBehaviour:
       healthRegen: 1.5525
       energyCap: 36
       energyRegen: 3
-      moveSpeed: 6.375
+      moveSpeed: 5.61
       turnSpeed: 24
       gemCap: 39.2
       peopleCap: 25.599998
@@ -1716,7 +1716,7 @@ MonoBehaviour:
       offense: 102.25
       defense: 243.1485
       energy: 151.5
-      mobility: 88.2
+      mobility: 85.14
       capacity: 227.7
       firePower: 9.75
       bulletSpeed: 27
@@ -1727,7 +1727,7 @@ MonoBehaviour:
       healthRegen: 7.3237495
       energyCap: 144
       energyRegen: 7.5
-      moveSpeed: 10.200001
+      moveSpeed: 7.14
       turnSpeed: 60
       gemCap: 122
       peopleCap: 105.7
@@ -1771,13 +1771,13 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: ea1819f76cef1e44386de8535b280123, type: 3}
     minHomePlanetLevel: 5
-    powerScore: 196.32138
-    powerScoreAtMaxLevel: 739.0023
+    powerScore: 195.55638
+    powerScoreAtMaxLevel: 735.9423
     powerScoreBreakdown:
       offense: 49.25
       defense: 38.09568
       energy: 43.199997
-      mobility: 39.375
+      mobility: 38.61
       capacity: 64.1007
       firePower: 3
       bulletSpeed: 12
@@ -1788,7 +1788,7 @@ MonoBehaviour:
       healthRegen: 1.1474602
       energyCap: 39.6
       energyRegen: 3.6000001
-      moveSpeed: 6.375
+      moveSpeed: 5.61
       turnSpeed: 24
       gemCap: 38.7338
       peopleCap: 25.366901
@@ -1796,7 +1796,7 @@ MonoBehaviour:
       offense: 102.25
       defense: 225.90039
       energy: 162
-      mobility: 88.2
+      mobility: 85.14
       capacity: 225.77693
       firePower: 9.75
       bulletSpeed: 27
@@ -1807,7 +1807,7 @@ MonoBehaviour:
       healthRegen: 6.804229
       energyCap: 153
       energyRegen: 9
-      moveSpeed: 10.200001
+      moveSpeed: 7.14
       turnSpeed: 60
       gemCap: 120.8345
       peopleCap: 104.94243
@@ -1851,13 +1851,13 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: e7000bb949f2baf4898f147f737388b0, type: 3}
     minHomePlanetLevel: 5
-    powerScore: 189.72284
-    powerScoreAtMaxLevel: 694.97205
+    powerScore: 188.95784
+    powerScoreAtMaxLevel: 691.91205
     powerScoreBreakdown:
       offense: 49.25
       defense: 33.615
       energy: 43.186264
-      mobility: 47.375
+      mobility: 46.61
       capacity: 54
       firePower: 3
       bulletSpeed: 12
@@ -1868,7 +1868,7 @@ MonoBehaviour:
       healthRegen: 1.0125
       energyCap: 39.588226
       energyRegen: 3.5980377
-      moveSpeed: 6.375
+      moveSpeed: 5.61
       turnSpeed: 32
       gemCap: 32
       peopleCap: 22
@@ -1876,7 +1876,7 @@ MonoBehaviour:
       offense: 102.25
       defense: 201.69
       energy: 161.96567
-      mobility: 96.2
+      mobility: 93.14
       capacity: 198
       firePower: 9.75
       bulletSpeed: 27
@@ -1887,7 +1887,7 @@ MonoBehaviour:
       healthRegen: 6.075
       energyCap: 152.97057
       energyRegen: 8.995094
-      moveSpeed: 10.200001
+      moveSpeed: 7.14
       turnSpeed: 68
       gemCap: 104
       peopleCap: 94
@@ -1931,13 +1931,13 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: f871598b5c5a3cc48a0fbc1807e128b4, type: 3}
     minHomePlanetLevel: 5
-    powerScore: 197.7315
-    powerScoreAtMaxLevel: 727.095
+    powerScore: 196.9665
+    powerScoreAtMaxLevel: 724.035
     powerScoreBreakdown:
       offense: 49.25
       defense: 29.5065
       energy: 60
-      mobility: 39.375
+      mobility: 38.61
       capacity: 53.1
       firePower: 3
       bulletSpeed: 12
@@ -1948,7 +1948,7 @@ MonoBehaviour:
       healthRegen: 0.8887501
       energyCap: 54
       energyRegen: 6
-      moveSpeed: 6.375
+      moveSpeed: 5.61
       turnSpeed: 24
       gemCap: 31.6
       peopleCap: 21.5
@@ -1956,7 +1956,7 @@ MonoBehaviour:
       offense: 102.25
       defense: 194.22
       energy: 204
-      mobility: 88.2
+      mobility: 85.14
       capacity: 193.05
       firePower: 9.75
       bulletSpeed: 27
@@ -1967,7 +1967,7 @@ MonoBehaviour:
       healthRegen: 5.8499994
       energyCap: 189
       energyRegen: 15
-      moveSpeed: 10.200001
+      moveSpeed: 7.14
       turnSpeed: 60
       gemCap: 101.8
       peopleCap: 91.25
@@ -2011,13 +2011,13 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 493e603ebed19f446af5ac5b47e2873c, type: 3}
     minHomePlanetLevel: 5
-    powerScore: 194.035
-    powerScoreAtMaxLevel: 730.81
+    powerScore: 193.525
+    powerScoreAtMaxLevel: 728.005
     powerScoreBreakdown:
       offense: 49.25
       defense: 41.085
       energy: 53
-      mobility: 37.95
+      mobility: 37.44
       capacity: 47
       firePower: 3
       bulletSpeed: 12
@@ -2028,7 +2028,7 @@ MonoBehaviour:
       healthRegen: 1.2375001
       energyCap: 48
       energyRegen: 5
-      moveSpeed: 5.9500003
+      moveSpeed: 5.44
       turnSpeed: 24
       gemCap: 28
       peopleCap: 19
@@ -2036,7 +2036,7 @@ MonoBehaviour:
       offense: 102.25
       defense: 209.15999
       energy: 197
-      mobility: 86.775
+      mobility: 83.97
       capacity: 191
       firePower: 9.75
       bulletSpeed: 27
@@ -2047,7 +2047,7 @@ MonoBehaviour:
       healthRegen: 6.3
       energyCap: 183
       energyRegen: 14
-      moveSpeed: 9.775001
+      moveSpeed: 6.9700003
       turnSpeed: 60
       gemCap: 100
       peopleCap: 91
@@ -2091,13 +2091,13 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 2f5e6bbb70cf4414b9e9cedb9b344ae1, type: 3}
     minHomePlanetLevel: 6
-    powerScore: 213.70815
-    powerScoreAtMaxLevel: 917.099
+    powerScore: 212.94315
+    powerScoreAtMaxLevel: 913.52905
     powerScoreBreakdown:
       offense: 49.25
       defense: 40.084293
       energy: 60
-      mobility: 39.375
+      mobility: 38.61
       capacity: 58.498848
       firePower: 3
       bulletSpeed: 12
@@ -2108,7 +2108,7 @@ MonoBehaviour:
       healthRegen: 1.2073581
       energyCap: 54
       energyRegen: 6
-      moveSpeed: 6.375
+      moveSpeed: 5.61
       turnSpeed: 24
       gemCap: 33.99949
       peopleCap: 24.49936
@@ -2116,7 +2116,7 @@ MonoBehaviour:
       offense: 114.5625
       defense: 268.43152
       energy: 236
-      mobility: 99.05
+      mobility: 95.48
       capacity: 259.24252
       firePower: 11.25
       bulletSpeed: 30
@@ -2127,7 +2127,7 @@ MonoBehaviour:
       healthRegen: 8.085286
       energyCap: 219
       energyRegen: 17
-      moveSpeed: 11.05
+      moveSpeed: 7.4800005
       turnSpeed: 68
       gemCap: 132.99667
       peopleCap: 126.24584
@@ -2171,13 +2171,13 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 460c0b26d6f2aa54f8b72c5fd0c8131c, type: 3}
     minHomePlanetLevel: 6
-    powerScore: 221.945
-    powerScoreAtMaxLevel: 877.67004
+    powerScore: 221.18001
+    powerScoreAtMaxLevel: 874.10004
     powerScoreBreakdown:
       offense: 49.25
       defense: 44.82
       energy: 60
-      mobility: 47.375
+      mobility: 46.61
       capacity: 54
       firePower: 3
       bulletSpeed: 12
@@ -2188,7 +2188,7 @@ MonoBehaviour:
       healthRegen: 1.35
       energyCap: 54
       energyRegen: 6
-      moveSpeed: 6.375
+      moveSpeed: 5.61
       turnSpeed: 32
       gemCap: 32
       peopleCap: 22
@@ -2196,7 +2196,7 @@ MonoBehaviour:
       offense: 114.5625
       defense: 250.24503
       energy: 236
-      mobility: 107.05
+      mobility: 103.48
       capacity: 230
       firePower: 11.25
       bulletSpeed: 30
@@ -2207,7 +2207,7 @@ MonoBehaviour:
       healthRegen: 7.5375004
       energyCap: 219
       energyRegen: 17
-      moveSpeed: 11.05
+      moveSpeed: 7.4800005
       turnSpeed: 76
       gemCap: 120
       peopleCap: 110
@@ -2251,13 +2251,13 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 9ba619a2e6d336e4bab0dfa55345d8d0, type: 3}
     minHomePlanetLevel: 6
-    powerScore: 208.3612
-    powerScoreAtMaxLevel: 845.54425
+    powerScore: 207.5962
+    powerScoreAtMaxLevel: 841.97424
     powerScoreBreakdown:
       offense: 49.25
       defense: 37.350002
       energy: 53.636204
-      mobility: 51.375
+      mobility: 50.61
       capacity: 54
       firePower: 3
       bulletSpeed: 12
@@ -2268,7 +2268,7 @@ MonoBehaviour:
       healthRegen: 1.125
       energyCap: 48.54532
       energyRegen: 5.090886
-      moveSpeed: 6.375
+      moveSpeed: 5.61
       turnSpeed: 36
       gemCap: 32
       peopleCap: 22
@@ -2276,7 +2276,7 @@ MonoBehaviour:
       offense: 114.5625
       defense: 242.775
       energy: 217.96925
-      mobility: 111.05
+      mobility: 107.48
       capacity: 230
       firePower: 11.25
       bulletSpeed: 30
@@ -2287,7 +2287,7 @@ MonoBehaviour:
       healthRegen: 7.3125
       energyCap: 203.54507
       energyRegen: 14.424177
-      moveSpeed: 11.05
+      moveSpeed: 7.4800005
       turnSpeed: 80
       gemCap: 120
       peopleCap: 110
@@ -2331,13 +2331,13 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: f7b236a53dbba8643abe42a7843372ec, type: 3}
     minHomePlanetLevel: 6
-    powerScore: 206.33861
-    powerScoreAtMaxLevel: 865.12604
+    powerScore: 205.57361
+    powerScoreAtMaxLevel: 861.556
     powerScoreBreakdown:
       offense: 49.25
       defense: 40.963615
       energy: 60
-      mobility: 39.375
+      mobility: 38.61
       capacity: 54
       firePower: 3
       bulletSpeed: 12
@@ -2348,7 +2348,7 @@ MonoBehaviour:
       healthRegen: 1.2338438
       energyCap: 54
       energyRegen: 6
-      moveSpeed: 6.375
+      moveSpeed: 5.61
       turnSpeed: 24
       gemCap: 32
       peopleCap: 22
@@ -2356,7 +2356,7 @@ MonoBehaviour:
       offense: 114.5625
       defense: 256.32605
       energy: 236
-      mobility: 99.05
+      mobility: 95.48
       capacity: 230
       firePower: 11.25
       bulletSpeed: 30
@@ -2367,7 +2367,7 @@ MonoBehaviour:
       healthRegen: 7.720664
       energyCap: 219
       energyRegen: 17
-      moveSpeed: 11.05
+      moveSpeed: 7.4800005
       turnSpeed: 68
       gemCap: 120
       peopleCap: 110
@@ -2411,13 +2411,13 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 07c49d7a799e37b41b31d16fbf27d044, type: 3}
     minHomePlanetLevel: 6
-    powerScore: 206.33861
-    powerScoreAtMaxLevel: 865.12604
+    powerScore: 205.57361
+    powerScoreAtMaxLevel: 861.556
     powerScoreBreakdown:
       offense: 49.25
       defense: 40.963615
       energy: 60
-      mobility: 39.375
+      mobility: 38.61
       capacity: 54
       firePower: 3
       bulletSpeed: 12
@@ -2428,7 +2428,7 @@ MonoBehaviour:
       healthRegen: 1.2338438
       energyCap: 54
       energyRegen: 6
-      moveSpeed: 6.375
+      moveSpeed: 5.61
       turnSpeed: 24
       gemCap: 32
       peopleCap: 22
@@ -2436,7 +2436,7 @@ MonoBehaviour:
       offense: 114.5625
       defense: 256.32605
       energy: 236
-      mobility: 99.05
+      mobility: 95.48
       capacity: 230
       firePower: 11.25
       bulletSpeed: 30
@@ -2447,7 +2447,7 @@ MonoBehaviour:
       healthRegen: 7.720664
       energyCap: 219
       energyRegen: 17
-      moveSpeed: 11.05
+      moveSpeed: 7.4800005
       turnSpeed: 68
       gemCap: 120
       peopleCap: 110
@@ -2491,13 +2491,13 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: e61f845aff8ec0e4a992aa7e334a8603, type: 3}
     minHomePlanetLevel: 6
-    powerScore: 225.74454
-    powerScoreAtMaxLevel: 887.9217
+    powerScore: 224.97954
+    powerScoreAtMaxLevel: 884.3517
     powerScoreBreakdown:
       offense: 49.25
       defense: 56.91405
       energy: 60
-      mobility: 43.375
+      mobility: 42.61
       capacity: 49.705486
       firePower: 3
       bulletSpeed: 12
@@ -2508,7 +2508,7 @@ MonoBehaviour:
       healthRegen: 1.7142787
       energyCap: 54
       energyRegen: 6
-      moveSpeed: 6.375
+      moveSpeed: 5.61
       turnSpeed: 28
       gemCap: 29.13699
       peopleCap: 20.568497
@@ -2516,7 +2516,7 @@ MonoBehaviour:
       offense: 114.5625
       defense: 277.97668
       energy: 236
-      mobility: 103.05
+      mobility: 99.48
       capacity: 216.51999
       firePower: 11.25
       bulletSpeed: 30
@@ -2527,7 +2527,7 @@ MonoBehaviour:
       healthRegen: 8.37279
       energyCap: 219
       energyRegen: 17
-      moveSpeed: 11.05
+      moveSpeed: 7.4800005
       turnSpeed: 72
       gemCap: 111.88814
       peopleCap: 104.63186

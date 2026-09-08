@@ -967,7 +967,16 @@ namespace TitanOrbit.Game
         /// Nearest cached obstacle to a logical point (surface-fit). Used to parent
         /// Sequence-0 burn / ram flashes to the body this observer sees.
         /// </summary>
-        public static bool TryFindNearestObstacle(float3 logicalHit, out Obstacle obstacle)
+        public static bool TryFindNearestObstacle(float3 logicalHit, out Obstacle obstacle) =>
+            TryFindNearestObstacle(logicalHit, excludeShips: false, out obstacle);
+
+        /// <summary>
+        /// Same as <see cref="TryFindNearestObstacle(float3, out Obstacle)"/>.
+        /// Ram / hull-collision flashes pass <paramref name="excludeShips"/> so the boom
+        /// parents to the rock (or other body), not the ramming hull — attaching to the
+        /// ship with identity rotation made Sci-Fi Fire/Glow cones read as a muzzle flash.
+        /// </summary>
+        public static bool TryFindNearestObstacle(float3 logicalHit, bool excludeShips, out Obstacle obstacle)
         {
             obstacle = default;
             if (Obstacles.Count == 0)
@@ -980,6 +989,8 @@ namespace TitanOrbit.Game
             for (int i = 0; i < Obstacles.Count; i++)
             {
                 var o = Obstacles[i];
+                if (excludeShips && o.Kind == ObstacleKind.Ship)
+                    continue;
                 float3 center = o.LogicalCenter;
                 center.y = 0f;
                 float dist;

@@ -98,6 +98,21 @@ namespace TitanOrbit.Game
         bool _latchedHasShipThisSession;
 
         /// <summary>
+        /// Cached <see cref="GameplayRootHostsJoinFlowUi"/> result. That helper used
+        /// <c>GetComponentInChildren</c> on the HUD every frame (~ms on a large canvas).
+        /// </summary>
+        bool _gameplayRootHostsJoinFlow;
+
+        /// <summary>True after the first <see cref="GameplayRootHostsJoinFlowUi"/> walk this session.</summary>
+        bool _gameplayRootHostsJoinFlowResolved;
+
+        /// <summary>
+        /// True after leftover alpha-0 CanvasGroups on loading / team panels have been restored.
+        /// The first minimap-warmup bug faded the shared canvas — we only need to undo that once.
+        /// </summary>
+        bool _sharedUiCanvasRestoreDone;
+
+        /// <summary>
         /// [TITAN-ORBIT] Realtime when Join Team latched <see cref="ClientTeamFlowState.HasRequestedTeamPick"/>.
         /// Used to detect lost RequestTeam / missing TeamChoiceResult (Editor.log hang 2026-07-30).
         /// </summary>
@@ -1067,13 +1082,24 @@ namespace TitanOrbit.Game
         {
             if (gameplayRoot == null)
                 return false;
-            if (gameplayRoot.GetComponentInChildren<LoadingScreenControllerNce>(true) != null)
-                return true;
-            Transform tr = gameplayRoot.transform;
-            return tr.Find("TeamSelectionPanel") != null ||
-                   tr.Find("LobbyPanel") != null ||
-                   tr.Find("MainMenuPanel") != null ||
-                   tr.Find("LoadingScreenController") != null;
+
+            // --- Cache: HUD hierarchy does not grow loading / team panels at runtime ---
+            if (_gameplayRootHostsJoinFlowResolved)
+                return _gameplayRootHostsJoinFlow;
+
+            bool hosts = gameplayRoot.GetComponentInChildren<LoadingScreenControllerNce>(true) != null;
+            if (!hosts)
+            {
+                Transform tr = gameplayRoot.transform;
+                hosts = tr.Find("TeamSelectionPanel") != null ||
+                        tr.Find("LobbyPanel") != null ||
+                        tr.Find("MainMenuPanel") != null ||
+                        tr.Find("LoadingScreenController") != null;
+            }
+
+            _gameplayRootHostsJoinFlow = hosts;
+            _gameplayRootHostsJoinFlowResolved = true;
+            return hosts;
         }
 
         /// <summary>
@@ -1082,6 +1108,9 @@ namespace TitanOrbit.Game
         /// </summary>
         void RestoreSharedUiCanvasIfFaded()
         {
+            if (_sharedUiCanvasRestoreDone)
+                return;
+
             RestoreCanvasGroupIfFaded(loadingRoot);
             RestoreCanvasGroupIfFaded(teamSelectionPanel);
             RestoreCanvasGroupIfFaded(lobbyPanel);
@@ -1097,7 +1126,11 @@ namespace TitanOrbit.Game
             if (canvas == null && teamSelectionPanel != null)
                 canvas = teamSelectionPanel.GetComponentInParent<Canvas>();
             if (canvas == null)
+            {
+                // Panels themselves are restored; no shared canvas to walk.
+                _sharedUiCanvasRestoreDone = true;
                 return;
+            }
 
             Transform t = canvas.transform;
             while (t.parent != null)
@@ -1108,10 +1141,57 @@ namespace TitanOrbit.Game
                 t = parentCanvas.transform;
             }
 
-            if (t.gameObject.name == "HUD")
-                return;
+            if (t.gameObject.name != "HUD")
+                RestoreCanvasGroupIfFaded(t.gameObject);
 
-            RestoreCanvasGroupIfFaded(t.gameObject);
+            _sharedUiCanvasRestoreDone = true;
+        }
+
+        /// <summary>
+        /// Cheap in-game HUD keep-alive. Returns true when menu/lobby/rejoin work can be skipped
+        /// this frame. Match-won and disconnect still fall through to the full <see cref="RefreshUi"/>.
+        /// </summary>
+        /// <param name="connected">True when NetCode reports the client is in-game.</param>
+        /// <returns>True when this frame already applied gameplay HUD state.</returns>
+        bool TryRefreshGameplayHudFastPath(bool connected)
+        {
+            if (!connected || !_latchedHasShipThisSession)
+                return false;
+            if (!OrbitMenuJoinWarmupGate.IsCompleteOrNotNeeded)
+                return false;
+            if (ClientTeamFlowState.IsRejoinChoicePending)
+                return false;
+
+            // --- Victory / end-match: full UI owns the overlay ---
+            if (EcsGameBridge.TryGetMatchState(out var match) && match.WinningTeam != TeamId.None)
+                return false;
+
+            bool menusOff =
+                (mainMenuPanel == null || !mainMenuPanel.activeSelf) &&
+                (lobbyPanel == null || !lobbyPanel.activeSelf) &&
+                (teamSelectionPanel == null || !teamSelectionPanel.activeSelf) &&
+                (loadingRoot == null || !loadingRoot.activeSelf);
+            bool hudOn = gameplayRoot == null || gameplayRoot.activeSelf;
+            bool statsOn = shipStatsPanel == null || shipStatsPanel.activeSelf;
+            if (menusOff && hudOn && statsOn)
+                return true;
+
+            // --- Keep menus off, HUD on (only SetActive when wrong) ---
+            if (mainMenuPanel != null && mainMenuPanel.activeSelf)
+                mainMenuPanel.SetActive(false);
+            if (lobbyPanel != null && lobbyPanel.activeSelf)
+                lobbyPanel.SetActive(false);
+            if (teamSelectionPanel != null && teamSelectionPanel.activeSelf)
+                teamSelectionPanel.SetActive(false);
+            if (loadingRoot != null && loadingRoot.activeSelf)
+                loadingRoot.SetActive(false);
+            if (_loadingScreen != null)
+                _loadingScreen.Hide();
+
+            ApplyGameplayHudRoot(true, false);
+            if (shipStatsPanel != null && !shipStatsPanel.activeSelf)
+                shipStatsPanel.SetActive(true);
+            return true;
         }
 
         /// <summary>Un-hides a join-flow object that still has a leftover alpha-0 CanvasGroup.</summary>
@@ -1129,8 +1209,6 @@ namespace TitanOrbit.Game
 
         void RefreshUi()
         {
-            RestoreSharedUiCanvasIfFaded();
-
             if (TitanOrbitPlayModeUtility.IsMppmAdditionalEditorInstance() && IsInGameFlow() && _mppmConnectedSince < 0f)
                 _mppmConnectedSince = Time.time;
 
@@ -1140,16 +1218,27 @@ namespace TitanOrbit.Game
             // --- Hidden Orbit Menu warmup while connecting / loading ---
             // [TITAN-ORBIT] Start as soon as Play begins so chrome Instantiates under the
             // overlay, not after Join Team. LoadingScreen also ticks; a frame stamp
-            // prevents double-advance.
-            if (connecting || connected)
+            // prevents double-advance. After complete, do NOT Tick — the handler used to
+            // FindFirstObjectByType every in-game frame (Profiler: 12–19 ms on this Update).
+            if ((connecting || connected) && !OrbitMenuJoinWarmupGate.IsCompleteOrNotNeeded)
                 OrbitMenuJoinWarmupGate.Tick();
             if (TitanOrbitSessionManager.IsDedicatedOnlineClient && connected && _dedicatedConnectedAt < 0f)
                 _dedicatedConnectedAt = Time.time;
             if (!connected && !connecting)
             {
                 _dedicatedConnectedAt = -1f;
+                _sharedUiCanvasRestoreDone = false;
+                _gameplayRootHostsJoinFlowResolved = false;
                 OrbitMenuJoinWarmupGate.ResetSession();
             }
+
+            // --- In-game flying: skip menu/lobby walks ---
+            // [TITAN-ORBIT] Full RefreshUi rebuilt team panels, restored canvases, and queried
+            // rejoin/match/team-count every frame. Once the ship is latched those are idle.
+            if (TryRefreshGameplayHudFastPath(connected))
+                return;
+
+            RestoreSharedUiCanvasIfFaded();
 
             bool mapLoaded = connected && IsMapReadyForTeamSelection();
 

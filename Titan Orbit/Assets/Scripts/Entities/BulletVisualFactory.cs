@@ -161,7 +161,8 @@ namespace TitanOrbit.Entities
             float damage,
             float scaleMultiplier,
             Transform attachParent = null,
-            float duration = 0f)
+            float duration = 0f,
+            Vector3 surfaceNormal = default)
         {
             // [TITAN-ORBIT] Isolation F1 — skip impact Instantiates/Rent to bisect destroy stutter.
             if (TitanOrbitDebugFlags.IsolateDisableImpactVfx)
@@ -187,7 +188,7 @@ namespace TitanOrbit.Entities
                 return;
             }
 
-            SpawnImpactAt(position, prefab, pitch, impactScale, life, attachParent);
+            SpawnImpactAt(position, prefab, pitch, impactScale, life, attachParent, surfaceNormal);
             AudioManager.Instance?.PlayImpactSound(pitch);
         }
 
@@ -268,7 +269,8 @@ namespace TitanOrbit.Entities
             float pitch,
             float scale,
             float duration,
-            Transform attachParent = null)
+            Transform attachParent = null,
+            Vector3 surfaceNormal = default)
         {
             // --- SpawnImpactAt (pooled) ---
             if (prefab == null)
@@ -277,7 +279,13 @@ namespace TitanOrbit.Entities
             if (!BulletOneShotVfxPool.TryRent(prefab, out GameObject go) || go == null)
                 return;
 
-            go.transform.SetPositionAndRotation(position, Quaternion.identity);
+            // Sci-Fi impact prefabs are authored with +Y = surface normal
+            // (SciFiProjectileScript uses FromToRotation(up, hit.normal)).
+            // LookRotation / identity on a ship hull made Fire/Glow cones read as muzzle.
+            Quaternion rot = surfaceNormal.sqrMagnitude > 0.0001f
+                ? Quaternion.FromToRotation(Vector3.up, surfaceNormal.normalized)
+                : Quaternion.identity;
+            go.transform.SetPositionAndRotation(position, rot);
             VfxUrpCompat.ApplyImpactVisualScale(go, scale);
             SetAudioPitchInHierarchy(go, pitch);
             // [UNITY] PrepareVfxInstance restarts ParticleSystems — required after pool Return cleared them.

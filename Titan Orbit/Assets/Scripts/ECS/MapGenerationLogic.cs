@@ -254,7 +254,10 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// Fills asteroid clusters around sector-sampled centers.
+        /// Fills asteroid clusters around stratified (jittered-grid) centers so fields appear
+        /// in different map regions instead of stacking near the origin.
+        /// Each rock's visual disc stays fully inside the canonical rectangle (mapW/mapH from
+        /// <paramref name="rolled"/>) with the same edge pad as planets — not on the seam.
         /// Size (from <paramref name="body"/>) drives visual scale, HP, and gems via ratios.
         /// Retries placement so we reach the rolled target count even when planet rings are dense.
         /// </summary>
@@ -274,8 +277,10 @@ namespace TitanOrbit.ECS
             int perCluster = (int)math.ceil((float)rolled.AsteroidCount / math.max(1, rolled.AsteroidClusterCount));
             float minSpacing = math.max(0.25f, config.MinAsteroidSpacing);
             float clearanceRadius = math.max(0.1f, body.MaxVisualRadius);
+            float rockEdgeInset = ComputeAsteroidMapEdgeInset(config, body);
+            float clusterEdgeInset = rockEdgeInset + GetMaxClusterOffset(perCluster);
             var clusterCenters = PickAsteroidClusterCenters(
-                config, rolled, planetPlacements, rolled.AsteroidClusterCount, clearanceRadius, ref rng);
+                config, rolled, planetPlacements, rolled.AsteroidClusterCount, clearanceRadius, clusterEdgeInset, ref rng);
 
             // --- Primary pass: place near cluster centers ---
             // [TITAN-ORBIT] Each slot gets several attempts; a single overlap used to skip the slot
@@ -287,7 +292,7 @@ namespace TitanOrbit.ECS
                 {
                     if (!TryPlaceAsteroidNearCenter(
                             config, rolled, body, planetPlacements, asteroidPositions, center, perCluster,
-                            minSpacing, clearanceRadius, ref rng, output))
+                            minSpacing, clearanceRadius, rockEdgeInset, ref rng, output))
                     {
                         // Keep trying other clusters; fill pass below covers shortfall.
                     }
@@ -302,10 +307,10 @@ namespace TitanOrbit.ECS
                 bool placed = false;
                 for (int attempt = 0; attempt < fillAttemptsPerSlot; attempt++)
                 {
-                    float3 position = new float3(
-                        rng.NextFloat(-rolled.MapWidth * 0.5f, rolled.MapWidth * 0.5f),
-                        0f,
-                        rng.NextFloat(-rolled.MapHeight * 0.5f, rolled.MapHeight * 0.5f));
+                    float3 position = SampleInsetMapPosition(
+                        rolled.MapWidth, rolled.MapHeight, rockEdgeInset, ref rng);
+                    if (!FitsDiscInsideMap(position, rolled.MapWidth, rolled.MapHeight, rockEdgeInset))
+                        continue;
                     if (IsTooCloseToAny(position, minSpacing, asteroidPositions))
                         continue;
                     if (OverlapsPlanetOrbitRings(
@@ -353,6 +358,7 @@ namespace TitanOrbit.ECS
             int perCluster,
             float minSpacing,
             float clearanceRadius,
+            float rockEdgeInset,
             ref Random rng,
             NativeList<AsteroidLayout> output)
         {
@@ -360,6 +366,8 @@ namespace TitanOrbit.ECS
             for (int attempt = 0; attempt < attemptsPerSlot; attempt++)
             {
                 float3 position = GetPositionInCluster(center, perCluster, ref rng);
+                if (!FitsDiscInsideMap(position, rolled.MapWidth, rolled.MapHeight, rockEdgeInset))
+                    continue;
                 if (IsTooCloseToAny(position, minSpacing, asteroidPositions))
                     continue;
                 if (OverlapsPlanetOrbitRings(
@@ -489,7 +497,7 @@ namespace TitanOrbit.ECS
                         float rot = baseRot + (math.PI * 2f * ti) / rotationSteps;
                         var candidate = BuildRegularHomePolygon(teamCount, r, rot);
                         if (!MeetsMinToroidalPairSeparation(candidate, mapWidth, mapHeight, requiredMin)
-                            || !FitsPlanetSystemInsideMap(candidate, mapWidth, mapHeight, edgeKeepIn))
+                            || !FitsDiscInsideMap(candidate, mapWidth, mapHeight, edgeKeepIn))
                         {
                             candidate.Dispose();
                             continue;
@@ -550,7 +558,7 @@ namespace TitanOrbit.ECS
                 float r = maxRadius * (ri + 1f) / 41f;
                 var candidate = BuildRegularHomePolygon(teamCount, r, rot);
                 bool ok = MeetsMinToroidalPairSeparation(candidate, mapWidth, mapHeight, minSep)
-                    && FitsPlanetSystemInsideMap(candidate, mapWidth, mapHeight, edgeKeepIn);
+                    && FitsDiscInsideMap(candidate, mapWidth, mapHeight, edgeKeepIn);
                 candidate.Dispose();
                 if (ok)
                 {
@@ -638,7 +646,7 @@ namespace TitanOrbit.ECS
         /// True when every planet center plus <paramref name="outerRadius"/> stays inside the
         /// canonical rectangle (mapW/mapH from <see cref="RolledParameters"/>).
         /// </summary>
-        static bool FitsPlanetSystemInsideMap(
+        static bool FitsDiscInsideMap(
             NativeList<float3> positions,
             float mapWidth,
             float mapHeight,
@@ -646,7 +654,7 @@ namespace TitanOrbit.ECS
         {
             for (int i = 0; i < positions.Length; i++)
             {
-                if (!FitsPlanetSystemInsideMap(positions[i], mapWidth, mapHeight, outerRadius))
+                if (!FitsDiscInsideMap(positions[i], mapWidth, mapHeight, outerRadius))
                     return false;
             }
 
@@ -654,10 +662,11 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// True when a planet's orbit ring + gem moon disc stays inside
-        /// <c>[-mapWidth/2, mapWidth/2) × [-mapHeight/2, mapHeight/2)</c>.
+        /// True when a disc of <paramref name="outerRadius"/> around <paramref name="position"/>
+        /// stays inside <c>[-mapWidth/2, mapWidth/2) × [-mapHeight/2, mapHeight/2)</c>
+        /// (mapW/mapH from <see cref="RolledParameters"/>).
         /// </summary>
-        static bool FitsPlanetSystemInsideMap(float3 position, float mapWidth, float mapHeight, float outerRadius)
+        static bool FitsDiscInsideMap(float3 position, float mapWidth, float mapHeight, float outerRadius)
         {
             float halfW = mapWidth * 0.5f;
             float halfH = mapHeight * 0.5f;
@@ -716,7 +725,7 @@ namespace TitanOrbit.ECS
                         rng.NextFloat(-mapWidth * 0.5f, mapWidth * 0.5f),
                         0f,
                         rng.NextFloat(-mapHeight * 0.5f, mapHeight * 0.5f));
-                if (edgeInset > 0.01f && !FitsPlanetSystemInsideMap(pos, mapWidth, mapHeight, edgeInset))
+                if (edgeInset > 0.01f && !FitsDiscInsideMap(pos, mapWidth, mapHeight, edgeInset))
                     continue;
                 if (!OverlapsPlanetOrbitRings(config, planetPlacements, mapWidth, mapHeight, pos, candidateInfluenceRadius))
                     return pos;
@@ -750,33 +759,55 @@ namespace TitanOrbit.ECS
             NativeList<PlanetPlacement> planetPlacements,
             int clusterCount,
             float asteroidClearanceRadius,
+            float clusterEdgeInset,
             ref Random rng,
             Allocator allocator = Allocator.Temp)
         {
             var centers = new NativeArray<float3>(clusterCount, allocator);
-            float halfW = rolled.MapWidth * 0.5f;
-            float halfH = rolled.MapHeight * 0.5f;
-            float sectorWidth = math.PI * 2f / math.max(1, clusterCount);
-            float sectorJitter = sectorWidth * 0.85f;
+            // mapW/mapH from RolledParameters — one cluster per shuffled grid cell so
+            // fields cover edges and corners, not just a polar disc around the origin.
+            float mapW = rolled.MapWidth;
+            float mapH = rolled.MapHeight;
+            float halfW = mapW * 0.5f;
+            float halfH = mapH * 0.5f;
             float clearance = math.max(0.1f, asteroidClearanceRadius);
 
+            int cols = math.max(1, (int)math.ceil(math.sqrt((float)math.max(1, clusterCount))));
+            int rows = math.max(1, (int)math.ceil((float)math.max(1, clusterCount) / cols));
+            int cellCount = rows * cols;
+            float cellW = mapW / cols;
+            float cellH = mapH / rows;
+
+            var cellOrder = new NativeArray<int>(cellCount, Allocator.Temp);
+            for (int i = 0; i < cellCount; i++)
+                cellOrder[i] = i;
+            for (int i = cellCount - 1; i > 0; i--)
+            {
+                int j = rng.NextInt(0, i + 1);
+                int tmp = cellOrder[i];
+                cellOrder[i] = cellOrder[j];
+                cellOrder[j] = tmp;
+            }
+
+            var used = new NativeArray<bool>(cellCount, Allocator.Temp);
             for (int c = 0; c < clusterCount; c++)
             {
-                float sectorStart = sectorWidth * c;
                 float3 chosen = float3.zero;
                 bool found = false;
-
-                for (int attempt = 0; attempt < 200; attempt++)
+                for (int n = 0; n < cellCount; n++)
                 {
-                    float angle = sectorStart + rng.NextFloat(0f, sectorJitter);
-                    float radial = rng.NextFloat(0.12f, 0.88f);
-                    float3 candidate = new float3(
-                        math.cos(angle) * radial * halfW,
-                        0f,
-                        math.sin(angle) * radial * halfH);
-                    if (!OverlapsPlanetOrbitRings(config, planetPlacements, rolled.MapWidth, rolled.MapHeight, candidate, clearance))
+                    int cell = cellOrder[n];
+                    if (used[cell])
+                        continue;
+
+                    int cx = cell % cols;
+                    int cz = cell / cols;
+                    float x0 = -halfW + cx * cellW;
+                    float z0 = -halfH + cz * cellH;
+                    if (TrySampleClusterCenterInCell(
+                            config, planetPlacements, mapW, mapH, x0, z0, cellW, cellH, clearance, clusterEdgeInset, ref rng, out chosen))
                     {
-                        chosen = candidate;
+                        used[cell] = true;
                         found = true;
                         break;
                     }
@@ -785,15 +816,114 @@ namespace TitanOrbit.ECS
                 centers[c] = found
                     ? chosen
                     : GetRandomMapPositionAvoidingPlanetRings(
-                        config, rolled.MapWidth, rolled.MapHeight, planetPlacements, clearance, ref rng);
+                        config, mapW, mapH, planetPlacements, clearance, ref rng, clusterEdgeInset);
             }
 
+            used.Dispose();
+            cellOrder.Dispose();
             return centers;
+        }
+
+        static bool TrySampleClusterCenterInCell(
+            in MapGenerationConfig config,
+            NativeList<PlanetPlacement> planetPlacements,
+            float mapWidth,
+            float mapHeight,
+            float cellX0,
+            float cellZ0,
+            float cellW,
+            float cellH,
+            float clearance,
+            float clusterEdgeInset,
+            ref Random rng,
+            out float3 chosen)
+        {
+            const int attempts = 32;
+            const float padFrac = 0.12f;
+            float padX = cellW * padFrac;
+            float padZ = cellH * padFrac;
+            float xLo = cellX0 + padX;
+            float xHi = cellX0 + cellW - padX;
+            float zLo = cellZ0 + padZ;
+            float zHi = cellZ0 + cellH - padZ;
+            if (xHi < xLo)
+            {
+                xLo = cellX0 + cellW * 0.5f;
+                xHi = xLo;
+            }
+
+            if (zHi < zLo)
+            {
+                zLo = cellZ0 + cellH * 0.5f;
+                zHi = zLo;
+            }
+
+            float halfW = mapWidth * 0.5f;
+            float halfH = mapHeight * 0.5f;
+            float inset = math.max(0f, clusterEdgeInset);
+            float mapXLo = -halfW + inset;
+            float mapXHi = halfW - inset;
+            float mapZLo = -halfH + inset;
+            float mapZHi = halfH - inset;
+
+            for (int pass = 0; pass < 2; pass++)
+            {
+                float xMin = math.max(pass == 0 ? xLo : cellX0, mapXLo);
+                float xMax = math.min(pass == 0 ? xHi : cellX0 + cellW, mapXHi);
+                float zMin = math.max(pass == 0 ? zLo : cellZ0, mapZLo);
+                float zMax = math.min(pass == 0 ? zHi : cellZ0 + cellH, mapZHi);
+                if (xMax < xMin || zMax < zMin)
+                    continue;
+
+                for (int attempt = 0; attempt < attempts; attempt++)
+                {
+                    float3 candidate = new float3(
+                        rng.NextFloat(xMin, xMax),
+                        0f,
+                        rng.NextFloat(zMin, zMax));
+                    if (OverlapsPlanetOrbitRings(
+                            config, planetPlacements, mapWidth, mapHeight, candidate, clearance))
+                        continue;
+                    if (!FitsDiscInsideMap(candidate, mapWidth, mapHeight, inset))
+                        continue;
+
+                    chosen = candidate;
+                    return true;
+                }
+            }
+
+            chosen = float3.zero;
+            return false;
+        }
+
+        /// <summary>
+        /// Largest visual disc of a spawned asteroid (max scale × mesh + displacement jitter)
+        /// plus <see cref="MapGenerationConfig.PlanetRingPlacementMargin"/> so rocks sit off the seam.
+        /// </summary>
+        static float ComputeAsteroidMapEdgeInset(in MapGenerationConfig config, in AsteroidBodyTuning body)
+        {
+            const float maxAxisJitter = 1.2f;
+            float maxScale = math.max(0.1f, body.MaxVisualRadius) * maxAxisJitter;
+            float localOuter = BodyCollisionMath.AsteroidMeshBaseRadius
+                + BodyCollisionMath.AsteroidVisualDisplacementLocal;
+            float visualKeepIn = maxScale * localOuter;
+            return visualKeepIn + math.max(0f, config.PlanetRingPlacementMargin);
+        }
+
+        static float GetClusterCoreRadius(int perCluster)
+        {
+            return math.clamp(8f + math.sqrt((float)math.max(1, perCluster)) * 2.8f, 9f, 28f);
+        }
+
+        static float GetMaxClusterOffset(int perCluster)
+        {
+            float coreRadius = GetClusterCoreRadius(perCluster);
+            return coreRadius * 2.1f;
         }
 
         static float3 GetPositionInCluster(float3 center, int targetClusterCount, ref Random rng)
         {
-            float coreRadius = math.clamp(8f + math.sqrt(math.max(1, targetClusterCount)) * 2.8f, 9f, 28f);
+            float coreRadius = GetClusterCoreRadius(targetClusterCount);
             float radius = coreRadius * math.pow(rng.NextFloat(), 1.15f);
             if (rng.NextFloat() < 0.25f)
                 radius += coreRadius * rng.NextFloat(0.4f, 1.1f);

@@ -661,7 +661,7 @@ namespace TitanOrbit.ECS
                         ecb.SetComponent(planetById[t.SourcePlanetId], sourcePlanetOnly);
                         ClearInboundPeopleInTransit(ref state, t.TargetShipNetworkId, t.Amount, shipByNetworkId);
                         PeopleTransportNetNotify.EndAndDestroy(
-                            ref ecb, entity, in t, myPos, PeopleTransportPoseStatus.Consumed);
+                            ref ecb, entity, in t, myPos, PeopleTransportPoseStatus.Returned);
                         continue;
                     }
 
@@ -684,7 +684,7 @@ namespace TitanOrbit.ECS
                             planetStateById[t.SourcePlanetId] = sourcePlanet;
                             ecb.SetComponent(planetById[t.SourcePlanetId], sourcePlanet);
                             PeopleTransportNetNotify.EndAndDestroy(
-                                ref ecb, entity, in t, myPos, PeopleTransportPoseStatus.Consumed);
+                                ref ecb, entity, in t, myPos, PeopleTransportPoseStatus.Returned);
                         }
 
                         continue;

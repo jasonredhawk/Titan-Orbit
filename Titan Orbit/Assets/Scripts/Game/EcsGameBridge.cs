@@ -532,6 +532,10 @@ namespace TitanOrbit.Game
             return true;
         }
 
+        static World s_MatchQueryWorld;
+        static EntityQuery s_MatchStateQuery;
+        static bool s_MatchQueryValid;
+
         /// <summary>Match timer and started flag from <see cref="MatchStateSingleton"/>.</summary>
         public static bool TryGetMatchState(out MatchStateSingleton match)
         {
@@ -540,8 +544,41 @@ namespace TitanOrbit.Game
             if (world == null || !world.IsCreated)
                 return false;
 
-            using var query = world.EntityManager.CreateEntityQuery(typeof(MatchStateSingleton));
+            // --- Cached singleton query ---
+            // [TITAN-ORBIT] HUD / flow called this every frame with a fresh CreateEntityQuery.
+            // That allocates and walks archetypes — keep one query per world.
+            if (!TryGetCachedMatchQuery(world, out var query))
+                return false;
             return query.TryGetSingleton(out match);
+        }
+
+        static bool TryGetCachedMatchQuery(World world, out EntityQuery query)
+        {
+            query = default;
+            if (world == null || !world.IsCreated)
+                return false;
+
+            if (s_MatchQueryValid && s_MatchQueryWorld == world && world.IsCreated)
+            {
+                query = s_MatchStateQuery;
+                return true;
+            }
+
+            DisposeMatchQuery();
+            s_MatchQueryWorld = world;
+            s_MatchStateQuery = world.EntityManager.CreateEntityQuery(typeof(MatchStateSingleton));
+            s_MatchQueryValid = true;
+            query = s_MatchStateQuery;
+            return true;
+        }
+
+        static void DisposeMatchQuery()
+        {
+            if (s_MatchQueryValid && s_MatchQueryWorld != null && s_MatchQueryWorld.IsCreated)
+                s_MatchStateQuery.Dispose();
+
+            s_MatchQueryValid = false;
+            s_MatchQueryWorld = null;
         }
 
         /// <summary>Death / respawn timer state for the local ship — drives death screen UI.</summary>
@@ -886,10 +923,12 @@ namespace TitanOrbit.Game
             if (world == null || !world.IsCreated)
                 return false;
 
-            using var query = world.EntityManager.CreateEntityQuery(
-                ComponentType.ReadOnly<NetworkStreamConnection>(),
-                ComponentType.ReadOnly<NetworkId>());
-            return query.CalculateEntityCount() > 0;
+            // --- Cached handshake query ---
+            // [TITAN-ORBIT] CreateEntityQuery every RefreshUi allocated during loading AND after spawn
+            // (showLoadingOverlay still evaluated this). Reuse one query per client world.
+            if (!TryGetCachedHasNetworkIdQuery(world, out var query))
+                return false;
+            return !query.IsEmptyIgnoreFilter;
         }
 
         /// <summary>
@@ -1689,6 +1728,41 @@ namespace TitanOrbit.Game
         static EntityQuery s_LocalNetworkIdQuery;
         static EntityQuery s_InGameQuery;
         static bool s_NetQueriesValid;
+
+        static World s_HasNetworkIdQueryWorld;
+        static EntityQuery s_HasNetworkIdQuery;
+        static bool s_HasNetworkIdQueryValid;
+
+        static bool TryGetCachedHasNetworkIdQuery(World world, out EntityQuery query)
+        {
+            query = default;
+            if (world == null || !world.IsCreated)
+                return false;
+
+            if (s_HasNetworkIdQueryValid && s_HasNetworkIdQueryWorld == world && world.IsCreated)
+            {
+                query = s_HasNetworkIdQuery;
+                return true;
+            }
+
+            DisposeHasNetworkIdQuery();
+            s_HasNetworkIdQueryWorld = world;
+            s_HasNetworkIdQuery = world.EntityManager.CreateEntityQuery(
+                ComponentType.ReadOnly<NetworkStreamConnection>(),
+                ComponentType.ReadOnly<NetworkId>());
+            s_HasNetworkIdQueryValid = true;
+            query = s_HasNetworkIdQuery;
+            return true;
+        }
+
+        static void DisposeHasNetworkIdQuery()
+        {
+            if (s_HasNetworkIdQueryValid && s_HasNetworkIdQueryWorld != null && s_HasNetworkIdQueryWorld.IsCreated)
+                s_HasNetworkIdQuery.Dispose();
+
+            s_HasNetworkIdQueryValid = false;
+            s_HasNetworkIdQueryWorld = null;
+        }
 
         /// <summary>First in-game connection's <see cref="NetworkId"/> on the client world.</summary>
         static int GetLocalNetworkId(World clientWorld)

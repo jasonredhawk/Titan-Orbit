@@ -107,7 +107,7 @@ namespace TitanOrbit.ECS
         /// <summary>
         /// Bump when hull material or covering-sphere bake changes so live ships rebuild once.
         /// </summary>
-        public const int HullMaterialRevision = 8;
+        public const int HullMaterialRevision = 9;
 
         struct CoveringBakeKey : System.IEquatable<CoveringBakeKey>
         {
@@ -783,14 +783,14 @@ namespace TitanOrbit.ECS
 
         /// <summary>
         /// Unity Physics hull material. Collision events still fire for ramming damage and
-        /// the post-Export bounce pass. Asteroid materials keep restitution 0 so custom
-        /// wall bounce is unchanged (GeometricMean with this value is still 0).
+        /// the post-Export bounce pass. Restitution is 0 — <c>ShipCollisionBounceSystem</c>
+        /// owns rebound for ships, rocks, planets, moons, and shields.
         /// </summary>
         public static Material CreateHullMaterial()
         {
             var material = Material.Default;
             material.CollisionResponse = CollisionResponsePolicy.CollideRaiseCollisionEvents;
-            material.Restitution = 0.55f;
+            material.Restitution = 0f;
             material.Friction = 0.45f;
             material.RestitutionCombinePolicy = Material.CombinePolicy.GeometricMean;
             material.FrictionCombinePolicy = Material.CombinePolicy.Maximum;

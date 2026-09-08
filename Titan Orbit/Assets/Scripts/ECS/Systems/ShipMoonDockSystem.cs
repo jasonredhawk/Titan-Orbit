@@ -229,7 +229,9 @@ namespace TitanOrbit.ECS
                             float padSpeed = math.length(new float2(relVel.x, relVel.z));
                             if (IsDisruptingLanding(shipInput.ValueRO, padSpeed))
                             {
+                                // Flying / bouncing through the zone — do not start dock.
                                 approachDelay = 0f;
+                                landingProgress = 0f;
                             }
                             else
                             {
@@ -251,6 +253,10 @@ namespace TitanOrbit.ECS
                     landingProgress = 0f;
                     approachDelay = 0f;
                 }
+
+                // Bounce / fly-through: no dock id until a calm stop has started the delay.
+                if (!fullyLandedLatch && landingProgress <= 0f && approachDelay <= 0f)
+                    landedPlanetId = 0;
 
                 // --- Fully landed: keep kinematics matched to the moon (do not world-freeze) ---
                 if (landedPlanetId != 0 &&

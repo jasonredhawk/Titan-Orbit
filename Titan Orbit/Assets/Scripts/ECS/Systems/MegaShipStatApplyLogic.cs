@@ -14,7 +14,7 @@ namespace TitanOrbit.ECS
     /// Writes static MEGA motor / weapon / vitals onto a ship. No Extra Level, no attribute
     /// upgrades, gem cap forced to 0. Each mount fires the catalog unique-component (or
     /// type-table) bullet bank — not the store planet's gameplay family. Fire mode is
-    /// Always Round-Robin; Phase B uses <see cref="ShipWeaponFireLogic.TryPlanMegaFire"/>.
+    /// Energy Hybrid; Phase B uses <see cref="ShipWeaponFireLogic.TryPlanMegaFire"/>.
     /// Paired with <see cref="ShipStatApplyLogic.ApplyToShip"/> which routes here when
     /// <see cref="MegaShipState.IsMega"/> is true.
     /// </summary>
@@ -97,8 +97,8 @@ namespace TitanOrbit.ECS
                 weapon.BulletLifetime = Mathf.Max(0.25f, weapon.BulletMaxDistance / Mathf.Max(1f, bulletSpeed));
                 weapon.ReferenceBulletDamage = firePower;
                 weapon.ReferenceBulletSpeed = bulletSpeed;
-                // [TITAN-ORBIT] MEGA Phase B cycles one barrel: charge, fire, next.
-                weapon.FireMode = ShipWeaponFireMode.AlwaysRoundRobin;
+                // [TITAN-ORBIT] MEGA Phase B volleys when the pool covers the whole bank.
+                weapon.FireMode = ShipWeaponFireMode.EnergyHybrid;
                 em.SetComponentData(shipEntity, weapon);
             }
 

@@ -71,11 +71,10 @@ namespace TitanOrbit.Game
         int _nextMountIndex;
 
         /// <summary>
-        /// MEGA ship-level charge leftover (mirrors unused server
-        /// <see cref="ShipWeaponState.FireCooldown"/>). Next barrel waits this long
-        /// after a shot so leftover pool cannot dump the whole cycle in one burst.
+        /// After a drip shot, the next barrel charges at hull regen. A full-bank
+        /// volley ignores this so leftover pool cannot dump every gun across frames.
         /// </summary>
-        float _megaChargeCooldown;
+        float _energyChargeCooldown;
 
         /// <summary>
         /// Last fire bank we planned against. B-key changes reset predicted energy
@@ -110,7 +109,7 @@ namespace TitanOrbit.Game
             _lastGhostEnergy = 0f;
             _predictedBelowGhostStableTime = 0f;
             _nextMountIndex = 0;
-            _megaChargeCooldown = 0f;
+            _energyChargeCooldown = 0f;
             _lastFireBankIndex = int.MinValue;
         }
 
@@ -168,7 +167,7 @@ namespace TitanOrbit.Game
             {
                 _lastFireBankIndex = bankIndex;
                 _nextMountIndex = 0;
-                _megaChargeCooldown = 0f;
+                _energyChargeCooldown = 0f;
                 _predictedEnergy = shipState.CurrentEnergy;
                 _lastGhostEnergy = shipState.CurrentEnergy;
                 _predictedBelowGhostStableTime = 0f;
@@ -177,8 +176,8 @@ namespace TitanOrbit.Game
 
             // Tick cooldowns even when Fire is released so barrels stay in sync with server cadence.
             ShipWeaponFireLogic.TickMountCooldowns(mounts, dt);
-            if (isMega && _megaChargeCooldown > 0f)
-                _megaChargeCooldown = math.max(0f, _megaChargeCooldown - dt);
+            if (_energyChargeCooldown > 0f)
+                _energyChargeCooldown = math.max(0f, _energyChargeCooldown - dt);
 
             // Keep predicted energy aligned every frame — otherwise a stuck 0 pool
             // (MEGA Shift cosmetics the server never spent) never reconciles.
@@ -207,9 +206,6 @@ namespace TitanOrbit.Game
                     || !world.EntityManager.GetComponentData<ShipInput>(shipEntity).Fire.IsSet))
                 return;
 
-            if (isMega && _megaChargeCooldown > 0.001f)
-                return;
-
             int firePowerAbilityLv = 0;
             if (world.EntityManager.HasComponent<ShipAttributeUpgradeState>(shipEntity))
                 firePowerAbilityLv = world.EntityManager.GetComponentData<ShipAttributeUpgradeState>(shipEntity).FirePower;
@@ -236,7 +232,8 @@ namespace TitanOrbit.Game
                         s_ShotScratch,
                         out shotCount,
                         out energySpend,
-                        out nextMountIndexAfter))
+                        out nextMountIndexAfter,
+                        _energyChargeCooldown))
                     return;
             }
             else if (!ShipWeaponFireLogic.TryPlanFire(
@@ -250,7 +247,8 @@ namespace TitanOrbit.Game
                     out shotCount,
                     out energySpend,
                     out nextMountIndexAfter,
-                    abilityEnergy))
+                    abilityEnergy,
+                    _energyChargeCooldown))
             {
                 return;
             }
@@ -370,16 +368,25 @@ namespace TitanOrbit.Game
                 if (enqueued == shotCount)
                     _nextMountIndex = nextMountIndexAfter;
 
-                if (isMega)
+                if (shotCount == 1)
                 {
                     float regen = 0f;
                     if (world.EntityManager.HasComponent<ShipVitalsConfig>(shipEntity))
                         regen = world.EntityManager.GetComponentData<ShipVitalsConfig>(shipEntity)
                             .EnergyRegenPerSecond;
-                    float nextCost = ShipWeaponFireLogic.GetNextArmedMegaShotCost(
-                        mounts, _nextMountIndex);
-                    _megaChargeCooldown = ShipWeaponFireLogic.ComputeMegaChargeSeconds(
+                    float nextCost = isMega
+                        ? ShipWeaponFireLogic.GetNextArmedMegaShotCost(mounts, _nextMountIndex)
+                        : ShipWeaponFireLogic.GetMountEnergyCost(
+                            mounts[_nextMountIndex],
+                            weaponCfg.BulletDamage,
+                            weaponCfg.FireRate,
+                            abilityEnergy);
+                    _energyChargeCooldown = ShipWeaponFireLogic.ComputeEnergyChargeSeconds(
                         nextCost, regen);
+                }
+                else
+                {
+                    _energyChargeCooldown = 0f;
                 }
             }
         }

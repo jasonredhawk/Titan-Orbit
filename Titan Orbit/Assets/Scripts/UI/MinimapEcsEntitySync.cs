@@ -54,6 +54,15 @@ namespace TitanOrbit.UI
         /// <summary>Reuse for join-warmup planet/asteroid upserts (ApplyPlanetAnchor wants an alive set).</summary>
         readonly HashSet<Entity> _joinWarmupAliveScratch = new HashSet<Entity>();
 
+        /// <summary>Reuse for full / proxy rebuilds — a new HashSet every 6s still GC-spiked LateUpdate.</summary>
+        readonly HashSet<Entity> _rebuildAliveScratch = new HashSet<Entity>();
+
+        /// <summary>Reuse for pruning dead blips (was <c>new List</c> every rebuild).</summary>
+        readonly List<Entity> _pruneScratch = new List<Entity>(64);
+
+        /// <summary>Reuse for pruning gem-moon helpers whose planet despawned.</summary>
+        readonly List<int> _pruneMoonScratch = new List<int>(16);
+
         Transform _root;
         MinimapBlipAnchor _localPlayer;
         float _lastCacheRefreshTime = -999f;
@@ -232,7 +241,8 @@ namespace TitanOrbit.UI
         void RebuildAnchors(EntityManager em)
         {
             // --- Rebuild cache (full ECS gathers) ---
-            var alive = new HashSet<Entity>();
+            var alive = _rebuildAliveScratch;
+            alive.Clear();
             _localPlayer = null;
 
             SyncShips(em, alive);
@@ -251,7 +261,8 @@ namespace TitanOrbit.UI
         void RebuildAnchorsFromHybridProxies(EntityManager em)
         {
             // --- Rebuild cache (proxy walk) ---
-            var alive = new HashSet<Entity>();
+            var alive = _rebuildAliveScratch;
+            alive.Clear();
             _localPlayer = null;
 
             // Ships stay few; same ToEntityArray shape as EcsWorldVisualizer.SyncShipProxyTransforms.
@@ -295,7 +306,8 @@ namespace TitanOrbit.UI
         void PruneDeadAnchors(HashSet<Entity> alive)
         {
             // --- Drop despawned blips ---
-            var remove = new List<Entity>();
+            var remove = _pruneScratch;
+            remove.Clear();
             foreach (var kv in _anchors)
             {
                 if (!alive.Contains(kv.Key))
@@ -305,7 +317,8 @@ namespace TitanOrbit.UI
             foreach (var entity in remove)
                 DestroyAnchor(entity);
 
-            var removeMoons = new List<int>();
+            var removeMoons = _pruneMoonScratch;
+            removeMoons.Clear();
             foreach (var kv in _gemMoonsByPlanetId)
             {
                 bool planetAlive = false;

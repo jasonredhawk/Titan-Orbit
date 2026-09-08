@@ -400,6 +400,13 @@ namespace TitanOrbit.UI
 
         public static OrbitStationUI GetOrCreate()
         {
+            // --- Hot path: never scene-scan after the singleton exists ---
+            // [TITAN-ORBIT] FindFirstObjectByType walks every Transform (including inactive).
+            // Join warmup used to call this every frame from NceGameFlowController — Profiler
+            // pinned ~12–19 ms on NceGameFlowController.Update while flying.
+            if (Instance != null)
+                return Instance;
+
             var existing = UnityEngine.Object.FindFirstObjectByType<OrbitStationUI>();
             if (existing != null)
             {

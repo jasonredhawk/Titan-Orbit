@@ -14,8 +14,8 @@ namespace TitanOrbit.Simulation
     /// </para>
     /// <para>
     /// [STANDARD] Classical contact impulse along a unit normal with coefficient of restitution
-    /// <c>e</c>. [TITAN-ORBIT] Asteroids, planets, and moons stay put — bounce is an infinite-mass
-    /// wall reflect of the ship's incoming XZ speed. Ship↔ship uses two-body ramming mass.
+    /// <c>e</c>. Live bounce uses one designer <c>e</c> (<c>AsteroidSettings.BounceRestitution</c>):
+    /// world bodies are an infinite-mass wall; ship↔ship is two-body ramming mass.
     /// </para>
     /// </summary>
     public static class ShipCollisionImpulseLogic
@@ -233,9 +233,9 @@ namespace TitanOrbit.Simulation
         }
 
         /// <summary>
-        /// Infinite-mass wall that is itself moving (interpolated remote hull). Reflects
-        /// <paramref name="shipVelocity"/> in the wall's rest frame, then adds the wall
-        /// velocity back so a ramming remote still knocks the local ship aside.
+        /// Infinite-mass wall that is itself moving (interpolated remote hull, gem moon).
+        /// Reflects <paramref name="shipVelocity"/> in the wall's rest frame, then adds the
+        /// wall velocity back so only relative closing speed bounces.
         /// </summary>
         public static bool ApplyMovingWallImpulse(
             ref float3 shipVelocity,

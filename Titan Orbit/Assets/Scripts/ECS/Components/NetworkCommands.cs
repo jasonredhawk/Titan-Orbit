@@ -367,7 +367,7 @@ namespace TitanOrbit.ECS
         public float3 Velocity;
 
         /// <summary>
-        /// <see cref="PeopleTransportPoseStatus"/> — Active / Consumed / Destroyed.
+        /// <see cref="PeopleTransportPoseStatus"/> — Active / Consumed / Destroyed / Returned.
         /// </summary>
         public byte Status;
     }

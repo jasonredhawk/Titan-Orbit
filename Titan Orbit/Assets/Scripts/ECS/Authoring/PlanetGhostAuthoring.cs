@@ -49,9 +49,9 @@ namespace TitanOrbit.ECS.Authoring
                 // --- Static physics collider ---
                 // [UNITY] Geometry radius is unscaled mesh radius; LocalTransform.Scale scales world size.
                 // [PHYSICS] WorldStatic layer — ships bounce, planets never integrate position.
-                // [TITAN-ORBIT] Restitution ~0.5 for ship bounce off planet hulls.
+                // [TITAN-ORBIT] PhysX e = 0 — ShipCollisionBounceSystem owns rebound.
                 var material = Unity.Physics.Material.Default;
-                material.Restitution = 0.5f;
+                material.Restitution = 0f;
                 var collider = Unity.Physics.SphereCollider.Create(
                     new SphereGeometry { Center = float3.zero, Radius = BodyCollisionMath.PlanetMeshBaseRadius },
                     TitanOrbitPhysicsLayers.WorldStatic,
