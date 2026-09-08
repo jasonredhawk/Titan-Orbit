@@ -70,6 +70,8 @@ namespace TitanOrbit.Data
     public class ShipFamilyDefinition : ScriptableObject
     {
         static readonly Regex CloneSuffixRegex = new Regex(@"\(Clone\)\s*$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+        /// <summary>[UNITY] Hierarchy duplicates append <c> (1)</c>, <c> (2)</c> — must not become catalog ids.</summary>
+        static readonly Regex UnityDuplicateSuffixRegex = new Regex(@"\s*\(\d+\)\s*$", RegexOptions.Compiled);
         static readonly Regex PropulsionIdUnderscoreFormRegex = new Regex(
             @"^(?:(?<family>[A-Za-z]+)_)?(?<kind>Engine|Thruster)_(?<num>\d+)$",
             RegexOptions.Compiled | RegexOptions.IgnoreCase);
@@ -480,8 +482,10 @@ namespace TitanOrbit.Data
         }
 
         /// <summary>
-        /// Strips Unity clone suffixes, mirrored-part markers, and left/right suffixes so prefab
-        /// child names match authored ids (<c>AstroEagle_Wing_1_L</c> → <c>AstroEagle_Wing_1</c>).
+        /// Strips Unity clone suffixes (<c>(Clone)</c>), hierarchy duplicate suffixes
+        /// (<c> (1)</c>, <c> (2)</c>), mirrored-part markers, and left/right suffixes so prefab
+        /// child names match authored ids (<c>StarForce_Weapon (3)</c> → <c>StarForce_Weapon</c>,
+        /// <c>AstroEagle_Wing_1_L</c> → <c>AstroEagle_Wing_1</c>).
         /// </summary>
         public static string NormalizeComponentId(string rawId)
         {
@@ -489,7 +493,8 @@ namespace TitanOrbit.Data
                 return string.Empty;
 
             string s = rawId.Trim();
-            s = CloneSuffixRegex.Replace(s, string.Empty);
+            s = CloneSuffixRegex.Replace(s, string.Empty).Trim();
+            s = UnityDuplicateSuffixRegex.Replace(s, string.Empty).Trim();
             if (s.EndsWith("_Mirrored", StringComparison.OrdinalIgnoreCase))
                 s = s.Substring(0, s.Length - "_Mirrored".Length);
             if (s.EndsWith("_L", StringComparison.OrdinalIgnoreCase)

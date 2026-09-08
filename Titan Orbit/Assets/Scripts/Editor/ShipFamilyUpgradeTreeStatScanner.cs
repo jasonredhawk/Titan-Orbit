@@ -257,14 +257,10 @@ namespace TitanOrbit.Editor
             {
                 if (t == null)
                     continue;
-                string name = t.name;
-                if (string.IsNullOrEmpty(name))
-                    continue;
-                if (!name.StartsWith(familyId + "_", StringComparison.OrdinalIgnoreCase))
-                    continue;
-
-                string componentId = ShipFamilyDefinition.NormalizeComponentId(name);
+                string componentId = ShipFamilyDefinition.NormalizeComponentId(t.name);
                 if (string.IsNullOrWhiteSpace(componentId))
+                    continue;
+                if (!componentId.StartsWith(familyId + "_", StringComparison.OrdinalIgnoreCase))
                     continue;
 
                 if (!def.TryGetStatsForComponent(componentId, out var stats))

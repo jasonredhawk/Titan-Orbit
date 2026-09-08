@@ -140,15 +140,12 @@ namespace TitanOrbit.Data
                 if (t == null || t == root)
                     continue;
 
-                string name = t.name;
-                if (string.IsNullOrEmpty(name))
+                // Strip Unity (N) / (Clone) first so StarForce_Weapon (3) matches catalog StarForce_Weapon.
+                string componentId = ShipFamilyDefinition.NormalizeComponentId(t.name);
+                if (string.IsNullOrWhiteSpace(componentId))
                     continue;
                 // [TITAN-ORBIT] Child names must start with familyId_ to count as a stat-bearing part.
-                if (!name.StartsWith(familyId + "_", StringComparison.OrdinalIgnoreCase))
-                    continue;
-
-                string componentId = ShipFamilyDefinition.NormalizeComponentId(name);
-                if (string.IsNullOrWhiteSpace(componentId))
+                if (!componentId.StartsWith(familyId + "_", StringComparison.OrdinalIgnoreCase))
                     continue;
 
                 if (!family.TryGetStatsForComponent(componentId, out ShipComponentAbilityStats stats))

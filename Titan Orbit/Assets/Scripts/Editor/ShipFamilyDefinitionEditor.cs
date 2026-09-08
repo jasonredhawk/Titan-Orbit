@@ -1050,16 +1050,23 @@ namespace TitanOrbit.Editor
 
             // Collect prefab + power score (+ breakdown for inspector)
             var list = new List<(GameObject prefab, float power, ShipFamilyPowerScoreBreakdown breakdown)>();
+            var skippedNoFamilyParts = new List<string>();
             foreach (var guid in guids)
             {
                 string path = AssetDatabase.GUIDToAssetPath(guid);
+                if (string.IsNullOrEmpty(path) || !path.EndsWith(".prefab", StringComparison.OrdinalIgnoreCase))
+                    continue;
+
                 var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(path);
                 if (prefab == null) continue;
 
                 if (!ShipFamilyPowerBarNorm.TryBuildBreakdown(
                         prefab, def, shipLevel: 1, default,
                         out _, out ShipFamilyPowerScoreBreakdown breakdown))
+                {
+                    skippedNoFamilyParts.Add(prefab.name);
                     continue;
+                }
                 float power = breakdown.GetUpgradeTreeSortPowerScore();
                 list.Add((prefab, power, breakdown));
             }
@@ -1126,6 +1133,15 @@ namespace TitanOrbit.Editor
             EditorUtility.SetDirty(def);
             AssetDatabase.SaveAssets();
             AssetDatabase.Refresh();
+
+            string skipNote = skippedNoFamilyParts.Count == 0
+                ? string.Empty
+                : $"\n\nSkipped {skippedNoFamilyParts.Count} prefab(s) with no matching {familyId}_ catalog parts: "
+                  + string.Join(", ", skippedNoFamilyParts);
+            EditorUtility.DisplayDialog(
+                "Upgrade Tree Built",
+                $"Added {def.upgradeTree.Count} chassis from {relativeFolder}.{skipNote}",
+                "OK");
         }
 
         /// <summary>
