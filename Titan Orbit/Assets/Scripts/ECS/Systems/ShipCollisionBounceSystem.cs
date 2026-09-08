@@ -20,7 +20,11 @@ namespace TitanOrbit.ECS
     /// MEGA hulls plow asteroids: restore pre-collision motion (no bounce) so a field does
     /// not slow the ship. MEGA vs planet also restores pose — the covering sphere must not
     /// park the hull outside a small planet's orbit ring; capped keep-out runs after this.
-    /// Server ram damage + client soft-destroy happen elsewhere.
+    /// Friendly gem-moon rocks keep velocity <b>and</b> undo PhysX depenetration while the
+    /// player flies through the dock / orbit-menu disc — the solver shove felt like a
+    /// camera snap-back even though FPS stayed high. Landing attach and the moon cinematic
+    /// own surface pose; enemy/neutral moons still wall-bounce. Server ram damage + client
+    /// soft-destroy happen elsewhere.
     /// <para>
     /// Runs on ServerSimulation and ClientSimulation (predicted). Collision-event stream only —
     /// no asteroid/planet <c>ToEntityArray</c> (join-crash safe). Tangential grip stays in
@@ -175,10 +179,16 @@ namespace TitanOrbit.ECS
                     if (IsTakingOffMoon(pair.Ship, moonDockLookup))
                         continue;
 
-                    // Friendly moon rock/shield must not wall-bounce — that kick plus the
-                    // moving dock shell is why landing took several approaches. Keep the
-                    // pre-collision (co-orbit) velocity; PhysX depenetration still separates
-                    // the hull to the surface, which stays inside the dock zone.
+                    // --- Friendly moon rock / leftover shield pair ---
+                    // [TITAN-ORBIT] Same-team shields already omit the PhysX pair
+                    // (TitanOrbitPhysicsLayers.ShipForTeam). The solid moon hull is still
+                    // World-layer, so a ship flying through the orbit-menu disc keeps
+                    // overlapping it. Keeping only velocity left Unity Physics free to
+                    // depenetrate LocalTransform every tick — the hull (and the camera
+                    // locked to it) snapped back toward the rock while thrust continued.
+                    // Restore the pre-physics pose like MEGA vs planet. Dock attach
+                    // (ShipPhysicsDriveLogic) and ShipMoonDockVisualApplier own the
+                    // landed surface; this path is fly-through / approach only.
                     if (IsFriendlyMoonContact(
                             pair.Ship,
                             pair.Other,
@@ -188,6 +198,7 @@ namespace TitanOrbit.ECS
                     {
                         _working[pair.Ship] = GetWorkingOrSnapshot(
                             pair.Ship, ref _working, snapshotLookup);
+                        _megaUnconstrained.Add(pair.Ship);
                         continue;
                     }
 
@@ -207,8 +218,10 @@ namespace TitanOrbit.ECS
                 velocityLookup[e] = pv;
             }
 
-            // --- MEGA plow / planet approach: undo PhysX depenetration ---
+            // --- Undo PhysX depenetration (MEGA plow / planet, friendly moon fly-through) ---
             // Reconstruct unconstrained pose from the pre-physics snapshot (drive already applied).
+            // [PHYSICS] The solver already wrote LocalTransform. Writing it back here is what
+            // stops the visible snap; velocity restore alone is not enough.
             if (_megaUnconstrained.Count > 0)
             {
                 var transformLookup = SystemAPI.GetComponentLookup<LocalTransform>(false);
