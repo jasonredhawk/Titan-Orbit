@@ -1,6 +1,7 @@
 using TitanOrbit.Core;
 using TitanOrbit.ECS;
 using TitanOrbit.Game;
+using TitanOrbit.NetCode;
 using TitanOrbit.Shared;
 using TitanOrbit.Simulation;
 using UnityEngine;
@@ -11,9 +12,10 @@ namespace TitanOrbit.UI
     /// Shows/hides the moon orbit station menu when the local ship lands on a friendly gem moon.
     /// Opens <see cref="OrbitStationUI"/> with the docked store planet and the team's home planet id
     /// (needed for Bank / contributed-gem RPC polls). Client-only presentation controller.
-    /// While the ship is flying (not in a dock zone) we tick
-    /// <see cref="OrbitStationUI.TickIdleOrbitMenuCache"/> so every planet family's Orbit Menu
-    /// is already built. Landing must not construct widgets — that made the approach hitch.
+    /// Orbit Menu chrome + every planet-family GEAR grid are built on the join loading
+    /// screen (<see cref="OrbitStationUI.TickJoinLoadWarmup"/>). This controller only
+    /// ticks <see cref="OrbitStationUI.TickIdleOrbitMenuCache"/> as a leftover if that
+    /// warmup timed out. Landing must not construct widgets — that made the approach hitch.
     /// <para>
     /// [TITAN-ORBIT] Deposit intent stays on while truly docked. Failed ECS reads and brief
     /// <c>LandingProgress</c> dips use hysteresis — they must not call <see cref="HideMenuImmediate"/>
@@ -34,8 +36,9 @@ namespace TitanOrbit.UI
         const float UndockHysteresisSeconds = 0.75f;
 
         /// <summary>
-        /// In-game frames to wait after join Instantiates before idle Orbit Menu caching.
-        /// Gives spawn / camera a quiet window so the cache does not hitch the first flight.
+        /// In-game frames to wait after join Instantiates before leftover Orbit Menu
+        /// caching. Join warmup already ran on the loading screen; this delay only
+        /// protects first flight if that warmup timed out incomplete.
         /// </summary>
         const int IdleCacheMinInGameFrames = 90;
 
@@ -47,6 +50,8 @@ namespace TitanOrbit.UI
         static void EnsureExists()
         {
             // --- Ensure setup ---
+            if (!TitanOrbitDedicatedServerAutoBoot.ShouldRunClientPresentation())
+                return;
             if (FindFirstObjectByType<MoonOrbitStationController>() != null)
                 return;
             var go = new GameObject("MoonOrbitStationController");
@@ -83,6 +88,8 @@ namespace TitanOrbit.UI
         void Update()
         {
             // --- Per-frame dock / menu gate ---
+            if (!TitanOrbitDedicatedServerAutoBoot.ShouldRunClientPresentation())
+                return;
             if (!EcsGameBridge.IsNetworkInGame())
             {
                 HideMenuImmediate();
@@ -246,7 +253,8 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// Builds Orbit Menu chrome + every planet family's GEAR grid while the ship is flying.
+        /// Leftover Orbit Menu cache while the ship is flying. Join Team already waited
+        /// on loading-screen warmup; this only runs if that warmup timed out.
         /// Skips during join Instantiates and during any dock / landing so approach stays smooth.
         /// </summary>
         /// <param name="inDockZone">True when <c>ShipMoonDockState.MoonPlanetId</c> is set.</param>
@@ -254,7 +262,9 @@ namespace TitanOrbit.UI
         {
             // --- Idle cache gate ---
             // [TITAN-ORBIT] Landing used to Instantiates the tree and store on approach frames.
-            // That made the cinematic hitch. We only construct while free-flying.
+            // Join warmup now builds those under the loading overlay. Flight cache is leftover only.
+            if (OrbitStationUI.Instance != null && OrbitStationUI.Instance.IsJoinLoadWarmupComplete)
+                return;
             if (inDockZone)
                 return;
             if (_menuVisible || _landingCompleteTime >= 0f)
@@ -275,7 +285,7 @@ namespace TitanOrbit.UI
 
         /// <summary>
         /// Returns the cached <see cref="OrbitStationUI"/>, creating the empty host on first use.
-        /// Widget construction is deferred to <see cref="OrbitStationUI.TickIdleOrbitMenuCache"/> so
+        /// Widget construction is deferred to join-load warmup / leftover idle cache so
         /// GetOrCreate itself stays cheap.
         /// </summary>
         OrbitStationUI GetOrCreateUi()

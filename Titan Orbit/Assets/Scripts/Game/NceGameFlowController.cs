@@ -16,8 +16,9 @@ namespace TitanOrbit.Game
 {
     /// <summary>
     /// [HYBRID] Drives the NCE (NetCode Entities) vertical-slice UI flow: main menu → local connect →
-    /// team pick → loading → gameplay HUD. Wires buttons to <see cref="TitanOrbitSessionManager"/> and
-    /// listens for team-choice / rejoin RPC results. Client only — dedicated server has no canvas.
+    /// loading (map + hidden Orbit Menu warmup) → team pick → gameplay HUD. Wires buttons to
+    /// <see cref="TitanOrbitSessionManager"/> and listens for team-choice / rejoin RPC results.
+    /// Client only — dedicated server has no canvas.
     /// </summary>
     public class NceGameFlowController : MonoBehaviour
     {
@@ -1010,9 +1011,15 @@ namespace TitanOrbit.Game
             PickTeam(TeamId.TeamA);
         }
 
+        /// <summary>
+        /// True when Join Team may appear: map ghosts/proxies are ready <b>and</b> hidden
+        /// Orbit Menu warmup finished (or was skipped / timed out). First spawn used to
+        /// hitch because those menus built after the ship appeared.
+        /// </summary>
         bool IsMapReadyForTeamSelection()
         {
-            return EcsGameBridge.IsMapLoadingComplete();
+            return EcsGameBridge.IsMapLoadingComplete() &&
+                   OrbitMenuJoinWarmupGate.IsCompleteOrNotNeeded;
         }
 
         bool IsInGameFlow() => EcsGameBridge.IsNetworkInGame();
@@ -1024,10 +1031,20 @@ namespace TitanOrbit.Game
 
             bool connecting = TitanOrbitSessionManager.IsJoinConnecting;
             bool connected = IsInGameFlow();
+
+            // --- Hidden Orbit Menu warmup while connecting / loading ---
+            // [TITAN-ORBIT] Start as soon as Play begins so chrome Instantiates under the
+            // overlay, not after Join Team. LoadingScreen also ticks; a frame stamp
+            // prevents double-advance.
+            if (connecting || connected)
+                OrbitMenuJoinWarmupGate.Tick();
             if (TitanOrbitSessionManager.IsDedicatedOnlineClient && connected && _dedicatedConnectedAt < 0f)
                 _dedicatedConnectedAt = Time.time;
             if (!connected && !connecting)
+            {
                 _dedicatedConnectedAt = -1f;
+                OrbitMenuJoinWarmupGate.ResetSession();
+            }
 
             bool mapLoaded = connected && IsMapReadyForTeamSelection();
 
@@ -1110,21 +1127,22 @@ namespace TitanOrbit.Game
             }
 
             // --- Loading Map owns the screen ---
-            // [TITAN-ORBIT] Overlay until JoinWorldReady (via IsMapLoadingComplete) — not extra
+            // [TITAN-ORBIT] Overlay until JoinWorldReady AND Orbit Menu warmup — not extra
             // recipe/hydrate/GoInGame ORs that can disagree with Join Team.
             // Compute this BEFORE toggling MainMenuPanel so Play cannot flash under the
             // slightly transparent loading backdrop for a frame.
+            bool joinPresentationReady = IsMapReadyForTeamSelection();
             bool joinHandoff = _joinBrowser != null && _joinBrowser.IsHandedOffToLoading;
             bool showLoadingOverlay =
                 _holdLoadingOverlay ||
                 joinHandoff ||
                 (connecting && !connected) ||
                 (EcsGameBridge.HasClientNetworkId() &&
-                 !EcsGameBridge.IsMapLoadingComplete() &&
+                 !joinPresentationReady &&
                  !ClientTeamFlowState.TeamChoiceConfirmed &&
                  !ClientTeamFlowState.HasRequestedTeamPick);
 
-            if (EcsGameBridge.IsMapLoadingComplete() ||
+            if (joinPresentationReady ||
                 ClientTeamFlowState.TeamChoiceConfirmed ||
                 ClientTeamFlowState.HasRequestedTeamPick)
             {

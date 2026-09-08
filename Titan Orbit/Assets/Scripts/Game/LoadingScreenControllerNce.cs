@@ -12,9 +12,10 @@ namespace TitanOrbit.Game
     /// the top/bottom edges): HOW TO PLAY → five instruction cards → BUILDING GALAXY →
     /// one progress bar (live status + % drawn inside the track).
     /// <para>
-    /// Fill is 50% world sync (seed hydrate + occupancy + ghosts) plus 50% map visuals
-    /// (planet/asteroid GameObject Instantiates). Join Team stays hidden until
-    /// JoinWorldReadyCache.IsComplete.
+    /// Fill is world sync + map visuals + hidden Orbit Menu warmup (chrome, ship tree,
+    /// every planet-family GEAR grid). Join Team stays hidden until
+    /// JoinWorldReadyCache.IsComplete <b>and</b> Orbit Menu join warmup finishes
+    /// so first spawn does not Instantiates those widgets.
     /// </para>
     /// <para>
     /// The instruction strip matches the five-step guide from <c>InstructionScreenUI</c>.
@@ -189,18 +190,29 @@ namespace TitanOrbit.Game
         float _stuckWatchSince = -1f;
 
         /// <summary>
-        /// Per-frame: fill is 50% world sync + 50% map visuals. Overlay names the current step.
+        /// Per-frame: fill is world sync + map visuals + Orbit Menu warmup.
+        /// Overlay names the current step. Menu warmup Instantiates widgets off-screen
+        /// so first spawn does not pay that cost.
         /// </summary>
         void Update()
         {
             if (!IsVisible)
                 return;
 
+            // --- Hidden Orbit Menu construction while the overlay covers hitchy Instantiates ---
+            // [TITAN-ORBIT] Game cannot reference TitanOrbit.UI (default assembly). The UI
+            // registers a tick handler on OrbitMenuJoinWarmupGate after scene load.
+            OrbitMenuJoinWarmupGate.Tick();
+
             float networkProgress = 0f;
             EcsGameBridge.TryGetNetworkJoinLoadProgress(out networkProgress);
             float proxyProgress = 0f;
             EcsGameBridge.TryGetProxyJoinLoadProgress(out proxyProgress);
-            float combined = Mathf.Clamp01(0.5f * networkProgress + 0.5f * proxyProgress);
+            float mapCombined = Mathf.Clamp01(0.5f * networkProgress + 0.5f * proxyProgress);
+            float menuProgress = OrbitMenuJoinWarmupGate.Progress;
+            // Last 12% is menu chrome + family GEAR grids (honest — bar does not sit at 100%
+            // while those widgets are still Instantiating).
+            float combined = Mathf.Clamp01(0.88f * mapCombined + 0.12f * menuProgress);
 
             // --- Stuck hint after a few seconds (recipe / prefabs vs Instantiates drain) ---
             string mapHint = null;
@@ -219,7 +231,12 @@ namespace TitanOrbit.Game
                     mapHint = EcsGameBridge.GetMapLoadStuckHint();
             }
 
-            ApplyBar(_loadBar, combined, EcsGameBridge.GetJoinLoadStatusLabel(), mapHint);
+            string status = EcsGameBridge.GetJoinLoadStatusLabel();
+            if (EcsGameBridge.IsMapLoadingComplete() &&
+                !OrbitMenuJoinWarmupGate.IsCompleteOrNotNeeded)
+                status = OrbitMenuJoinWarmupGate.StatusLabel;
+
+            ApplyBar(_loadBar, combined, status, mapHint);
         }
 
         /// <summary>
@@ -348,7 +365,7 @@ namespace TitanOrbit.Game
             _titleText.alignment = TextAlignmentOptions.Center;
             _titleText.color = new Color(0.85f, 0.92f, 1f, 1f);
 
-            // --- Combined bar: 50% world sync + 50% map visuals ---
+            // --- Combined bar: world sync + map visuals + Orbit Menu warmup ---
             _loadBar = CreateProgressBar(
                 _contentRoot,
                 "LoadBar",

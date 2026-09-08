@@ -20,8 +20,10 @@ namespace TitanOrbit.UI
     /// Combined orbit station UI: ship loadout grids (stacked vertically) at top, orbit actions and store below.
     /// Single left-anchored panel. Optional Shift Sci-Fi UI sprites/font assignable in inspector.
     /// Gem-moon docking uses the full-screen moon-dock chrome (sidebar + SHIPS / GEAR / CARDS).
-    /// Chrome + one GEAR grid per ship family are cached while flying
-    /// (<see cref="TickIdleOrbitMenuCache"/>). Landing only reveals the already-built overlay. GameManager debug toggles
+    /// Chrome + one GEAR grid per ship family are built on the join loading screen
+    /// (<see cref="TickJoinLoadWarmup"/>) so first spawn / first land do not Instantiates widgets.
+    /// <see cref="TickIdleOrbitMenuCache"/> is a leftover fallback while flying if join warmup
+    /// timed out. Landing only reveals the already-built overlay. GameManager debug toggles
     /// (<see cref="GameManager.DebugFreeShipUpgradeTree"/>, <see cref="GameManager.DebugFreeGear"/>,
     /// <see cref="GameManager.DebugFreeCards"/>) paint Free prices and skip gem afford checks.
     /// </summary>
@@ -191,9 +193,9 @@ namespace TitanOrbit.UI
         private bool _moonDockLayoutActive;
         private bool _moonDockChromeReady;
         /// <summary>
-        /// How far idle Orbit Menu construction has gotten. The moon-dock controller
-        /// advances this one step per frame while the ship is flying so landing never
-        /// Instantiates widgets.
+        /// How far Orbit Menu construction has gotten. The loading screen advances
+        /// this one step per frame so Join Team / first spawn never Instantiates widgets.
+        /// Flight idle cache only runs if join warmup timed out incomplete.
         /// </summary>
         enum MoonDockWarmupPhase
         {
@@ -217,6 +219,14 @@ namespace TitanOrbit.UI
         bool _moonDockTreeWarmed;
         /// <summary>Planet ids scratch for idle family-store caching. Filled from <see cref="EcsGameBridge.CopyKnownPlanetIds"/>.</summary>
         readonly List<int> _idlePlanetIdScratch = new List<int>(16);
+        /// <summary>
+        /// Distinct catalog families still missing a GEAR grid. Join warmup fills from
+        /// <see cref="PlanetShipFamilyConfig"/> so we do not wait on the planet-state cache
+        /// (that cache is empty while <see cref="ClientJoinSettleCache.Settling"/>).
+        /// </summary>
+        readonly List<ShipFamilyDefinition> _catalogFamilyScratch = new List<ShipFamilyDefinition>(16);
+        /// <summary>[UNITY] <see cref="Time.frameCount"/> of the last join-warmup tick — blocks double-advance.</summary>
+        int _joinWarmupLastTickFrame = -1;
 
         /// <summary>
         /// One prebuilt GEAR panel per ship family (Astro Eagle, Cosmic Shark, …).
@@ -455,8 +465,8 @@ namespace TitanOrbit.UI
             // --- Unity lifecycle ---
             // [TITAN-ORBIT] Do not call EnsurePanelExists here. That method creates dozens of
             // TextMesh Pro widgets (loadout slots, store rows). Doing it in Awake on first
-            // land made the Orbit Menu hitch. MoonOrbitStationController spreads the build
-            // across flight frames via TickIdleOrbitMenuCache; Show still builds as a fallback.
+            // land made the Orbit Menu hitch. The loading screen spreads the build via
+            // TickJoinLoadWarmup; Show still builds as a fallback if warmup was skipped.
             OnOrbitStationEcsAwake();
         }
 
@@ -844,13 +854,29 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// Builds Orbit Menu widgets off-screen, one phase per call, while the ship is flying.
-        /// After the shared tree exists, each later tick caches one planet family's GEAR grid
-        /// so landing on any moon is a swap, not a rebuild.
+        /// Leftover flight-path warmup. Join Team already waited on
+        /// <see cref="TickJoinLoadWarmup"/>; this only fills families the loading screen
+        /// timed out before finishing. One phase per call so flight stays smooth.
         /// </summary>
         /// <param name="storePlanetHint">Home or any known planet id used to bind adapters; 0 = pick first known.</param>
         /// <param name="homePlanetId">Team home planet id for Bank RPCs (0 if unknown yet).</param>
         public void TickIdleOrbitMenuCache(int storePlanetHint, int homePlanetId)
+        {
+            TickOrbitMenuWarmup(storePlanetHint, homePlanetId, allowDummyShip: false);
+        }
+
+        /// <summary>
+        /// Builds Orbit Menu widgets off-screen, one phase per call.
+        /// Shared chrome first, then one GEAR grid per catalog family so landing on any
+        /// moon is a swap, not a rebuild.
+        /// </summary>
+        /// <param name="storePlanetHint">Home or any known planet id used to bind adapters; 0 = pick first known.</param>
+        /// <param name="homePlanetId">Team home planet id for Bank RPCs (0 if unknown yet).</param>
+        /// <param name="allowDummyShip">
+        /// True on the loading screen: bind a dummy <see cref="Starship"/> when the local
+        /// hull is not spawned yet. False while flying — wait for a real planet + ship.
+        /// </param>
+        void TickOrbitMenuWarmup(int storePlanetHint, int homePlanetId, bool allowDummyShip)
         {
             // --- Shared shell first ---
             int bindPlanetId = ResolveIdleBindPlanetId(storePlanetHint);
@@ -875,9 +901,14 @@ namespace TitanOrbit.UI
 
                 case MoonDockWarmupPhase.Chrome:
                     // --- Phase 3: reparent into the split + bind ECS adapters ---
-                    if (bindPlanetId <= 0)
+                    // [TITAN-ORBIT] Join warmup has no local ship yet. BindEcsViews(0, 0)
+                    // still creates the Starship adapter; SyncFromEcs no-ops until spawn.
+                    if (bindPlanetId > 0)
+                        BindEcsViews(bindPlanetId, homePlanetId);
+                    else if (allowDummyShip)
+                        BindEcsViews(0, 0);
+                    else
                         return;
-                    BindEcsViews(bindPlanetId, homePlanetId);
                     EnterMoonDockLayout();
                     _moonDockLayoutActive = false;
                     _moonDockWarmupPhase = MoonDockWarmupPhase.Layout;
@@ -885,11 +916,14 @@ namespace TitanOrbit.UI
 
                 case MoonDockWarmupPhase.Layout:
                     // --- Phase 4: spawn tree nodes once (same 24-node DAG on every moon) ---
-                    if (bindPlanetId <= 0 || currentShip == null)
+                    if (currentShip == null)
                     {
                         if (bindPlanetId > 0)
                             BindEcsViews(bindPlanetId, homePlanetId);
-                        return;
+                        else if (allowDummyShip)
+                            BindEcsViews(0, 0);
+                        if (currentShip == null)
+                            return;
                     }
 
                     BuildShipTreeHidden();
@@ -899,10 +933,10 @@ namespace TitanOrbit.UI
 
                 case MoonDockWarmupPhase.Tree:
                 case MoonDockWarmupPhase.Store:
-                    // --- Per-planet family stores ---
-                    // One family per idle frame so flight stays smooth. After the first
-                    // family is cached we mark Store so Show can reveal immediately.
-                    if (TryCacheNextFamilyStore(homePlanetId))
+                    // --- One family GEAR grid per tick ---
+                    // Catalog first so join does not wait on the planet-state cache.
+                    // Planet walk is the leftover path for families the catalog missed.
+                    if (TryCacheNextCatalogFamilyStore() || TryCacheNextFamilyStore(homePlanetId))
                         _moonDockWarmupPhase = MoonDockWarmupPhase.Store;
                     return;
             }
@@ -942,6 +976,43 @@ namespace TitanOrbit.UI
             if (shipUpgradeTreePrefab == null)
                 shipUpgradeTreePrefab = Resources.Load<ShipUpgradeTreeUI>("ShipUpgradeTree");
             PreloadFamilyMenuPreviewSprites();
+            PreloadFamilyChassisPrefabs();
+        }
+
+        /// <summary>
+        /// Touches every family / MEGA hull prefab so Unity loads the assets during the
+        /// loading screen. First spawn still Instantiates the live proxy, but the hitch
+        /// is meshes/materials already in memory instead of a cold Resources pull.
+        /// </summary>
+        void PreloadFamilyChassisPrefabs()
+        {
+            // --- Touch prefab references ---
+            var config = PlanetShipFamilyConfig.LoadDefault();
+            if (config?.families != null)
+            {
+                for (int i = 0; i < config.families.Count; i++)
+                {
+                    ShipFamilyDefinition family = config.families[i]?.shipFamilyDefinition;
+                    if (family?.upgradeTree == null)
+                        continue;
+                    for (int t = 0; t < family.upgradeTree.Count; t++)
+                    {
+                        GameObject prefab = family.upgradeTree[t]?.prefab;
+                        if (prefab != null)
+                            _ = prefab.name;
+                    }
+                }
+            }
+
+            MegaShipCatalog mega = MegaShipCatalog.Load();
+            if (mega?.entries == null)
+                return;
+            for (int i = 0; i < mega.entries.Count; i++)
+            {
+                GameObject prefab = mega.entries[i]?.prefab;
+                if (prefab != null)
+                    _ = prefab.name;
+            }
         }
 
         /// <summary>
@@ -1018,6 +1089,104 @@ namespace TitanOrbit.UI
             // Hide must not leave Update() refreshing store/slots every frame.
             _moonDockLayoutActive = false;
             _moonDockTreeWarmed = shipUpgradeTree.Nodes != null && shipUpgradeTree.Nodes.Count > 0;
+        }
+
+        /// <summary>
+        /// Builds the next missing catalog family GEAR grid (Astro Eagle, Cosmic Shark, …).
+        /// Does not need live planet ids — safe during join settle when the planet cache is empty.
+        /// </summary>
+        /// <returns>True if the cache has at least one family after this tick.</returns>
+        bool TryCacheNextCatalogFamilyStore()
+        {
+            // --- Next uncached catalog family ---
+            CollectUncachedCatalogFamilies(_catalogFamilyScratch);
+            if (_catalogFamilyScratch.Count == 0)
+                return _familyStoreCache.Count > 0;
+
+            ShipFamilyDefinition family = _catalogFamilyScratch[0];
+            bool wasActive = _moonDockLayoutActive;
+            _moonDockLayoutActive = true;
+            BuildAndCacheFamilyStore(family);
+            _moonDockLayoutActive = wasActive;
+            return _familyStoreCache.Count > 0;
+        }
+
+        /// <summary>
+        /// Fills <paramref name="dest"/> with catalog families that do not yet have a
+        /// cached GEAR section. Dedupes by <see cref="ShipFamilyDefinition.familyId"/>.
+        /// </summary>
+        /// <param name="dest">Caller-owned list. Cleared then filled.</param>
+        /// <returns>Number of uncached families written.</returns>
+        int CollectUncachedCatalogFamilies(List<ShipFamilyDefinition> dest)
+        {
+            dest.Clear();
+            var config = PlanetShipFamilyConfig.LoadDefault();
+            if (config?.families == null)
+                return 0;
+
+            for (int i = 0; i < config.families.Count; i++)
+            {
+                ShipFamilyDefinition family = config.families[i]?.shipFamilyDefinition;
+                if (family == null || string.IsNullOrEmpty(family.familyId))
+                    continue;
+                if (_familyStoreCache.ContainsKey(family.familyId))
+                    continue;
+
+                bool alreadyListed = false;
+                for (int j = 0; j < dest.Count; j++)
+                {
+                    if (dest[j] != null && dest[j].familyId == family.familyId)
+                    {
+                        alreadyListed = true;
+                        break;
+                    }
+                }
+
+                if (!alreadyListed)
+                    dest.Add(family);
+            }
+
+            return dest.Count;
+        }
+
+        /// <summary>How many distinct family ids exist on the default planet-family catalog.</summary>
+        int CountDistinctCatalogFamilies()
+        {
+            var config = PlanetShipFamilyConfig.LoadDefault();
+            if (config?.families == null)
+                return 0;
+
+            int count = 0;
+            for (int i = 0; i < config.families.Count; i++)
+            {
+                ShipFamilyDefinition family = config.families[i]?.shipFamilyDefinition;
+                if (family == null || string.IsNullOrEmpty(family.familyId))
+                    continue;
+
+                bool seen = false;
+                for (int j = 0; j < i; j++)
+                {
+                    ShipFamilyDefinition earlier = config.families[j]?.shipFamilyDefinition;
+                    if (earlier != null && earlier.familyId == family.familyId)
+                    {
+                        seen = true;
+                        break;
+                    }
+                }
+
+                if (!seen)
+                    count++;
+            }
+
+            return count;
+        }
+
+        /// <summary>
+        /// True when every distinct catalog family has a cached GEAR grid (or the catalog is empty).
+        /// </summary>
+        bool AreAllCatalogFamilyStoresCached()
+        {
+            return CollectUncachedCatalogFamilies(_catalogFamilyScratch) == 0;
         }
 
         /// <summary>
