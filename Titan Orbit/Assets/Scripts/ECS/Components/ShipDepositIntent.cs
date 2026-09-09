@@ -10,7 +10,7 @@ namespace TitanOrbit.ECS
     /// systems each server tick. [NETCODE] Ghost-serialized so orbit UI shows deposit state on all clients.
     /// Paired with <see cref="ShipMoonDockState"/> (must be landed) and moon orbit store RPCs.
     /// <para>
-    /// Deposits are <b>discrete metronome chunks</b> (one <c>ShipLevel</c> of gems every
+    /// Deposits are <b>discrete metronome chunks</b> (<c>ShipLevel × PlanetLevel</c> gems every
     /// <see cref="GemEconomyConstants.GemDepositBeatIntervalSeconds"/>), not a smooth per-frame drip.
     /// Presentation (SFX / Orbit Menu) follows ghosted <see cref="ShipDepositFeedback"/> beats.
     /// </para>
@@ -47,9 +47,10 @@ namespace TitanOrbit.ECS
 
     /// <summary>
     /// [NETCODE] Ghosted deposit metronome feedback. Server increments <see cref="BeatSequence"/>
-    /// and writes <see cref="LastChunkAmount"/> each time <see cref="GemDepositSystem"/> transfers
-    /// one chunk. Clients play SFX and bump Orbit Menu Ship/Bank only when the sequence advances —
-    /// presentation stays locked to real server deposits (not a free-running wall clock).
+    /// and writes <see cref="LastChunkAmount"/> each time <see cref="GemDepositSystem"/> (moon)
+    /// or <see cref="PlanetaryDefenseDepositSystem"/> (turret pad) transfers one chunk. Clients
+    /// play gem-size SFX when the sequence advances — presentation stays locked to real server
+    /// deposits (not a free-running wall clock). Moon-orbit also bumps Orbit Menu Ship/Bank.
     /// </summary>
     public struct ShipDepositFeedback : IComponentData
     {
@@ -59,9 +60,23 @@ namespace TitanOrbit.ECS
         [GhostField] public uint BeatSequence;
 
         /// <summary>
-        /// Gems moved on the most recent server beat (ship level, or leftover cargo).
+        /// Gems moved on the most recent server beat (ship × planet, or leftover cargo).
         /// Drives deposit SFX pitch and optimistic Bank/Ship UI deltas.
         /// </summary>
         [GhostField] public float LastChunkAmount;
+
+        /// <summary>
+        /// Server: stamp one transferred chunk onto the ghosted metronome so clients play SFX.
+        /// </summary>
+        public static void RecordBeat(EntityManager em, Entity shipEntity, float amount)
+        {
+            if (amount <= 0.001f || !em.HasComponent<ShipDepositFeedback>(shipEntity))
+                return;
+
+            var feedback = em.GetComponentData<ShipDepositFeedback>(shipEntity);
+            feedback.LastChunkAmount = amount;
+            feedback.BeatSequence += 1u;
+            em.SetComponentData(shipEntity, feedback);
+        }
     }
 }

@@ -70,6 +70,7 @@ namespace TitanOrbit.Entities
             BulletShape shape,
             float scaleMultiplier,
             float bulletSpeed,
+            float firePower,
             bool noTrail)
         {
             // [TITAN-ORBIT] bankIndex also selects per-category Global Visual Scale (default 1).
@@ -108,7 +109,7 @@ namespace TitanOrbit.Entities
             visual.transform.localRotation = Quaternion.identity;
             if (visualPrefab == null)
                 visual.transform.localScale = Vector3.one * scale;
-            SetAudioPitchInHierarchy(visual, GetProjectileSoundPitchBySpeed(bulletSpeed));
+            SetAudioPitchInHierarchy(visual, GetFirePowerSoundPitch(firePower));
             return visual;
         }
 
@@ -119,7 +120,7 @@ namespace TitanOrbit.Entities
             int bankIndex,
             TeamId team,
             float scaleMultiplier,
-            float bulletSpeed)
+            float firePower)
         {
             // Keep authored / mount world Y so the flash sits on the weapon, not the ground plane.
             Vector3 dir = direction;
@@ -129,7 +130,7 @@ namespace TitanOrbit.Entities
             dir.Normalize();
 
             float visualScale = GetBulletVisualScale(bank, scaleMultiplier, bankIndex);
-            float pitch = GetProjectileSoundPitchBySpeed(bulletSpeed);
+            float pitch = GetFirePowerSoundPitch(firePower);
             Color flashColor = GetTeamBulletColor(team);
 
             if (!Application.isMobilePlatform && bank != null)
@@ -170,13 +171,13 @@ namespace TitanOrbit.Entities
 
             // Keep the caller Y (drawn surface). Flattening to 0 put flashes under large rocks / moons.
             float impactScale = GetImpactScale(bank, scaleMultiplier, bankIndex);
-            float pitch = GetImpactSoundPitch(damage);
+            float pitch = GetFirePowerSoundPitch(damage);
             float life = duration > 0.05f ? duration : DefaultImpactDuration;
 
             if (Application.isMobilePlatform)
             {
                 VfxUrpCompat.SpawnMobileImpactBurst(position, GetTeamBulletColor(team), impactScale);
-                AudioManager.Instance?.PlayImpactSound(pitch);
+                AudioManager.Instance?.PlayBulletImpactSound(pitch);
                 return;
             }
 
@@ -184,12 +185,12 @@ namespace TitanOrbit.Entities
             if (prefab == null)
             {
                 VfxUrpCompat.SpawnMobileImpactBurst(position, GetTeamBulletColor(team), impactScale);
-                AudioManager.Instance?.PlayImpactSound(pitch);
+                AudioManager.Instance?.PlayBulletImpactSound(pitch);
                 return;
             }
 
             SpawnImpactAt(position, prefab, pitch, impactScale, life, attachParent, surfaceNormal);
-            AudioManager.Instance?.PlayImpactSound(pitch);
+            AudioManager.Instance?.PlayBulletImpactSound(pitch);
         }
 
         public static void ApplyColorToVisual(GameObject root, Color color)
@@ -229,22 +230,16 @@ namespace TitanOrbit.Entities
             }
         }
 
-        public static float GetProjectileSoundPitchBySpeed(float projectileSpeed)
+        /// <summary>
+        /// Chromatic piano pitch from per-shot fire power (same ladder as gems).
+        /// Fire power 1 = highest C; each +1 is one semitone down.
+        /// </summary>
+        public static float GetFirePowerSoundPitch(float firePower)
         {
-            // --- Compute value ---
-            float s = Mathf.Max(0.01f, projectileSpeed);
-            const float minSpeed = 1f;
-            const float maxSpeed = 30f;
-            const float lowPitch = 0.35f;
-            const float highPitch = 2.2f;
-
-            float clamped = Mathf.Clamp(s, minSpeed, maxSpeed);
-            float minLog = Mathf.Log10(minSpeed);
-            float maxLog = Mathf.Log10(maxSpeed);
-            float sLog = Mathf.Log10(clamped);
-            float normalized = Mathf.InverseLerp(minLog, maxLog, sLog);
-            float emphasized = Mathf.Pow(normalized, 0.85f);
-            return Mathf.Lerp(lowPitch, highPitch, emphasized);
+            AudioManager audio = AudioManager.Instance;
+            if (audio != null)
+                return audio.ResolveFirePowerPitch(firePower);
+            return GemMusicalPitch.ResolvePitch(firePower, 1f, 0.01f);
         }
 
         public static float GetImpactSoundPitch(float damage)

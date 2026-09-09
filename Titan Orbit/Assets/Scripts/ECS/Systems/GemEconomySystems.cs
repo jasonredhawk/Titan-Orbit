@@ -69,31 +69,26 @@ namespace TitanOrbit.ECS
         public const float MoonTakeoffSurfaceStandoffWorld = 0.2f;
 
         /// <summary>
-        /// Historical gems/sec factor (<c>ShipLevel × 2</c>). Kept so docs and design notes still
-        /// match the discrete beat math: one full chunk every <see cref="GemDepositBeatIntervalSeconds"/>.
+        /// Server + client deposit metronome period in seconds (one beat per second).
+        /// [TITAN-ORBIT] Each beat moves <c>ShipLevel × PlanetLevel</c> gems (or leftover cargo).
+        /// Ship 2 on planet 4 → 8 gems/sec. Deposit-speed cards still shorten this interval.
         /// </summary>
-        public const float DepositRatePerShipLevel = 2f;
+        public const float GemDepositBeatIntervalSeconds = 1f;
 
         /// <summary>
-        /// Server + client deposit metronome period in seconds.
-        /// [TITAN-ORBIT] Each beat moves one gem-value chunk (= <c>ShipLevel</c>, or the leftover
-        /// cargo if smaller). Average rate stays <c>ShipLevel × DepositRatePerShipLevel</c> gems/sec.
+        /// Gems transferred on one deposit beat.
+        /// Full loads use <c>shipLevel × planetLevel</c>; leftover cargo uses what remains so
+        /// pitch / floating counts / Bank UI show the true amount — never a fake full chunk.
         /// </summary>
-        public const float GemDepositBeatIntervalSeconds = 0.5f;
-
-        /// <summary>
-        /// Gems transferred on one deposit beat for this ship.
-        /// Full loads use <paramref name="shipLevel"/>; the last leftover uses remaining cargo so
-        /// pitch / floating counts / Bank UI all show the true amount — never a fake full chunk.
-        /// </summary>
-        /// <param name="shipLevel">Ship level (gem-value of one full deposit load).</param>
+        /// <param name="shipLevel">Depositing ship level.</param>
+        /// <param name="planetLevel">Planet receiving the gems (moon treasury or turret-pad owner).</param>
         /// <param name="currentGems">Cargo remaining on the ship right now.</param>
         /// <returns>Chunk size to move this beat (0 when empty).</returns>
-        public static float GetDepositChunkAmount(float shipLevel, float currentGems)
+        public static float GetDepositChunkAmount(float shipLevel, float planetLevel, float currentGems)
         {
             // --- One metronome load ---
-            // [TITAN-ORBIT] Level 5 with 50 cargo → 5. Level 5 with 3 left → 3 (correct leftover pitch).
-            float fullChunk = math.max(1f, shipLevel);
+            // [TITAN-ORBIT] Ship 2 × planet 4 → 8. Same ship with 3 cargo left → 3 (leftover pitch).
+            float fullChunk = math.max(1f, shipLevel) * math.max(1f, planetLevel);
             return math.min(fullChunk, math.max(0f, currentGems));
         }
 
@@ -790,8 +785,8 @@ namespace TitanOrbit.ECS
 
     /// <summary>
     /// Server: deposits ship cargo gems into friendly planets while docked at the gem moon.
-    /// Transfers happen on a <b>discrete metronome</b> (one ship-level chunk every
-    /// <see cref="GemEconomyConstants.GemDepositBeatIntervalSeconds"/>), matching client deposit SFX.
+    /// Transfers happen on a <b>discrete metronome</b> (one <c>ShipLevel × PlanetLevel</c>
+    /// chunk every <see cref="GemEconomyConstants.GemDepositBeatIntervalSeconds"/>), matching client deposit SFX.
     /// Planet treasury levels up via <see cref="PlanetEconomyMath"/>; the player's spendable
     /// Bank (contributed gems) is always credited on the team's <b>home</b> planet ledger so
     /// orbit-store purchases work after depositing at any friendly moon.
@@ -876,6 +871,7 @@ namespace TitanOrbit.ECS
                         // --- One gem-value chunk (or leftover cargo) ---
                         float amount = GemEconomyConstants.GetDepositChunkAmount(
                             shipState.ValueRO.ShipLevel,
+                            planetState.ValueRO.PlanetLevel,
                             shipState.ValueRO.CurrentGems);
                         if (amount <= 0.001f)
                             break;
@@ -931,13 +927,7 @@ namespace TitanOrbit.ECS
 
                         // --- Ghosted presentation beat (clients SFX / Ship↓ / Bank↑ from this) ---
                         // [NETCODE] BeatSequence++ tells every client a real chunk transferred.
-                        if (state.EntityManager.HasComponent<ShipDepositFeedback>(shipEntity))
-                        {
-                            var feedback = state.EntityManager.GetComponentData<ShipDepositFeedback>(shipEntity);
-                            feedback.LastChunkAmount = amount;
-                            feedback.BeatSequence += 1u;
-                            state.EntityManager.SetComponentData(shipEntity, feedback);
-                        }
+                        ShipDepositFeedback.RecordBeat(state.EntityManager, shipEntity, amount);
                     }
 
                     // Only one friendly docked moon can accept deposits for this ship.

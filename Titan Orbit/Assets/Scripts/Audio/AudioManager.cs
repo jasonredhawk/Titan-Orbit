@@ -7,8 +7,9 @@ namespace TitanOrbit.Audio
     /// Central client audio hub for music and gameplay SFX.
     /// Owns pooled <see cref="AudioSource"/>s for weapons, gems, and impacts so overlapping
     /// one-shots can use different pitches without fighting a single source.
-    /// Gem deposit and gem collect share <see cref="GemMusicalPitch"/> (chromatic 88-key piano)
-    /// and the same <see cref="gemCollectSound"/> clip — only volume / proximity differ.
+    /// Gem deposit/collect and bullet muzzle/projectile/impact share
+    /// <see cref="GemMusicalPitch"/> (chromatic 88-key piano). Gems key off cargo value;
+    /// bullets key off per-shot fire power via <see cref="ResolveFirePowerPitch"/>.
     /// Multi-gem collect batches play a C-major chord via <see cref="GemChordValues"/>.
     /// Singleton with DontDestroyOnLoad — UI and hybrid presenters call into <see cref="Instance"/>.
     /// </summary>
@@ -41,10 +42,13 @@ namespace TitanOrbit.Audio
         private const int IMPACT_SOUND_POOL_SIZE = 6;
         private const float IMPACT_PITCH_MIN = 0.3f;
         private const float IMPACT_PITCH_MAX = 2.4f;
+        /// <summary>Unity AudioClip pitch usable range (safety clamp after piano resolve).</summary>
+        private const float UnityPitchMin = 0.01f;
+        private const float UnityPitchMax = 3f;
 
         [Header("Audio Clips")]
         [SerializeField] private AudioClip backgroundMusic;
-        [Tooltip("Weapon fire (one shot per cannon, pitch varies by bullet size/speed). Assign e.g. laser_01 from ShootingSound folder.")]
+        [Tooltip("Weapon fire (one shot per cannon, pitch follows fire-power piano). Assign e.g. laser_01 from ShootingSound folder.")]
         [SerializeField] private AudioClip shootSound;
         [Tooltip("Collision and impact (ship-asteroid, bullet hit). Assign cannon_01 from ShootingSound folder.")]
         [SerializeField] private AudioClip impactSound;
@@ -82,8 +86,9 @@ namespace TitanOrbit.Audio
         [SerializeField] private bool playMusicOnStart = true;
 
         [Header("Pitch ranges (SFX)")]
-        [Tooltip("Weapon fire pitch clamp. Bigger bullet / faster shot uses values in this range.")]
+        [Tooltip("Pitch floor for very low fire-power piano keys. Shift this by the SAME factor as Weapon Pitch Max so chromatic intervals stay true.")]
         [SerializeField] private float weaponPitchMin = 0.01f;
+        [Tooltip("Pitch at fire power 1 (highest C / ET root). Fire power 13 = this÷2 (one octave). Same piano as gems.")]
         [SerializeField] private float weaponPitchMax = 1f;
         [Tooltip("Pitch floor for very low piano keys. Shift this by the SAME factor as Gem Pitch Max (e.g. both ×1.5) so chromatic intervals stay true.")]
         [SerializeField] private float gemPitchMin = 0.15f;
@@ -150,18 +155,27 @@ namespace TitanOrbit.Audio
         }
 
         /// <summary>
-        /// Play weapon fire sound with pitch derived from bullet size and speed.
-        /// Bigger bullet = lower pitch (deeper); faster bullet = higher pitch (shorter playback).
-        /// Call once per weapon/cannon that fired.
+        /// Maps per-shot fire power onto the same chromatic piano as gems
+        /// (<see cref="GemMusicalPitch"/>). Fire power 1 = <see cref="weaponPitchMax"/>;
+        /// each +1 step is one semitone down. <see cref="weaponPitchMin"/> is a floor only.
         /// </summary>
-        /// <param name="pitch">Pitch multiplier. Clamped to 0.5–2.5. Higher = higher tone and shorter length.</param>
+        public float ResolveFirePowerPitch(float firePower)
+        {
+            return GemMusicalPitch.ResolvePitch(firePower, weaponPitchMax, weaponPitchMin);
+        }
+
+        /// <summary>
+        /// Play weapon fire sound at a resolved pitch (typically
+        /// <see cref="ResolveFirePowerPitch"/>). Call once per cannon that fired.
+        /// </summary>
+        /// <param name="pitch">Pitch multiplier. Safety-clamped to Unity's 0.01–3 range.</param>
         public void PlayWeaponShootSound(float pitch)
         {
             // --- PlayWeaponShootSound ---
             if (shootSound == null) return;
             EnsureWeaponSoundPool();
             if (weaponSoundSources == null || weaponSoundSources.Length == 0) { PlaySFX(shootSound); return; }
-            float p = Mathf.Clamp(pitch, weaponPitchMin, weaponPitchMax);
+            float p = Mathf.Clamp(pitch, UnityPitchMin, UnityPitchMax);
             AudioSource src = weaponSoundSources[nextWeaponSoundIndex % weaponSoundSources.Length];
             nextWeaponSoundIndex = (nextWeaponSoundIndex + 1) % weaponSoundSources.Length;
             if (src != null)
@@ -195,6 +209,16 @@ namespace TitanOrbit.Audio
             PlayPooledImpactSound(impactSound, impactVolume, pitch);
         }
 
+        /// <summary>
+        /// Bullet-hit impact using fire-power piano pitch. Skips the collision
+        /// <see cref="IMPACT_PITCH_MIN"/> / <see cref="IMPACT_PITCH_MAX"/> squash so high
+        /// fire power can sit at the same floor as muzzle.
+        /// </summary>
+        public void PlayBulletImpactSound(float pitch)
+        {
+            PlayPooledImpactSound(impactSound, impactVolume, pitch, clampToImpactRange: false);
+        }
+
         public void PlayAsteroidCollisionSound()
         {
             PlayAsteroidCollisionSound(1f);
@@ -217,7 +241,11 @@ namespace TitanOrbit.Audio
             PlayPooledImpactSound(clip, shipCollisionVolume, pitch);
         }
 
-        private void PlayPooledImpactSound(AudioClip clip, float clipVolumeMultiplier, float pitch)
+        private void PlayPooledImpactSound(
+            AudioClip clip,
+            float clipVolumeMultiplier,
+            float pitch,
+            bool clampToImpactRange = true)
         {
             // --- PlayPooledImpactSound ---
             if (clip == null) return;
@@ -228,7 +256,9 @@ namespace TitanOrbit.Audio
                 return;
             }
 
-            float p = Mathf.Clamp(pitch, IMPACT_PITCH_MIN, IMPACT_PITCH_MAX);
+            float p = clampToImpactRange
+                ? Mathf.Clamp(pitch, IMPACT_PITCH_MIN, IMPACT_PITCH_MAX)
+                : Mathf.Clamp(pitch, UnityPitchMin, UnityPitchMax);
             AudioSource src = impactSoundSources[nextImpactSoundIndex % impactSoundSources.Length];
             nextImpactSoundIndex = (nextImpactSoundIndex + 1) % impactSoundSources.Length;
             if (src != null)

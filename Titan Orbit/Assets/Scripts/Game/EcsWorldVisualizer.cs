@@ -2956,9 +2956,9 @@ namespace TitanOrbit.Game
                         bankIndex,
                         team,
                         scaleMul,
-                        bulletSpeed);
+                        tracer.Damage);
                     AudioManager.Instance?.PlayWeaponShootSound(
-                        BulletVisualFactory.GetProjectileSoundPitchBySpeed(bulletSpeed));
+                        BulletVisualFactory.GetFirePowerSoundPitch(tracer.Damage));
 
                     GameObject visual = BulletVisualFactory.BuildVisual(
                         go.transform,
@@ -2968,6 +2968,7 @@ namespace TitanOrbit.Game
                         BulletShape.Sphere,
                         scaleMul,
                         bulletSpeed,
+                        tracer.Damage,
                         noTrail: false);
 
                     if (bulletVfxBank != null

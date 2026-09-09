@@ -12,7 +12,8 @@ namespace TitanOrbit.ECS
 {
     /// <summary>
     /// Server: when a friendly living ship sits still in a planetary defense slot zone, automatically
-    /// drains cargo gems into that slot's build/upgrade bar (metronome chunks).
+    /// drains cargo gems into that slot's build/upgrade bar (metronome chunks). Each chunk writes
+    /// <see cref="ShipDepositFeedback"/> so clients play the same gem-size deposit SFX as moon orbit.
     /// <para>
     /// [TITAN-ORBIT] Gems go <b>only</b> into the slot — never planet treasury / Bank
     /// (<see cref="PlanetEconomyMath.DepositGems"/> is intentionally not called).
@@ -219,7 +220,8 @@ namespace TitanOrbit.ECS
                         continue;
                     }
 
-                    float chunk = GemEconomyConstants.GetDepositChunkAmount(ship.ShipLevel, ship.CurrentGems);
+                    float chunk = GemEconomyConstants.GetDepositChunkAmount(
+                        ship.ShipLevel, planet.PlanetLevel, ship.CurrentGems);
                     chunk = math.min(chunk, need);
                     if (chunk <= 0.001f)
                         break;
@@ -231,6 +233,9 @@ namespace TitanOrbit.ECS
                     slot.BuildProgress += chunk;
                     ApplyLevelUpsWhileFull(ref slot, maxTurretLevel, config);
                     buffer[slotIndex] = slot;
+
+                    // --- Ghosted presentation beat (same gem-size SFX as moon orbit) ---
+                    ShipDepositFeedback.RecordBeat(em, shipEntity, chunk);
                 }
             }
         }

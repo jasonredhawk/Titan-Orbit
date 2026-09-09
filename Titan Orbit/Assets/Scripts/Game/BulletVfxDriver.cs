@@ -1203,9 +1203,9 @@ namespace TitanOrbit.Game
                     bankIndex,
                     team,
                     scaleMul * cameraScale,
-                    bulletSpeed);
+                    req.Damage);
                 AudioManager.Instance?.PlayWeaponShootSound(
-                    BulletVisualFactory.GetProjectileSoundPitchBySpeed(bulletSpeed));
+                    BulletVisualFactory.GetFirePowerSoundPitch(req.Damage));
             }
 
             // --- Pooled tracer shell (destroy-probe: spawnMs ~14 ms was Instantiates here) ---
@@ -1219,7 +1219,7 @@ namespace TitanOrbit.Game
                 go = new GameObject("BulletTracer");
                 BulletVisualFactory.BuildVisual(
                     go.transform, _bank, bankIndex, team, BulletShape.Sphere,
-                    scaleMul, bulletSpeed, noTrail: false);
+                    scaleMul, bulletSpeed, req.Damage, noTrail: false);
             }
 
             Quaternion rot = math.lengthsq(req.Velocity) > 0.0001f
@@ -1239,7 +1239,7 @@ namespace TitanOrbit.Game
             VfxUrpCompat.ApplyImpactVisualScale(go, visualScale);
             VfxUrpCompat.PrepareVfxInstance(go);
             BulletVisualFactory.SetAudioPitchInHierarchy(
-                go, BulletVisualFactory.GetProjectileSoundPitchBySpeed(bulletSpeed));
+                go, BulletVisualFactory.GetFirePowerSoundPitch(req.Damage));
 
             ClientBulletStretchVisual stretch = go.GetComponent<ClientBulletStretchVisual>();
             if (_bank != null

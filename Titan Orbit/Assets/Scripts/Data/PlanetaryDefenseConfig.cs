@@ -77,7 +77,7 @@ namespace TitanOrbit.Data
 
         [Header("Gem Deposit")]
         [Tooltip("Seconds between automatic cargo→slot gem chunks while a ship sits in the zone.")]
-        public float depositChunkIntervalSeconds = 0.5f;
+        public float depositChunkIntervalSeconds = 1f;
 
         [Tooltip(
             "Seconds the ship must stay nearly still inside a pad zone before gem auto-deposit " +

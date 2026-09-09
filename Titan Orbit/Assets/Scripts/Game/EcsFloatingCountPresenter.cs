@@ -32,11 +32,11 @@ namespace TitanOrbit.Game
     /// </para>
     /// <para>
     /// Gem-deposit audio follows the <b>server</b> metronome via ghosted
-    /// <see cref="ShipDepositFeedback.BeatSequence"/>. Local beats use
-    /// <see cref="TickLocalDepositMetronome"/> (tagged ship read). Remotes use
+    /// <see cref="ShipDepositFeedback.BeatSequence"/> (moon orbit and turret-pad deposits).
+    /// Local beats use <see cref="TickLocalDepositMetronome"/> (tagged ship read). Remotes use
     /// <see cref="TickRemoteGemDepositMetronomes"/> with toroidal hear range. Each beat uses the
-    /// server <see cref="ShipDepositFeedback.LastChunkAmount"/> for pitch and notifies Orbit Menu
-    /// Ship/Bank so UI stays locked to real deposits.
+    /// server <see cref="ShipDepositFeedback.LastChunkAmount"/> for pitch. Moon-orbit also
+    /// notifies Orbit Menu Ship/Bank so UI stays locked to real deposits.
     /// </para>
     /// </summary>
     public class EcsFloatingCountPresenter : MonoBehaviour
@@ -204,18 +204,21 @@ namespace TitanOrbit.Game
 
         /// <summary>
         /// Local deposit presentation driven by ghosted <see cref="ShipDepositFeedback"/>.
-        /// Fires SFX + Orbit Menu Ship/Bank only when the server increments <c>BeatSequence</c>
-        /// (real chunk transfer). Tagged ship reads stay safe during Instantiates backlog.
+        /// Fires gem-size SFX whenever the server increments <c>BeatSequence</c> (moon orbit or
+        /// turret pad). Orbit Menu Ship/Bank optimistic ticks stay moon-orbit only (pad gems
+        /// never credit Bank). Tagged ship reads stay safe during Instantiates backlog.
         /// </summary>
         void TickLocalDepositMetronome()
         {
-            // --- Clear optimistic UI only when deposit intent turns off ---
-            if (!MoonOrbitClientState.WantDepositGems)
+            bool moonOrbitDeposit = MoonOrbitClientState.WantDepositGems;
+
+            // --- Clear optimistic Bank/Ship only when moon-orbit deposit intent turns off ---
+            // [TITAN-ORBIT] Do not return here — turret-pad deposits also bump BeatSequence.
+            if (!moonOrbitDeposit)
             {
                 if (MoonOrbitClientState.TryGetOptimisticDepositCargo(out _) ||
                     MoonOrbitClientState.TryGetOptimisticDepositBank(out _))
                     MoonOrbitClientState.ClearOptimisticDepositCargo();
-                return;
             }
 
             // --- Seed cargo / team from tagged ShipState when available ---
@@ -232,7 +235,8 @@ namespace TitanOrbit.Game
                 else if (ship.CurrentGems + 0.51f < _cachedLocalGems)
                     _cachedLocalGems = ship.CurrentGems;
 
-                MoonOrbitClientState.EnsureOptimisticDepositCargoSeed(_cachedLocalGems);
+                if (moonOrbitDeposit)
+                    MoonOrbitClientState.EnsureOptimisticDepositCargoSeed(_cachedLocalGems);
                 _cachedLocalTeam = ship.Team;
             }
 
@@ -262,9 +266,16 @@ namespace TitanOrbit.Game
             if (missed > 1u && EcsGameBridge.TryGetLocalShipState(out ship))
                 _cachedLocalGems = ship.CurrentGems;
 
-            // --- Atomic beat: SFX + optimistic Ship/Bank + Orbit Menu ---
+            // --- Atomic beat: gem-size SFX (+ moon-orbit optimistic Ship/Bank) ---
             TryGetLocalShipAnchor(out Transform anchor);
             EmitGemDepositBeat(EcsGameBridge.GetLocalNetworkId(), anchor, chunkAmount, _cachedLocalTeam, 1f);
+
+            if (!moonOrbitDeposit)
+            {
+                if (_cachedLocalGems >= 0f)
+                    _cachedLocalGems = Mathf.Max(0f, _cachedLocalGems - chunkAmount);
+                return;
+            }
 
             if (_cachedLocalGems >= 0f)
             {
@@ -1016,11 +1027,11 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Single deposit metronome tick — pitch matches the actual chunk amount (full ship-level
-        /// load or leftover cargo), plus floating count when a hull proxy anchor exists.
+        /// Single deposit metronome tick — pitch matches the actual chunk amount
+        /// (ship × planet, or leftover cargo), plus floating count when a hull proxy exists.
         /// </summary>
         /// <param name="anchor">Optional ship hull proxy (null = sound only).</param>
-        /// <param name="gemValue">Actual gems this beat (ship level, or leftover — drives pitch).</param>
+        /// <param name="gemValue">Actual gems this beat (ship × planet, or leftover — drives pitch).</param>
         /// <param name="team">Team tint for the floating count.</param>
         /// <param name="volumeScale">Proximity volume 0–1 from toroidal hear range.</param>
         static void EmitGemDepositBeat(int networkId, Transform anchor, float gemValue, TeamId team, float volumeScale)

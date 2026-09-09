@@ -1,4 +1,5 @@
 using TitanOrbit.Core;
+using TitanOrbit.Data;
 using TitanOrbit.ECS;
 using TitanOrbit.Simulation;
 using TMPro;
@@ -7,7 +8,12 @@ using UnityEngine.Rendering;
 
 namespace TitanOrbit.Game
 {
-    /// <summary>World-space gem count / max above the orbiting gem moon.</summary>
+    /// <summary>
+    /// World-space label above the orbiting gem moon: ship family name, that family's default
+    /// bullet type, then gem bank and matrix shield counts. Family / gun strings match
+    /// <see cref="PlanetWorldStatsLabel"/> (same planet <see cref="PlanetState"/> + config).
+    /// Client presentation only.
+    /// </summary>
     public class GemMoonWorldStatsLabel : MonoBehaviour
     {
         const string GemsColorHex = "#FF3333";
@@ -18,19 +24,30 @@ namespace TitanOrbit.Game
         const int IconSortingOrder = 5000;
         /// <summary>Fallback moon label scale before planet size is known (unit-scale roots).</summary>
         const float LabelWorldScaleFallback = 0.24f;
-        const float CurrentFontSize = 33f;
-        const float MaxFontSize = 21f;
-        const float StatBlockGapLocal = 2f;
+        /// <summary>Gem / shield current count — smaller than the old 33 so family + gun still fit.</summary>
+        const float CurrentFontSize = 24f;
+        /// <summary>Gem / shield capacity line under current (same 21/33 ratio as before).</summary>
+        const float MaxFontSize = CurrentFontSize * (21f / 33f);
+        /// <summary>Ship family title — same local size as the planet label title.</summary>
+        const float TitleFontSize = 21f;
+        /// <summary>Family gun type under the name — same 62% subtitle as the planet label.</summary>
+        const float BulletTypeFontSize = TitleFontSize * 0.62f;
+        const float StatBlockGapLocal = 1.5f;
+        const float HeaderToStatsGapLocal = 1.5f;
+        const float TitleToBulletTypeGapLocal = 0.28f;
         const float ValueLineGapLocal = 0.5f;
         const float IconGapLocal = 2.5f;
         const float IconHeightOverFontSize = 0.11f;
         const float OutlineWidth = 0.14f;
+        const float BulletTypeAlpha = 0.72f;
         static readonly int RenderQueueOverlay = (int)RenderQueue.Overlay;
 
         [SerializeField] int planetId;
         float _moonLocalRadius = 0.25f;
 
         Transform _labelRoot;
+        TextMeshPro _titleText;
+        TextMeshPro _bulletTypeText;
         StatRow _gemRow;
         StatRow _shieldRow;
 
@@ -38,6 +55,14 @@ namespace TitanOrbit.Game
         int _cachedMaxGems = int.MinValue;
         int _cachedCurrentShield = int.MinValue;
         int _cachedMaxShield = int.MinValue;
+        int _cachedFamilyConfigIndex = int.MinValue;
+        bool _cachedIsHomePlanet;
+        TeamId _cachedTeam;
+        bool _hasCachedPaint;
+        string _cachedTitle;
+        string _cachedBulletType;
+
+        static PlanetShipFamilyConfig _shipFamilyConfig;
 
         static readonly Color GemsColor = ParseHexColor(GemsColorHex);
         static readonly Color GemsMaxColor = ParseHexColor(GemsMaxColorHex);
@@ -64,10 +89,84 @@ namespace TitanOrbit.Game
 
         void EnsureLabel()
         {
-            // --- Ensure setup ---
-            if (_labelRoot != null)
+            // --- Already wired — skip Find / rebuild on LateUpdate ---
+            if (_labelRoot != null &&
+                _titleText != null &&
+                _bulletTypeText != null &&
+                _gemRow.CurrentText != null &&
+                _shieldRow.CurrentText != null)
                 return;
 
+            if (TryRecoverExistingLabel())
+                return;
+
+            CleanupLegacyLabels();
+
+            _labelRoot = CreateLabelRoot("GemsLabel", transform);
+            _titleText = CreateValueText(_labelRoot, "FamilyTitle", TitleFontSize, Color.white);
+            _bulletTypeText = CreateValueText(_labelRoot, "BulletType", BulletTypeFontSize, Color.white);
+            _gemRow = CreateStatRow(_labelRoot, "GemRow", WorldStatLabelIcons.Gem, ParseHexColor(GemsColorHex));
+            _shieldRow = CreateStatRow(_labelRoot, "ShieldRow", WorldStatLabelIcons.Shield, ParseHexColor(ShieldColorHex));
+        }
+
+        /// <summary>
+        /// Re-wires children if GemsLabel already exists (Play Mode recompile), and adds
+        /// FamilyTitle / BulletType when an older moon label is missing them.
+        /// </summary>
+        bool TryRecoverExistingLabel()
+        {
+            if (_labelRoot == null)
+            {
+                Transform existing = transform.Find("GemsLabel");
+                if (existing != null)
+                    _labelRoot = existing;
+            }
+
+            if (_labelRoot == null)
+                return false;
+
+            if (_titleText == null)
+                _titleText = _labelRoot.Find("FamilyTitle")?.GetComponent<TextMeshPro>();
+            if (_bulletTypeText == null)
+                _bulletTypeText = _labelRoot.Find("BulletType")?.GetComponent<TextMeshPro>();
+
+            TryRecoverStatRow(ref _gemRow, "GemRow");
+            TryRecoverStatRow(ref _shieldRow, "ShieldRow");
+
+            if (_gemRow.CurrentText == null || _shieldRow.CurrentText == null)
+                return false;
+
+            if (_titleText == null)
+                _titleText = CreateValueText(_labelRoot, "FamilyTitle", TitleFontSize, Color.white);
+            if (_bulletTypeText == null)
+                _bulletTypeText = CreateValueText(_labelRoot, "BulletType", BulletTypeFontSize, Color.white);
+
+            ApplyReadableTextMaterial(_titleText);
+            ApplyReadableTextMaterial(_bulletTypeText);
+            ApplyReadableTextMaterial(_gemRow.CurrentText);
+            ApplyReadableTextMaterial(_gemRow.MaxText);
+            ApplyReadableTextMaterial(_shieldRow.CurrentText);
+            ApplyReadableTextMaterial(_shieldRow.MaxText);
+            return true;
+        }
+
+        void TryRecoverStatRow(ref StatRow row, string rowName)
+        {
+            if (row.Root == null)
+            {
+                Transform found = _labelRoot != null ? _labelRoot.Find(rowName) : null;
+                if (found == null)
+                    return;
+
+                row.Root = found;
+                row.Icon = found.Find("Icon")?.GetComponent<SpriteRenderer>();
+                row.CurrentText = found.Find("Current")?.GetComponent<TextMeshPro>();
+                row.MaxText = found.Find("Max")?.GetComponent<TextMeshPro>();
+            }
+        }
+
+        void CleanupLegacyLabels()
+        {
             var legacyCanvas = transform.Find("GemMoonStatsCanvas");
             if (legacyCanvas != null)
                 Destroy(legacyCanvas.gameObject);
@@ -84,9 +183,11 @@ namespace TitanOrbit.Game
             if (legacyLabel != null)
                 Destroy(legacyLabel.gameObject);
 
-            _labelRoot = CreateLabelRoot("GemsLabel", transform);
-            _gemRow = CreateStatRow(_labelRoot, "GemRow", WorldStatLabelIcons.Gem, ParseHexColor(GemsColorHex));
-            _shieldRow = CreateStatRow(_labelRoot, "ShieldRow", WorldStatLabelIcons.Shield, ParseHexColor(ShieldColorHex));
+            _labelRoot = null;
+            _titleText = null;
+            _bulletTypeText = null;
+            _gemRow = default;
+            _shieldRow = default;
         }
 
         static Transform CreateLabelRoot(string name, Transform parent)
@@ -227,18 +328,71 @@ namespace TitanOrbit.Game
             return row.CurrentText.preferredHeight + ValueLineGapLocal + row.MaxText.preferredHeight;
         }
 
-        static void LayoutLabelBlock(ref StatRow gemRow, ref StatRow shieldRow)
+        /// <summary>
+        /// Centers family name, smaller bullet-type subtitle, then gem and shield rows.
+        /// </summary>
+        void LayoutLabelBlock(bool showTitle, bool showBulletType)
         {
             // --- LayoutLabelBlock ---
-            LayoutStatRow(ref gemRow);
-            LayoutStatRow(ref shieldRow);
+            LayoutStatRow(ref _gemRow);
+            LayoutStatRow(ref _shieldRow);
 
-            float gemHeight = GetStatRowHeight(gemRow);
-            float shieldHeight = GetStatRowHeight(shieldRow);
-            float totalHeight = gemHeight + StatBlockGapLocal + shieldHeight;
+            float titleHeight = 0f;
+            if (showTitle && _titleText != null)
+            {
+                _titleText.fontSize = TitleFontSize;
+                _titleText.ForceMeshUpdate();
+                titleHeight = _titleText.preferredHeight;
+            }
 
-            gemRow.Root.localPosition = new Vector3(0f, (totalHeight - gemHeight) * 0.5f, 0f);
-            shieldRow.Root.localPosition = new Vector3(0f, -(totalHeight - shieldHeight) * 0.5f, 0f);
+            float bulletTypeHeight = 0f;
+            if (showBulletType && _bulletTypeText != null)
+            {
+                _bulletTypeText.fontSize = BulletTypeFontSize;
+                _bulletTypeText.ForceMeshUpdate();
+                bulletTypeHeight = _bulletTypeText.preferredHeight;
+            }
+
+            bool hasHeader = showTitle || showBulletType;
+            float titleTypeGap = showTitle && showBulletType ? TitleToBulletTypeGapLocal : 0f;
+            float headerGap = hasHeader ? HeaderToStatsGapLocal : 0f;
+            float gemHeight = GetStatRowHeight(_gemRow);
+            float shieldHeight = GetStatRowHeight(_shieldRow);
+            float headerHeight = (showTitle ? titleHeight : 0f)
+                + (showBulletType ? bulletTypeHeight : 0f)
+                + titleTypeGap
+                + headerGap;
+            float statsHeight = gemHeight + StatBlockGapLocal + shieldHeight;
+            float totalHeight = headerHeight + statsHeight;
+
+            float cursor = totalHeight * 0.5f;
+            if (showTitle && _titleText != null)
+            {
+                _titleText.fontStyle = FontStyles.Bold;
+                _titleText.transform.localPosition = new Vector3(
+                    0f,
+                    cursor - titleHeight * 0.5f,
+                    0f);
+                cursor -= titleHeight + titleTypeGap;
+            }
+
+            if (showBulletType && _bulletTypeText != null)
+            {
+                _bulletTypeText.fontStyle = FontStyles.Bold;
+                _bulletTypeText.transform.localPosition = new Vector3(
+                    0f,
+                    cursor - bulletTypeHeight * 0.5f,
+                    0f);
+                cursor -= bulletTypeHeight + headerGap;
+            }
+            else if (showTitle)
+            {
+                cursor -= headerGap;
+            }
+
+            _gemRow.Root.localPosition = new Vector3(0f, cursor - gemHeight * 0.5f, 0f);
+            cursor -= gemHeight + StatBlockGapLocal;
+            _shieldRow.Root.localPosition = new Vector3(0f, cursor - shieldHeight * 0.5f, 0f);
         }
 
         static TMP_FontAsset ResolveFont()
@@ -288,16 +442,59 @@ namespace TitanOrbit.Game
             return ColorUtility.TryParseHtmlString(hex, out Color color) ? color : Color.white;
         }
 
+        static Color WithAlpha(Color color, float alpha)
+        {
+            color.a = alpha;
+            return color;
+        }
+
+        static PlanetShipFamilyConfig ShipFamilyConfig
+        {
+            get
+            {
+                if (_shipFamilyConfig != null)
+                    return _shipFamilyConfig;
+
+                _shipFamilyConfig = Resources.Load<PlanetShipFamilyConfig>("PlanetShipFamilyConfig");
+                return _shipFamilyConfig;
+            }
+        }
+
+        static string ResolveShipFamilyTitle(in PlanetState state)
+        {
+            var config = ShipFamilyConfig;
+            if (config == null)
+                return string.Empty;
+
+            return config.GetPlanetDisplayName(
+                state.PlanetId,
+                state.IsHomePlanet,
+                state.ShipFamilyConfigIndex);
+        }
+
+        static string ResolveShipFamilyBulletType(in PlanetState state)
+        {
+            var config = ShipFamilyConfig;
+            if (config == null)
+                return string.Empty;
+
+            return config.GetPlanetBulletTypeName(
+                state.PlanetId,
+                state.IsHomePlanet,
+                state.ShipFamilyConfigIndex);
+        }
+
         void LateUpdate()
         {
-            // Dirty Refresh skips ApplyLayout when gem/shield digits unchanged.
+            // Dirty Refresh skips ApplyLayout when gem/shield/family text is unchanged.
             if (Refresh())
                 ApplyLayout();
         }
 
         /// <summary>
-        /// Updates gem/shield TMP only when values change.
+        /// Updates family / gun / gem / shield TMP only when values change.
         /// [TITAN-ORBIT] Per-frame ParseHexColor + .text on every moon was ~1.4ms (Profiler 41220).
+        /// Family title is resolved only when id / config / home / team is dirty (same as planet).
         /// </summary>
         /// <returns>True when layout should run.</returns>
         bool Refresh()
@@ -307,7 +504,10 @@ namespace TitanOrbit.Game
                 return false;
 
             EnsureLabel();
-            if (_gemRow.CurrentText == null || _shieldRow.CurrentText == null)
+            if (_titleText == null ||
+                _bulletTypeText == null ||
+                _gemRow.CurrentText == null ||
+                _shieldRow.CurrentText == null)
                 return false;
 
             if (!EcsGameBridge.TryGetPlanetStateByPlanetId(planetId, out PlanetState state))
@@ -329,18 +529,59 @@ namespace TitanOrbit.Game
                 currentShield = maxShield;
             }
 
-            if (_cachedCurrentGems == currentGems &&
+            // --- Dirty check BEFORE ResolveShipFamilyTitle ---
+            // [TITAN-ORBIT] Resolve used Trim()/SplitCamelCase every LateUpdate × N moons.
+            if (_hasCachedPaint &&
+                _cachedCurrentGems == currentGems &&
                 _cachedMaxGems == maxGems &&
                 _cachedCurrentShield == currentShield &&
-                _cachedMaxShield == maxShield)
+                _cachedMaxShield == maxShield &&
+                _cachedFamilyConfigIndex == state.ShipFamilyConfigIndex &&
+                _cachedIsHomePlanet == state.IsHomePlanet &&
+                _cachedTeam == state.Ownership)
             {
                 return false;
             }
 
+            bool familyDirty = !_hasCachedPaint ||
+                               _cachedFamilyConfigIndex != state.ShipFamilyConfigIndex ||
+                               _cachedIsHomePlanet != state.IsHomePlanet;
+            string familyTitle;
+            string bulletType;
+            if (familyDirty)
+            {
+                familyTitle = ResolveShipFamilyTitle(state);
+                bulletType = ResolveShipFamilyBulletType(state);
+            }
+            else
+            {
+                familyTitle = _cachedTitle;
+                bulletType = _cachedBulletType;
+            }
+
+            bool hasTitle = !string.IsNullOrEmpty(familyTitle);
+            bool hasBulletType = hasTitle && !string.IsNullOrEmpty(bulletType);
+
+            _hasCachedPaint = true;
             _cachedCurrentGems = currentGems;
             _cachedMaxGems = maxGems;
             _cachedCurrentShield = currentShield;
             _cachedMaxShield = maxShield;
+            _cachedFamilyConfigIndex = state.ShipFamilyConfigIndex;
+            _cachedIsHomePlanet = state.IsHomePlanet;
+            _cachedTeam = state.Ownership;
+            _cachedTitle = familyTitle;
+            _cachedBulletType = bulletType;
+
+            Color teamColor = state.Ownership.ToColor();
+
+            _titleText.gameObject.SetActive(hasTitle);
+            _titleText.text = hasTitle ? familyTitle : string.Empty;
+            _titleText.color = teamColor;
+
+            _bulletTypeText.gameObject.SetActive(hasBulletType);
+            _bulletTypeText.text = hasBulletType ? bulletType : string.Empty;
+            _bulletTypeText.color = WithAlpha(teamColor, BulletTypeAlpha);
 
             _gemRow.CurrentText.text = currentGems.ToString();
             _gemRow.MaxText.text = maxGems.ToString();
@@ -352,7 +593,7 @@ namespace TitanOrbit.Game
             _shieldRow.CurrentText.color = ShieldColor;
             _shieldRow.MaxText.color = ShieldMaxColor;
 
-            LayoutLabelBlock(ref _gemRow, ref _shieldRow);
+            LayoutLabelBlock(hasTitle, hasBulletType);
             return true;
         }
     }
