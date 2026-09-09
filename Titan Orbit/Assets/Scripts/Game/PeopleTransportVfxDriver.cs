@@ -77,6 +77,9 @@ namespace TitanOrbit.Game
             public bool ReturnPopupShown;
             /// <summary>True after at least one Active pose RPC — suppress local arrive guesses.</summary>
             public bool HasServerPose;
+
+            /// <summary>Aft jet — shown while this flight is moving.</summary>
+            public PeopleTransportThruster Thruster;
         }
 
         const float LiftY = 1.0f;
@@ -289,11 +292,14 @@ namespace TitanOrbit.Game
 
                 float3 flatVel = f.Velocity;
                 flatVel.y = 0f;
-                if (math.lengthsq(flatVel) > 0.01f)
+                PeopleTransportVisualApplier.ApplyTravelFacing(f.Go.transform, flatVel);
+
+                if (f.Thruster == null)
+                    f.Thruster = PeopleTransportVisualApplier.EnsureThruster(f.Go);
+                if (f.Thruster != null)
                 {
-                    float3 forward = math.normalize(flatVel);
-                    f.Go.transform.rotation = Quaternion.LookRotation(
-                        new Vector3(forward.x, 0f, forward.z), Vector3.up);
+                    float cruise = PeopleTransportMath.GetEscortFollowCruise(f.Amount);
+                    f.Thruster.SetMotion(math.length(flatVel), cruise);
                 }
 
                 TryShowReturnToPlanetPopup(ref f);
@@ -396,6 +402,17 @@ namespace TitanOrbit.Game
                 }
 
                 PlayPeopleArriveSound(in f, loadReturnedToPlanet);
+                if (!loadReturnedToPlanet &&
+                    f.IsLoad != 0 &&
+                    f.Go != null &&
+                    PeopleTransportEscortPresenter.TryAdopt(
+                        f.TargetShipNetworkId, f.Go, f.Amount, f.Team, f.LogicalPos))
+                {
+                    f.Go = null;
+                    RemoveFlightAt(index);
+                    return;
+                }
+
                 DestroyFlightAt(index, showArrivePopup: false);
                 return;
             }
@@ -475,6 +492,7 @@ namespace TitanOrbit.Game
                     TileM = int.MinValue,
                     LeavePopupShown = false,
                     HasServerPose = false,
+                    Thruster = PeopleTransportVisualApplier.EnsureThruster(go),
                 };
 
                 // Leave: planet −N (load) or ship −N (unload). Arrive is a separate target.

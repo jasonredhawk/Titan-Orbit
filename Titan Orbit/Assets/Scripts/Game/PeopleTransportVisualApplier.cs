@@ -44,6 +44,17 @@ namespace TitanOrbit.Game
         /// <summary>Shared unlit yellow for the outer sphere (never team-tinted).</summary>
         static Material s_YellowSphereMaterial;
 
+        /// <summary>Unlit orange when ModularJetFlame2 is missing.</summary>
+        static Material s_ThrusterFallbackMaterial;
+
+        const string ThrusterChildName = "PeopleTransportThruster";
+
+        /// <summary>Local size vs the transport root so parent scale grows the jet.</summary>
+        public const float ThrusterLocalScale = 0.16f;
+
+        /// <summary>Aft of the unit-sphere root (LookRotation +Z is the nose).</summary>
+        const float ThrusterLocalZ = -0.55f;
+
         /// <summary>
         /// Loads the designer prefab from Resources (player + Editor). Editor can also resolve
         /// via AssetDatabase if Resources is empty during iteration.
@@ -96,7 +107,127 @@ namespace TitanOrbit.Game
             instance.transform.localScale = baseVisualScale * multiplier;
 
             ApplyTeamMaterialToShipChild(instance, team);
+            EnsureThruster(instance);
             return instance;
+        }
+
+        /// <summary>
+        /// Face travel direction while moving. When speed drops, keep the last heading
+        /// so a stop does not snap 180°.
+        /// </summary>
+        public static void ApplyTravelFacing(Transform t, float3 velocity)
+        {
+            if (t == null)
+                return;
+            velocity.y = 0f;
+            if (math.lengthsq(velocity) < 0.16f)
+                return;
+
+            float3 want = math.normalize(velocity);
+            var target = Quaternion.LookRotation(new Vector3(want.x, 0f, want.z), Vector3.up);
+            t.rotation = Quaternion.RotateTowards(t.rotation, target, 420f * Time.deltaTime);
+        }
+
+        /// <summary>Rescales an existing proxy when packed people change.</summary>
+        public static void ApplyAmountScale(GameObject instance, float peopleAmount)
+        {
+            if (instance == null)
+                return;
+            Vector3 baseVisualScale = s_RuntimeTemplate != null
+                ? s_RuntimeTemplate.transform.localScale
+                : Vector3.one * DefaultPrefabBaseUniform;
+            if (baseVisualScale.sqrMagnitude < 0.0001f)
+                baseVisualScale = Vector3.one * DefaultPrefabBaseUniform;
+            float multiplier = PeopleTransportMath.GetVisualScaleMultiplier(math.max(0.001f, peopleAmount));
+            instance.transform.localScale = baseVisualScale * multiplier;
+        }
+
+        /// <summary>
+        /// One aft jet on the transport. Parent scale grows it with the capsule.
+        /// Play/Stop only when move state changes.
+        /// </summary>
+        public static PeopleTransportThruster EnsureThruster(GameObject instance)
+        {
+            if (instance == null)
+                return null;
+
+            var existing = instance.GetComponentInChildren<PeopleTransportThruster>(true);
+            if (existing != null)
+                return existing;
+
+            GameObject prefab = LoadJetFlamePrefab();
+            GameObject jet;
+            if (prefab != null)
+            {
+                jet = Object.Instantiate(prefab, instance.transform);
+            }
+            else
+            {
+                jet = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
+                Object.DestroyImmediate(jet.GetComponent<Collider>());
+                var renderer = jet.GetComponent<MeshRenderer>();
+                if (renderer != null)
+                {
+                    renderer.sharedMaterial = GetThrusterFallbackMaterial();
+                    renderer.shadowCastingMode = ShadowCastingMode.Off;
+                    renderer.receiveShadows = false;
+                }
+            }
+
+            jet.name = ThrusterChildName;
+            jet.transform.SetParent(instance.transform, false);
+            jet.transform.localPosition = new Vector3(0f, 0f, ThrusterLocalZ);
+            jet.transform.localRotation = Quaternion.Euler(0f, 180f, 0f);
+            jet.transform.localScale = Vector3.one * ThrusterLocalScale;
+
+            var systems = jet.GetComponentsInChildren<ParticleSystem>(true);
+            for (int i = 0; i < systems.Length; i++)
+            {
+                ParticleSystem ps = systems[i];
+                if (ps == null)
+                    continue;
+                var main = ps.main;
+                main.playOnAwake = false;
+                main.simulationSpace = ParticleSystemSimulationSpace.Local;
+                main.scalingMode = ParticleSystemScalingMode.Hierarchy;
+                ps.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
+            }
+
+            var thruster = jet.AddComponent<PeopleTransportThruster>();
+            thruster.Bind(systems);
+            jet.SetActive(false);
+            return thruster;
+        }
+
+        static GameObject LoadJetFlamePrefab()
+        {
+            GameObject fromResources = Resources.Load<GameObject>("ModularJetFlame2");
+            if (fromResources != null)
+                return fromResources;
+#if UNITY_EDITOR
+            return UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(
+                "Assets/Archanor/Sci-Fi Arsenal/Sci-Fi Effects/Prefabs/Interactive/JetFlame/V2/ModularJetFlame2.prefab");
+#else
+            return null;
+#endif
+        }
+
+        static Material GetThrusterFallbackMaterial()
+        {
+            if (s_ThrusterFallbackMaterial != null)
+                return s_ThrusterFallbackMaterial;
+
+            var shader = Shader.Find("Universal Render Pipeline/Unlit")
+                         ?? Shader.Find("Unlit/Color")
+                         ?? Shader.Find("Standard");
+            s_ThrusterFallbackMaterial = new Material(shader);
+            var orange = new Color(1f, 0.45f, 0.12f, 1f);
+            if (s_ThrusterFallbackMaterial.HasProperty("_BaseColor"))
+                s_ThrusterFallbackMaterial.SetColor("_BaseColor", orange);
+            if (s_ThrusterFallbackMaterial.HasProperty("_Color"))
+                s_ThrusterFallbackMaterial.SetColor("_Color", orange);
+            s_ThrusterFallbackMaterial.color = orange;
+            return s_ThrusterFallbackMaterial;
         }
 
         /// <summary>Uniform world scale estimate for visualizer helpers.</summary>
@@ -320,6 +451,72 @@ namespace TitanOrbit.Game
                 case TeamId.TeamD: return "GenericSpaceships1-8_GreenYellow.mat";
                 case TeamId.TeamE: return "GenericSpaceships1-8_Violet.mat";
                 default: return "GenericSpaceships1-8_Grey.mat";
+            }
+        }
+    }
+
+    /// <summary>
+    /// Tiny aft jet on a people-transport proxy. Shown only while moving.
+    /// </summary>
+    public sealed class PeopleTransportThruster : MonoBehaviour
+    {
+        const float OnSpeedSq = 0.22f;
+        const float OffSpeedSq = 0.08f;
+
+        ParticleSystem[] _systems;
+        bool _moving;
+        bool _bound;
+
+        public void Bind(ParticleSystem[] systems)
+        {
+            _systems = systems;
+            _bound = true;
+            _moving = false;
+        }
+
+        public void SetMotion(float speed, float cruise)
+        {
+            float speedSq = speed * speed;
+            bool next = _moving ? speedSq > OffSpeedSq : speedSq > OnSpeedSq;
+            float maxSpeed = math.max(
+                PeopleTransportMath.EscortFollowCruiseMin,
+                math.max(0.15f, cruise));
+            float t = math.saturate(speed / maxSpeed);
+            float scale = PeopleTransportVisualApplier.ThrusterLocalScale * math.lerp(0.4f, 1f, t);
+            transform.localScale = Vector3.one * scale;
+
+            if (next == _moving && _bound)
+                return;
+            _moving = next;
+            _bound = true;
+
+            if (next)
+            {
+                if (!gameObject.activeSelf)
+                    gameObject.SetActive(true);
+                if (_systems == null)
+                    return;
+                for (int i = 0; i < _systems.Length; i++)
+                {
+                    ParticleSystem ps = _systems[i];
+                    if (ps != null && !ps.isPlaying)
+                        ps.Play(true);
+                }
+            }
+            else
+            {
+                if (_systems != null)
+                {
+                    for (int i = 0; i < _systems.Length; i++)
+                    {
+                        ParticleSystem ps = _systems[i];
+                        if (ps != null && ps.isPlaying)
+                            ps.Stop(true, ParticleSystemStopBehavior.StopEmitting);
+                    }
+                }
+
+                if (gameObject.activeSelf)
+                    gameObject.SetActive(false);
             }
         }
     }

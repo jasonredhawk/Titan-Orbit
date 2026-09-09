@@ -30,7 +30,8 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// Advances takeoff and writes planar pose + velocity. Clears
+        /// Advances takeoff and writes planar pose. Velocity stays matched to the moon
+        /// (no extra radial launch). Clears
         /// <see cref="ShipMoonDockState.TakeoffPlanetId"/> when the hull is outside the zone
         /// or the planet snapshot is missing.
         /// </summary>
@@ -42,9 +43,8 @@ namespace TitanOrbit.ECS
         /// <param name="mapW">Toroidal map width from <c>MapStateSingleton</c>.</param>
         /// <param name="mapH">Toroidal map height from <c>MapStateSingleton</c>.</param>
         /// <param name="elapsedSeconds">Shared moon orbit clock (ServerTick seconds).</param>
-        /// <param name="takeoffSpeed">Outward speed after exit (world units/s).</param>
         /// <param name="isMegaShip">MEGAs get a larger exit pad so the long hull clears the disc.</param>
-        /// <returns>True while takeoff still owns the motor this tick.</returns>
+        /// <returns>True while takeoff still owns the motor this tick (including the finish tick).</returns>
         public static bool TryApply(
             ref ShipMoonDockState moonDock,
             ref LocalTransform transform,
@@ -54,7 +54,6 @@ namespace TitanOrbit.ECS
             float mapW,
             float mapH,
             double elapsedSeconds,
-            float takeoffSpeed,
             bool isMegaShip,
             float shipPhysicsRadius = -1f)
         {
@@ -126,10 +125,14 @@ namespace TitanOrbit.ECS
                 planet.PlanetId,
                 elapsedSeconds);
             moonVel.y = 0f;
-            float radialSpeed = math.max(takeoffSpeed, (exitRadius - startRadius) / duration);
+            // [TITAN-ORBIT] Pose is authored along the exit ray. Do not also write cruise-speed
+            // radial velocity — Physics would integrate that on top of the lerp, and the finish
+            // tick used to fall through into thrust with max(8, MaxSpeed) leftover. That was the
+            // double shove past the already-padded exit shell. Keep moon orbital velocity only
+            // so the hull tracks the moving pad; player thrust owns flight next tick.
             physicsVelocity = new PhysicsVelocity
             {
-                Linear = moonVel + outward * radialSpeed,
+                Linear = moonVel,
                 Angular = float3.zero,
             };
 
@@ -138,7 +141,7 @@ namespace TitanOrbit.ECS
 
             moonDock.TakeoffPlanetId = 0;
             moonDock.TakeoffProgress = 0f;
-            return false;
+            return true;
         }
 
         /// <summary>

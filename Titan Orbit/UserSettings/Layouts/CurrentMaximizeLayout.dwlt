@@ -23,7 +23,7 @@ MonoBehaviour:
   m_MinSize: {x: 300, y: 112}
   m_MaxSize: {x: 24288, y: 16192}
   vertical: 1
-  controlID: 14280
+  controlID: 1317
   draggingID: 0
 --- !u!114 &2
 MonoBehaviour:
@@ -154,7 +154,7 @@ MonoBehaviour:
   m_MinSize: {x: 300, y: 112}
   m_MaxSize: {x: 24288, y: 16192}
   vertical: 0
-  controlID: 14281
+  controlID: 1318
   draggingID: 0
 --- !u!114 &4
 MonoBehaviour:
@@ -180,7 +180,7 @@ MonoBehaviour:
   m_MinSize: {x: 200, y: 112}
   m_MaxSize: {x: 16192, y: 16192}
   vertical: 1
-  controlID: 13880
+  controlID: 1248
   draggingID: 0
 --- !u!114 &5
 MonoBehaviour:
@@ -206,7 +206,7 @@ MonoBehaviour:
   m_MinSize: {x: 200, y: 56}
   m_MaxSize: {x: 16192, y: 8096}
   vertical: 0
-  controlID: 13761
+  controlID: 1249
   draggingID: 0
 --- !u!114 &6
 MonoBehaviour:
@@ -280,8 +280,6 @@ MonoBehaviour:
       m_LastClickedID:
         m_Data: 0
       m_ExpandedIDs:
-      - m_Data: -7776870
-      - m_Data: -6828632
       - m_Data: -1386
       m_RenameOverlay:
         m_UserAcceptedRename: 0
@@ -1105,7 +1103,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 1
   m_Script: {fileID: 12006, guid: 0000000000000000e000000000000000, type: 0}
-  m_Name: ProfilerWindow
+  m_Name: ProjectBrowser
   m_EditorClassIdentifier: 
   m_Children: []
   m_Position:
@@ -1114,15 +1112,15 @@ MonoBehaviour:
     y: 747
     width: 1857
     height: 546
-  m_MinSize: {x: 900, y: 216}
-  m_MaxSize: {x: 4000, y: 4000}
-  m_ActualView: {fileID: 16}
+  m_MinSize: {x: 231, y: 276}
+  m_MaxSize: {x: 10001, y: 10026}
+  m_ActualView: {fileID: 14}
   m_Panes:
   - {fileID: 14}
   - {fileID: 15}
   - {fileID: 16}
-  m_Selected: 2
-  m_LastSelected: 0
+  m_Selected: 0
+  m_LastSelected: 1
 --- !u!114 &14
 MonoBehaviour:
   m_ObjectHideFlags: 52
@@ -1172,7 +1170,7 @@ MonoBehaviour:
     m_SkipHidden: 0
     m_SearchArea: 0
     m_Folders:
-    - Assets/Archanor/Sci-Fi Arsenal/Sci-Fi Effects/Sound/Loops
+    - Assets/Resources
     m_Globs: []
     m_ProductIds: 
     m_AnyWithAssetOrigin: 0
@@ -1182,31 +1180,21 @@ MonoBehaviour:
   m_ViewMode: 1
   m_StartGridSize: 16
   m_LastFolders:
-  - Assets/Archanor/Sci-Fi Arsenal/Sci-Fi Effects/Sound/Loops
+  - Assets/Resources
   m_LastFoldersGridSize: 16
   m_LastProjectPath: C:\Users\jason\Documents\repo\Titan-Orbit\Titan Orbit
   m_LockTracker:
     m_IsLocked: 0
   m_LastLocalAssetsSearchArea: 0
   m_FolderTreeState:
-    scrollPos: {x: 0, y: 287}
+    scrollPos: {x: 0, y: 840}
     m_SelectedIDs:
-    - m_Data: 348184
+    - m_Data: 99914
     m_LastClickedID:
-      m_Data: 348184
+      m_Data: 99914
     m_ExpandedIDs:
     - m_Data: 0
-    - m_Data: 82126
-    - m_Data: 99880
-    - m_Data: 99882
-    - m_Data: 99884
-    - m_Data: 99886
-    - m_Data: 99888
-    - m_Data: 99890
-    - m_Data: 99892
-    - m_Data: 99894
-    - m_Data: 99896
-    - m_Data: 99898
+    - m_Data: 82142
     - m_Data: 99900
     - m_Data: 99902
     - m_Data: 99904
@@ -1216,6 +1204,20 @@ MonoBehaviour:
     - m_Data: 99912
     - m_Data: 99914
     - m_Data: 99916
+    - m_Data: 99918
+    - m_Data: 99920
+    - m_Data: 99922
+    - m_Data: 99924
+    - m_Data: 99926
+    - m_Data: 99928
+    - m_Data: 99930
+    - m_Data: 99932
+    - m_Data: 99934
+    - m_Data: 99936
+    - m_Data: 316442
+    - m_Data: 316690
+    - m_Data: 316692
+    - m_Data: 316694
     - m_Data: 1000000000
     m_RenameOverlay:
       m_UserAcceptedRename: 0
@@ -1250,17 +1252,7 @@ MonoBehaviour:
       m_Data: 0
     m_ExpandedIDs:
     - m_Data: 0
-    - m_Data: 82126
-    - m_Data: 99880
-    - m_Data: 99882
-    - m_Data: 99884
-    - m_Data: 99886
-    - m_Data: 99888
-    - m_Data: 99890
-    - m_Data: 99892
-    - m_Data: 99894
-    - m_Data: 99896
-    - m_Data: 99898
+    - m_Data: 82142
     - m_Data: 99900
     - m_Data: 99902
     - m_Data: 99904
@@ -1270,7 +1262,16 @@ MonoBehaviour:
     - m_Data: 99912
     - m_Data: 99914
     - m_Data: 99916
-    - m_Data: 1000000000
+    - m_Data: 99918
+    - m_Data: 99920
+    - m_Data: 99922
+    - m_Data: 99924
+    - m_Data: 99926
+    - m_Data: 99928
+    - m_Data: 99930
+    - m_Data: 99932
+    - m_Data: 99934
+    - m_Data: 99936
     m_RenameOverlay:
       m_UserAcceptedRename: 0
       m_Name: 
@@ -1299,10 +1300,10 @@ MonoBehaviour:
       m_ResourceFile: 
   m_ListAreaState:
     m_SelectedInstanceIDs:
-    - m_Data: 356778
+    - m_Data: 82722
     m_LastClickedEntityId:
-      m_Data: 356778
-    m_HadKeyboardFocusLastEvent: 0
+      m_Data: 82722
+    m_HadKeyboardFocusLastEvent: 1
     m_ExpandedInstanceIDs:
     - m_Data: 54664
     - m_Data: 275120
@@ -1355,7 +1356,7 @@ MonoBehaviour:
       m_Icon: {fileID: 0}
       m_ResourceFile: 
     m_NewAssetIndexInList: -1
-    m_ScrollPosition: {x: 0, y: 0}
+    m_ScrollPosition: {x: 0, y: 240}
     m_GridSize: 16
   m_SkipHiddenPackages: 0
   m_DirectoriesAreaWidth: 240
@@ -2479,7 +2480,7 @@ MonoBehaviour:
   m_MinSize: {x: 100, y: 112}
   m_MaxSize: {x: 8096, y: 16192}
   vertical: 1
-  controlID: 14282
+  controlID: 1319
   draggingID: 0
 --- !u!114 &18
 MonoBehaviour:
@@ -2537,9 +2538,9 @@ MonoBehaviour:
     width: 702
     height: 951
   m_SerializedDataModeController:
-    m_DataMode: 1
-    m_PreferredDataMode: 1
-    m_SupportedDataModes: 010000000200000003000000
+    m_DataMode: 0
+    m_PreferredDataMode: 0
+    m_SupportedDataModes: 
     isAutomatic: 1
   m_ViewDataDictionary: {fileID: 0}
   m_OverlayCanvas:
@@ -2556,8 +2557,8 @@ MonoBehaviour:
     m_ControlHash: -371814159
     m_PrefName: Preview_InspectorPreview
   m_LastInspectedObjectEntityId:
-    m_Data: 356778
-  m_LastVerticalScrollValue: 275
+    m_Data: 82722
+  m_LastVerticalScrollValue: 0
   m_GlobalObjectId: 
   m_InspectorMode: 0
   m_LockTracker:
@@ -2738,8 +2739,8 @@ MonoBehaviour:
     y: 977
     width: 703
     height: 316
-  m_MinSize: {x: 50, y: 50}
-  m_MaxSize: {x: 4000, y: 4000}
+  m_MinSize: {x: 51, y: 76}
+  m_MaxSize: {x: 4001, y: 4026}
   m_ActualView: {fileID: 25}
   m_Panes:
   - {fileID: 25}

@@ -37,5 +37,11 @@ namespace TitanOrbit.ECS
         /// Ideal batch size is ship level only (planet level does not multiply).
         /// </summary>
         public float UnloadAccumulator;
+
+        /// <summary>
+        /// Last load combine cap (<c>shipLevel × planetLevel</c>). Partial inbound
+        /// spheres grow an existing escort until this size.
+        /// </summary>
+        public int LastLoadCombineMax;
     }
 }
