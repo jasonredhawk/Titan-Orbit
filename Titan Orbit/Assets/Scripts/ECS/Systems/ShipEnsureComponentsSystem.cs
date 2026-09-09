@@ -176,6 +176,11 @@ namespace TitanOrbit.ECS
                              .WithNone<PeopleEscortLandingState>()
                              .WithEntityAccess())
                     ecb.AddComponent(entity, new PeopleEscortLandingState());
+
+                foreach (var (_, entity) in SystemAPI.Query<RefRO<ShipTag>>()
+                             .WithNone<ShipEscortVitals>()
+                             .WithEntityAccess())
+                    ecb.AddComponent(entity, new ShipEscortVitals());
             }
 
             foreach (var (_, entity) in SystemAPI.Query<RefRO<ShipTag>>()

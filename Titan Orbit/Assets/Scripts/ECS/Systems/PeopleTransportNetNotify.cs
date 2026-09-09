@@ -23,7 +23,8 @@ namespace TitanOrbit.ECS
             uint sequence,
             float3 position,
             float3 velocity,
-            byte status)
+            byte status,
+            float health = -1f)
         {
             if (sequence == 0)
                 return;
@@ -40,6 +41,7 @@ namespace TitanOrbit.ECS
                     Position = position,
                     Velocity = velocity,
                     Status = status,
+                    Health = health,
                 });
             }
 
@@ -51,6 +53,7 @@ namespace TitanOrbit.ECS
                 Position = position,
                 Velocity = velocity,
                 Status = status,
+                Health = health,
             });
             ecb.AddComponent(rpcEntity, new SendRpcCommandRequest { TargetConnection = Entity.Null });
         }
@@ -65,7 +68,7 @@ namespace TitanOrbit.ECS
             float3 position,
             byte status)
         {
-            SendPose(ref ecb, transport.Sequence, position, transport.Velocity, status);
+            SendPose(ref ecb, transport.Sequence, position, transport.Velocity, status, transport.Health);
             ecb.DestroyEntity(transportEntity);
         }
 
@@ -82,7 +85,7 @@ namespace TitanOrbit.ECS
             if (transport.Sequence != 0)
             {
                 var ecb = new EntityCommandBuffer(Unity.Collections.Allocator.Temp);
-                SendPose(ref ecb, transport.Sequence, position, transport.Velocity, status);
+                SendPose(ref ecb, transport.Sequence, position, transport.Velocity, status, transport.Health);
                 ecb.Playback(state.EntityManager);
                 ecb.Dispose();
             }

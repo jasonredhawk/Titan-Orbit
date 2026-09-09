@@ -1501,6 +1501,8 @@ namespace TitanOrbit.ECS
                     {
                         PeopleTransportEscortLogic.ApplyDamageToSlot(
                             state.EntityManager, bestEntity, s_BestEscortSlot, hitDamage);
+                        PeopleTransportEscortLogic.WriteEscortVitals(
+                            state.EntityManager, bestEntity);
                     }
                     else if (state.EntityManager.HasComponent<PeopleTransportState>(bestEntity))
                     {

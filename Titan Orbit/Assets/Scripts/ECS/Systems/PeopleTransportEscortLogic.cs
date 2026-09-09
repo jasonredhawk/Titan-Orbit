@@ -130,7 +130,7 @@ namespace TitanOrbit.ECS
             }
 
             int people = ship.CurrentPeople;
-            int sum = SumAmounts(slots);
+            int sum = SumCargoAmounts(slots);
             if (sum == people)
                 return;
 
@@ -291,6 +291,27 @@ namespace TitanOrbit.ECS
             return false;
         }
 
+        /// <summary>True when the preload capsule is stopped on ship center.</summary>
+        public static bool IsReadySlotParkedAtShipCenter(
+            in DynamicBuffer<PeopleEscortSlot> slots,
+            float3 shipPos,
+            float hullRadius,
+            float mapW,
+            float mapH)
+        {
+            shipPos.y = 0f;
+            for (int i = 0; i < slots.Length; i++)
+            {
+                var slot = slots[i];
+                if (slot.InFlight != 0 || slot.Ready == 0)
+                    continue;
+                return PeopleTransportMath.IsEscortParkedAtShipCenter(
+                    slot.Position, slot.Velocity, shipPos, hullRadius, mapW, mapH);
+            }
+
+            return false;
+        }
+
         /// <summary>
         /// Launches the ready capsule if it has reached ship center. One-way — does not come back.
         /// </summary>
@@ -302,8 +323,10 @@ namespace TitanOrbit.ECS
             float3 planetPos,
             float planetSize,
             float mapW,
-            float mapH)
+            float mapH,
+            out int launchedAmount)
         {
+            launchedAmount = 0;
             if (planetId == 0)
                 return false;
 
@@ -335,6 +358,7 @@ namespace TitanOrbit.ECS
                 slot.TargetPlanetId = planetId;
                 slot.FlightElapsed = 0f;
                 slots[i] = slot;
+                launchedAmount = math.max(0, (int)slot.Amount);
                 return true;
             }
 
@@ -410,8 +434,9 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// Applies bullet damage to one escort slot. Lethal hits remove the slot and debit
-        /// <see cref="ShipState.CurrentPeople"/>. Returns people lost (0 if only HP chipped).
+        /// Applies bullet damage to one escort slot. Cargo kills debit
+        /// <see cref="ShipState.CurrentPeople"/>. In-flight kills do not (already left the ship).
+        /// Dead in-flight slots stay one tick at 0 HP so <see cref="ShipEscortVitals"/> can show it.
         /// </summary>
         public static int ApplyDamageToSlot(
             EntityManager em,
@@ -436,6 +461,13 @@ namespace TitanOrbit.ECS
             }
 
             int lost = math.max(0, (int)slot.Amount);
+            if (slot.InFlight != 0)
+            {
+                slot.Health = 0f;
+                slots[slotIndex] = slot;
+                return 0;
+            }
+
             slots.RemoveAt(slotIndex);
             if (lost <= 0)
                 return 0;
@@ -446,11 +478,47 @@ namespace TitanOrbit.ECS
             return lost;
         }
 
-        static int SumAmounts(DynamicBuffer<PeopleEscortSlot> slots)
+        /// <summary>Writes packed escort HP for client nameplates. Call after slot mutations.</summary>
+        public static void WriteEscortVitals(EntityManager em, Entity shipEntity)
+        {
+            if (!em.HasComponent<ShipEscortVitals>(shipEntity) ||
+                !em.HasBuffer<PeopleEscortSlot>(shipEntity))
+                return;
+
+            var slots = em.GetBuffer<PeopleEscortSlot>(shipEntity);
+            var vitals = new ShipEscortVitals();
+            int n = math.min(ShipEscortVitals.MaxSlots, slots.Length);
+            vitals.Count = (byte)n;
+            ulong health = 0;
+            ulong amount = 0;
+            byte flying = 0;
+            for (int i = 0; i < n; i++)
+            {
+                var slot = slots[i];
+                byte hp = (byte)math.clamp((int)math.round(math.max(0f, slot.Health)), 0, 255);
+                byte amt = (byte)math.clamp((int)math.round(math.max(0f, slot.Amount)), 0, 255);
+                health |= ((ulong)hp) << (i * 8);
+                amount |= ((ulong)amt) << (i * 8);
+                if (slot.InFlight != 0)
+                    flying |= (byte)(1 << i);
+            }
+
+            vitals.HealthPacked = health;
+            vitals.AmountPacked = amount;
+            vitals.InFlightMask = flying;
+            em.SetComponentData(shipEntity, vitals);
+        }
+
+        static int SumCargoAmounts(DynamicBuffer<PeopleEscortSlot> slots)
         {
             int sum = 0;
             for (int i = 0; i < slots.Length; i++)
+            {
+                if (slots[i].InFlight != 0)
+                    continue;
                 sum += math.max(0, (int)slots[i].Amount);
+            }
+
             return sum;
         }
 

@@ -43,5 +43,20 @@ namespace TitanOrbit.ECS
         /// spheres grow an existing escort until this size.
         /// </summary>
         public int LastLoadCombineMax;
+
+        /// <summary>
+        /// Latched for this parked dwell: 0 none, 1 load, 2 unload.
+        /// Once load is chosen, do not flip to unload if planet pop drops below half-cap.
+        /// Cleared with the dwell when the ship leaves, thrusts, or changes planet.
+        /// </summary>
+        public byte TransferDirection;
+    }
+
+    /// <summary>Values for <see cref="ShipPeopleTransferState.TransferDirection"/>.</summary>
+    public static class PeopleTransferDirection
+    {
+        public const byte None = 0;
+        public const byte Load = 1;
+        public const byte Unload = 2;
     }
 }

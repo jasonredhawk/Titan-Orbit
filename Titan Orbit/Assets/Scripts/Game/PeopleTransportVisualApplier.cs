@@ -108,6 +108,7 @@ namespace TitanOrbit.Game
 
             ApplyTeamMaterialToShipChild(instance, team);
             EnsureThruster(instance);
+            PeopleTransportNameplate.Ensure(instance);
             return instance;
         }
 

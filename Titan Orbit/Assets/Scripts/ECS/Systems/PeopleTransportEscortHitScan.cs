@@ -67,7 +67,7 @@ namespace TitanOrbit.ECS
                     continue;
 
                 var shipState = em.GetComponentData<ShipState>(ship);
-                if (shipState.IsDead || shipState.AwaitingTeamSelection || shipState.CurrentPeople <= 0)
+                if (shipState.IsDead || shipState.AwaitingTeamSelection)
                     continue;
                 if (PlanetaryDefenseTurretControlLogic.IsControllingTurret(em, ship))
                     continue;
@@ -85,7 +85,7 @@ namespace TitanOrbit.ECS
                         for (int i = 0; i < slots.Length; i++)
                         {
                             var slot = slots[i];
-                            if (slot.Amount <= 0.01f)
+                            if (slot.Amount <= 0.01f || slot.Health <= 0f)
                                 continue;
                             float3 pos = slot.Position;
                             pos.y = 0f;

@@ -222,9 +222,15 @@ namespace TitanOrbit.ECS
                     shipState.ValueRO.CurrentPeople, shipState.ValueRO.PeopleCapacity,
                     transfer.PeopleInTransit);
 
-                if (PeopleTransportEscortLogic.ShouldUnloadEscorts(
-                        in shipState.ValueRO, in planetState, halfCap))
+                // Latch load for this dwell so paying the planet down through 50% cannot
+                // immediately dump the escorts we just picked up. Unload may still flip
+                // to load if the planet fills above half-cap.
+                bool lockedLoad = transfer.TransferDirection == PeopleTransferDirection.Load;
+                bool wantUnload = !lockedLoad && PeopleTransportEscortLogic.ShouldUnloadEscorts(
+                    in shipState.ValueRO, in planetState, halfCap);
+                if (wantUnload)
                 {
+                    transfer.TransferDirection = PeopleTransferDirection.Unload;
                     // --- Ready-at-center, then one-way launch (old unload cadence) ---
                     // Only in-position followers may become ready. Enroute escorts stay in follow.
                     PeopleTransportEscortLogic.BeginLandingWave(
@@ -247,14 +253,28 @@ namespace TitanOrbit.ECS
                             ref escortSlots, in shipTransform.ValueRO, extX, extZ, shipNetworkId, mapW, mapH);
 
                         float unloadChunk = PeopleTransportMath.GetUnloadChunk(shipLevel);
-                        transfer.UnloadAccumulator +=
-                            unloadChunk * dt * PeopleTransportConstants.TransferSpeedMultiplier * transferMul;
+                        // Cadence only while the ready capsule is parked at center — do not
+                        // spend the hold during the preload flight (that skipped the ready pose).
+                        if (PeopleTransportEscortLogic.IsReadySlotParkedAtShipCenter(
+                                escortSlots, shipTransform.ValueRO.Position, hull, mapW, mapH))
+                        {
+                            transfer.UnloadAccumulator +=
+                                unloadChunk * dt * PeopleTransportConstants.TransferSpeedMultiplier * transferMul;
+                        }
+
                         if (transfer.UnloadAccumulator >= unloadChunk)
                         {
                             if (PeopleTransportEscortLogic.TryLaunchReadySlot(
                                     ref escortSlots, in shipTransform.ValueRO, hull,
-                                    planetState.PlanetId, planetPos, planetSize, mapW, mapH))
+                                    planetState.PlanetId, planetPos, planetSize, mapW, mapH,
+                                    out int launched))
                             {
+                                if (launched > 0)
+                                {
+                                    shipState.ValueRW.CurrentPeople = math.max(
+                                        0, shipState.ValueRO.CurrentPeople - launched);
+                                }
+
                                 transfer.UnloadAccumulator = 0f;
                                 PeopleTransportEscortLogic.TryPromoteReadySlot(
                                     ref escortSlots, in shipTransform.ValueRO, extX, extZ, shipNetworkId, mapW, mapH);
@@ -264,6 +284,7 @@ namespace TitanOrbit.ECS
                 }
                 else
                 {
+                    transfer.TransferDirection = PeopleTransferDirection.Load;
                     PeopleTransportEscortLogic.AbortLandingWave(state.EntityManager, shipEntity);
 
                     if (friendly)
@@ -307,6 +328,7 @@ namespace TitanOrbit.ECS
             transfer.OrbitDwellSeconds = 0f;
             transfer.LoadAccumulator = 0f;
             transfer.UnloadAccumulator = 0f;
+            transfer.TransferDirection = PeopleTransferDirection.None;
         }
 
         /// <summary>
@@ -800,8 +822,9 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// Follow-pose reconcile + sequential landing. Contact debits CurrentPeople and
-        /// applies <see cref="DeliverUnload"/>; leaving the ring aborts without a refund.
+        /// Follow-pose reconcile + sequential landing. Launch already debited
+        /// <see cref="ShipState.CurrentPeople"/>; contact only applies <see cref="DeliverUnload"/>.
+        /// Leaving the ring aborts ready/follow without a refund of launched capsules.
         /// </summary>
         static void StepEscortWaves(
             ref SystemState state,
@@ -842,6 +865,12 @@ namespace TitanOrbit.ECS
                     var slot = slots[i];
                     if (slot.InFlight == 0 || slot.TargetPlanetId == 0)
                         continue;
+                    if (slot.Health <= 0f)
+                    {
+                        slots.RemoveAt(i);
+                        continue;
+                    }
+
                     if (!planetById.TryGetValue(slot.TargetPlanetId, out var planetEntity) ||
                         !planetStateById.TryGetValue(slot.TargetPlanetId, out var planetState) ||
                         !planetTransformById.TryGetValue(slot.TargetPlanetId, out var planetTransform))
@@ -861,8 +890,6 @@ namespace TitanOrbit.ECS
                     if (moved <= 0)
                         continue;
 
-                    shipState.CurrentPeople = math.max(0, shipState.CurrentPeople - moved);
-                    em.SetComponentData(entity, shipState);
                     var unloadOutcome = DeliverUnload(ref planetState, moved, team, planetTransform, planetSize);
 
                     if (sourceNetId > 0 &&
@@ -914,6 +941,8 @@ namespace TitanOrbit.ECS
                         ecb.SetComponent(planetEntity, growth);
                     }
                 }
+
+                PeopleTransportEscortLogic.WriteEscortVitals(em, entity);
             }
         }
 

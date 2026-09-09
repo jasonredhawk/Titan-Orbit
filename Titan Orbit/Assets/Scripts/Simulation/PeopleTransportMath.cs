@@ -105,7 +105,10 @@ namespace TitanOrbit.Simulation
         /// </summary>
         public const float EscortRideBreak = 5f;
 
-        /// <summary>How close a waiting capsule must be to its ring slot before it may unload.</summary>
+        /// <summary>
+        /// Extra reach past the outer formation ring when deciding an escort has
+        /// caught the ship (yaw / orbit must not starve the ready call).
+        /// </summary>
         public const float EscortGatherSlack = 1.25f;
 
         /// <summary>Follow cruise (world units/s) for a +36 capsule.</summary>
@@ -120,7 +123,10 @@ namespace TitanOrbit.Simulation
         /// </summary>
         public const float EscortAccelRate = 1.45f;
 
-        /// <summary>How close a ready capsule must be to ship center before it may launch.</summary>
+        /// <summary>
+        /// How close a ready capsule's center must be to ship center before launch.
+        /// Do not scale this by covering-hull radius — that let ring seats skip preload.
+        /// </summary>
         public const float EscortReadyCenterSlack = 0.42f;
 
         /// <summary>Must be this slow at center before the one-way planet launch.</summary>
@@ -344,7 +350,12 @@ namespace TitanOrbit.Simulation
             return hullR * math.lerp(EscortRingMinRadiusMul, EscortRingMaxRadiusMul, u);
         }
 
-        /// <summary>True when this capsule is next to the orbiting ship (may unload).</summary>
+        /// <summary>
+        /// True when this capsule has caught the ship (inside the outer hover ring).
+        /// Uses ship proximity, not the exact hashed seat — orbit yaw moves seats
+        /// faster than escorts can chase, which starved the ready-to-center call.
+        /// Enroute chases farther than the ring still cannot become ready.
+        /// </summary>
         public static bool IsEscortGatheredAtShip(
             float3 escortPos,
             float3 shipPos,
@@ -358,10 +369,13 @@ namespace TitanOrbit.Simulation
             float mapW,
             float mapH)
         {
-            float3 home = EvaluateEscortSlotPose(
-                shipPos, shipRot, extX, extZ, slotIndex, slotCount, peopleAmount,
-                shipNetworkId, mapW, mapH);
-            return ToroidalMapEcs.ToroidalDistance(escortPos, home, mapW, mapH) <= EscortGatherSlack;
+            _ = shipRot;
+            _ = slotIndex;
+            _ = slotCount;
+            _ = peopleAmount;
+            _ = shipNetworkId;
+            float outer = math.max(extX, extZ) * EscortRingMaxRadiusMul + EscortGatherSlack;
+            return ToroidalMapEcs.ToroidalDistance(escortPos, shipPos, mapW, mapH) <= outer;
         }
 
         /// <summary>True when a ready capsule has reached the ship center and may launch.</summary>
@@ -372,8 +386,8 @@ namespace TitanOrbit.Simulation
             float mapW,
             float mapH)
         {
-            float slack = math.max(EscortReadyCenterSlack, hullRadius * 0.35f);
-            return ToroidalMapEcs.ToroidalDistance(escortPos, shipPos, mapW, mapH) <= slack;
+            _ = hullRadius;
+            return ToroidalMapEcs.ToroidalDistance(escortPos, shipPos, mapW, mapH) <= EscortReadyCenterSlack;
         }
 
         /// <summary>At ship center and nearly stopped — may launch toward the planet.</summary>

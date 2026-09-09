@@ -52,6 +52,15 @@ namespace TitanOrbit.Game
 
             /// <summary>Aft jet — shown while this capsule is moving.</summary>
             public PeopleTransportThruster Thruster;
+
+            /// <summary>Live HP from <see cref="ShipEscortVitals"/>; negative until first sync.</summary>
+            public float Health;
+
+            /// <summary>Seconds since this capsule launched (client land gate).</summary>
+            public float FlightElapsed;
+
+            /// <summary>Launch pose for <see cref="PeopleTransportMath.CanCompleteEscortUnload"/>.</summary>
+            public float3 SpawnPosition;
         }
 
         sealed class ShipEscortGroup
@@ -79,8 +88,15 @@ namespace TitanOrbit.Game
 
         static PeopleTransportEscortPresenter s_Instance;
 
+        struct TransferDwell
+        {
+            public float Seconds;
+            public int PlanetId;
+            public byte Direction;
+        }
+
         readonly Dictionary<int, ShipEscortGroup> _groups = new Dictionary<int, ShipEscortGroup>(8);
-        readonly Dictionary<int, float> _orbitDwell = new Dictionary<int, float>(8);
+        readonly Dictionary<int, TransferDwell> _orbitDwell = new Dictionary<int, TransferDwell>(8);
         readonly List<int> _aliveNetIds = new List<int>(8);
         readonly List<int> _removeNetIds = new List<int>(8);
         readonly List<Adopted> _adopted = new List<Adopted>(4);
@@ -261,20 +277,31 @@ namespace TitanOrbit.Game
                 bool moonLanding = em.HasComponent<ShipMoonDockState>(e) &&
                                   em.GetComponentData<ShipMoonDockState>(e).LandingProgress > 0.01f;
                 bool parkedForTransfer = orbit.InOrbitRing && orbit.OrbitPlanetId != 0 && !thrusting && !moonLanding;
-                float dwell = 0f;
-                _orbitDwell.TryGetValue(owner.NetworkId, out dwell);
+                bool landing = false;
                 if (parkedForTransfer)
                 {
-                    dwell += dt;
+                    if (!_orbitDwell.TryGetValue(owner.NetworkId, out var dwell) ||
+                        dwell.PlanetId != orbit.OrbitPlanetId)
+                    {
+                        dwell = new TransferDwell { PlanetId = orbit.OrbitPlanetId };
+                    }
+
+                    dwell.Seconds += dt;
+                    if (dwell.Seconds >= PeopleTransportConstants.OrbitDwellBeforeTransferSeconds &&
+                        dwell.Direction != PeopleTransferDirection.Load)
+                    {
+                        dwell.Direction = IsClientUnloadWave(in ship, in orbit)
+                            ? PeopleTransferDirection.Unload
+                            : PeopleTransferDirection.Load;
+                    }
+
                     _orbitDwell[owner.NetworkId] = dwell;
+                    landing = dwell.Direction == PeopleTransferDirection.Unload;
                 }
                 else
                 {
                     _orbitDwell.Remove(owner.NetworkId);
                 }
-                bool landing = parkedForTransfer &&
-                               dwell >= PeopleTransportConstants.OrbitDwellBeforeTransferSeconds &&
-                               IsClientUnloadWave(in ship, in orbit);
                 int planetLevel = 1;
                 if (orbit.OrbitPlanetId != 0 &&
                     EcsGameBridge.TryGetPlanetPoseByPlanetId(
@@ -284,10 +311,13 @@ namespace TitanOrbit.Game
                     math.max(1, ship.ShipLevel), planetLevel);
                 PeopleTransportEscortLogic.ResolveEscortShipExtents(
                     em, e, in xf, out float extX, out float extZ);
+                var vitals = em.HasComponent<ShipEscortVitals>(e)
+                    ? em.GetComponentData<ShipEscortVitals>(e)
+                    : default;
                 UpdateGroup(
                     owner.NetworkId, (byte)ship.Team, ship.CurrentPeople, combineMax,
                     hullPos, hullRot, extX, extZ,
-                    landing, orbit.OrbitPlanetId, dt, mapW, mapH);
+                    landing, orbit.OrbitPlanetId, dt, mapW, mapH, in vitals);
                 if (_groups.TryGetValue(owner.NetworkId, out var keep) && keep.Slots.Count > 0)
                     _aliveNetIds.Add(owner.NetworkId);
             }
@@ -348,6 +378,7 @@ namespace TitanOrbit.Game
                         DisplayTileK = int.MinValue,
                         DisplayTileM = int.MinValue,
                         Thruster = PeopleTransportVisualApplier.EnsureThruster(a.Go),
+                        Health = -1f,
                     });
                 }
 
@@ -371,7 +402,8 @@ namespace TitanOrbit.Game
             int orbitPlanetId,
             float dt,
             float mapW,
-            float mapH)
+            float mapH,
+            in ShipEscortVitals vitals)
         {
             if (!_groups.TryGetValue(networkId, out var group))
             {
@@ -385,6 +417,7 @@ namespace TitanOrbit.Game
             SyncVisualAmounts(
                 group, people, landing, orbitPlanetId, team,
                 hullPos, hullRot, extX, extZ, networkId, combineMax, mapW, mapH, allowShrink: !adopted);
+            ApplyEscortVitals(group, in vitals);
 
             bool drop = landing && orbitPlanetId != 0;
             if (!drop)
@@ -403,7 +436,8 @@ namespace TitanOrbit.Game
             else
             {
                 TryPromoteReadyVisual(group, hullPos, hullRot, extX, extZ, networkId, mapW, mapH);
-                group.DispatchAcc += dt;
+                if (IsReadyVisualParkedAtCenter(group, hullPos, hullRadius, mapW, mapH))
+                    group.DispatchAcc += dt;
                 if (group.DispatchAcc >= PeopleTransportConstants.UnloadDispatchIntervalSeconds &&
                     TryLaunchReadyVisual(group, hullPos, hullRadius, orbitPlanetId, mapW, mapH))
                 {
@@ -441,6 +475,7 @@ namespace TitanOrbit.Game
                         PlaceDisplay(slot.Go.transform, slot.LogicalPos, slot.Velocity, mapW, mapH,
                             ref slot.DisplayTileK, ref slot.DisplayTileM);
                         ApplyThruster(ref slot);
+                        PeopleTransportNameplate.Sync(slot.Go, networkId, slot.Amount, slot.Health);
                         group.Slots[i] = slot;
                         continue;
                     }
@@ -463,6 +498,7 @@ namespace TitanOrbit.Game
                     slot.LogicalPos.y = 0f;
                     if (ToroidalMapEcs.IsValidMapSize(mapW, mapH))
                         slot.LogicalPos = ToroidalMapEcs.Wrap(slot.LogicalPos, mapW, mapH);
+                    slot.FlightElapsed += dt;
                 }
                 else
                 {
@@ -488,8 +524,11 @@ namespace TitanOrbit.Game
                 PlaceDisplay(slot.Go.transform, slot.LogicalPos, slot.Velocity, mapW, mapH,
                     ref slot.DisplayTileK, ref slot.DisplayTileM);
                 ApplyThruster(ref slot);
+                PeopleTransportNameplate.Sync(slot.Go, networkId, slot.Amount, slot.Health);
                 group.Slots[i] = slot;
             }
+
+            FinishFlyingSlots(group, team, mapW, mapH);
         }
 
         static bool TryPromoteReadyVisual(
@@ -528,6 +567,25 @@ namespace TitanOrbit.Game
             return false;
         }
 
+        static bool IsReadyVisualParkedAtCenter(
+            ShipEscortGroup group,
+            float3 hullPos,
+            float hullRadius,
+            float mapW,
+            float mapH)
+        {
+            for (int i = 0; i < group.Slots.Count; i++)
+            {
+                var slot = group.Slots[i];
+                if (slot.Flying || !slot.Ready || slot.Go == null)
+                    continue;
+                return PeopleTransportMath.IsEscortParkedAtShipCenter(
+                    slot.LogicalPos, slot.Velocity, hullPos, hullRadius, mapW, mapH);
+            }
+
+            return false;
+        }
+
         static bool TryLaunchReadyVisual(
             ShipEscortGroup group,
             float3 hullPos,
@@ -553,6 +611,8 @@ namespace TitanOrbit.Game
                 slot.TargetPlanetId = planetId;
                 slot.Velocity = float3.zero;
                 slot.CruiseSpeed = 0f;
+                slot.FlightElapsed = 0f;
+                slot.SpawnPosition = slot.LogicalPos;
                 group.Slots[i] = slot;
                 return true;
             }
@@ -618,15 +678,15 @@ namespace TitanOrbit.Game
             people = math.max(0, people);
             if (people <= 0)
             {
-                ShrinkLandedThenFollow(group, SumVisualAmounts(group), planetId, team, mapW, mapH);
+                ShrinkCargoOnly(group, SumCargoAmounts(group));
                 return;
             }
 
-            int sum = SumVisualAmounts(group);
+            int sum = SumCargoAmounts(group);
             if (allowShrink && sum > people)
             {
-                ShrinkLandedThenFollow(group, sum - people, planetId, team, mapW, mapH);
-                sum = SumVisualAmounts(group);
+                ShrinkCargoOnly(group, sum - people);
+                sum = SumCargoAmounts(group);
             }
 
             if (sum >= people)
@@ -672,6 +732,7 @@ namespace TitanOrbit.Game
                 DisplayTileK = tileK,
                 DisplayTileM = tileM,
                 Thruster = PeopleTransportVisualApplier.EnsureThruster(go),
+                Health = -1f,
             });
             _spawnsThisFrame++;
         }
@@ -698,12 +759,102 @@ namespace TitanOrbit.Game
             return leftover;
         }
 
-        static int SumVisualAmounts(ShipEscortGroup group)
+        static int SumCargoAmounts(ShipEscortGroup group)
         {
             int sum = 0;
             for (int i = 0; i < group.Slots.Count; i++)
+            {
+                if (group.Slots[i].Flying)
+                    continue;
                 sum += math.max(0, (int)group.Slots[i].Amount);
+            }
+
             return sum;
+        }
+
+        static void ShrinkCargoOnly(ShipEscortGroup group, int deficit)
+        {
+            for (int i = group.Slots.Count - 1; i >= 0 && deficit > 0; i--)
+            {
+                if (group.Slots[i].Flying)
+                    continue;
+                deficit = ConsumeVisualSlot(group, i, deficit, planetId: 0, team: 0);
+            }
+        }
+
+        static void ApplyEscortVitals(ShipEscortGroup group, in ShipEscortVitals vitals)
+        {
+            int cargoCursor = 0;
+            int flyCursor = 0;
+            int n = math.min((int)vitals.Count, ShipEscortVitals.MaxSlots);
+            for (int s = 0; s < n; s++)
+            {
+                bool flying = vitals.IsInFlight(s);
+                float hp = vitals.GetHealth(s);
+                int seen = 0;
+                int want = flying ? flyCursor : cargoCursor;
+                int found = -1;
+                for (int i = 0; i < group.Slots.Count; i++)
+                {
+                    if (group.Slots[i].Flying != flying)
+                        continue;
+                    if (seen++ < want)
+                        continue;
+                    found = i;
+                    break;
+                }
+
+                if (found < 0)
+                    continue;
+                if (flying)
+                    flyCursor++;
+                else
+                    cargoCursor++;
+
+                var slot = group.Slots[found];
+                slot.Health = hp;
+                group.Slots[found] = slot;
+            }
+        }
+
+        void FinishFlyingSlots(ShipEscortGroup group, byte team, float mapW, float mapH)
+        {
+            for (int i = group.Slots.Count - 1; i >= 0; i--)
+            {
+                var slot = group.Slots[i];
+                if (slot.Go == null)
+                {
+                    group.Slots.RemoveAt(i);
+                    continue;
+                }
+
+                if (slot.Health >= 0f && slot.Health <= 0.01f)
+                {
+                    Destroy(slot.Go);
+                    group.Slots.RemoveAt(i);
+                    continue;
+                }
+
+                if (!slot.Flying)
+                    continue;
+
+                int dest = slot.TargetPlanetId;
+                if (dest == 0)
+                    continue;
+                if (!EcsGameBridge.TryGetPlanetPoseByPlanetId(
+                        dest, out float3 planetPos, out float scale, out _))
+                    continue;
+
+                float planetSize = math.max(0.5f, scale);
+                if (!PeopleTransportMath.CanCompleteEscortUnload(
+                        slot.LogicalPos, slot.SpawnPosition, planetPos, planetSize,
+                        slot.FlightElapsed, mapW, mapH))
+                    continue;
+
+                ShowLandPopup(slot.Amount, team, dest, slot.LogicalPos);
+                Destroy(slot.Go);
+                group.Slots.RemoveAt(i);
+            }
         }
 
         void ShrinkLandedThenFollow(
@@ -762,7 +913,7 @@ namespace TitanOrbit.Game
             return best;
         }
 
-        int ConsumeVisualSlot(ShipEscortGroup group, int index, int deficit, int planetId, byte team)
+        static int ConsumeVisualSlot(ShipEscortGroup group, int index, int deficit, int planetId, byte team)
         {
             var slot = group.Slots[index];
             int have = math.max(0, (int)slot.Amount);
@@ -772,7 +923,7 @@ namespace TitanOrbit.Game
                 if (slot.Amount > 0.01f)
                     ShowLandPopup(slot.Amount, team, dest, slot.LogicalPos);
                 if (slot.Go != null)
-                    Destroy(slot.Go);
+                    Object.Destroy(slot.Go);
                 group.Slots.RemoveAt(index);
                 return deficit - have;
             }

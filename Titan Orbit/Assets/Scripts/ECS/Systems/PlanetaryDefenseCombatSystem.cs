@@ -406,7 +406,7 @@ namespace TitanOrbit.ECS
                 for (int s = 0; s < count; s++)
                 {
                     var slot = slots[s];
-                    if (slot.Amount <= 0.01f)
+                    if (slot.Amount <= 0.01f || slot.Health <= 0f)
                         continue;
                     float3 pos = slot.Position;
                     pos.y = PlanetaryDefenseMath.FixedY;

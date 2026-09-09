@@ -1,6 +1,7 @@
 using TitanOrbit.Core;
 using Unity.Entities;
 using Unity.Mathematics;
+using Unity.NetCode;
 
 namespace TitanOrbit.ECS
 {
@@ -144,7 +145,7 @@ namespace TitanOrbit.ECS
         /// <summary>People packed in this sphere.</summary>
         public float Amount;
 
-        /// <summary>Hull points — server-only; clients see the slot vanish when people drop.</summary>
+        /// <summary>Hull points. Replicated to clients via <see cref="ShipEscortVitals"/>.</summary>
         public float Health;
 
         /// <summary>Landing cruise speed (world units / sec).</summary>
@@ -181,5 +182,36 @@ namespace TitanOrbit.ECS
     {
         /// <summary>Planet being dropped on; 0 when escorts follow the ship.</summary>
         public int PlanetId;
+    }
+
+    /// <summary>
+    /// Compact ghosted escort HP for nameplates. 8 slots × 1-byte health + amount (16 bytes)
+    /// plus count / in-flight mask. Not a per-capsule ghost.
+    /// </summary>
+    public struct ShipEscortVitals : IComponentData
+    {
+        public const int MaxSlots = 8;
+
+        [GhostField] public ulong HealthPacked;
+        [GhostField] public ulong AmountPacked;
+        [GhostField] public byte Count;
+        [GhostField] public byte InFlightMask;
+
+        public float GetHealth(int index)
+        {
+            if (index < 0 || index >= MaxSlots)
+                return 0f;
+            return (HealthPacked >> (index * 8)) & 0xFFul;
+        }
+
+        public float GetAmount(int index)
+        {
+            if (index < 0 || index >= MaxSlots)
+                return 0f;
+            return (AmountPacked >> (index * 8)) & 0xFFul;
+        }
+
+        public bool IsInFlight(int index) =>
+            index >= 0 && index < MaxSlots && (InFlightMask & (1 << index)) != 0;
     }
 }
