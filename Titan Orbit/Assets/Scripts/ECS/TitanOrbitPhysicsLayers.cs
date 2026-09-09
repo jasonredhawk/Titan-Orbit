@@ -112,9 +112,21 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
+        /// Negative Unity Physics group for an owned moon shield. Equal negative
+        /// <see cref="CollisionFilter.GroupIndex"/> never collides.
+        /// Ships keep group 0 — putting this same value on ships would also disable
+        /// same-team ship↔ship hits.
+        /// </summary>
+        public static int ShieldGroupIndexForOwner(TeamId owner)
+        {
+            return owner == TeamId.None ? 0 : -(int)owner;
+        }
+
+        /// <summary>
         /// Ship sphere filter. Friendly moon shields are omitted from CollidesWith so PhysX
         /// never generates the pair (collect-skip is not enough — the solver would still shove).
-        /// Written when team is assigned, not every tick.
+        /// Written when team is assigned, not every tick. GroupIndex stays 0 so same-team
+        /// ships still collide with each other.
         /// </summary>
         public static CollisionFilter ShipForTeam(TeamId team)
         {
@@ -130,14 +142,18 @@ namespace TitanOrbit.ECS
             };
         }
 
-        /// <summary>Moon-shield sphere for this planet owner. Collides with ships only.</summary>
+        /// <summary>
+        /// Moon-shield sphere for this planet owner. Collides with ships only.
+        /// Owned shields also take a unique negative GroupIndex so a stale ship layer
+        /// mask cannot keep a friendly pair alive in the solver.
+        /// </summary>
         public static CollisionFilter MoonShieldForOwner(TeamId owner)
         {
             return new CollisionFilter
             {
                 BelongsTo = ShieldBitForOwner(owner),
                 CollidesWith = Ships,
-                GroupIndex = 0,
+                GroupIndex = ShieldGroupIndexForOwner(owner),
             };
         }
 

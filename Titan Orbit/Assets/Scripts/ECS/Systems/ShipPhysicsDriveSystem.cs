@@ -13,8 +13,8 @@ namespace TitanOrbit.ECS
     /// Server-authoritative ship motor. Schedules shared <see cref="ShipPhysicsDriveJob"/> before
     /// <see cref="PhysicsSystemGroup"/> so thrust/turn/orbit write <see cref="Unity.Physics.PhysicsVelocity"/>,
     /// then Unity Physics integrates position and resolves hull collisions.
-    /// Collects planet snapshots + territory triangles + map size once per tick for toroidal orbit,
-    /// shield repel, and friendly territory speed.
+    /// Collects planet snapshots + territory triangles + map size once per tick for toroidal orbit
+    /// and friendly territory speed.
     /// Paired with <see cref="ShipClientPredictedPhysicsDriveSystem"/> (same job, client owner).
     /// Pipeline: Input → MassSync → Drive → Physics → Planar → KinematicsSync.
     /// </summary>
@@ -55,7 +55,7 @@ namespace TitanOrbit.ECS
             // [ECS/DOTS] TempJob planet snapshot — disposed after the parallel job completes.
             var planets = PlanetMotorSnapshotCollection.Collect(ref state, Allocator.TempJob);
 
-            // --- Moon orbit clock for shield repel + territory moon vertices ---
+            // --- Moon orbit clock for dock attach / takeoff + territory moon vertices ---
             // [TITAN-ORBIT] Same ServerTick seconds as PlanetGemMoonColliderSyncSystem (not World.ElapsedTime).
             int hz = 0;
             if (SystemAPI.TryGetSingleton<ClientServerTickRate>(out var tickRate))
@@ -95,6 +95,7 @@ namespace TitanOrbit.ECS
                 MinSpeed = mobility.minSpeed,
                 MinAccel = mobility.minAccel,
                 MinTurn = mobility.minTurn,
+                PhysicsColliders = SystemAPI.GetComponentLookup<PhysicsCollider>(true),
             };
             state.Dependency = job.ScheduleParallel(state.Dependency);
             state.Dependency = planets.Dispose(state.Dependency);

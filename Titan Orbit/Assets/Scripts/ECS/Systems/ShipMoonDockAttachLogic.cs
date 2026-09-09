@@ -58,6 +58,13 @@ namespace TitanOrbit.ECS
                 : default;
 
             // Shared pin math with the per-tick motor path.
+            float hullRadius = -1f;
+            if (em.HasComponent<PhysicsCollider>(shipEntity))
+            {
+                hullRadius = ShipPhysicsDriveLogic.MeasurePhysicsHullRadiusXZ(
+                    em.GetComponentData<PhysicsCollider>(shipEntity), transform);
+            }
+
             ShipPhysicsDriveLogic.ApplyMoonDockAttach(
                 moonDock.MoonPlanetId,
                 ref transform,
@@ -65,7 +72,8 @@ namespace TitanOrbit.ECS
                 snapshot,
                 mapW,
                 mapH,
-                elapsedSeconds);
+                elapsedSeconds,
+                hullRadius);
 
             em.SetComponentData(shipEntity, transform);
             if (em.HasComponent<PhysicsVelocity>(shipEntity))

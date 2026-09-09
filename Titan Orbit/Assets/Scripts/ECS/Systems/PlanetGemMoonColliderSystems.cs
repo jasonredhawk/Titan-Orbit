@@ -92,14 +92,7 @@ namespace TitanOrbit.ECS
                 Entity moonEntity = ecb.CreateEntity();
                 float moonBodyRadiusLocal = PlanetGemMoonMath.GetMoonBodyRadiusLocal(planetScale, isHome);
 
-                var material = Unity.Physics.Material.Default;
-                // PhysX e = 0 — custom wall bounce owns rebound (same as asteroids).
-                material.Restitution = 0f;
-
-                var collider = SphereCollider.Create(
-                    new SphereGeometry { Center = float3.zero, Radius = moonBodyRadiusLocal },
-                    TitanOrbitPhysicsLayers.WorldStatic,
-                    material);
+                var collider = PlanetGemMoonColliderLogic.CreateMoonBodySphere(moonBodyRadiusLocal);
 
                 ecb.AddComponent(moonEntity, new PhysicsCollider { Value = collider });
                 ecb.AddComponent(moonEntity, PhysicsMass.CreateKinematic(collider.Value.MassProperties));
@@ -141,13 +134,8 @@ namespace TitanOrbit.ECS
                 bool shieldUp = moonState.ValueRO.CurrentShield > 0.001f;
 
                 Entity shieldEntity = ecb.CreateEntity();
-                var material = Unity.Physics.Material.Default;
-                material.Restitution = 0f;
                 var owner = planetState.ValueRO.Ownership;
-                var collider = Unity.Physics.SphereCollider.Create(
-                    new SphereGeometry { Center = float3.zero, Radius = math.max(0.05f, shieldLocal) },
-                    TitanOrbitPhysicsLayers.MoonShieldForOwner(owner),
-                    material);
+                var collider = PlanetGemMoonColliderLogic.CreateMoonShieldSphere(shieldLocal, owner);
 
                 ecb.AddComponent(shieldEntity, new PhysicsCollider { Value = collider });
                 ecb.AddComponent(shieldEntity, PhysicsMass.CreateKinematic(collider.Value.MassProperties));
@@ -201,12 +189,7 @@ namespace TitanOrbit.ECS
                     float planetScale = math.max(0.25f, planetTransform.Scale);
                     float shieldLocal = PlanetGemMoonMath.GetMoonShieldOuterRadiusLocal(
                         planetScale, planetState.IsHomePlanet);
-                    var material = Unity.Physics.Material.Default;
-                    material.Restitution = 0f;
-                    var collider = Unity.Physics.SphereCollider.Create(
-                        new SphereGeometry { Center = float3.zero, Radius = math.max(0.05f, shieldLocal) },
-                        TitanOrbitPhysicsLayers.MoonShieldForOwner(owner),
-                        material);
+                    var collider = PlanetGemMoonColliderLogic.CreateMoonShieldSphere(shieldLocal, owner);
                     ecb.SetComponent(shieldEntity, new PhysicsCollider { Value = collider });
                 }
             }
@@ -317,12 +300,8 @@ namespace TitanOrbit.ECS
                 {
                     float shieldLocal = PlanetGemMoonMath.GetMoonShieldOuterRadiusLocal(
                         planetScale, planetState.IsHomePlanet);
-                    var material = Unity.Physics.Material.Default;
-                    material.Restitution = 0f;
-                    var collider = Unity.Physics.SphereCollider.Create(
-                        new SphereGeometry { Center = float3.zero, Radius = math.max(0.05f, shieldLocal) },
-                        TitanOrbitPhysicsLayers.MoonShieldForOwner(planetState.Ownership),
-                        material);
+                    var collider = PlanetGemMoonColliderLogic.CreateMoonShieldSphere(
+                        shieldLocal, planetState.Ownership);
                     state.EntityManager.SetComponentData(
                         shieldEntity, new PhysicsCollider { Value = collider });
                     ownerState.ValueRW.Owner = planetState.Ownership;

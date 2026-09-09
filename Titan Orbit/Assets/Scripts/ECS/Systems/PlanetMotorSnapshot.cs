@@ -8,7 +8,7 @@ using Unity.Transforms;
 namespace TitanOrbit.ECS
 {
     /// <summary>
-    /// Per-tick planet data for ship motor orbit detection and enemy moon-shield repel.
+    /// Per-tick planet data for ship motor orbit detection and moon dock / takeoff.
     /// Collected once per drive-system update on the main thread, then shared read-only by the
     /// Burst <see cref="ShipPhysicsDriveJob"/> for every ship — never queried per ship inside the job.
     /// </summary>
@@ -17,7 +17,7 @@ namespace TitanOrbit.ECS
         /// <summary>Ownership, level, and planet id for orbit ring membership and team checks.</summary>
         public PlanetState Planet;
 
-        /// <summary>Gem-moon shield and reservoir — used by shield repel when CurrentShield &gt; 0.</summary>
+        /// <summary>Gem-moon shield and reservoir — used by dock / combat snapshots.</summary>
         public PlanetGemMoonState Moon;
 
         /// <summary>World pose at collect time — position and uniform scale (planet size).</summary>
@@ -25,7 +25,7 @@ namespace TitanOrbit.ECS
 
         /// <summary>
         /// Precomputed moon shield outer radius in world units at collect time —
-        /// avoids repeating scale math inside Burst shield repel.
+        /// takeoff exit shell and dock zone share this radius.
         /// </summary>
         public float ShieldOuterRadiusWorld;
 

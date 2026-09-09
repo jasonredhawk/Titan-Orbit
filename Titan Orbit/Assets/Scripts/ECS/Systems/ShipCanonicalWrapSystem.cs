@@ -1,3 +1,4 @@
+using TitanOrbit.Core;
 using TitanOrbit.Generation;
 using TitanOrbit.Simulation;
 using Unity.Collections;
@@ -99,7 +100,8 @@ namespace TitanOrbit.ECS
                         ref lt,
                         physicsCollider.ValueRO,
                         collisionWorld,
-                        shipEntity);
+                        shipEntity,
+                        shipState.ValueRO.Team);
                 }
 
                 transform.ValueRW = lt;
@@ -115,7 +117,8 @@ namespace TitanOrbit.ECS
             ref LocalTransform transform,
             in PhysicsCollider physicsCollider,
             in CollisionWorld collisionWorld,
-            Entity self)
+            Entity self,
+            TeamId team)
         {
             float radius = ShipToroidalWorldCollisionLogic.GetShipCollisionRadiusWorld(
                 physicsCollider, transform.Scale);
@@ -126,7 +129,7 @@ namespace TitanOrbit.ECS
             {
                 Position = transform.Position,
                 MaxDistance = radius,
-                Filter = TitanOrbitPhysicsLayers.Ship,
+                Filter = TitanOrbitPhysicsLayers.ShipForTeam(team),
             };
 
             if (!collisionWorld.CalculateDistance(input, out DistanceHit hit))

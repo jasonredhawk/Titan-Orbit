@@ -20,7 +20,7 @@ namespace TitanOrbit.ECS
     /// Unity Physics then integrates position and resolves hull contacts.
     /// [TITAN-ORBIT] Also detects planet orbit rings (toroidal distance), blends passive orbit
     /// velocity when coasting, writes <see cref="ShipOrbitState"/> for people-transport dwell /
-    /// HUD, applies enemy moon shield repel, latches friendly-triangle speed
+    /// HUD, latches friendly-triangle speed
     /// (<c>1 + 0.05 × homePlanetLevel</c> — not a ship MovementSpeed attribute) via
     /// <see cref="ShipTerritoryBoostLatch"/>, and OVERDRIVE via ghosted
     /// <see cref="ShipState.OverdriveLockout"/> (<see cref="ShipOverdriveTuning.StepLockout"/>):
@@ -54,6 +54,13 @@ namespace TitanOrbit.ECS
         const float MoonApproachCoOrbitResponsiveness = 5f;
 
         /// <summary>
+        /// Extra gap so attach sits outside the PhysX covering hull (matches
+        /// <c>PhysicsStep.CollisionTolerance</c>). Without this the pad embeds the box in the
+        /// moon and the solver shoves ~0.5 each tick (landed poseD 0.43–0.66).
+        /// </summary>
+        const float MoonAttachColliderClearance = 0.15f;
+
+        /// <summary>
         /// Applies player input before <see cref="Unity.Physics.Systems.PhysicsSystemGroup"/>.
         /// Starts from the previous physics step's linear velocity so ship↔ship and asteroid
         /// bounces carry forward; thrust is added on top (GameObject AddForce style).
@@ -80,8 +87,8 @@ namespace TitanOrbit.ECS
         /// <param name="mapW">Toroidal map width.</param>
         /// <param name="mapH">Toroidal map height.</param>
         /// <param name="elapsedSeconds">
-        /// Shared moon orbit clock (<c>PlanetGemMoonOrbitClock</c> / ServerTick seconds) for shield repel
-        /// phase and territory sticky expiry.
+        /// Shared moon orbit clock (<c>PlanetGemMoonOrbitClock</c> / ServerTick seconds) for moon
+        /// dock attach / takeoff phase and territory sticky expiry.
         /// </param>
         /// <param name="territoryTriangles">Baked planet-center triangles for friendly speed boost; may be empty.</param>
         /// <param name="homeLevelByTeam">Home planet level indexed by <c>TeamId</c> byte (length ≥ 6).</param>
@@ -127,7 +134,8 @@ namespace TitanOrbit.ECS
             float minAccel,
             float minTurn,
             bool skipMassTax = false,
-            bool isMegaShip = false)
+            bool isMegaShip = false,
+            float shipPhysicsRadius = -1f)
         {
             // --- Guard: fixed-step dt only ---
             if (dt <= 0f)
@@ -164,6 +172,7 @@ namespace TitanOrbit.ECS
                 }
 
                 float takeoffSpeed = math.max(8f, motor.MaxSpeed);
+                float takeoffHull = ResolveMoonAttachHullRadius(shipPhysicsRadius, transform);
                 if (ShipMoonTakeoffLogic.TryApply(
                         ref moonDock,
                         ref transform,
@@ -174,7 +183,8 @@ namespace TitanOrbit.ECS
                         mapH,
                         elapsedSeconds,
                         takeoffSpeed,
-                        isMegaShip))
+                        isMegaShip,
+                        takeoffHull))
                 {
                     physicsDamping = default;
                     orbitState = default;
@@ -203,7 +213,8 @@ namespace TitanOrbit.ECS
                     in planets,
                     mapW,
                     mapH,
-                    elapsedSeconds);
+                    elapsedSeconds,
+                    ResolveMoonAttachHullRadius(shipPhysicsRadius, transform));
                 physicsDamping = default;
                 orbitState = default;
                 ClearTerritoryBoostLatch(ref territoryLatch);
@@ -446,6 +457,7 @@ namespace TitanOrbit.ECS
             }
 
             // Moon shield is a kinematic PhysX sphere (PlanetGemMoonShieldColliderTag).
+            // Friendly ships omit that layer + GroupIndex; enemy bounce is AfterPhysics.
 
             // --- Asteroid contact: reject inward motor velocity (no position shove) ---
             // [TITAN-ORBIT] Continuous thrust into a rock used to fight PhysX and slowly dig the
@@ -824,7 +836,8 @@ namespace TitanOrbit.ECS
             in NativeArray<PlanetMotorSnapshot> planets,
             float mapW,
             float mapH,
-            double elapsedSeconds)
+            double elapsedSeconds,
+            float shipPhysicsRadius = -1f)
         {
             // --- Resolve docked moon ---
             if (!TryFindPlanetById(moonPlanetId, in planets, out PlanetMotorSnapshot snapshot))
@@ -841,7 +854,8 @@ namespace TitanOrbit.ECS
                 in snapshot,
                 mapW,
                 mapH,
-                elapsedSeconds);
+                elapsedSeconds,
+                shipPhysicsRadius);
         }
 
         /// <summary>
@@ -855,7 +869,8 @@ namespace TitanOrbit.ECS
             in PlanetMotorSnapshot snapshot,
             float mapW,
             float mapH,
-            double elapsedSeconds)
+            double elapsedSeconds,
+            float shipPhysicsRadius = -1f)
         {
             if (moonPlanetId == 0 || snapshot.Planet.PlanetId != moonPlanetId)
             {
@@ -891,8 +906,10 @@ namespace TitanOrbit.ECS
             // [TITAN-ORBIT] Flight is planar (Y = 0). Do not preserve Position.y — the kinematic
             // moon hull can push the ship upward during Physics; locking that Y made undock leave
             // the hull flying above asteroids.
-            float shipRadius = BodyCollisionMath.GetShipHullRadiusWorld(transform.Scale);
-            float contactRadius = math.max(0.05f, snapshot.MoonBodyRadiusWorld + shipRadius);
+            float shipRadius = ResolveMoonAttachHullRadius(shipPhysicsRadius, transform);
+            float contactRadius = math.max(
+                0.05f,
+                snapshot.MoonBodyRadiusWorld + shipRadius + MoonAttachColliderClearance);
             float3 attachPos = moonPos + offset * contactRadius;
             attachPos.y = 0f;
             transform.Position = attachPos;
@@ -981,6 +998,31 @@ namespace TitanOrbit.ECS
                 forward = math.normalize(forward);
 
             aimWorldXz = shipPos.xz + forward.xz * 100f;
+        }
+
+        /// <summary>
+        /// XZ radius of the live PhysX covering hull, or the presentation-sphere fallback.
+        /// Landed attach used the fallback alone and seated the box inside the moon.
+        /// </summary>
+        public static float ResolveMoonAttachHullRadius(float physicsRadiusOrSentinel, in LocalTransform transform)
+        {
+            float fallback = BodyCollisionMath.GetShipHullRadiusWorld(transform.Scale);
+            if (physicsRadiusOrSentinel > fallback)
+                return physicsRadiusOrSentinel;
+            return fallback;
+        }
+
+        /// <summary>World XZ half-extent of the ship PhysX collider (covering box or sphere).</summary>
+        public static float MeasurePhysicsHullRadiusXZ(in PhysicsCollider collider, in LocalTransform transform)
+        {
+            float fallback = BodyCollisionMath.GetShipHullRadiusWorld(transform.Scale);
+            if (!collider.Value.IsCreated)
+                return fallback;
+
+            Aabb aabb = collider.Value.Value.CalculateAabb(
+                new RigidTransform(transform.Rotation, transform.Position));
+            float2 he = (aabb.Max.xz - aabb.Min.xz) * 0.5f;
+            return math.max(fallback, math.max(he.x, he.y));
         }
     }
 }

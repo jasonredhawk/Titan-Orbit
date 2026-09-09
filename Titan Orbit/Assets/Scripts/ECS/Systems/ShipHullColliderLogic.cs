@@ -232,16 +232,15 @@ namespace TitanOrbit.ECS
             if (em.HasComponent<PhysicsCollider>(shipEntity))
             {
                 var existing = em.GetComponentData<PhysicsCollider>(shipEntity);
-                if (existing.Value.IsCreated && CoveringMatches(existing, localCenter, localExtents))
-                {
-                    if (TitanOrbitPhysicsLayers.FiltersEqual(
-                            existing.Value.Value.GetCollisionFilter(), wantFilter))
-                        return true;
-
-                    // Team-only: rewrite filter in place. Do not rebuild the blob.
-                    existing.Value.Value.SetCollisionFilter(wantFilter);
+                if (existing.Value.IsCreated
+                    && CoveringMatches(existing, localCenter, localExtents)
+                    && TitanOrbitPhysicsLayers.FiltersEqual(
+                        existing.Value.Value.GetCollisionFilter(), wantFilter))
                     return true;
-                }
+
+                // Team or geometry change: replace the blob. In-place SetCollisionFilter
+                // plus SynchronizeCollisionWorld = 0 left a stale solver pair that still
+                // depen'd friendlies out of the concentric moon-shield sphere.
             }
 
             float mass = motorMass;

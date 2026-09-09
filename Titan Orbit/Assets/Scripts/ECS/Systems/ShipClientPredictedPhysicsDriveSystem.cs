@@ -6,6 +6,7 @@ using Unity.Collections;
 using Unity.Entities;
 using Unity.Mathematics;
 using Unity.NetCode;
+using Unity.Physics;
 using Unity.Transforms;
 
 namespace TitanOrbit.ECS
@@ -78,7 +79,7 @@ namespace TitanOrbit.ECS
                     ? PlanetMotorSnapshotCollection.CollectFromClientRegistry(ref state, Allocator.TempJob)
                     : PlanetMotorSnapshotCollection.Collect(ref state, Allocator.TempJob);
 
-            // --- Moon orbit clock for predicted shield repel + territory moon vertices ---
+            // --- Moon orbit clock for predicted dock attach / takeoff + territory moon vertices ---
             // [TITAN-ORBIT] Must match server / collider sync — World.ElapsedTime diverges on late-join.
             int hz = 0;
             if (SystemAPI.TryGetSingleton<ClientServerTickRate>(out var tickRate))
@@ -148,6 +149,7 @@ namespace TitanOrbit.ECS
                 MinSpeed = mobility.minSpeed,
                 MinAccel = mobility.minAccel,
                 MinTurn = mobility.minTurn,
+                PhysicsColliders = SystemAPI.GetComponentLookup<PhysicsCollider>(true),
             };
             state.Dependency = job.ScheduleParallel(state.Dependency);
             state.Dependency = planets.Dispose(state.Dependency);

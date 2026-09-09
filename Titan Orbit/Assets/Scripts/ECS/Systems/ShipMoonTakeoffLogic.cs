@@ -55,7 +55,8 @@ namespace TitanOrbit.ECS
             float mapH,
             double elapsedSeconds,
             float takeoffSpeed,
-            bool isMegaShip)
+            bool isMegaShip,
+            float shipPhysicsRadius = -1f)
         {
             int planetId = moonDock.TakeoffPlanetId;
             if (planetId == 0)
@@ -95,7 +96,8 @@ namespace TitanOrbit.ECS
             else
                 outward /= outwardLen;
 
-            float shipRadius = BodyCollisionMath.GetShipHullRadiusWorld(transform.Scale);
+            float shipRadius = ShipPhysicsDriveLogic.ResolveMoonAttachHullRadius(
+                shipPhysicsRadius, transform);
             float exitPad = GemEconomyConstants.MoonTakeoffExitPadWorld;
             if (isMegaShip)
                 exitPad += shipRadius;

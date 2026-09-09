@@ -26,7 +26,7 @@ namespace TitanOrbit.ECS
         /// <summary>Fixed delta time for this prediction step.</summary>
         public float Dt;
 
-        /// <summary>Elapsed simulation seconds — moon orbit phase and shield repel timing.</summary>
+        /// <summary>Elapsed simulation seconds — moon orbit phase and dock attach / takeoff.</summary>
         public double Elapsed;
 
         /// <summary>Toroidal map width from <see cref="MapStateSingleton"/>.</summary>
@@ -55,6 +55,8 @@ namespace TitanOrbit.ECS
         public float MinAccel;
         public float MinTurn;
 
+        [ReadOnly] public ComponentLookup<PhysicsCollider> PhysicsColliders;
+
         /// <summary>
         /// Per-ship motor tick. Writes velocity, yaw, <see cref="ShipOrbitState"/>,
         /// <see cref="ShipTerritoryBoostLatch"/>, <see cref="ShipMoonDockState"/> takeoff
@@ -75,7 +77,8 @@ namespace TitanOrbit.ECS
             RefRW<ShipTerritoryBoostLatch> territoryLatch,
             RefRO<ShipAsteroidContactState> asteroidContact,
             RefRO<ShipElectricShockState> electricShock,
-            RefRO<MegaShipState> megaState)
+            RefRO<MegaShipState> megaState,
+            Entity entity)
         {
             // --- Stowed in planetary defense turret: freeze hull (server + predicted client) ---
             // [TITAN-ORBIT] Aim/Fire still flow through ShipInput for the pad; thrust = exit on server.
@@ -122,7 +125,11 @@ namespace TitanOrbit.ECS
                 MinAccel,
                 MinTurn,
                 skipMassTax: motor.ValueRO.SkipMassTax != 0,
-                isMegaShip: megaState.ValueRO.IsMega);
+                isMegaShip: megaState.ValueRO.IsMega,
+                shipPhysicsRadius: PhysicsColliders.HasComponent(entity)
+                    ? ShipPhysicsDriveLogic.MeasurePhysicsHullRadiusXZ(
+                        PhysicsColliders[entity], transform.ValueRO)
+                    : -1f);
         }
     }
 }

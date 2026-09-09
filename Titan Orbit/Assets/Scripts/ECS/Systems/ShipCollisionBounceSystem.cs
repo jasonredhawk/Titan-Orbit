@@ -1,4 +1,6 @@
+using TitanOrbit.Core;
 using TitanOrbit.Data;
+using TitanOrbit.Generation;
 using TitanOrbit.Simulation;
 using Unity.Collections;
 using Unity.Entities;
@@ -18,8 +20,11 @@ namespace TitanOrbit.ECS
     /// no <see cref="PhysicsVelocity"/> — moving wall from ghosted <see cref="ShipKinematics"/>
     /// at the same <c>e</c>. PhysX materials stay restitution 0 so this pass owns rebound.
     /// MEGA hulls plow asteroids / planets (restore pre-collision motion). Moon, shield,
-    /// planet, and asteroid share one wall bounce. Dock / takeoff skip only while fully
-    /// landed or taking off — flying into the moon is a normal bounce.
+    /// planet, and asteroid share one wall bounce. Friendly shields are off via
+    /// <see cref="TitanOrbitPhysicsLayers.ShipForTeam"/>. Flying ships that PhysX
+    /// exports from the moon rock onto the concentric shield rim get snapshot pose
+    /// restore (same idea as MEGA planet undo). Dock / takeoff skip only while
+    /// fully landed or taking off — flying into the moon is a normal bounce.
     /// Server ram damage + client soft-destroy happen elsewhere.
     /// <para>
     /// Runs on ServerSimulation and ClientSimulation (predicted). Collision-event stream only —
@@ -89,20 +94,27 @@ namespace TitanOrbit.ECS
             settings.ClampValues();
             float restitution = settings.BounceRestitution;
 
-            if (!SystemAPI.TryGetSingletonBuffer<ShipPhysicsContactElement>(out var pairs) ||
-                pairs.Length == 0)
+            // Empty contact queue still runs friendly-shield rim undo — the yeet is the
+            // physics tick after moon-rock contact, which often has no kind-3 event.
+            if (!SystemAPI.TryGetSingletonBuffer<ShipPhysicsContactElement>(out var pairs))
+            {
+                UndoFriendlyMoonShieldRimSnaps(ref state, fixedDt);
                 return;
+            }
 
             // --- Lookups for impulse resolve ---
             var snapshotLookup = SystemAPI.GetComponentLookup<ShipPreCollisionVelocity>(true);
             var motorLookup = SystemAPI.GetComponentLookup<ShipMotorConfig>(true);
             var shipStateLookup = SystemAPI.GetComponentLookup<ShipState>(true);
             var moonDockLookup = SystemAPI.GetComponentLookup<ShipMoonDockState>(true);
+            var shieldPlanetLookup = SystemAPI.GetComponentLookup<PlanetGemMoonColliderPlanetRef>(true);
+            var planetStateLookup = SystemAPI.GetComponentLookup<PlanetState>(true);
             var megaLookup = SystemAPI.GetComponentLookup<MegaShipState>(true);
             var asteroidStateLookup = SystemAPI.GetComponentLookup<AsteroidState>(true);
             var culledLookup = SystemAPI.GetComponentLookup<AsteroidClientCulledTag>(true);
             var velocityLookup = SystemAPI.GetComponentLookup<PhysicsVelocity>(false);
             var kinematicsLookup = SystemAPI.GetComponentLookup<ShipKinematics>(true);
+            var transformLookup = SystemAPI.GetComponentLookup<LocalTransform>(false);
             bool isClient = state.World.IsClient();
 
             // Working velocities start from the pre-collision snapshot so multiple contacts
@@ -167,10 +179,15 @@ namespace TitanOrbit.ECS
                 else if (pair.Kind == ShipPhysicsContactKind.Moon
                          || pair.Kind == ShipPhysicsContactKind.Shield)
                 {
-                    if (ShouldSkipMoonWorldBounce(pair.Ship, moonDockLookup))
-                        continue;
-
-                    ApplyWorldWallBounce(pair, ref _working, snapshotLookup, restitution);
+                    bool skipMoon = ShouldSkipMoonWorldBounce(pair.Ship, moonDockLookup)
+                                    || (pair.Kind == ShipPhysicsContactKind.Shield
+                                        && ShouldSkipFriendlyShieldBounce(
+                                            pair, shipStateLookup, shieldPlanetLookup,
+                                            planetStateLookup));
+                    if (!skipMoon)
+                    {
+                        ApplyWorldWallBounce(pair, ref _working, snapshotLookup, restitution);
+                    }
                 }
             }
 
@@ -191,7 +208,6 @@ namespace TitanOrbit.ECS
             // stops the visible snap; velocity restore alone is not enough.
             if (_megaUnconstrained.Count > 0)
             {
-                var transformLookup = SystemAPI.GetComponentLookup<LocalTransform>(false);
                 foreach (Entity ship in _megaUnconstrained)
                 {
                     if (_megaKeepPhysX.Contains(ship))
@@ -207,6 +223,11 @@ namespace TitanOrbit.ECS
                     transformLookup[ship] = lt;
                 }
             }
+
+            // Flying friendly ships: PhysX can export a 4-unit snap from the moon rock
+            // onto the concentric shield / orbit-zone rim. Restore unconstrained pose;
+            // bounced velocity already written above stays.
+            UndoFriendlyMoonShieldRimSnaps(ref state, fixedDt);
 
             // Client predicts the rock vanishing so the next physics step cannot pin the MEGA
             // while HitRpc is still in flight. Server authority + self-damage stay in ramming.
@@ -280,6 +301,157 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
+        /// Pose jump that is a PhysX export, not a velocity integrate, at cruise.
+        /// Session 8b4ec2 yeet was ~4 units vs ~0.09 expected.
+        /// </summary>
+        const float FriendlyShieldRimJumpMin = 1.5f;
+
+        /// <summary>Slack so a hull sitting on the rock still counts as "near rock."</summary>
+        const float FriendlyShieldRimRockSlack = 1.3f;
+
+        /// <summary>How close to shield+hull the live pose must be to count as a rim snap.</summary>
+        const float FriendlyShieldRimSurfaceSlack = 0.5f;
+
+        /// <summary>
+        /// AfterPhysics: if a flying ship was sitting on a friendly moon rock before
+        /// physics and is now on the shield / dock-zone rim, write back snapshot pose.
+        /// Landed attach and takeoff own those poses and are skipped.
+        /// mapW/mapH from <see cref="ToroidalMapEcs"/> / <c>MapStateSingleton</c>.
+        /// </summary>
+        void UndoFriendlyMoonShieldRimSnaps(ref SystemState state, float fixedDt)
+        {
+            if (!ToroidalMapEcs.TryGetMapSize(out float mapW, out float mapH))
+                return;
+
+            int hz = 0;
+            if (SystemAPI.TryGetSingleton<ClientServerTickRate>(out var tickRate))
+                hz = tickRate.SimulationTickRate;
+            double elapsed = SystemAPI.TryGetSingleton<NetworkTime>(out var networkTime)
+                ? PlanetGemMoonOrbitClock.GetElapsedSeconds(networkTime, hz, includeTickFraction: false)
+                : state.World.Time.ElapsedTime;
+
+            var moons = new NativeList<FriendlyMoonRim>(8, state.WorldUpdateAllocator);
+            foreach (var (planetState, planetTransform, moon) in SystemAPI
+                         .Query<RefRO<PlanetState>, RefRO<LocalTransform>, RefRO<PlanetGemMoonState>>()
+                         .WithAll<PlanetTag>())
+            {
+                if (moon.ValueRO.CurrentShield <= 0.001f)
+                    continue;
+                if (planetState.ValueRO.Ownership == TeamId.None)
+                    continue;
+
+                float planetSize = math.max(0.25f, planetTransform.ValueRO.Scale);
+                bool home = planetState.ValueRO.IsHomePlanet;
+                moons.Add(new FriendlyMoonRim
+                {
+                    Owner = planetState.ValueRO.Ownership,
+                    PlanetPos = planetTransform.ValueRO.Position,
+                    PlanetSize = planetSize,
+                    PlanetLevel = planetState.ValueRO.PlanetLevel,
+                    PlanetId = planetState.ValueRO.PlanetId,
+                    BodyRadius = PlanetGemMoonMath.GetMoonBodyRadiusWorld(planetSize, home),
+                    ShieldRadius = PlanetGemMoonMath.GetMoonShieldOuterRadiusWorld(planetSize, home),
+                });
+            }
+
+            if (moons.Length == 0)
+                return;
+
+            foreach (var (transform, snapshot, shipState, moonDock, physicsCollider) in SystemAPI
+                         .Query<RefRW<LocalTransform>, RefRO<ShipPreCollisionVelocity>,
+                             RefRO<ShipState>, RefRO<ShipMoonDockState>, RefRO<PhysicsCollider>>()
+                         .WithAll<ShipTag, Simulate>())
+            {
+                if (shipState.ValueRO.IsDead || shipState.ValueRO.AwaitingTeamSelection)
+                    continue;
+                if (moonDock.ValueRO.IsTakingOff || moonDock.ValueRO.IsFullyLanded)
+                    continue;
+
+                TeamId team = shipState.ValueRO.Team;
+                if (team == TeamId.None)
+                    continue;
+
+                float3 live = transform.ValueRO.Position;
+                float3 snapPos = snapshot.ValueRO.Position;
+                float jump = math.length(new float2(live.x - snapPos.x, live.z - snapPos.z));
+                if (jump < FriendlyShieldRimJumpMin)
+                    continue;
+
+                float hullR = physicsCollider.ValueRO.Value.IsCreated
+                    ? ShipToroidalWorldCollisionLogic.GetShipCollisionRadiusWorld(
+                        physicsCollider.ValueRO, transform.ValueRO.Scale)
+                    : 0.7f;
+
+                if (!IsFriendlyMoonRockToShieldRimSnap(
+                        live, snapPos, team, hullR, mapW, mapH, elapsed, moons))
+                    continue;
+
+                float3 pos = snapPos + snapshot.ValueRO.Linear * fixedDt;
+                pos.y = 0f;
+                var lt = transform.ValueRO;
+                lt.Position = pos;
+                transform.ValueRW = lt;
+            }
+        }
+
+        /// <summary>
+        /// True when snapshot was near the friendly moon rock and live pose is on the
+        /// shield / visual-shell rim (the orbit-zone push-out).
+        /// </summary>
+        static bool IsFriendlyMoonRockToShieldRimSnap(
+            float3 livePos,
+            float3 snapPos,
+            TeamId team,
+            float hullR,
+            float mapW,
+            float mapH,
+            double elapsed,
+            in NativeList<FriendlyMoonRim> moons)
+        {
+            for (int i = 0; i < moons.Length; i++)
+            {
+                FriendlyMoonRim moon = moons[i];
+                if (!PlanetGemMoonCombatLogic.IsTeamFriendlyToMoon(moon.Owner, team))
+                    continue;
+
+                float3 moonPos = PlanetOrbitMath.GetMoonWorldPositionNear(
+                    livePos,
+                    moon.PlanetPos,
+                    moon.PlanetSize,
+                    moon.PlanetLevel,
+                    moon.PlanetId,
+                    elapsed,
+                    mapW,
+                    mapH);
+
+                float snapDist = ToroidalMapEcs.ToroidalDistance(snapPos, moonPos, mapW, mapH);
+                float liveDist = ToroidalMapEcs.ToroidalDistance(livePos, moonPos, mapW, mapH);
+                float rockContact = moon.BodyRadius + hullR + FriendlyShieldRimRockSlack;
+                float rimContact = moon.ShieldRadius + hullR;
+                if (snapDist > rockContact)
+                    continue;
+                if (liveDist + FriendlyShieldRimSurfaceSlack < rimContact)
+                    continue;
+                if (liveDist <= snapDist + FriendlyShieldRimJumpMin)
+                    continue;
+                return true;
+            }
+
+            return false;
+        }
+
+        struct FriendlyMoonRim
+        {
+            public TeamId Owner;
+            public float3 PlanetPos;
+            public float PlanetSize;
+            public int PlanetLevel;
+            public int PlanetId;
+            public float BodyRadius;
+            public float ShieldRadius;
+        }
+
+        /// <summary>
         /// Landed pad and takeoff own the hull. Bounce must not fight attach or the
         /// outward takeoff that exits the moon orbit zone.
         /// </summary>
@@ -289,6 +461,25 @@ namespace TitanOrbit.ECS
                 return false;
             var dock = moonDock[ship];
             return dock.IsTakingOff || dock.IsFullyLanded;
+        }
+
+        /// <summary>
+        /// Friendly shields are pass-through. A leftover kind-4 event must not bounce
+        /// the hull (pair-disable is the solver gate; this is the gameplay backup).
+        /// </summary>
+        static bool ShouldSkipFriendlyShieldBounce(
+            in ShipPhysicsContactElement pair,
+            ComponentLookup<ShipState> ships,
+            ComponentLookup<PlanetGemMoonColliderPlanetRef> shieldPlanets,
+            ComponentLookup<PlanetState> planets)
+        {
+            if (!ships.HasComponent(pair.Ship) || !shieldPlanets.HasComponent(pair.Other))
+                return false;
+            Entity planet = shieldPlanets[pair.Other].PlanetEntity;
+            if (!planets.HasComponent(planet))
+                return false;
+            return PlanetGemMoonCombatLogic.IsTeamFriendlyToMoon(
+                planets[planet].Ownership, ships[pair.Ship].Team);
         }
 
         /// <summary>
