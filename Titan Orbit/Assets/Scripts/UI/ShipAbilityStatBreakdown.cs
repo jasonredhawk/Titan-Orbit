@@ -1028,9 +1028,13 @@ namespace TitanOrbit.UI
                 .Append("  hull ").Append(FResult(live.RamSelfDamage)).AppendLine();
         }
 
-        /// <summary>Static mass-tax drag on turn (from the last chip/tip snapshot).</summary>
+        /// <summary>
+        /// Static mass-tax drag on turn (from the last chip/tip snapshot).
+        /// Uses the same ×10 definition→°/s scale as drive so the line matches the chip.
+        /// </summary>
         static void AppendTurnMassTax(StringBuilder sb, in ShipSpeedometerStatTooltips.LiveContext live)
         {
+            // --- MEGA: no cargo tax on yaw ---
             if (live.Motor.SkipMassTax != 0)
             {
                 ShipStatTooltipChrome.AppendSectionBanner(sb, "MASS TAX", HexMass);
@@ -1042,7 +1046,10 @@ namespace TitanOrbit.UI
             ShipCargoMobilitySettings settings = ShipCargoMobilitySettingsCache.ResolveOrDefault();
             if (settings == null)
                 return;
-            float drag = live.TotalMass * settings.turnWeightPerMass;
+
+            // [TITAN-ORBIT] turnWeight is definition units; drag must be °/s like the chip.
+            float drag = ShipMobilityResolution.ComputeTurnDragDegreesPerSecond(
+                live.TotalMass, settings.turnWeightPerMass);
             ShipStatTooltipChrome.AppendSectionBanner(sb, "MASS TAX", HexMass);
             AppendTint(sb, HexMass, "Mass turn drag  -" + FDetail(drag) + "/s");
             sb.AppendLine();

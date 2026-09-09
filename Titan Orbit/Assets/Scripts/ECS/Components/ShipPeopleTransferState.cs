@@ -34,7 +34,7 @@ namespace TitanOrbit.ECS
 
         /// <summary>
         /// Fractional accumulator toward the next unload batch.
-        /// Ideal batch size is <c>shipLevel × planetLevel</c> — one packed transport sphere.
+        /// Ideal batch size is ship level only (planet level does not multiply).
         /// </summary>
         public float UnloadAccumulator;
     }

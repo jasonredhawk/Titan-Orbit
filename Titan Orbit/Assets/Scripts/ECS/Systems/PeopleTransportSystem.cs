@@ -60,7 +60,8 @@ namespace TitanOrbit.ECS
     /// PeopleTransportGhost — that flooded Windows GhostSpawn and kicked clients to the main menu.
     /// <para>
     /// [TITAN-ORBIT] One batch = one transport sphere carrying <c>Amount</c> people (scaled up).
-    /// Load and unload batch = <c>shipLevel × planetLevel</c> (L6 ship at L3 planet → one +18).
+    /// Load batch = <c>shipLevel × planetLevel</c> (L6 ship at L3 planet → one +18).
+    /// Unload batch = ship level only (L6 → one +6) — planet level does not multiply.
     /// Packing into a single sphere cuts spawn/pose RPC traffic and client Instantiates vs N
     /// separate +1 flights.
     /// </para>
@@ -79,7 +80,7 @@ namespace TitanOrbit.ECS
     {
         /// <summary>
         /// Each frame: dwell timers → load/unload chunks → CreateEntity transports + VFX RPC.
-        /// Load and unload chunk = <c>shipLevel × planetLevel</c>.
+        /// Load chunk = <c>shipLevel × planetLevel</c>; unload chunk = ship level only.
         /// </summary>
         public void OnUpdate(ref SystemState state)
         {
@@ -189,12 +190,12 @@ namespace TitanOrbit.ECS
                 int halfCap = math.max(1, maxPop / 2);
 
                 // --- Load vs unload batch sizes (people/sec + people per packed sphere) ---
-                // [TITAN-ORBIT] Both = ship × planet. L6 ship at L3 planet → one +18 transport.
+                // [TITAN-ORBIT] Load = ship × planet (L6 at L3 → +18). Unload = ship only (L6 → +6).
                 // Live PlanetLevel / ShipLevel every tick — leveling mid-orbit must change chunk size.
                 int shipLevel = math.max(1, shipState.ValueRO.ShipLevel);
                 int planetLevel = math.max(1, planetState.PlanetLevel);
                 float loadChunk = PeopleTransportMath.GetTransferChunk(shipLevel, planetLevel);
-                float unloadChunk = loadChunk;
+                float unloadChunk = PeopleTransportMath.GetUnloadChunk(shipLevel);
                 float transferMul = CardEffectQuery.GetMul(state.EntityManager, shipEntity, CardEffectKind.PeopleTransferSpeedMul);
                 float unloadAdd = CardEffectQuery.GetValue(state.EntityManager, shipEntity, CardEffectKind.PeopleUnloadChunkAdd);
                 unloadChunk = math.max(1f, unloadChunk + unloadAdd);
@@ -416,7 +417,7 @@ namespace TitanOrbit.ECS
         /// Floating −Amount is shown by client VFX at spawn.
         /// </summary>
         /// <param name="amount">People packed into this single sphere (ideal size
-        /// <c>shipLevel × planetLevel</c>).</param>
+        /// is ship level only; caller may pass a smaller partial).</param>
         static bool TryDispatchUnload(
             ref EntityCommandBuffer ecb,
             ref ShipState ship,

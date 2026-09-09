@@ -97,10 +97,13 @@ namespace TitanOrbit.ECS
         /// <param name="massPerComponentSize">ComponentSize (HullMassReference) → totalMass.</param>
         /// <param name="speedWeightPerMass">Subtract from MaxSpeed per unit totalMass.</param>
         /// <param name="accelWeightPerMass">Subtract from accel per unit totalMass.</param>
-        /// <param name="turnWeightPerMass">Subtract from turn °/s per unit totalMass.</param>
+        /// <param name="turnWeightPerMass">
+        /// Designer turn weight in definition units. <see cref="ShipMobilityResolution"/> scales it
+        /// ×10 to °/s so it matches motor RotationSpeed.
+        /// </param>
         /// <param name="minSpeed">Floor after subtractive MaxSpeed tax.</param>
         /// <param name="minAccel">Floor after subtractive accel tax.</param>
-        /// <param name="minTurn">Floor after subtractive turn tax.</param>
+        /// <param name="minTurn">Floor after subtractive turn tax (definition units; scaled ×10 to °/s).</param>
         /// <param name="skipMassTax">True for MEGA hulls — keep chassis speed / accel / turn.</param>
         /// <param name="isMegaShip">
         /// True while <see cref="MegaShipState.IsMega"/>. Disables overdrive and treats
@@ -261,6 +264,8 @@ namespace TitanOrbit.ECS
                     massPerGem,
                     massPerPerson,
                     massPerComponentSize);
+                // [TITAN-ORBIT] RotationSpeed is already °/s; turnWeight / minTurn are definition
+                // units. ApplyMassTaxBurst multiplies those by 10 so yaw tax matches Speed/Accel ratio.
                 taxed = ShipMobilityResolution.ApplyMassTaxBurst(
                     motor.MaxSpeed,
                     motor.EngineThrust,

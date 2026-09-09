@@ -47,8 +47,9 @@ namespace TitanOrbit.Simulation
         public const float PeopleAmountScaleMax = 36f;
         public const float VisualScaleMinMultiplier = 0.9f;
         /// <summary>
-        /// Max scale at <see cref="PeopleAmountScaleMax"/>. Packed batches are
-        /// <c>shipLevel × planetLevel</c> (L6×L3 = +18, L6×L6 = +36).
+        /// Max scale at <see cref="PeopleAmountScaleMax"/>. Load batches are
+        /// <c>shipLevel × planetLevel</c> (L6×L3 = +18, L6×L6 = +36). Unload
+        /// batches are ship level only (L6 = +6).
         /// </summary>
         public const float VisualScaleMaxMultiplier = 2.7f;
 
@@ -85,9 +86,9 @@ namespace TitanOrbit.Simulation
         }
 
         /// <summary>
-        /// People packed into one load or unload sphere: <c>shipLevel × planetLevel</c>
+        /// People packed into one load sphere: <c>shipLevel × planetLevel</c>
         /// (L6 ship at L3 planet → 18). Callers may still send a smaller partial when
-        /// surplus, cargo space, or remaining crew is tight.
+        /// surplus or cargo space is tight. Unload uses <see cref="GetUnloadChunk"/>.
         /// </summary>
         public static int GetTransferChunk(int shipLevel, int planetLevel)
         {
@@ -95,10 +96,22 @@ namespace TitanOrbit.Simulation
         }
 
         /// <summary>
+        /// People packed into one unload sphere: ship level only (L6 → 6).
+        /// Planet level does not multiply — unloading a high-level world is not faster
+        /// than unloading a low-level one. Callers may still send a smaller partial
+        /// when remaining crew or planet room is tight.
+        /// </summary>
+        public static int GetUnloadChunk(int shipLevel)
+        {
+            return math.max(1, shipLevel);
+        }
+
+        /// <summary>
         /// Multiplier on the prefab's authored localScale from carried people amount.
-        /// Dispatch packs each load/unload batch into one sphere: Amount =
-        /// <c>shipLevel × planetLevel</c>. Higher Amount → larger visual
-        /// (e.g. +1 ≈ 0.9×, +18 ≈ 1.7×, +36 ≈ 2.7× on the prefab's 0.25 base scale).
+        /// Dispatch packs each batch into one sphere. Load Amount =
+        /// <c>shipLevel × planetLevel</c>; unload Amount = ship level. Higher Amount
+        /// → larger visual (e.g. +1 ≈ 0.9×, +18 ≈ 1.7×, +36 ≈ 2.7× on the prefab's
+        /// 0.25 base scale).
         /// </summary>
         public static float GetVisualScaleMultiplier(float peopleAmount)
         {

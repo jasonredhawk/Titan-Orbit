@@ -45,6 +45,8 @@ namespace TitanOrbit.Data
         /// <summary>
         /// Family-authored <see cref="ShipComponentAbilityStats.turnSpeed"/> uses small definition units;
         /// multiply by this at runtime only (rotation/banking), not in power-score UI.
+        /// <see cref="ShipMobilityResolution"/> scales turn mass tax by the same factor so cargo
+        /// bite stays in ratio with Speed/Accel (those stats are never ×10).
         /// </summary>
         public const float TurnDefinitionToDegreesPerSecond = 10f;
 

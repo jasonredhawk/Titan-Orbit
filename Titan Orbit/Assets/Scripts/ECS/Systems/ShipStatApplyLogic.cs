@@ -522,6 +522,8 @@ namespace TitanOrbit.ECS
                 // [TITAN-ORBIT] No ×10 EngineThrustVisibility — EngineThrust stores acceleration.
                 // No bake-time capacity tax — collecting gems/people updates Speed/Accel/Turn live.
                 float moveVal = Mathf.Max(0.1f, effective.moveSpeed);
+                // [TITAN-ORBIT] Definition turnSpeed × 10 → °/s. Mass tax scales by the same 10 in
+                // ShipMobilityResolution so cargo ratio matches Speed/Accel (those are never ×10).
                 float turnVal = ShipPropulsionAggregation.ConvertTurnDefinitionToDegreesPerSecond(effective.turnSpeed);
                 float accel = Mathf.Max(0.1f, effective.accelerationCap > 0f
                     ? effective.accelerationCap
