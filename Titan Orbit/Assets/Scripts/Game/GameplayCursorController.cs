@@ -4,21 +4,23 @@ using TitanOrbit.Input;
 using TitanOrbit.NetCode;
 using TitanOrbit.Shared;
 using UnityEngine;
+using UnityEngine.InputSystem;
+using UnityEngine.UI;
 
 namespace TitanOrbit.Game
 {
     /// <summary>
-    /// Client-only OS mouse pointer swap for combat. Replaces the default arrow with one of
-    /// three aim reticles: a general crosshair, a MEGA-ship reticle, or a tighter Shift
-    /// manual-aim reticle. Menus, death, match-end, and touch UI restore the system arrow.
+    /// Client-only combat mouse pointer. Hides the OS arrow while flying and draws a
+    /// screen-space reticle that follows the mouse: general crosshair, MEGA reticle, or
+    /// MEGA+Shift manual-aim. Menus, death, match-end, and touch UI restore the OS arrow.
     /// <para>
-    /// [TITAN-ORBIT] There is no world-space reticle. Aim already uses the OS pointer
-    /// (<see cref="PlayerInputHandler"/> unprojects it onto the play plane). This component
-    /// only changes the <em>shape</em> of that pointer so MEGA auto-aim and MEGA+Shift
-    /// manual gun converge look different from a normal hull.
+    /// [TITAN-ORBIT] We do <em>not</em> use <c>Cursor.SetCursor</c> for the combat look.
+    /// Windows hardware cursors are capped at 32×32 (thin line art vanishes) and the Editor
+    /// Game view often keeps the OS arrow anyway. A UI Image is the pointer the player
+    /// actually sees. Aim still uses the OS mouse position via <see cref="PlayerInputHandler"/>.
     /// </para>
-    /// Presentation only — no ECS writes, no ghosts, no RPCs. Lives on NceGameRoot next to
-    /// <see cref="ShipInputBridge"/>. Dedicated-server processes disable immediately.
+    /// Presentation only — no ECS writes, no ghosts, no RPCs. Lives on NceGameRoot.
+    /// Dedicated-server processes disable immediately.
     /// Paired with <see cref="EcsGameBridge.TryGetLocalMegaShipState"/> and
     /// <see cref="PlayerInputHandler.OverdriveHeld"/>.
     /// </summary>
@@ -26,8 +28,8 @@ namespace TitanOrbit.Game
     public class GameplayCursorController : MonoBehaviour
     {
         /// <summary>
-        /// Which pointer is showing. We only call <see cref="Cursor.SetCursor"/> when this
-        /// changes so LateUpdate stays cheap (no texture upload every frame).
+        /// Which pointer is showing. Sprite / OS-visibility swaps only when this changes.
+        /// Position still updates every LateUpdate while a combat reticle is up.
         /// </summary>
         enum GameplayCursorMode
         {
@@ -56,10 +58,19 @@ namespace TitanOrbit.Game
         /// <summary>MEGA+Shift manual-aim reticle path. See <see cref="GeneralCursorAssetPath"/>.</summary>
         public const string MegaManualCursorAssetPath = "Assets/Art/Cursors/cursor_mega_manual.png";
 
+        /// <summary>On-screen reticle size in overlay pixels. Large enough that thin line art stays readable.</summary>
+        const float CursorSizePixels = 80f;
+
+        /// <summary>Ice-cyan tint so white pack icons read as HUD chrome on the dark map.</summary>
+        static readonly Color ReticleColor = new Color(0.45f, 0.92f, 1f, 1f);
+
+        /// <summary>Near-black duplicate behind the reticle so it stays visible over bright planets.</summary>
+        static readonly Color ShadowColor = new Color(0.02f, 0.04f, 0.08f, 0.9f);
+
         [Header("Cursor textures")]
         /// <summary>
-        /// Simple line crosshair for a normal family hull. Texture Type must be Cursor and
-        /// Read/Write enabled — <see cref="Cursor.SetCursor"/> reads the pixels on the CPU.
+        /// Simple line crosshair for a normal family hull. Read/Write should stay on so
+        /// we can <see cref="Sprite.Create"/> a runtime sprite for the HUD Image.
         /// </summary>
         [SerializeField] Texture2D generalCursor;
 
@@ -84,15 +95,32 @@ namespace TitanOrbit.Game
         /// <summary>Main-menu / loading flow on this root (null if missing).</summary>
         NceGameFlowController _flow;
 
+        /// <summary>Overlay canvas that owns the reticle. No GraphicRaycaster — it must not steal HUD clicks.</summary>
+        Canvas _cursorCanvas;
+
+        /// <summary>Root rect we park on the mouse pixel (pivot centre = aim hotspot).</summary>
+        RectTransform _cursorRoot;
+
+        /// <summary>Dark copy of the reticle, slightly larger, for contrast.</summary>
+        Image _shadowImage;
+
+        /// <summary>Tinted combat reticle the player sees.</summary>
+        Image _reticleImage;
+
+        Sprite _generalSprite;
+        Sprite _megaSprite;
+        Sprite _megaManualSprite;
+
         /// <summary>
         /// [UNITY] Domain Reload off leaves static overlay flags hot. Clear them so a leftover
-        /// death / match-end plaque from the last Play Mode session cannot pin the OS arrow.
+        /// death / match-end / orbit-menu flag from the last Play Mode session cannot pin the OS arrow.
         /// </summary>
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
         static void ResetStaticsBeforeSceneLoad()
         {
             DeathScreenController.ClearShowingFlag();
             MatchEndScreenController.ClearShowingFlag();
+            MoonOrbitClientState.SetOrbitMenuVisible(false);
         }
 
         /// <summary>
@@ -121,20 +149,29 @@ namespace TitanOrbit.Game
             _flow = GetComponent<NceGameFlowController>();
 
             TryLoadDefaultTexturesIfMissing();
+            BuildSprites();
+            EnsureCursorUi();
+            HideReticle();
         }
 
         /// <summary>
-        /// After every gameplay Update (input + overlay show/hide). Resolves the mode and
-        /// uploads a new OS cursor only when it changed.
+        /// After every gameplay Update (input + overlay show/hide). Resolves the mode,
+        /// swaps the reticle when it changes, and follows the mouse while flying.
         /// </summary>
         void LateUpdate()
         {
             GameplayCursorMode next = ResolveMode();
-            if (next == _appliedMode)
-                return;
+            if (next != _appliedMode)
+            {
+                ApplyMode(next);
+                _appliedMode = next;
+            }
 
-            ApplyMode(next);
-            _appliedMode = next;
+            // --- Follow the mouse ---
+            // Screen Space Overlay world position is the pixel. Pivot is centred so the
+            // reticle sits on the same point PlayerInputHandler unprojects for aim.
+            if (next != GameplayCursorMode.SystemDefault && TryReadMouseScreen(out Vector2 screen))
+                _cursorRoot.position = screen;
         }
 
         /// <summary>
@@ -144,7 +181,16 @@ namespace TitanOrbit.Game
         void OnDisable()
         {
             RestoreSystemCursor();
+            HideReticle();
             _appliedMode = (GameplayCursorMode)(-1);
+        }
+
+        /// <summary>[UNITY] Drops runtime sprites we created so Domain Reload does not leak them.</summary>
+        void OnDestroy()
+        {
+            DestroySprite(ref _generalSprite);
+            DestroySprite(ref _megaSprite);
+            DestroySprite(ref _megaManualSprite);
         }
 
         /// <summary>
@@ -188,71 +234,197 @@ namespace TitanOrbit.Game
         /// </summary>
         bool UsesSystemCursorOverlay()
         {
-            // --- Title / command / store overlays ---
-            if (_flow != null && _flow.IsMainMenuVisible)
-                return true;
+            // --- In-match command / store / plaques ---
+            // These can sit on top of a live ship, so they always win.
             if (InGameEscapeMenuController.IsOpen)
                 return true;
             if (MoonOrbitClientState.IsOrbitMenuVisible)
                 return true;
-            if (_joinBrowser != null && _joinBrowser.IsVisible)
-                return true;
-
-            // --- Match-flow plaques ---
             if (DeathScreenController.IsShowing)
                 return true;
             if (MatchEndScreenController.IsShowing)
+                return true;
+
+            // --- Title / join ---
+            // Ignore leftover Main Menu / Join Game flags once we already have a live hull
+            // in a match. Those overlays should be off; a stuck activeInHierarchy must not
+            // pin the OS arrow for the whole flight.
+            bool inMatchWithShip = EcsGameBridge.IsNetworkInGame() &&
+                                   (EcsGameBridge.HasLocalPlayerShip() || ShipDisplayPose.HasLocalPose);
+            if (inMatchWithShip)
+                return false;
+
+            if (_flow != null && _flow.IsMainMenuVisible)
+                return true;
+            if (_joinBrowser != null && _joinBrowser.IsVisible)
                 return true;
 
             return false;
         }
 
         /// <summary>
-        /// Pushes one texture (or null) into the OS cursor. Hotspot is the texture centre
-        /// so a crosshair sits on the aim point, not the top-left corner like an arrow.
+        /// Shows or hides the HUD reticle and toggles the OS arrow. Called only on mode change.
         /// </summary>
         /// <param name="mode">Mode resolved this frame.</param>
         void ApplyMode(GameplayCursorMode mode)
         {
-            // --- System arrow ---
-            // Cursor.SetCursor(null, …) is the Unity API for "give the OS pointer back".
             if (mode == GameplayCursorMode.SystemDefault)
             {
                 RestoreSystemCursor();
+                HideReticle();
                 return;
             }
 
-            Texture2D tex = TextureForMode(mode);
-            if (tex == null)
+            Sprite sprite = SpriteForMode(mode);
+            if (sprite == null)
             {
                 RestoreSystemCursor();
+                HideReticle();
                 return;
             }
 
-            // Unity hotspot is pixels from the top-left of the texture.
-            Vector2 hotspot = new Vector2(tex.width * 0.5f, tex.height * 0.5f);
-            Cursor.SetCursor(tex, hotspot, UnityEngine.CursorMode.Auto);
+            // --- Combat pointer ---
+            // Hide the OS arrow so the player sees one reticle, not two stacked pointers.
+            Cursor.visible = false;
+            Cursor.SetCursor(null, Vector2.zero, UnityEngine.CursorMode.Auto);
+
+            if (_shadowImage != null)
+                _shadowImage.sprite = sprite;
+            if (_reticleImage != null)
+                _reticleImage.sprite = sprite;
+            if (_cursorRoot != null)
+                _cursorRoot.gameObject.SetActive(true);
         }
 
-        /// <summary>Serialized (or Editor-loaded) texture for a combat mode. Null if unwired.</summary>
-        /// <param name="mode">Combat mode only — SystemDefault has no texture.</param>
-        Texture2D TextureForMode(GameplayCursorMode mode)
+        /// <summary>Runtime sprite for a combat mode. Null if that texture never loaded.</summary>
+        Sprite SpriteForMode(GameplayCursorMode mode)
         {
             switch (mode)
             {
                 case GameplayCursorMode.Mega:
-                    return megaCursor;
+                    return _megaSprite;
                 case GameplayCursorMode.MegaManual:
-                    return megaManualCursor;
+                    return _megaManualSprite;
                 default:
-                    return generalCursor;
+                    return _generalSprite;
             }
         }
 
-        /// <summary>Hands the pointer back to the operating system.</summary>
+        /// <summary>Hands the OS pointer back and makes it visible again.</summary>
         static void RestoreSystemCursor()
         {
+            Cursor.visible = true;
             Cursor.SetCursor(null, Vector2.zero, UnityEngine.CursorMode.Auto);
+        }
+
+        /// <summary>Turns the HUD reticle off without touching the OS cursor.</summary>
+        void HideReticle()
+        {
+            if (_cursorRoot != null)
+                _cursorRoot.gameObject.SetActive(false);
+        }
+
+        /// <summary>
+        /// Reads the Input System mouse in Game-view pixels. False on MPPM unfocused views
+        /// that report NaN (same guard as <see cref="PlayerInputHandler"/>).
+        /// </summary>
+        static bool TryReadMouseScreen(out Vector2 screenPos)
+        {
+            screenPos = default;
+            if (Mouse.current == null)
+                return false;
+
+            Vector2 raw = Mouse.current.position.ReadValue();
+            if (!float.IsFinite(raw.x) || !float.IsFinite(raw.y))
+                return false;
+
+            screenPos = raw;
+            return true;
+        }
+
+        /// <summary>
+        /// Builds a Screen Space Overlay canvas with a centred shadow + reticle Image.
+        /// No raycaster — clicks still hit the real HUD / world.
+        /// </summary>
+        void EnsureCursorUi()
+        {
+            if (_cursorRoot != null)
+                return;
+
+            var canvasGo = new GameObject("GameplayCursorCanvas");
+            canvasGo.transform.SetParent(transform, false);
+
+            _cursorCanvas = canvasGo.AddComponent<Canvas>();
+            _cursorCanvas.renderMode = RenderMode.ScreenSpaceOverlay;
+            // Above match-end (9000) and other HUD so the reticle is never under a plaque.
+            _cursorCanvas.sortingOrder = 32000;
+            _cursorCanvas.pixelPerfect = true;
+
+            var rootGo = new GameObject("Reticle");
+            rootGo.transform.SetParent(canvasGo.transform, false);
+            _cursorRoot = rootGo.AddComponent<RectTransform>();
+            _cursorRoot.pivot = new Vector2(0.5f, 0.5f);
+            _cursorRoot.anchorMin = new Vector2(0f, 0f);
+            _cursorRoot.anchorMax = new Vector2(0f, 0f);
+            _cursorRoot.sizeDelta = new Vector2(CursorSizePixels, CursorSizePixels);
+
+            _shadowImage = CreateLayer(rootGo.transform, "Shadow", CursorSizePixels + 4f, ShadowColor);
+            _reticleImage = CreateLayer(rootGo.transform, "Icon", CursorSizePixels, ReticleColor);
+        }
+
+        /// <summary>
+        /// Adds a full-stretch Image under <paramref name="parent"/>.
+        /// <c>raycastTarget</c> stays false so the pointer never blocks HUD clicks.
+        /// </summary>
+        static Image CreateLayer(Transform parent, string name, float size, Color color)
+        {
+            var go = new GameObject(name);
+            go.transform.SetParent(parent, false);
+
+            var rt = go.AddComponent<RectTransform>();
+            rt.anchorMin = new Vector2(0.5f, 0.5f);
+            rt.anchorMax = new Vector2(0.5f, 0.5f);
+            rt.pivot = new Vector2(0.5f, 0.5f);
+            rt.sizeDelta = new Vector2(size, size);
+
+            var image = go.AddComponent<Image>();
+            image.raycastTarget = false;
+            image.preserveAspect = true;
+            image.color = color;
+            return image;
+        }
+
+        /// <summary>One-shot <see cref="Sprite.Create"/> for each loaded texture.</summary>
+        void BuildSprites()
+        {
+            _generalSprite = CreateCenteredSprite(generalCursor);
+            _megaSprite = CreateCenteredSprite(megaCursor);
+            _megaManualSprite = CreateCenteredSprite(megaManualCursor);
+        }
+
+        /// <summary>
+        /// Turns a Cursor-type texture into a centred sprite. Returns null when the
+        /// texture is missing or has no pixels (SetCursor would also fail in that case).
+        /// </summary>
+        static Sprite CreateCenteredSprite(Texture2D tex)
+        {
+            if (tex == null || tex.width < 2 || tex.height < 2)
+                return null;
+
+            return Sprite.Create(
+                tex,
+                new Rect(0f, 0f, tex.width, tex.height),
+                new Vector2(0.5f, 0.5f),
+                100f);
+        }
+
+        /// <summary>Destroys a runtime sprite we created. Scene-imported sprites are left alone.</summary>
+        static void DestroySprite(ref Sprite sprite)
+        {
+            if (sprite == null)
+                return;
+            Destroy(sprite);
+            sprite = null;
         }
 
         /// <summary>

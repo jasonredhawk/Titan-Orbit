@@ -625,9 +625,9 @@ namespace TitanOrbit.Data
                 if (abilityOnly)
                     sb.Append("(ability only)</color>\n");
                 else if (weapon && (label == "Fire Power" || label == "Fire Rate" || label == "Bullet Range"))
-                    sb.Append("(Base + PerExtra × (shipLv − 1))</color>\n");
+                    sb.Append("(Base + PerExtra × shipLv)</color>\n");
                 else
-                    sb.Append("(Base + PerExtra × (shipLv − 1))</color>\n");
+                    sb.Append("(Base + PerExtra × shipLv)</color>\n");
             }
 
             Line("Fire Power", s.firePower, false);

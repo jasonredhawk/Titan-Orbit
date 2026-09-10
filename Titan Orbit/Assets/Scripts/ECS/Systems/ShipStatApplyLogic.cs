@@ -319,7 +319,7 @@ namespace TitanOrbit.ECS
                 return;
 
             // --- Chassis parts (plus moon-store extras) then Extra Level ---
-            // [TITAN-ORBIT] Primary Base + each part’s own PerExtra × ((shipLevel−1) + ability).
+            // [TITAN-ORBIT] Primary Base + each part’s own PerExtra × (shipLevel + ability).
             // Extras do not add a second Base. Engine PerExtra ≠ thruster PerExtra.
             if (!TryGetChassisPartSum(em, shipEntity, chassisId, out ShipFamilyStatsCalculator.SumResult partSum))
             {

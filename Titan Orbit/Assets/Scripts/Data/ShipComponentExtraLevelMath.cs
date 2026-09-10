@@ -64,7 +64,7 @@ namespace TitanOrbit.Data
     /// </para>
     /// <para>
     /// Non-weapons:
-    /// <c>PrimaryBase + Σ (part.PerExtra × ((shipLevel − 1) + abilityLevel))</c>
+    /// <c>PrimaryBase + Σ (part.PerExtra × (shipLevel + abilityLevel))</c>
     /// Buying a second cockpit / engine / wing raises the total by that part’s PerExtra
     /// steps, not by copying another Base into the hull.
     /// </para>
@@ -76,7 +76,7 @@ namespace TitanOrbit.Data
     /// </para>
     /// <para>
     /// Weapons (each barrel, same Extra Level — no component-count term):
-    /// <c>Base + PerExtraLevel × ((shipLevel − 1) + abilityLevel)</c>
+    /// <c>Base + PerExtraLevel × (shipLevel + abilityLevel)</c>
     /// Live mounts each use their own Base / PerExtra.
     /// </para>
     /// <para>
@@ -117,30 +117,30 @@ namespace TitanOrbit.Data
             if (componentCount <= 0)
                 return 0f;
 
-            // --- Ship tier above 1 + ability purchases ---
-            int levels = Mathf.Max(0, shipLevel - 1) + Mathf.Max(0, abilityLevel);
+            // --- Full ship tier + ability purchases (level 1 still applies 1× PerExtra) ---
+            int levels = Mathf.Max(0, shipLevel) + Mathf.Max(0, abilityLevel);
             float usedBase = includeBase ? baseValue : 0f;
             return usedBase + perExtraLevel * levels;
         }
 
         /// <summary>
         /// Extra Level multiplier steps for one non-weapon part:
-        /// <c>(shipLevel−1) + abilityLevel</c>.
+        /// <c>shipLevel + abilityLevel</c>.
         /// <paramref name="componentCount"/> is ignored (kept so older call sites compile).
-        /// Each extra part is evaluated on its own Base / PerExtra instead of adding <c>(N−1)</c>
+        /// Each extra part is evaluated on its own PerExtra instead of adding <c>(N−1)</c>
         /// of the primary’s PerExtra.
         /// </summary>
         public static int CountExtraLevels(int shipLevel, int abilityLevel, int componentCount)
         {
             _ = componentCount;
-            return Mathf.Max(0, shipLevel - 1) + Mathf.Max(0, abilityLevel);
+            return Mathf.Max(0, shipLevel) + Mathf.Max(0, abilityLevel);
         }
 
         /// <summary>
-        /// Weapon Extra Level steps (no component stack): <c>(shipLevel−1) + abilityLevel</c>.
+        /// Weapon Extra Level steps (no component stack): <c>shipLevel + abilityLevel</c>.
         /// </summary>
         public static int CountWeaponExtraLevels(int shipLevel, int abilityLevel) =>
-            Mathf.Max(0, shipLevel - 1) + Mathf.Max(0, abilityLevel);
+            Mathf.Max(0, shipLevel) + Mathf.Max(0, abilityLevel);
 
         /// <summary>
         /// Weapon bullet speed steps — ability purchases only (no ship level, no N).

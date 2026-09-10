@@ -157,12 +157,12 @@ namespace TitanOrbit.Data
         {
             /// <summary>
             /// Extra Level top speed: sum of each engine/thruster
-            /// <c>Move Base + that part’s PerExtra × (shipLv−1)</c>, then optional level mobility drag.
+            /// <c>Move Base + that part’s PerExtra × shipLevel</c>, then optional level mobility drag.
             /// </summary>
             public float topMoveSpeed;
 
             /// <summary>
-            /// Extra Level accel: sum of each engine/thruster Accel Base + that part’s PerExtra × (shipLv−1).
+            /// Extra Level accel: primary Accel Base + each engine/thruster PerExtra × shipLevel.
             /// </summary>
             public float sumAcceleration;
 

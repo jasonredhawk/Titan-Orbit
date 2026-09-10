@@ -142,7 +142,7 @@ namespace TitanOrbit.Data
     /// <summary>
     /// Resolves upgrade-tree power-bar stats: Extra Level at ship level with every HUD
     /// ability maxed (<see cref="ShipAbilityLevelCounts.Maxed"/>). Same formulas as live
-    /// ships — non-weapons use <c>(ship−1) + ability + (N−1)</c>; weapons omit N;
+    /// ships — non-weapons use <c>shipLevel + ability</c> per part; weapons omit N;
     /// weapon bullet speed is ability-only. Live prefab sums are cached per session.
     /// Also walks the regular-family catalog and the MEGA catalog for two separate
     /// ten-stat max pools, and remembers which hull set each slot's ceiling

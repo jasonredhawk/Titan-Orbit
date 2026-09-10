@@ -756,7 +756,7 @@ namespace TitanOrbit.UI
             int extraLevelsNoAbility = ShipComponentExtraLevelMath.CountExtraLevels(shipLevel, 0, n);
             float afterExtra = moveL1 + movePer * extraLevelsNoAbility;
 
-            // --- Summed Bases + each part’s own PerExtra × (ship−1) ---
+            // --- Primary Base + each part’s own PerExtra × shipLevel ---
             sb.Append("Primary Base  <color=#B8C8D8>").Append(FDetail(moveL1)).Append("</color>");
             if (extras > 0)
             {
@@ -768,7 +768,7 @@ namespace TitanOrbit.UI
             sb.AppendLine();
             sb.Append("Extra Level  +").Append(FDetail(movePer)).Append(" × ")
                 .Append(extraLevelsNoAbility.ToString(CultureInfo.InvariantCulture))
-                .Append(" (shipLv−1) → ").Append(FDetail(afterExtra)).AppendLine();
+                .Append(" (shipLv) → ").Append(FDetail(afterExtra)).AppendLine();
 
             // --- Optional level MaxSpeed drag from mobility settings ---
             ShipCargoMobilitySettings mobility = ShipCargoMobilitySettingsCache.ResolveOrDefault();
@@ -819,7 +819,7 @@ namespace TitanOrbit.UI
             sb.AppendLine();
             sb.Append("Extra Level  +").Append(FDetail(accelPer)).Append(" × ")
                 .Append(extraLevelsNoAbility.ToString(CultureInfo.InvariantCulture))
-                .Append(" (shipLv−1) → ").Append(FDetail(afterExtra)).AppendLine();
+                .Append(" (shipLv) → ").Append(FDetail(afterExtra)).AppendLine();
 
             ShipCargoMobilitySettings mobility = ShipCargoMobilitySettingsCache.ResolveOrDefault();
             float accelPenalty = mobility != null ? mobility.levelAccelPenaltyFractionPerLevel : 0f;

@@ -12,7 +12,7 @@ namespace TitanOrbit.ECS
     /// <para>
     /// [TITAN-ORBIT] Each barrel keeps its own catalog Base / PerExtra (not prefab-scale
     /// multiplied) and evaluates independently — weapons do <b>not</b> use the non-weapon
-    /// <c>(N−1)</c> stack term: <c>Base + PerExtra × ((shipLevel−1) + abilityLevel)</c>.
+    /// <c>(N−1)</c> stack term: <c>Base + PerExtra × (shipLevel + abilityLevel)</c>.
     /// </para>
     /// <para>
     /// Combat stats are read from a fresh Instantiates of the chassis prefab — never from the
@@ -57,7 +57,7 @@ namespace TitanOrbit.ECS
         /// <param name="shipEntity">Ship ghost with a <see cref="ShipWeaponMountElement"/> buffer.</param>
         /// <param name="chassisPrefab">Upgrade-tree hull prefab (Weapon children).</param>
         /// <param name="family">Family definition with Weapon component stats.</param>
-        /// <param name="shipLevel">Current ship level (1 = base; 6 adds five × per-level steps).</param>
+        /// <param name="shipLevel">Current ship level (1 applies 1× PerExtra; 6 applies 6×).</param>
         /// <param name="attrs">Bottom-bar attribute upgrades (Fire Power multiplies mount damage).</param>
         /// <param name="fallbackDamage">Used when a mount cannot resolve prefab stats.</param>
         /// <param name="fallbackFireRate">Used when a mount cannot resolve prefab stats.</param>
@@ -85,7 +85,7 @@ namespace TitanOrbit.ECS
             if (chassisPrefab != null && family != null)
                 CollectWeaponCombatBases(chassisPrefab, family, CombatScratch);
 
-            // --- Each mount: own Base + PerExtra × ((shipLevel−1) + ability) — no (N−1) ---
+            // --- Each mount: own Base + PerExtra × (shipLevel + ability) — no (N−1) ---
             float damageSum = 0f;
             float rateSum = 0f;
             int armed = 0;

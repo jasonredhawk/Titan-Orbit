@@ -414,10 +414,10 @@ namespace TitanOrbit.Game
             group.Team = team;
             bool adopted = ConsumeAdopted(group, combineMax);
             float hullRadius = math.max(extX, extZ);
+            ApplyEscortVitals(group, in vitals);
             SyncVisualAmounts(
                 group, people, landing, orbitPlanetId, team,
                 hullPos, hullRot, extX, extZ, networkId, combineMax, mapW, mapH, allowShrink: !adopted);
-            ApplyEscortVitals(group, in vitals);
 
             bool drop = landing && orbitPlanetId != 0;
             if (!drop)
@@ -676,23 +676,36 @@ namespace TitanOrbit.Game
             bool allowShrink)
         {
             people = math.max(0, people);
+            int cargo = SumCargoAmounts(group);
+            int flying = SumFlyingAmounts(group);
             if (people <= 0)
             {
-                ShrinkCargoOnly(group, SumCargoAmounts(group));
+                // During an unload wave the last capsule may still be cargo here
+                // (CurrentPeople already dropped). Do not destroy it — launch owns it.
+                if (!landing && flying == 0)
+                    ShrinkCargoOnly(group, cargo);
                 return;
             }
 
-            int sum = SumCargoAmounts(group);
-            if (allowShrink && sum > people)
+            // Never shrink followers to match a launch debit. That resized healthy
+            // capsules and collapsed their health bars. Flying slots already hold
+            // the missing people; a live wave will launch the rest.
+            if (allowShrink && cargo > people && !landing && flying == 0)
             {
-                ShrinkCargoOnly(group, sum - people);
-                sum = SumCargoAmounts(group);
+                ShrinkCargoOnly(group, cargo - people);
+                cargo = SumCargoAmounts(group);
             }
 
-            if (sum >= people)
+            if (cargo >= people)
                 return;
 
-            float leftover = FillVisualSlots(group, people - sum, combineMax);
+            // Local launch marks a slot Flying before CurrentPeople ghosts down.
+            // Those people are already shown — do not pour them into the remaining
+            // capsules (that grew size and emptied the health bar).
+            if (flying > 0 && cargo + flying >= people)
+                return;
+
+            float leftover = FillVisualSlots(group, people - cargo, combineMax);
             if (leftover <= 0.01f)
                 return;
 
@@ -700,9 +713,7 @@ namespace TitanOrbit.Game
             {
                 int last = group.Slots.Count - 1;
                 var merge = group.Slots[last];
-                merge.Amount += leftover;
-                if (merge.Go != null)
-                    PeopleTransportVisualApplier.ApplyAmountScale(merge.Go, merge.Amount);
+                GrowVisualAmount(ref merge, merge.Amount + leftover);
                 group.Slots[last] = merge;
                 return;
             }
@@ -749,9 +760,7 @@ namespace TitanOrbit.Game
                 if (room <= 0.01f)
                     continue;
                 float add = math.min(leftover, room);
-                slot.Amount += add;
-                if (slot.Go != null)
-                    PeopleTransportVisualApplier.ApplyAmountScale(slot.Go, slot.Amount);
+                GrowVisualAmount(ref slot, slot.Amount + add);
                 group.Slots[i] = slot;
                 leftover -= add;
             }
@@ -770,6 +779,42 @@ namespace TitanOrbit.Game
             }
 
             return sum;
+        }
+
+        static int SumFlyingAmounts(ShipEscortGroup group)
+        {
+            int sum = 0;
+            for (int i = 0; i < group.Slots.Count; i++)
+            {
+                if (!group.Slots[i].Flying)
+                    continue;
+                sum += math.max(0, (int)group.Slots[i].Amount);
+            }
+
+            return sum;
+        }
+
+        /// <summary>
+        /// Grows a capsule for a real pickup. Full / unknown HP stays full;
+        /// existing damage is kept and clamped to the new max.
+        /// </summary>
+        static void GrowVisualAmount(ref SlotVisual slot, float newAmount)
+        {
+            float oldAmount = slot.Amount;
+            newAmount = math.max(0.001f, newAmount);
+            if (math.abs(newAmount - oldAmount) <= 0.01f)
+                return;
+
+            float oldMax = PeopleTransportMath.ComputeMaxHealth(math.max(0.001f, oldAmount));
+            slot.Amount = newAmount;
+            float newMax = PeopleTransportMath.ComputeMaxHealth(newAmount);
+            if (slot.Health < 0f || slot.Health >= oldMax - 0.01f)
+                slot.Health = newMax;
+            else
+                slot.Health = math.min(slot.Health, newMax);
+
+            if (slot.Go != null)
+                PeopleTransportVisualApplier.ApplyAmountScale(slot.Go, slot.Amount);
         }
 
         static void ShrinkCargoOnly(ShipEscortGroup group, int deficit)
@@ -812,7 +857,18 @@ namespace TitanOrbit.Game
                     cargoCursor++;
 
                 var slot = group.Slots[found];
-                slot.Health = hp;
+                float amt = vitals.GetAmount(s);
+                if (amt > 0.01f && math.abs(slot.Amount - amt) > 0.01f)
+                {
+                    slot.Amount = amt;
+                    if (slot.Go != null)
+                        PeopleTransportVisualApplier.ApplyAmountScale(slot.Go, slot.Amount);
+                }
+
+                // Skip a 0 HP write over "not yet synced" — empty vitals would
+                // collapse the bar the first frame a wave starts.
+                if (hp > 0.01f || slot.Health >= 0f)
+                    slot.Health = hp;
                 group.Slots[found] = slot;
             }
         }
@@ -959,14 +1015,9 @@ namespace TitanOrbit.Game
             if (!orbit.InOrbitRing || orbit.OrbitPlanetId == 0)
                 return false;
             if (!EcsGameBridge.TryGetPlanetPoseByPlanetId(
-                    orbit.OrbitPlanetId, out _, out float scale, out var planet))
+                    orbit.OrbitPlanetId, out _, out _, out var planet))
                 return false;
-            float planetSize = math.max(0.5f, scale);
-            float bonus = PlanetConnectionGraphCache.GetStackedConnectionBonusFraction(orbit.OrbitPlanetId);
-            int maxPop = PlanetPopulationMath.GetEffectiveMaxPopulation(
-                planetSize, planet.PlanetLevel, bonus);
-            int halfCap = math.max(1, maxPop / 2);
-            return PeopleTransportEscortLogic.ShouldUnloadEscorts(in ship, in planet, halfCap);
+            return PeopleTransportEscortLogic.ShouldUnloadEscorts(in ship, in planet);
         }
 
         /// <summary>

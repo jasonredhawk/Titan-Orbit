@@ -109,7 +109,7 @@ namespace TitanOrbit.Editor
                 EditorGUILayout.FloatField(
                     new GUIContent(
                         "Acceleration Cap (aggregated)",
-                        "Primary Accel only. Extras raise Extra Level via (N−1): Base + PerExtra × ((shipLv−1)+ability+(N−1))."),
+                        "Primary Accel only. Extras add that part’s PerExtra × (shipLevel+ability)."),
                     total.accelerationCap);
                 EditorGUILayout.FloatField(
                     new GUIContent(
@@ -132,7 +132,7 @@ namespace TitanOrbit.Editor
                     EditorGUILayout.FloatField(
                         new GUIContent(
                             "Acceleration Cap (stacked)",
-                            "Primary Accel + PerExtra × ((shipLv−1)+(N−1)) — matches Extra Level flight math."),
+                            "Primary Accel + each part’s PerExtra × (shipLevel+ability) — matches Extra Level flight math."),
                         preview.PreviewSumPropulsionAcceleration);
                     EditorGUILayout.FloatField(
                         new GUIContent(

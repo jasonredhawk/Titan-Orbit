@@ -16,18 +16,18 @@ namespace TitanOrbit.ECS
     /// </summary>
     public static class PeopleTransportEscortLogic
     {
-        /// <summary>True when this ship should dump escorts (hostile/neutral, or friendly below half-cap).</summary>
+        /// <summary>
+        /// True when escorts may land: hostile or unowned worlds only.
+        /// Allied planets never accept a dump — troops stay with the ship (load may still run).
+        /// </summary>
         public static bool ShouldUnloadEscorts(
             in ShipState ship,
-            in PlanetState planet,
-            int halfCap)
+            in PlanetState planet)
         {
             if (ship.IsDead || ship.AwaitingTeamSelection || ship.CurrentPeople <= 0)
                 return false;
             bool friendly = ship.Team != TeamId.None && planet.Ownership == ship.Team;
-            if (!friendly)
-                return true;
-            return planet.Population < halfCap;
+            return !friendly;
         }
 
         /// <summary>True when the landing latch is aimed at a live planet.</summary>

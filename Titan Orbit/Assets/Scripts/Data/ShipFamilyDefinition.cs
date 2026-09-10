@@ -88,7 +88,7 @@ namespace TitanOrbit.Data
         [Header("Ship Tier Growth (Legacy)")]
         [Tooltip(
             "[LEGACY] Unused by combat. Stats now use Extra Level per part: " +
-            "Base + that part’s PerExtra × ((shipLevel−1)+ability). " +
+            "Base + that part’s PerExtra × (shipLevel+ability). " +
             "Engines and thrusters keep different Move PerExtra values and both add. " +
             "Kept on the asset so older family YAML still loads cleanly.")]
         [Min(0f)]

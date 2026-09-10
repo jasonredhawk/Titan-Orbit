@@ -15,7 +15,7 @@ namespace TitanOrbit.UI
     /// MASS TAX table (Move / Accel / Turn): gems / troops / hull → drag → chip.
     /// MEGA hulls skip Extra Level and show static catalog part sums (no +per-buy).
     /// Token colours are shared: violet = start scale, amber = part count N, steel = Primary,
-    /// cyan = PerExtra, blue = ship−1, green = ability, mint = total.
+    /// cyan = PerExtra, blue = shipLevel, green = ability, mint = total.
     /// Presentation-only — never writes ECS.
     /// <para>
     /// [TITAN-ORBIT] Intentionally <b>not</b> live: no per-frame HP/energy/speed/cargo vitals.
@@ -45,7 +45,7 @@ namespace TitanOrbit.UI
         const string HexCount = "FFB347";   // how many parts (N, 2×, N−1)
         const string HexPrimary = "B8C8D8"; // catalog / scaled Primary
         const string HexPerExtra = "7EC8FF"; // PerExtra step
-        const string HexShip = "5B9BD5";    // (shipLevel − 1)
+        const string HexShip = "5B9BD5";    // shipLevel
         const string HexAbility = "7DFFB2"; // bottom-HUD purchases
         const string HexResult = "AAEEDD";  // line total / chip
         const string HexMass = "FF8A8A";    // cargo drag (Move / Turn only)
@@ -621,7 +621,7 @@ namespace TitanOrbit.UI
             float finalEffective)
         {
             int shipLevel = Mathf.Max(1, live.Ship.ShipLevel);
-            int shipSteps = Mathf.Max(0, shipLevel - 1);
+            int shipSteps = Mathf.Max(0, shipLevel);
             var rows = new List<FieldPoolEval>(8);
             CollectFieldPools(in parts, field, shipLevel, abilityLv, rows);
 
@@ -895,7 +895,7 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// ×LV cell: blue ship−1 + green ability (weapon bullet speed is ability only).
+        /// ×LV cell: blue shipLevel + green ability (weapon bullet speed is ability only).
         /// </summary>
         static void AppendGridLevelsCell(
             StringBuilder sb,
@@ -981,7 +981,7 @@ namespace TitanOrbit.UI
             string perExtra = Tint(HexPerExtra, "PerExtra");
             string levels = field == StatField.BulletSpeed
                 ? Tint(HexAbility, "ability")
-                : Tint(HexMute, "(") + Tint(HexShip, "ship−1") + Tint(HexMute, "+") + Tint(HexAbility, "ability") + Tint(HexMute, ")");
+                : Tint(HexMute, "(") + Tint(HexShip, "ship") + Tint(HexMute, "+") + Tint(HexAbility, "ability") + Tint(HexMute, ")");
             return primary
                    + Tint(HexMute, " + Σ ")
                    + perExtra

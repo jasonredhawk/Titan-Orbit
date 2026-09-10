@@ -85,10 +85,13 @@ namespace TitanOrbit.Simulation
         /// <summary>
         /// Farthest formation radius as a multiple of the hull ellipse at that slot angle.
         /// </summary>
-        public const float EscortRingMaxRadiusMul = 2f;
+        public const float EscortRingMaxRadiusMul = 2.5f;
 
-        /// <summary>Angular jitter (radians) so slots are not a perfect clock face.</summary>
-        public const float EscortAngleJitter = 1.05f;
+        /// <summary>
+        /// Aft-arc jitter (radians). Kept small so hash scatter cannot push a seat
+        /// past the beam into the forward hemisphere.
+        /// </summary>
+        public const float EscortAngleJitter = 0.22f;
 
         /// <summary>Minimum world gap between neighboring escort spheres on the ring.</summary>
         public const float EscortSlotGap = 0.65f;
@@ -332,19 +335,19 @@ namespace TitanOrbit.Simulation
         }
 
         /// <summary>
-        /// Per-slot radius as 1.1–2× the hull ellipse at that slot's angle.
+        /// Per-slot radius as 1.1–2.5× the hull ellipse along <paramref name="localX"/> /
+        /// <paramref name="localZ"/> (ship-local right / forward-back).
         /// </summary>
         public static float GetEscortSlotRadius(
             float extX,
             float extZ,
-            float angle,
+            float localX,
+            float localZ,
             float peopleAmount,
             int shipNetworkId,
             int slotIndex)
         {
             _ = peopleAmount;
-            float localX = math.cos(angle);
-            float localZ = -math.sin(angle);
             float hullR = GetHullRadiusAlongLocalDir(extX, extZ, localX, localZ);
             float u = EscortSlotHash01(shipNetworkId, slotIndex * 31 + 7);
             return hullR * math.lerp(EscortRingMinRadiusMul, EscortRingMaxRadiusMul, u);
@@ -406,7 +409,8 @@ namespace TitanOrbit.Simulation
         }
 
         /// <summary>
-        /// Home pose around the ship: unique radius in a min/max band and a non-uniform angle.
+        /// Home pose in the <b>rear hemisphere</b>: unique 1.1–2.5× hull radius.
+        /// Seats spread port-beam → astern → starboard-beam. Never ahead of the ship.
         /// Client visuals and server follow / hit-scan must share this.
         /// </summary>
         public static float3 EvaluateEscortSlotPose(
@@ -426,12 +430,17 @@ namespace TitanOrbit.Simulation
                 slotCount = 1;
             slotIndex = math.clamp(slotIndex, 0, slotCount - 1);
 
-            const float golden = 2.399963229728653f;
+            float t = slotCount <= 1 ? 0.5f : (slotIndex + 0.5f) / slotCount;
             float uAng = EscortSlotHash01(shipNetworkId, slotIndex * 17 + 11);
-            float ang = slotIndex * golden + (uAng - 0.5f) * EscortAngleJitter;
-            float3 dir = math.cos(ang) * right + math.sin(ang) * (-forward);
+            float aftAng = (t - 0.5f) * math.PI + (uAng - 0.5f) * EscortAngleJitter;
+            aftAng = math.clamp(aftAng, -0.5f * math.PI, 0.5f * math.PI);
+
+            // aftAng 0 = dead astern (−forward). ±90° = beam, still not in front.
+            float3 dir = math.cos(aftAng) * (-forward) + math.sin(aftAng) * right;
+            float localX = math.sin(aftAng);
+            float localZ = -math.cos(aftAng);
             float3 pos = shipPos + dir * GetEscortSlotRadius(
-                extX, extZ, ang, peopleAmount, shipNetworkId, slotIndex);
+                extX, extZ, localX, localZ, peopleAmount, shipNetworkId, slotIndex);
             pos.y = 0f;
             if (ToroidalMapEcs.IsValidMapSize(mapW, mapH))
                 pos = ToroidalMapEcs.Wrap(pos, mapW, mapH);

@@ -11,7 +11,7 @@ namespace TitanOrbit.ECS
     /// <summary>
     /// Bottom-bar attribute upgrades: gem cost, per-level caps, and server-side purchase validation.
     /// Ability purchase counts feed <see cref="ShipComponentExtraLevelMath"/> —
-    /// each part uses its own PerExtra × ((ship−1) + ability) — applied in
+    /// each part uses its own PerExtra × (shipLevel + ability) — applied in
     /// <see cref="ShipStatApplyLogic"/>. Client sends PurchaseAttributeUpgradeCommand RPC;
     /// ShipAttributeUpgradeSystem invokes TryPurchaseForNetworkId on the server.
     /// </summary>

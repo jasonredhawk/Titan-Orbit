@@ -46,7 +46,7 @@ namespace TitanOrbit.ECS
 
         /// <summary>
         /// Latched for this parked dwell: 0 none, 1 load, 2 unload.
-        /// Once load is chosen, do not flip to unload if planet pop drops below half-cap.
+        /// Once load is chosen, stay on load for the rest of this dwell.
         /// Cleared with the dwell when the ship leaves, thrusts, or changes planet.
         /// </summary>
         public byte TransferDirection;

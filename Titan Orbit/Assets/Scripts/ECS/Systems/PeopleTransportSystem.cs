@@ -222,12 +222,11 @@ namespace TitanOrbit.ECS
                     shipState.ValueRO.CurrentPeople, shipState.ValueRO.PeopleCapacity,
                     transfer.PeopleInTransit);
 
-                // Latch load for this dwell so paying the planet down through 50% cannot
-                // immediately dump the escorts we just picked up. Unload may still flip
-                // to load if the planet fills above half-cap.
+                // Latch load for this dwell so a friendly pickup cannot flip to unload
+                // mid-orbit. Unload is hostile/neutral only — never dump onto allies.
                 bool lockedLoad = transfer.TransferDirection == PeopleTransferDirection.Load;
                 bool wantUnload = !lockedLoad && PeopleTransportEscortLogic.ShouldUnloadEscorts(
-                    in shipState.ValueRO, in planetState, halfCap);
+                    in shipState.ValueRO, in planetState);
                 if (wantUnload)
                 {
                     transfer.TransferDirection = PeopleTransferDirection.Unload;
@@ -352,9 +351,6 @@ namespace TitanOrbit.ECS
 
             if (friendly)
             {
-                if (planetPopulation < halfCap)
-                    return currentPeople > 0;
-
                 int space = peopleCapacity - currentPeople;
                 int surplus = planetPopulation - halfCap;
                 return space > 0 && surplus > 0;
