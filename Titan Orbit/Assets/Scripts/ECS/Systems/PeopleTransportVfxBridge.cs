@@ -40,6 +40,7 @@ namespace TitanOrbit.ECS
             public float3 Position;
             public float3 Velocity;
             public byte Status;
+            public float Health;
         }
 
         static readonly ConcurrentQueue<SpawnRequest> SpawnQueue = new ConcurrentQueue<SpawnRequest>();

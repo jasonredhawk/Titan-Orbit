@@ -36,6 +36,7 @@ namespace TitanOrbit.ECS
                     Position = pos,
                     Velocity = vel,
                     Status = r.Status,
+                    Health = r.Health,
                 });
                 ecb.DestroyEntity(entity);
             }

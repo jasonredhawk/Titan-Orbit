@@ -174,7 +174,6 @@ namespace TitanOrbit.ECS
                     moonDock.LandingApproachDelay = 0f;
                 }
 
-                float takeoffSpeed = math.max(8f, motor.MaxSpeed);
                 float takeoffHull = ResolveMoonAttachHullRadius(shipPhysicsRadius, transform);
                 if (ShipMoonTakeoffLogic.TryApply(
                         ref moonDock,
@@ -185,7 +184,6 @@ namespace TitanOrbit.ECS
                         mapW,
                         mapH,
                         elapsedSeconds,
-                        takeoffSpeed,
                         isMegaShip,
                         takeoffHull))
                 {
@@ -195,8 +193,6 @@ namespace TitanOrbit.ECS
                     shipState.OverdriveLockout = false;
                     return;
                 }
-
-                // Takeoff just finished — continue into normal flight this tick.
             }
 
             // --- Landed moon dock — co-orbit the moon until thrust undocks ---

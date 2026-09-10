@@ -2888,6 +2888,7 @@ namespace TitanOrbit.Game
 
                 var pos = GetVisualPosition(entity, lt.Position);
                 ApplyProxyTransform(pos, lt.Rotation, go.transform, scale);
+                PeopleTransportNameplate.Sync(go, state.TargetShipNetworkId, state.Amount);
             }
         }
 

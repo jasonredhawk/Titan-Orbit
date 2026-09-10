@@ -53,6 +53,91 @@ namespace TitanOrbit.Simulation
         /// </summary>
         public const float VisualScaleMaxMultiplier = 2.7f;
 
+        /// <summary>
+        /// Hard cap on follow / landing escort spheres per ship (visual + hit-scan).
+        /// Extra people pack into these slots instead of spawning more proxies.
+        /// </summary>
+        public const int MaxEscortVisualSlots = 8;
+
+        /// <summary>Authored PeopleTransport prefab root scale — used for escort hit radius.</summary>
+        public const float EscortPrefabBaseUniform = 0.25f;
+
+        /// <summary>Hull radii behind the ship for the first escort row.</summary>
+        public const float EscortBackHullMul = 1.15f;
+
+        /// <summary>Extra back spacing per row after the first.</summary>
+        public const float EscortRowSpacingHullMul = 0.55f;
+
+        /// <summary>World-unit pad added to each escort row.</summary>
+        public const float EscortRowSpacingPad = 0.35f;
+
+        /// <summary>Lateral offset from centerline as a fraction of hull radius.</summary>
+        public const float EscortLateralHullMul = 0.42f;
+
+        /// <summary>World-unit pad on the left/right escort columns.</summary>
+        public const float EscortLateralPad = 0.22f;
+
+        /// <summary>
+        /// Closest formation radius as a multiple of the hull ellipse at that slot angle.
+        /// </summary>
+        public const float EscortRingMinRadiusMul = 1.1f;
+
+        /// <summary>
+        /// Farthest formation radius as a multiple of the hull ellipse at that slot angle.
+        /// </summary>
+        public const float EscortRingMaxRadiusMul = 2f;
+
+        /// <summary>Angular jitter (radians) so slots are not a perfect clock face.</summary>
+        public const float EscortAngleJitter = 1.05f;
+
+        /// <summary>Minimum world gap between neighboring escort spheres on the ring.</summary>
+        public const float EscortSlotGap = 0.65f;
+
+        /// <summary>
+        /// When an escort is this close to its home, latch onto the slot.
+        /// Stops idle jitter; they ride with the ship once caught up.
+        /// </summary>
+        public const float EscortSettleSnap = 0.18f;
+
+        /// <summary>
+        /// Un-latch a riding escort only if it is this far from home
+        /// (wrap / teleport). Smaller gaps stay glued so they do not jitter.
+        /// </summary>
+        public const float EscortRideBreak = 5f;
+
+        /// <summary>
+        /// Extra reach past the outer formation ring when deciding an escort has
+        /// caught the ship (yaw / orbit must not starve the ready call).
+        /// </summary>
+        public const float EscortGatherSlack = 1.25f;
+
+        /// <summary>Follow cruise (world units/s) for a +36 capsule.</summary>
+        public const float EscortFollowCruiseMin = 4f;
+
+        /// <summary>Follow cruise (world units/s) for a +1 capsule.</summary>
+        public const float EscortFollowCruiseMax = 6f;
+
+        /// <summary>
+        /// Magnet lerp rate toward cruise. Lower than the generic transport <c>4</c>
+        /// so escorts ease on instead of snapping up to speed.
+        /// </summary>
+        public const float EscortAccelRate = 1.45f;
+
+        /// <summary>
+        /// How close a ready capsule's center must be to ship center before launch.
+        /// Do not scale this by covering-hull radius — that let ring seats skip preload.
+        /// </summary>
+        public const float EscortReadyCenterSlack = 0.42f;
+
+        /// <summary>Must be this slow at center before the one-way planet launch.</summary>
+        public const float EscortReadyStopSpeed = 0.4f;
+
+        /// <summary>Escorts must fly at least this long before surface consume.</summary>
+        public const float EscortUnloadMinSeconds = 0.55f;
+
+        /// <summary>Fraction of the launch-to-surface gap that must be covered before consume.</summary>
+        public const float EscortUnloadCoverFraction = 0.78f;
+
         public static float EffectiveVisualTravelSeconds =>
             TargetVisualTravelSeconds * VisualTravelDurationMultiplier / VisualTravelSpeedBonus;
 
@@ -86,6 +171,70 @@ namespace TitanOrbit.Simulation
         }
 
         /// <summary>
+        /// Same magnet as <see cref="SteerMagnetVelocity"/> with mass-scaled accel.
+        /// Heavier capsules ease onto the new heading instead of snapping with the pack.
+        /// </summary>
+        public static float3 SteerEscortVelocity(
+            float3 myPos,
+            float3 targetPos,
+            float3 currentVel,
+            float dt,
+            float cruiseSpeed,
+            float peopleAmount,
+            float mapW,
+            float mapH)
+        {
+            float accelMul = EscortMassAccelMul(peopleAmount);
+            myPos.y = 0f;
+            targetPos.y = 0f;
+            float3 toTarget = ToroidalMapEcs.ToroidalDirection(myPos, targetPos, mapW, mapH);
+            float dist = ToroidalMapEcs.ToroidalDistance(myPos, targetPos, mapW, mapH);
+            float speed = cruiseSpeed;
+            if (dist < MagnetCloseRangeWorld)
+                speed = math.max(0.4f, cruiseSpeed * math.saturate(dist / MagnetCloseRangeWorld));
+            float3 targetVel = toTarget * speed;
+            return math.lerp(currentVel, targetVel, math.saturate(cruiseSpeed * dt * EscortAccelRate * accelMul));
+        }
+
+        /// <summary>
+        /// Ease onto a point: speed scales with remaining distance so arrival
+        /// does not floor at a crawl and then teleport.
+        /// </summary>
+        public static float3 SteerEscortArriveVelocity(
+            float3 myPos,
+            float3 targetPos,
+            float3 currentVel,
+            float dt,
+            float cruiseSpeed,
+            float peopleAmount,
+            float mapW,
+            float mapH)
+        {
+            float accelMul = EscortMassAccelMul(peopleAmount);
+            myPos.y = 0f;
+            targetPos.y = 0f;
+            float3 toTarget = ToroidalMapEcs.ToroidalDirection(myPos, targetPos, mapW, mapH);
+            float dist = ToroidalMapEcs.ToroidalDistance(myPos, targetPos, mapW, mapH);
+            float speed = math.min(cruiseSpeed, dist / 0.42f);
+            float3 targetVel = toTarget * speed;
+            return math.lerp(currentVel, targetVel, math.saturate(cruiseSpeed * dt * EscortAccelRate * accelMul));
+        }
+
+        /// <summary>Ship motion this frame (toroidal) so ready capsules can track a moving center.</summary>
+        public static float3 GetEscortShipCarryDelta(
+            float3 lastShipPos,
+            float3 shipPos,
+            float mapW,
+            float mapH)
+        {
+            lastShipPos.y = 0f;
+            shipPos.y = 0f;
+            if (ToroidalMapEcs.IsValidMapSize(mapW, mapH))
+                return ToroidalMapEcs.ShortestOffsetXZ(lastShipPos, shipPos, mapW, mapH);
+            return shipPos - lastShipPos;
+        }
+
+        /// <summary>
         /// People packed into one load sphere: <c>shipLevel × planetLevel</c>
         /// (L6 ship at L3 planet → 18). Callers may still send a smaller partial when
         /// surplus or cargo space is tight. Unload uses <see cref="GetUnloadChunk"/>.
@@ -104,6 +253,315 @@ namespace TitanOrbit.Simulation
         public static int GetUnloadChunk(int shipLevel)
         {
             return math.max(1, shipLevel);
+        }
+
+        /// <summary>
+        /// How many escort spheres to show / hit-test for this cargo.
+        /// Packs into <see cref="GetUnloadChunk"/> sizes, then clamps to
+        /// <see cref="MaxEscortVisualSlots"/>.
+        /// </summary>
+        public static int GetEscortSlotCount(int people, int shipLevel)
+        {
+            if (people <= 0)
+                return 0;
+            int chunk = GetUnloadChunk(shipLevel);
+            int raw = (people + chunk - 1) / chunk;
+            return math.min(raw, MaxEscortVisualSlots);
+        }
+
+        /// <summary>
+        /// People in one packed escort slot. Spreads remainder across the first slots
+        /// so <c>sum(GetEscortSlotAmount)</c> equals <paramref name="people"/>.
+        /// </summary>
+        public static int GetEscortSlotAmount(int people, int shipLevel, int slotIndex)
+        {
+            int count = GetEscortSlotCount(people, shipLevel);
+            if (count <= 0 || slotIndex < 0 || slotIndex >= count)
+                return 0;
+            int baseAmt = people / count;
+            int remainder = people - baseAmt * count;
+            return baseAmt + (slotIndex < remainder ? 1 : 0);
+        }
+
+        /// <summary>Heavier capsules cruise slower. Used to remap follow into 6 → 4.</summary>
+        public static float EscortMassSpeedMul(float peopleAmount)
+        {
+            return 1f / math.sqrt(1f + math.max(0f, peopleAmount - 1f) * 0.038f);
+        }
+
+        /// <summary>Follow cruise in the 4–6 band. +1 → 6, +36 → 4.</summary>
+        public static float GetEscortFollowCruise(float peopleAmount)
+        {
+            float t = math.saturate(
+                (math.max(PeopleAmountScaleMin, peopleAmount) - PeopleAmountScaleMin) /
+                math.max(0.01f, PeopleAmountScaleMax - PeopleAmountScaleMin));
+            return math.lerp(EscortFollowCruiseMax, EscortFollowCruiseMin, t);
+        }
+
+        /// <summary>Heavier capsules ease onto heading more slowly. +1 → 1, +36 → ~0.52.</summary>
+        public static float EscortMassAccelMul(float peopleAmount)
+        {
+            return 1f / math.sqrt(1f + math.max(0f, peopleAmount - 1f) * 0.095f);
+        }
+
+        /// <summary>Deterministic 0..1 hash so peers share the same escort layout with no extra net.</summary>
+        public static float EscortSlotHash01(int shipNetworkId, int salt)
+        {
+            uint h = (uint)(shipNetworkId * unchecked((int)0x9E3779B9) ^ (salt * unchecked((int)0x85EBCA77)));
+            h ^= h >> 16;
+            h *= 0x7FEB352D;
+            h ^= h >> 15;
+            return (h & 0xFFFFu) / 65535f;
+        }
+
+        /// <summary>
+        /// Hull surface distance along a ship-local XZ direction using the covering
+        /// ellipse (extent X = beam, extent Z = length). Not an average of the axes.
+        /// </summary>
+        public static float GetHullRadiusAlongLocalDir(float extX, float extZ, float localX, float localZ)
+        {
+            float a = math.max(BodyCollisionMath.MinShipHullRadiusWorld, extX);
+            float b = math.max(BodyCollisionMath.MinShipHullRadiusWorld, extZ);
+            float2 dir = new float2(localX, localZ);
+            float len = math.length(dir);
+            if (len < 1e-5f)
+                return a;
+            dir /= len;
+            float d = (dir.x / a) * (dir.x / a) + (dir.y / b) * (dir.y / b);
+            return 1f / math.sqrt(math.max(1e-8f, d));
+        }
+
+        /// <summary>
+        /// Per-slot radius as 1.1–2× the hull ellipse at that slot's angle.
+        /// </summary>
+        public static float GetEscortSlotRadius(
+            float extX,
+            float extZ,
+            float angle,
+            float peopleAmount,
+            int shipNetworkId,
+            int slotIndex)
+        {
+            _ = peopleAmount;
+            float localX = math.cos(angle);
+            float localZ = -math.sin(angle);
+            float hullR = GetHullRadiusAlongLocalDir(extX, extZ, localX, localZ);
+            float u = EscortSlotHash01(shipNetworkId, slotIndex * 31 + 7);
+            return hullR * math.lerp(EscortRingMinRadiusMul, EscortRingMaxRadiusMul, u);
+        }
+
+        /// <summary>
+        /// True when this capsule has caught the ship (inside the outer hover ring).
+        /// Uses ship proximity, not the exact hashed seat — orbit yaw moves seats
+        /// faster than escorts can chase, which starved the ready-to-center call.
+        /// Enroute chases farther than the ring still cannot become ready.
+        /// </summary>
+        public static bool IsEscortGatheredAtShip(
+            float3 escortPos,
+            float3 shipPos,
+            quaternion shipRot,
+            float extX,
+            float extZ,
+            int slotIndex,
+            int slotCount,
+            float peopleAmount,
+            int shipNetworkId,
+            float mapW,
+            float mapH)
+        {
+            _ = shipRot;
+            _ = slotIndex;
+            _ = slotCount;
+            _ = peopleAmount;
+            _ = shipNetworkId;
+            float outer = math.max(extX, extZ) * EscortRingMaxRadiusMul + EscortGatherSlack;
+            return ToroidalMapEcs.ToroidalDistance(escortPos, shipPos, mapW, mapH) <= outer;
+        }
+
+        /// <summary>True when a ready capsule has reached the ship center and may launch.</summary>
+        public static bool IsEscortReadyAtShipCenter(
+            float3 escortPos,
+            float3 shipPos,
+            float hullRadius,
+            float mapW,
+            float mapH)
+        {
+            _ = hullRadius;
+            return ToroidalMapEcs.ToroidalDistance(escortPos, shipPos, mapW, mapH) <= EscortReadyCenterSlack;
+        }
+
+        /// <summary>At ship center and nearly stopped — may launch toward the planet.</summary>
+        public static bool IsEscortParkedAtShipCenter(
+            float3 escortPos,
+            float3 escortVel,
+            float3 shipPos,
+            float hullRadius,
+            float mapW,
+            float mapH)
+        {
+            if (!IsEscortReadyAtShipCenter(escortPos, shipPos, hullRadius, mapW, mapH))
+                return false;
+            escortVel.y = 0f;
+            return math.lengthsq(escortVel) <= EscortReadyStopSpeed * EscortReadyStopSpeed;
+        }
+
+        /// <summary>
+        /// Home pose around the ship: unique radius in a min/max band and a non-uniform angle.
+        /// Client visuals and server follow / hit-scan must share this.
+        /// </summary>
+        public static float3 EvaluateEscortSlotPose(
+            float3 shipPos,
+            quaternion shipRot,
+            float extX,
+            float extZ,
+            int slotIndex,
+            int slotCount,
+            float peopleAmount,
+            int shipNetworkId,
+            float mapW,
+            float mapH)
+        {
+            GetEscortShipBasis(shipPos, shipRot, out shipPos, out float3 forward, out float3 right);
+            if (slotCount < 1)
+                slotCount = 1;
+            slotIndex = math.clamp(slotIndex, 0, slotCount - 1);
+
+            const float golden = 2.399963229728653f;
+            float uAng = EscortSlotHash01(shipNetworkId, slotIndex * 17 + 11);
+            float ang = slotIndex * golden + (uAng - 0.5f) * EscortAngleJitter;
+            float3 dir = math.cos(ang) * right + math.sin(ang) * (-forward);
+            float3 pos = shipPos + dir * GetEscortSlotRadius(
+                extX, extZ, ang, peopleAmount, shipNetworkId, slotIndex);
+            pos.y = 0f;
+            if (ToroidalMapEcs.IsValidMapSize(mapW, mapH))
+                pos = ToroidalMapEcs.Wrap(pos, mapW, mapH);
+            return pos;
+        }
+
+        /// <summary>Cruise after size scale. Bigger troop packs move slower.</summary>
+        public static float GetEscortCruise(float peopleAmount, float baseCruise)
+        {
+            return math.max(0.12f, baseCruise * EscortMassSpeedMul(peopleAmount));
+        }
+
+        /// <summary>
+        /// Snap onto <paramref name="target"/> when close so idle escorts do not jitter.
+        /// </summary>
+        public static bool TrySettleEscort(
+            ref float3 pos,
+            ref float3 vel,
+            float3 target,
+            float mapW,
+            float mapH)
+        {
+            pos.y = 0f;
+            target.y = 0f;
+            if (ToroidalMapEcs.ToroidalDistance(pos, target, mapW, mapH) > EscortSettleSnap)
+                return false;
+            pos = target;
+            pos.y = 0f;
+            vel = float3.zero;
+            return true;
+        }
+
+        /// <summary>
+        /// Follow at own 4–6 cruise. Ready capsules ride the moving ship center
+        /// and ease to a stop — they do not teleport onto the hull.
+        /// </summary>
+        public static void IntegrateEscortFollow(
+            ref float3 pos,
+            ref float3 vel,
+            ref bool riding,
+            float3 target,
+            float3 carryDelta,
+            float peopleAmount,
+            float dt,
+            float mapW,
+            float mapH,
+            bool readyToCenter)
+        {
+            bool parkedAtCenter = riding && readyToCenter;
+            riding = false;
+            pos.y = 0f;
+            target.y = 0f;
+            carryDelta.y = 0f;
+            if (readyToCenter)
+            {
+                pos += carryDelta;
+                if (ToroidalMapEcs.IsValidMapSize(mapW, mapH))
+                    pos = ToroidalMapEcs.Wrap(pos, mapW, mapH);
+
+                float dist = ToroidalMapEcs.ToroidalDistance(pos, target, mapW, mapH);
+                if (parkedAtCenter)
+                {
+                    if (dist > 0.03f)
+                    {
+                        float3 off = ToroidalMapEcs.ShortestOffsetXZ(pos, target, mapW, mapH);
+                        pos += off * math.saturate(dt * 6f);
+                        if (ToroidalMapEcs.IsValidMapSize(mapW, mapH))
+                            pos = ToroidalMapEcs.Wrap(pos, mapW, mapH);
+                    }
+
+                    vel = float3.zero;
+                    riding = true;
+                    return;
+                }
+
+                float cruise = GetEscortFollowCruise(peopleAmount);
+                vel = SteerEscortArriveVelocity(
+                    pos, target, vel, dt, cruise, peopleAmount, mapW, mapH);
+                pos += vel * dt;
+                pos.y = 0f;
+                if (ToroidalMapEcs.IsValidMapSize(mapW, mapH))
+                    pos = ToroidalMapEcs.Wrap(pos, mapW, mapH);
+
+                dist = ToroidalMapEcs.ToroidalDistance(pos, target, mapW, mapH);
+                if (dist <= EscortReadyCenterSlack &&
+                    math.lengthsq(vel) <= EscortReadyStopSpeed * EscortReadyStopSpeed)
+                {
+                    vel = float3.zero;
+                    riding = true;
+                }
+
+                return;
+            }
+
+            float followCruise = GetEscortFollowCruise(peopleAmount);
+            vel = SteerEscortVelocity(
+                pos, target, vel, dt, followCruise, peopleAmount, mapW, mapH);
+            pos += vel * dt;
+            pos.y = 0f;
+            if (ToroidalMapEcs.IsValidMapSize(mapW, mapH))
+                pos = ToroidalMapEcs.Wrap(pos, mapW, mapH);
+        }
+
+        static void GetEscortShipBasis(
+            float3 shipPos,
+            quaternion shipRot,
+            out float3 planarPos,
+            out float3 forward,
+            out float3 right)
+        {
+            planarPos = shipPos;
+            planarPos.y = 0f;
+            forward = math.mul(shipRot, new float3(0f, 0f, 1f));
+            forward.y = 0f;
+            if (math.lengthsq(forward) < 1e-4f)
+                forward = new float3(0f, 0f, 1f);
+            else
+                forward = math.normalize(forward);
+            right = new float3(-forward.z, 0f, forward.x);
+            if (math.lengthsq(right) < 1e-4f)
+                right = new float3(1f, 0f, 0f);
+            else
+                right = math.normalize(right);
+        }
+
+        /// <summary>World hit-sphere radius for a packed escort amount (matches visual scale).</summary>
+        public static float GetEscortHitRadius(float peopleAmount)
+        {
+            float scale = EscortPrefabBaseUniform * GetVisualScaleMultiplier(peopleAmount);
+            return GetBulletHitRadius(scale);
         }
 
         /// <summary>
@@ -227,6 +685,33 @@ namespace TitanOrbit.Simulation
             float surfaceReach = math.max(0.85f, planetSize * 0.12f);
             float3 surface = GetPlanetSurfaceToward(planetCenter, planetSize, projectilePos, mapW, mapH);
             return ToroidalMapEcs.ToroidalDistance(projectilePos, surface, mapW, mapH) <= surfaceReach;
+        }
+
+        /// <summary>
+        /// Escort unload consume. Capsules launch from beside the ship in the orbit ring —
+        /// the generic surface-reach gate would fire while they are still next to the hull.
+        /// They must cover most of the launch-to-surface gap and actually reach the planet.
+        /// </summary>
+        public static bool CanCompleteEscortUnload(
+            float3 projectilePos,
+            float3 spawnPosition,
+            float3 planetCenter,
+            float planetSize,
+            float elapsed,
+            float mapW,
+            float mapH)
+        {
+            if (elapsed < EscortUnloadMinSeconds)
+                return false;
+
+            float3 surface = GetPlanetSurfaceToward(planetCenter, planetSize, projectilePos, mapW, mapH);
+            float distNow = ToroidalMapEcs.ToroidalDistance(projectilePos, surface, mapW, mapH);
+            float distAtSpawn = ToroidalMapEcs.ToroidalDistance(spawnPosition, surface, mapW, mapH);
+            if (distAtSpawn > 1.25f && distNow > distAtSpawn * (1f - EscortUnloadCoverFraction))
+                return false;
+
+            float surfaceReach = math.max(0.4f, planetSize * 0.05f);
+            return distNow <= surfaceReach;
         }
 
         /// <summary>

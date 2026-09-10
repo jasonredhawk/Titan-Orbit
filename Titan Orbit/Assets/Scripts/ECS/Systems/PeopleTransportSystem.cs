@@ -23,6 +23,12 @@ namespace TitanOrbit.ECS
         /// <summary>Multiplier on base transfer rate (1 = designer default).</summary>
         public const float TransferSpeedMultiplier = 1f;
 
+        /// <summary>
+        /// Seconds between escort unload launches at 1× transfer speed.
+        /// Same cadence as the old packed-sphere dispatcher (accumulator hits one chunk).
+        /// </summary>
+        public const float UnloadDispatchIntervalSeconds = 1f;
+
         /// <summary>Fallback hull radius when ship collider scale is unavailable.</summary>
         public const float DefaultShipHullRadius = 1f;
 
@@ -54,10 +60,10 @@ namespace TitanOrbit.ECS
     }
 
     /// <summary>
-    /// Server: after a ship dwells in an orbit ring, dispatches incremental people load/unload.
-    /// Spawns server-only transport entities (<see cref="PeopleTransportTag"/>) plus a cosmetic
-    /// <see cref="PeopleTransportSpawnRpc"/> for client VFX. Does not Instantiate the old
-    /// PeopleTransportGhost — that flooded Windows GhostSpawn and kicked clients to the main menu.
+    /// Server: after a ship dwells in an orbit ring, dispatches incremental people <b>load</b>
+    /// (planet→ship hops) and starts a simultaneous escort <b>unload wave</b> (no per-sphere
+    /// spawn RPC). Load still uses server-only <see cref="PeopleTransportTag"/> + cosmetic
+    /// <see cref="PeopleTransportSpawnRpc"/>. Does not Instantiate the old PeopleTransportGhost.
     /// <para>
     /// [TITAN-ORBIT] One batch = one transport sphere carrying <c>Amount</c> people (scaled up).
     /// Load batch = <c>shipLevel × planetLevel</c> (L6 ship at L3 planet → one +18).
@@ -131,6 +137,7 @@ namespace TitanOrbit.ECS
             {
                 if (shipState.ValueRO.IsDead || shipState.ValueRO.AwaitingTeamSelection)
                 {
+                    PeopleTransportEscortLogic.AbortLandingWave(state.EntityManager, shipEntity);
                     orbit.ValueRW.IsTransferringPeople = false;
                     continue;
                 }
@@ -139,6 +146,7 @@ namespace TitanOrbit.ECS
                 float3 shipPos = shipTransform.ValueRO.Position;
                 if (!orbit.ValueRO.InOrbitRing || orbit.ValueRO.OrbitPlanetId == 0)
                 {
+                    PeopleTransportEscortLogic.AbortLandingWave(state.EntityManager, shipEntity);
                     ResetTransferDwell(ref transfer);
                     orbit.ValueRW.IsTransferringPeople = false;
                     continue;
@@ -149,6 +157,7 @@ namespace TitanOrbit.ECS
                         in orbit.ValueRO, in shipInput.ValueRO, in moonDock.ValueRO, shipPos,
                         orbitPlanetId, planetTransformById, planetStateById, mapW, mapH))
                 {
+                    PeopleTransportEscortLogic.AbortLandingWave(state.EntityManager, shipEntity);
                     ResetTransferDwell(ref transfer);
                     orbit.ValueRW.IsTransferringPeople = false;
                     continue;
@@ -165,12 +174,14 @@ namespace TitanOrbit.ECS
                     PeopleTransportConstants.OrbitDwellBeforeTransferSeconds;
                 if (!dwellReady)
                 {
+                    PeopleTransportEscortLogic.AbortLandingWave(state.EntityManager, shipEntity);
                     orbit.ValueRW.IsTransferringPeople = transfer.PeopleInTransit > 0.01f;
                     continue;
                 }
 
                 if (!planetById.TryGetValue(orbitPlanetId, out var planetEntity))
                 {
+                    PeopleTransportEscortLogic.AbortLandingWave(state.EntityManager, shipEntity);
                     orbit.ValueRW.IsTransferringPeople = false;
                     continue;
                 }
@@ -195,49 +206,88 @@ namespace TitanOrbit.ECS
                 int shipLevel = math.max(1, shipState.ValueRO.ShipLevel);
                 int planetLevel = math.max(1, planetState.PlanetLevel);
                 float loadChunk = PeopleTransportMath.GetTransferChunk(shipLevel, planetLevel);
-                float unloadChunk = PeopleTransportMath.GetUnloadChunk(shipLevel);
                 float transferMul = CardEffectQuery.GetMul(state.EntityManager, shipEntity, CardEffectKind.PeopleTransferSpeedMul);
-                float unloadAdd = CardEffectQuery.GetValue(state.EntityManager, shipEntity, CardEffectKind.PeopleUnloadChunkAdd);
-                unloadChunk = math.max(1f, unloadChunk + unloadAdd);
                 float loadStep = loadChunk * dt * PeopleTransportConstants.TransferSpeedMultiplier * transferMul;
-                float unloadStep = unloadChunk * dt * PeopleTransportConstants.TransferSpeedMultiplier * transferMul;
                 int shipNetworkId = GetShipNetworkId(ref state, shipEntity);
                 if (shipNetworkId == 0)
                 {
+                    PeopleTransportEscortLogic.AbortLandingWave(state.EntityManager, shipEntity);
                     orbit.ValueRW.IsTransferringPeople = false;
                     continue;
                 }
                 float3 planetPos = planetTransform.Position;
-                float shipHullRadius = PeopleTransportMath.GetShipHullRadius(shipTransform.ValueRO.Scale);
                 bool friendly = shipState.ValueRO.Team != TeamId.None && planetState.Ownership == shipState.ValueRO.Team;
                 orbit.ValueRW.IsTransferringPeople = ComputeIsTransferringPeople(
                     dwellReady, friendly, planetState.Population, halfCap,
                     shipState.ValueRO.CurrentPeople, shipState.ValueRO.PeopleCapacity,
                     transfer.PeopleInTransit);
 
-                if (friendly)
+                // Latch load for this dwell so paying the planet down through 50% cannot
+                // immediately dump the escorts we just picked up. Unload may still flip
+                // to load if the planet fills above half-cap.
+                bool lockedLoad = transfer.TransferDirection == PeopleTransferDirection.Load;
+                bool wantUnload = !lockedLoad && PeopleTransportEscortLogic.ShouldUnloadEscorts(
+                    in shipState.ValueRO, in planetState, halfCap);
+                if (wantUnload)
                 {
-                    if (planetState.Population < halfCap)
+                    transfer.TransferDirection = PeopleTransferDirection.Unload;
+                    // --- Ready-at-center, then one-way launch (old unload cadence) ---
+                    // Only in-position followers may become ready. Enroute escorts stay in follow.
+                    PeopleTransportEscortLogic.BeginLandingWave(
+                        state.EntityManager,
+                        shipEntity,
+                        in shipState.ValueRO,
+                        in shipTransform.ValueRO,
+                        planetState.PlanetId,
+                        mapW,
+                        mapH);
+
+                    if (state.EntityManager.HasBuffer<PeopleEscortSlot>(shipEntity))
                     {
-                        transfer.UnloadAccumulator += unloadStep;
-                        // [TITAN-ORBIT] Unload debits CurrentPeople at spawn — no PeopleInTransit reserve.
-                        int availablePeople = shipState.ValueRO.CurrentPeople;
-                        if (transfer.UnloadAccumulator >= unloadChunk && availablePeople > 0)
+                        var escortSlots = state.EntityManager.GetBuffer<PeopleEscortSlot>(shipEntity);
+                        PeopleTransportEscortLogic.ResolveEscortShipExtents(
+                            state.EntityManager, shipEntity, in shipTransform.ValueRO,
+                            out float extX, out float extZ);
+                        float hull = math.max(extX, extZ);
+                        PeopleTransportEscortLogic.TryPromoteReadySlot(
+                            ref escortSlots, in shipTransform.ValueRO, extX, extZ, shipNetworkId, mapW, mapH);
+
+                        float unloadChunk = PeopleTransportMath.GetUnloadChunk(shipLevel);
+                        // Cadence only while the ready capsule is parked at center — do not
+                        // spend the hold during the preload flight (that skipped the ready pose).
+                        if (PeopleTransportEscortLogic.IsReadySlotParkedAtShipCenter(
+                                escortSlots, shipTransform.ValueRO.Position, hull, mapW, mapH))
                         {
-                            int room = halfCap - planetState.Population;
-                            int send = (int)math.min(unloadChunk, math.min(availablePeople, room));
-                            if (send > 0 && TryDispatchUnload(
-                                    ref ecb, ref shipState.ValueRW, ref planetState, ref transfer,
-                                    send, shipNetworkId, planetState.PlanetId, shipState.ValueRO.Team,
-                                    shipPos, planetPos, planetSize, shipHullRadius, mapW, mapH, now))
+                            transfer.UnloadAccumulator +=
+                                unloadChunk * dt * PeopleTransportConstants.TransferSpeedMultiplier * transferMul;
+                        }
+
+                        if (transfer.UnloadAccumulator >= unloadChunk)
+                        {
+                            if (PeopleTransportEscortLogic.TryLaunchReadySlot(
+                                    ref escortSlots, in shipTransform.ValueRO, hull,
+                                    planetState.PlanetId, planetPos, planetSize, mapW, mapH,
+                                    out int launched))
                             {
+                                if (launched > 0)
+                                {
+                                    shipState.ValueRW.CurrentPeople = math.max(
+                                        0, shipState.ValueRO.CurrentPeople - launched);
+                                }
+
                                 transfer.UnloadAccumulator = 0f;
-                                planetStateById[planetState.PlanetId] = planetState;
-                                ecb.SetComponent(planetEntity, planetState);
+                                PeopleTransportEscortLogic.TryPromoteReadySlot(
+                                    ref escortSlots, in shipTransform.ValueRO, extX, extZ, shipNetworkId, mapW, mapH);
                             }
                         }
                     }
-                    else
+                }
+                else
+                {
+                    transfer.TransferDirection = PeopleTransferDirection.Load;
+                    PeopleTransportEscortLogic.AbortLandingWave(state.EntityManager, shipEntity);
+
+                    if (friendly)
                     {
                         transfer.LoadAccumulator += loadStep;
                         if (transfer.LoadAccumulator >= loadChunk)
@@ -256,27 +306,11 @@ namespace TitanOrbit.ECS
                                     ref transfer, send, shipNetworkId, planetState.PlanetId, shipState.ValueRO.Team,
                                     shipPos, planetPos, planetSize, mapW, mapH, now))
                             {
+                                transfer.LastLoadCombineMax = (int)loadChunk;
                                 transfer.LoadAccumulator = 0f;
                                 planetStateById[planetState.PlanetId] = planetState;
                                 ecb.SetComponent(planetEntity, planetState);
                             }
-                        }
-                    }
-                }
-                else
-                {
-                    transfer.UnloadAccumulator += unloadStep;
-                    // Hostile/neutral: drain / capture — same debit-at-leave accounting as friendly unload.
-                    int availablePeople = shipState.ValueRO.CurrentPeople;
-                    if (transfer.UnloadAccumulator >= unloadChunk && availablePeople > 0)
-                    {
-                        int send = (int)math.min(unloadChunk, availablePeople);
-                        if (TryDispatchUnload(
-                                ref ecb, ref shipState.ValueRW, ref planetState, ref transfer,
-                                send, shipNetworkId, planetState.PlanetId, shipState.ValueRO.Team,
-                                shipPos, planetPos, planetSize, shipHullRadius, mapW, mapH, now))
-                        {
-                            transfer.UnloadAccumulator = 0f;
                         }
                     }
                 }
@@ -294,6 +328,7 @@ namespace TitanOrbit.ECS
             transfer.OrbitDwellSeconds = 0f;
             transfer.LoadAccumulator = 0f;
             transfer.UnloadAccumulator = 0f;
+            transfer.TransferDirection = PeopleTransferDirection.None;
         }
 
         /// <summary>
@@ -408,53 +443,6 @@ namespace TitanOrbit.ECS
             // [TITAN-ORBIT] Planet pays immediately; ship gains only on DeliverLoad (transitory vessel).
             planet.Population -= amount;
             transfer.PeopleInTransit += amount;
-            return true;
-        }
-
-        /// <summary>
-        /// Spawns one packed unload transport and immediately removes that crew from the ship.
-        /// Planet population rises only when the sphere lands (<see cref="DeliverUnload"/>).
-        /// Floating −Amount is shown by client VFX at spawn.
-        /// </summary>
-        /// <param name="amount">People packed into this single sphere (ideal size
-        /// is ship level only; caller may pass a smaller partial).</param>
-        static bool TryDispatchUnload(
-            ref EntityCommandBuffer ecb,
-            ref ShipState ship,
-            ref PlanetState planet,
-            ref ShipPeopleTransferState transfer,
-            int amount,
-            int shipNetworkId,
-            int planetId,
-            TeamId team,
-            float3 shipPos,
-            float3 planetPos,
-            float planetSize,
-            float shipHullRadius,
-            float mapW,
-            float mapH,
-            float now)
-        {
-            _ = planet;
-            _ = transfer;
-            if (amount <= 0)
-                return false;
-
-            // --- Clamp to crew still aboard (caller usually already did this) ---
-            int send = math.min(amount, ship.CurrentPeople);
-            if (send <= 0)
-                return false;
-
-            // --- Target = planet surface; spawn = planet-facing ship flank (not ship forward / nose) ---
-            float3 targetPos = PeopleTransportMath.GetPlanetSurfaceToward(planetPos, planetSize, shipPos, mapW, mapH);
-            float3 spawnPos = PeopleTransportMath.GetShipUnloadSpawnToward(
-                shipPos, shipHullRadius, planetPos, mapW, mapH);
-
-            // --- One packed sphere for the whole batch ---
-            SpawnTransport(ref ecb, spawnPos, targetPos, send, 0, planetId,
-                planetId, shipNetworkId, false, team, now, mapW, mapH);
-            // [TITAN-ORBIT] Debit ship now — people are in the temporary vessel, not aboard.
-            ship.CurrentPeople -= send;
             return true;
         }
 
@@ -696,7 +684,9 @@ namespace TitanOrbit.ECS
                     if (PeopleTransportMath.CanDeliverLoadToShip(myPos, shipCenter, shipRadius, mapW, mapH) &&
                         PeopleTransportMath.HasBriefTravelBeforeLoad(myPos, t.SpawnPosition, elapsed, mapW, mapH))
                     {
-                        DeliverLoad(ref state, shipEntity, ref shipState, t.Amount, team);
+                        int sourcePlanetLevel = sourcePlanetState.PlanetLevel;
+                        DeliverLoad(
+                            ref state, shipEntity, ref shipState, t.Amount, team, sourcePlanetLevel);
                         shipStateByNetworkId[t.TargetShipNetworkId] = shipState;
                         ecb.SetComponent(shipEntity, shipState);
                         PeopleTransportNetNotify.EndAndDestroy(
@@ -814,6 +804,10 @@ namespace TitanOrbit.ECS
                 }
             }
 
+            StepEscortWaves(
+                ref state, ref ecb, dt, now, mapW, mapH,
+                planetById, planetStateById, planetTransformById, shipByNetworkId);
+
             ecb.Playback(state.EntityManager);
             ecb.Dispose();
             planetById.Dispose();
@@ -825,6 +819,131 @@ namespace TitanOrbit.ECS
             shipMoonDockByNetworkId.Dispose();
             shipInputByNetworkId.Dispose();
             shipOrbitByNetworkId.Dispose();
+        }
+
+        /// <summary>
+        /// Follow-pose reconcile + sequential landing. Launch already debited
+        /// <see cref="ShipState.CurrentPeople"/>; contact only applies <see cref="DeliverUnload"/>.
+        /// Leaving the ring aborts ready/follow without a refund of launched capsules.
+        /// </summary>
+        static void StepEscortWaves(
+            ref SystemState state,
+            ref EntityCommandBuffer ecb,
+            float dt,
+            float now,
+            float mapW,
+            float mapH,
+            NativeHashMap<int, Entity> planetById,
+            NativeHashMap<int, PlanetState> planetStateById,
+            NativeHashMap<int, LocalTransform> planetTransformById,
+            NativeHashMap<int, Entity> shipByNetworkId)
+        {
+            var em = state.EntityManager;
+            using var keys = shipByNetworkId.GetKeyArray(Allocator.Temp);
+            for (int s = 0; s < keys.Length; s++)
+            {
+                int sourceNetId = keys[s];
+                if (!shipByNetworkId.TryGetValue(sourceNetId, out var entity))
+                    continue;
+                if (!em.HasComponent<ShipState>(entity) ||
+                    !em.HasComponent<LocalTransform>(entity) ||
+                    !em.HasBuffer<PeopleEscortSlot>(entity))
+                    continue;
+
+                var shipState = em.GetComponentData<ShipState>(entity);
+                var shipTransform = em.GetComponentData<LocalTransform>(entity);
+                PeopleTransportEscortLogic.SyncSlotAmounts(
+                    em, entity, in shipState, in shipTransform, mapW, mapH);
+                PeopleTransportEscortLogic.StepFollowSlots(
+                    em, entity, in shipTransform, dt, mapW, mapH);
+
+                var slots = em.GetBuffer<PeopleEscortSlot>(entity);
+                var team = shipState.Team;
+
+                for (int i = slots.Length - 1; i >= 0; i--)
+                {
+                    var slot = slots[i];
+                    if (slot.InFlight == 0 || slot.TargetPlanetId == 0)
+                        continue;
+                    if (slot.Health <= 0f)
+                    {
+                        slots.RemoveAt(i);
+                        continue;
+                    }
+
+                    if (!planetById.TryGetValue(slot.TargetPlanetId, out var planetEntity) ||
+                        !planetStateById.TryGetValue(slot.TargetPlanetId, out var planetState) ||
+                        !planetTransformById.TryGetValue(slot.TargetPlanetId, out var planetTransform))
+                        continue;
+
+                    float planetSize = math.max(0.5f, planetTransform.Scale);
+                    if (!PeopleTransportEscortLogic.StepLandingSlot(
+                            ref slot, dt, planetTransform.Position, planetSize, mapW, mapH))
+                    {
+                        slots[i] = slot;
+                        continue;
+                    }
+
+                    int destPlanetId = slot.TargetPlanetId;
+                    int moved = math.max(0, (int)slot.Amount);
+                    slots.RemoveAt(i);
+                    if (moved <= 0)
+                        continue;
+
+                    var unloadOutcome = DeliverUnload(ref planetState, moved, team, planetTransform, planetSize);
+
+                    if (sourceNetId > 0 &&
+                        (unloadOutcome == PeopleUnloadOutcome.HostileDrain ||
+                         unloadOutcome == PeopleUnloadOutcome.Captured))
+                    {
+                        PlanetPeopleContributionLogic.Add(
+                            em, planetEntity, sourceNetId, moved, team);
+                    }
+
+                    if (unloadOutcome == PeopleUnloadOutcome.Captured)
+                    {
+                        planetState.TopContributorNetworkId =
+                            PlanetPeopleContributionLogic.ResolveTopAndClear(
+                                em, planetEntity, team, sourceNetId);
+                    }
+
+                    planetStateById[destPlanetId] = planetState;
+                    ecb.SetComponent(planetEntity, planetState);
+
+                    if (sourceNetId > 0)
+                    {
+                        ShipMatchStatsLogic.TryAddOnShip(
+                            em, entity,
+                            kills: 0, gemsDeposited: 0, peopleDelivered: moved);
+                    }
+
+                    if (unloadOutcome == PeopleUnloadOutcome.Captured)
+                    {
+                        PlanetaryDefenseSlotSyncSystem.WipeSlotsForOwnershipChange(
+                            em, planetEntity, team, planetState.PlanetLevel);
+                        PlanetOwnershipNetNotify.Send(
+                            ref ecb,
+                            planetState.PlanetId,
+                            team,
+                            planetState.Population,
+                            planetState.PlanetLevel,
+                            planetState.TopContributorNetworkId);
+                    }
+
+                    if (em.HasComponent<PlanetGrowthState>(planetEntity))
+                    {
+                        var growth = em.GetComponentData<PlanetGrowthState>(planetEntity);
+                        growth.FractionalPopulation = math.max(0f, planetState.Population);
+                        if (unloadOutcome == PeopleUnloadOutcome.Captured)
+                            growth.LastHostilePopulationImpactServerTime = 0f;
+                        else if (unloadOutcome == PeopleUnloadOutcome.HostileDrain)
+                            growth.LastHostilePopulationImpactServerTime = now;
+                        ecb.SetComponent(planetEntity, growth);
+                    }
+                }
+
+                PeopleTransportEscortLogic.WriteEscortVitals(em, entity);
+            }
         }
 
         internal static void StepTransportMotion(
@@ -948,14 +1067,41 @@ namespace TitanOrbit.ECS
             return PlanetOrbitMath.IsInOrbitRing(dist, inner, outer);
         }
 
-        static void DeliverLoad(ref SystemState state, Entity shipEntity, ref ShipState ship, float amount, TeamId team)
+        static void DeliverLoad(
+            ref SystemState state,
+            Entity shipEntity,
+            ref ShipState ship,
+            float amount,
+            TeamId team,
+            int planetLevel)
         {
             // --- DeliverLoad (arrival) ---
             // CurrentPeople rises here; client VFX shows +N at the transport consume position.
             int space = ship.PeopleCapacity - ship.CurrentPeople;
             int toAdd = (int)math.min(amount, space);
             if (toAdd > 0)
+            {
                 ship.CurrentPeople += toAdd;
+                int combineMax = PeopleTransportMath.GetTransferChunk(
+                    math.max(1, ship.ShipLevel), math.max(1, planetLevel));
+                if (state.EntityManager.HasComponent<ShipPeopleTransferState>(shipEntity))
+                {
+                    var transfer = state.EntityManager.GetComponentData<ShipPeopleTransferState>(shipEntity);
+                    transfer.LastLoadCombineMax = combineMax;
+                    state.EntityManager.SetComponentData(shipEntity, transfer);
+                }
+
+                if (state.EntityManager.HasComponent<LocalTransform>(shipEntity) &&
+                    ToroidalMapEcs.TryGetMapSize(out float mapW, out float mapH))
+                {
+                    var xf = state.EntityManager.GetComponentData<LocalTransform>(shipEntity);
+                    int netId = state.EntityManager.HasComponent<GhostOwner>(shipEntity)
+                        ? state.EntityManager.GetComponentData<GhostOwner>(shipEntity).NetworkId
+                        : 0;
+                    PeopleTransportEscortLogic.TryAppendEscortSlot(
+                        state.EntityManager, shipEntity, toAdd, in xf, mapW, mapH, combineMax, netId);
+                }
+            }
 
             ClearPeopleInTransitOnShip(ref state, shipEntity, amount);
             LogPeopleEvent("Load", toAdd, team);

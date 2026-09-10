@@ -1,6 +1,7 @@
 using TitanOrbit.Core;
 using Unity.Entities;
 using Unity.Mathematics;
+using Unity.NetCode;
 
 namespace TitanOrbit.ECS
 {
@@ -126,5 +127,91 @@ namespace TitanOrbit.ECS
 
         /// <summary>Dedupe key from server spawn sequence.</summary>
         public uint Sequence;
+    }
+
+    /// <summary>
+    /// Server-only packed escort capsule. Pose is formation-follow while waiting
+    /// or magnet kinematics while that slot is the active unloader — never ghosted.
+    /// Amount is the intact load size (a +36 stays +36).
+    /// </summary>
+    public struct PeopleEscortSlot : IBufferElementData
+    {
+        /// <summary>Planar world center (Y forced to 0).</summary>
+        public float3 Position;
+
+        /// <summary>Planar velocity (hover follow and landing magnet).</summary>
+        public float3 Velocity;
+
+        /// <summary>People packed in this sphere.</summary>
+        public float Amount;
+
+        /// <summary>Hull points. Replicated to clients via <see cref="ShipEscortVitals"/>.</summary>
+        public float Health;
+
+        /// <summary>Landing cruise speed (world units / sec).</summary>
+        public float CruiseSpeed;
+
+        /// <summary>Position when this capsule launched toward the planet.</summary>
+        public float3 SpawnPosition;
+
+        /// <summary>1 when launched one-way at the planet; 0 otherwise.</summary>
+        public byte InFlight;
+
+        /// <summary>1 when called to ship center (preload / ready). Not launched yet.</summary>
+        public byte Ready;
+
+        /// <summary>Planet this launched capsule is committed to; 0 if not launched.</summary>
+        public int TargetPlanetId;
+
+        /// <summary>Seconds since this capsule launched (min-time contact gate).</summary>
+        public float FlightElapsed;
+
+        /// <summary>
+        /// 1 when this capsule has caught its formation / ready seat and should
+        /// ride the ship pose. 0 while still swarming in at its own cruise.
+        /// </summary>
+        public byte Riding;
+    }
+
+    /// <summary>
+    /// Server-only landing latch. <see cref="PlanetId"/> 0 = follow beside the ship.
+    /// Launches are paced by the old unload accumulator — several capsules may be in flight.
+    /// Not ghosted — clients infer unload from orbit ring + dwell + planet ownership.
+    /// </summary>
+    public struct PeopleEscortLandingState : IComponentData
+    {
+        /// <summary>Planet being dropped on; 0 when escorts follow the ship.</summary>
+        public int PlanetId;
+    }
+
+    /// <summary>
+    /// Compact ghosted escort HP for nameplates. 8 slots × 1-byte health + amount (16 bytes)
+    /// plus count / in-flight mask. Not a per-capsule ghost.
+    /// </summary>
+    public struct ShipEscortVitals : IComponentData
+    {
+        public const int MaxSlots = 8;
+
+        [GhostField] public ulong HealthPacked;
+        [GhostField] public ulong AmountPacked;
+        [GhostField] public byte Count;
+        [GhostField] public byte InFlightMask;
+
+        public float GetHealth(int index)
+        {
+            if (index < 0 || index >= MaxSlots)
+                return 0f;
+            return (HealthPacked >> (index * 8)) & 0xFFul;
+        }
+
+        public float GetAmount(int index)
+        {
+            if (index < 0 || index >= MaxSlots)
+                return 0f;
+            return (AmountPacked >> (index * 8)) & 0xFFul;
+        }
+
+        public bool IsInFlight(int index) =>
+            index >= 0 && index < MaxSlots && (InFlightMask & (1 << index)) != 0;
     }
 }

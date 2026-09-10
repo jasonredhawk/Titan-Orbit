@@ -390,6 +390,40 @@ namespace TitanOrbit.ECS
                 found = true;
             }
 
+            // --- Derived troop escorts (follow / landing) — same as in-flight transports ---
+            for (int i = 0; i < enemyShips.Length; i++)
+            {
+                Entity ship = enemyShips[i];
+                if (!EntityManager.HasBuffer<PeopleEscortSlot>(ship) ||
+                    !EntityManager.HasComponent<ShipState>(ship))
+                    continue;
+                var shipState = EntityManager.GetComponentData<ShipState>(ship);
+                if (shipState.IsDead || shipState.Team == TeamId.None || shipState.Team == ownerTeam)
+                    continue;
+
+                var slots = EntityManager.GetBuffer<PeopleEscortSlot>(ship);
+                int count = slots.Length;
+                for (int s = 0; s < count; s++)
+                {
+                    var slot = slots[s];
+                    if (slot.Amount <= 0.01f || slot.Health <= 0f)
+                        continue;
+                    float3 pos = slot.Position;
+                    pos.y = PlanetaryDefenseMath.FixedY;
+
+                    float3 fromMuzzle = ToroidalMapEcs.ShortestOffsetXZ(muzzle, pos, mapW, mapH);
+                    float muzzleDistSq = math.lengthsq(new float3(fromMuzzle.x, 0f, fromMuzzle.z));
+                    if (muzzleDistSq > engageRangeSq || muzzleDistSq >= bestMuzzleDistSq)
+                        continue;
+
+                    bestMuzzleDistSq = muzzleDistSq;
+                    targetPos = pos;
+                    targetVel = slot.Velocity;
+                    targetVel.y = 0f;
+                    found = true;
+                }
+            }
+
             return found;
         }
 

@@ -353,7 +353,7 @@ namespace TitanOrbit.ECS
     /// <summary>
     /// [NETCODE] Server → all clients: authoritative people-transport pose / end-of-life.
     /// Server sim + bullets own the entity; clients only mirror this for VFX (no PeopleTransportGhost).
-    /// Wire size ~32 bytes — must match Linux headless layout.
+    /// Wire size ~36 bytes (includes Health) — must match Linux headless layout.
     /// </summary>
     public struct PeopleTransportPoseRpc : IRpcCommand
     {
@@ -370,6 +370,9 @@ namespace TitanOrbit.ECS
         /// <see cref="PeopleTransportPoseStatus"/> — Active / Consumed / Destroyed / Returned.
         /// </summary>
         public byte Status;
+
+        /// <summary>Live hull points so the client nameplate can show damage mid-flight.</summary>
+        public float Health;
     }
 
     /// <summary>

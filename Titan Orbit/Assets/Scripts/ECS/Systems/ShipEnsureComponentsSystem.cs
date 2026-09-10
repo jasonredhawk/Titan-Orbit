@@ -168,7 +168,19 @@ namespace TitanOrbit.ECS
                 {
                     if (!state.EntityManager.HasBuffer<ShipRamContactElement>(entity))
                         ecb.AddBuffer<ShipRamContactElement>(entity);
+                    if (!state.EntityManager.HasBuffer<PeopleEscortSlot>(entity))
+                        ecb.AddBuffer<PeopleEscortSlot>(entity);
                 }
+
+                foreach (var (_, entity) in SystemAPI.Query<RefRO<ShipTag>>()
+                             .WithNone<PeopleEscortLandingState>()
+                             .WithEntityAccess())
+                    ecb.AddComponent(entity, new PeopleEscortLandingState());
+
+                foreach (var (_, entity) in SystemAPI.Query<RefRO<ShipTag>>()
+                             .WithNone<ShipEscortVitals>()
+                             .WithEntityAccess())
+                    ecb.AddComponent(entity, new ShipEscortVitals());
             }
 
             foreach (var (_, entity) in SystemAPI.Query<RefRO<ShipTag>>()
