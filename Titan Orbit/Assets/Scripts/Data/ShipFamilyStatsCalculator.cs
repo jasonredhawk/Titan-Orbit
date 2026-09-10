@@ -26,6 +26,12 @@ namespace TitanOrbit.Data
             /// Ability details cards read this so Base / PerExtra can show × starting scale.
             /// </summary>
             public List<Vector3> PerComponentLocalScales;
+            /// <summary>
+            /// First index in <see cref="MatchedComponentIds"/> that is a moon-store extra.
+            /// <see cref="int.MaxValue"/> when the hull has no store gear. Extra Level uses
+            /// this so the newest purchase is the primary (only that Base counts).
+            /// </summary>
+            public int StoreExtraStartIndex;
         }
 
         /// <summary>
@@ -117,6 +123,7 @@ namespace TitanOrbit.Data
                 MatchedComponentIds = new List<string>(),
                 PerComponentStats = new List<ShipComponentAbilityStats>(),
                 PerComponentLocalScales = new List<Vector3>(),
+                StoreExtraStartIndex = int.MaxValue,
             };
 
             if (prefab == null || family == null)
@@ -168,7 +175,9 @@ namespace TitanOrbit.Data
 
         /// <summary>
         /// Appends moon-store-purchased components onto a prefab sum, then re-runs shared aggregation.
-        /// Stack pools keep only the primary part; extras scale via Extra Level component count.
+        /// Each extra keeps <b>its catalog family’s</b> Base / PerExtra (a CosmicShark thruster
+        /// does not borrow the hull family’s engine PerExtra). Store rows are appended after
+        /// prefab children so Extra Level / HUD can mark the newest buy as the display primary.
         /// </summary>
         public static SumResult AppendExtraComponentsAndAggregate(
             SumResult prefabSum,
@@ -177,11 +186,6 @@ namespace TitanOrbit.Data
             int shipLevel = 1)
         {
             // --- Append store extras then re-aggregate ---
-            if (family == null)
-                return prefabSum;
-
-            // Start from a raw (pre-aggregation) copy when possible — caller should pass
-            // SumFromPrefabHierarchy(..., applyPropulsionAndWeaponRules: false).
             var result = prefabSum;
             if (result.MatchedComponentIds == null)
                 result.MatchedComponentIds = new List<string>();
@@ -190,6 +194,10 @@ namespace TitanOrbit.Data
             if (result.PerComponentLocalScales == null)
                 result.PerComponentLocalScales = new List<Vector3>();
 
+            // Store extras are appended after prefab children — remember the split for primary pick.
+            int extraStart = result.MatchedComponentIds.Count;
+            result.StoreExtraStartIndex = int.MaxValue;
+
             if (extraComponentIds != null)
             {
                 for (int i = 0; i < extraComponentIds.Count; i++)
@@ -197,7 +205,9 @@ namespace TitanOrbit.Data
                     string componentId = extraComponentIds[i];
                     if (string.IsNullOrWhiteSpace(componentId))
                         continue;
-                    if (!family.TryGetStatsForComponent(componentId, out ShipComponentAbilityStats stats))
+
+                    // Any-family first — extras are often a captured-moon foreign catalog id.
+                    if (!TryResolveComponentStats(family, componentId, out ShipComponentAbilityStats stats))
                         continue;
 
                     // [TITAN-ORBIT] Store buys have no prefab transform scale — catalog stats at ×1.
@@ -208,13 +218,44 @@ namespace TitanOrbit.Data
                 }
             }
 
+            if (result.MatchedComponentIds.Count > extraStart)
+                result.StoreExtraStartIndex = extraStart;
+
             ApplySharedAggregationRules(ref result, family, shipLevel);
             return result;
         }
 
         /// <summary>
-        /// Shared post-sum rules: primary-per-pool aggregate, then family fallbacks / special bonuses.
-        /// Extra Level ship/ability scaling is applied later by
+        /// Catalog Base / PerExtra for a component id. Prefers the exact row in
+        /// <see cref="BulletBankProfileUtility.TryFindComponentInAnyFamily"/> so a purchased
+        /// foreign engine keeps that family’s PerExtra. Falls back to the hull family
+        /// (prefab suffixes like <c>Engine_2</c>).
+        /// </summary>
+        public static bool TryResolveComponentStats(
+            ShipFamilyDefinition preferredFamily,
+            string componentId,
+            out ShipComponentAbilityStats stats)
+        {
+            stats = default;
+            if (string.IsNullOrWhiteSpace(componentId))
+                return false;
+
+            // --- Exact catalog id across every planet family ---
+            if (BulletBankProfileUtility.TryFindComponentInAnyFamily(componentId, out ShipFamilyComponentEntry entry)
+                && entry != null)
+            {
+                stats = entry.stats;
+                return true;
+            }
+
+            // --- Hull-family suffix / prefix forms (prefab child names) ---
+            return preferredFamily != null
+                && preferredFamily.TryGetStatsForComponent(componentId, out stats);
+        }
+
+        /// <summary>
+        /// Shared post-sum rules: display-primary snapshot plus family fallbacks / special bonuses.
+        /// Live Extra Level (each part’s own PerExtra, then sum) is applied later by
         /// <see cref="ShipComponentExtraLevelMath.AggregateAndEvaluate"/>.
         /// </summary>
         public static void ApplySharedAggregationRules(ref SumResult result, ShipFamilyDefinition family, int shipLevel)

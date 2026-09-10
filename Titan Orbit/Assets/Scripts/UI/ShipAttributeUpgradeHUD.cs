@@ -18,8 +18,8 @@ namespace TitanOrbit.UI
     /// ShipState and ShipAttributeUpgradeState from EcsGameBridge; sends purchases via
     /// MoonOrbitRpcClient.PurchaseAttributeUpgrade (server validates in ShipAttributeUpgradeSystem).
     /// Cost = ShipLevel × 5 gems; max levels per attribute = ShipLevel.
-    /// Most abilities are +10% per purchase; Move Speed adds one chassis PerExtraLevel step
-    /// (move + accel + OD drain together) — see ShipAttributeUpgradeLogic.
+    /// Most abilities are Extra Level purchases; Move Speed adds each engine/thruster’s own
+    /// PerExtra step (move + accel + OD drain together) — see ShipAttributeUpgradeLogic.
     /// <para>
     /// [TITAN-ORBIT] Optional quick-stat chips above each button show <b>current</b> and
     /// <c>+per-buy</c> (toggle via a small STATS control). Fire Power's chip is sustained
@@ -1202,7 +1202,8 @@ namespace TitanOrbit.UI
             in ShipState ship,
             in ShipAttributeUpgradeState attrs,
             float componentSize,
-            int megaCatalogKey)
+            int megaCatalogKey,
+            int equipmentHash)
         {
             // [STANDARD] Unchecked hash combine — collisions are rare; worst case is one extra rebuild.
             unchecked
@@ -1232,6 +1233,8 @@ namespace TitanOrbit.UI
                 // MEGA catalog row — buying / swapping a MEGA must rebuild chips even when
                 // ship level and family stay at 7. 0 = regular hull.
                 h = h * 31 + megaCatalogKey;
+                // Orbit Menu gear — buying a cockpit must rebuild chips even when level/attrs stay put.
+                h = h * 31 + equipmentHash;
                 return h;
             }
         }
@@ -1530,7 +1533,8 @@ namespace TitanOrbit.UI
                         parts.Ids,
                         parts.Stats,
                         ship.ShipLevel,
-                        in abilityCounts);
+                        in abilityCounts,
+                        parts.StoreExtraStartIndex);
                     effective = ShipComponentExtraLevelMath.ApplyMobilityPenalties(effective, ship.ShipLevel);
                     ShipFamilyDefinition family = null;
                     if (ShipStatApplyLogic.TryResolveFamilyForChassisId(chassisId, out family)
@@ -1621,6 +1625,26 @@ namespace TitanOrbit.UI
         /// </summary>
         /// <param name="componentSize">Hull ComponentSize for mass tax when known.</param>
         /// <returns>True when the motor has a positive HullMassReference.</returns>
+        /// <summary>
+        /// Hash of the local ship's moon-store gear + cards. Used so buying a component
+        /// rebuilds STATS chips even when ship level and ability purchases did not change.
+        /// One local ship only — not a fleet walk.
+        /// </summary>
+        static int ResolveLocalEquipmentHash()
+        {
+            var world = EcsGameBridge.GetLocalPlayerShipWorld();
+            if (world == null || !world.IsCreated)
+                return 0;
+
+            var em = world.EntityManager;
+            if (!LocalShipEntitySeed.TryGetSeededShip(em, out Entity ship)
+                || ship == Entity.Null
+                || !em.Exists(ship))
+                return 0;
+
+            return ShipStatApplyLogic.ComputeEquippedLoadoutFingerprint(em, ship);
+        }
+
         static bool TryGetLocalHullComponentSize(out float componentSize)
         {
             componentSize = 0f;
@@ -2097,7 +2121,11 @@ namespace TitanOrbit.UI
             // Gems are bucketed + throttled — 4 Hz grind expulsion must not ForceMeshUpdate
             // every pulse (Profiler hitch ~9.6 ms on ShipAttributeUpgradeHUD.LateUpdate).
             int snapshotKey = ComputeStatsSnapshotKey(
-                in ship, in attrs, live.ComponentSize, live.IsMega ? live.MegaCatalogIndex + 1 : 0);
+                in ship,
+                in attrs,
+                live.ComponentSize,
+                live.IsMega ? live.MegaCatalogIndex + 1 : 0,
+                ResolveLocalEquipmentHash());
             int gemBucket = Mathf.RoundToInt(ship.CurrentGems);
             bool identityChanged = snapshotKey != _statsSnapshotKey;
             bool gemsChanged = gemBucket != _lastGemBucket;

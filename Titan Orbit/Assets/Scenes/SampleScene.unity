@@ -8388,6 +8388,7 @@ GameObject:
   - component: {fileID: 1418200285}
   - component: {fileID: 1418200286}
   - component: {fileID: 1418200287}
+  - component: {fileID: 1418200288}
   m_Layer: 0
   m_Name: NceGameRoot
   m_TagString: Untagged
@@ -8694,6 +8695,21 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: TitanOrbit.Game::TitanOrbit.Game.ShipCargoMobilitySettingsLoader
   settings: {fileID: 11400000, guid: 5396ff6d1425a934ba191a44c5434c50, type: 2}
+--- !u!114 &1418200288
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1418200267}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 3a8c1e7f5b294d6e9c0d2a4b6e8f1c3d, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: TitanOrbit.Game::TitanOrbit.Game.GameplayCursorController
+  generalCursor: {fileID: 2800000, guid: 8d5f2b0c3e9a4f7b82c4d6e8f0a1b3c5, type: 3}
+  megaCursor: {fileID: 2800000, guid: 9e6a3c1d4f0b5a8c93d5e7f9a1b2c4d6, type: 3}
+  megaManualCursor: {fileID: 2800000, guid: 0f7b4d2e5a1c6b9d04e6f8a0b2c3d5e7, type: 3}
 --- !u!1 &1427633624
 GameObject:
   m_ObjectHideFlags: 0

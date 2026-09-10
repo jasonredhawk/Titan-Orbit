@@ -214,6 +214,8 @@ namespace TitanOrbit.UI
         Entity _statsCacheShipEntity;
         int _statsCacheShipLevel = int.MinValue;
         int _statsCacheBranch = int.MinValue;
+        /// <summary>Moon-store gear + cards at last effective-stat rebuild (purchase must bust this).</summary>
+        int _statsCacheEquipmentHash = int.MinValue;
         ShipComponentAbilityStats _statsCacheEffective;
         ShipAttributeUpgradeState _statsCacheAttrs;
         /// <summary>Move Speed ability level for tooltip chassis breakdown (updated every HUD fill).</summary>
@@ -1080,11 +1082,15 @@ namespace TitanOrbit.UI
             if (hasAttrs)
                 attrs = em.GetComponentData<ShipAttributeUpgradeState>(shipEntity);
 
+            // Cheap FixedString.GetHashCode walk of the local ship's loadout (one ship, not the fleet).
+            int equipmentHash = ShipStatApplyLogic.ComputeEquippedLoadoutFingerprint(em, shipEntity);
+
             if (_statsCacheShipEntity == shipEntity &&
                 _statsCacheShipLevel == ship.ShipLevel &&
                 _statsCacheBranch == branchIndex &&
                 _statsCacheFamilyIndex == familyIndex &&
                 _statsCacheChassisKey.Equals(chassisKey) &&
+                _statsCacheEquipmentHash == equipmentHash &&
                 (!hasAttrs || AttrsEqual(attrs, _statsCacheAttrs)))
             {
                 effectiveStats = _statsCacheEffective;
@@ -1159,7 +1165,8 @@ namespace TitanOrbit.UI
                             _partCache.Ids,
                             _partCache.Stats,
                             ship.ShipLevel,
-                            in abilityCounts);
+                            in abilityCounts,
+                            _partCache.StoreExtraStartIndex);
                         effectiveStats = ShipComponentExtraLevelMath.ApplyMobilityPenalties(
                             effectiveStats, ship.ShipLevel);
                         if (ShipStatApplyLogic.TryResolveFamilyForChassisId(chassisId, out ShipFamilyDefinition family)
@@ -1201,6 +1208,7 @@ namespace TitanOrbit.UI
             _statsCacheBranch = branchIndex;
             _statsCacheFamilyIndex = familyIndex;
             _statsCacheChassisKey = chassisKey;
+            _statsCacheEquipmentHash = equipmentHash;
             _statsCacheAttrs = attrs;
             _statsCacheEffective = effectiveStats;
             _moveSpeedAbilityLevel = hasAttrs ? attrs.MovementSpeed : 0;

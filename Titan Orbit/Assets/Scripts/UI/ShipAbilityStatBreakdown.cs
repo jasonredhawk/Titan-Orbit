@@ -10,12 +10,10 @@ namespace TitanOrbit.UI
 {
     /// <summary>
     /// Telemetry-style calculation cards for the ten bottom Ship Ability chips.
-    /// Builds grouped part grids (N× same component) and walks Extra Level math:
-    /// Tip cards: PARTS (Primary + Extras) then FORMULA.
+    /// Colour-coded calculation grids for the ten bottom Ship Ability chips.
+    /// PARTS table: PRIMARY Base + each part’s own PerExtra × levels (extras add no Base).
+    /// MASS TAX table (Move / Accel / Turn): gems / troops / hull → drag → chip.
     /// MEGA hulls skip Extra Level and show static catalog part sums (no +per-buy).
-    /// Each part type (Cockpit, Wing, …) is its own Extra Level pool; the chip is the sum.
-    /// Starting prefab <c>localScale</c> multiplies that pool’s Base / PerExtra (Cockpit at 3
-    /// → 3× Health / Gems / Troops). Mass tax is only shown for Move / Accel / Turn.
     /// Token colours are shared: violet = start scale, amber = part count N, steel = Primary,
     /// cyan = PerExtra, blue = ship−1, green = ability, mint = total.
     /// Presentation-only — never writes ECS.
@@ -78,14 +76,11 @@ namespace TitanOrbit.UI
             public string DisplayName;
             /// <summary>How many instances of this id are the pool primary (0 or 1 usually).</summary>
             public int PrimaryCount;
-            /// <summary>How many instances of this id are extras (count toward Extra Level only).</summary>
+            /// <summary>How many instances of this id are extras (PerExtra × levels only — no Base).</summary>
             public int ExtraCount;
             /// <summary>Stack pool this row belongs to (Cockpit, Wing, Propulsion, …).</summary>
             public string PoolKey;
-            /// <summary>
-            /// Scale-adjusted field value used as Primary (catalog × starting scale).
-            /// Extras ignore this for Base — they only raise N.
-            /// </summary>
+            /// <summary>Scale-adjusted field Base (catalog × starting scale) for this id.</summary>
             public float AuthoredEach;
             /// <summary>Family-catalog value before prefab starting scale (0 when unknown).</summary>
             public float CatalogEach;
@@ -96,15 +91,15 @@ namespace TitanOrbit.UI
             public float ScaleFactor;
             /// <summary>[LEGACY] Unused — Extra Stack Weight retired (kept so older tip builders compile).</summary>
             public float ExtraWeight;
-            /// <summary>Primary Base contribution (extras add 0 Base).</summary>
+            /// <summary>Base contribution from instances marked primary.</summary>
             public float PrimaryContrib;
-            /// <summary>Always 0 under Extra Level (extras raise count, not Base).</summary>
+            /// <summary>Always 0 — extras never add Base (kept so older tip rows compile).</summary>
             public float ExtraContrib;
 
             /// <summary>Total Base contribution to the pool from this id (primary only).</summary>
             public float ContribTotal => PrimaryContrib + ExtraContrib;
 
-            /// <summary>Total instance count N (Extra Level uses (N−1) extras in the multiplier).</summary>
+            /// <summary>Total instance count of this id (each instance Extra-Levels with its own PerExtra).</summary>
             public int Count => PrimaryCount + ExtraCount;
         }
 
@@ -193,7 +188,7 @@ namespace TitanOrbit.UI
                     value = Mathf.Max(0f, live.CruiseMaxSpeed > 0.01f
                         ? live.CruiseMaxSpeed
                         : live.ChassisMaxSpeed);
-                    // Next purchase adds one Extra Level of primary Move PerExtraLevel.
+                    // Next purchase adds one Extra Level of every propulsion part’s own Move PerExtra.
                     nextStep = Mathf.Max(0f, live.MoveStepPreview);
                     if (nextStep <= 0.0001f)
                         nextStep = Mathf.Max(0f, eff.moveSpeedPerExtraLevel);
@@ -296,7 +291,6 @@ namespace TitanOrbit.UI
                         ? live.TaxedTurnDeg
                         : (live.ChassisTurnDeg > 0.01f ? live.ChassisTurnDeg : live.EffectiveStats.turnSpeed);
                     AppendTenPercentPipeline(sb, parts, live, attrs, StatField.TurnSpeed, "°/s", lv, turnLive);
-                    AppendTurnMassTax(sb, live);
                     break;
                 case 8:
                     AppendTenPercentPipeline(sb, parts, live, attrs, StatField.MaxGems, "Gem Cap", lv, live.EffectiveStats.maxGems);
@@ -315,8 +309,8 @@ namespace TitanOrbit.UI
 
         /// <summary>
         /// Groups parts that contribute to <paramref name="field"/>, collapsing identical ids.
-        /// When <paramref name="useStackWeight"/> is true (legacy name), uses primary-per-pool
-        /// Extra Level grouping: primary supplies Primary; extras raise N only.
+        /// When <paramref name="useStackWeight"/> is true (legacy name), newest store extra
+        /// is PRIMARY; every instance still shows its own Base.
         /// </summary>
         public static void CollectGroupedRows(
             in ShipSpeedometerStatTooltips.PartCache parts,
@@ -370,7 +364,8 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// Primary-per-pool grouping for Extra Level: primary Base; extras count only.
+        /// Pool grouping for Extra Level: newest store extra is PRIMARY; every instance
+        /// still contributes its own Base + PerExtra (shown on both PRIMARY and EXTRAS lines).
         /// </summary>
         static void CollectStackedGroupedRows(
             in ShipSpeedometerStatTooltips.PartCache parts,
@@ -383,7 +378,8 @@ namespace TitanOrbit.UI
                 string id = parts.Ids[i];
                 if (string.IsNullOrWhiteSpace(id) || ShipFamilyPartCalcProfileSet.IsCosmeticPartName(id))
                     continue;
-                if (ReadField(parts.Stats[i], field) <= 0.0001f)
+                if (ReadField(parts.Stats[i], field) <= 0.0001f
+                    && ReadPerExtraLevel(parts.Stats[i], field) <= 0.0001f)
                     continue;
 
                 string key = field is StatField.MoveSpeed or StatField.AccelerationCap
@@ -408,7 +404,7 @@ namespace TitanOrbit.UI
             foreach (KeyValuePair<string, List<int>> pool in pools)
             {
                 int primaryLocal = ShipComponentStackAggregation.PickPrimaryLocalIndex(
-                    pool.Key, pool.Value, parts.Stats);
+                    pool.Key, pool.Value, parts.Stats, parts.StoreExtraStartIndex);
                 int primaryGlobal = pool.Value[primaryLocal];
 
                 for (int m = 0; m < pool.Value.Count; m++)
@@ -439,7 +435,7 @@ namespace TitanOrbit.UI
                     }
                     else
                     {
-                        // [TITAN-ORBIT] Extra Base is ignored — only raises numberOfComponents.
+                        // Extra adds PerExtra only — Base stays on the primary row.
                         row.ExtraCount++;
                         row.ExtraContrib = 0f;
                     }
@@ -460,8 +456,8 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// Parts list only: PRIMARY part(s) then EXTRAS (count toward Extra Level).
-        /// Does not print Base — that comes from <see cref="AppendExtraLevelFormula"/>.
+        /// Compact parts list: PRIMARY first, then extras (PerExtra only — no extra Bases).
+        /// Prefer <see cref="AppendStatCalcGrid"/> for the colour-coded calculation table.
         /// </summary>
         public static void AppendGroupedFieldGrid(
             StringBuilder sb,
@@ -507,7 +503,7 @@ namespace TitanOrbit.UI
             if (!wrotePrimary && useStackWeight)
                 sb.AppendLine("<color=#888888>PRIMARY — none</color>");
 
-            // --- EXTRAS (raise N only) ---
+            // --- Other parts in the pool (own Base + own PerExtra) ---
             bool wroteExtra = false;
             for (int i = 0; i < rows.Count; i++)
             {
@@ -517,18 +513,18 @@ namespace TitanOrbit.UI
                 if (!wroteExtra)
                 {
                     sb.Append("> ");
-                    AppendTint(sb, HexCount, "EXTRAS");
+                    AppendTint(sb, HexCount, "OTHER PARTS");
                     sb.Append(" ");
                     AppendTint(sb, HexMute, "(");
-                    AppendTint(sb, HexCount, "+ to N");
+                    AppendTint(sb, HexPerExtra, "own PerExtra");
                     AppendTint(sb, HexMute, ")");
                     sb.AppendLine();
                     wroteExtra = true;
                 }
 
                 AppendPartLine(
-                    sb, r.ExtraCount, r.DisplayName, 0f, unitLabel,
-                    isExtra: true, catalogEach: 0f, scaleFactor: 1f, extraPoolKey: r.PoolKey);
+                    sb, r.ExtraCount, r.DisplayName, r.AuthoredEach, unitLabel,
+                    isExtra: false, r.CatalogEach, r.ScaleFactor, extraPoolKey: null);
             }
         }
 
@@ -585,12 +581,8 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// Parts breakdown, then Extra Level formula, then Base.
-        /// <para>
-        /// Primary / PerExtra start as family catalog numbers, then multiply by prefab
-        /// starting scale (Cockpit at 3 → ×3). Base is the Extra Level result before mass tax:
-        /// <c>(Primary × Scale) + (PerExtra × Scale) × levels</c>.
-        /// </para>
+        /// Colour-coded parts grid: PRIMARY Base + every part’s own PerExtra × levels.
+        /// Mass-affected chips (Move / Accel / Turn) append a matching mass-tax grid.
         /// </summary>
         static void AppendTenPercentPipeline(
             StringBuilder sb,
@@ -603,13 +595,350 @@ namespace TitanOrbit.UI
             float finalEffective)
         {
             _ = attrs;
-            AppendGroupedFieldGrid(sb, parts, field, unitLabel, useStackWeight: true);
-            AppendExtraLevelFormula(sb, in parts, in live, field, unitLabel, abilityLv, finalEffective);
+            AppendStatCalcGrid(sb, in parts, in live, field, unitLabel, abilityLv, finalEffective);
+            if (IsMassAffectedField(field))
+                AppendMassTaxGrid(sb, in live, field, finalEffective, writeComposition: true);
+        }
+
+        const string GridMspace = "<mspace=0.5em>";
+        const string GridMspaceEnd = "</mspace>";
+        const int GridNameW = 13;
+        const int GridRoleW = 4;
+        const int GridNumW = 7;
+        const int GridLvW = 5;
+
+        /// <summary>
+        /// Colour-coded parts table: PRIMARY Base + every part’s own PerExtra × levels.
+        /// Extras show — in BASE (they never add a second Base). Weapon barrels keep Base.
+        /// </summary>
+        public static void AppendStatCalcGrid(
+            StringBuilder sb,
+            in ShipSpeedometerStatTooltips.PartCache parts,
+            in ShipSpeedometerStatTooltips.LiveContext live,
+            StatField field,
+            string unitLabel,
+            int abilityLv,
+            float finalEffective)
+        {
+            int shipLevel = Mathf.Max(1, live.Ship.ShipLevel);
+            int shipSteps = Mathf.Max(0, shipLevel - 1);
+            var rows = new List<FieldPoolEval>(8);
+            CollectFieldPools(in parts, field, shipLevel, abilityLv, rows);
+
+            float unitScale = field == StatField.TurnSpeed
+                ? ShipPropulsionAggregation.TurnDefinitionToDegreesPerSecond
+                : 1f;
+
+            ShipStatTooltipChrome.AppendSectionBanner(sb, "PARTS", "5B9BD5");
+            sb.AppendLine(DescribeFormula(field, rows.Count > 1));
+
+            if (rows.Count == 0)
+            {
+                AppendTint(sb, HexMute, "No contributing parts.");
+                sb.AppendLine();
+                AppendGridTotal(sb, finalEffective, unitLabel);
+                return;
+            }
+
+            AppendGridHeader(sb, "PART", "ROLE", "BASE", "PERX", "×LV", "ADD");
+            ShipStatTooltipChrome.AppendGridRule(sb);
+
+            float running = 0f;
+            bool bulletSpeedWeaponLevels = field == StatField.BulletSpeed;
+            for (int i = 0; i < rows.Count; i++)
+            {
+                FieldPoolEval p = rows[i];
+                float baseDisp = p.Primary * unitScale;
+                float perDisp = p.PerExtra * unitScale;
+                float addDisp = p.Evaluated * unitScale;
+                running += addDisp;
+
+                string name = p.PoolKey ?? "?";
+                if (HasMeaningfulScale(p.Scale))
+                    name = TrimGridName(name, GridNameW - 2) + "×" + FDetail(p.Scale);
+
+                string role = p.IsWeaponPool
+                    ? (p.IsDisplayPrimary ? "PRI" : "GUN")
+                    : (p.IsDisplayPrimary ? "PRI" : "+X");
+                string roleHex = p.IsDisplayPrimary ? HexPrimary : HexCount;
+                string nameHex = p.IsDisplayPrimary ? HexPrimary : HexCount;
+                string baseText = p.IncludeBase ? FGrid(baseDisp) : "—";
+                string baseHex = p.IncludeBase ? HexPrimary : HexMute;
+
+                AppendGridRowOpen(sb, name, nameHex, role, roleHex, baseText, baseHex, FGrid(perDisp), HexPerExtra);
+                AppendGridLevelsCell(
+                    sb,
+                    bulletSpeedWeaponLevels && p.IsWeaponPool,
+                    shipSteps,
+                    abilityLv);
+                AppendGridCell(sb, HexResult, FGrid(addDisp), GridNumW, right: true);
+                sb.AppendLine();
+            }
+
+            float familyMul = ReadFamilyMul(parts.Family, field);
+            if (Mathf.Abs(familyMul - 1f) > 0.01f)
+            {
+                ShipStatTooltipChrome.AppendGridRule(sb);
+                float afterMul = running * familyMul;
+                AppendGridRow(
+                    sb,
+                    "family", HexMute,
+                    "×", HexMute,
+                    FGrid(familyMul), HexMute,
+                    "—", HexMute,
+                    "—", HexMute,
+                    FGrid(afterMul), HexResult);
+                running = afterMul;
+            }
+
+            ShipStatTooltipChrome.AppendGridRule(sb);
+            float shownTotal = IsMassAffectedField(field) ? running : finalEffective;
+            if (!IsMassAffectedField(field) && Mathf.Abs(finalEffective - running) > 0.05f)
+                shownTotal = finalEffective;
+            AppendGridTotal(sb, shownTotal, unitLabel);
         }
 
         /// <summary>
-        /// One Extra Level pool’s numbers for a chip field. Cockpit and Wing are separate
-        /// pools — Gem Cap is their sum, not a single primary.
+        /// Colour-coded mass table: gems / troops / hull → totalMass → tax → after-tax chip.
+        /// Pass <paramref name="writeComposition"/> false to add another tax row under an
+        /// already-printed cargo breakdown (Move card prints Accel tax this way).
+        /// </summary>
+        public static void AppendMassTaxGrid(
+            StringBuilder sb,
+            in ShipSpeedometerStatTooltips.LiveContext live,
+            StatField field,
+            float afterTax,
+            bool writeComposition = true)
+        {
+            if (writeComposition)
+                ShipStatTooltipChrome.AppendSectionBanner(sb, "MASS TAX", HexMass);
+            if (live.Motor.SkipMassTax != 0)
+            {
+                if (writeComposition)
+                {
+                    AppendTint(sb, HexResult, "MEGA hulls ignore mass tax.");
+                    sb.AppendLine();
+                }
+
+                return;
+            }
+
+            ShipCargoMobilitySettings settings = ShipCargoMobilitySettingsCache.ResolveOrDefault();
+            float mGem = settings != null ? settings.massPerGem : 0.01f;
+            float mPerson = settings != null ? settings.massPerPerson : 0.15f;
+            float mSize = settings != null ? settings.massPerComponentSize : 1f;
+            float speedW = settings != null ? settings.speedWeightPerMass : 0.1f;
+            float accelW = settings != null ? settings.accelWeightPerMass : 0.1f;
+            float turnW = settings != null ? settings.turnWeightPerMass : 0.1f;
+
+            float gemMass = live.Ship.CurrentGems * mGem;
+            float peopleMass = live.Ship.CurrentPeople * mPerson;
+            float sizeMass = live.ComponentSize * mSize;
+            float totalMass = live.TotalMass > 0.0001f
+                ? live.TotalMass
+                : gemMass + peopleMass + sizeMass;
+
+            if (writeComposition)
+            {
+                AppendGridHeader(sb, "SOURCE", "QTY", "RATE", "MASS", "", "");
+                ShipStatTooltipChrome.AppendGridRule(sb);
+                AppendGridRow(
+                    sb, "Gems", HexCount,
+                    FGrid(live.Ship.CurrentGems), HexCount,
+                    FGrid(mGem), HexMute,
+                    FGrid(gemMass), HexMass,
+                    "", HexMute, "", HexMute);
+                AppendGridRow(
+                    sb, "Troops", HexCount,
+                    FGrid(live.Ship.CurrentPeople), HexCount,
+                    FGrid(mPerson), HexMute,
+                    FGrid(peopleMass), HexMass,
+                    "", HexMute, "", HexMute);
+                AppendGridRow(
+                    sb, "Hull", HexScale,
+                    FGrid(live.ComponentSize), HexScale,
+                    FGrid(mSize), HexMute,
+                    FGrid(sizeMass), HexMass,
+                    "", HexMute, "", HexMute);
+                ShipStatTooltipChrome.AppendGridRule(sb);
+                AppendGridRow(
+                    sb, "totalMass", HexMute,
+                    "—", HexMute,
+                    "—", HexMute,
+                    FGrid(totalMass), HexResult,
+                    "", HexMute, "", HexMute);
+            }
+
+            float weight = field == StatField.MoveSpeed
+                ? speedW
+                : field == StatField.AccelerationCap
+                    ? accelW
+                    : turnW;
+            // Turn tax is authored in definition units — convert so the grid matches °/s chips.
+            float drag = field == StatField.TurnSpeed
+                ? ShipMobilityResolution.ComputeTurnDragDegreesPerSecond(totalMass, turnW)
+                : totalMass * weight;
+            string taxLabel = field == StatField.MoveSpeed
+                ? "speed tax"
+                : field == StatField.AccelerationCap
+                    ? "accel tax"
+                    : "turn tax";
+
+            AppendGridRow(
+                sb, taxLabel, HexMass,
+                FGrid(totalMass), HexResult,
+                FGrid(weight), HexMass,
+                "-" + FGrid(drag), HexMass,
+                "", HexMute, "", HexMute);
+            ShipStatTooltipChrome.AppendGridRule(sb);
+            string totalUnit = field == StatField.TurnSpeed
+                ? "°/s"
+                : field == StatField.AccelerationCap
+                    ? "Accel"
+                    : field == StatField.MoveSpeed
+                        ? "Move"
+                        : "";
+            AppendMassGridTotal(sb, afterTax, totalUnit);
+        }
+
+        static void AppendGridHeader(
+            StringBuilder sb,
+            string c0, string c1, string c2, string c3, string c4, string c5)
+        {
+            AppendGridCell(sb, HexMute, c0, GridNameW, right: false);
+            AppendGridCell(sb, HexMute, c1, GridRoleW, right: true);
+            AppendGridCell(sb, HexMute, c2, GridNumW, right: true);
+            AppendGridCell(sb, HexMute, c3, GridNumW, right: true);
+            if (!string.IsNullOrEmpty(c4))
+                AppendGridCell(sb, HexMute, c4, GridLvW, right: true);
+            if (!string.IsNullOrEmpty(c5))
+                AppendGridCell(sb, HexMute, c5, GridNumW, right: true);
+            sb.AppendLine();
+        }
+
+        static void AppendGridRow(
+            StringBuilder sb,
+            string n, string nHex,
+            string r, string rHex,
+            string a, string aHex,
+            string b, string bHex,
+            string c, string cHex,
+            string d, string dHex)
+        {
+            AppendGridCell(sb, nHex, n, GridNameW, right: false);
+            AppendGridCell(sb, rHex, r, GridRoleW, right: true);
+            AppendGridCell(sb, aHex, a, GridNumW, right: true);
+            AppendGridCell(sb, bHex, b, GridNumW, right: true);
+            if (!string.IsNullOrEmpty(c))
+                AppendGridCell(sb, cHex, c, GridLvW, right: true);
+            if (!string.IsNullOrEmpty(d))
+                AppendGridCell(sb, dHex, d, GridNumW, right: true);
+            sb.AppendLine();
+        }
+
+        static void AppendGridCell(StringBuilder sb, string hex, string text, int width, bool right)
+        {
+            string raw = text ?? string.Empty;
+            if (raw.Length > width)
+                raw = raw.Substring(0, width);
+            string padded = right ? raw.PadLeft(width) : raw.PadRight(width);
+            sb.Append("<color=#").Append(hex).Append('>')
+                .Append(GridMspace).Append(padded).Append(GridMspaceEnd)
+                .Append("</color>");
+        }
+
+        static void AppendGridTotal(StringBuilder sb, float total, string unitLabel)
+        {
+            AppendGridCell(sb, HexMute, "TOTAL", GridNameW, right: false);
+            AppendGridCell(sb, HexMute, "", GridRoleW, right: true);
+            AppendGridCell(sb, HexMute, "", GridNumW, right: true);
+            AppendGridCell(sb, HexMute, "", GridNumW, right: true);
+            AppendGridCell(sb, HexMute, "", GridLvW, right: true);
+            AppendGridCell(sb, HexResult, FGrid(total), GridNumW, right: true);
+            if (!string.IsNullOrEmpty(unitLabel))
+            {
+                sb.Append(" ");
+                AppendTint(sb, HexMute, unitLabel);
+            }
+
+            sb.AppendLine();
+        }
+
+        /// <summary>Mass-table total aligned under the MASS column (4 columns, not 6).</summary>
+        static void AppendMassGridTotal(StringBuilder sb, float total, string unitLabel)
+        {
+            AppendGridCell(sb, HexMute, "TOTAL", GridNameW, right: false);
+            AppendGridCell(sb, HexMute, "", GridRoleW, right: true);
+            AppendGridCell(sb, HexMute, "", GridNumW, right: true);
+            AppendGridCell(sb, HexResult, FGrid(total), GridNumW, right: true);
+            if (!string.IsNullOrEmpty(unitLabel))
+            {
+                sb.Append(" ");
+                AppendTint(sb, HexMute, unitLabel);
+            }
+
+            sb.AppendLine();
+        }
+
+        /// <summary>First four columns of a parts row; caller writes ×LV + ADD.</summary>
+        static void AppendGridRowOpen(
+            StringBuilder sb,
+            string n, string nHex,
+            string r, string rHex,
+            string a, string aHex,
+            string b, string bHex)
+        {
+            AppendGridCell(sb, nHex, n, GridNameW, right: false);
+            AppendGridCell(sb, rHex, r, GridRoleW, right: true);
+            AppendGridCell(sb, aHex, a, GridNumW, right: true);
+            AppendGridCell(sb, bHex, b, GridNumW, right: true);
+        }
+
+        /// <summary>
+        /// ×LV cell: blue ship−1 + green ability (weapon bullet speed is ability only).
+        /// </summary>
+        static void AppendGridLevelsCell(
+            StringBuilder sb,
+            bool abilityOnly,
+            int shipSteps,
+            int abilityLv)
+        {
+            if (abilityOnly)
+            {
+                AppendGridCell(sb, HexAbility, abilityLv.ToString(CultureInfo.InvariantCulture), GridLvW, right: true);
+                return;
+            }
+
+            string ship = shipSteps.ToString(CultureInfo.InvariantCulture);
+            string ab = abilityLv.ToString(CultureInfo.InvariantCulture);
+            string visible = ship + "+" + ab;
+            int pad = Mathf.Max(0, GridLvW - visible.Length);
+            if (pad > 0)
+                sb.Append(GridMspace).Append(new string(' ', pad)).Append(GridMspaceEnd);
+            sb.Append("<color=#").Append(HexShip).Append('>')
+                .Append(GridMspace).Append(ship).Append(GridMspaceEnd)
+                .Append("</color>");
+            sb.Append("<color=#").Append(HexMute).Append('>')
+                .Append(GridMspace).Append('+').Append(GridMspaceEnd)
+                .Append("</color>");
+            sb.Append("<color=#").Append(HexAbility).Append('>')
+                .Append(GridMspace).Append(ab).Append(GridMspaceEnd)
+                .Append("</color>");
+        }
+
+        static string FGrid(float v) =>
+            v.ToString("0.##", CultureInfo.InvariantCulture);
+
+        static string TrimGridName(string name, int max)
+        {
+            if (string.IsNullOrEmpty(name) || name.Length <= max)
+                return name ?? string.Empty;
+            return name.Substring(0, max);
+        }
+
+        /// <summary>
+        /// One Extra Level line for a chip field. Each contributing part is its own line
+        /// (engine PerExtra ≠ thruster PerExtra). Gem Cap still sums Cockpit + Wing.
         /// </summary>
         struct FieldPoolEval
         {
@@ -621,113 +950,9 @@ namespace TitanOrbit.UI
             public int Levels;
             public float Evaluated;
             public bool IsWeaponPool;
-        }
-
-        /// <summary>
-        /// Writes one arithmetic line per part-type pool, then the running total.
-        /// <para>
-        /// [TITAN-ORBIT] The chip is the <b>sum of every pool</b> (Cockpit gems + Wing gems),
-        /// then an optional family multiplier. Older cards only showed the first pool and
-        /// labeled the leftover “After mass tax” — mass only hits Move / Accel / Turn.
-        /// </para>
-        /// </summary>
-        static void AppendExtraLevelFormula(
-            StringBuilder sb,
-            in ShipSpeedometerStatTooltips.PartCache parts,
-            in ShipSpeedometerStatTooltips.LiveContext live,
-            StatField field,
-            string unitLabel,
-            int abilityLv,
-            float finalEffective)
-        {
-            int shipLevel = Mathf.Max(1, live.Ship.ShipLevel);
-            int shipSteps = Mathf.Max(0, shipLevel - 1);
-            var pools = new List<FieldPoolEval>(4);
-            CollectFieldPools(in parts, field, shipLevel, abilityLv, pools);
-
-            // [TITAN-ORBIT] Turn is authored in definition units; chips show °/s.
-            float unitScale = field == StatField.TurnSpeed
-                ? ShipPropulsionAggregation.TurnDefinitionToDegreesPerSecond
-                : 1f;
-
-            ShipStatTooltipChrome.AppendSectionBanner(sb, "FORMULA", "7DFFB2");
-            sb.AppendLine(DescribeFormula(field, pools.Count > 1));
-
-            float running = 0f;
-            if (pools.Count == 0)
-            {
-                // No prefab parts for this field — hull may still have a family fallback.
-                running = finalEffective;
-                AppendTint(sb, HexMute, "fallback");
-                sb.Append("  ");
-                AppendTint(sb, HexResult, FResult(finalEffective));
-                if (!string.IsNullOrEmpty(unitLabel))
-                {
-                    sb.Append(" ");
-                    AppendTint(sb, HexMute, unitLabel);
-                }
-                sb.AppendLine();
-                AppendTotalLine(sb, finalEffective, unitLabel);
-                return;
-            }
-
-            // --- One line per pool: Primary + PerExtra × levels = result ---
-            for (int i = 0; i < pools.Count; i++)
-            {
-                FieldPoolEval p = pools[i];
-                float primaryDisp = p.Primary * unitScale;
-                float perExtraDisp = p.PerExtra * unitScale;
-                float evalDisp = p.Evaluated * unitScale;
-                running += evalDisp;
-
-                AppendTint(sb, HexPrimary, p.PoolKey);
-                if (HasMeaningfulScale(p.Scale))
-                {
-                    sb.Append(" ");
-                    AppendTint(sb, HexScale, "Scale ×" + FDetail(p.Scale));
-                }
-
-                sb.Append("  ");
-                // Cache Primary / PerExtra are already × scale — this line always equals Evaluated.
-                AppendTint(sb, HexPrimary, FDetail(primaryDisp));
-                AppendTint(sb, HexMute, " + ");
-                AppendTint(sb, HexPerExtra, FDetail(perExtraDisp));
-                AppendTint(sb, HexMute, " × ");
-                AppendTint(sb, HexMute, p.Levels.ToString(CultureInfo.InvariantCulture));
-                AppendTint(sb, HexMute, " = ");
-                AppendTint(sb, HexResult, FResult(evalDisp));
-                sb.Append(" ");
-                AppendTint(sb, HexMute, "(");
-                AppendPoolLevelBreakdown(sb, p.IsWeaponPool, field, shipSteps, abilityLv, p.ComponentCount);
-                AppendTint(sb, HexMute, ")");
-                sb.AppendLine();
-            }
-
-            // --- Family identity mul (1 = skip) ---
-            float familyMul = ReadFamilyMul(parts.Family, field);
-            if (Mathf.Abs(familyMul - 1f) > 0.01f)
-            {
-                float afterMul = running * familyMul;
-                AppendTint(sb, HexMute, "× family ");
-                AppendTint(sb, HexMute, FDetail(familyMul));
-                AppendTint(sb, HexMute, " = ");
-                AppendTint(sb, HexResult, FResult(afterMul));
-                sb.AppendLine();
-                running = afterMul;
-            }
-
-            // --- Mass tax only on Move / Accel / Turn ---
-            if (IsMassAffectedField(field) && Mathf.Abs(finalEffective - running) > 0.05f)
-            {
-                float drag = running - finalEffective;
-                AppendTint(sb, HexMass, "− mass  " + FDetail(drag));
-                AppendTint(sb, HexMute, " = ");
-                AppendTint(sb, HexResult, FResult(finalEffective));
-                sb.AppendLine();
-                running = finalEffective;
-            }
-
-            AppendTotalLine(sb, running, unitLabel);
+            public bool IsDisplayPrimary;
+            /// <summary>True when this row adds Base (primary, or every weapon barrel).</summary>
+            public bool IncludeBase;
         }
 
         /// <summary>Final readout that should match the chip header.</summary>
@@ -747,42 +972,27 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// Colour-coded equation. Words use the same tints as the numbers — including
-        /// <c>Scale</c>, so a violet ×1.7 is not mistaken for amber 2× N.
+        /// One-line caption above the parts grid. Extra Bases are never in this formula.
         /// </summary>
         static string DescribeFormula(StatField field, bool multiPool)
         {
-            string primary = Tint(HexPrimary, "Primary");
+            _ = multiPool;
+            string primary = Tint(HexPrimary, "Primary Base");
             string perExtra = Tint(HexPerExtra, "PerExtra");
-            string scale = Tint(HexScale, "Scale");
-            string ship = Tint(HexShip, "ship−1");
-            string ability = Tint(HexAbility, "ability");
-            string n = Tint(HexCount, "N−1");
-            string plus = Tint(HexMute, " + ");
-            string times = Tint(HexMute, " × ");
-            string open = Tint(HexMute, "(");
-            string close = Tint(HexMute, ")");
-
-            // Primary and PerExtra are catalog × Scale before Extra Level runs.
-            string scaledPrimary = open + primary + times + scale + close;
-            string scaledPerExtra = open + perExtra + times + scale + close;
-
-            string core;
-            if (field == StatField.BulletSpeed)
-                core = scaledPrimary + plus + scaledPerExtra + times + ability;
-            else if (field == StatField.FirePower || field == StatField.BulletRange)
-                core = scaledPrimary + plus + scaledPerExtra + times + open + ship + plus + ability + close;
-            else
-                core = scaledPrimary + plus + scaledPerExtra + times + open + ship + plus + ability + plus + n + close;
-
-            if (multiPool)
-                return Tint(HexMute, "Each part type: ") + core + Tint(HexMute, "  — then add");
-            return core;
+            string levels = field == StatField.BulletSpeed
+                ? Tint(HexAbility, "ability")
+                : Tint(HexMute, "(") + Tint(HexShip, "ship−1") + Tint(HexMute, "+") + Tint(HexAbility, "ability") + Tint(HexMute, ")");
+            return primary
+                   + Tint(HexMute, " + Σ ")
+                   + perExtra
+                   + Tint(HexMute, " × ")
+                   + levels;
         }
 
         /// <summary>
-        /// Builds one eval per stack pool that actually contributes this field.
-        /// Uses the same primary + N as <see cref="ShipComponentExtraLevelMath.AggregateAndEvaluate"/>.
+        /// Builds one eval per contributing part. Only the pool primary (and every weapon
+        /// barrel) includes Base; extras are PerExtra × levels. Matches
+        /// <see cref="ShipComponentExtraLevelMath.AggregateAndEvaluate"/>.
         /// </summary>
         static void CollectFieldPools(
             in ShipSpeedometerStatTooltips.PartCache parts,
@@ -795,7 +1005,7 @@ namespace TitanOrbit.UI
             if (!parts.Valid || parts.Ids == null || parts.Stats == null)
                 return;
 
-            // --- Group every non-cosmetic part by pool (Cockpit / Wing / Propulsion / …) ---
+            // --- Group so we can mark the newest store extra as the display primary ---
             var groups = new Dictionary<string, List<int>>(StringComparer.OrdinalIgnoreCase);
             for (int i = 0; i < parts.Ids.Count && i < parts.Stats.Count; i++)
             {
@@ -819,47 +1029,67 @@ namespace TitanOrbit.UI
                 list.Add(i);
             }
 
+            var primaryGlobals = new HashSet<int>();
             foreach (KeyValuePair<string, List<int>> pair in groups)
             {
                 int primaryLocal = ShipComponentStackAggregation.PickPrimaryLocalIndex(
-                    pair.Key, pair.Value, parts.Stats);
-                int gi = pair.Value[primaryLocal];
-                if (gi < 0 || gi >= parts.Stats.Count)
-                    continue;
-
-                // Cache stats are already catalog × starting scale (same as the motor).
-                ShipComponentAbilityStats s = parts.Stats[gi];
-                float primary = ReadField(s, field);
-                float perExtra = ReadPerExtraLevel(s, field);
-                if (primary <= 0.0001f && perExtra <= 0.0001f)
-                    continue;
-
-                string id = gi < parts.Ids.Count ? parts.Ids[gi] : string.Empty;
-                bool isWeapon = ShipComponentStackAggregation.IsWeaponPoolKey(pair.Key);
-                int n = pair.Value.Count;
-                int levels = CountPoolLevels(isWeapon, field, shipLevel, abilityLv, n);
-                float evaluated = EvaluatePoolField(isWeapon, field, primary, perExtra, shipLevel, abilityLv, n);
-                float scale = ShipComponentAbilityStatsMath.GetScaleMultiplier(
-                    ReadLocalScale(in parts, gi), id, ToScaleChannel(field));
-
-                into.Add(new FieldPoolEval
-                {
-                    PoolKey = pair.Key,
-                    Scale = scale,
-                    Primary = primary,
-                    PerExtra = perExtra,
-                    ComponentCount = n,
-                    Levels = levels,
-                    Evaluated = evaluated,
-                    IsWeaponPool = isWeapon
-                });
+                    pair.Key, pair.Value, parts.Stats, parts.StoreExtraStartIndex);
+                primaryGlobals.Add(pair.Value[primaryLocal]);
             }
 
-            into.Sort((a, b) => b.Evaluated.CompareTo(a.Evaluated));
+            foreach (KeyValuePair<string, List<int>> pair in groups)
+            {
+                bool isWeapon = ShipComponentStackAggregation.IsWeaponPoolKey(pair.Key);
+                for (int m = 0; m < pair.Value.Count; m++)
+                {
+                    int gi = pair.Value[m];
+                    if (gi < 0 || gi >= parts.Stats.Count)
+                        continue;
+
+                    // Cache stats are already catalog × starting scale (same as the motor).
+                    ShipComponentAbilityStats s = parts.Stats[gi];
+                    float primary = ReadField(s, field);
+                    float perExtra = ReadPerExtraLevel(s, field);
+                    if (primary <= 0.0001f && perExtra <= 0.0001f)
+                        continue;
+
+                    string id = gi < parts.Ids.Count ? parts.Ids[gi] : string.Empty;
+                    bool includeBase = isWeapon || primaryGlobals.Contains(gi);
+                    int levels = CountPoolLevels(isWeapon, field, shipLevel, abilityLv, 1);
+                    float evaluated = EvaluatePoolField(
+                        isWeapon, field, primary, perExtra, shipLevel, abilityLv, 1, includeBase);
+                    float scale = ShipComponentAbilityStatsMath.GetScaleMultiplier(
+                        ReadLocalScale(in parts, gi), id, ToScaleChannel(field));
+                    string label = ResolvePartName(parts.Family, id);
+                    if (string.IsNullOrWhiteSpace(label))
+                        label = pair.Key;
+
+                    into.Add(new FieldPoolEval
+                    {
+                        PoolKey = label,
+                        Scale = scale,
+                        Primary = includeBase ? primary : 0f,
+                        PerExtra = perExtra,
+                        ComponentCount = 1,
+                        Levels = levels,
+                        Evaluated = evaluated,
+                        IsWeaponPool = isWeapon,
+                        IsDisplayPrimary = primaryGlobals.Contains(gi),
+                        IncludeBase = includeBase
+                    });
+                }
+            }
+
+            into.Sort((a, b) =>
+            {
+                if (a.IsDisplayPrimary != b.IsDisplayPrimary)
+                    return a.IsDisplayPrimary ? -1 : 1;
+                return b.Evaluated.CompareTo(a.Evaluated);
+            });
         }
 
         /// <summary>
-        /// Extra Level steps for one pool. Weapons skip <c>(N−1)</c>; weapon bullet speed is ability only.
+        /// Extra Level steps for one part. Weapon bullet speed is ability only.
         /// </summary>
         static int CountPoolLevels(
             bool isWeaponPool,
@@ -883,12 +1113,13 @@ namespace TitanOrbit.UI
             float perExtra,
             int shipLevel,
             int abilityLv,
-            int componentCount)
+            int componentCount,
+            bool includeBase)
         {
             if (isWeaponPool && field == StatField.BulletSpeed)
             {
                 return ShipComponentExtraLevelMath.EvaluateWeaponBulletSpeed(
-                    primary, perExtra, abilityLv);
+                    includeBase ? primary : 0f, perExtra, abilityLv);
             }
 
             return ShipComponentExtraLevelMath.Evaluate(
@@ -897,34 +1128,8 @@ namespace TitanOrbit.UI
                 shipLevel,
                 abilityLv,
                 componentCount,
-                includeExtraComponentLevels: !isWeaponPool);
-        }
-
-        /// <summary>
-        /// Inline <c>ship+ability+(N−1)</c> with the same tints as the FORMULA caption.
-        /// </summary>
-        static void AppendPoolLevelBreakdown(
-            StringBuilder sb,
-            bool isWeaponPool,
-            StatField field,
-            int shipSteps,
-            int abilityLv,
-            int componentCount)
-        {
-            if (isWeaponPool && field == StatField.BulletSpeed)
-            {
-                AppendTint(sb, HexAbility, abilityLv.ToString(CultureInfo.InvariantCulture));
-                return;
-            }
-
-            AppendTint(sb, HexShip, shipSteps.ToString(CultureInfo.InvariantCulture));
-            AppendTint(sb, HexMute, "+");
-            AppendTint(sb, HexAbility, abilityLv.ToString(CultureInfo.InvariantCulture));
-            if (!isWeaponPool)
-            {
-                AppendTint(sb, HexMute, "+");
-                AppendTint(sb, HexCount, Mathf.Max(0, componentCount - 1).ToString(CultureInfo.InvariantCulture));
-            }
+                includeExtraComponentLevels: !isWeaponPool,
+                includeBase: includeBase);
         }
 
         /// <summary>True for Move / Accel / Turn — cargo mass actually changes the chip.</summary>
@@ -966,32 +1171,26 @@ namespace TitanOrbit.UI
             int abilityLv)
         {
             _ = attrs;
-            // Move: parts → Base formula → mass tax.
-            AppendGroupedFieldGrid(sb, parts, StatField.MoveSpeed, "Move", useStackWeight: true, sectionTitle: "MOVE PARTS");
-            AppendExtraLevelFormula(
-                sb, in parts, in live, StatField.MoveSpeed, "Move", abilityLv, live.CruiseMaxSpeed);
+            AppendStatCalcGrid(sb, in parts, in live, StatField.MoveSpeed, "Move", abilityLv, live.CruiseMaxSpeed);
+            AppendStatCalcGrid(sb, in parts, in live, StatField.AccelerationCap, "Accel", abilityLv, live.TaxedAccel);
+            AppendMassTaxGrid(sb, in live, StatField.MoveSpeed, live.CruiseMaxSpeed, writeComposition: true);
+            AppendMassTaxGrid(sb, in live, StatField.AccelerationCap, live.TaxedAccel, writeComposition: false);
 
-            AppendGroupedFieldGrid(sb, parts, StatField.AccelerationCap, "Accel", useStackWeight: true, sectionTitle: "ACCEL PARTS");
-            AppendExtraLevelFormula(
-                sb, in parts, in live, StatField.AccelerationCap, "Accel", abilityLv, live.TaxedAccel);
-
-            // --- Mass tax detail (gems / people / hull size) ---
-            ShipSpeedometerStatTooltips.AppendMassTaxEffectsBreakdown(
-                sb, in live, includeMove: true, includeAccel: true);
-
-            // --- Capacity ceilings (static — no "now flying at X" vitals) ---
-            ShipStatTooltipChrome.AppendSectionBanner(sb, "CAPACITY", "7EC8FF");
-            float cruise = live.CruiseMaxSpeed > 0.01f ? live.CruiseMaxSpeed : live.ChassisMaxSpeed;
-            sb.Append("Cruise max  ").Append(FResult(cruise)).AppendLine();
             if (live.OverdriveCapacityMult > 1.001f)
-                sb.Append("<color=#FFCC66>OVERDRIVE bar ").Append(FResult(live.BarMaxSpeed)).Append("</color>")
+            {
+                ShipStatTooltipChrome.AppendSectionBanner(sb, "OVERDRIVE", "FFCC66");
+                sb.Append("<color=#FFCC66>Bar max  ").Append(FResult(live.BarMaxSpeed)).Append("</color>")
                     .AppendLine();
+            }
 
             float moveStep = live.MoveStepPreview;
             if (moveStep <= 0.0001f)
                 moveStep = Mathf.Max(0f, parts.Propulsion.moveSpeedPerExtraLevel);
-            sb.Append("Purchased  Lv").Append(abilityLv.ToString(CultureInfo.InvariantCulture));
-            sb.Append(" x +").Append(FDetail(moveStep)).Append(" Move/buy").AppendLine();
+            AppendTint(sb, HexAbility, "NEXT BUY");
+            sb.Append("  +");
+            AppendTint(sb, HexPerExtra, FDetail(moveStep));
+            AppendTint(sb, HexMute, " Move (Σ PerExtra)");
+            sb.AppendLine();
         }
 
         /// <summary>
@@ -1015,7 +1214,7 @@ namespace TitanOrbit.UI
             sb.Append(FResult(dps)).Append("/s  ");
             sb.Append("<color=#5B7A94>").Append(FResult(live.Weapon.FireRate)).Append("/s</color>").AppendLine();
 
-            AppendGroupedFieldGrid(sb, parts, StatField.RammingPower, "RAM", useStackWeight: true, sectionTitle: "RAM PARTS");
+            AppendStatCalcGrid(sb, in parts, in live, StatField.RammingPower, "RAM", 0, live.EffectiveStats.rammingPower);
 
             // [TITAN-ORBIT] Max impact at full cruise — RamAsteroidDamage on LiveContext is filled
             // with that static estimate by ShipSpeedometerHUD (not current speed).
@@ -1411,9 +1610,12 @@ namespace TitanOrbit.UI
         {
             catalogPrimary = 0f;
             catalogPerExtra = 0f;
-            if (family == null || string.IsNullOrWhiteSpace(componentId))
+            if (string.IsNullOrWhiteSpace(componentId))
                 return false;
-            if (!family.TryGetStatsForComponent(componentId, out ShipComponentAbilityStats catalog))
+
+            // Foreign moon-store parts live on another family’s catalog row.
+            ShipComponentAbilityStats catalog;
+            if (!ShipFamilyStatsCalculator.TryResolveComponentStats(family, componentId, out catalog))
                 return false;
 
             catalogPrimary = ReadField(catalog, field);
@@ -1458,6 +1660,11 @@ namespace TitanOrbit.UI
                 && family.TryGetComponentEntry(componentId, out ShipFamilyComponentEntry entry)
                 && entry != null)
                 return ShipComponentStoreData.GetDisplayName(entry);
+
+            if (BulletBankProfileUtility.TryFindComponentInAnyFamily(componentId, out ShipFamilyComponentEntry any)
+                && any != null)
+                return ShipComponentStoreData.GetDisplayName(any);
+
             return ShipComponentStoreData.FormatComponentId(componentId);
         }
 

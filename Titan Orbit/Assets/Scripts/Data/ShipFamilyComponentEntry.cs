@@ -23,9 +23,9 @@ namespace TitanOrbit.Data
     /// <summary>
     /// Serializable stat block for one ship part — base values plus
     /// <c>*PerExtraLevel</c> steps used by the unified Extra Level formula.
-    /// Non-weapons: <c>Base + PerExtraLevel × ((shipLevel−1) + abilityLevel + (N−1))</c>.
-    /// Weapons (each barrel): <c>Base + PerExtraLevel × ((shipLevel−1) + abilityLevel)</c>.
-    /// Non-weapon pools use primary-per-pool aggregation; weapons fire per-mount.
+    /// Each part: <c>Base + PerExtraLevel × ((shipLevel−1) + abilityLevel)</c> using
+    /// <b>this</b> part’s PerExtra (engine Move PerExtra ≠ thruster Move PerExtra).
+    /// Weapons use the same Extra Level per barrel (no shared N term). Live shots fire per-mount.
     /// </summary>
     [Serializable]
     public struct ShipComponentAbilityStats

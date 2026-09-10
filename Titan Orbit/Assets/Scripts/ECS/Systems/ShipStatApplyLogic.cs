@@ -318,9 +318,9 @@ namespace TitanOrbit.ECS
             if (!TryResolveChassisId(team, shipLevel, branchIndex, out string chassisId, allowFallback: true, familyIndex))
                 return;
 
-            // --- Chassis parts (primary pools + counts) then Extra Level evaluate ---
-            // [TITAN-ORBIT] Non-weapons: Base + PerExtra × ((shipLevel−1) + ability + (N−1)).
-            // Weapons: Base + PerExtra × ((shipLevel−1) + ability) per barrel (no N stack).
+            // --- Chassis parts (plus moon-store extras) then Extra Level ---
+            // [TITAN-ORBIT] Primary Base + each part’s own PerExtra × ((shipLevel−1) + ability).
+            // Extras do not add a second Base. Engine PerExtra ≠ thruster PerExtra.
             if (!TryGetChassisPartSum(em, shipEntity, chassisId, out ShipFamilyStatsCalculator.SumResult partSum))
             {
                 // Fallback: baked breakdown / family defaults when prefab parts are unavailable.
@@ -331,6 +331,7 @@ namespace TitanOrbit.ECS
                     TotalStats = summedFallback,
                     MatchedComponentIds = new System.Collections.Generic.List<string>(),
                     PerComponentStats = new System.Collections.Generic.List<ShipComponentAbilityStats>(),
+                    StoreExtraStartIndex = int.MaxValue,
                 };
                 Debug.LogWarning(
                     "[ShipStatApply] chassis=" + chassisId +
@@ -364,7 +365,8 @@ namespace TitanOrbit.ECS
                     partSum.MatchedComponentIds,
                     partSum.PerComponentStats,
                     shipLevel,
-                    in abilityCounts);
+                    in abilityCounts,
+                    partSum.StoreExtraStartIndex);
                 chassisBaseline = ShipComponentExtraLevelMath.ApplyMobilityPenalties(chassisBaseline, shipLevel);
                 if (TryResolveFamilyForChassisId(chassisId, out ShipFamilyDefinition evalFamily) && evalFamily != null)
                 {
@@ -547,7 +549,10 @@ namespace TitanOrbit.ECS
                 ShipComponentAbilityStats levelOneStats =
                     partSum.MatchedComponentIds != null && partSum.MatchedComponentIds.Count > 0
                         ? ShipComponentExtraLevelMath.AggregateAndEvaluate(
-                            partSum.MatchedComponentIds, partSum.PerComponentStats, shipLevel: 1)
+                            partSum.MatchedComponentIds,
+                            partSum.PerComponentStats,
+                            shipLevel: 1,
+                            storeExtraStartIndex: partSum.StoreExtraStartIndex)
                         : ShipComponentStoreData.GetEffectiveStatsAtShipLevel(summed, 1);
                 float referenceHealth = Mathf.Max(1f, levelOneStats.healthCap);
 
@@ -679,7 +684,8 @@ namespace TitanOrbit.ECS
         /// <summary>
         /// Collects chassis prefab parts (plus moon-store ship components when equipped) as a
         /// raw <see cref="ShipFamilyStatsCalculator.SumResult"/> for Extra Level evaluation.
-        /// Aggregation here is primary-only; ship/ability scaling happens in ApplyToShip.
+        /// Store extras resolve from any family catalog so a foreign engine keeps its PerExtra.
+        /// Ship/ability scaling happens in ApplyToShip via AggregateAndEvaluate.
         /// </summary>
         static bool TryGetChassisPartSum(
             EntityManager em,

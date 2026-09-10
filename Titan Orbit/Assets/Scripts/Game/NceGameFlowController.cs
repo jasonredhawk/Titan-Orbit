@@ -25,6 +25,12 @@ namespace TitanOrbit.Game
         [Header("UI Panels")]
         /// <summary>Root panel with Play button and connection status.</summary>
         [SerializeField] GameObject mainMenuPanel;
+
+        /// <summary>
+        /// True while the title / team-pick Main Menu panel is on screen.
+        /// <see cref="GameplayCursorController"/> uses this to restore the OS arrow.
+        /// </summary>
+        public bool IsMainMenuVisible => mainMenuPanel != null && mainMenuPanel.activeInHierarchy;
         /// <summary>Optional intermediate lobby (browser / relay) before team select.</summary>
         [SerializeField] GameObject lobbyPanel;
         /// <summary>Five-team picker shown after successful connect.</summary>
@@ -363,9 +369,9 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Attaches client-only match overlays (floaters, match-end, death, Escape command menu)
-        /// onto this GameObject if they are missing. Skipped on dedicated-server processes
-        /// that have no presentation canvas.
+        /// Attaches client-only match overlays (floaters, match-end, death, Escape command menu,
+        /// combat mouse cursors) onto this GameObject if they are missing. Skipped on
+        /// dedicated-server processes that have no presentation canvas.
         /// </summary>
         void EnsureMatchFlowControllers()
         {
@@ -382,6 +388,8 @@ namespace TitanOrbit.Game
                 gameObject.AddComponent<DeathScreenController>();
             if (GetComponent<InGameEscapeMenuController>() == null)
                 gameObject.AddComponent<InGameEscapeMenuController>();
+            if (GetComponent<GameplayCursorController>() == null)
+                gameObject.AddComponent<GameplayCursorController>();
         }
 
         /// <summary>

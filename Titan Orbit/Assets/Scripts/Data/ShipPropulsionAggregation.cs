@@ -7,10 +7,9 @@ namespace TitanOrbit.Data
     /// Engine and thruster move-speed and acceleration rules shared by legacy <see cref="Entities.Starship"/>,
     /// ECS motor, and editor previews.
     /// <para>
-    /// [TITAN-ORBIT] Engines/thrusters share one propulsion pool. Base and PerExtraLevel come from the
-    /// <b>primary</b> (highest moveSpeed) only. Extra copies raise the Extra Level formula's
-    /// <c>numberOfComponents</c> term via <see cref="ShipComponentExtraLevelMath"/> —
-    /// they do not add discounted base stats.
+    /// [TITAN-ORBIT] Engines and thrusters both contribute Move / Accel using <b>that part’s</b>
+    /// Base and PerExtraLevel (they are not the same number). Extra Level evaluates each part
+    /// then sums. The newest moon-store extra is the display primary.
     /// </para>
     /// Paired with <see cref="ShipFamilyStatsCalculator"/>.
     /// </summary>
@@ -157,26 +156,24 @@ namespace TitanOrbit.Data
         public struct Result
         {
             /// <summary>
-            /// Extra Level top speed: primary Move Base + PerExtra × ((shipLv−1)+(N−1)),
-            /// then optional level mobility drag.
+            /// Extra Level top speed: sum of each engine/thruster
+            /// <c>Move Base + that part’s PerExtra × (shipLv−1)</c>, then optional level mobility drag.
             /// </summary>
             public float topMoveSpeed;
 
             /// <summary>
-            /// Extra Level accel: primary Accel Base + PerExtra × ((shipLv−1)+(N−1)),
-            /// then optional level mobility drag.
+            /// Extra Level accel: sum of each engine/thruster Accel Base + that part’s PerExtra × (shipLv−1).
             /// </summary>
             public float sumAcceleration;
 
-            /// <summary>Index into matched component lists for the part whose base moveSpeed was used as primary.</summary>
+            /// <summary>Index of the display primary (newest store extra, else highest moveSpeed).</summary>
             public int primaryIndex;
 
             /// <summary>How many engine/thruster parts participated in the stack (0 if none).</summary>
             public int propulsionCount;
 
             /// <summary>
-            /// Move contributed by extras via Extra Level count only:
-            /// <c>primaryMovePerExtraLevel × (count − 1)</c> (0 when a single propulsion part).
+            /// Move contributed by non-primary propulsion parts (their own Base + PerExtra at this ship level).
             /// </summary>
             public float extraMoveSpeedFromAdditional;
 
@@ -250,17 +247,16 @@ namespace TitanOrbit.Data
 
         /// <summary>
         /// Computes shared engine/thruster Move / Accel from per-component stats using Extra Level.
-        /// <list type="bullet">
-        /// <item>Base and PerExtraLevel come from the primary (highest moveSpeed) only.</item>
-        /// <item><c>value = Base + PerExtra × ((shipLevel−1) + (numberOfComponents−1))</c>
-        /// (abilityLevel = 0 here — HUD/sim pass abilities via
-        /// <see cref="ShipComponentExtraLevelMath.AggregateAndEvaluate"/>).</item>
-        /// </list>
+        /// Each propulsion part uses <b>its own</b> Move / Accel PerExtra; results are summed.
+        /// Ability purchases are 0 here — HUD/sim pass them via
+        /// <see cref="ShipComponentExtraLevelMath.AggregateAndEvaluate"/>.
         /// </summary>
+        /// <param name="storeExtraStartIndex">First moon-store extra index (newest extra becomes primary).</param>
         public static Result ComputeThrusterPropulsion(
             IReadOnlyList<string> componentIds,
             IReadOnlyList<ShipComponentAbilityStats> perComponentStats,
-            int shipLevel)
+            int shipLevel,
+            int storeExtraStartIndex = int.MaxValue)
         {
             var result = new Result { primaryIndex = -1 };
             if (componentIds == null || perComponentStats == null)
@@ -275,61 +271,71 @@ namespace TitanOrbit.Data
             float speedPenalty = mobility != null ? mobility.levelMaxSpeedPenaltyFractionPerLevel : 0f;
             float accelPenalty = mobility != null ? mobility.levelAccelPenaltyFractionPerLevel : 0f;
 
-            // --- Pick primary via shared stack rules (highest moveSpeed) ---
+            // --- Display primary: newest store extra, else highest moveSpeed ---
             result.primaryIndex = ShipComponentStackAggregation.PickPropulsionPrimaryGlobalIndex(
-                componentIds, perComponentStats);
+                componentIds, perComponentStats, storeExtraStartIndex);
             if (result.primaryIndex < 0)
                 return result;
 
-            // --- Count non-cosmetic propulsion members (Extra Level numberOfComponents) ---
+            // --- Extra Level each engine / thruster with that part’s PerExtra, then sum ---
             int propulsionCount = 0;
+            float moveRaw = 0f;
+            float accelRaw = 0f;
+            float movePerSum = 0f;
+            float accelPerSum = 0f;
+            float extraMove = 0f;
             for (int i = 0; i < count; i++)
             {
                 if (!ShipComponentAbilityStats.IsPropulsionComponent(componentIds[i]))
                     continue;
                 if (ShipFamilyPartCalcProfileSet.IsCosmeticPartName(componentIds[i]))
                     continue;
+
+                ShipComponentAbilityStats part = perComponentStats[i];
+                float movePer = Mathf.Max(0f, part.moveSpeedPerExtraLevel);
+                float accelPer = Mathf.Max(0f, part.accelerationCapPerExtraLevel);
+                if (accelPer <= 0.0001f && movePer > 0f)
+                    accelPer = movePer * SuggestedPropulsionAccelerationFractionOfMoveSpeed;
+
+                bool includeBase = i == result.primaryIndex;
+                float partMove = ShipComponentExtraLevelMath.Evaluate(
+                    Mathf.Max(0f, part.moveSpeed),
+                    movePer,
+                    shipLevel,
+                    abilityLevel: 0,
+                    componentCount: 1,
+                    includeExtraComponentLevels: true,
+                    includeBase: includeBase);
+                float partAccel = ShipComponentExtraLevelMath.Evaluate(
+                    Mathf.Max(0f, GetPropulsionAccelerationContribution(part, 0)),
+                    accelPer,
+                    shipLevel,
+                    abilityLevel: 0,
+                    componentCount: 1,
+                    includeExtraComponentLevels: true,
+                    includeBase: includeBase);
+
+                moveRaw += partMove;
+                accelRaw += partAccel;
+                movePerSum += movePer;
+                accelPerSum += accelPer;
+                if (!includeBase)
+                    extraMove += partMove;
                 propulsionCount++;
             }
 
             if (propulsionCount <= 0)
                 return result;
 
-            ShipComponentAbilityStats primary = perComponentStats[result.primaryIndex];
-            float movePer = Mathf.Max(0f, primary.moveSpeedPerExtraLevel);
-            float accelPer = Mathf.Max(0f, primary.accelerationCapPerExtraLevel);
-            if (accelPer <= 0.0001f && movePer > 0f)
-                accelPer = movePer * SuggestedPropulsionAccelerationFractionOfMoveSpeed;
-
-            // --- Extra Level (abilityLevel = 0 in this helper) ---
-            // [TITAN-ORBIT] Same formula as ShipComponentExtraLevelMath.Evaluate.
-            float moveRaw = ShipComponentExtraLevelMath.Evaluate(
-                Mathf.Max(0f, primary.moveSpeed),
-                movePer,
-                shipLevel,
-                abilityLevel: 0,
-                propulsionCount,
-                includeExtraComponentLevels: true);
-            float accelRaw = ShipComponentExtraLevelMath.Evaluate(
-                Mathf.Max(0f, GetPropulsionAccelerationContribution(primary, 0)),
-                accelPer,
-                shipLevel,
-                abilityLevel: 0,
-                propulsionCount,
-                includeExtraComponentLevels: true);
-
             float topMove = ApplyShipLevelMobilityScale(moveRaw, levelsAfterFirst, speedPenalty);
             float sumAccel = ApplyShipLevelMobilityScale(accelRaw, levelsAfterFirst, accelPenalty);
-
-            // Extras-only slice of the count term (for preview / tooltip "extra from stack").
-            float extraMove = movePer * Mathf.Max(0, propulsionCount - 1);
 
             result.propulsionCount = propulsionCount;
             result.topMoveSpeed = Mathf.Max(0.1f, topMove);
             result.sumAcceleration = Mathf.Max(0f, sumAccel);
             result.extraMoveSpeedFromAdditional = Mathf.Max(0f, extraMove);
-            result.moveSpeedPerExtraLevel = movePer;
-            result.accelerationCapPerExtraLevel = accelPer;
+            result.moveSpeedPerExtraLevel = movePerSum;
+            result.accelerationCapPerExtraLevel = accelPerSum;
             return result;
         }
 

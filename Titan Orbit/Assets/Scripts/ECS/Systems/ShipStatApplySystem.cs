@@ -6,7 +6,7 @@ using Unity.NetCode;
 namespace TitanOrbit.ECS
 {
     /// <summary>
-    /// Re-applies ship-family chassis stats when ShipLevel, branch index, or attribute upgrades change.
+    /// Re-applies ship-family chassis stats when ShipLevel, branch, attributes, or (local client) equipped gear change.
     /// Runs on <b>server</b> (writes ghosted ShipState + motor) and <b>client</b> (motor/weapon/vitals only)
     /// so owner prediction matches authoritative MaxSpeed / thrust.
     /// <para>
@@ -53,9 +53,10 @@ namespace TitanOrbit.ECS
                     attrSum = ShipStatApplyLogic.SumAttributeLevels(em.GetComponentData<ShipAttributeUpgradeState>(entity));
 
                 // [STANDARD] Apply stats on first spawn or when level/branch/attrs change.
-                // [TITAN-ORBIT] Do NOT poll EquippedEquipment fingerprints every tick — that buffer
-                // walk + FixedString.ToString on every ship caused menu-open lag. Orbit purchases
-                // call ApplyToShip immediately via MoonOrbitStoreSystem.ReapplyShipStats.
+                // [TITAN-ORBIT] Do NOT poll EquippedEquipment on every ship — that lagged the
+                // server. Orbit purchases call ApplyToShip on the server immediately. Dedicated
+                // clients still need a local-only fingerprint so ghosted gear updates the motor
+                // (ShipMotorConfig is not replicated).
                 bool needsApply = !em.HasComponent<ShipChassisState>(entity);
                 if (!needsApply)
                 {
@@ -64,6 +65,11 @@ namespace TitanOrbit.ECS
                         || chassis.AppliedBranchIndex != branch
                         || chassis.AppliedShipFamilyConfigIndex != ship.ValueRO.ShipFamilyConfigIndex
                         || chassis.AppliedAttributeSum != attrSum;
+                    if (!needsApply && state.World.IsClient() && IsLocalOwnedShip(em, entity))
+                    {
+                        int fp = ShipStatApplyLogic.ComputeEquippedLoadoutFingerprint(em, entity);
+                        needsApply = chassis.AppliedEquipmentFingerprint != fp;
+                    }
                 }
 
                 if (!needsApply)
@@ -97,10 +103,15 @@ namespace TitanOrbit.ECS
                 if (em.HasComponent<ShipChassisState>(entity))
                 {
                     var chassis = em.GetComponentData<ShipChassisState>(entity);
-                    if (chassis.AppliedShipLevel == ship.ValueRO.ShipLevel
+                    bool sameIdentity = chassis.AppliedShipLevel == ship.ValueRO.ShipLevel
                         && chassis.AppliedBranchIndex == branch
                         && chassis.AppliedShipFamilyConfigIndex == ship.ValueRO.ShipFamilyConfigIndex
-                        && chassis.AppliedAttributeSum == attrSum)
+                        && chassis.AppliedAttributeSum == attrSum;
+                    if (sameIdentity
+                        && !(state.World.IsClient()
+                             && IsLocalOwnedShip(em, entity)
+                             && chassis.AppliedEquipmentFingerprint
+                                != ShipStatApplyLogic.ComputeEquippedLoadoutFingerprint(em, entity)))
                         continue;
                 }
 
@@ -117,6 +128,22 @@ namespace TitanOrbit.ECS
 
             ecb.Playback(em);
             ecb.Dispose();
+        }
+
+        /// <summary>
+        /// True for the client’s own predicted hull. Used so we only hash one equipment buffer
+        /// per tick (not every ship in the match).
+        /// </summary>
+        static bool IsLocalOwnedShip(EntityManager em, Entity entity)
+        {
+            if (entity == Entity.Null || !em.Exists(entity))
+                return false;
+
+            if (LocalShipEntitySeed.TryGetSeededShip(em, out Entity seeded) && seeded == entity)
+                return true;
+
+            return em.HasComponent<GhostOwnerIsLocal>(entity)
+                && em.IsComponentEnabled<GhostOwnerIsLocal>(entity);
         }
     }
 }

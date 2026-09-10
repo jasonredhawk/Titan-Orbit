@@ -418,6 +418,9 @@ namespace TitanOrbit.ECS.Editor
             if (root.GetComponent<InGameEscapeMenuController>() == null)
                 root.AddComponent<InGameEscapeMenuController>();
 
+            // Combat OS cursors — textures are scene-serialized so player builds keep the refs.
+            WireGameplayCursorController(root);
+
             WireEcsWorldVisualizer(root);
             WireMapGenerationSettingsLoader(root);
 
@@ -477,6 +480,38 @@ namespace TitanOrbit.ECS.Editor
             var go = GameObject.Find(objectName);
             if (go != null)
                 go.SetActive(false);
+        }
+
+        /// <summary>
+        /// Ensures <see cref="GameplayCursorController"/> sits on NceGameRoot and points at the
+        /// three Cursor-type textures in Assets/Art/Cursors. Scene-serialized refs survive into
+        /// player builds (Editor AssetDatabase fallback is Play Mode only).
+        /// </summary>
+        /// <param name="root">NceGameRoot created or found by <see cref="EnsureBootstrapObjects"/>.</param>
+        static void WireGameplayCursorController(GameObject root)
+        {
+            // --- Ensure component ---
+            var cursor = root.GetComponent<GameplayCursorController>();
+            if (cursor == null)
+                cursor = root.AddComponent<GameplayCursorController>();
+
+            // --- Assign copied CleanFlatIcon line-aim textures ---
+            var general = AssetDatabase.LoadAssetAtPath<Texture2D>(GameplayCursorController.GeneralCursorAssetPath);
+            var mega = AssetDatabase.LoadAssetAtPath<Texture2D>(GameplayCursorController.MegaCursorAssetPath);
+            var megaManual = AssetDatabase.LoadAssetAtPath<Texture2D>(GameplayCursorController.MegaManualCursorAssetPath);
+
+            var so = new SerializedObject(cursor);
+            so.FindProperty("generalCursor").objectReferenceValue = general;
+            so.FindProperty("megaCursor").objectReferenceValue = mega;
+            so.FindProperty("megaManualCursor").objectReferenceValue = megaManual;
+            so.ApplyModifiedPropertiesWithoutUndo();
+
+            if (general == null || mega == null || megaManual == null)
+            {
+                Debug.LogWarning(
+                    "[NetCodeGameSetup] Gameplay cursor textures missing under Assets/Art/Cursors. " +
+                    "Expected cursor_general.png, cursor_mega.png, cursor_mega_manual.png.");
+            }
         }
 
         static void WireEcsWorldVisualizer(GameObject root)

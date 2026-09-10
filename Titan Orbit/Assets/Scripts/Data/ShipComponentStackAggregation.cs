@@ -5,12 +5,16 @@ using UnityEngine;
 namespace TitanOrbit.Data
 {
     /// <summary>
-    /// Multi-part stack aggregation: each pool keeps only the <b>primary</b> (highest-valued) part's
-    /// stats. Extra copies contribute through the Extra Level formula's <c>(N−1)</c>
-    /// term — not by adding discounted base stats.
+    /// Groups hull parts into Extra Level pools and picks a <b>primary</b> for HUD / visuals.
     /// <para>
-    /// [TITAN-ORBIT] Pools are by part type, except Engines + Thrusters share one
-    /// <see cref="PropulsionPoolKey"/> pool. Paired with <see cref="ShipComponentExtraLevelMath"/>.
+    /// [TITAN-ORBIT] Combat numbers no longer use primary-only Base + primary PerExtra × (N−1).
+    /// <see cref="ShipComponentExtraLevelMath.AggregateAndEvaluate"/> Extra-Levels each part
+    /// with that part’s own PerExtra and sums them (Engine PerExtra ≠ Thruster PerExtra).
+    /// </para>
+    /// <para>
+    /// Primary for display: the newest moon-store extra in the pool (purchased gear becomes
+    /// the main part). When the pool is chassis-only, we keep the highest-valued prefab part.
+    /// Engines + Thrusters share <see cref="PropulsionPoolKey"/>.
     /// </para>
     /// </summary>
     public static class ShipComponentStackAggregation
@@ -26,7 +30,7 @@ namespace TitanOrbit.Data
             /// <summary>Pool key (Weapon, Propulsion, Cockpit, …).</summary>
             public string PoolKey;
 
-            /// <summary>Stats from the highest-valued member only.</summary>
+            /// <summary>Stats from the display primary (newest store extra, else highest-valued).</summary>
             public ShipComponentAbilityStats PrimaryStats;
 
             /// <summary>Total members in the pool (including primary).</summary>
@@ -140,7 +144,8 @@ namespace TitanOrbit.Data
             if (memberIndices == null || memberIndices.Count == 0)
                 return result;
 
-            int primaryLocal = PickPrimaryLocalIndex(poolKey, memberIndices, perComponentStats);
+            int primaryLocal = PickPrimaryLocalIndex(
+                poolKey, memberIndices, perComponentStats);
             int primaryGlobal = memberIndices[primaryLocal];
 
             result.PrimaryStats = perComponentStats[primaryGlobal];
@@ -150,7 +155,7 @@ namespace TitanOrbit.Data
 
         /// <summary>
         /// [LEGACY name] Primary-only pool aggregate for older call sites.
-        /// Extras do not add base stats — they raise Extra Level <c>(N−1)</c> later.
+        /// Display-primary stats only. Live Extra Level evaluates every member with its own PerExtra.
         /// </summary>
         public static ShipComponentAbilityStats AggregatePoolWeighted(
             string poolKey,
@@ -163,13 +168,38 @@ namespace TitanOrbit.Data
 
         /// <summary>
         /// Primary index within <paramref name="memberIndices"/> (local list index, not global).
-        /// Propulsion: highest moveSpeed (tie-break accel, energy). Other: highest additive score.
+        /// Newest moon-store extra in the pool wins (Orbit Menu purchase becomes the main part).
+        /// Chassis-only pools: propulsion uses highest moveSpeed; others use the additive score.
         /// </summary>
+        /// <param name="storeExtraStartIndex">
+        /// First list index that is a moon-store extra (<see cref="int.MaxValue"/> = none).
+        /// Store rows are appended after prefab children, so the last extra in the pool is newest.
+        /// </param>
         public static int PickPrimaryLocalIndex(
             string poolKey,
             List<int> memberIndices,
-            IReadOnlyList<ShipComponentAbilityStats> perComponentStats)
+            IReadOnlyList<ShipComponentAbilityStats> perComponentStats,
+            int storeExtraStartIndex = int.MaxValue)
         {
+            if (memberIndices == null || memberIndices.Count == 0)
+                return 0;
+
+            // --- Purchased gear becomes the display / visual primary ---
+            // [TITAN-ORBIT] Extras are appended after chassis parts. The last extra in this
+            // pool is the most recent Orbit Menu buy (second cockpit, foreign engine, …).
+            if (storeExtraStartIndex < int.MaxValue)
+            {
+                int lastExtraLocal = -1;
+                for (int m = 0; m < memberIndices.Count; m++)
+                {
+                    if (memberIndices[m] >= storeExtraStartIndex)
+                        lastExtraLocal = m;
+                }
+
+                if (lastExtraLocal >= 0)
+                    return lastExtraLocal;
+            }
+
             int bestLocal = 0;
             float bestScore = float.NegativeInfinity;
             bool propulsion = string.Equals(poolKey, PropulsionPoolKey, StringComparison.OrdinalIgnoreCase);
@@ -189,9 +219,11 @@ namespace TitanOrbit.Data
         }
 
         /// <summary>Global list index of the propulsion primary, or -1.</summary>
+        /// <param name="storeExtraStartIndex">First moon-store extra index, or <see cref="int.MaxValue"/>.</param>
         public static int PickPropulsionPrimaryGlobalIndex(
             IReadOnlyList<string> componentIds,
-            IReadOnlyList<ShipComponentAbilityStats> perComponentStats)
+            IReadOnlyList<ShipComponentAbilityStats> perComponentStats,
+            int storeExtraStartIndex = int.MaxValue)
         {
             if (componentIds == null || perComponentStats == null)
                 return -1;
@@ -210,7 +242,8 @@ namespace TitanOrbit.Data
             if (members.Count == 0)
                 return -1;
 
-            int local = PickPrimaryLocalIndex(PropulsionPoolKey, members, perComponentStats);
+            int local = PickPrimaryLocalIndex(
+                PropulsionPoolKey, members, perComponentStats, storeExtraStartIndex);
             return members[local];
         }
 

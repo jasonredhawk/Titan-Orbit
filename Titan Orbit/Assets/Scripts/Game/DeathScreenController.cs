@@ -22,6 +22,19 @@ namespace TitanOrbit.Game
     public class DeathScreenController : MonoBehaviour
     {
         /// <summary>
+        /// True while the death plaque is visible. <see cref="GameplayCursorController"/>
+        /// reads this to restore the OS arrow so the countdown card feels like UI.
+        /// </summary>
+        public static bool IsShowing { get; private set; }
+
+        /// <summary>
+        /// [UNITY] Domain Reload off leaves this static hot. Called from
+        /// <see cref="GameplayCursorController"/> before scene load so a leftover plaque
+        /// from the last Play Mode session cannot pin the system cursor.
+        /// </summary>
+        public static void ClearShowingFlag() => IsShowing = false;
+
+        /// <summary>
         /// Plaque root we show/hide. Built at runtime if the Inspector fields are empty
         /// (SampleScene ships both as null).
         /// </summary>
@@ -197,20 +210,35 @@ namespace TitanOrbit.Game
             _timerText.color = c;
         }
 
-        /// <summary>Makes the plaque visible. Builds UI on first show if Awake was skipped.</summary>
+        /// <summary>
+        /// Makes the plaque visible. Builds UI on first show if Awake was skipped.
+        /// Sets <see cref="IsShowing"/> so the combat cursor yields to the OS arrow.
+        /// </summary>
         void Show()
         {
             EnsureUi();
             if (overlayRoot != null)
                 overlayRoot.SetActive(true);
+            IsShowing = true;
         }
 
-        /// <summary>Hides the plaque and clears the last painted second so the next death refreshes text.</summary>
+        /// <summary>
+        /// Hides the plaque and clears the last painted second so the next death refreshes text.
+        /// Also clears <see cref="IsShowing"/> so flight can take the combat cursor back.
+        /// </summary>
         void Hide()
         {
             if (overlayRoot != null)
                 overlayRoot.SetActive(false);
             _lastShownSeconds = int.MinValue;
+            IsShowing = false;
+        }
+
+        /// <summary>[UNITY] Clears the static flag if this instance was the one showing.</summary>
+        void OnDestroy()
+        {
+            if (IsShowing)
+                IsShowing = false;
         }
 
         /// <summary>

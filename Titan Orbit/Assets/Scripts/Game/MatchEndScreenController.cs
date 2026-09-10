@@ -9,6 +9,18 @@ namespace TitanOrbit.Game
     /// <summary>Full-screen overlay when a team captures all planets.</summary>
     public class MatchEndScreenController : MonoBehaviour
     {
+        /// <summary>
+        /// True while the winner overlay is visible. <see cref="GameplayCursorController"/>
+        /// reads this to restore the OS arrow over the Continue button.
+        /// </summary>
+        public static bool IsShowing { get; private set; }
+
+        /// <summary>
+        /// [UNITY] Domain Reload off leaves this static hot. Called from
+        /// <see cref="GameplayCursorController"/> before scene load.
+        /// </summary>
+        public static void ClearShowingFlag() => IsShowing = false;
+
         [SerializeField] GameObject overlayRoot;
         [SerializeField] TextMeshProUGUI titleText;
         [SerializeField] TextMeshProUGUI subtitleText;
@@ -46,12 +58,19 @@ namespace TitanOrbit.Game
             ShowWinner(match.WinningTeam, match.MatchTimer);
         }
 
+        /// <summary>
+        /// Builds (if needed) and shows the winner card. Sets <see cref="IsShowing"/> so
+        /// <see cref="GameplayCursorController"/> restores the OS arrow over Continue.
+        /// </summary>
+        /// <param name="team">Winning team from the ghosted match singleton.</param>
+        /// <param name="matchSeconds">Elapsed match time painted on the subtitle.</param>
         void ShowWinner(TeamId team, float matchSeconds)
         {
             // --- ShowWinner ---
             EnsureUi();
             if (overlayRoot != null)
                 overlayRoot.SetActive(true);
+            IsShowing = true;
 
             if (titleText != null)
             {
@@ -69,12 +88,24 @@ namespace TitanOrbit.Game
             }
         }
 
+        /// <summary>
+        /// Dismisses the overlay and clears <see cref="IsShowing"/> so combat cursors
+        /// can return if the player is still in the session.
+        /// </summary>
         void Hide()
         {
             // --- Hide ---
             _shownWinner = TeamId.None;
             if (overlayRoot != null)
                 overlayRoot.SetActive(false);
+            IsShowing = false;
+        }
+
+        /// <summary>[UNITY] Clears the static flag if this instance was the one showing.</summary>
+        void OnDestroy()
+        {
+            if (IsShowing)
+                IsShowing = false;
         }
 
         static string FormatTeamName(TeamId team) =>

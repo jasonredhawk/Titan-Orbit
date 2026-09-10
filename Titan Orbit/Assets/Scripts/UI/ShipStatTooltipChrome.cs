@@ -315,6 +315,19 @@ namespace TitanOrbit.UI
                 .AppendLine();
         }
 
+        /// <summary>
+        /// Full-width telemetry rule for calculation grids (parts / mass).
+        /// Wider than <see cref="AppendSectionBanner"/> so columns read as one table.
+        /// </summary>
+        public static void AppendGridRule(StringBuilder sb)
+        {
+            if (sb == null)
+                return;
+            sb.Append("<color=#").Append(SectionRailHex)
+                .Append(">────────────────────────────────────────</color>")
+                .AppendLine();
+        }
+
         /// <summary>Closing rail after a major block (optional — next banner already spaces).</summary>
         public static void AppendSectionClose(StringBuilder sb)
         {

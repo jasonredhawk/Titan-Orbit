@@ -22,12 +22,12 @@ namespace TitanOrbit.Data
 
         /// <summary>
         /// Extra Level evaluation for a <b>single</b> component (store card / solo preview).
-        /// <c>value = base + perExtra × ((shipLevel−1) + abilityLevel + 1)</c> with abilityLevel = 0.
+        /// <c>value = base + this part’s perExtra × ((shipLevel−1) + abilityLevel)</c> with abilityLevel = 0.
         /// Then applies cargo mobility penalties.
         /// <para>
         /// [TITAN-ORBIT] Full hulls with multiple parts must use
-        /// <see cref="ShipComponentExtraLevelMath.AggregateAndEvaluate"/> so each pool's
-        /// <c>numberOfComponents</c> is correct. <paramref name="shipLevelStatGrowthFraction"/> is
+        /// <see cref="ShipComponentExtraLevelMath.AggregateAndEvaluate"/> so each part keeps
+        /// its own PerExtra (engine ≠ thruster). <paramref name="shipLevelStatGrowthFraction"/> is
         /// ignored (legacy % tier growth retired).
         /// </para>
         /// </summary>
@@ -370,7 +370,7 @@ namespace TitanOrbit.Data
         /// <summary>
         /// How much hull top speed / accel this propulsion part contributes:
         /// aggregated result with the part minus without it (same rules as flight).
-        /// Move and Accel use Extra Level on the primary (extras raise component count).
+        /// Move and Accel Extra Level each propulsion part with that part’s PerExtra, then sum.
         /// </summary>
         public static void TryGetPropulsionCumulativeGain(
             ShipFamilyDefinition family,
