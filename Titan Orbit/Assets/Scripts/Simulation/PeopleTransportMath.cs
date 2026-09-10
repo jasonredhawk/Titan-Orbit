@@ -54,10 +54,12 @@ namespace TitanOrbit.Simulation
         public const float VisualScaleMaxMultiplier = 2.7f;
 
         /// <summary>
-        /// Hard cap on follow / landing escort spheres per ship (visual + hit-scan).
-        /// Extra people pack into these slots instead of spawning more proxies.
+        /// Runaway ceiling only — not the gameplay pack rule.
+        /// Pack size is <see cref="GetTransferChunk"/> (ship × planet); slot count is
+        /// <c>ceil(people / chunk)</c>. This stops Instantiates / hit-scan if capacity
+        /// is huge (L1×L1 at 30 people → 30 capsules, well under this).
         /// </summary>
-        public const int MaxEscortVisualSlots = 8;
+        public const int MaxEscortVisualSlots = 64;
 
         /// <summary>Authored PeopleTransport prefab root scale — used for escort hit radius.</summary>
         public const float EscortPrefabBaseUniform = 0.25f;
@@ -259,31 +261,47 @@ namespace TitanOrbit.Simulation
         }
 
         /// <summary>
-        /// How many escort spheres to show / hit-test for this cargo.
-        /// Packs into <see cref="GetUnloadChunk"/> sizes, then clamps to
-        /// <see cref="MaxEscortVisualSlots"/>.
+        /// How many escort spheres for this cargo. Pack size is
+        /// <paramref name="chunk"/> (ship × planet). L1 ship at L3 with 30 people
+        /// → 10; L1×L1 with 30 → 30. Clamps only at <see cref="MaxEscortVisualSlots"/>.
         /// </summary>
-        public static int GetEscortSlotCount(int people, int shipLevel)
+        public static int GetEscortSlotCount(int people, int chunk)
         {
             if (people <= 0)
                 return 0;
-            int chunk = GetUnloadChunk(shipLevel);
+            chunk = math.max(1, chunk);
             int raw = (people + chunk - 1) / chunk;
             return math.min(raw, MaxEscortVisualSlots);
         }
 
         /// <summary>
-        /// People in one packed escort slot. Spreads remainder across the first slots
-        /// so <c>sum(GetEscortSlotAmount)</c> equals <paramref name="people"/>.
+        /// People in one packed escort slot. Full capsules are <paramref name="chunk"/>
+        /// (L1×L3 → 3); the last holds the remainder. If the safety ceiling clamps
+        /// the count, leftover people spread so the sum still equals
+        /// <paramref name="people"/>.
         /// </summary>
-        public static int GetEscortSlotAmount(int people, int shipLevel, int slotIndex)
+        public static int GetEscortSlotAmount(int people, int chunk, int slotIndex)
         {
-            int count = GetEscortSlotCount(people, shipLevel);
+            chunk = math.max(1, chunk);
+            int count = GetEscortSlotCount(people, chunk);
             if (count <= 0 || slotIndex < 0 || slotIndex >= count)
                 return 0;
-            int baseAmt = people / count;
-            int remainder = people - baseAmt * count;
-            return baseAmt + (slotIndex < remainder ? 1 : 0);
+
+            int full = people / chunk;
+            int rem = people % chunk;
+            int rawCount = rem > 0 ? full + 1 : full;
+            if (count < rawCount)
+            {
+                int baseAmt = people / count;
+                int extra = people - baseAmt * count;
+                return baseAmt + (slotIndex < extra ? 1 : 0);
+            }
+
+            if (slotIndex < full)
+                return chunk;
+            if (slotIndex == full && rem > 0)
+                return rem;
+            return 0;
         }
 
         /// <summary>Heavier capsules cruise slower. Used to remap follow into 6 → 4.</summary>
@@ -336,7 +354,8 @@ namespace TitanOrbit.Simulation
 
         /// <summary>
         /// Per-slot radius as 1.1–2.5× the hull ellipse along <paramref name="localX"/> /
-        /// <paramref name="localZ"/> (ship-local right / forward-back).
+        /// <paramref name="localZ"/> (ship-local right / forward-back). Outer seat rings
+        /// step farther out so 10–30 capsules do not stack on the same hash.
         /// </summary>
         public static float GetEscortSlotRadius(
             float extX,
@@ -350,7 +369,9 @@ namespace TitanOrbit.Simulation
             _ = peopleAmount;
             float hullR = GetHullRadiusAlongLocalDir(extX, extZ, localX, localZ);
             float u = EscortSlotHash01(shipNetworkId, slotIndex * 31 + 7);
-            return hullR * math.lerp(EscortRingMinRadiusMul, EscortRingMaxRadiusMul, u);
+            int ring = math.max(0, slotIndex) / 8;
+            float ringMul = 1f + ring * 0.18f;
+            return hullR * math.lerp(EscortRingMinRadiusMul, EscortRingMaxRadiusMul, u) * ringMul;
         }
 
         /// <summary>
@@ -409,8 +430,23 @@ namespace TitanOrbit.Simulation
         }
 
         /// <summary>
-        /// Home pose in the <b>rear hemisphere</b>: unique 1.1–2.5× hull radius.
-        /// Seats spread port-beam → astern → starboard-beam. Never ahead of the ship.
+        /// First free seat in 0..<see cref="MaxEscortVisualSlots"/>. Bit <c>s</c> of
+        /// <paramref name="usedMask"/> means that seat is taken (up to 64 seats).
+        /// </summary>
+        public static int AllocateEscortSeatId(ulong usedMask)
+        {
+            for (int s = 0; s < MaxEscortVisualSlots; s++)
+            {
+                if ((usedMask & (1UL << s)) == 0)
+                    return s;
+            }
+
+            return 0;
+        }
+
+        /// <summary>
+        /// Home pose in the <b>rear hemisphere</b> for a stable <paramref name="seatId"/>.
+        /// Angle is hashed from the seat only — live count must not move other capsules.
         /// Client visuals and server follow / hit-scan must share this.
         /// </summary>
         public static float3 EvaluateEscortSlotPose(
@@ -418,21 +454,19 @@ namespace TitanOrbit.Simulation
             quaternion shipRot,
             float extX,
             float extZ,
-            int slotIndex,
-            int slotCount,
+            int seatId,
             float peopleAmount,
             int shipNetworkId,
             float mapW,
             float mapH)
         {
             GetEscortShipBasis(shipPos, shipRot, out shipPos, out float3 forward, out float3 right);
-            if (slotCount < 1)
-                slotCount = 1;
-            slotIndex = math.clamp(slotIndex, 0, slotCount - 1);
+            seatId = math.max(0, seatId);
 
-            float t = slotCount <= 1 ? 0.5f : (slotIndex + 0.5f) / slotCount;
-            float uAng = EscortSlotHash01(shipNetworkId, slotIndex * 17 + 11);
-            float aftAng = (t - 0.5f) * math.PI + (uAng - 0.5f) * EscortAngleJitter;
+            // Golden-ratio wrap so 10 or 30 seats stay unique in the aft 180°.
+            float wrapped = math.frac(seatId * 0.6180339887f + 0.5f);
+            float uAng = EscortSlotHash01(shipNetworkId, seatId * 17 + 11);
+            float aftAng = (wrapped - 0.5f) * math.PI + (uAng - 0.5f) * EscortAngleJitter;
             aftAng = math.clamp(aftAng, -0.5f * math.PI, 0.5f * math.PI);
 
             // aftAng 0 = dead astern (−forward). ±90° = beam, still not in front.
@@ -440,7 +474,7 @@ namespace TitanOrbit.Simulation
             float localX = math.sin(aftAng);
             float localZ = -math.cos(aftAng);
             float3 pos = shipPos + dir * GetEscortSlotRadius(
-                extX, extZ, localX, localZ, peopleAmount, shipNetworkId, slotIndex);
+                extX, extZ, localX, localZ, peopleAmount, shipNetworkId, seatId);
             pos.y = 0f;
             if (ToroidalMapEcs.IsValidMapSize(mapW, mapH))
                 pos = ToroidalMapEcs.Wrap(pos, mapW, mapH);

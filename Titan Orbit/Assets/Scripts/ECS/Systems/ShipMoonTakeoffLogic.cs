@@ -31,9 +31,11 @@ namespace TitanOrbit.ECS
 
         /// <summary>
         /// Advances takeoff and writes planar pose. Velocity stays matched to the moon
-        /// (no extra radial launch). Clears
-        /// <see cref="ShipMoonDockState.TakeoffPlanetId"/> when the hull is outside the zone
-        /// or the planet snapshot is missing.
+        /// (no extra radial launch). MEGA and regular hulls use the same presentation
+        /// radius and exit pad. Clears
+        /// <see cref="ShipMoonDockState.TakeoffPlanetId"/> on the tick after the lerp
+        /// finishes (so AfterPhysics can still restore a PhysX yeet) or when the planet
+        /// snapshot is missing.
         /// </summary>
         /// <param name="moonDock">Dock/takeoff state (takeoff fields are written here).</param>
         /// <param name="transform">Ship pose — position and yaw are overwritten while taking off.</param>
@@ -43,7 +45,6 @@ namespace TitanOrbit.ECS
         /// <param name="mapW">Toroidal map width from <c>MapStateSingleton</c>.</param>
         /// <param name="mapH">Toroidal map height from <c>MapStateSingleton</c>.</param>
         /// <param name="elapsedSeconds">Shared moon orbit clock (ServerTick seconds).</param>
-        /// <param name="isMegaShip">MEGAs get a larger exit pad so the long hull clears the disc.</param>
         /// <returns>True while takeoff still owns the motor this tick (including the finish tick).</returns>
         public static bool TryApply(
             ref ShipMoonDockState moonDock,
@@ -53,13 +54,20 @@ namespace TitanOrbit.ECS
             float dt,
             float mapW,
             float mapH,
-            double elapsedSeconds,
-            bool isMegaShip,
-            float shipPhysicsRadius = -1f)
+            double elapsedSeconds)
         {
             int planetId = moonDock.TakeoffPlanetId;
             if (planetId == 0)
                 return false;
+
+            // Finished the authored lerp last tick. Release so thrust owns flight.
+            // AfterPhysics on the finish tick still saw IsTakingOff and restored any PhysX yeet.
+            if (moonDock.TakeoffProgress >= 1f)
+            {
+                moonDock.TakeoffPlanetId = 0;
+                moonDock.TakeoffProgress = 0f;
+                return false;
+            }
 
             if (!TryFindPlanetById(planetId, in planets, out PlanetMotorSnapshot snapshot))
             {
@@ -95,11 +103,10 @@ namespace TitanOrbit.ECS
             else
                 outward /= outwardLen;
 
-            float shipRadius = ShipPhysicsDriveLogic.ResolveMoonAttachHullRadius(
-                shipPhysicsRadius, transform);
+            // Presentation hull — same radius regular ships use. MEGA compound AABB was
+            // added on top of this and shoved the center a full extra hull length past the zone.
+            float shipRadius = BodyCollisionMath.GetShipHullRadiusWorld(transform.Scale);
             float exitPad = GemEconomyConstants.MoonTakeoffExitPadWorld;
-            if (isMegaShip)
-                exitPad += shipRadius;
 
             // Drawn moon orbit shell (same radius collected for shield / zone visuals).
             float zoneRadius = math.max(snapshot.MoonBodyRadiusWorld, snapshot.ShieldOuterRadiusWorld);
@@ -136,11 +143,8 @@ namespace TitanOrbit.ECS
                 Angular = float3.zero,
             };
 
-            if (moonDock.TakeoffProgress < 1f)
-                return true;
-
-            moonDock.TakeoffPlanetId = 0;
-            moonDock.TakeoffProgress = 0f;
+            // Keep TakeoffPlanetId this tick so AfterPhysics still treats us as taking off
+            // and restores moon/shield depenetration. Next drive tick releases (progress >= 1).
             return true;
         }
 

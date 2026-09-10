@@ -23,8 +23,9 @@ namespace TitanOrbit.ECS
     /// planet, and asteroid share one wall bounce. Friendly shields are off via
     /// <see cref="TitanOrbitPhysicsLayers.ShipForTeam"/>. Flying ships that PhysX
     /// exports from the moon rock onto the concentric shield rim get snapshot pose
-    /// restore (same idea as MEGA planet undo). Dock / takeoff skip only while
-    /// fully landed or taking off — flying into the moon is a normal bounce.
+    /// restore (same idea as MEGA planet undo). Dock / takeoff skip bounce and restore
+    /// pose so PhysX cannot add a second shove. MEGA + friendly moon/shield also restore
+    /// pose so a regular-length takeoff is not followed by a long-hull depenetration yeet.
     /// Server ram damage + client soft-destroy happen elsewhere.
     /// <para>
     /// Runs on ServerSimulation and ClientSimulation (predicted). Collision-event stream only —
@@ -160,16 +161,19 @@ namespace TitanOrbit.ECS
                 else if (pair.Kind == ShipPhysicsContactKind.Planet)
                 {
                     if (ShouldSkipMoonWorldBounce(pair.Ship, moonDockLookup))
+                    {
+                        // Takeoff / landed own the pose — undo PhysX depenetration too.
+                        RestoreUnconstrainedPose(
+                            pair.Ship, ref _working, snapshotLookup, _megaUnconstrained);
                         continue;
+                    }
 
                     bool megaPlanet = megaLookup.HasComponent(pair.Ship)
                                       && megaLookup[pair.Ship].IsMega;
                     if (megaPlanet)
                     {
-                        // Keep snapshot velocity — PhysX planet depenetration is undone below.
-                        _working[pair.Ship] = GetWorkingOrSnapshot(
-                            pair.Ship, ref _working, snapshotLookup);
-                        _megaUnconstrained.Add(pair.Ship);
+                        RestoreUnconstrainedPose(
+                            pair.Ship, ref _working, snapshotLookup, _megaUnconstrained);
                     }
                     else
                     {
@@ -179,15 +183,27 @@ namespace TitanOrbit.ECS
                 else if (pair.Kind == ShipPhysicsContactKind.Moon
                          || pair.Kind == ShipPhysicsContactKind.Shield)
                 {
-                    bool skipMoon = ShouldSkipMoonWorldBounce(pair.Ship, moonDockLookup)
-                                    || (pair.Kind == ShipPhysicsContactKind.Shield
-                                        && ShouldSkipFriendlyShieldBounce(
-                                            pair, shipStateLookup, shieldPlanetLookup,
-                                            planetStateLookup));
-                    if (!skipMoon)
+                    bool dockOwnsPose = ShouldSkipMoonWorldBounce(pair.Ship, moonDockLookup);
+                    bool friendlyMoonWorld = IsFriendlyMoonWorldContact(
+                        pair, shipStateLookup, shieldPlanetLookup, planetStateLookup);
+                    bool megaFriendly = megaLookup.HasComponent(pair.Ship)
+                                        && megaLookup[pair.Ship].IsMega
+                                        && friendlyMoonWorld;
+
+                    // Takeoff/landed: restore pose so the long hull cannot add a second shove.
+                    // Friendly shield: pass-through includes pose (not just bounce skip).
+                    // MEGA + friendly moon: regular-length takeoff must not be followed by
+                    // a compound-hull depenetration yeet out of the disc.
+                    if (dockOwnsPose
+                        || megaFriendly
+                        || (pair.Kind == ShipPhysicsContactKind.Shield && friendlyMoonWorld))
                     {
-                        ApplyWorldWallBounce(pair, ref _working, snapshotLookup, restitution);
+                        RestoreUnconstrainedPose(
+                            pair.Ship, ref _working, snapshotLookup, _megaUnconstrained);
+                        continue;
                     }
+
+                    ApplyWorldWallBounce(pair, ref _working, snapshotLookup, restitution);
                 }
             }
 
@@ -464,22 +480,36 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// Friendly shields are pass-through. A leftover kind-4 event must not bounce
-        /// the hull (pair-disable is the solver gate; this is the gameplay backup).
+        /// Friendly moon rock or shield. Pair-disable is the solver gate; this is the
+        /// gameplay backup so a leftover event cannot bounce or yeet an ally.
         /// </summary>
-        static bool ShouldSkipFriendlyShieldBounce(
+        static bool IsFriendlyMoonWorldContact(
             in ShipPhysicsContactElement pair,
             ComponentLookup<ShipState> ships,
-            ComponentLookup<PlanetGemMoonColliderPlanetRef> shieldPlanets,
+            ComponentLookup<PlanetGemMoonColliderPlanetRef> moonWorldPlanets,
             ComponentLookup<PlanetState> planets)
         {
-            if (!ships.HasComponent(pair.Ship) || !shieldPlanets.HasComponent(pair.Other))
+            if (!ships.HasComponent(pair.Ship) || !moonWorldPlanets.HasComponent(pair.Other))
                 return false;
-            Entity planet = shieldPlanets[pair.Other].PlanetEntity;
+            Entity planet = moonWorldPlanets[pair.Other].PlanetEntity;
             if (!planets.HasComponent(planet))
                 return false;
             return PlanetGemMoonCombatLogic.IsTeamFriendlyToMoon(
                 planets[planet].Ownership, ships[pair.Ship].Team);
+        }
+
+        /// <summary>
+        /// Keep snapshot velocity and queue pose restore so PhysX depenetration cannot
+        /// launch the hull off the drive/takeoff path.
+        /// </summary>
+        static void RestoreUnconstrainedPose(
+            Entity ship,
+            ref NativeHashMap<Entity, float3> working,
+            ComponentLookup<ShipPreCollisionVelocity> snapshots,
+            NativeHashSet<Entity> unconstrained)
+        {
+            working[ship] = GetWorkingOrSnapshot(ship, ref working, snapshots);
+            unconstrained.Add(ship);
         }
 
         /// <summary>

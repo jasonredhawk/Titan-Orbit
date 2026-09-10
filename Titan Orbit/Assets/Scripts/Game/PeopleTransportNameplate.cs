@@ -95,6 +95,18 @@ namespace TitanOrbit.Game
             ApplyHealthBar();
         }
 
+        void OnDisable()
+        {
+            if (_labelRoot != null)
+                _labelRoot.gameObject.SetActive(false);
+        }
+
+        void OnEnable()
+        {
+            if (_labelRoot != null)
+                _labelRoot.gameObject.SetActive(true);
+        }
+
         void LateUpdate()
         {
             if (!_ready || _labelRoot == null)

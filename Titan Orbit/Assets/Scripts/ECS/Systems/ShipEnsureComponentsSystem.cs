@@ -176,11 +176,6 @@ namespace TitanOrbit.ECS
                              .WithNone<PeopleEscortLandingState>()
                              .WithEntityAccess())
                     ecb.AddComponent(entity, new PeopleEscortLandingState());
-
-                foreach (var (_, entity) in SystemAPI.Query<RefRO<ShipTag>>()
-                             .WithNone<ShipEscortVitals>()
-                             .WithEntityAccess())
-                    ecb.AddComponent(entity, new ShipEscortVitals());
             }
 
             foreach (var (_, entity) in SystemAPI.Query<RefRO<ShipTag>>()
@@ -196,6 +191,9 @@ namespace TitanOrbit.ECS
                     ecb.AddBuffer<EquippedCardElement>(entity);
                 if (!state.EntityManager.HasBuffer<DeployedMineElement>(entity))
                     ecb.AddBuffer<DeployedMineElement>(entity);
+                // [NETCODE] Prefer bake on StarshipGhost — runtime-only AddBuffer does not replicate.
+                if (!state.EntityManager.HasBuffer<PeopleEscortVitalElement>(entity))
+                    ecb.AddBuffer<PeopleEscortVitalElement>(entity);
             }
 
             foreach (var (_, entity) in SystemAPI.Query<RefRO<ShipTag>>()

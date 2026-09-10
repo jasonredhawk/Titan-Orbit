@@ -174,7 +174,6 @@ namespace TitanOrbit.ECS
                     moonDock.LandingApproachDelay = 0f;
                 }
 
-                float takeoffHull = ResolveMoonAttachHullRadius(shipPhysicsRadius, transform);
                 if (ShipMoonTakeoffLogic.TryApply(
                         ref moonDock,
                         ref transform,
@@ -183,9 +182,7 @@ namespace TitanOrbit.ECS
                         dt,
                         mapW,
                         mapH,
-                        elapsedSeconds,
-                        isMegaShip,
-                        takeoffHull))
+                        elapsedSeconds))
                 {
                     physicsDamping = default;
                     orbitState = default;

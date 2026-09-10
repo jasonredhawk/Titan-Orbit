@@ -651,8 +651,8 @@ MonoBehaviour:
       extraSpeedPercentPerExtraLevel: 0
       extraSpeedEnergyDrain: 0
       extraSpeedEnergyDrainPerExtraLevel: 0
-      turnSpeed: 20
-      turnSpeedPerExtraLevel: 4
+      turnSpeed: 10
+      turnSpeedPerExtraLevel: 2
       maxGems: 0
       maxGemsPerExtraLevel: 0
       tractorBeamDistance: 0
@@ -807,14 +807,14 @@ MonoBehaviour:
       extraSpeedEnergyDrainPerExtraLevel: 0
       turnSpeed: 0
       turnSpeedPerExtraLevel: 0
-      maxGems: 20
-      maxGemsPerExtraLevel: 4
+      maxGems: 10
+      maxGemsPerExtraLevel: 2
       tractorBeamDistance: 3
       tractorBeamDistancePerExtraLevel: 0.75
       tractorBeamPower: 4
       tractorBeamPowerPerExtraLevel: 1
-      maxPeople: 9
-      maxPeoplePerExtraLevel: 3
+      maxPeople: 5
+      maxPeoplePerExtraLevel: 2
     bulletPrefabIndex: -1
     menuPreviewSprite: {fileID: 21300000, guid: 93c21f5c95712a842bbc80e9ec17dba0, type: 3}
     theatricalMenuPreviewSprite: {fileID: 21300000, guid: 93c21f5c95712a842bbc80e9ec17dba0, type: 3}
@@ -891,127 +891,47 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: f9b4cff584725cb439652e17c9fae8e8, type: 3}
     minHomePlanetLevel: 1
-    powerScore: 171.47539
-    powerScoreAtMaxLevel: 208.911
+    powerScore: 189.72229
+    powerScoreAtMaxLevel: 282.6439
     powerScoreBreakdown:
-      offense: 18.050001
-      defense: 63.245083
-      energy: 26.707996
-      mobility: 25.8
-      capacity: 45.845314
-      firePower: 3.6000001
-      bulletSpeed: 10.200001
-      fireRate: 3
-      sustainedDps: 0
-      rammingPower: 1.25
-      healthCap: 61.29066
-      healthRegen: 1.9544216
-      energyCap: 22.892569
-      energyRegen: 3.815428
-      moveSpeed: 6.2
-      turnSpeed: 12.599999
-      gemCap: 24.563543
-      peopleCap: 21.281773
-    powerScoreBreakdownAtShipLevel:
-      offense: 18.050001
-      defense: 79.47007
+      offense: 18.300001
+      defense: 70.750984
       energy: 33.384995
       mobility: 27
-      capacity: 58.50968
+      capacity: 48.040066
       firePower: 3.6000001
       bulletSpeed: 10.200001
       fireRate: 3
       sustainedDps: 0
-      rammingPower: 1.25
-      healthCap: 77.01426
-      healthRegen: 2.4558117
+      rammingPower: 1.5
+      healthCap: 68.56461
+      healthRegen: 2.1863716
       energyCap: 28.615711
       energyRegen: 4.769285
-      moveSpeed: 6.4
+      moveSpeed: 6.3999996
       turnSpeed: 12.599999
-      gemCap: 30.657467
-      peopleCap: 27.852215
-    componentMass: 13.838364
-    lockedInUpgradeTree: 0
-  - chassisId: MeteorMantis_04
-    upgradeTreeShipName: Scythe
-    prefab: {fileID: 5475663384806958609, guid: aaf45fc1848ede044b21a66de15725f4, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: aa1cd010d4df875428d8a69346cba28e, type: 3}
-    teamMenuPreviewSprites:
-    - variantName: Red
-      team: 1
-      sprite: {fileID: 21300000, guid: aa1cd010d4df875428d8a69346cba28e, type: 3}
-    - variantName: Blue
-      team: 2
-      sprite: {fileID: 21300000, guid: 40ec39a91bcdcc54e9482b61b5fc6bf5, type: 3}
-    - variantName: Green
-      team: 3
-      sprite: {fileID: 21300000, guid: fe22b5821aa2e0947b5ebad9888b8425, type: 3}
-    - variantName: Orange
-      team: 4
-      sprite: {fileID: 21300000, guid: e482970e621cab2498969948d85cd818, type: 3}
-    - variantName: Purple
-      team: 5
-      sprite: {fileID: 21300000, guid: 568fc87c8e2e0e246af2dd483212fff0, type: 3}
-    theatricalMenuPreviewSprite: {fileID: 21300000, guid: aa1cd010d4df875428d8a69346cba28e, type: 3}
-    teamTheatricalMenuPreviewSprites:
-    - variantName: Red
-      team: 1
-      sprite: {fileID: 21300000, guid: aa1cd010d4df875428d8a69346cba28e, type: 3}
-    - variantName: Blue
-      team: 2
-      sprite: {fileID: 21300000, guid: 40ec39a91bcdcc54e9482b61b5fc6bf5, type: 3}
-    - variantName: Green
-      team: 3
-      sprite: {fileID: 21300000, guid: fe22b5821aa2e0947b5ebad9888b8425, type: 3}
-    - variantName: Orange
-      team: 4
-      sprite: {fileID: 21300000, guid: e482970e621cab2498969948d85cd818, type: 3}
-    - variantName: Purple
-      team: 5
-      sprite: {fileID: 21300000, guid: 568fc87c8e2e0e246af2dd483212fff0, type: 3}
-    minHomePlanetLevel: 2
-    powerScore: 187.89732
-    powerScoreAtMaxLevel: 367.7882
-    powerScoreBreakdown:
-      offense: 47.8
-      defense: 46.64434
-      energy: 42.860325
-      mobility: 33.6
-      capacity: 52.127586
+      gemCap: 23.328735
+      peopleCap: 24.71133
+    powerScoreBreakdownAtShipLevel:
+      offense: 18.300001
+      defense: 125.276985
+      energy: 46.738995
+      mobility: 29.4
+      capacity: 70.22791
       firePower: 3.6000001
       bulletSpeed: 10.200001
       fireRate: 3
-      sustainedDps: 21.6
-      rammingPower: 1
-      healthCap: 45.20292
-      healthRegen: 1.4414197
-      energyCap: 39.30885
-      energyRegen: 3.551475
-      moveSpeed: 6
-      turnSpeed: 21.599998
-      gemCap: 31.167816
-      peopleCap: 20.95977
-    powerScoreBreakdownAtShipLevel:
-      offense: 63.35
-      defense: 103.3934
-      energy: 94.72065
-      mobility: 47.999996
-      capacity: 97.31897
-      firePower: 6.3
-      bulletSpeed: 15.3
-      fireRate: 3
-      sustainedDps: 37.800003
-      rammingPower: 1.25
-      healthCap: 100.1983
-      healthRegen: 3.1950989
-      energyCap: 87.6177
-      energyRegen: 7.10295
-      moveSpeed: 6.6
-      turnSpeed: 32.399998
-      gemCap: 53.91954
-      peopleCap: 43.399426
-    componentMass: 12.165972
+      sustainedDps: 0
+      rammingPower: 1.5
+      healthCap: 121.40563
+      healthRegen: 3.871353
+      energyCap: 40.061996
+      energyRegen: 6.676999
+      moveSpeed: 6.8
+      turnSpeed: 12.599999
+      gemCap: 33.422657
+      peopleCap: 36.805256
+    componentMass: 13.838364
     lockedInUpgradeTree: 0
   - chassisId: MeteorMantis_02
     upgradeTreeShipName: Streak
@@ -1051,47 +971,207 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 3cf5dea3a1d1eb246bd785fc5be73a22, type: 3}
     minHomePlanetLevel: 2
-    powerScore: 185.51826
-    powerScoreAtMaxLevel: 318.5834
+    powerScore: 192.57936
+    powerScoreAtMaxLevel: 467.49466
     powerScoreBreakdown:
-      offense: 18.050001
-      defense: 55.27536
-      energy: 26.599998
-      mobility: 38.399998
-      capacity: 55.39292
-      firePower: 3.6000001
-      bulletSpeed: 10.200001
-      fireRate: 3
-      sustainedDps: 0
-      rammingPower: 1.25
-      healthCap: 53.567223
-      healthRegen: 1.7081386
-      energyCap: 22.8
-      energyRegen: 3.8
-      moveSpeed: 6.2
-      turnSpeed: 25.199999
-      gemCap: 29.975891
-      peopleCap: 25.41703
-    powerScoreBreakdownAtShipLevel:
       offense: 18.300001
-      defense: 107.49159
-      energy: 46.550003
-      mobility: 52.8
-      capacity: 100.741806
+      defense: 64.232155
+      energy: 33.25
+      mobility: 28.8
+      capacity: 55.78472
       firePower: 3.6000001
       bulletSpeed: 10.200001
       fireRate: 3
       sustainedDps: 0
       rammingPower: 1.5
-      healthCap: 104.16985
-      healthRegen: 3.3217425
-      energyCap: 39.9
-      energyRegen: 6.6499996
-      moveSpeed: 6.8
-      turnSpeed: 36
-      gemCap: 51.916557
-      peopleCap: 48.825253
+      healthCap: 62.247227
+      healthRegen: 1.9849244
+      energyCap: 28.5
+      energyRegen: 4.75
+      moveSpeed: 6.3999996
+      turnSpeed: 14.4
+      gemCap: 27.322817
+      peopleCap: 28.461905
+    powerScoreBreakdownAtShipLevel:
+      offense: 18.800001
+      defense: 204.71239
+      energy: 73.15
+      mobility: 52.199997
+      capacity: 130.4323
+      firePower: 3.6000001
+      bulletSpeed: 10.200001
+      fireRate: 3
+      sustainedDps: 0
+      rammingPower: 2
+      healthCap: 198.38629
+      healthRegen: 6.3260937
+      energyCap: 62.7
+      energyRegen: 10.45
+      moveSpeed: 7.6000004
+      turnSpeed: 30.599998
+      gemCap: 61.392315
+      peopleCap: 69.03998
     componentMass: 13.729518
+    lockedInUpgradeTree: 0
+  - chassisId: MeteorMantis_01
+    upgradeTreeShipName: Shardwing
+    prefab: {fileID: 193457954238526299, guid: cbe0a7e2d61eb2749823e7570df772bc, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 91e3ccb363d1c0f4ba9500156a8ed479, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: Red
+      team: 1
+      sprite: {fileID: 21300000, guid: 91e3ccb363d1c0f4ba9500156a8ed479, type: 3}
+    - variantName: Blue
+      team: 2
+      sprite: {fileID: 21300000, guid: b6ba69d73aea7744a8427fa370d624d5, type: 3}
+    - variantName: Green
+      team: 3
+      sprite: {fileID: 21300000, guid: 726011577a81a4747bd865f42f626bc8, type: 3}
+    - variantName: Orange
+      team: 4
+      sprite: {fileID: 21300000, guid: a15b33db39d160a4ca1587228fa97000, type: 3}
+    - variantName: Purple
+      team: 5
+      sprite: {fileID: 21300000, guid: 46ba45afb2a4ab04b82c098ed8156e68, type: 3}
+    theatricalMenuPreviewSprite: {fileID: 21300000, guid: 91e3ccb363d1c0f4ba9500156a8ed479, type: 3}
+    teamTheatricalMenuPreviewSprites:
+    - variantName: Red
+      team: 1
+      sprite: {fileID: 21300000, guid: 91e3ccb363d1c0f4ba9500156a8ed479, type: 3}
+    - variantName: Blue
+      team: 2
+      sprite: {fileID: 21300000, guid: b6ba69d73aea7744a8427fa370d624d5, type: 3}
+    - variantName: Green
+      team: 3
+      sprite: {fileID: 21300000, guid: 726011577a81a4747bd865f42f626bc8, type: 3}
+    - variantName: Orange
+      team: 4
+      sprite: {fileID: 21300000, guid: a15b33db39d160a4ca1587228fa97000, type: 3}
+    - variantName: Purple
+      team: 5
+      sprite: {fileID: 21300000, guid: 46ba45afb2a4ab04b82c098ed8156e68, type: 3}
+    minHomePlanetLevel: 2
+    powerScore: 214.15338
+    powerScoreAtMaxLevel: 471.26706
+    powerScoreBreakdown:
+      offense: 56.45
+      defense: 58.07846
+      energy: 68.30819
+      mobility: 27
+      capacity: 45.06674
+      firePower: 4.5
+      bulletSpeed: 10.200001
+      fireRate: 3
+      sustainedDps: 13.500001
+      rammingPower: 1.25
+      healthCap: 56.2837
+      healthRegen: 1.7947607
+      energyCap: 62.40702
+      energyRegen: 5.90117
+      moveSpeed: 6.3999996
+      turnSpeed: 12.599999
+      gemCap: 23.410572
+      peopleCap: 21.656166
+    powerScoreBreakdownAtShipLevel:
+      offense: 72
+      defense: 175.01173
+      energy: 144.87802
+      mobility: 45
+      capacity: 83.47731
+      firePower: 7.2000003
+      bulletSpeed: 15.3
+      fireRate: 3
+      sustainedDps: 21.6
+      rammingPower: 1.5
+      healthCap: 169.60345
+      healthRegen: 5.4082727
+      energyCap: 131.89545
+      energyRegen: 12.9825735
+      moveSpeed: 7.6000004
+      turnSpeed: 23.4
+      gemCap: 41.11586
+      peopleCap: 42.361454
+    componentMass: 15.083791
+    lockedInUpgradeTree: 0
+  - chassisId: MeteorMantis_05
+    upgradeTreeShipName: Flare
+    prefab: {fileID: 7539151618137602507, guid: a6098ea9ae8f73d44849b2763edca48c, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: e13aaecc07c6aa4409a35e68b53e849d, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: Red
+      team: 1
+      sprite: {fileID: 21300000, guid: e13aaecc07c6aa4409a35e68b53e849d, type: 3}
+    - variantName: Blue
+      team: 2
+      sprite: {fileID: 21300000, guid: 104e0ec510498494793c43e5b1907e64, type: 3}
+    - variantName: Green
+      team: 3
+      sprite: {fileID: 21300000, guid: e1603a46d3bd6234ca19691cd1a60b48, type: 3}
+    - variantName: Orange
+      team: 4
+      sprite: {fileID: 21300000, guid: 915f2d0d122595c49a5e6e0d7e388da2, type: 3}
+    - variantName: Purple
+      team: 5
+      sprite: {fileID: 21300000, guid: edbff3c5d9ac2dd4487af3da43d11b87, type: 3}
+    theatricalMenuPreviewSprite: {fileID: 21300000, guid: e13aaecc07c6aa4409a35e68b53e849d, type: 3}
+    teamTheatricalMenuPreviewSprites:
+    - variantName: Red
+      team: 1
+      sprite: {fileID: 21300000, guid: e13aaecc07c6aa4409a35e68b53e849d, type: 3}
+    - variantName: Blue
+      team: 2
+      sprite: {fileID: 21300000, guid: 104e0ec510498494793c43e5b1907e64, type: 3}
+    - variantName: Green
+      team: 3
+      sprite: {fileID: 21300000, guid: e1603a46d3bd6234ca19691cd1a60b48, type: 3}
+    - variantName: Orange
+      team: 4
+      sprite: {fileID: 21300000, guid: 915f2d0d122595c49a5e6e0d7e388da2, type: 3}
+    - variantName: Purple
+      team: 5
+      sprite: {fileID: 21300000, guid: edbff3c5d9ac2dd4487af3da43d11b87, type: 3}
+    minHomePlanetLevel: 3
+    powerScore: 241.73691
+    powerScoreAtMaxLevel: 783.4582
+    powerScoreBreakdown:
+      offense: 56.7
+      defense: 71.264404
+      energy: 68.7725
+      mobility: 27
+      capacity: 59
+      firePower: 4.5
+      bulletSpeed: 10.200001
+      fireRate: 3
+      sustainedDps: 13.500001
+      rammingPower: 1.5
+      healthCap: 69.062164
+      healthRegen: 2.2022376
+      energyCap: 62.805
+      energyRegen: 5.9675
+      moveSpeed: 6.3999996
+      turnSpeed: 12.599999
+      gemCap: 30
+      peopleCap: 29
+    powerScoreBreakdownAtShipLevel:
+      offense: 84.85
+      defense: 331.29068
+      energy: 197.3175
+      mobility: 39
+      capacity: 189
+      firePower: 9
+      bulletSpeed: 17.85
+      fireRate: 3
+      sustainedDps: 27.000002
+      rammingPower: 2.5
+      healthCap: 321.053
+      healthRegen: 10.237659
+      energyCap: 179.41501
+      energyRegen: 17.9025
+      moveSpeed: 8.4
+      turnSpeed: 12.599999
+      gemCap: 90
+      peopleCap: 99
+    componentMass: 13.158913
     lockedInUpgradeTree: 0
   - chassisId: MeteorMantis_06
     upgradeTreeShipName: Pincer
@@ -1131,447 +1211,207 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 212378e21a186df4f9e43c8afdb86103, type: 3}
     minHomePlanetLevel: 3
-    powerScore: 198.44904
-    powerScoreAtMaxLevel: 401.89902
+    powerScore: 215.98581
+    powerScoreAtMaxLevel: 749.03577
     powerScoreBreakdown:
-      offense: 18.050001
-      defense: 61.877842
-      energy: 39.335983
-      mobility: 28.199999
-      capacity: 58.001213
+      offense: 18.300001
+      defense: 72.334404
+      energy: 45.89198
+      mobility: 29.399998
+      capacity: 57.359436
       firePower: 3.6000001
       bulletSpeed: 10.200001
       fireRate: 3
       sustainedDps: 0
-      rammingPower: 1.25
-      healthCap: 59.96567
-      healthRegen: 1.9121706
-      energyCap: 33.716557
-      energyRegen: 5.619426
-      moveSpeed: 6.6
+      rammingPower: 1.5
+      healthCap: 70.0991
+      healthRegen: 2.235303
+      energyCap: 39.335983
+      energyRegen: 6.5559974
+      moveSpeed: 6.799999
       turnSpeed: 12.599999
-      gemCap: 31.711716
-      peopleCap: 26.289497
+      gemCap: 28.294966
+      peopleCap: 29.064472
     powerScoreBreakdownAtShipLevel:
-      offense: 18.550001
-      defense: 152.45505
-      energy: 72.11597
-      mobility: 34.2
-      capacity: 136.12802
+      offense: 19.300001
+      defense: 343.4292
+      energy: 177.0119
+      mobility: 53.399998
+      capacity: 184.19463
       firePower: 3.6000001
       bulletSpeed: 10.200001
       fireRate: 3
       sustainedDps: 0
-      rammingPower: 1.75
-      healthCap: 147.74384
-      healthRegen: 4.711219
-      energyCap: 61.813683
-      energyRegen: 10.30228
-      moveSpeed: 7.6
+      rammingPower: 2.5
+      healthCap: 332.81644
+      healthRegen: 10.61277
+      energyCap: 151.72449
+      energyRegen: 25.287418
+      moveSpeed: 10.799999
       turnSpeed: 12.599999
-      gemCap: 69.73108
-      peopleCap: 66.39695
+      gemCap: 86.31433
+      peopleCap: 97.880295
     componentMass: 14.996915
     lockedInUpgradeTree: 0
-  - chassisId: MeteorMantis_07
-    upgradeTreeShipName: Firefall
-    prefab: {fileID: 5672496216798089599, guid: adb5b30201dd3ba40847484aa7a9de2d, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: ad18a976ec868a742bb0b154d3e3433a, type: 3}
+  - chassisId: MeteorMantis_04
+    upgradeTreeShipName: Scythe
+    prefab: {fileID: 5475663384806958609, guid: aaf45fc1848ede044b21a66de15725f4, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: aa1cd010d4df875428d8a69346cba28e, type: 3}
     teamMenuPreviewSprites:
     - variantName: Red
       team: 1
-      sprite: {fileID: 21300000, guid: ad18a976ec868a742bb0b154d3e3433a, type: 3}
+      sprite: {fileID: 21300000, guid: aa1cd010d4df875428d8a69346cba28e, type: 3}
     - variantName: Blue
       team: 2
-      sprite: {fileID: 21300000, guid: 6399f2562508cfb42af14eafc718f604, type: 3}
+      sprite: {fileID: 21300000, guid: 40ec39a91bcdcc54e9482b61b5fc6bf5, type: 3}
     - variantName: Green
       team: 3
-      sprite: {fileID: 21300000, guid: 64c6050197e12f94db1bea4726e5e8af, type: 3}
+      sprite: {fileID: 21300000, guid: fe22b5821aa2e0947b5ebad9888b8425, type: 3}
     - variantName: Orange
       team: 4
-      sprite: {fileID: 21300000, guid: 81d13eebbd20ff540a994afc706646f4, type: 3}
+      sprite: {fileID: 21300000, guid: e482970e621cab2498969948d85cd818, type: 3}
     - variantName: Purple
       team: 5
-      sprite: {fileID: 21300000, guid: c64b3d1a76b4daa479d8aae0cac6556e, type: 3}
-    theatricalMenuPreviewSprite: {fileID: 21300000, guid: ad18a976ec868a742bb0b154d3e3433a, type: 3}
+      sprite: {fileID: 21300000, guid: 568fc87c8e2e0e246af2dd483212fff0, type: 3}
+    theatricalMenuPreviewSprite: {fileID: 21300000, guid: aa1cd010d4df875428d8a69346cba28e, type: 3}
     teamTheatricalMenuPreviewSprites:
     - variantName: Red
       team: 1
-      sprite: {fileID: 21300000, guid: ad18a976ec868a742bb0b154d3e3433a, type: 3}
+      sprite: {fileID: 21300000, guid: aa1cd010d4df875428d8a69346cba28e, type: 3}
     - variantName: Blue
       team: 2
-      sprite: {fileID: 21300000, guid: 6399f2562508cfb42af14eafc718f604, type: 3}
+      sprite: {fileID: 21300000, guid: 40ec39a91bcdcc54e9482b61b5fc6bf5, type: 3}
     - variantName: Green
       team: 3
-      sprite: {fileID: 21300000, guid: 64c6050197e12f94db1bea4726e5e8af, type: 3}
+      sprite: {fileID: 21300000, guid: fe22b5821aa2e0947b5ebad9888b8425, type: 3}
     - variantName: Orange
       team: 4
-      sprite: {fileID: 21300000, guid: 81d13eebbd20ff540a994afc706646f4, type: 3}
+      sprite: {fileID: 21300000, guid: e482970e621cab2498969948d85cd818, type: 3}
     - variantName: Purple
       team: 5
-      sprite: {fileID: 21300000, guid: c64b3d1a76b4daa479d8aae0cac6556e, type: 3}
+      sprite: {fileID: 21300000, guid: 568fc87c8e2e0e246af2dd483212fff0, type: 3}
     minHomePlanetLevel: 3
-    powerScore: 194.79596
-    powerScoreAtMaxLevel: 478.37274
+    powerScore: 236.33505
+    powerScoreAtMaxLevel: 691.56354
     powerScoreBreakdown:
-      offense: 48.05
-      defense: 49.655704
-      energy: 51.147102
+      offense: 63.95
+      defense: 57.95979
+      energy: 87.1471
       mobility: 25.8
-      capacity: 54.456387
-      firePower: 3.6000001
+      capacity: 47.19138
+      firePower: 9
       bulletSpeed: 10.200001
-      fireRate: 3
-      sustainedDps: 21.6
+      fireRate: 6
+      sustainedDps: 27.000002
       rammingPower: 1.25
-      healthCap: 48.121227
-      healthRegen: 1.5344777
-      energyCap: 46.4118
+      healthCap: 56.168697
+      healthRegen: 1.7910937
+      energyCap: 82.411804
       energyRegen: 4.7353
       moveSpeed: 6.2
       turnSpeed: 12.599999
-      gemCap: 30.93544
-      peopleCap: 23.520947
+      gemCap: 24.751724
+      peopleCap: 22.439655
     powerScoreBreakdownAtShipLevel:
-      offense: 75.7
-      defense: 144.02814
-      energy: 137.58098
-      mobility: 31.8
-      capacity: 132.59341
-      firePower: 8.1
+      offense: 96.1
+      defense: 253.17696
+      energy: 218.58096
+      mobility: 49.8
+      capacity: 127.510345
+      firePower: 18
       bulletSpeed: 17.85
-      fireRate: 3
-      sustainedDps: 48.600002
+      fireRate: 6
+      sustainedDps: 54.000004
       rammingPower: 1.75
-      healthCap: 139.57733
-      healthRegen: 4.4508076
-      energyCap: 126.92655
+      healthCap: 245.3532
+      healthRegen: 7.8237624
+      energyCap: 207.92654
       energyRegen: 10.654425
       moveSpeed: 7.2
-      turnSpeed: 12.599999
-      gemCap: 69.87088
-      peopleCap: 62.722527
-    componentMass: 13.250139
+      turnSpeed: 30.599998
+      gemCap: 62.671265
+      peopleCap: 64.83908
+    componentMass: 12.165972
     lockedInUpgradeTree: 0
-  - chassisId: MeteorMantis_01
-    upgradeTreeShipName: Shardwing
-    prefab: {fileID: 193457954238526299, guid: cbe0a7e2d61eb2749823e7570df772bc, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: 91e3ccb363d1c0f4ba9500156a8ed479, type: 3}
+  - chassisId: MeteorMantis_10
+    upgradeTreeShipName: Searing
+    prefab: {fileID: 322231075039104863, guid: fa18f6efa32599944a07df22fe508427, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: b53ee2e025802e343abac8f3b8672406, type: 3}
     teamMenuPreviewSprites:
     - variantName: Red
       team: 1
-      sprite: {fileID: 21300000, guid: 91e3ccb363d1c0f4ba9500156a8ed479, type: 3}
+      sprite: {fileID: 21300000, guid: b53ee2e025802e343abac8f3b8672406, type: 3}
     - variantName: Blue
       team: 2
-      sprite: {fileID: 21300000, guid: b6ba69d73aea7744a8427fa370d624d5, type: 3}
+      sprite: {fileID: 21300000, guid: a7635bcb19e29734d8753611664d554d, type: 3}
     - variantName: Green
       team: 3
-      sprite: {fileID: 21300000, guid: 726011577a81a4747bd865f42f626bc8, type: 3}
+      sprite: {fileID: 21300000, guid: 35fb3a9358ceb394eba4495c12330823, type: 3}
     - variantName: Orange
       team: 4
-      sprite: {fileID: 21300000, guid: a15b33db39d160a4ca1587228fa97000, type: 3}
+      sprite: {fileID: 21300000, guid: f218477426bcb6249976565d7bb42624, type: 3}
     - variantName: Purple
       team: 5
-      sprite: {fileID: 21300000, guid: 46ba45afb2a4ab04b82c098ed8156e68, type: 3}
-    theatricalMenuPreviewSprite: {fileID: 21300000, guid: 91e3ccb363d1c0f4ba9500156a8ed479, type: 3}
+      sprite: {fileID: 21300000, guid: 56095286f29b8fc4bbd9289199b97904, type: 3}
+    theatricalMenuPreviewSprite: {fileID: 21300000, guid: b53ee2e025802e343abac8f3b8672406, type: 3}
     teamTheatricalMenuPreviewSprites:
     - variantName: Red
       team: 1
-      sprite: {fileID: 21300000, guid: 91e3ccb363d1c0f4ba9500156a8ed479, type: 3}
+      sprite: {fileID: 21300000, guid: b53ee2e025802e343abac8f3b8672406, type: 3}
     - variantName: Blue
       team: 2
-      sprite: {fileID: 21300000, guid: b6ba69d73aea7744a8427fa370d624d5, type: 3}
+      sprite: {fileID: 21300000, guid: a7635bcb19e29734d8753611664d554d, type: 3}
     - variantName: Green
       team: 3
-      sprite: {fileID: 21300000, guid: 726011577a81a4747bd865f42f626bc8, type: 3}
+      sprite: {fileID: 21300000, guid: 35fb3a9358ceb394eba4495c12330823, type: 3}
     - variantName: Orange
       team: 4
-      sprite: {fileID: 21300000, guid: a15b33db39d160a4ca1587228fa97000, type: 3}
+      sprite: {fileID: 21300000, guid: f218477426bcb6249976565d7bb42624, type: 3}
     - variantName: Purple
       team: 5
-      sprite: {fileID: 21300000, guid: 46ba45afb2a4ab04b82c098ed8156e68, type: 3}
-    minHomePlanetLevel: 3
-    powerScore: 188.71613
-    powerScoreAtMaxLevel: 489.24698
+      sprite: {fileID: 21300000, guid: 56095286f29b8fc4bbd9289199b97904, type: 3}
+    minHomePlanetLevel: 4
+    powerScore: 248.5949
+    powerScoreAtMaxLevel: 1140.0161
     powerScoreBreakdown:
-      offense: 47.8
-      defense: 43.582386
-      energy: 51.04655
-      mobility: 34.8
-      capacity: 45.57555
+      offense: 18.300001
+      defense: 92.3557
+      energy: 41.433876
+      mobility: 27
+      capacity: 75.24686
       firePower: 3.6000001
       bulletSpeed: 10.200001
       fireRate: 3
-      sustainedDps: 10.8
-      rammingPower: 1
-      healthCap: 42.235588
-      healthRegen: 1.346798
-      energyCap: 46.325615
-      energyRegen: 4.720936
-      moveSpeed: 6.2
-      turnSpeed: 21.599998
-      gemCap: 27.01762
-      peopleCap: 18.55793
-    powerScoreBreakdownAtShipLevel:
-      offense: 75.45
-      defense: 139.08588
-      energy: 137.35474
-      mobility: 58.8
-      capacity: 123.856384
-      firePower: 8.1
-      bulletSpeed: 17.85
-      fireRate: 3
-      sustainedDps: 24.300001
+      sustainedDps: 0
       rammingPower: 1.5
-      healthCap: 134.7878
-      healthRegen: 4.2980804
-      energyCap: 126.732635
-      energyRegen: 10.622106
-      moveSpeed: 7.2
-      turnSpeed: 39.6
-      gemCap: 66.03524
-      peopleCap: 57.821144
-    componentMass: 15.083791
-    lockedInUpgradeTree: 0
-  - chassisId: MeteorMantis_13
-    upgradeTreeShipName: Strike
-    prefab: {fileID: 3688897530263829303, guid: d3690ef53ac23a0488106647a81d8861, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: 49777ed35f9454a4498ded7af565e968, type: 3}
-    teamMenuPreviewSprites:
-    - variantName: Red
-      team: 1
-      sprite: {fileID: 21300000, guid: 49777ed35f9454a4498ded7af565e968, type: 3}
-    - variantName: Blue
-      team: 2
-      sprite: {fileID: 21300000, guid: dcc427733775efb46a2d4efa8bd512f9, type: 3}
-    - variantName: Green
-      team: 3
-      sprite: {fileID: 21300000, guid: 105959a5aa65b0e4cb5cddc94c96226b, type: 3}
-    - variantName: Orange
-      team: 4
-      sprite: {fileID: 21300000, guid: f8196fbb2be51f84dae53e1f01a9274d, type: 3}
-    - variantName: Purple
-      team: 5
-      sprite: {fileID: 21300000, guid: 1a2ad1e7d60a0664b93a0122955bd24b, type: 3}
-    theatricalMenuPreviewSprite: {fileID: 21300000, guid: 49777ed35f9454a4498ded7af565e968, type: 3}
-    teamTheatricalMenuPreviewSprites:
-    - variantName: Red
-      team: 1
-      sprite: {fileID: 21300000, guid: 49777ed35f9454a4498ded7af565e968, type: 3}
-    - variantName: Blue
-      team: 2
-      sprite: {fileID: 21300000, guid: dcc427733775efb46a2d4efa8bd512f9, type: 3}
-    - variantName: Green
-      team: 3
-      sprite: {fileID: 21300000, guid: 105959a5aa65b0e4cb5cddc94c96226b, type: 3}
-    - variantName: Orange
-      team: 4
-      sprite: {fileID: 21300000, guid: f8196fbb2be51f84dae53e1f01a9274d, type: 3}
-    - variantName: Purple
-      team: 5
-      sprite: {fileID: 21300000, guid: 1a2ad1e7d60a0664b93a0122955bd24b, type: 3}
-    minHomePlanetLevel: 4
-    powerScore: 229.92093
-    powerScoreAtMaxLevel: 650.38257
-    powerScoreBreakdown:
-      offense: 48.05
-      defense: 64.58056
-      energy: 46
-      mobility: 25.8
-      capacity: 81.09038
+      healthCap: 89.501686
+      healthRegen: 2.854008
+      energyCap: 35.51475
+      energyRegen: 5.919125
+      moveSpeed: 6.3999996
+      turnSpeed: 12.599999
+      gemCap: 39.019825
+      peopleCap: 36.22703
+    powerScoreBreakdownAtShipLevel:
+      offense: 19.800001
+      defense: 581.24115
+      energy: 157.44873
+      mobility: 69
+      capacity: 333.32617
       firePower: 3.6000001
       bulletSpeed: 10.200001
       fireRate: 3
-      sustainedDps: 21.6
-      rammingPower: 1.25
-      healthCap: 62.58487
-      healthRegen: 1.9956912
-      energyCap: 42
-      energyRegen: 4
-      moveSpeed: 6.2
-      turnSpeed: 12.599999
-      gemCap: 44.725544
-      peopleCap: 36.364834
-    powerScoreBreakdownAtShipLevel:
-      offense: 87.8
-      defense: 212.21309
-      energy: 158
-      mobility: 34.2
-      capacity: 210.19452
-      firePower: 9.900001
-      bulletSpeed: 20.400002
-      fireRate: 3
-      sustainedDps: 59.4
-      rammingPower: 2
-      healthCap: 205.65521
-      healthRegen: 6.5578823
-      energyCap: 147
-      energyRegen: 11
-      moveSpeed: 7.6
-      turnSpeed: 12.599999
-      gemCap: 107.63222
-      peopleCap: 102.5623
-    componentMass: 12.806133
-    lockedInUpgradeTree: 0
-  - chassisId: MeteorMantis_14
-    upgradeTreeShipName: Cometclaw
-    prefab: {fileID: 4545491441829712224, guid: e979f3e2a26824840970db21b909ce75, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: 3ae2e6111d086f046a16d71711a18715, type: 3}
-    teamMenuPreviewSprites:
-    - variantName: Red
-      team: 1
-      sprite: {fileID: 21300000, guid: 3ae2e6111d086f046a16d71711a18715, type: 3}
-    - variantName: Blue
-      team: 2
-      sprite: {fileID: 21300000, guid: 1d1fb7a3ff7797f429aa6888e59392e2, type: 3}
-    - variantName: Green
-      team: 3
-      sprite: {fileID: 21300000, guid: 6f8576a58345b944fb121c66929a98c6, type: 3}
-    - variantName: Orange
-      team: 4
-      sprite: {fileID: 21300000, guid: 472a330fea0baa6478693540b8ce07fb, type: 3}
-    - variantName: Purple
-      team: 5
-      sprite: {fileID: 21300000, guid: 23be455ae29e3b848a69442460a0e884, type: 3}
-    theatricalMenuPreviewSprite: {fileID: 21300000, guid: 3ae2e6111d086f046a16d71711a18715, type: 3}
-    teamTheatricalMenuPreviewSprites:
-    - variantName: Red
-      team: 1
-      sprite: {fileID: 21300000, guid: 3ae2e6111d086f046a16d71711a18715, type: 3}
-    - variantName: Blue
-      team: 2
-      sprite: {fileID: 21300000, guid: 1d1fb7a3ff7797f429aa6888e59392e2, type: 3}
-    - variantName: Green
-      team: 3
-      sprite: {fileID: 21300000, guid: 6f8576a58345b944fb121c66929a98c6, type: 3}
-    - variantName: Orange
-      team: 4
-      sprite: {fileID: 21300000, guid: 472a330fea0baa6478693540b8ce07fb, type: 3}
-    - variantName: Purple
-      team: 5
-      sprite: {fileID: 21300000, guid: 23be455ae29e3b848a69442460a0e884, type: 3}
-    minHomePlanetLevel: 4
-    powerScore: 227.81427
-    powerScoreAtMaxLevel: 604.845
-    powerScoreBreakdown:
-      offense: 48.05
-      defense: 76.6767
-      energy: 39.43865
-      mobility: 34.8
-      capacity: 66.08927
-      firePower: 3.6000001
-      bulletSpeed: 10.200001
-      fireRate: 3
-      sustainedDps: 21.6
-      rammingPower: 1.25
-      healthCap: 74.307205
-      healthRegen: 2.36949
-      energyCap: 36.375984
-      energyRegen: 3.062664
-      moveSpeed: 6.2
-      turnSpeed: 21.599998
-      gemCap: 37.371025
-      peopleCap: 28.718246
-    powerScoreBreakdownAtShipLevel:
-      offense: 87.8
-      defense: 200.27696
-      energy: 139.9563
-      mobility: 68.4
-      capacity: 164.94766
-      firePower: 9.900001
-      bulletSpeed: 20.400002
-      fireRate: 3
-      sustainedDps: 59.4
-      rammingPower: 2
-      healthCap: 194.08794
-      healthRegen: 6.1890287
-      energyCap: 131.53397
-      energyRegen: 8.422326
-      moveSpeed: 7.6
-      turnSpeed: 46.8
-      gemCap: 86.397736
-      peopleCap: 78.54993
-    componentMass: 16.292568
-    lockedInUpgradeTree: 0
-  - chassisId: MeteorMantis_05
-    upgradeTreeShipName: Flare
-    prefab: {fileID: 7539151618137602507, guid: a6098ea9ae8f73d44849b2763edca48c, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: e13aaecc07c6aa4409a35e68b53e849d, type: 3}
-    teamMenuPreviewSprites:
-    - variantName: Red
-      team: 1
-      sprite: {fileID: 21300000, guid: e13aaecc07c6aa4409a35e68b53e849d, type: 3}
-    - variantName: Blue
-      team: 2
-      sprite: {fileID: 21300000, guid: 104e0ec510498494793c43e5b1907e64, type: 3}
-    - variantName: Green
-      team: 3
-      sprite: {fileID: 21300000, guid: e1603a46d3bd6234ca19691cd1a60b48, type: 3}
-    - variantName: Orange
-      team: 4
-      sprite: {fileID: 21300000, guid: 915f2d0d122595c49a5e6e0d7e388da2, type: 3}
-    - variantName: Purple
-      team: 5
-      sprite: {fileID: 21300000, guid: edbff3c5d9ac2dd4487af3da43d11b87, type: 3}
-    theatricalMenuPreviewSprite: {fileID: 21300000, guid: e13aaecc07c6aa4409a35e68b53e849d, type: 3}
-    teamTheatricalMenuPreviewSprites:
-    - variantName: Red
-      team: 1
-      sprite: {fileID: 21300000, guid: e13aaecc07c6aa4409a35e68b53e849d, type: 3}
-    - variantName: Blue
-      team: 2
-      sprite: {fileID: 21300000, guid: 104e0ec510498494793c43e5b1907e64, type: 3}
-    - variantName: Green
-      team: 3
-      sprite: {fileID: 21300000, guid: e1603a46d3bd6234ca19691cd1a60b48, type: 3}
-    - variantName: Orange
-      team: 4
-      sprite: {fileID: 21300000, guid: 915f2d0d122595c49a5e6e0d7e388da2, type: 3}
-    - variantName: Purple
-      team: 5
-      sprite: {fileID: 21300000, guid: edbff3c5d9ac2dd4487af3da43d11b87, type: 3}
-    minHomePlanetLevel: 4
-    powerScore: 211.32944
-    powerScoreAtMaxLevel: 610.3205
-    powerScoreBreakdown:
-      offense: 48.05
-      defense: 57.30693
-      energy: 51.418
-      mobility: 25.8
-      capacity: 63
-      firePower: 3.6000001
-      bulletSpeed: 10.200001
-      fireRate: 3
-      sustainedDps: 10.8
-      rammingPower: 1.25
-      healthCap: 55.53601
-      healthRegen: 1.7709188
-      energyCap: 46.644
-      energyRegen: 4.774
-      moveSpeed: 6.2
-      turnSpeed: 12.599999
-      gemCap: 36
-      peopleCap: 27
-    powerScoreBreakdownAtShipLevel:
-      offense: 87.8
-      defense: 192.12102
-      energy: 172.89949
-      mobility: 34.2
-      capacity: 175
-      firePower: 9.900001
-      bulletSpeed: 20.400002
-      fireRate: 3
-      sustainedDps: 29.7
-      rammingPower: 2
-      healthCap: 186.18402
-      healthRegen: 5.9369907
-      energyCap: 159.771
-      energyRegen: 13.1285
-      moveSpeed: 7.6
-      turnSpeed: 12.599999
-      gemCap: 92
-      peopleCap: 83
-    componentMass: 13.158913
+      sustainedDps: 0
+      rammingPower: 3
+      healthCap: 563.2794
+      healthRegen: 17.961718
+      energyCap: 134.95605
+      energyRegen: 22.492676
+      moveSpeed: 9.2
+      turnSpeed: 37.8
+      gemCap: 161.05948
+      peopleCap: 172.26668
+    componentMass: 18.639439
     lockedInUpgradeTree: 0
   - chassisId: MeteorMantis_09
     upgradeTreeShipName: Skid
@@ -1611,287 +1451,447 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 70635431f27c0254cbe56f784c58f51e, type: 3}
     minHomePlanetLevel: 4
-    powerScore: 216.11113
-    powerScoreAtMaxLevel: 641.13513
+    powerScore: 248.08138
+    powerScoreAtMaxLevel: 1043.3326
     powerScoreBreakdown:
-      offense: 48.05
-      defense: 69.64069
-      energy: 46
-      mobility: 25.8
-      capacity: 62.220436
-      firePower: 3.6000001
+      offense: 56.7
+      defense: 76.946236
+      energy: 62
+      mobility: 27
+      capacity: 67.81015
+      firePower: 4.5
       bulletSpeed: 10.200001
       fireRate: 3
-      sustainedDps: 10.8
-      rammingPower: 1.25
-      healthCap: 67.48863
-      healthRegen: 2.152061
-      energyCap: 42
-      energyRegen: 4
-      moveSpeed: 6.2
+      sustainedDps: 13.500001
+      rammingPower: 1.5
+      healthCap: 74.56841
+      healthRegen: 2.3778193
+      energyCap: 57
+      energyRegen: 5
+      moveSpeed: 6.3999996
       turnSpeed: 12.599999
-      gemCap: 31.699705
-      peopleCap: 30.520733
+      gemCap: 32.04854
+      peopleCap: 35.761612
     powerScoreBreakdownAtShipLevel:
-      offense: 87.8
-      defense: 223.46074
-      energy: 158
-      mobility: 34.2
-      capacity: 189.69943
-      firePower: 9.900001
+      offense: 97.200005
+      defense: 461.74982
+      energy: 223
+      mobility: 43.8
+      capacity: 283.98282
+      firePower: 10.8
       bulletSpeed: 20.400002
       fireRate: 3
-      sustainedDps: 29.7
-      rammingPower: 2
-      healthCap: 216.55528
-      healthRegen: 6.9054623
-      energyCap: 147
-      energyRegen: 11
-      moveSpeed: 7.6
+      sustainedDps: 32.4
+      rammingPower: 3
+      healthCap: 447.48065
+      healthRegen: 14.269153
+      energyCap: 204
+      energyRegen: 19
+      moveSpeed: 9.2
       turnSpeed: 12.599999
-      gemCap: 91.50406
-      peopleCap: 98.19537
+      gemCap: 129.69879
+      peopleCap: 154.28403
     componentMass: 13.888145
     lockedInUpgradeTree: 0
-  - chassisId: MeteorMantis_10
-    upgradeTreeShipName: Searing
-    prefab: {fileID: 322231075039104863, guid: fa18f6efa32599944a07df22fe508427, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: b53ee2e025802e343abac8f3b8672406, type: 3}
+  - chassisId: MeteorMantis_14
+    upgradeTreeShipName: Cometclaw
+    prefab: {fileID: 4545491441829712224, guid: e979f3e2a26824840970db21b909ce75, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 3ae2e6111d086f046a16d71711a18715, type: 3}
     teamMenuPreviewSprites:
     - variantName: Red
       team: 1
-      sprite: {fileID: 21300000, guid: b53ee2e025802e343abac8f3b8672406, type: 3}
+      sprite: {fileID: 21300000, guid: 3ae2e6111d086f046a16d71711a18715, type: 3}
     - variantName: Blue
       team: 2
-      sprite: {fileID: 21300000, guid: a7635bcb19e29734d8753611664d554d, type: 3}
+      sprite: {fileID: 21300000, guid: 1d1fb7a3ff7797f429aa6888e59392e2, type: 3}
     - variantName: Green
       team: 3
-      sprite: {fileID: 21300000, guid: 35fb3a9358ceb394eba4495c12330823, type: 3}
+      sprite: {fileID: 21300000, guid: 6f8576a58345b944fb121c66929a98c6, type: 3}
     - variantName: Orange
       team: 4
-      sprite: {fileID: 21300000, guid: f218477426bcb6249976565d7bb42624, type: 3}
+      sprite: {fileID: 21300000, guid: 472a330fea0baa6478693540b8ce07fb, type: 3}
     - variantName: Purple
       team: 5
-      sprite: {fileID: 21300000, guid: 56095286f29b8fc4bbd9289199b97904, type: 3}
-    theatricalMenuPreviewSprite: {fileID: 21300000, guid: b53ee2e025802e343abac8f3b8672406, type: 3}
+      sprite: {fileID: 21300000, guid: 23be455ae29e3b848a69442460a0e884, type: 3}
+    theatricalMenuPreviewSprite: {fileID: 21300000, guid: 3ae2e6111d086f046a16d71711a18715, type: 3}
     teamTheatricalMenuPreviewSprites:
     - variantName: Red
       team: 1
-      sprite: {fileID: 21300000, guid: b53ee2e025802e343abac8f3b8672406, type: 3}
+      sprite: {fileID: 21300000, guid: 3ae2e6111d086f046a16d71711a18715, type: 3}
     - variantName: Blue
       team: 2
-      sprite: {fileID: 21300000, guid: a7635bcb19e29734d8753611664d554d, type: 3}
+      sprite: {fileID: 21300000, guid: 1d1fb7a3ff7797f429aa6888e59392e2, type: 3}
     - variantName: Green
       team: 3
-      sprite: {fileID: 21300000, guid: 35fb3a9358ceb394eba4495c12330823, type: 3}
+      sprite: {fileID: 21300000, guid: 6f8576a58345b944fb121c66929a98c6, type: 3}
     - variantName: Orange
       team: 4
-      sprite: {fileID: 21300000, guid: f218477426bcb6249976565d7bb42624, type: 3}
+      sprite: {fileID: 21300000, guid: 472a330fea0baa6478693540b8ce07fb, type: 3}
     - variantName: Purple
       team: 5
-      sprite: {fileID: 21300000, guid: 56095286f29b8fc4bbd9289199b97904, type: 3}
-    minHomePlanetLevel: 5
-    powerScore: 249.85947
-    powerScoreAtMaxLevel: 730.37714
+      sprite: {fileID: 21300000, guid: 23be455ae29e3b848a69442460a0e884, type: 3}
+    minHomePlanetLevel: 4
+    powerScore: 255.46645
+    powerScoreAtMaxLevel: 1126.2976
     powerScoreBreakdown:
-      offense: 18.050001
-      defense: 75.49764
-      energy: 33.147102
-      mobility: 34.8
-      capacity: 94.92795
-      firePower: 3.6000001
-      bulletSpeed: 10.200001
-      fireRate: 3
-      sustainedDps: 0
-      rammingPower: 1.25
-      healthCap: 73.16459
-      healthRegen: 2.3330543
-      energyCap: 28.4118
-      energyRegen: 4.7353
-      moveSpeed: 6.2
-      turnSpeed: 21.599998
-      gemCap: 55.47389
-      peopleCap: 39.454063
-    powerScoreBreakdownAtShipLevel:
-      offense: 19.050001
-      defense: 278.13187
-      energy: 107.72807
-      mobility: 78
-      capacity: 261.51718
-      firePower: 3.6000001
-      bulletSpeed: 10.200001
-      fireRate: 3
-      sustainedDps: 0
-      rammingPower: 2.25
-      healthCap: 269.53693
-      healthRegen: 8.594927
-      energyCap: 92.33835
-      energyRegen: 15.389725
-      moveSpeed: 8
-      turnSpeed: 54
-      gemCap: 140.38202
-      peopleCap: 121.135155
-    componentMass: 18.639439
-    lockedInUpgradeTree: 0
-  - chassisId: MeteorMantis_17
-    upgradeTreeShipName: Hooktail
-    prefab: {fileID: 5259669648767954279, guid: 926871e94445ce744bef0585a495c19f, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: c79bf42fca9bf3540a3e637e361601fc, type: 3}
-    teamMenuPreviewSprites:
-    - variantName: Red
-      team: 1
-      sprite: {fileID: 21300000, guid: c79bf42fca9bf3540a3e637e361601fc, type: 3}
-    - variantName: Blue
-      team: 2
-      sprite: {fileID: 21300000, guid: 1402ea1d93bb30d4bb8369094911a00f, type: 3}
-    - variantName: Green
-      team: 3
-      sprite: {fileID: 21300000, guid: 0c8dad0eaaef16c44b4239fba69cdb12, type: 3}
-    - variantName: Orange
-      team: 4
-      sprite: {fileID: 21300000, guid: 8a12e94d943111347a3cb2ca284c7a75, type: 3}
-    - variantName: Purple
-      team: 5
-      sprite: {fileID: 21300000, guid: 381c145186d91e64eba6f6560fe2530b, type: 3}
-    theatricalMenuPreviewSprite: {fileID: 21300000, guid: c79bf42fca9bf3540a3e637e361601fc, type: 3}
-    teamTheatricalMenuPreviewSprites:
-    - variantName: Red
-      team: 1
-      sprite: {fileID: 21300000, guid: c79bf42fca9bf3540a3e637e361601fc, type: 3}
-    - variantName: Blue
-      team: 2
-      sprite: {fileID: 21300000, guid: 1402ea1d93bb30d4bb8369094911a00f, type: 3}
-    - variantName: Green
-      team: 3
-      sprite: {fileID: 21300000, guid: 0c8dad0eaaef16c44b4239fba69cdb12, type: 3}
-    - variantName: Orange
-      team: 4
-      sprite: {fileID: 21300000, guid: 8a12e94d943111347a3cb2ca284c7a75, type: 3}
-    - variantName: Purple
-      team: 5
-      sprite: {fileID: 21300000, guid: 381c145186d91e64eba6f6560fe2530b, type: 3}
-    minHomePlanetLevel: 5
-    powerScore: 234.92607
-    powerScoreAtMaxLevel: 758.9312
-    powerScoreBreakdown:
-      offense: 48.05
-      defense: 67.76923
-      energy: 37.3765
-      mobility: 25.8
-      capacity: 93.6862
-      firePower: 3.6000001
-      bulletSpeed: 10.200001
-      fireRate: 3
-      sustainedDps: 43.2
-      rammingPower: 1.25
-      healthCap: 65.675
-      healthRegen: 2.0942285
-      energyCap: 34.60843
-      energyRegen: 2.768072
-      moveSpeed: 6.2
-      turnSpeed: 12.599999
-      gemCap: 53.781094
-      peopleCap: 39.905113
-    powerScoreBreakdownAtShipLevel:
-      offense: 99.9
-      defense: 258.58746
-      energy: 161.97363
-      mobility: 36.6
-      capacity: 266.70172
-      firePower: 11.700001
-      bulletSpeed: 22.95
-      fireRate: 3
-      sustainedDps: 140.40001
-      rammingPower: 2.25
-      healthCap: 250.59651
-      healthRegen: 7.9909596
-      energyCap: 152.9774
-      energyRegen: 8.996234
-      moveSpeed: 8
-      turnSpeed: 12.599999
-      gemCap: 140.61188
-      peopleCap: 126.089836
-    componentMass: 14.313509
-    lockedInUpgradeTree: 0
-  - chassisId: MeteorMantis_18
-    upgradeTreeShipName: Cinder
-    prefab: {fileID: 8810885618950878329, guid: fc782e22d6e6f4f4d9e24364635e4a77, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: 67b3a036ba79e2a42b42423de9bf38e4, type: 3}
-    teamMenuPreviewSprites:
-    - variantName: Red
-      team: 1
-      sprite: {fileID: 21300000, guid: 67b3a036ba79e2a42b42423de9bf38e4, type: 3}
-    - variantName: Blue
-      team: 2
-      sprite: {fileID: 21300000, guid: 201e422eda472e54980553291ad354df, type: 3}
-    - variantName: Green
-      team: 3
-      sprite: {fileID: 21300000, guid: cf4d6fd7dd5201a458f5ec5e310ef638, type: 3}
-    - variantName: Orange
-      team: 4
-      sprite: {fileID: 21300000, guid: 1b316cd6a7965d24793c269f1652f14f, type: 3}
-    - variantName: Purple
-      team: 5
-      sprite: {fileID: 21300000, guid: efd6b17e2de596549b339d7621914707, type: 3}
-    theatricalMenuPreviewSprite: {fileID: 21300000, guid: 67b3a036ba79e2a42b42423de9bf38e4, type: 3}
-    teamTheatricalMenuPreviewSprites:
-    - variantName: Red
-      team: 1
-      sprite: {fileID: 21300000, guid: 67b3a036ba79e2a42b42423de9bf38e4, type: 3}
-    - variantName: Blue
-      team: 2
-      sprite: {fileID: 21300000, guid: 201e422eda472e54980553291ad354df, type: 3}
-    - variantName: Green
-      team: 3
-      sprite: {fileID: 21300000, guid: cf4d6fd7dd5201a458f5ec5e310ef638, type: 3}
-    - variantName: Orange
-      team: 4
-      sprite: {fileID: 21300000, guid: 1b316cd6a7965d24793c269f1652f14f, type: 3}
-    - variantName: Purple
-      team: 5
-      sprite: {fileID: 21300000, guid: efd6b17e2de596549b339d7621914707, type: 3}
-    minHomePlanetLevel: 5
-    powerScore: 244.64618
-    powerScoreAtMaxLevel: 804.2176
-    powerScoreBreakdown:
-      offense: 48.05
-      defense: 72.70422
-      energy: 53
+      offense: 64.2
+      defense: 75.725815
+      energy: 80.79831
       mobility: 27
-      capacity: 78.74197
-      firePower: 3.6000001
+      capacity: 56.292755
+      firePower: 9
+      bulletSpeed: 10.200001
+      fireRate: 6
+      sustainedDps: 27.000002
+      rammingPower: 1.5
+      healthCap: 73.38571
+      healthRegen: 2.3401058
+      energyCap: 76.96998
+      energyRegen: 3.82833
+      moveSpeed: 6.3999996
+      turnSpeed: 12.599999
+      gemCap: 28.328426
+      peopleCap: 27.96433
+    powerScoreBreakdownAtShipLevel:
+      offense: 111
+      defense: 482.20627
+      energy: 281.8336
+      mobility: 69
+      capacity: 246.89938
+      firePower: 21.6
+      bulletSpeed: 20.400002
+      fireRate: 6
+      sustainedDps: 64.8
+      rammingPower: 3
+      healthCap: 467.30496
+      healthRegen: 14.901304
+      energyCap: 267.28592
+      energyRegen: 14.547654
+      moveSpeed: 9.2
+      turnSpeed: 37.8
+      gemCap: 117.12227
+      peopleCap: 129.77711
+    componentMass: 16.292568
+    lockedInUpgradeTree: 0
+  - chassisId: MeteorMantis_07
+    upgradeTreeShipName: Firefall
+    prefab: {fileID: 5672496216798089599, guid: adb5b30201dd3ba40847484aa7a9de2d, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: ad18a976ec868a742bb0b154d3e3433a, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: Red
+      team: 1
+      sprite: {fileID: 21300000, guid: ad18a976ec868a742bb0b154d3e3433a, type: 3}
+    - variantName: Blue
+      team: 2
+      sprite: {fileID: 21300000, guid: 6399f2562508cfb42af14eafc718f604, type: 3}
+    - variantName: Green
+      team: 3
+      sprite: {fileID: 21300000, guid: 64c6050197e12f94db1bea4726e5e8af, type: 3}
+    - variantName: Orange
+      team: 4
+      sprite: {fileID: 21300000, guid: 81d13eebbd20ff540a994afc706646f4, type: 3}
+    - variantName: Purple
+      team: 5
+      sprite: {fileID: 21300000, guid: c64b3d1a76b4daa479d8aae0cac6556e, type: 3}
+    theatricalMenuPreviewSprite: {fileID: 21300000, guid: ad18a976ec868a742bb0b154d3e3433a, type: 3}
+    teamTheatricalMenuPreviewSprites:
+    - variantName: Red
+      team: 1
+      sprite: {fileID: 21300000, guid: ad18a976ec868a742bb0b154d3e3433a, type: 3}
+    - variantName: Blue
+      team: 2
+      sprite: {fileID: 21300000, guid: 6399f2562508cfb42af14eafc718f604, type: 3}
+    - variantName: Green
+      team: 3
+      sprite: {fileID: 21300000, guid: 64c6050197e12f94db1bea4726e5e8af, type: 3}
+    - variantName: Orange
+      team: 4
+      sprite: {fileID: 21300000, guid: 81d13eebbd20ff540a994afc706646f4, type: 3}
+    - variantName: Purple
+      team: 5
+      sprite: {fileID: 21300000, guid: c64b3d1a76b4daa479d8aae0cac6556e, type: 3}
+    minHomePlanetLevel: 4
+    powerScore: 257.17682
+    powerScoreAtMaxLevel: 1007.4543
+    powerScoreBreakdown:
+      offense: 64.2
+      defense: 61.44581
+      energy: 95.43388
+      mobility: 27
+      capacity: 53.988667
+      firePower: 9
+      bulletSpeed: 10.200001
+      fireRate: 6
+      sustainedDps: 27.000002
+      rammingPower: 1.5
+      healthCap: 59.54699
+      healthRegen: 1.89882
+      energyCap: 89.514755
+      energyRegen: 5.919125
+      moveSpeed: 6.3999996
+      turnSpeed: 12.599999
+      gemCap: 27.361263
+      peopleCap: 26.627403
+    powerScoreBreakdownAtShipLevel:
+      offense: 111
+      defense: 359.44507
+      energy: 337.44873
+      mobility: 43.8
+      capacity: 206.49829
+      firePower: 21.6
+      bulletSpeed: 20.400002
+      fireRate: 6
+      sustainedDps: 64.8
+      rammingPower: 3
+      healthCap: 348.33737
+      healthRegen: 11.1076975
+      energyCap: 314.95605
+      energyRegen: 22.492676
+      moveSpeed: 9.2
+      turnSpeed: 12.599999
+      gemCap: 96.61607
+      peopleCap: 109.88221
+    componentMass: 13.250139
+    lockedInUpgradeTree: 0
+  - chassisId: MeteorMantis_11B
+    upgradeTreeShipName: Emberclaw
+    prefab: {fileID: 3028100247762755984, guid: df102d12bcd9f9446b47075d61fd9c32, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: ed4c06a4d1c868248be090c262ac5cd8, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: Red
+      team: 1
+      sprite: {fileID: 21300000, guid: ed4c06a4d1c868248be090c262ac5cd8, type: 3}
+    - variantName: Blue
+      team: 2
+      sprite: {fileID: 21300000, guid: fdb3591b160a0dc439254849300947e5, type: 3}
+    - variantName: Green
+      team: 3
+      sprite: {fileID: 21300000, guid: 151e694de4a17a84a865c2ffb2c63d4b, type: 3}
+    - variantName: Orange
+      team: 4
+      sprite: {fileID: 21300000, guid: 5d6f33c2b3516614c82016d639f7c471, type: 3}
+    - variantName: Purple
+      team: 5
+      sprite: {fileID: 21300000, guid: 66a73ac40b888e040811d89e7ec1b640, type: 3}
+    theatricalMenuPreviewSprite: {fileID: 21300000, guid: 83d3ef0ee4c174846b162a409c512e36, type: 3}
+    teamTheatricalMenuPreviewSprites:
+    - variantName: Red
+      team: 1
+      sprite: {fileID: 21300000, guid: 83d3ef0ee4c174846b162a409c512e36, type: 3}
+    - variantName: Blue
+      team: 2
+      sprite: {fileID: 21300000, guid: 753a4bba47f51fb4f815ac5e4169b69d, type: 3}
+    - variantName: Green
+      team: 3
+      sprite: {fileID: 21300000, guid: 130eb32b73e4117488c384d003975a6c, type: 3}
+    - variantName: Orange
+      team: 4
+      sprite: {fileID: 21300000, guid: 1c45b64719e3f6d4c84b236593479a8b, type: 3}
+    - variantName: Purple
+      team: 5
+      sprite: {fileID: 21300000, guid: 4a4527ca4093c5245bab06295d878d40, type: 3}
+    minHomePlanetLevel: 5
+    powerScore: 304.4291
+    powerScoreAtMaxLevel: 1620.1561
+    powerScoreBreakdown:
+      offense: 64.45
+      defense: 90.92707
+      energy: 86.8762
+      mobility: 25.8
+      capacity: 82.65679
+      firePower: 9
+      bulletSpeed: 10.200001
+      fireRate: 6
+      sustainedDps: 27.000002
+      rammingPower: 1.75
+      healthCap: 88.11721
+      healthRegen: 2.8098598
+      energyCap: 82.179596
+      energyRegen: 4.6966
+      moveSpeed: 6.2
+      turnSpeed: 12.599999
+      gemCap: 40.51413
+      peopleCap: 42.142662
+    powerScoreBreakdownAtShipLevel:
+      offense: 126.4
+      defense: 714.5254
+      energy: 322.84766
+      mobility: 69
+      capacity: 453.12106
+      firePower: 25.2
+      bulletSpeed: 22.95
+      fireRate: 6
+      sustainedDps: 75.600006
+      rammingPower: 4.75
+      healthCap: 692.4449
+      healthRegen: 22.080515
+      energyCap: 307.5837
+      energyRegen: 15.26395
+      moveSpeed: 8
+      turnSpeed: 45
+      gemCap: 209.16492
+      peopleCap: 243.95615
+    componentMass: 17.944273
+    lockedInUpgradeTree: 0
+  - chassisId: MeteorMantis_13
+    upgradeTreeShipName: Strike
+    prefab: {fileID: 3688897530263829303, guid: d3690ef53ac23a0488106647a81d8861, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 49777ed35f9454a4498ded7af565e968, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: Red
+      team: 1
+      sprite: {fileID: 21300000, guid: 49777ed35f9454a4498ded7af565e968, type: 3}
+    - variantName: Blue
+      team: 2
+      sprite: {fileID: 21300000, guid: dcc427733775efb46a2d4efa8bd512f9, type: 3}
+    - variantName: Green
+      team: 3
+      sprite: {fileID: 21300000, guid: 105959a5aa65b0e4cb5cddc94c96226b, type: 3}
+    - variantName: Orange
+      team: 4
+      sprite: {fileID: 21300000, guid: f8196fbb2be51f84dae53e1f01a9274d, type: 3}
+    - variantName: Purple
+      team: 5
+      sprite: {fileID: 21300000, guid: 1a2ad1e7d60a0664b93a0122955bd24b, type: 3}
+    theatricalMenuPreviewSprite: {fileID: 21300000, guid: 49777ed35f9454a4498ded7af565e968, type: 3}
+    teamTheatricalMenuPreviewSprites:
+    - variantName: Red
+      team: 1
+      sprite: {fileID: 21300000, guid: 49777ed35f9454a4498ded7af565e968, type: 3}
+    - variantName: Blue
+      team: 2
+      sprite: {fileID: 21300000, guid: dcc427733775efb46a2d4efa8bd512f9, type: 3}
+    - variantName: Green
+      team: 3
+      sprite: {fileID: 21300000, guid: 105959a5aa65b0e4cb5cddc94c96226b, type: 3}
+    - variantName: Orange
+      team: 4
+      sprite: {fileID: 21300000, guid: f8196fbb2be51f84dae53e1f01a9274d, type: 3}
+    - variantName: Purple
+      team: 5
+      sprite: {fileID: 21300000, guid: 1a2ad1e7d60a0664b93a0122955bd24b, type: 3}
+    minHomePlanetLevel: 5
+    powerScore: 275.05014
+    powerScoreAtMaxLevel: 1373.5116
+    powerScoreBreakdown:
+      offense: 64.2
+      defense: 71.910515
+      energy: 89
+      mobility: 27
+      capacity: 69.43964
+      firePower: 9
+      bulletSpeed: 10.200001
+      fireRate: 6
+      sustainedDps: 27.000002
+      rammingPower: 1.5
+      healthCap: 69.68831
+      healthRegen: 2.2222037
+      energyCap: 84
+      energyRegen: 5
+      moveSpeed: 6.3999996
+      turnSpeed: 12.599999
+      gemCap: 34.477085
+      peopleCap: 34.96255
+    powerScoreBreakdownAtShipLevel:
+      offense: 125.15
+      defense: 529.2919
+      energy: 377
+      mobility: 48.6
+      capacity: 354.41974
+      firePower: 25.2
+      bulletSpeed: 22.95
+      fireRate: 6
+      sustainedDps: 75.600006
+      rammingPower: 3.5
+      healthCap: 512.9355
+      healthRegen: 16.356361
+      energyCap: 354
+      energyRegen: 23
+      moveSpeed: 10
+      turnSpeed: 12.599999
+      gemCap: 167.02184
+      peopleCap: 187.39792
+    componentMass: 12.806133
+    lockedInUpgradeTree: 0
+  - chassisId: MeteorMantis_15
+    upgradeTreeShipName: Sparkmantis
+    prefab: {fileID: 8784030506752188957, guid: 9f5c0d446f566774b8a7fe5ff37c6bb3, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 70d86a7c4adf74a41b97ba170da4b800, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: Red
+      team: 1
+      sprite: {fileID: 21300000, guid: 70d86a7c4adf74a41b97ba170da4b800, type: 3}
+    - variantName: Blue
+      team: 2
+      sprite: {fileID: 21300000, guid: 3bd2544dc14d5104588f939294b9b220, type: 3}
+    - variantName: Green
+      team: 3
+      sprite: {fileID: 21300000, guid: 50f1250aabc2b5443bfcc10b41f8ae2a, type: 3}
+    - variantName: Orange
+      team: 4
+      sprite: {fileID: 21300000, guid: ec00669244949e1439b027a848f8cccb, type: 3}
+    - variantName: Purple
+      team: 5
+      sprite: {fileID: 21300000, guid: ee1cec4bc94c36b4a8666abf816a3398, type: 3}
+    theatricalMenuPreviewSprite: {fileID: 21300000, guid: 70d86a7c4adf74a41b97ba170da4b800, type: 3}
+    teamTheatricalMenuPreviewSprites:
+    - variantName: Red
+      team: 1
+      sprite: {fileID: 21300000, guid: 70d86a7c4adf74a41b97ba170da4b800, type: 3}
+    - variantName: Blue
+      team: 2
+      sprite: {fileID: 21300000, guid: 3bd2544dc14d5104588f939294b9b220, type: 3}
+    - variantName: Green
+      team: 3
+      sprite: {fileID: 21300000, guid: 50f1250aabc2b5443bfcc10b41f8ae2a, type: 3}
+    - variantName: Orange
+      team: 4
+      sprite: {fileID: 21300000, guid: ec00669244949e1439b027a848f8cccb, type: 3}
+    - variantName: Purple
+      team: 5
+      sprite: {fileID: 21300000, guid: ee1cec4bc94c36b4a8666abf816a3398, type: 3}
+    minHomePlanetLevel: 5
+    powerScore: 289.12228
+    powerScoreAtMaxLevel: 1735.9082
+    powerScoreBreakdown:
+      offense: 56.7
+      defense: 107.59993
+      energy: 75.34211
+      mobility: 30
+      capacity: 61.480232
+      firePower: 4.5
       bulletSpeed: 10.200001
       fireRate: 3
-      sustainedDps: 32.4
-      rammingPower: 1.25
-      healthCap: 70.45749
-      healthRegen: 2.2467313
-      energyCap: 48
-      energyRegen: 5
-      moveSpeed: 6.4
-      turnSpeed: 12.599999
-      gemCap: 45.163628
-      peopleCap: 33.57834
+      sustainedDps: 13.500001
+      rammingPower: 1.5
+      healthCap: 104.27484
+      healthRegen: 3.3250902
+      energyCap: 68.4361
+      energyRegen: 6.906017
+      moveSpeed: 6.5999994
+      turnSpeed: 14.4
+      gemCap: 31.10128
+      peopleCap: 30.378952
     powerScoreBreakdownAtShipLevel:
-      offense: 99.9
-      defense: 268.81522
-      energy: 197
-      mobility: 37.8
-      capacity: 257.7774
-      firePower: 11.700001
+      offense: 109.55
+      defense: 905.35187
+      energy: 369.50684
+      mobility: 111
+      capacity: 325.2994
+      firePower: 12.6
       bulletSpeed: 22.95
       fireRate: 3
-      sustainedDps: 105.3
-      rammingPower: 2.25
-      healthCap: 260.5082
-      healthRegen: 8.307021
-      energyCap: 183
-      energyRegen: 14
-      moveSpeed: 8.2
-      turnSpeed: 12.599999
-      gemCap: 134.90213
-      peopleCap: 122.87526
-    componentMass: 18.63621
+      sustainedDps: 37.800003
+      rammingPower: 3.5
+      healthCap: 877.3744
+      healthRegen: 27.9775
+      energyCap: 332.1487
+      energyRegen: 37.35812
+      moveSpeed: 12
+      turnSpeed: 63
+      gemCap: 154.01086
+      peopleCap: 171.28854
+    componentMass: 25.48289
     lockedInUpgradeTree: 0
   - chassisId: MeteorMantis_12
     upgradeTreeShipName: Slashorbit
@@ -1931,46 +1931,46 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: b39a74aef9bf9c941ad8d885532a4dfd, type: 3}
     minHomePlanetLevel: 5
-    powerScore: 246.36093
-    powerScoreAtMaxLevel: 770.06134
+    powerScore: 270.27466
+    powerScoreAtMaxLevel: 1408.2756
     powerScoreBreakdown:
-      offense: 48.05
-      defense: 64.68273
-      energy: 49.792603
-      mobility: 42
-      capacity: 76.48746
-      firePower: 3.6000001
+      offense: 64.2
+      defense: 67.72481
+      energy: 93.74075
+      mobility: 30.599998
+      capacity: 59.32392
+      firePower: 9
       bulletSpeed: 10.200001
-      fireRate: 3
-      sustainedDps: 21.6
-      rammingPower: 1.25
-      healthCap: 62.68388
-      healthRegen: 1.9988482
-      energyCap: 45.2508
-      energyRegen: 4.5418
-      moveSpeed: 6.2
-      turnSpeed: 28.8
-      gemCap: 43.7722
-      peopleCap: 32.715256
+      fireRate: 6
+      sustainedDps: 27.000002
+      rammingPower: 1.5
+      healthCap: 65.63195
+      healthRegen: 2.0928557
+      energyCap: 88.0635
+      energyRegen: 5.67725
+      moveSpeed: 6.3999996
+      turnSpeed: 16.199999
+      gemCap: 30.377907
+      peopleCap: 28.946016
     powerScoreBreakdownAtShipLevel:
-      offense: 99.9
-      defense: 218.42908
-      energy: 202.32594
-      mobility: 85.2
-      capacity: 218.94983
-      firePower: 11.700001
+      offense: 125.15
+      defense: 523.5018
+      energy: 398.80746
+      mobility: 117
+      capacity: 299.3145
+      firePower: 25.2
       bulletSpeed: 22.95
-      fireRate: 3
-      sustainedDps: 70.200005
-      rammingPower: 2.25
-      healthCap: 211.67911
-      healthRegen: 6.749972
-      energyCap: 187.5651
-      energyRegen: 14.76085
-      moveSpeed: 8
-      turnSpeed: 61.199997
-      gemCap: 115.08881
-      peopleCap: 103.86102
+      fireRate: 6
+      sustainedDps: 75.600006
+      rammingPower: 3.5
+      healthCap: 507.3243
+      healthRegen: 16.177433
+      energyCap: 372.6921
+      energyRegen: 26.115349
+      moveSpeed: 10
+      turnSpeed: 81
+      gemCap: 143.14586
+      peopleCap: 156.16864
     componentMass: 18.294838
     lockedInUpgradeTree: 0
   - chassisId: MeteorMantis_08
@@ -2011,47 +2011,127 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 1d806d6a52d333b43939419f0319d6f2, type: 3}
     minHomePlanetLevel: 5
-    powerScore: 230.18352
-    powerScoreAtMaxLevel: 765.73224
+    powerScore: 273.29538
+    powerScoreAtMaxLevel: 1424.6277
     powerScoreBreakdown:
-      offense: 48.05
-      defense: 61.888504
-      energy: 49.87601
-      mobility: 42
-      capacity: 63
-      firePower: 3.6000001
+      offense: 64.2
+      defense: 71.875336
+      energy: 93.84502
+      mobility: 30.599998
+      capacity: 58.063793
+      firePower: 9
       bulletSpeed: 10.200001
-      fireRate: 3
-      sustainedDps: 21.6
-      rammingPower: 1.25
-      healthCap: 59.976006
-      healthRegen: 1.9125001
-      energyCap: 45.322296
-      energyRegen: 4.553716
-      moveSpeed: 6.2
-      turnSpeed: 28.8
-      gemCap: 36
-      peopleCap: 27
+      fireRate: 6
+      sustainedDps: 27.000002
+      rammingPower: 1.5
+      healthCap: 69.65422
+      healthRegen: 2.2211168
+      energyCap: 88.15287
+      energyRegen: 5.6921453
+      moveSpeed: 6.3999996
+      turnSpeed: 16.199999
+      gemCap: 29.583908
+      peopleCap: 28.479885
     powerScoreBreakdownAtShipLevel:
-      offense: 99.9
-      defense: 225.71101
-      energy: 202.59703
-      mobility: 85.2
-      capacity: 207
-      firePower: 11.700001
+      offense: 125.15
+      defense: 554.93085
+      energy: 399.28708
+      mobility: 117
+      capacity: 283.63794
+      firePower: 25.2
       bulletSpeed: 22.95
-      fireRate: 3
-      sustainedDps: 70.200005
-      rammingPower: 2.25
-      healthCap: 218.73601
-      healthRegen: 6.975
-      energyCap: 187.79745
-      energyRegen: 14.799578
-      moveSpeed: 8
-      turnSpeed: 61.199997
-      gemCap: 108
-      peopleCap: 99
+      fireRate: 6
+      sustainedDps: 75.600006
+      rammingPower: 3.5
+      healthCap: 537.78217
+      healthRegen: 17.148668
+      energyCap: 373.1032
+      energyRegen: 26.183868
+      moveSpeed: 10
+      turnSpeed: 81
+      gemCap: 133.83908
+      peopleCap: 149.79886
     componentMass: 19.51114
+    lockedInUpgradeTree: 0
+  - chassisId: MeteorMantis_16
+    upgradeTreeShipName: Impact
+    prefab: {fileID: 5806120606043722178, guid: 465a4f40f117c2548b44c3794a6125bc, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 6ce46abe636e77b4baa25a7e5b98d4b6, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: Red
+      team: 1
+      sprite: {fileID: 21300000, guid: 6ce46abe636e77b4baa25a7e5b98d4b6, type: 3}
+    - variantName: Blue
+      team: 2
+      sprite: {fileID: 21300000, guid: c633e476696cf4146a651179714421d1, type: 3}
+    - variantName: Green
+      team: 3
+      sprite: {fileID: 21300000, guid: 72b30eeb883c893419087e59f5b55a37, type: 3}
+    - variantName: Orange
+      team: 4
+      sprite: {fileID: 21300000, guid: 06458ea9c7d39794ca52594647103c8c, type: 3}
+    - variantName: Purple
+      team: 5
+      sprite: {fileID: 21300000, guid: a986174d37cc87f43ac189d5e8f5d869, type: 3}
+    theatricalMenuPreviewSprite: {fileID: 21300000, guid: 6ce46abe636e77b4baa25a7e5b98d4b6, type: 3}
+    teamTheatricalMenuPreviewSprites:
+    - variantName: Red
+      team: 1
+      sprite: {fileID: 21300000, guid: 6ce46abe636e77b4baa25a7e5b98d4b6, type: 3}
+    - variantName: Blue
+      team: 2
+      sprite: {fileID: 21300000, guid: c633e476696cf4146a651179714421d1, type: 3}
+    - variantName: Green
+      team: 3
+      sprite: {fileID: 21300000, guid: 72b30eeb883c893419087e59f5b55a37, type: 3}
+    - variantName: Orange
+      team: 4
+      sprite: {fileID: 21300000, guid: 06458ea9c7d39794ca52594647103c8c, type: 3}
+    - variantName: Purple
+      team: 5
+      sprite: {fileID: 21300000, guid: a986174d37cc87f43ac189d5e8f5d869, type: 3}
+    minHomePlanetLevel: 6
+    powerScore: 374.61566
+    powerScoreAtMaxLevel: 2366.1035
+    powerScoreBreakdown:
+      offense: 79.2
+      defense: 111.60239
+      energy: 111
+      mobility: 29.4
+      capacity: 98.313286
+      firePower: 18
+      bulletSpeed: 10.200001
+      fireRate: 12
+      sustainedDps: 54.000004
+      rammingPower: 1.5
+      healthCap: 108.15361
+      healthRegen: 3.4487753
+      energyCap: 108
+      energyRegen: 3
+      moveSpeed: 9
+      turnSpeed: 18
+      gemCap: 49.38762
+      peopleCap: 48.925667
+    powerScoreBreakdownAtShipLevel:
+      offense: 174.1
+      defense: 1032.7642
+      energy: 507
+      mobility: 128.4
+      capacity: 608.8393
+      firePower: 57.600002
+      bulletSpeed: 25.5
+      fireRate: 12
+      sustainedDps: 172.8
+      rammingPower: 4
+      healthCap: 1000.84937
+      healthRegen: 31.914831
+      energyCap: 504
+      energyRegen: 3
+      moveSpeed: 9
+      turnSpeed: 117
+      gemCap: 289.47144
+      peopleCap: 319.36786
+    componentMass: 23.187592
     lockedInUpgradeTree: 0
   - chassisId: MeteorMantis_20
     upgradeTreeShipName: Stonefall
@@ -2091,46 +2171,46 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 2c2438410b9c7704c82159a441602185, type: 3}
     minHomePlanetLevel: 6
-    powerScore: 356.7168
-    powerScoreAtMaxLevel: 1130.3087
+    powerScore: 347.95016
+    powerScoreAtMaxLevel: 2380.7644
     powerScoreBreakdown:
-      offense: 48.05
-      defense: 117.88861
-      energy: 51.147102
-      mobility: 34.8
-      capacity: 139.14432
-      firePower: 3.6000001
+      offense: 64.2
+      defense: 113.228
+      energy: 95.43388
+      mobility: 27
+      capacity: 92.97982
+      firePower: 9
       bulletSpeed: 10.200001
-      fireRate: 3
-      sustainedDps: 21.6
-      rammingPower: 1.25
-      healthCap: 114.245575
-      healthRegen: 3.643035
-      energyCap: 46.4118
-      energyRegen: 4.7353
-      moveSpeed: 6.2
-      turnSpeed: 21.599998
-      gemCap: 82.090195
-      peopleCap: 57.05412
+      fireRate: 6
+      sustainedDps: 27.000002
+      rammingPower: 1.5
+      healthCap: 109.72899
+      healthRegen: 3.4990113
+      energyCap: 89.514755
+      energyRegen: 5.919125
+      moveSpeed: 6.3999996
+      turnSpeed: 12.599999
+      gemCap: 48.870544
+      peopleCap: 44.109276
     powerScoreBreakdownAtShipLevel:
-      offense: 112
-      defense: 375.13864
-      energy: 241.30162
-      mobility: 87.6
-      capacity: 373.06796
-      firePower: 13.500001
+      offense: 139.3
+      defense: 1101.4858
+      energy: 475.74295
+      mobility: 93
+      capacity: 628.63574
+      firePower: 28.800001
       bulletSpeed: 25.5
-      fireRate: 3
-      sustainedDps: 81
-      rammingPower: 2.5
-      healthCap: 363.546
-      healthRegen: 11.592666
-      energyCap: 223.54425
-      energyRegen: 17.757376
-      moveSpeed: 8.4
-      turnSpeed: 61.199997
-      gemCap: 203.18942
-      peopleCap: 169.87854
+      fireRate: 6
+      sustainedDps: 86.4
+      rammingPower: 4
+      healthCap: 1067.4474
+      healthRegen: 34.0385
+      energyCap: 443.77966
+      energyRegen: 31.963276
+      moveSpeed: 10.799999
+      turnSpeed: 52.199997
+      gemCap: 305.6985
+      peopleCap: 322.93723
     componentMass: 21.383373
     lockedInUpgradeTree: 0
   - chassisId: MeteorMantis_19
@@ -2171,127 +2251,47 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 475b60cce144a274987f61ec1ee1f44a, type: 3}
     minHomePlanetLevel: 6
-    powerScore: 318.7168
-    powerScoreAtMaxLevel: 1148.1757
+    powerScore: 344.75348
+    powerScoreAtMaxLevel: 2185.6824
     powerScoreBreakdown:
-      offense: 48.3
-      defense: 91.51477
-      energy: 53.831776
-      mobility: 33.6
-      capacity: 124.362305
-      firePower: 3.6000001
+      offense: 64.45
+      defense: 102.52143
+      energy: 101.775696
+      mobility: 25.8
+      capacity: 92.76243
+      firePower: 9
       bulletSpeed: 10.200001
-      fireRate: 3
-      sustainedDps: 21.6
-      rammingPower: 1.5
-      healthCap: 88.68675
-      healthRegen: 2.8280213
-      energyCap: 48.71295
-      energyRegen: 5.118825
-      moveSpeed: 6
-      turnSpeed: 21.599998
-      gemCap: 72.55187
-      peopleCap: 51.81043
+      fireRate: 6
+      sustainedDps: 27.000002
+      rammingPower: 1.75
+      healthCap: 99.35328
+      healthRegen: 3.1681528
+      energyCap: 94.9506
+      energyRegen: 6.8251
+      moveSpeed: 6.2
+      turnSpeed: 12.599999
+      gemCap: 48.29933
+      peopleCap: 44.463097
     powerScoreBreakdownAtShipLevel:
-      offense: 112.25
-      defense: 353.19177
-      energy: 284.21494
-      mobility: 86.399994
-      capacity: 359.44025
-      firePower: 13.500001
+      offense: 140.8
+      defense: 968.58026
+      energy: 431.15887
+      mobility: 78.6
+      capacity: 623.55347
+      firePower: 28.800001
       bulletSpeed: 25.5
-      fireRate: 3
-      sustainedDps: 81
-      rammingPower: 2.75
-      healthCap: 342.2773
-      healthRegen: 10.914455
-      energyCap: 260.3271
-      energyRegen: 23.88785
-      moveSpeed: 8.2
-      turnSpeed: 61.199997
-      gemCap: 194.3107
-      peopleCap: 165.12955
+      fireRate: 6
+      sustainedDps: 86.4
+      rammingPower: 5.5
+      healthCap: 938.64886
+      healthRegen: 29.9314
+      energyCap: 405.56476
+      energyRegen: 25.594124
+      moveSpeed: 8.4
+      turnSpeed: 52.199997
+      gemCap: 297.19485
+      peopleCap: 326.3586
     componentMass: 19.019709
-    lockedInUpgradeTree: 0
-  - chassisId: MeteorMantis_16
-    upgradeTreeShipName: Impact
-    prefab: {fileID: 5806120606043722178, guid: 465a4f40f117c2548b44c3794a6125bc, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: 6ce46abe636e77b4baa25a7e5b98d4b6, type: 3}
-    teamMenuPreviewSprites:
-    - variantName: Red
-      team: 1
-      sprite: {fileID: 21300000, guid: 6ce46abe636e77b4baa25a7e5b98d4b6, type: 3}
-    - variantName: Blue
-      team: 2
-      sprite: {fileID: 21300000, guid: c633e476696cf4146a651179714421d1, type: 3}
-    - variantName: Green
-      team: 3
-      sprite: {fileID: 21300000, guid: 72b30eeb883c893419087e59f5b55a37, type: 3}
-    - variantName: Orange
-      team: 4
-      sprite: {fileID: 21300000, guid: 06458ea9c7d39794ca52594647103c8c, type: 3}
-    - variantName: Purple
-      team: 5
-      sprite: {fileID: 21300000, guid: a986174d37cc87f43ac189d5e8f5d869, type: 3}
-    theatricalMenuPreviewSprite: {fileID: 21300000, guid: 6ce46abe636e77b4baa25a7e5b98d4b6, type: 3}
-    teamTheatricalMenuPreviewSprites:
-    - variantName: Red
-      team: 1
-      sprite: {fileID: 21300000, guid: 6ce46abe636e77b4baa25a7e5b98d4b6, type: 3}
-    - variantName: Blue
-      team: 2
-      sprite: {fileID: 21300000, guid: c633e476696cf4146a651179714421d1, type: 3}
-    - variantName: Green
-      team: 3
-      sprite: {fileID: 21300000, guid: 72b30eeb883c893419087e59f5b55a37, type: 3}
-    - variantName: Orange
-      team: 4
-      sprite: {fileID: 21300000, guid: 06458ea9c7d39794ca52594647103c8c, type: 3}
-    - variantName: Purple
-      team: 5
-      sprite: {fileID: 21300000, guid: a986174d37cc87f43ac189d5e8f5d869, type: 3}
-    minHomePlanetLevel: 6
-    powerScore: 289.0555
-    powerScoreAtMaxLevel: 1039.8392
-    powerScoreBreakdown:
-      offense: 48.05
-      defense: 96.27454
-      energy: 21
-      mobility: 43.8
-      capacity: 114.93098
-      firePower: 3.6000001
-      bulletSpeed: 10.200001
-      fireRate: 3
-      sustainedDps: 43.2
-      rammingPower: 1.25
-      healthCap: 93.29943
-      healthRegen: 2.9751093
-      energyCap: 18
-      energyRegen: 3
-      moveSpeed: 9
-      turnSpeed: 32.399998
-      gemCap: 64.26381
-      peopleCap: 50.667168
-    powerScoreBreakdownAtShipLevel:
-      offense: 112
-      defense: 402.73892
-      energy: 120
-      mobility: 83.4
-      capacity: 392.97534
-      firePower: 13.500001
-      bulletSpeed: 25.5
-      fireRate: 3
-      sustainedDps: 162
-      rammingPower: 2.5
-      healthCap: 390.29333
-      healthRegen: 12.445578
-      energyCap: 117
-      energyRegen: 3
-      moveSpeed: 9
-      turnSpeed: 72
-      gemCap: 201.02245
-      peopleCap: 191.95288
-    componentMass: 23.187592
     lockedInUpgradeTree: 0
   - chassisId: MeteorMantis_11
     upgradeTreeShipName: Blazewing
@@ -2331,207 +2331,207 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 66a73ac40b888e040811d89e7ec1b640, type: 3}
     minHomePlanetLevel: 6
-    powerScore: 253.6962
-    powerScoreAtMaxLevel: 995.92267
+    powerScore: 304.4291
+    powerScoreAtMaxLevel: 1912.2565
     powerScoreBreakdown:
-      offense: 48.3
-      defense: 75.83658
-      energy: 42.65715
-      mobility: 33.6
-      capacity: 88.98819
-      firePower: 3.6000001
+      offense: 64.45
+      defense: 90.92707
+      energy: 86.8762
+      mobility: 25.8
+      capacity: 82.65679
+      firePower: 9
       bulletSpeed: 10.200001
-      fireRate: 3
-      sustainedDps: 21.6
-      rammingPower: 1.5
-      healthCap: 73.49305
-      healthRegen: 2.3435285
-      energyCap: 39.1347
-      energyRegen: 3.52245
-      moveSpeed: 6
-      turnSpeed: 21.599998
-      gemCap: 47.550304
-      peopleCap: 41.43788
+      fireRate: 6
+      sustainedDps: 27.000002
+      rammingPower: 1.75
+      healthCap: 88.11721
+      healthRegen: 2.8098598
+      energyCap: 82.179596
+      energyRegen: 4.6966
+      moveSpeed: 6.2
+      turnSpeed: 12.599999
+      gemCap: 40.51413
+      peopleCap: 42.142662
     powerScoreBreakdownAtShipLevel:
-      offense: 112.25
-      defense: 313.85858
-      energy: 232.0667
-      mobility: 86.399994
-      capacity: 311.7057
-      firePower: 13.500001
+      offense: 140.8
+      defense: 853.1029
+      energy: 375.28574
+      mobility: 78.6
+      capacity: 535.4464
+      firePower: 28.800001
       bulletSpeed: 25.5
-      fireRate: 3
-      sustainedDps: 81
-      rammingPower: 2.75
-      healthCap: 304.1596
-      healthRegen: 9.698967
-      energyCap: 215.6286
-      energyRegen: 16.438099
-      moveSpeed: 8.2
-      turnSpeed: 61.199997
-      gemCap: 156.31364
-      peopleCap: 155.39206
+      fireRate: 6
+      sustainedDps: 86.4
+      rammingPower: 5.5
+      healthCap: 826.74005
+      healthRegen: 26.36288
+      energyCap: 357.6735
+      energyRegen: 17.61225
+      moveSpeed: 8.4
+      turnSpeed: 52.199997
+      gemCap: 246.64285
+      peopleCap: 288.8036
     componentMass: 17.944273
     lockedInUpgradeTree: 0
-  - chassisId: MeteorMantis_11B
-    upgradeTreeShipName: Emberclaw
-    prefab: {fileID: 3028100247762755984, guid: df102d12bcd9f9446b47075d61fd9c32, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: ed4c06a4d1c868248be090c262ac5cd8, type: 3}
+  - chassisId: MeteorMantis_17
+    upgradeTreeShipName: Hooktail
+    prefab: {fileID: 5259669648767954279, guid: 926871e94445ce744bef0585a495c19f, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: c79bf42fca9bf3540a3e637e361601fc, type: 3}
     teamMenuPreviewSprites:
     - variantName: Red
       team: 1
-      sprite: {fileID: 21300000, guid: ed4c06a4d1c868248be090c262ac5cd8, type: 3}
+      sprite: {fileID: 21300000, guid: c79bf42fca9bf3540a3e637e361601fc, type: 3}
     - variantName: Blue
       team: 2
-      sprite: {fileID: 21300000, guid: fdb3591b160a0dc439254849300947e5, type: 3}
+      sprite: {fileID: 21300000, guid: 1402ea1d93bb30d4bb8369094911a00f, type: 3}
     - variantName: Green
       team: 3
-      sprite: {fileID: 21300000, guid: 151e694de4a17a84a865c2ffb2c63d4b, type: 3}
+      sprite: {fileID: 21300000, guid: 0c8dad0eaaef16c44b4239fba69cdb12, type: 3}
     - variantName: Orange
       team: 4
-      sprite: {fileID: 21300000, guid: 5d6f33c2b3516614c82016d639f7c471, type: 3}
+      sprite: {fileID: 21300000, guid: 8a12e94d943111347a3cb2ca284c7a75, type: 3}
     - variantName: Purple
       team: 5
-      sprite: {fileID: 21300000, guid: 66a73ac40b888e040811d89e7ec1b640, type: 3}
-    theatricalMenuPreviewSprite: {fileID: 21300000, guid: 83d3ef0ee4c174846b162a409c512e36, type: 3}
+      sprite: {fileID: 21300000, guid: 381c145186d91e64eba6f6560fe2530b, type: 3}
+    theatricalMenuPreviewSprite: {fileID: 21300000, guid: c79bf42fca9bf3540a3e637e361601fc, type: 3}
     teamTheatricalMenuPreviewSprites:
     - variantName: Red
       team: 1
-      sprite: {fileID: 21300000, guid: 83d3ef0ee4c174846b162a409c512e36, type: 3}
+      sprite: {fileID: 21300000, guid: c79bf42fca9bf3540a3e637e361601fc, type: 3}
     - variantName: Blue
       team: 2
-      sprite: {fileID: 21300000, guid: 753a4bba47f51fb4f815ac5e4169b69d, type: 3}
+      sprite: {fileID: 21300000, guid: 1402ea1d93bb30d4bb8369094911a00f, type: 3}
     - variantName: Green
       team: 3
-      sprite: {fileID: 21300000, guid: 130eb32b73e4117488c384d003975a6c, type: 3}
+      sprite: {fileID: 21300000, guid: 0c8dad0eaaef16c44b4239fba69cdb12, type: 3}
     - variantName: Orange
       team: 4
-      sprite: {fileID: 21300000, guid: 1c45b64719e3f6d4c84b236593479a8b, type: 3}
+      sprite: {fileID: 21300000, guid: 8a12e94d943111347a3cb2ca284c7a75, type: 3}
     - variantName: Purple
       team: 5
-      sprite: {fileID: 21300000, guid: 4a4527ca4093c5245bab06295d878d40, type: 3}
+      sprite: {fileID: 21300000, guid: 381c145186d91e64eba6f6560fe2530b, type: 3}
     minHomePlanetLevel: 6
-    powerScore: 253.6962
-    powerScoreAtMaxLevel: 995.92267
+    powerScore: 336.486
+    powerScoreAtMaxLevel: 1975.7025
     powerScoreBreakdown:
-      offense: 48.3
-      defense: 75.83658
-      energy: 42.65715
-      mobility: 33.6
-      capacity: 88.98819
-      firePower: 3.6000001
+      offense: 79.2
+      defense: 79.54892
+      energy: 132.22061
+      mobility: 27
+      capacity: 75.9613
+      firePower: 18
       bulletSpeed: 10.200001
-      fireRate: 3
-      sustainedDps: 21.6
+      fireRate: 12
+      sustainedDps: 54.000004
       rammingPower: 1.5
-      healthCap: 73.49305
-      healthRegen: 2.3435285
-      energyCap: 39.1347
-      energyRegen: 3.52245
-      moveSpeed: 6
-      turnSpeed: 21.599998
-      gemCap: 47.550304
-      peopleCap: 41.43788
+      healthCap: 77.090675
+      healthRegen: 2.4582481
+      energyCap: 128.76053
+      energyRegen: 3.46009
+      moveSpeed: 6.3999996
+      turnSpeed: 12.599999
+      gemCap: 38.747147
+      peopleCap: 37.21416
     powerScoreBreakdownAtShipLevel:
-      offense: 112.25
-      defense: 313.85858
-      energy: 232.0667
-      mobility: 86.399994
-      capacity: 311.7057
-      firePower: 13.500001
+      offense: 174.1
+      defense: 721.3648
+      energy: 634.79144
+      mobility: 53.399998
+      capacity: 474.94833
+      firePower: 57.600002
       bulletSpeed: 25.5
-      fireRate: 3
-      sustainedDps: 81
-      rammingPower: 2.75
-      healthCap: 304.1596
-      healthRegen: 9.698967
-      energyCap: 215.6286
-      energyRegen: 16.438099
-      moveSpeed: 8.2
-      turnSpeed: 61.199997
-      gemCap: 156.31364
-      peopleCap: 155.39206
-    componentMass: 17.944273
+      fireRate: 12
+      sustainedDps: 172.8
+      rammingPower: 4
+      healthCap: 699.07294
+      healthRegen: 22.291862
+      energyCap: 616.10693
+      energyRegen: 18.684486
+      moveSpeed: 10.799999
+      turnSpeed: 12.599999
+      gemCap: 225.39154
+      peopleCap: 249.5568
+    componentMass: 14.313509
     lockedInUpgradeTree: 0
-  - chassisId: MeteorMantis_15
-    upgradeTreeShipName: Sparkmantis
-    prefab: {fileID: 8784030506752188957, guid: 9f5c0d446f566774b8a7fe5ff37c6bb3, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: 70d86a7c4adf74a41b97ba170da4b800, type: 3}
+  - chassisId: MeteorMantis_18
+    upgradeTreeShipName: Cinder
+    prefab: {fileID: 8810885618950878329, guid: fc782e22d6e6f4f4d9e24364635e4a77, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 67b3a036ba79e2a42b42423de9bf38e4, type: 3}
     teamMenuPreviewSprites:
     - variantName: Red
       team: 1
-      sprite: {fileID: 21300000, guid: 70d86a7c4adf74a41b97ba170da4b800, type: 3}
+      sprite: {fileID: 21300000, guid: 67b3a036ba79e2a42b42423de9bf38e4, type: 3}
     - variantName: Blue
       team: 2
-      sprite: {fileID: 21300000, guid: 3bd2544dc14d5104588f939294b9b220, type: 3}
+      sprite: {fileID: 21300000, guid: 201e422eda472e54980553291ad354df, type: 3}
     - variantName: Green
       team: 3
-      sprite: {fileID: 21300000, guid: 50f1250aabc2b5443bfcc10b41f8ae2a, type: 3}
+      sprite: {fileID: 21300000, guid: cf4d6fd7dd5201a458f5ec5e310ef638, type: 3}
     - variantName: Orange
       team: 4
-      sprite: {fileID: 21300000, guid: ec00669244949e1439b027a848f8cccb, type: 3}
+      sprite: {fileID: 21300000, guid: 1b316cd6a7965d24793c269f1652f14f, type: 3}
     - variantName: Purple
       team: 5
-      sprite: {fileID: 21300000, guid: ee1cec4bc94c36b4a8666abf816a3398, type: 3}
-    theatricalMenuPreviewSprite: {fileID: 21300000, guid: 70d86a7c4adf74a41b97ba170da4b800, type: 3}
+      sprite: {fileID: 21300000, guid: efd6b17e2de596549b339d7621914707, type: 3}
+    theatricalMenuPreviewSprite: {fileID: 21300000, guid: 67b3a036ba79e2a42b42423de9bf38e4, type: 3}
     teamTheatricalMenuPreviewSprites:
     - variantName: Red
       team: 1
-      sprite: {fileID: 21300000, guid: 70d86a7c4adf74a41b97ba170da4b800, type: 3}
+      sprite: {fileID: 21300000, guid: 67b3a036ba79e2a42b42423de9bf38e4, type: 3}
     - variantName: Blue
       team: 2
-      sprite: {fileID: 21300000, guid: 3bd2544dc14d5104588f939294b9b220, type: 3}
+      sprite: {fileID: 21300000, guid: 201e422eda472e54980553291ad354df, type: 3}
     - variantName: Green
       team: 3
-      sprite: {fileID: 21300000, guid: 50f1250aabc2b5443bfcc10b41f8ae2a, type: 3}
+      sprite: {fileID: 21300000, guid: cf4d6fd7dd5201a458f5ec5e310ef638, type: 3}
     - variantName: Orange
       team: 4
-      sprite: {fileID: 21300000, guid: ec00669244949e1439b027a848f8cccb, type: 3}
+      sprite: {fileID: 21300000, guid: 1b316cd6a7965d24793c269f1652f14f, type: 3}
     - variantName: Purple
       team: 5
-      sprite: {fileID: 21300000, guid: ee1cec4bc94c36b4a8666abf816a3398, type: 3}
+      sprite: {fileID: 21300000, guid: efd6b17e2de596549b339d7621914707, type: 3}
     minHomePlanetLevel: 6
-    powerScore: 309.6408
-    powerScoreAtMaxLevel: 966.14325
+    powerScore: 328.58582
+    powerScoreAtMaxLevel: 1993.2167
     powerScoreBreakdown:
-      offense: 48.05
-      defense: 123.72228
-      energy: 59.095253
-      mobility: 39.6
-      capacity: 74.2233
-      firePower: 3.6000001
-      bulletSpeed: 10.200001
-      fireRate: 3
-      sustainedDps: 10.8
-      rammingPower: 1.25
-      healthCap: 119.89897
-      healthRegen: 3.823309
-      energyCap: 53.224503
-      energyRegen: 5.87075
-      moveSpeed: 6.4
-      turnSpeed: 25.199999
-      gemCap: 42.22291
-      peopleCap: 32.00039
-    powerScoreBreakdownAtShipLevel:
-      offense: 112
-      defense: 332.29126
-      energy: 248.50479
-      mobility: 92.399994
-      capacity: 245.94717
+      offense: 71.700005
+      defense: 84.79054
+      energy: 123
+      mobility: 28.199999
+      capacity: 70.77027
       firePower: 13.500001
-      bulletSpeed: 25.5
-      fireRate: 3
+      bulletSpeed: 10.200001
+      fireRate: 9
       sustainedDps: 40.5
-      rammingPower: 2.5
-      healthCap: 322.02267
-      healthRegen: 10.268579
-      energyCap: 229.7184
-      energyRegen: 18.7864
-      moveSpeed: 8.6
-      turnSpeed: 64.799995
-      gemCap: 127.77942
-      peopleCap: 118.16776
-    componentMass: 25.48289
+      rammingPower: 1.5
+      healthCap: 82.17032
+      healthRegen: 2.6202273
+      energyCap: 117
+      energyRegen: 6
+      moveSpeed: 6.5999994
+      turnSpeed: 12.599999
+      gemCap: 36.25463
+      peopleCap: 34.51564
+    powerScoreBreakdownAtShipLevel:
+      offense: 156.7
+      defense: 777.7954
+      energy: 651
+      mobility: 67.799995
+      capacity: 397.62122
+      firePower: 43.2
+      bulletSpeed: 25.5
+      fireRate: 9
+      sustainedDps: 129.6
+      rammingPower: 4
+      healthCap: 753.7597
+      healthRegen: 24.035706
+      energyCap: 612
+      energyRegen: 39
+      moveSpeed: 13.199999
+      turnSpeed: 12.599999
+      gemCap: 187.73502
+      peopleCap: 209.88622
+    componentMass: 18.63621
     lockedInUpgradeTree: 0
   teamMaterials:
   - variantName: Red

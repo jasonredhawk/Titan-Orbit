@@ -91,8 +91,8 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// Keeps slot Amounts in sync with <see cref="ShipState.CurrentPeople"/> without
-        /// re-packing into unload chunks. A delivered +36 stays one slot.
+        /// Keeps slot Amounts in sync with <see cref="ShipState.CurrentPeople"/>.
+        /// New people pack into ship×planet chunks; existing intact loads stay intact.
         /// </summary>
         public static void SyncSlotAmounts(
             EntityManager em,
@@ -212,7 +212,7 @@ namespace TitanOrbit.ECS
                     ? shipPos
                     : PeopleTransportMath.EvaluateEscortSlotPose(
                         shipTransform.Position, shipTransform.Rotation, extX, extZ,
-                        i, count, slot.Amount, netId, mapW, mapH);
+                        slot.SeatId, slot.Amount, netId, mapW, mapH);
                 float3 pos = slot.Position;
                 float3 vel = slot.Velocity;
                 bool riding = slot.Riding != 0;
@@ -436,7 +436,7 @@ namespace TitanOrbit.ECS
         /// <summary>
         /// Applies bullet damage to one escort slot. Cargo kills debit
         /// <see cref="ShipState.CurrentPeople"/>. In-flight kills do not (already left the ship).
-        /// Dead in-flight slots stay one tick at 0 HP so <see cref="ShipEscortVitals"/> can show it.
+        /// Dead in-flight slots stay one tick at 0 HP so <see cref="PeopleEscortVitalElement"/> can show it.
         /// </summary>
         public static int ApplyDamageToSlot(
             EntityManager em,
@@ -478,35 +478,27 @@ namespace TitanOrbit.ECS
             return lost;
         }
 
-        /// <summary>Writes packed escort HP for client nameplates. Call after slot mutations.</summary>
+        /// <summary>Writes ghosted escort HP for client nameplates. Call after slot mutations.</summary>
         public static void WriteEscortVitals(EntityManager em, Entity shipEntity)
         {
-            if (!em.HasComponent<ShipEscortVitals>(shipEntity) ||
+            if (!em.HasBuffer<PeopleEscortVitalElement>(shipEntity) ||
                 !em.HasBuffer<PeopleEscortSlot>(shipEntity))
                 return;
 
             var slots = em.GetBuffer<PeopleEscortSlot>(shipEntity);
-            var vitals = new ShipEscortVitals();
-            int n = math.min(ShipEscortVitals.MaxSlots, slots.Length);
-            vitals.Count = (byte)n;
-            ulong health = 0;
-            ulong amount = 0;
-            byte flying = 0;
-            for (int i = 0; i < n; i++)
+            var vitals = em.GetBuffer<PeopleEscortVitalElement>(shipEntity);
+            vitals.ResizeUninitialized(slots.Length);
+            for (int i = 0; i < slots.Length; i++)
             {
                 var slot = slots[i];
-                byte hp = (byte)math.clamp((int)math.round(math.max(0f, slot.Health)), 0, 255);
-                byte amt = (byte)math.clamp((int)math.round(math.max(0f, slot.Amount)), 0, 255);
-                health |= ((ulong)hp) << (i * 8);
-                amount |= ((ulong)amt) << (i * 8);
-                if (slot.InFlight != 0)
-                    flying |= (byte)(1 << i);
+                vitals[i] = new PeopleEscortVitalElement
+                {
+                    SeatId = slot.SeatId,
+                    Health = (byte)math.clamp((int)math.round(math.max(0f, slot.Health)), 0, 255),
+                    Amount = (byte)math.clamp((int)math.round(math.max(0f, slot.Amount)), 0, 255),
+                    InFlight = slot.InFlight,
+                };
             }
-
-            vitals.HealthPacked = health;
-            vitals.AmountPacked = amount;
-            vitals.InFlightMask = flying;
-            em.SetComponentData(shipEntity, vitals);
         }
 
         static int SumCargoAmounts(DynamicBuffer<PeopleEscortSlot> slots)
@@ -554,36 +546,47 @@ namespace TitanOrbit.ECS
 
             combineMax = math.max(1, combineMax);
             amount = FillExistingSlots(ref slots, amount, combineMax);
-            if (amount <= 0.01f)
-                return;
+            while (amount > 0.01f && slots.Length < PeopleTransportMath.MaxEscortVisualSlots)
+            {
+                float take = math.min(amount, combineMax);
+                ulong usedMask = 0;
+                for (int i = 0; i < slots.Length; i++)
+                {
+                    int s = slots[i].SeatId;
+                    if (s < PeopleTransportMath.MaxEscortVisualSlots)
+                        usedMask |= 1UL << s;
+                }
 
-            if (slots.Length >= PeopleTransportMath.MaxEscortVisualSlots)
+                byte seat = (byte)PeopleTransportMath.AllocateEscortSeatId(usedMask);
+                float3 pos = PeopleTransportMath.EvaluateEscortSlotPose(
+                    shipTransform.Position, shipTransform.Rotation, extX, extZ,
+                    seat, take, shipNetworkId, mapW, mapH);
+                slots.Add(new PeopleEscortSlot
+                {
+                    Position = pos,
+                    Velocity = float3.zero,
+                    Amount = take,
+                    Health = PeopleTransportMath.ComputeMaxHealth(take),
+                    CruiseSpeed = 0f,
+                    SpawnPosition = pos,
+                    InFlight = 0,
+                    Ready = 0,
+                    TargetPlanetId = 0,
+                    FlightElapsed = 0f,
+                    Riding = 0,
+                    SeatId = seat,
+                });
+                amount -= take;
+            }
+
+            if (amount > 0.01f && slots.Length > 0)
             {
                 int last = slots.Length - 1;
                 var merge = slots[last];
                 merge.Amount += amount;
                 merge.Health = PeopleTransportMath.ComputeMaxHealth(merge.Amount);
                 slots[last] = merge;
-                return;
             }
-
-            float3 pos = PeopleTransportMath.EvaluateEscortSlotPose(
-                shipTransform.Position, shipTransform.Rotation, extX, extZ,
-                slots.Length, slots.Length + 1, amount, shipNetworkId, mapW, mapH);
-            slots.Add(new PeopleEscortSlot
-            {
-                Position = pos,
-                Velocity = float3.zero,
-                Amount = amount,
-                Health = PeopleTransportMath.ComputeMaxHealth(amount),
-                CruiseSpeed = 0f,
-                SpawnPosition = pos,
-                InFlight = 0,
-                Ready = 0,
-                TargetPlanetId = 0,
-                FlightElapsed = 0f,
-                Riding = 0,
-            });
         }
 
         static float FillExistingSlots(

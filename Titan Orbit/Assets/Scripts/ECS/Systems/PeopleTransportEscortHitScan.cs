@@ -71,6 +71,7 @@ namespace TitanOrbit.ECS
                     continue;
                 if (PlanetaryDefenseTurretControlLogic.IsControllingTurret(em, ship))
                     continue;
+                bool moonStowed = ShipMoonDockState.IsFullyLandedOnMoon(em, ship);
 
                 var transform = em.GetComponentData<LocalTransform>(ship);
                 var ghost = em.GetComponentData<GhostOwner>(ship);
@@ -86,6 +87,8 @@ namespace TitanOrbit.ECS
                         {
                             var slot = slots[i];
                             if (slot.Amount <= 0.01f || slot.Health <= 0f)
+                                continue;
+                            if (moonStowed && slot.InFlight == 0)
                                 continue;
                             float3 pos = slot.Position;
                             pos.y = 0f;
@@ -175,9 +178,19 @@ namespace TitanOrbit.ECS
             float mapW,
             float mapH)
         {
+            if (ShipMoonDockState.IsFullyLandedOnMoon(em, ship))
+                return;
+
             int people = shipState.CurrentPeople;
-            int level = math.max(1, shipState.ShipLevel);
-            int count = PeopleTransportMath.GetEscortSlotCount(people, level);
+            int chunk = PeopleTransportMath.GetTransferChunk(math.max(1, shipState.ShipLevel), 1);
+            if (em.HasComponent<ShipPeopleTransferState>(ship))
+            {
+                int stored = em.GetComponentData<ShipPeopleTransferState>(ship).LastLoadCombineMax;
+                if (stored > 0)
+                    chunk = stored;
+            }
+
+            int count = PeopleTransportMath.GetEscortSlotCount(people, chunk);
             if (count <= 0)
                 return;
 
@@ -185,11 +198,11 @@ namespace TitanOrbit.ECS
                 em, ship, in transform, out float extX, out float extZ);
             for (int i = 0; i < count; i++)
             {
-                int amount = PeopleTransportMath.GetEscortSlotAmount(people, level, i);
+                int amount = PeopleTransportMath.GetEscortSlotAmount(people, chunk, i);
                 if (amount <= 0)
                     continue;
                 float3 pos = PeopleTransportMath.EvaluateEscortSlotPose(
-                    transform.Position, transform.Rotation, extX, extZ, i, count, amount, ownerNetId, mapW, mapH);
+                    transform.Position, transform.Rotation, extX, extZ, i, amount, ownerNetId, mapW, mapH);
                 targetsOut.Add(new PeopleEscortHitTarget
                 {
                     ShipEntity = ship,

@@ -730,14 +730,14 @@ MonoBehaviour:
       extraSpeedEnergyDrainPerExtraLevel: 0
       turnSpeed: 0
       turnSpeedPerExtraLevel: 0
-      maxGems: 20
-      maxGemsPerExtraLevel: 4
+      maxGems: 10
+      maxGemsPerExtraLevel: 2
       tractorBeamDistance: 3
       tractorBeamDistancePerExtraLevel: 0.75
       tractorBeamPower: 4
       tractorBeamPowerPerExtraLevel: 1
-      maxPeople: 9
-      maxPeoplePerExtraLevel: 3
+      maxPeople: 5
+      maxPeoplePerExtraLevel: 2
     bulletPrefabIndex: -1
     menuPreviewSprite: {fileID: 21300000, guid: d9adfeb388ae6ff478cec4055de42c3d, type: 3}
     theatricalMenuPreviewSprite: {fileID: 21300000, guid: d9adfeb388ae6ff478cec4055de42c3d, type: 3}
@@ -807,14 +807,14 @@ MonoBehaviour:
       extraSpeedEnergyDrainPerExtraLevel: 0
       turnSpeed: 0
       turnSpeedPerExtraLevel: 0
-      maxGems: 30
-      maxGemsPerExtraLevel: 6
+      maxGems: 15
+      maxGemsPerExtraLevel: 3
       tractorBeamDistance: 6
       tractorBeamDistancePerExtraLevel: 1.5
       tractorBeamPower: 8
       tractorBeamPowerPerExtraLevel: 2
-      maxPeople: 15
-      maxPeoplePerExtraLevel: 5
+      maxPeople: 8
+      maxPeoplePerExtraLevel: 3
     bulletPrefabIndex: -1
     menuPreviewSprite: {fileID: 21300000, guid: 159f4283b24724c4b93f2bd22c0da9be, type: 3}
     theatricalMenuPreviewSprite: {fileID: 21300000, guid: 159f4283b24724c4b93f2bd22c0da9be, type: 3}
@@ -891,287 +891,47 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 98da724788bd81546911d564b17674e4, type: 3}
     minHomePlanetLevel: 1
-    powerScore: 170.31335
-    powerScoreAtMaxLevel: 209.4737
+    powerScore: 152.34827
+    powerScoreAtMaxLevel: 209.1341
     powerScoreBreakdown:
-      offense: 19
-      defense: 30.820091
-      energy: 35
-      mobility: 30.880001
-      capacity: 62.063267
+      offense: 19.25
+      defense: 42.609795
+      energy: 28
+      mobility: 17.199999
+      capacity: 53.818478
       firePower: 3
       bulletSpeed: 12
       fireRate: 3
       sustainedDps: 0
-      rammingPower: 1
-      healthCap: 29.577345
-      healthRegen: 1.2427455
+      rammingPower: 1.25
+      healthCap: 40.89166
+      healthRegen: 1.718137
+      energyCap: 24
+      energyRegen: 4
+      moveSpeed: 7.9199996
+      turnSpeed: 1
+      gemCap: 28.163193
+      peopleCap: 25.655285
+    powerScoreBreakdownAtShipLevel:
+      offense: 19.25
+      defense: 71.20456
+      energy: 35
+      mobility: 20.3
+      capacity: 71.539536
+      firePower: 3
+      bulletSpeed: 12
+      fireRate: 3
+      sustainedDps: 0
+      rammingPower: 1.25
+      healthCap: 68.333405
+      healthRegen: 2.8711512
       energyCap: 30
       energyRegen: 5
-      moveSpeed: 7.6800003
-      turnSpeed: 14
-      gemCap: 36.326385
-      peopleCap: 25.736881
-    powerScoreBreakdownAtShipLevel:
-      offense: 19
-      defense: 44.83514
-      energy: 42
-      mobility: 32.27
-      capacity: 79.71855
-      firePower: 3
-      bulletSpeed: 12
-      fireRate: 3
-      sustainedDps: 0
-      rammingPower: 1
-      healthCap: 43.02727
-      healthRegen: 1.8078682
-      energyCap: 36
-      energyRegen: 6
-      moveSpeed: 7.92
-      turnSpeed: 14
-      gemCap: 45.047447
-      peopleCap: 34.6711
+      moveSpeed: 8.64
+      turnSpeed: 2
+      gemCap: 36.523724
+      peopleCap: 35.015816
     componentMass: 9.506616
-    lockedInUpgradeTree: 0
-  - chassisId: HyperFalcon_02
-    upgradeTreeShipName: Divewind
-    prefab: {fileID: 6431040843001023359, guid: 74ffec7e11c266c418900c7e17d00534, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: b01c0ec983cd2bc4b8138750556469e5, type: 3}
-    teamMenuPreviewSprites:
-    - variantName: TeamA
-      team: 1
-      sprite: {fileID: 21300000, guid: b01c0ec983cd2bc4b8138750556469e5, type: 3}
-    - variantName: TeamB
-      team: 2
-      sprite: {fileID: 21300000, guid: fd43680d4fa130349bcdb26c61634c9e, type: 3}
-    - variantName: TeamC
-      team: 3
-      sprite: {fileID: 21300000, guid: 1ef163d97e182ae4eb79a71132d5e1a4, type: 3}
-    - variantName: TeamD
-      team: 4
-      sprite: {fileID: 21300000, guid: 21e7f4058fbde9f44bf3ae6ee6979b55, type: 3}
-    - variantName: TeamE
-      team: 5
-      sprite: {fileID: 21300000, guid: d55692e737551ee438b7ab63c152e566, type: 3}
-    theatricalMenuPreviewSprite: {fileID: 21300000, guid: b01c0ec983cd2bc4b8138750556469e5, type: 3}
-    teamTheatricalMenuPreviewSprites:
-    - variantName: TeamA
-      team: 1
-      sprite: {fileID: 21300000, guid: b01c0ec983cd2bc4b8138750556469e5, type: 3}
-    - variantName: TeamB
-      team: 2
-      sprite: {fileID: 21300000, guid: fd43680d4fa130349bcdb26c61634c9e, type: 3}
-    - variantName: TeamC
-      team: 3
-      sprite: {fileID: 21300000, guid: 1ef163d97e182ae4eb79a71132d5e1a4, type: 3}
-    - variantName: TeamD
-      team: 4
-      sprite: {fileID: 21300000, guid: 21e7f4058fbde9f44bf3ae6ee6979b55, type: 3}
-    - variantName: TeamE
-      team: 5
-      sprite: {fileID: 21300000, guid: d55692e737551ee438b7ab63c152e566, type: 3}
-    minHomePlanetLevel: 2
-    powerScore: 185.59064
-    powerScoreAtMaxLevel: 321.1911
-    powerScoreBreakdown:
-      offense: 19
-      defense: 36.953526
-      energy: 20.662277
-      mobility: 28.1
-      capacity: 89.60927
-      firePower: 3
-      bulletSpeed: 12
-      fireRate: 3
-      sustainedDps: 0
-      rammingPower: 1
-      healthCap: 35.463463
-      healthRegen: 1.4900614
-      energyCap: 17.710524
-      energyRegen: 2.951754
-      moveSpeed: 7.2000003
-      turnSpeed: 14
-      gemCap: 52.88939
-      peopleCap: 36.719875
-    powerScoreBreakdownAtShipLevel:
-      offense: 19.25
-      defense: 85.06705
-      energy: 41.324554
-      mobility: 32.27
-      capacity: 151.8795
-      firePower: 3
-      bulletSpeed: 12
-      fireRate: 3
-      sustainedDps: 0
-      rammingPower: 1.25
-      healthCap: 81.636925
-      healthRegen: 3.4301229
-      energyCap: 35.421047
-      energyRegen: 5.903508
-      moveSpeed: 7.92
-      turnSpeed: 14
-      gemCap: 84.1277
-      peopleCap: 67.7518
-    componentMass: 7.7465672
-    lockedInUpgradeTree: 0
-  - chassisId: HyperFalcon_06
-    upgradeTreeShipName: Volt
-    prefab: {fileID: 3291292398803739974, guid: 90c80e02e8a7b20419486b7e6143751c, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: e1aa525e22c338249bd95f0d12df8867, type: 3}
-    teamMenuPreviewSprites:
-    - variantName: TeamA
-      team: 1
-      sprite: {fileID: 21300000, guid: e1aa525e22c338249bd95f0d12df8867, type: 3}
-    - variantName: TeamB
-      team: 2
-      sprite: {fileID: 21300000, guid: 75f814ccd8f062d4d8e7638f196385af, type: 3}
-    - variantName: TeamC
-      team: 3
-      sprite: {fileID: 21300000, guid: 8cd530e3aeb31a6428a88c4f2935187f, type: 3}
-    - variantName: TeamD
-      team: 4
-      sprite: {fileID: 21300000, guid: 18fbb675dc94d234c8bcda4291c6f1d5, type: 3}
-    - variantName: TeamE
-      team: 5
-      sprite: {fileID: 21300000, guid: e017ddaa44c29984382e569efbb4a886, type: 3}
-    theatricalMenuPreviewSprite: {fileID: 21300000, guid: e1aa525e22c338249bd95f0d12df8867, type: 3}
-    teamTheatricalMenuPreviewSprites:
-    - variantName: TeamA
-      team: 1
-      sprite: {fileID: 21300000, guid: e1aa525e22c338249bd95f0d12df8867, type: 3}
-    - variantName: TeamB
-      team: 2
-      sprite: {fileID: 21300000, guid: 75f814ccd8f062d4d8e7638f196385af, type: 3}
-    - variantName: TeamC
-      team: 3
-      sprite: {fileID: 21300000, guid: 8cd530e3aeb31a6428a88c4f2935187f, type: 3}
-    - variantName: TeamD
-      team: 4
-      sprite: {fileID: 21300000, guid: 18fbb675dc94d234c8bcda4291c6f1d5, type: 3}
-    - variantName: TeamE
-      team: 5
-      sprite: {fileID: 21300000, guid: e017ddaa44c29984382e569efbb4a886, type: 3}
-    minHomePlanetLevel: 2
-    powerScore: 170.95544
-    powerScoreAtMaxLevel: 268.50247
-    powerScoreBreakdown:
-      offense: 19
-      defense: 39.509193
-      energy: 21
-      mobility: 21.505
-      capacity: 75.256256
-      firePower: 3
-      bulletSpeed: 12
-      fireRate: 3
-      sustainedDps: 0
-      rammingPower: 1
-      healthCap: 37.91608
-      healthRegen: 1.5931125
-      energyCap: 18
-      energyRegen: 3
-      moveSpeed: 7.44
-      turnSpeed: 10.5
-      gemCap: 44.644
-      peopleCap: 30.612251
-    powerScoreBreakdownAtShipLevel:
-      offense: 19.25
-      defense: 83.78859
-      energy: 21
-      mobility: 24.070002
-      capacity: 126.30388
-      firePower: 3
-      bulletSpeed: 12
-      fireRate: 3
-      sustainedDps: 0
-      rammingPower: 1.25
-      healthCap: 80.41002
-      healthRegen: 3.378572
-      energyCap: 18
-      energyRegen: 3
-      moveSpeed: 8.160001
-      turnSpeed: 12
-      gemCap: 70.3855
-      peopleCap: 55.918377
-    componentMass: 8.568384
-    lockedInUpgradeTree: 0
-  - chassisId: HyperFalcon_04
-    upgradeTreeShipName: Afterburn
-    prefab: {fileID: 5184615716735559179, guid: 5e515ed97c5dd0448a038c848bc9d8a8, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: 5234d6c978d0df3419cc8b706d6d947c, type: 3}
-    teamMenuPreviewSprites:
-    - variantName: TeamA
-      team: 1
-      sprite: {fileID: 21300000, guid: 5234d6c978d0df3419cc8b706d6d947c, type: 3}
-    - variantName: TeamB
-      team: 2
-      sprite: {fileID: 21300000, guid: 0c81d1f27d6b16642b763bc9cabdcb6f, type: 3}
-    - variantName: TeamC
-      team: 3
-      sprite: {fileID: 21300000, guid: d995d4eedbd652d42a3103ac20148401, type: 3}
-    - variantName: TeamD
-      team: 4
-      sprite: {fileID: 21300000, guid: 8444712222bc3474e9ec4ac1bdc9be85, type: 3}
-    - variantName: TeamE
-      team: 5
-      sprite: {fileID: 21300000, guid: ca2a137d2ad68a3449c67eaad5e48b11, type: 3}
-    theatricalMenuPreviewSprite: {fileID: 21300000, guid: 5234d6c978d0df3419cc8b706d6d947c, type: 3}
-    teamTheatricalMenuPreviewSprites:
-    - variantName: TeamA
-      team: 1
-      sprite: {fileID: 21300000, guid: 5234d6c978d0df3419cc8b706d6d947c, type: 3}
-    - variantName: TeamB
-      team: 2
-      sprite: {fileID: 21300000, guid: 0c81d1f27d6b16642b763bc9cabdcb6f, type: 3}
-    - variantName: TeamC
-      team: 3
-      sprite: {fileID: 21300000, guid: d995d4eedbd652d42a3103ac20148401, type: 3}
-    - variantName: TeamD
-      team: 4
-      sprite: {fileID: 21300000, guid: 8444712222bc3474e9ec4ac1bdc9be85, type: 3}
-    - variantName: TeamE
-      team: 5
-      sprite: {fileID: 21300000, guid: ca2a137d2ad68a3449c67eaad5e48b11, type: 3}
-    minHomePlanetLevel: 3
-    powerScore: 186.40286
-    powerScoreAtMaxLevel: 367.82428
-    powerScoreBreakdown:
-      offense: 19.25
-      defense: 35.472862
-      energy: 21
-      mobility: 22.36
-      capacity: 94
-      firePower: 3
-      bulletSpeed: 12
-      fireRate: 3
-      sustainedDps: 0
-      rammingPower: 1.25
-      healthCap: 34.042503
-      healthRegen: 1.4303572
-      energyCap: 18
-      energyRegen: 3
-      moveSpeed: 7.6800003
-      turnSpeed: 11
-      gemCap: 54
-      peopleCap: 40
-    powerScoreBreakdownAtShipLevel:
-      offense: 19.75
-      defense: 113.19429
-      energy: 21
-      mobility: 26.635
-      capacity: 194
-      firePower: 3
-      bulletSpeed: 12
-      fireRate: 3
-      sustainedDps: 0
-      rammingPower: 1.75
-      healthCap: 108.630005
-      healthRegen: 4.5642858
-      energyCap: 18
-      energyRegen: 3
-      moveSpeed: 8.88
-      turnSpeed: 13.5
-      gemCap: 104
-      peopleCap: 90
-    componentMass: 8.780899
     lockedInUpgradeTree: 0
   - chassisId: HyperFalcon_10
     upgradeTreeShipName: Peak
@@ -1210,47 +970,47 @@ MonoBehaviour:
     - variantName: TeamE
       team: 5
       sprite: {fileID: 21300000, guid: 306840ce9d0e882468e761e4c478b305, type: 3}
-    minHomePlanetLevel: 3
-    powerScore: 193.414
-    powerScoreAtMaxLevel: 380.074
+    minHomePlanetLevel: 2
+    powerScore: 161.038
+    powerScoreAtMaxLevel: 355.07602
     powerScoreBreakdown:
-      offense: 19
-      defense: 29.574001
-      energy: 63
-      mobility: 36.44
-      capacity: 57.2
+      offense: 19.25
+      defense: 42.407997
+      energy: 35
+      mobility: 21.155
+      capacity: 51.5
       firePower: 3
       bulletSpeed: 12
       fireRate: 3
       sustainedDps: 0
-      rammingPower: 1
-      healthCap: 28.3815
-      healthRegen: 1.1925001
-      energyCap: 54
-      energyRegen: 9
-      moveSpeed: 8.64
-      turnSpeed: 14
-      gemCap: 33.2
-      peopleCap: 24
+      rammingPower: 1.25
+      healthCap: 40.697998
+      healthRegen: 1.7100002
+      energyCap: 30
+      energyRegen: 5
+      moveSpeed: 8.879999
+      turnSpeed: 2.5
+      gemCap: 26.7
+      peopleCap: 24.800001
     powerScoreBreakdownAtShipLevel:
       offense: 19.5
-      defense: 96.53401
-      energy: 98
-      mobility: 43.39
-      capacity: 140.7
+      defense: 129.45601
+      energy: 77
+      mobility: 42.32
+      capacity: 103.700005
       firePower: 3
       bulletSpeed: 12
       fireRate: 3
       sustainedDps: 0
       rammingPower: 1.5
-      healthCap: 92.64151
-      healthRegen: 3.8925
-      energyCap: 84
-      energyRegen: 14
-      moveSpeed: 9.84
-      turnSpeed: 14
-      gemCap: 74.2
-      peopleCap: 66.5
+      healthCap: 124.23601
+      healthRegen: 5.2200003
+      energyCap: 66
+      energyRegen: 11
+      moveSpeed: 13.920002
+      turnSpeed: 10
+      gemCap: 51.300003
+      peopleCap: 52.4
     componentMass: 14.356342
     lockedInUpgradeTree: 0
   - chassisId: HyperFalcon_01
@@ -1290,128 +1050,448 @@ MonoBehaviour:
     - variantName: TeamE
       team: 5
       sprite: {fileID: 21300000, guid: 0cbf26c6c622af241ab153840cadec74, type: 3}
-    minHomePlanetLevel: 3
-    powerScore: 192.52817
-    powerScoreAtMaxLevel: 383.03247
-    powerScoreBreakdown:
-      offense: 19
-      defense: 38.232376
-      energy: 68.43707
-      mobility: 33.66
-      capacity: 42.69872
-      firePower: 3
-      bulletSpeed: 12
-      fireRate: 3
-      sustainedDps: 0
-      rammingPower: 1
-      healthCap: 36.690746
-      healthRegen: 1.541628
-      energyCap: 58.660347
-      energyRegen: 9.776725
-      moveSpeed: 8.160001
-      turnSpeed: 14
-      gemCap: 25.0336
-      peopleCap: 17.66512
-    powerScoreBreakdownAtShipLevel:
-      offense: 19.5
-      defense: 103.84425
-      energy: 117.3207
-      mobility: 40.61
-      capacity: 117.50752
-      firePower: 3
-      bulletSpeed: 12
-      fireRate: 3
-      sustainedDps: 0
-      rammingPower: 1.5
-      healthCap: 99.65698
-      healthRegen: 4.187268
-      energyCap: 100.5606
-      energyRegen: 16.7601
-      moveSpeed: 9.360001
-      turnSpeed: 14
-      gemCap: 62.0672
-      peopleCap: 55.44032
-    componentMass: 15.006214
-    lockedInUpgradeTree: 0
-  - chassisId: HyperFalcon_07
-    upgradeTreeShipName: Swoop
-    prefab: {fileID: 3571592331501742404, guid: b4d69c4f9c3d162448102b7fb3a96fbf, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: fb826daee2e78974e84ac4026edebb9d, type: 3}
-    teamMenuPreviewSprites:
-    - variantName: TeamA
-      team: 1
-      sprite: {fileID: 21300000, guid: fb826daee2e78974e84ac4026edebb9d, type: 3}
-    - variantName: TeamB
-      team: 2
-      sprite: {fileID: 21300000, guid: b1cd86a6300df2f44bd39564092ab21a, type: 3}
-    - variantName: TeamC
-      team: 3
-      sprite: {fileID: 21300000, guid: beacb1f2a270ba14aa8d7d9f7065fb19, type: 3}
-    - variantName: TeamD
-      team: 4
-      sprite: {fileID: 21300000, guid: 38d0a7a351cce434aa49e875fb691242, type: 3}
-    - variantName: TeamE
-      team: 5
-      sprite: {fileID: 21300000, guid: bd80bd24087ed294c86a52c7aff075b8, type: 3}
-    theatricalMenuPreviewSprite: {fileID: 21300000, guid: fb826daee2e78974e84ac4026edebb9d, type: 3}
-    teamTheatricalMenuPreviewSprites:
-    - variantName: TeamA
-      team: 1
-      sprite: {fileID: 21300000, guid: fb826daee2e78974e84ac4026edebb9d, type: 3}
-    - variantName: TeamB
-      team: 2
-      sprite: {fileID: 21300000, guid: b1cd86a6300df2f44bd39564092ab21a, type: 3}
-    - variantName: TeamC
-      team: 3
-      sprite: {fileID: 21300000, guid: beacb1f2a270ba14aa8d7d9f7065fb19, type: 3}
-    - variantName: TeamD
-      team: 4
-      sprite: {fileID: 21300000, guid: 38d0a7a351cce434aa49e875fb691242, type: 3}
-    - variantName: TeamE
-      team: 5
-      sprite: {fileID: 21300000, guid: bd80bd24087ed294c86a52c7aff075b8, type: 3}
-    minHomePlanetLevel: 4
-    powerScore: 203.65883
-    powerScoreAtMaxLevel: 506.41785
+    minHomePlanetLevel: 2
+    powerScore: 158.788
+    powerScoreAtMaxLevel: 330.8687
     powerScoreBreakdown:
       offense: 19.25
-      defense: 39.39025
-      energy: 28
-      mobility: 29.49
-      capacity: 95.828575
+      defense: 45.099174
+      energy: 39.1069
+      mobility: 18.91
+      capacity: 43.18192
       firePower: 3
       bulletSpeed: 12
       fireRate: 3
       sustainedDps: 0
       rammingPower: 1.25
-      healthCap: 37.801933
-      healthRegen: 1.5883166
-      energyCap: 24
-      energyRegen: 4
-      moveSpeed: 7.44
-      turnSpeed: 14
-      gemCap: 54.8127
-      peopleCap: 41.015877
+      healthCap: 43.28066
+      healthRegen: 1.8185151
+      energyCap: 33.5202
+      energyRegen: 5.5867
+      moveSpeed: 8.4
+      turnSpeed: 2
+      gemCap: 22.22016
+      peopleCap: 20.96176
+    powerScoreBreakdownAtShipLevel:
+      offense: 19.5
+      defense: 141.02957
+      energy: 68.43707
+      mobility: 33.34
+      capacity: 80.40208
+      firePower: 3
+      bulletSpeed: 12
+      fireRate: 3
+      sustainedDps: 0
+      rammingPower: 1.5
+      healthCap: 135.3429
+      healthRegen: 5.6866755
+      energyCap: 58.660347
+      energyRegen: 9.776725
+      moveSpeed: 12.000002
+      turnSpeed: 8
+      gemCap: 39.33024
+      peopleCap: 41.07184
+    componentMass: 15.006214
+    lockedInUpgradeTree: 0
+  - chassisId: HyperFalcon_20
+    upgradeTreeShipName: Burstail
+    prefab: {fileID: 8502949886050205693, guid: 22124f0ba44537547bfd80bcdb9bed0f, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 7b8f8abee8f4f1143aeea5150e3cf173, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: TeamA
+      team: 1
+      sprite: {fileID: 21300000, guid: 7b8f8abee8f4f1143aeea5150e3cf173, type: 3}
+    - variantName: TeamB
+      team: 2
+      sprite: {fileID: 21300000, guid: 55f667961eddc1040a66a2ffd2c50a6c, type: 3}
+    - variantName: TeamC
+      team: 3
+      sprite: {fileID: 21300000, guid: 0ad9eb411766aec4fb2ea816852f85bb, type: 3}
+    - variantName: TeamD
+      team: 4
+      sprite: {fileID: 21300000, guid: 2b999d5d44f74374497218b3dc6779aa, type: 3}
+    - variantName: TeamE
+      team: 5
+      sprite: {fileID: 21300000, guid: a055d359c1d0dbe4e99c27d39a73f0b9, type: 3}
+    theatricalMenuPreviewSprite: {fileID: 21300000, guid: 7b8f8abee8f4f1143aeea5150e3cf173, type: 3}
+    teamTheatricalMenuPreviewSprites:
+    - variantName: TeamA
+      team: 1
+      sprite: {fileID: 21300000, guid: 7b8f8abee8f4f1143aeea5150e3cf173, type: 3}
+    - variantName: TeamB
+      team: 2
+      sprite: {fileID: 21300000, guid: 55f667961eddc1040a66a2ffd2c50a6c, type: 3}
+    - variantName: TeamC
+      team: 3
+      sprite: {fileID: 21300000, guid: 0ad9eb411766aec4fb2ea816852f85bb, type: 3}
+    - variantName: TeamD
+      team: 4
+      sprite: {fileID: 21300000, guid: 2b999d5d44f74374497218b3dc6779aa, type: 3}
+    - variantName: TeamE
+      team: 5
+      sprite: {fileID: 21300000, guid: a055d359c1d0dbe4e99c27d39a73f0b9, type: 3}
+    minHomePlanetLevel: 3
+    powerScore: 171.10785
+    powerScoreAtMaxLevel: 600.47327
+    powerScoreBreakdown:
+      offense: 19.25
+      defense: 57.415356
+      energy: 19.25
+      mobility: 21.155
+      capacity: 66.25
+      firePower: 3
+      bulletSpeed: 12
+      fireRate: 3
+      sustainedDps: 0
+      rammingPower: 1.25
+      healthCap: 55.10022
+      healthRegen: 2.315135
+      energyCap: 16.5
+      energyRegen: 2.75
+      moveSpeed: 8.879999
+      turnSpeed: 2.5
+      gemCap: 35.5
+      peopleCap: 30.75
+    powerScoreBreakdownAtShipLevel:
+      offense: 19.75
+      defense: 274.44324
+      energy: 57.75
+      mobility: 56.43
+      capacity: 215
+      firePower: 3
+      bulletSpeed: 12
+      fireRate: 3
+      sustainedDps: 0
+      rammingPower: 1.75
+      healthCap: 263.37698
+      healthRegen: 11.0662565
+      energyCap: 49.5
+      energyRegen: 8.25
+      moveSpeed: 17.279999
+      turnSpeed: 15
+      gemCap: 108
+      peopleCap: 107
+    componentMass: 13.286121
+    lockedInUpgradeTree: 0
+  - chassisId: HyperFalcon_06
+    upgradeTreeShipName: Volt
+    prefab: {fileID: 3291292398803739974, guid: 90c80e02e8a7b20419486b7e6143751c, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: e1aa525e22c338249bd95f0d12df8867, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: TeamA
+      team: 1
+      sprite: {fileID: 21300000, guid: e1aa525e22c338249bd95f0d12df8867, type: 3}
+    - variantName: TeamB
+      team: 2
+      sprite: {fileID: 21300000, guid: 75f814ccd8f062d4d8e7638f196385af, type: 3}
+    - variantName: TeamC
+      team: 3
+      sprite: {fileID: 21300000, guid: 8cd530e3aeb31a6428a88c4f2935187f, type: 3}
+    - variantName: TeamD
+      team: 4
+      sprite: {fileID: 21300000, guid: 18fbb675dc94d234c8bcda4291c6f1d5, type: 3}
+    - variantName: TeamE
+      team: 5
+      sprite: {fileID: 21300000, guid: e017ddaa44c29984382e569efbb4a886, type: 3}
+    theatricalMenuPreviewSprite: {fileID: 21300000, guid: e1aa525e22c338249bd95f0d12df8867, type: 3}
+    teamTheatricalMenuPreviewSprites:
+    - variantName: TeamA
+      team: 1
+      sprite: {fileID: 21300000, guid: e1aa525e22c338249bd95f0d12df8867, type: 3}
+    - variantName: TeamB
+      team: 2
+      sprite: {fileID: 21300000, guid: 75f814ccd8f062d4d8e7638f196385af, type: 3}
+    - variantName: TeamC
+      team: 3
+      sprite: {fileID: 21300000, guid: 8cd530e3aeb31a6428a88c4f2935187f, type: 3}
+    - variantName: TeamD
+      team: 4
+      sprite: {fileID: 21300000, guid: 18fbb675dc94d234c8bcda4291c6f1d5, type: 3}
+    - variantName: TeamE
+      team: 5
+      sprite: {fileID: 21300000, guid: e017ddaa44c29984382e569efbb4a886, type: 3}
+    minHomePlanetLevel: 3
+    powerScore: 168.16107
+    powerScoreAtMaxLevel: 482.0331
+    powerScoreBreakdown:
+      offense: 19.25
+      defense: 48.86351
+      energy: 21
+      mobility: 22.359999
+      capacity: 62.367565
+      firePower: 3
+      bulletSpeed: 12
+      fireRate: 3
+      sustainedDps: 0
+      rammingPower: 1.25
+      healthCap: 46.893208
+      healthRegen: 1.9703027
+      energyCap: 18
+      energyRegen: 3
+      moveSpeed: 7.68
+      turnSpeed: 11
+      gemCap: 32.546597
+      peopleCap: 29.820969
+    powerScoreBreakdownAtShipLevel:
+      offense: 19.75
+      defense: 219.3821
+      energy: 21
+      mobility: 30.91
+      capacity: 198.32101
+      firePower: 3
+      bulletSpeed: 12
+      fireRate: 3
+      sustainedDps: 0
+      rammingPower: 1.75
+      healthCap: 210.53604
+      healthRegen: 8.846051
+      energyCap: 18
+      energyRegen: 3
+      moveSpeed: 10.08
+      turnSpeed: 16
+      gemCap: 98.023315
+      peopleCap: 100.29769
+    componentMass: 8.568384
+    lockedInUpgradeTree: 0
+  - chassisId: HyperFalcon_08
+    upgradeTreeShipName: Leapstoop
+    prefab: {fileID: 6592500596467918042, guid: ee106c28e11618c48b09ebd75f31d802, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: f0c9e80d5da6559479f09ef578d00519, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: TeamA
+      team: 1
+      sprite: {fileID: 21300000, guid: f0c9e80d5da6559479f09ef578d00519, type: 3}
+    - variantName: TeamB
+      team: 2
+      sprite: {fileID: 21300000, guid: 266867cb5d29c2f49b8a958b434c3810, type: 3}
+    - variantName: TeamC
+      team: 3
+      sprite: {fileID: 21300000, guid: c02124cc45eef234bb8984aa32f33373, type: 3}
+    - variantName: TeamD
+      team: 4
+      sprite: {fileID: 21300000, guid: c2465ccc98631f2438cede90f16f6f49, type: 3}
+    - variantName: TeamE
+      team: 5
+      sprite: {fileID: 21300000, guid: 53c2adc29f7f42c4285d05e9ace3490c, type: 3}
+    theatricalMenuPreviewSprite: {fileID: 21300000, guid: f0c9e80d5da6559479f09ef578d00519, type: 3}
+    teamTheatricalMenuPreviewSprites:
+    - variantName: TeamA
+      team: 1
+      sprite: {fileID: 21300000, guid: f0c9e80d5da6559479f09ef578d00519, type: 3}
+    - variantName: TeamB
+      team: 2
+      sprite: {fileID: 21300000, guid: 266867cb5d29c2f49b8a958b434c3810, type: 3}
+    - variantName: TeamC
+      team: 3
+      sprite: {fileID: 21300000, guid: c02124cc45eef234bb8984aa32f33373, type: 3}
+    - variantName: TeamD
+      team: 4
+      sprite: {fileID: 21300000, guid: c2465ccc98631f2438cede90f16f6f49, type: 3}
+    - variantName: TeamE
+      team: 5
+      sprite: {fileID: 21300000, guid: 53c2adc29f7f42c4285d05e9ace3490c, type: 3}
+    minHomePlanetLevel: 3
+    powerScore: 174.90309
+    powerScoreAtMaxLevel: 574.67694
+    powerScoreBreakdown:
+      offense: 19.25
+      defense: 51.87698
+      energy: 40.25
+      mobility: 21.155
+      capacity: 50.396107
+      firePower: 3
+      bulletSpeed: 12
+      fireRate: 3
+      sustainedDps: 0
+      rammingPower: 1.25
+      healthCap: 49.785168
+      healthRegen: 2.0918136
+      energyCap: 34.5
+      energyRegen: 5.75
+      moveSpeed: 8.879999
+      turnSpeed: 2.5
+      gemCap: 27.2989
+      peopleCap: 23.097206
+    powerScoreBreakdownAtShipLevel:
+      offense: 19.75
+      defense: 248.46942
+      energy: 120.75
+      mobility: 56.43
+      capacity: 152.1775
+      firePower: 3
+      bulletSpeed: 12
+      fireRate: 3
+      sustainedDps: 0
+      rammingPower: 1.75
+      healthCap: 238.4505
+      healthRegen: 10.018929
+      energyCap: 103.5
+      energyRegen: 17.25
+      moveSpeed: 17.279999
+      turnSpeed: 15
+      gemCap: 76.73268
+      peopleCap: 75.444824
+    componentMass: 16.49111
+    lockedInUpgradeTree: 0
+  - chassisId: HyperFalcon_04
+    upgradeTreeShipName: Afterburn
+    prefab: {fileID: 5184615716735559179, guid: 5e515ed97c5dd0448a038c848bc9d8a8, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 5234d6c978d0df3419cc8b706d6d947c, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: TeamA
+      team: 1
+      sprite: {fileID: 21300000, guid: 5234d6c978d0df3419cc8b706d6d947c, type: 3}
+    - variantName: TeamB
+      team: 2
+      sprite: {fileID: 21300000, guid: 0c81d1f27d6b16642b763bc9cabdcb6f, type: 3}
+    - variantName: TeamC
+      team: 3
+      sprite: {fileID: 21300000, guid: d995d4eedbd652d42a3103ac20148401, type: 3}
+    - variantName: TeamD
+      team: 4
+      sprite: {fileID: 21300000, guid: 8444712222bc3474e9ec4ac1bdc9be85, type: 3}
+    - variantName: TeamE
+      team: 5
+      sprite: {fileID: 21300000, guid: ca2a137d2ad68a3449c67eaad5e48b11, type: 3}
+    theatricalMenuPreviewSprite: {fileID: 21300000, guid: 5234d6c978d0df3419cc8b706d6d947c, type: 3}
+    teamTheatricalMenuPreviewSprites:
+    - variantName: TeamA
+      team: 1
+      sprite: {fileID: 21300000, guid: 5234d6c978d0df3419cc8b706d6d947c, type: 3}
+    - variantName: TeamB
+      team: 2
+      sprite: {fileID: 21300000, guid: 0c81d1f27d6b16642b763bc9cabdcb6f, type: 3}
+    - variantName: TeamC
+      team: 3
+      sprite: {fileID: 21300000, guid: d995d4eedbd652d42a3103ac20148401, type: 3}
+    - variantName: TeamD
+      team: 4
+      sprite: {fileID: 21300000, guid: 8444712222bc3474e9ec4ac1bdc9be85, type: 3}
+    - variantName: TeamE
+      team: 5
+      sprite: {fileID: 21300000, guid: ca2a137d2ad68a3449c67eaad5e48b11, type: 3}
+    minHomePlanetLevel: 4
+    powerScore: 178.49857
+    powerScoreAtMaxLevel: 644.02856
+    powerScoreBreakdown:
+      offense: 19.5
+      defense: 47.82857
+      energy: 21
+      mobility: 23.215
+      capacity: 73
+      firePower: 3
+      bulletSpeed: 12
+      fireRate: 3
+      sustainedDps: 0
+      rammingPower: 1.5
+      healthCap: 45.9
+      healthRegen: 1.9285715
+      energyCap: 18
+      energyRegen: 3
+      moveSpeed: 7.9199996
+      turnSpeed: 11.5
+      gemCap: 38
+      peopleCap: 35
+    powerScoreBreakdownAtShipLevel:
+      offense: 21
+      defense: 273.81857
+      energy: 21
+      mobility: 41.170002
+      capacity: 297
+      firePower: 3
+      bulletSpeed: 12
+      fireRate: 3
+      sustainedDps: 0
+      rammingPower: 3
+      healthCap: 262.7775
+      healthRegen: 11.041071
+      energyCap: 18
+      energyRegen: 3
+      moveSpeed: 12.960001
+      turnSpeed: 22
+      gemCap: 143
+      peopleCap: 154
+    componentMass: 8.780899
+    lockedInUpgradeTree: 0
+  - chassisId: HyperFalcon_15
+    upgradeTreeShipName: Foldwing
+    prefab: {fileID: 4144724020860529509, guid: 8b97525675c7a5f4d9fe03156465278d, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 1e8f895a7ef65454795f419b402810d4, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: TeamA
+      team: 1
+      sprite: {fileID: 21300000, guid: 1e8f895a7ef65454795f419b402810d4, type: 3}
+    - variantName: TeamB
+      team: 2
+      sprite: {fileID: 21300000, guid: 230762cb1c8e0ba4aa0e85b31ad7ae9d, type: 3}
+    - variantName: TeamC
+      team: 3
+      sprite: {fileID: 21300000, guid: 1582e9f0d76590a44a8773f791be5000, type: 3}
+    - variantName: TeamD
+      team: 4
+      sprite: {fileID: 21300000, guid: c969823630b5e4f458b8d5749a002126, type: 3}
+    - variantName: TeamE
+      team: 5
+      sprite: {fileID: 21300000, guid: 2a0701d72c17ebd4096590ab6b265147, type: 3}
+    theatricalMenuPreviewSprite: {fileID: 21300000, guid: 1e8f895a7ef65454795f419b402810d4, type: 3}
+    teamTheatricalMenuPreviewSprites:
+    - variantName: TeamA
+      team: 1
+      sprite: {fileID: 21300000, guid: 1e8f895a7ef65454795f419b402810d4, type: 3}
+    - variantName: TeamB
+      team: 2
+      sprite: {fileID: 21300000, guid: 230762cb1c8e0ba4aa0e85b31ad7ae9d, type: 3}
+    - variantName: TeamC
+      team: 3
+      sprite: {fileID: 21300000, guid: 1582e9f0d76590a44a8773f791be5000, type: 3}
+    - variantName: TeamD
+      team: 4
+      sprite: {fileID: 21300000, guid: c969823630b5e4f458b8d5749a002126, type: 3}
+    - variantName: TeamE
+      team: 5
+      sprite: {fileID: 21300000, guid: 2a0701d72c17ebd4096590ab6b265147, type: 3}
+    minHomePlanetLevel: 4
+    powerScore: 176.43341
+    powerScoreAtMaxLevel: 744.01324
+    powerScoreBreakdown:
+      offense: 19.25
+      defense: 56.134834
+      energy: 26.25
+      mobility: 22.010002
+      capacity: 63.36607
+      firePower: 3
+      bulletSpeed: 12
+      fireRate: 3
+      sustainedDps: 0
+      rammingPower: 1.25
+      healthCap: 53.871334
+      healthRegen: 2.2635014
+      energyCap: 22.5
+      energyRegen: 3.75
+      moveSpeed: 9.119999
+      turnSpeed: 3
+      gemCap: 33.833035
+      peopleCap: 29.533035
     powerScoreBreakdownAtShipLevel:
       offense: 20
-      defense: 145.20262
-      energy: 77
-      mobility: 39.22
-      capacity: 240.09525
+      defense: 344.17468
+      energy: 99.75
+      mobility: 77.38
+      capacity: 232.52856
       firePower: 3
       bulletSpeed: 12
       fireRate: 3
       sustainedDps: 0
       rammingPower: 2
-      healthCap: 139.34767
-      healthRegen: 5.854944
-      energyCap: 66
-      energyRegen: 11
-      moveSpeed: 9.12
-      turnSpeed: 14
-      gemCap: 126.709
-      peopleCap: 113.386246
-    componentMass: 8.258868
+      healthCap: 330.29666
+      healthRegen: 13.878012
+      energyCap: 85.5
+      energyRegen: 14.25
+      moveSpeed: 22.560001
+      turnSpeed: 24
+      gemCap: 115.26428
+      peopleCap: 117.26428
+    componentMass: 16.074923
     lockedInUpgradeTree: 0
   - chassisId: HyperFalcon_14
     upgradeTreeShipName: Voltail
@@ -1451,207 +1531,207 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 040238b6476534648abcf4dadf7f8a82, type: 3}
     minHomePlanetLevel: 4
-    powerScore: 197.78314
-    powerScoreAtMaxLevel: 421.15515
+    powerScore: 177.99387
+    powerScoreAtMaxLevel: 689.50885
     powerScoreBreakdown:
-      offense: 19
-      defense: 46.553146
+      offense: 19.25
+      defense: 54.72386
       energy: 21
-      mobility: 26.635
-      capacity: 90.6
+      mobility: 27.489998
+      capacity: 61.9
       firePower: 3
       bulletSpeed: 12
       fireRate: 3
       sustainedDps: 0
-      rammingPower: 1
-      healthCap: 44.676003
-      healthRegen: 1.8771429
+      rammingPower: 1.25
+      healthCap: 52.517254
+      healthRegen: 2.2066073
       energyCap: 18
       energyRegen: 3
-      moveSpeed: 8.88
-      turnSpeed: 13.5
-      gemCap: 53.6
-      peopleCap: 37
+      moveSpeed: 9.119999
+      turnSpeed: 14
+      gemCap: 33.4
+      peopleCap: 28.5
     powerScoreBreakdownAtShipLevel:
-      offense: 19.75
-      defense: 143.64516
+      offense: 20
+      defense: 340.69885
       energy: 21
-      mobility: 32.62
-      capacity: 211.7
+      mobility: 75.37
+      capacity: 246
       firePower: 3
       bulletSpeed: 12
       fireRate: 3
       sustainedDps: 0
-      rammingPower: 1.75
-      healthCap: 137.85301
-      healthRegen: 5.792143
+      rammingPower: 2
+      healthCap: 326.961
+      healthRegen: 13.737858
       energyCap: 18
       energyRegen: 3
-      moveSpeed: 10.56
-      turnSpeed: 17
-      gemCap: 115.2
-      peopleCap: 96.5
+      moveSpeed: 22.560001
+      turnSpeed: 42
+      gemCap: 123
+      peopleCap: 123
     componentMass: 14.957066
     lockedInUpgradeTree: 0
-  - chassisId: HyperFalcon_05
-    upgradeTreeShipName: Overdrive
-    prefab: {fileID: 8844493127646110690, guid: c0401d063f9f15e4089eb3bf81f6c07a, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: f5d3b855d1ce5ac449b0a9da33e551f5, type: 3}
+  - chassisId: HyperFalcon_13
+    upgradeTreeShipName: Pulse
+    prefab: {fileID: 4919701350902243033, guid: 761c8ba191d9b9941bad5ff458918bf2, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 70bb0dece54f12a4c9ce85fb08c31e67, type: 3}
     teamMenuPreviewSprites:
     - variantName: TeamA
       team: 1
-      sprite: {fileID: 21300000, guid: f5d3b855d1ce5ac449b0a9da33e551f5, type: 3}
+      sprite: {fileID: 21300000, guid: 70bb0dece54f12a4c9ce85fb08c31e67, type: 3}
     - variantName: TeamB
       team: 2
-      sprite: {fileID: 21300000, guid: 672b7834bfacfcc43999a79f96e5637f, type: 3}
+      sprite: {fileID: 21300000, guid: 110d91a7f1befe74cbec0875d42e46ec, type: 3}
     - variantName: TeamC
       team: 3
-      sprite: {fileID: 21300000, guid: a3a84a522abb62e46aaaaf781dd2b83b, type: 3}
+      sprite: {fileID: 21300000, guid: 77c30f76544de614195456ec51055cb4, type: 3}
     - variantName: TeamD
       team: 4
-      sprite: {fileID: 21300000, guid: 5ac8112be2cdc9943b6abd2c7dd2aeda, type: 3}
+      sprite: {fileID: 21300000, guid: 022b49e73de242e428cce8d767e3c87a, type: 3}
     - variantName: TeamE
       team: 5
-      sprite: {fileID: 21300000, guid: 3641c9c95e86ed74b93a60eb5fe7bd42, type: 3}
-    theatricalMenuPreviewSprite: {fileID: 21300000, guid: f5d3b855d1ce5ac449b0a9da33e551f5, type: 3}
+      sprite: {fileID: 21300000, guid: 5a22dc54fde77d74e8a861e87ffbb3a7, type: 3}
+    theatricalMenuPreviewSprite: {fileID: 21300000, guid: 70bb0dece54f12a4c9ce85fb08c31e67, type: 3}
     teamTheatricalMenuPreviewSprites:
     - variantName: TeamA
       team: 1
-      sprite: {fileID: 21300000, guid: f5d3b855d1ce5ac449b0a9da33e551f5, type: 3}
+      sprite: {fileID: 21300000, guid: 70bb0dece54f12a4c9ce85fb08c31e67, type: 3}
     - variantName: TeamB
       team: 2
-      sprite: {fileID: 21300000, guid: 672b7834bfacfcc43999a79f96e5637f, type: 3}
+      sprite: {fileID: 21300000, guid: 110d91a7f1befe74cbec0875d42e46ec, type: 3}
     - variantName: TeamC
       team: 3
-      sprite: {fileID: 21300000, guid: a3a84a522abb62e46aaaaf781dd2b83b, type: 3}
+      sprite: {fileID: 21300000, guid: 77c30f76544de614195456ec51055cb4, type: 3}
     - variantName: TeamD
       team: 4
-      sprite: {fileID: 21300000, guid: 5ac8112be2cdc9943b6abd2c7dd2aeda, type: 3}
+      sprite: {fileID: 21300000, guid: 022b49e73de242e428cce8d767e3c87a, type: 3}
     - variantName: TeamE
       team: 5
-      sprite: {fileID: 21300000, guid: 3641c9c95e86ed74b93a60eb5fe7bd42, type: 3}
+      sprite: {fileID: 21300000, guid: 5a22dc54fde77d74e8a861e87ffbb3a7, type: 3}
     minHomePlanetLevel: 4
-    powerScore: 219.85202
-    powerScoreAtMaxLevel: 504.56448
+    powerScore: 178.45972
+    powerScoreAtMaxLevel: 786.9057
     powerScoreBreakdown:
-      offense: 19
-      defense: 45.235847
-      energy: 55.0032
-      mobility: 32.27
-      capacity: 76.69297
+      offense: 19.25
+      defense: 58.669716
+      energy: 35
+      mobility: 20.300001
+      capacity: 53.4
       firePower: 3
       bulletSpeed: 12
       fireRate: 3
       sustainedDps: 0
-      rammingPower: 1
-      healthCap: 43.411823
-      healthRegen: 1.8240261
-      energyCap: 47.1456
-      energyRegen: 7.8576
-      moveSpeed: 7.92
-      turnSpeed: 14
-      gemCap: 44.11875
-      peopleCap: 32.57422
+      rammingPower: 1.25
+      healthCap: 56.304
+      healthRegen: 2.3657146
+      energyCap: 30
+      energyRegen: 5
+      moveSpeed: 8.639999
+      turnSpeed: 2
+      gemCap: 29.35
+      peopleCap: 24.050001
     powerScoreBreakdownAtShipLevel:
-      offense: 19.75
-      defense: 143.15742
-      energy: 119.1736
-      mobility: 42
-      capacity: 197.63347
+      offense: 20
+      defense: 380.6357
+      energy: 133
+      mobility: 63.699997
+      capacity: 217.55
       firePower: 3
       bulletSpeed: 12
       fireRate: 3
       sustainedDps: 0
-      rammingPower: 1.75
-      healthCap: 137.38495
-      healthRegen: 5.772476
-      energyCap: 102.1488
-      energyRegen: 17.0248
-      moveSpeed: 9.6
-      turnSpeed: 14
-      gemCap: 103.72266
-      peopleCap: 93.91081
-    componentMass: 14.0440035
+      rammingPower: 2
+      healthCap: 365.2875
+      healthRegen: 15.348214
+      energyCap: 114
+      energyRegen: 19
+      moveSpeed: 18.720003
+      turnSpeed: 16
+      gemCap: 109.850006
+      peopleCap: 107.7
+    componentMass: 16.85
     lockedInUpgradeTree: 0
-  - chassisId: HyperFalcon_09
-    upgradeTreeShipName: Peakwind
-    prefab: {fileID: 5015609858578011754, guid: 00a4ee30e7d043f409030ebb13180816, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: 8518f01ffde49b5428719eabb0d96ca5, type: 3}
+  - chassisId: HyperFalcon_07
+    upgradeTreeShipName: Swoop
+    prefab: {fileID: 3571592331501742404, guid: b4d69c4f9c3d162448102b7fb3a96fbf, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: fb826daee2e78974e84ac4026edebb9d, type: 3}
     teamMenuPreviewSprites:
     - variantName: TeamA
       team: 1
-      sprite: {fileID: 21300000, guid: 8518f01ffde49b5428719eabb0d96ca5, type: 3}
+      sprite: {fileID: 21300000, guid: fb826daee2e78974e84ac4026edebb9d, type: 3}
     - variantName: TeamB
       team: 2
-      sprite: {fileID: 21300000, guid: 12b734f9c98310d4e86fd3978a15a740, type: 3}
+      sprite: {fileID: 21300000, guid: b1cd86a6300df2f44bd39564092ab21a, type: 3}
     - variantName: TeamC
       team: 3
-      sprite: {fileID: 21300000, guid: 39ee1ab8bf907c34db43ad63d35739d8, type: 3}
+      sprite: {fileID: 21300000, guid: beacb1f2a270ba14aa8d7d9f7065fb19, type: 3}
     - variantName: TeamD
       team: 4
-      sprite: {fileID: 21300000, guid: b7f9fef01ade825419a4a8d5a764f357, type: 3}
+      sprite: {fileID: 21300000, guid: 38d0a7a351cce434aa49e875fb691242, type: 3}
     - variantName: TeamE
       team: 5
-      sprite: {fileID: 21300000, guid: 5be264939cfea8c49a4e3f689a7a0824, type: 3}
-    theatricalMenuPreviewSprite: {fileID: 21300000, guid: 8518f01ffde49b5428719eabb0d96ca5, type: 3}
+      sprite: {fileID: 21300000, guid: bd80bd24087ed294c86a52c7aff075b8, type: 3}
+    theatricalMenuPreviewSprite: {fileID: 21300000, guid: fb826daee2e78974e84ac4026edebb9d, type: 3}
     teamTheatricalMenuPreviewSprites:
     - variantName: TeamA
       team: 1
-      sprite: {fileID: 21300000, guid: 8518f01ffde49b5428719eabb0d96ca5, type: 3}
+      sprite: {fileID: 21300000, guid: fb826daee2e78974e84ac4026edebb9d, type: 3}
     - variantName: TeamB
       team: 2
-      sprite: {fileID: 21300000, guid: 12b734f9c98310d4e86fd3978a15a740, type: 3}
+      sprite: {fileID: 21300000, guid: b1cd86a6300df2f44bd39564092ab21a, type: 3}
     - variantName: TeamC
       team: 3
-      sprite: {fileID: 21300000, guid: 39ee1ab8bf907c34db43ad63d35739d8, type: 3}
+      sprite: {fileID: 21300000, guid: beacb1f2a270ba14aa8d7d9f7065fb19, type: 3}
     - variantName: TeamD
       team: 4
-      sprite: {fileID: 21300000, guid: b7f9fef01ade825419a4a8d5a764f357, type: 3}
+      sprite: {fileID: 21300000, guid: 38d0a7a351cce434aa49e875fb691242, type: 3}
     - variantName: TeamE
       team: 5
-      sprite: {fileID: 21300000, guid: 5be264939cfea8c49a4e3f689a7a0824, type: 3}
-    minHomePlanetLevel: 4
-    powerScore: 227.17516
-    powerScoreAtMaxLevel: 526.7179
+      sprite: {fileID: 21300000, guid: bd80bd24087ed294c86a52c7aff075b8, type: 3}
+    minHomePlanetLevel: 5
+    powerScore: 182.13766
+    powerScoreAtMaxLevel: 882.5606
     powerScoreBreakdown:
-      offense: 19
-      defense: 32.689163
-      energy: 80.9228
-      mobility: 35.05
-      capacity: 70.16319
+      offense: 19.5
+      defense: 50.37218
+      energy: 28
+      mobility: 16.345
+      capacity: 76.58548
       firePower: 3
       bulletSpeed: 12
       fireRate: 3
       sustainedDps: 0
-      rammingPower: 1
-      healthCap: 31.371052
-      healthRegen: 1.3181114
-      energyCap: 69.3624
-      energyRegen: 11.5604
-      moveSpeed: 8.400001
-      turnSpeed: 14
-      gemCap: 42.294754
-      peopleCap: 27.86844
+      rammingPower: 1.5
+      healthCap: 48.341045
+      healthRegen: 2.031136
+      energyCap: 24
+      energyRegen: 4
+      moveSpeed: 7.68
+      turnSpeed: 0.5
+      gemCap: 39.657288
+      peopleCap: 36.92819
     powerScoreBreakdownAtShipLevel:
-      offense: 19.75
-      defense: 133.1733
-      energy: 151.73024
-      mobility: 44.78
-      capacity: 196.73438
+      offense: 21.5
+      defense: 367.6773
+      energy: 91
+      mobility: 36.55
+      capacity: 385.8833
       firePower: 3
       bulletSpeed: 12
       fireRate: 3
       sustainedDps: 0
-      rammingPower: 1.75
-      healthCap: 127.8034
-      healthRegen: 5.3698907
-      energyCap: 130.05449
-      energyRegen: 21.67575
-      moveSpeed: 10.08
-      turnSpeed: 14
-      gemCap: 106.326385
-      peopleCap: 90.40798
-    componentMass: 15.006784
+      rammingPower: 3.5
+      healthCap: 352.85162
+      healthRegen: 14.825697
+      energyCap: 78
+      energyRegen: 13
+      moveSpeed: 12
+      turnSpeed: 5
+      gemCap: 184.69667
+      peopleCap: 201.18663
+    componentMass: 8.258868
     lockedInUpgradeTree: 0
   - chassisId: HyperFalcon_11
     upgradeTreeShipName: Flashdive
@@ -1691,46 +1771,46 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 78d97e39693ec1c438409eb5269c6064, type: 3}
     minHomePlanetLevel: 5
-    powerScore: 232.73926
-    powerScoreAtMaxLevel: 598.87476
+    powerScore: 189.49724
+    powerScoreAtMaxLevel: 1043.4946
     powerScoreBreakdown:
-      offense: 19
-      defense: 63.77143
-      energy: 22.630264
-      mobility: 30.880001
-      capacity: 107
+      offense: 19.25
+      defense: 67.33379
+      energy: 22.630266
+      mobility: 17.735
+      capacity: 73.45561
       firePower: 3
       bulletSpeed: 12
       fireRate: 3
       sustainedDps: 0
-      rammingPower: 1
-      healthCap: 61.2
-      healthRegen: 2.5714288
-      energyCap: 19.39737
+      rammingPower: 1.25
+      healthCap: 64.61872
+      healthRegen: 2.7150717
+      energyCap: 19.397371
       energyRegen: 3.2328951
-      moveSpeed: 7.6800003
-      turnSpeed: 14
-      gemCap: 62
-      peopleCap: 45
+      moveSpeed: 7.9199996
+      turnSpeed: 0.5
+      gemCap: 38.727806
+      peopleCap: 34.727806
     powerScoreBreakdownAtShipLevel:
-      offense: 20
-      defense: 203.67001
-      energy: 63.364746
-      mobility: 43.39
-      capacity: 287
+      offense: 20.25
+      defense: 533.4393
+      energy: 104.09922
+      mobility: 50.45
+      capacity: 365.55615
       firePower: 3
       bulletSpeed: 12
       fireRate: 3
       sustainedDps: 0
-      rammingPower: 2
-      healthCap: 195.45752
-      healthRegen: 8.2125
-      energyCap: 54.312637
-      energyRegen: 9.052107
-      moveSpeed: 9.84
-      turnSpeed: 14
-      gemCap: 152
-      peopleCap: 135
+      rammingPower: 2.25
+      healthCap: 511.9296
+      healthRegen: 21.509645
+      energyCap: 89.227905
+      energyRegen: 14.871317
+      moveSpeed: 14.400001
+      turnSpeed: 5
+      gemCap: 180.27808
+      peopleCap: 185.27808
     componentMass: 13.57174
     lockedInUpgradeTree: 0
   - chassisId: HyperFalcon_12
@@ -1771,367 +1851,207 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 839aecf6a00b7cc479a88196067e6fa5, type: 3}
     minHomePlanetLevel: 5
-    powerScore: 233.59715
-    powerScoreAtMaxLevel: 618.6557
+    powerScore: 192.25174
+    powerScoreAtMaxLevel: 973.3188
     powerScoreBreakdown:
-      offense: 19
-      defense: 45.437145
-      energy: 49
-      mobility: 33.66
-      capacity: 96
+      offense: 19.25
+      defense: 56.601734
+      energy: 35
+      mobility: 19.445
+      capacity: 70
       firePower: 3
       bulletSpeed: 12
       fireRate: 3
       sustainedDps: 0
-      rammingPower: 1
-      healthCap: 43.605003
-      healthRegen: 1.8321428
-      energyCap: 42
-      energyRegen: 7
-      moveSpeed: 8.160001
-      turnSpeed: 14
-      gemCap: 56
-      peopleCap: 40
-    powerScoreBreakdownAtShipLevel:
-      offense: 20
-      defense: 185.33572
-      energy: 112
-      mobility: 46.170002
-      capacity: 276
-      firePower: 3
-      bulletSpeed: 12
-      fireRate: 3
-      sustainedDps: 0
-      rammingPower: 2
-      healthCap: 177.8625
-      healthRegen: 7.473214
-      energyCap: 96
-      energyRegen: 16
-      moveSpeed: 10.320001
-      turnSpeed: 14
-      gemCap: 146
-      peopleCap: 130
-    componentMass: 13.279276
-    lockedInUpgradeTree: 0
-  - chassisId: HyperFalcon_13
-    upgradeTreeShipName: Pulse
-    prefab: {fileID: 4919701350902243033, guid: 761c8ba191d9b9941bad5ff458918bf2, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: 70bb0dece54f12a4c9ce85fb08c31e67, type: 3}
-    teamMenuPreviewSprites:
-    - variantName: TeamA
-      team: 1
-      sprite: {fileID: 21300000, guid: 70bb0dece54f12a4c9ce85fb08c31e67, type: 3}
-    - variantName: TeamB
-      team: 2
-      sprite: {fileID: 21300000, guid: 110d91a7f1befe74cbec0875d42e46ec, type: 3}
-    - variantName: TeamC
-      team: 3
-      sprite: {fileID: 21300000, guid: 77c30f76544de614195456ec51055cb4, type: 3}
-    - variantName: TeamD
-      team: 4
-      sprite: {fileID: 21300000, guid: 022b49e73de242e428cce8d767e3c87a, type: 3}
-    - variantName: TeamE
-      team: 5
-      sprite: {fileID: 21300000, guid: 5a22dc54fde77d74e8a861e87ffbb3a7, type: 3}
-    theatricalMenuPreviewSprite: {fileID: 21300000, guid: 70bb0dece54f12a4c9ce85fb08c31e67, type: 3}
-    teamTheatricalMenuPreviewSprites:
-    - variantName: TeamA
-      team: 1
-      sprite: {fileID: 21300000, guid: 70bb0dece54f12a4c9ce85fb08c31e67, type: 3}
-    - variantName: TeamB
-      team: 2
-      sprite: {fileID: 21300000, guid: 110d91a7f1befe74cbec0875d42e46ec, type: 3}
-    - variantName: TeamC
-      team: 3
-      sprite: {fileID: 21300000, guid: 77c30f76544de614195456ec51055cb4, type: 3}
-    - variantName: TeamD
-      team: 4
-      sprite: {fileID: 21300000, guid: 022b49e73de242e428cce8d767e3c87a, type: 3}
-    - variantName: TeamE
-      team: 5
-      sprite: {fileID: 21300000, guid: 5a22dc54fde77d74e8a861e87ffbb3a7, type: 3}
-    minHomePlanetLevel: 5
-    powerScore: 234.8093
-    powerScoreAtMaxLevel: 544.54047
-    powerScoreBreakdown:
-      offense: 19
-      defense: 53.20929
-      energy: 56
-      mobility: 35.05
-      capacity: 82.2
-      firePower: 3
-      bulletSpeed: 12
-      fireRate: 3
-      sustainedDps: 0
-      rammingPower: 1
-      healthCap: 51.063755
-      healthRegen: 2.145536
-      energyCap: 48
-      energyRegen: 8
-      moveSpeed: 8.400001
-      turnSpeed: 14
-      gemCap: 49.199997
+      rammingPower: 1.25
+      healthCap: 54.319405
+      healthRegen: 2.2823281
+      energyCap: 30
+      energyRegen: 5
+      moveSpeed: 8.4
+      turnSpeed: 1.5
+      gemCap: 37
       peopleCap: 33
     powerScoreBreakdownAtShipLevel:
-      offense: 20
-      defense: 167.28044
-      energy: 119
-      mobility: 47.56
-      capacity: 212.7
-      firePower: 3
-      bulletSpeed: 12
-      fireRate: 3
-      sustainedDps: 0
-      rammingPower: 2
-      healthCap: 160.53526
-      healthRegen: 6.7451787
-      energyCap: 102
-      energyRegen: 17
-      moveSpeed: 10.56
-      turnSpeed: 14
-      gemCap: 116.7
-      peopleCap: 96
-    componentMass: 16.85
-    lockedInUpgradeTree: 0
-  - chassisId: HyperFalcon_08
-    upgradeTreeShipName: Leapstoop
-    prefab: {fileID: 6592500596467918042, guid: ee106c28e11618c48b09ebd75f31d802, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: f0c9e80d5da6559479f09ef578d00519, type: 3}
-    teamMenuPreviewSprites:
-    - variantName: TeamA
-      team: 1
-      sprite: {fileID: 21300000, guid: f0c9e80d5da6559479f09ef578d00519, type: 3}
-    - variantName: TeamB
-      team: 2
-      sprite: {fileID: 21300000, guid: 266867cb5d29c2f49b8a958b434c3810, type: 3}
-    - variantName: TeamC
-      team: 3
-      sprite: {fileID: 21300000, guid: c02124cc45eef234bb8984aa32f33373, type: 3}
-    - variantName: TeamD
-      team: 4
-      sprite: {fileID: 21300000, guid: c2465ccc98631f2438cede90f16f6f49, type: 3}
-    - variantName: TeamE
-      team: 5
-      sprite: {fileID: 21300000, guid: 53c2adc29f7f42c4285d05e9ace3490c, type: 3}
-    theatricalMenuPreviewSprite: {fileID: 21300000, guid: f0c9e80d5da6559479f09ef578d00519, type: 3}
-    teamTheatricalMenuPreviewSprites:
-    - variantName: TeamA
-      team: 1
-      sprite: {fileID: 21300000, guid: f0c9e80d5da6559479f09ef578d00519, type: 3}
-    - variantName: TeamB
-      team: 2
-      sprite: {fileID: 21300000, guid: 266867cb5d29c2f49b8a958b434c3810, type: 3}
-    - variantName: TeamC
-      team: 3
-      sprite: {fileID: 21300000, guid: c02124cc45eef234bb8984aa32f33373, type: 3}
-    - variantName: TeamD
-      team: 4
-      sprite: {fileID: 21300000, guid: c2465ccc98631f2438cede90f16f6f49, type: 3}
-    - variantName: TeamE
-      team: 5
-      sprite: {fileID: 21300000, guid: 53c2adc29f7f42c4285d05e9ace3490c, type: 3}
-    minHomePlanetLevel: 5
-    powerScore: 242.98375
-    powerScoreAtMaxLevel: 561.97437
-    powerScoreBreakdown:
-      offense: 19
-      defense: 50.10392
-      energy: 72.45
-      mobility: 36.44
-      capacity: 76.789825
-      firePower: 3
-      bulletSpeed: 12
-      fireRate: 3
-      sustainedDps: 0
-      rammingPower: 1
-      healthCap: 48.0836
-      healthRegen: 2.0203195
-      energyCap: 62.1
-      energyRegen: 10.349999
-      moveSpeed: 8.64
-      turnSpeed: 14
-      gemCap: 45.462147
-      peopleCap: 31.32768
-    powerScoreBreakdownAtShipLevel:
-      offense: 20
-      defense: 163.13033
-      energy: 144.9
-      mobility: 48.95
-      capacity: 208.14404
-      firePower: 3
-      bulletSpeed: 12
-      fireRate: 3
-      sustainedDps: 0
-      rammingPower: 2
-      healthCap: 156.55249
-      healthRegen: 6.577835
-      energyCap: 124.2
-      energyRegen: 20.699999
-      moveSpeed: 10.8
-      turnSpeed: 14
-      gemCap: 112.3418
-      peopleCap: 95.802246
-    componentMass: 16.49111
-    lockedInUpgradeTree: 0
-  - chassisId: HyperFalcon_09B
-    upgradeTreeShipName: Peakgust
-    prefab: {fileID: 5015609858578011754, guid: 00a4ee30e7d043f409030ebb13180816, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: 8518f01ffde49b5428719eabb0d96ca5, type: 3}
-    teamMenuPreviewSprites:
-    - variantName: TeamA
-      team: 1
-      sprite: {fileID: 21300000, guid: 8518f01ffde49b5428719eabb0d96ca5, type: 3}
-    - variantName: TeamB
-      team: 2
-      sprite: {fileID: 21300000, guid: 12b734f9c98310d4e86fd3978a15a740, type: 3}
-    - variantName: TeamC
-      team: 3
-      sprite: {fileID: 21300000, guid: 39ee1ab8bf907c34db43ad63d35739d8, type: 3}
-    - variantName: TeamD
-      team: 4
-      sprite: {fileID: 21300000, guid: b7f9fef01ade825419a4a8d5a764f357, type: 3}
-    - variantName: TeamE
-      team: 5
-      sprite: {fileID: 21300000, guid: 5be264939cfea8c49a4e3f689a7a0824, type: 3}
-    theatricalMenuPreviewSprite: {fileID: 21300000, guid: f792916d55d4a1d4a826a370170c0a47, type: 3}
-    teamTheatricalMenuPreviewSprites:
-    - variantName: TeamA
-      team: 1
-      sprite: {fileID: 21300000, guid: f792916d55d4a1d4a826a370170c0a47, type: 3}
-    - variantName: TeamB
-      team: 2
-      sprite: {fileID: 21300000, guid: d93c113ef258f594cb550e683d8f962a, type: 3}
-    - variantName: TeamC
-      team: 3
-      sprite: {fileID: 21300000, guid: a04f10d5ea7dde14a893e746742dcd7e, type: 3}
-    - variantName: TeamD
-      team: 4
-      sprite: {fileID: 21300000, guid: d4265f010a6dcfa4fa19a71793198991, type: 3}
-    - variantName: TeamE
-      team: 5
-      sprite: {fileID: 21300000, guid: fc6b284b06ae0b74f9e7bd0816488483, type: 3}
-    minHomePlanetLevel: 5
-    powerScore: 227.17516
-    powerScoreAtMaxLevel: 612.3016
-    powerScoreBreakdown:
-      offense: 19
-      defense: 32.689163
-      energy: 80.9228
-      mobility: 35.05
-      capacity: 70.16319
-      firePower: 3
-      bulletSpeed: 12
-      fireRate: 3
-      sustainedDps: 0
-      rammingPower: 1
-      healthCap: 31.371052
-      healthRegen: 1.3181114
-      energyCap: 69.3624
-      energyRegen: 11.5604
-      moveSpeed: 8.400001
-      turnSpeed: 14
-      gemCap: 42.294754
-      peopleCap: 27.86844
-    powerScoreBreakdownAtShipLevel:
-      offense: 20
-      defense: 161.88304
-      energy: 171.96094
-      mobility: 47.56
-      capacity: 232.89755
-      firePower: 3
-      bulletSpeed: 12
-      fireRate: 3
-      sustainedDps: 0
-      rammingPower: 2
-      healthCap: 155.3555
-      healthRegen: 6.527542
-      energyCap: 147.3951
-      energyRegen: 24.56585
-      moveSpeed: 10.56
-      turnSpeed: 14
-      gemCap: 124.62114
-      peopleCap: 108.27642
-    componentMass: 15.006784
-    lockedInUpgradeTree: 0
-  - chassisId: HyperFalcon_19
-    upgradeTreeShipName: Bolt
-    prefab: {fileID: 1344076883211271124, guid: 53f75bca70c86c14282f84bdc6b3f1ab, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: 3ab243a7e56d77e49bca507db4148da8, type: 3}
-    teamMenuPreviewSprites:
-    - variantName: TeamA
-      team: 1
-      sprite: {fileID: 21300000, guid: 3ab243a7e56d77e49bca507db4148da8, type: 3}
-    - variantName: TeamB
-      team: 2
-      sprite: {fileID: 21300000, guid: 358925beff1facf448d5a8e13393e5f4, type: 3}
-    - variantName: TeamC
-      team: 3
-      sprite: {fileID: 21300000, guid: e2f0562aac99296459f9b81f973e096a, type: 3}
-    - variantName: TeamD
-      team: 4
-      sprite: {fileID: 21300000, guid: aa1ffba7a438d824d808813f831e148e, type: 3}
-    - variantName: TeamE
-      team: 5
-      sprite: {fileID: 21300000, guid: 418ad188049f43944ab2b14c592af51f, type: 3}
-    theatricalMenuPreviewSprite: {fileID: 21300000, guid: 3ab243a7e56d77e49bca507db4148da8, type: 3}
-    teamTheatricalMenuPreviewSprites:
-    - variantName: TeamA
-      team: 1
-      sprite: {fileID: 21300000, guid: 3ab243a7e56d77e49bca507db4148da8, type: 3}
-    - variantName: TeamB
-      team: 2
-      sprite: {fileID: 21300000, guid: 358925beff1facf448d5a8e13393e5f4, type: 3}
-    - variantName: TeamC
-      team: 3
-      sprite: {fileID: 21300000, guid: e2f0562aac99296459f9b81f973e096a, type: 3}
-    - variantName: TeamD
-      team: 4
-      sprite: {fileID: 21300000, guid: aa1ffba7a438d824d808813f831e148e, type: 3}
-    - variantName: TeamE
-      team: 5
-      sprite: {fileID: 21300000, guid: 418ad188049f43944ab2b14c592af51f, type: 3}
-    minHomePlanetLevel: 6
-    powerScore: 372.73288
-    powerScoreAtMaxLevel: 843.36005
-    powerScoreBreakdown:
-      offense: 19
-      defense: 96.85287
-      energy: 70
-      mobility: 37.83
-      capacity: 162
-      firePower: 3
-      bulletSpeed: 12
-      fireRate: 3
-      sustainedDps: 0
-      rammingPower: 1
-      healthCap: 92.94751
-      healthRegen: 3.9053574
-      energyCap: 60
-      energyRegen: 10
-      moveSpeed: 8.88
-      turnSpeed: 14
-      gemCap: 92
-      peopleCap: 70
-    powerScoreBreakdownAtShipLevel:
       offense: 20.25
-      defense: 267.84003
-      energy: 147
-      mobility: 53.12
-      capacity: 382
+      defense: 426.1188
+      energy: 161
+      mobility: 67.55
+      capacity: 331
       firePower: 3
       bulletSpeed: 12
       fireRate: 3
       sustainedDps: 0
       rammingPower: 2.25
-      healthCap: 257.04004
-      healthRegen: 10.8
-      energyCap: 126
-      energyRegen: 21
-      moveSpeed: 11.52
+      healthCap: 408.93658
+      healthRegen: 17.182209
+      energyCap: 138
+      energyRegen: 23
+      moveSpeed: 19.2
+      turnSpeed: 15
+      gemCap: 163
+      peopleCap: 168
+    componentMass: 13.279276
+    lockedInUpgradeTree: 0
+  - chassisId: HyperFalcon_02
+    upgradeTreeShipName: Divewind
+    prefab: {fileID: 6431040843001023359, guid: 74ffec7e11c266c418900c7e17d00534, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: b01c0ec983cd2bc4b8138750556469e5, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: TeamA
+      team: 1
+      sprite: {fileID: 21300000, guid: b01c0ec983cd2bc4b8138750556469e5, type: 3}
+    - variantName: TeamB
+      team: 2
+      sprite: {fileID: 21300000, guid: fd43680d4fa130349bcdb26c61634c9e, type: 3}
+    - variantName: TeamC
+      team: 3
+      sprite: {fileID: 21300000, guid: 1ef163d97e182ae4eb79a71132d5e1a4, type: 3}
+    - variantName: TeamD
+      team: 4
+      sprite: {fileID: 21300000, guid: 21e7f4058fbde9f44bf3ae6ee6979b55, type: 3}
+    - variantName: TeamE
+      team: 5
+      sprite: {fileID: 21300000, guid: d55692e737551ee438b7ab63c152e566, type: 3}
+    theatricalMenuPreviewSprite: {fileID: 21300000, guid: b01c0ec983cd2bc4b8138750556469e5, type: 3}
+    teamTheatricalMenuPreviewSprites:
+    - variantName: TeamA
+      team: 1
+      sprite: {fileID: 21300000, guid: b01c0ec983cd2bc4b8138750556469e5, type: 3}
+    - variantName: TeamB
+      team: 2
+      sprite: {fileID: 21300000, guid: fd43680d4fa130349bcdb26c61634c9e, type: 3}
+    - variantName: TeamC
+      team: 3
+      sprite: {fileID: 21300000, guid: 1ef163d97e182ae4eb79a71132d5e1a4, type: 3}
+    - variantName: TeamD
+      team: 4
+      sprite: {fileID: 21300000, guid: 21e7f4058fbde9f44bf3ae6ee6979b55, type: 3}
+    - variantName: TeamE
+      team: 5
+      sprite: {fileID: 21300000, guid: d55692e737551ee438b7ab63c152e566, type: 3}
+    minHomePlanetLevel: 5
+    powerScore: 183.59654
+    powerScoreAtMaxLevel: 763.74963
+    powerScoreBreakdown:
+      offense: 19.25
+      defense: 48.81136
+      energy: 27.549706
+      mobility: 29.49
+      capacity: 66.90806
+      firePower: 3
+      bulletSpeed: 12
+      fireRate: 3
+      sustainedDps: 0
+      rammingPower: 1.25
+      healthCap: 46.84316
+      healthRegen: 1.9681996
+      energyCap: 23.614033
+      energyRegen: 3.935672
+      moveSpeed: 7.44
       turnSpeed: 14
-      gemCap: 202
-      peopleCap: 180
-    componentMass: 22.027992
+      gemCap: 35.694813
+      peopleCap: 31.213247
+    powerScoreBreakdownAtShipLevel:
+      offense: 20.25
+      defense: 343.773
+      energy: 89.53654
+      mobility: 42
+      capacity: 285.84006
+      firePower: 3
+      bulletSpeed: 12
+      fireRate: 3
+      sustainedDps: 0
+      rammingPower: 2.25
+      healthCap: 329.9112
+      healthRegen: 13.861812
+      energyCap: 76.745605
+      energyRegen: 12.790935
+      moveSpeed: 9.6
+      turnSpeed: 14
+      gemCap: 140.66081
+      peopleCap: 145.17924
+    componentMass: 7.7465672
+    lockedInUpgradeTree: 0
+  - chassisId: HyperFalcon_05
+    upgradeTreeShipName: Overdrive
+    prefab: {fileID: 8844493127646110690, guid: c0401d063f9f15e4089eb3bf81f6c07a, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: f5d3b855d1ce5ac449b0a9da33e551f5, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: TeamA
+      team: 1
+      sprite: {fileID: 21300000, guid: f5d3b855d1ce5ac449b0a9da33e551f5, type: 3}
+    - variantName: TeamB
+      team: 2
+      sprite: {fileID: 21300000, guid: 672b7834bfacfcc43999a79f96e5637f, type: 3}
+    - variantName: TeamC
+      team: 3
+      sprite: {fileID: 21300000, guid: a3a84a522abb62e46aaaaf781dd2b83b, type: 3}
+    - variantName: TeamD
+      team: 4
+      sprite: {fileID: 21300000, guid: 5ac8112be2cdc9943b6abd2c7dd2aeda, type: 3}
+    - variantName: TeamE
+      team: 5
+      sprite: {fileID: 21300000, guid: 3641c9c95e86ed74b93a60eb5fe7bd42, type: 3}
+    theatricalMenuPreviewSprite: {fileID: 21300000, guid: f5d3b855d1ce5ac449b0a9da33e551f5, type: 3}
+    teamTheatricalMenuPreviewSprites:
+    - variantName: TeamA
+      team: 1
+      sprite: {fileID: 21300000, guid: f5d3b855d1ce5ac449b0a9da33e551f5, type: 3}
+    - variantName: TeamB
+      team: 2
+      sprite: {fileID: 21300000, guid: 672b7834bfacfcc43999a79f96e5637f, type: 3}
+    - variantName: TeamC
+      team: 3
+      sprite: {fileID: 21300000, guid: a3a84a522abb62e46aaaaf781dd2b83b, type: 3}
+    - variantName: TeamD
+      team: 4
+      sprite: {fileID: 21300000, guid: 5ac8112be2cdc9943b6abd2c7dd2aeda, type: 3}
+    - variantName: TeamE
+      team: 5
+      sprite: {fileID: 21300000, guid: 3641c9c95e86ed74b93a60eb5fe7bd42, type: 3}
+    minHomePlanetLevel: 5
+    powerScore: 187.37178
+    powerScoreAtMaxLevel: 928.7421
+    powerScoreBreakdown:
+      offense: 19.25
+      defense: 58.706387
+      energy: 36.6688
+      mobility: 18.055
+      capacity: 61.33659
+      firePower: 3
+      bulletSpeed: 12
+      fireRate: 3
+      sustainedDps: 0
+      rammingPower: 1.25
+      healthCap: 56.339195
+      healthRegen: 2.367193
+      energyCap: 31.4304
+      energyRegen: 5.2384
+      moveSpeed: 8.16
+      turnSpeed: 1.5
+      gemCap: 31.801954
+      peopleCap: 29.534636
+    powerScoreBreakdownAtShipLevel:
+      offense: 20.25
+      defense: 461.16473
+      energy: 119.1736
+      mobility: 53.65
+      capacity: 295.60376
+      firePower: 3
+      bulletSpeed: 12
+      fireRate: 3
+      sustainedDps: 0
+      rammingPower: 2.25
+      healthCap: 442.5694
+      healthRegen: 18.59535
+      energyCap: 102.1488
+      energyRegen: 17.0248
+      moveSpeed: 16.800001
+      turnSpeed: 15
+      gemCap: 144.43555
+      peopleCap: 151.16823
+    componentMass: 14.0440035
     lockedInUpgradeTree: 0
   - chassisId: HyperFalcon_17
     upgradeTreeShipName: Gustail
@@ -2171,47 +2091,127 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 5168e13178a6cb44aa37358abac72f3e, type: 3}
     minHomePlanetLevel: 6
-    powerScore: 312.32196
-    powerScoreAtMaxLevel: 852.1198
+    powerScore: 240.40244
+    powerScoreAtMaxLevel: 1708.2979
     powerScoreBreakdown:
-      offense: 19
-      defense: 78.40572
-      energy: 42.350002
-      mobility: 39.22
-      capacity: 147.44623
+      offense: 19.25
+      defense: 86.97892
+      energy: 19.25
+      mobility: 22.865002
+      capacity: 104.50102
       firePower: 3
       bulletSpeed: 12
       fireRate: 3
       sustainedDps: 0
-      rammingPower: 1
-      healthCap: 75.2442
-      healthRegen: 3.161521
-      energyCap: 36.300003
-      energyRegen: 6.05
-      moveSpeed: 9.12
-      turnSpeed: 14
-      gemCap: 82.558426
-      peopleCap: 64.8878
+      rammingPower: 1.25
+      healthCap: 83.4717
+      healthRegen: 3.507214
+      energyCap: 16.5
+      energyRegen: 2.75
+      moveSpeed: 9.359999
+      turnSpeed: 3.5
+      gemCap: 53.052658
+      peopleCap: 51.448368
     powerScoreBreakdownAtShipLevel:
-      offense: 20.25
-      defense: 289.02512
-      energy: 84.700005
-      mobility: 54.510002
-      capacity: 431.6347
+      offense: 20.5
+      defense: 833.1276
+      energy: 103.950005
+      mobility: 119.28
+      capacity: 675.1002
       firePower: 3
       bulletSpeed: 12
       fireRate: 3
       sustainedDps: 0
-      rammingPower: 2.25
-      healthCap: 277.37088
-      healthRegen: 11.654238
-      energyCap: 72.600006
-      energyRegen: 12.1
-      moveSpeed: 11.76
-      turnSpeed: 14
-      gemCap: 220.57031
-      peopleCap: 211.06438
+      rammingPower: 2.5
+      healthCap: 799.53375
+      healthRegen: 33.593857
+      energyCap: 89.100006
+      energyRegen: 14.85
+      moveSpeed: 33.12
+      turnSpeed: 42
+      gemCap: 329.00226
+      peopleCap: 346.09796
     componentMass: 18.061779
+    lockedInUpgradeTree: 0
+  - chassisId: HyperFalcon_19
+    upgradeTreeShipName: Bolt
+    prefab: {fileID: 1344076883211271124, guid: 53f75bca70c86c14282f84bdc6b3f1ab, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 3ab243a7e56d77e49bca507db4148da8, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: TeamA
+      team: 1
+      sprite: {fileID: 21300000, guid: 3ab243a7e56d77e49bca507db4148da8, type: 3}
+    - variantName: TeamB
+      team: 2
+      sprite: {fileID: 21300000, guid: 358925beff1facf448d5a8e13393e5f4, type: 3}
+    - variantName: TeamC
+      team: 3
+      sprite: {fileID: 21300000, guid: e2f0562aac99296459f9b81f973e096a, type: 3}
+    - variantName: TeamD
+      team: 4
+      sprite: {fileID: 21300000, guid: aa1ffba7a438d824d808813f831e148e, type: 3}
+    - variantName: TeamE
+      team: 5
+      sprite: {fileID: 21300000, guid: 418ad188049f43944ab2b14c592af51f, type: 3}
+    theatricalMenuPreviewSprite: {fileID: 21300000, guid: 3ab243a7e56d77e49bca507db4148da8, type: 3}
+    teamTheatricalMenuPreviewSprites:
+    - variantName: TeamA
+      team: 1
+      sprite: {fileID: 21300000, guid: 3ab243a7e56d77e49bca507db4148da8, type: 3}
+    - variantName: TeamB
+      team: 2
+      sprite: {fileID: 21300000, guid: 358925beff1facf448d5a8e13393e5f4, type: 3}
+    - variantName: TeamC
+      team: 3
+      sprite: {fileID: 21300000, guid: e2f0562aac99296459f9b81f973e096a, type: 3}
+    - variantName: TeamD
+      team: 4
+      sprite: {fileID: 21300000, guid: aa1ffba7a438d824d808813f831e148e, type: 3}
+    - variantName: TeamE
+      team: 5
+      sprite: {fileID: 21300000, guid: 418ad188049f43944ab2b14c592af51f, type: 3}
+    minHomePlanetLevel: 6
+    powerScore: 233.63564
+    powerScoreAtMaxLevel: 1643.4406
+    powerScoreBreakdown:
+      offense: 19.25
+      defense: 82.28357
+      energy: 35
+      mobility: 22.010002
+      capacity: 83.48207
+      firePower: 3
+      bulletSpeed: 12
+      fireRate: 3
+      sustainedDps: 0
+      rammingPower: 1.25
+      healthCap: 78.96568
+      healthRegen: 3.3178852
+      energyCap: 30
+      energyRegen: 5
+      moveSpeed: 9.119999
+      turnSpeed: 3
+      gemCap: 43.741035
+      peopleCap: 39.74103
+    powerScoreBreakdownAtShipLevel:
+      offense: 20.5
+      defense: 816.4157
+      energy: 189
+      mobility: 109.020004
+      capacity: 550.78485
+      firePower: 3
+      bulletSpeed: 12
+      fireRate: 3
+      sustainedDps: 0
+      rammingPower: 2.5
+      healthCap: 783.4957
+      healthRegen: 32.919987
+      energyCap: 162
+      energyRegen: 27
+      moveSpeed: 30.239998
+      turnSpeed: 36
+      gemCap: 271.89243
+      peopleCap: 278.89243
+    componentMass: 22.027992
     lockedInUpgradeTree: 0
   - chassisId: HyperFalcon_16
     upgradeTreeShipName: Plungewind
@@ -2251,46 +2251,46 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: c1357e88e40f3e343b82aa94f96862fb, type: 3}
     minHomePlanetLevel: 6
-    powerScore: 282.75873
-    powerScoreAtMaxLevel: 713.9289
+    powerScore: 203.24542
+    powerScoreAtMaxLevel: 1384.8651
     powerScoreBreakdown:
-      offense: 19
-      defense: 61.738716
-      energy: 61.600002
-      mobility: 39.22
-      capacity: 115.3
+      offense: 19.25
+      defense: 68.23543
+      energy: 28
+      mobility: 22.865002
+      capacity: 75.149994
       firePower: 3
       bulletSpeed: 12
       fireRate: 3
       sustainedDps: 0
-      rammingPower: 1
-      healthCap: 59.249252
-      healthRegen: 2.4894643
-      energyCap: 52.800003
-      energyRegen: 8.8
-      moveSpeed: 9.12
-      turnSpeed: 14
-      gemCap: 66.8
-      peopleCap: 48.5
+      rammingPower: 1.25
+      healthCap: 65.484
+      healthRegen: 2.7514286
+      energyCap: 24
+      energyRegen: 4
+      moveSpeed: 9.359999
+      turnSpeed: 3.5
+      gemCap: 39.8
+      peopleCap: 35.35
     powerScoreBreakdownAtShipLevel:
-      offense: 20.25
-      defense: 223.51888
-      energy: 123.200005
-      mobility: 54.510002
-      capacity: 320.45
+      offense: 20.5
+      defense: 657.0451
+      energy: 151.20001
+      mobility: 119.28
+      capacity: 480.50003
       firePower: 3
       bulletSpeed: 12
       fireRate: 3
       sustainedDps: 0
-      rammingPower: 2.25
-      healthCap: 214.50601
-      healthRegen: 9.012857
-      energyCap: 105.600006
-      energyRegen: 17.6
-      moveSpeed: 11.76
-      turnSpeed: 14
-      gemCap: 170.2
-      peopleCap: 150.25
+      rammingPower: 2.5
+      healthCap: 630.55133
+      healthRegen: 26.493748
+      energyCap: 129.6
+      energyRegen: 21.6
+      moveSpeed: 33.12
+      turnSpeed: 42
+      gemCap: 237.80002
+      peopleCap: 242.70001
     componentMass: 18.1
     lockedInUpgradeTree: 0
   - chassisId: HyperFalcon_18
@@ -2331,207 +2331,207 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 24bd784f54ee11a4c946830c56be99d3, type: 3}
     minHomePlanetLevel: 6
-    powerScore: 295.31973
-    powerScoreAtMaxLevel: 733.8709
+    powerScore: 202.01099
+    powerScoreAtMaxLevel: 1315.8207
     powerScoreBreakdown:
-      offense: 19
-      defense: 67.03972
-      energy: 70
-      mobility: 37.83
-      capacity: 114.4
+      offense: 19.25
+      defense: 65.96035
+      energy: 35
+      mobility: 22.010002
+      capacity: 68.18063
       firePower: 3
       bulletSpeed: 12
       fireRate: 3
       sustainedDps: 0
-      rammingPower: 1
-      healthCap: 64.3365
-      healthRegen: 2.7032144
-      energyCap: 60
-      energyRegen: 10
-      moveSpeed: 8.88
-      turnSpeed: 14
-      gemCap: 66.4
-      peopleCap: 48
+      rammingPower: 1.25
+      healthCap: 63.300655
+      healthRegen: 2.6596913
+      energyCap: 30
+      energyRegen: 5
+      moveSpeed: 9.119999
+      turnSpeed: 3
+      gemCap: 36.390316
+      peopleCap: 31.790318
     powerScoreBreakdownAtShipLevel:
-      offense: 20.25
-      defense: 225.75089
-      energy: 147
-      mobility: 53.12
-      capacity: 314.6
+      offense: 20.5
+      defense: 632.81305
+      energy: 189
+      mobility: 109.020004
+      capacity: 406.76764
       firePower: 3
       bulletSpeed: 12
       fireRate: 3
       sustainedDps: 0
-      rammingPower: 2.25
-      healthCap: 216.64803
-      healthRegen: 9.102857
-      energyCap: 126
-      energyRegen: 21
-      moveSpeed: 11.52
-      turnSpeed: 14
-      gemCap: 167.6
-      peopleCap: 147
+      rammingPower: 2.5
+      healthCap: 607.2964
+      healthRegen: 25.516655
+      energyCap: 162
+      energyRegen: 27
+      moveSpeed: 30.239998
+      turnSpeed: 36
+      gemCap: 201.28381
+      peopleCap: 205.48383
     componentMass: 19.28497
     lockedInUpgradeTree: 0
-  - chassisId: HyperFalcon_20
-    upgradeTreeShipName: Burstail
-    prefab: {fileID: 8502949886050205693, guid: 22124f0ba44537547bfd80bcdb9bed0f, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: 7b8f8abee8f4f1143aeea5150e3cf173, type: 3}
+  - chassisId: HyperFalcon_09
+    upgradeTreeShipName: Peakwind
+    prefab: {fileID: 5015609858578011754, guid: 00a4ee30e7d043f409030ebb13180816, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 8518f01ffde49b5428719eabb0d96ca5, type: 3}
     teamMenuPreviewSprites:
     - variantName: TeamA
       team: 1
-      sprite: {fileID: 21300000, guid: 7b8f8abee8f4f1143aeea5150e3cf173, type: 3}
+      sprite: {fileID: 21300000, guid: 8518f01ffde49b5428719eabb0d96ca5, type: 3}
     - variantName: TeamB
       team: 2
-      sprite: {fileID: 21300000, guid: 55f667961eddc1040a66a2ffd2c50a6c, type: 3}
+      sprite: {fileID: 21300000, guid: 12b734f9c98310d4e86fd3978a15a740, type: 3}
     - variantName: TeamC
       team: 3
-      sprite: {fileID: 21300000, guid: 0ad9eb411766aec4fb2ea816852f85bb, type: 3}
+      sprite: {fileID: 21300000, guid: 39ee1ab8bf907c34db43ad63d35739d8, type: 3}
     - variantName: TeamD
       team: 4
-      sprite: {fileID: 21300000, guid: 2b999d5d44f74374497218b3dc6779aa, type: 3}
+      sprite: {fileID: 21300000, guid: b7f9fef01ade825419a4a8d5a764f357, type: 3}
     - variantName: TeamE
       team: 5
-      sprite: {fileID: 21300000, guid: a055d359c1d0dbe4e99c27d39a73f0b9, type: 3}
-    theatricalMenuPreviewSprite: {fileID: 21300000, guid: 7b8f8abee8f4f1143aeea5150e3cf173, type: 3}
+      sprite: {fileID: 21300000, guid: 5be264939cfea8c49a4e3f689a7a0824, type: 3}
+    theatricalMenuPreviewSprite: {fileID: 21300000, guid: 8518f01ffde49b5428719eabb0d96ca5, type: 3}
     teamTheatricalMenuPreviewSprites:
     - variantName: TeamA
       team: 1
-      sprite: {fileID: 21300000, guid: 7b8f8abee8f4f1143aeea5150e3cf173, type: 3}
+      sprite: {fileID: 21300000, guid: 8518f01ffde49b5428719eabb0d96ca5, type: 3}
     - variantName: TeamB
       team: 2
-      sprite: {fileID: 21300000, guid: 55f667961eddc1040a66a2ffd2c50a6c, type: 3}
+      sprite: {fileID: 21300000, guid: 12b734f9c98310d4e86fd3978a15a740, type: 3}
     - variantName: TeamC
       team: 3
-      sprite: {fileID: 21300000, guid: 0ad9eb411766aec4fb2ea816852f85bb, type: 3}
+      sprite: {fileID: 21300000, guid: 39ee1ab8bf907c34db43ad63d35739d8, type: 3}
     - variantName: TeamD
       team: 4
-      sprite: {fileID: 21300000, guid: 2b999d5d44f74374497218b3dc6779aa, type: 3}
+      sprite: {fileID: 21300000, guid: b7f9fef01ade825419a4a8d5a764f357, type: 3}
     - variantName: TeamE
       team: 5
-      sprite: {fileID: 21300000, guid: a055d359c1d0dbe4e99c27d39a73f0b9, type: 3}
+      sprite: {fileID: 21300000, guid: 5be264939cfea8c49a4e3f689a7a0824, type: 3}
     minHomePlanetLevel: 6
-    powerScore: 254.58623
-    powerScoreAtMaxLevel: 649.27136
+    powerScore: 198.14041
+    powerScoreAtMaxLevel: 1166.9796
     powerScoreBreakdown:
-      offense: 19
-      defense: 63.133717
-      energy: 34.65
-      mobility: 36.44
-      capacity: 113.5
+      offense: 19.25
+      defense: 47.04404
+      energy: 64.211586
+      mobility: 21.369999
+      capacity: 56.24479
       firePower: 3
       bulletSpeed: 12
       fireRate: 3
       sustainedDps: 0
-      rammingPower: 1
-      healthCap: 60.588
-      healthRegen: 2.5457144
-      energyCap: 29.7
-      energyRegen: 4.9500003
-      moveSpeed: 8.64
-      turnSpeed: 14
-      gemCap: 66
-      peopleCap: 47.5
+      rammingPower: 1.25
+      healthCap: 45.147102
+      healthRegen: 1.8969369
+      energyCap: 55.0385
+      energyRegen: 9.173084
+      moveSpeed: 8.639999
+      turnSpeed: 1
+      gemCap: 30.442127
+      peopleCap: 25.80266
     powerScoreBreakdownAtShipLevel:
-      offense: 20.25
-      defense: 217.24138
-      energy: 77
-      mobility: 51.73
-      capacity: 308.75
+      offense: 20.5
+      defense: 406.62482
+      energy: 436.73245
+      mobility: 101.34
+      capacity: 266.14233
       firePower: 3
       bulletSpeed: 12
       fireRate: 3
       sustainedDps: 0
-      rammingPower: 2.25
-      healthCap: 208.48164
-      healthRegen: 8.759732
-      energyCap: 66
-      energyRegen: 11
-      moveSpeed: 11.28
-      turnSpeed: 14
-      gemCap: 165
-      peopleCap: 143.75
-    componentMass: 13.286121
+      rammingPower: 2.5
+      healthCap: 390.22867
+      healthRegen: 16.396162
+      energyCap: 374.3421
+      energyRegen: 62.390358
+      moveSpeed: 24.479998
+      turnSpeed: 12
+      gemCap: 131.06326
+      peopleCap: 135.07909
+    componentMass: 15.006784
     lockedInUpgradeTree: 0
-  - chassisId: HyperFalcon_15
-    upgradeTreeShipName: Foldwing
-    prefab: {fileID: 4144724020860529509, guid: 8b97525675c7a5f4d9fe03156465278d, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: 1e8f895a7ef65454795f419b402810d4, type: 3}
+  - chassisId: HyperFalcon_09B
+    upgradeTreeShipName: Peakgust
+    prefab: {fileID: 5015609858578011754, guid: 00a4ee30e7d043f409030ebb13180816, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 8518f01ffde49b5428719eabb0d96ca5, type: 3}
     teamMenuPreviewSprites:
     - variantName: TeamA
       team: 1
-      sprite: {fileID: 21300000, guid: 1e8f895a7ef65454795f419b402810d4, type: 3}
+      sprite: {fileID: 21300000, guid: 8518f01ffde49b5428719eabb0d96ca5, type: 3}
     - variantName: TeamB
       team: 2
-      sprite: {fileID: 21300000, guid: 230762cb1c8e0ba4aa0e85b31ad7ae9d, type: 3}
+      sprite: {fileID: 21300000, guid: 12b734f9c98310d4e86fd3978a15a740, type: 3}
     - variantName: TeamC
       team: 3
-      sprite: {fileID: 21300000, guid: 1582e9f0d76590a44a8773f791be5000, type: 3}
+      sprite: {fileID: 21300000, guid: 39ee1ab8bf907c34db43ad63d35739d8, type: 3}
     - variantName: TeamD
       team: 4
-      sprite: {fileID: 21300000, guid: c969823630b5e4f458b8d5749a002126, type: 3}
+      sprite: {fileID: 21300000, guid: b7f9fef01ade825419a4a8d5a764f357, type: 3}
     - variantName: TeamE
       team: 5
-      sprite: {fileID: 21300000, guid: 2a0701d72c17ebd4096590ab6b265147, type: 3}
-    theatricalMenuPreviewSprite: {fileID: 21300000, guid: 1e8f895a7ef65454795f419b402810d4, type: 3}
+      sprite: {fileID: 21300000, guid: 5be264939cfea8c49a4e3f689a7a0824, type: 3}
+    theatricalMenuPreviewSprite: {fileID: 21300000, guid: f792916d55d4a1d4a826a370170c0a47, type: 3}
     teamTheatricalMenuPreviewSprites:
     - variantName: TeamA
       team: 1
-      sprite: {fileID: 21300000, guid: 1e8f895a7ef65454795f419b402810d4, type: 3}
+      sprite: {fileID: 21300000, guid: f792916d55d4a1d4a826a370170c0a47, type: 3}
     - variantName: TeamB
       team: 2
-      sprite: {fileID: 21300000, guid: 230762cb1c8e0ba4aa0e85b31ad7ae9d, type: 3}
+      sprite: {fileID: 21300000, guid: d93c113ef258f594cb550e683d8f962a, type: 3}
     - variantName: TeamC
       team: 3
-      sprite: {fileID: 21300000, guid: 1582e9f0d76590a44a8773f791be5000, type: 3}
+      sprite: {fileID: 21300000, guid: a04f10d5ea7dde14a893e746742dcd7e, type: 3}
     - variantName: TeamD
       team: 4
-      sprite: {fileID: 21300000, guid: c969823630b5e4f458b8d5749a002126, type: 3}
+      sprite: {fileID: 21300000, guid: d4265f010a6dcfa4fa19a71793198991, type: 3}
     - variantName: TeamE
       team: 5
-      sprite: {fileID: 21300000, guid: 2a0701d72c17ebd4096590ab6b265147, type: 3}
+      sprite: {fileID: 21300000, guid: fc6b284b06ae0b74f9e7bd0816488483, type: 3}
     minHomePlanetLevel: 6
-    powerScore: 243.82915
-    powerScoreAtMaxLevel: 679.16833
+    powerScore: 198.14041
+    powerScoreAtMaxLevel: 1166.9796
     powerScoreBreakdown:
-      offense: 19
-      defense: 53.24915
-      energy: 52.5
-      mobility: 37.83
-      capacity: 94.2
+      offense: 19.25
+      defense: 47.04404
+      energy: 64.211586
+      mobility: 21.369999
+      capacity: 56.24479
       firePower: 3
       bulletSpeed: 12
       fireRate: 3
       sustainedDps: 0
-      rammingPower: 1
-      healthCap: 51.102005
-      healthRegen: 2.147143
-      energyCap: 45
-      energyRegen: 7.5
-      moveSpeed: 8.88
-      turnSpeed: 14
-      gemCap: 55.2
-      peopleCap: 39
+      rammingPower: 1.25
+      healthCap: 45.147102
+      healthRegen: 1.8969369
+      energyCap: 55.0385
+      energyRegen: 9.173084
+      moveSpeed: 8.639999
+      turnSpeed: 1
+      gemCap: 30.442127
+      peopleCap: 25.80266
     powerScoreBreakdownAtShipLevel:
-      offense: 20.25
-      defense: 218.0983
-      energy: 110.25
-      mobility: 53.12
-      capacity: 304.3
+      offense: 20.5
+      defense: 406.62482
+      energy: 436.73245
+      mobility: 101.34
+      capacity: 266.14233
       firePower: 3
       bulletSpeed: 12
       fireRate: 3
       sustainedDps: 0
-      rammingPower: 2.25
-      healthCap: 209.30402
-      healthRegen: 8.794286
-      energyCap: 94.5
-      energyRegen: 15.75
-      moveSpeed: 11.52
-      turnSpeed: 14
-      gemCap: 160.8
-      peopleCap: 143.5
-    componentMass: 16.074923
+      rammingPower: 2.5
+      healthCap: 390.22867
+      healthRegen: 16.396162
+      energyCap: 374.3421
+      energyRegen: 62.390358
+      moveSpeed: 24.479998
+      turnSpeed: 12
+      gemCap: 131.06326
+      peopleCap: 135.07909
+    componentMass: 15.006784
     lockedInUpgradeTree: 0
   teamMaterials:
   - variantName: 

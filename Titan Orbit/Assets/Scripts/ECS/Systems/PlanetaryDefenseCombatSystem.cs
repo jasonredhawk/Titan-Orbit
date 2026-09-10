@@ -408,6 +408,9 @@ namespace TitanOrbit.ECS
                     var slot = slots[s];
                     if (slot.Amount <= 0.01f || slot.Health <= 0f)
                         continue;
+                    if (slot.InFlight == 0 &&
+                        ShipMoonDockState.IsFullyLandedOnMoon(EntityManager, ship))
+                        continue;
                     float3 pos = slot.Position;
                     pos.y = PlanetaryDefenseMath.FixedY;
 

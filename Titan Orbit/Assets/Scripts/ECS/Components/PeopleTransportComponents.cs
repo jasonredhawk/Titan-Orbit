@@ -145,7 +145,7 @@ namespace TitanOrbit.ECS
         /// <summary>People packed in this sphere.</summary>
         public float Amount;
 
-        /// <summary>Hull points. Replicated to clients via <see cref="ShipEscortVitals"/>.</summary>
+        /// <summary>Hull points. Replicated to clients via <see cref="PeopleEscortVitalElement"/>.</summary>
         public float Health;
 
         /// <summary>Landing cruise speed (world units / sec).</summary>
@@ -171,6 +171,12 @@ namespace TitanOrbit.ECS
         /// ride the ship pose. 0 while still swarming in at its own cruise.
         /// </summary>
         public byte Riding;
+
+        /// <summary>
+        /// Stable aft-pack seat. Assigned at spawn and never reused until this
+        /// slot is destroyed — adding or losing a capsule must not move the others.
+        /// </summary>
+        public byte SeatId;
     }
 
     /// <summary>
@@ -185,33 +191,16 @@ namespace TitanOrbit.ECS
     }
 
     /// <summary>
-    /// Compact ghosted escort HP for nameplates. 8 slots × 1-byte health + amount (16 bytes)
-    /// plus count / in-flight mask. Not a per-capsule ghost.
+    /// Ghosted escort HP / amount for nameplates. One element per live capsule
+    /// (matched by <see cref="SeatId"/>). 4 bytes each — not a per-capsule ghost.
+    /// Must bake on the starship ghost so GhostFields replicate.
     /// </summary>
-    public struct ShipEscortVitals : IComponentData
+    [InternalBufferCapacity(16)]
+    public struct PeopleEscortVitalElement : IBufferElementData
     {
-        public const int MaxSlots = 8;
-
-        [GhostField] public ulong HealthPacked;
-        [GhostField] public ulong AmountPacked;
-        [GhostField] public byte Count;
-        [GhostField] public byte InFlightMask;
-
-        public float GetHealth(int index)
-        {
-            if (index < 0 || index >= MaxSlots)
-                return 0f;
-            return (HealthPacked >> (index * 8)) & 0xFFul;
-        }
-
-        public float GetAmount(int index)
-        {
-            if (index < 0 || index >= MaxSlots)
-                return 0f;
-            return (AmountPacked >> (index * 8)) & 0xFFul;
-        }
-
-        public bool IsInFlight(int index) =>
-            index >= 0 && index < MaxSlots && (InFlightMask & (1 << index)) != 0;
+        [GhostField] public byte SeatId;
+        [GhostField] public byte Health;
+        [GhostField] public byte Amount;
+        [GhostField] public byte InFlight;
     }
 }
