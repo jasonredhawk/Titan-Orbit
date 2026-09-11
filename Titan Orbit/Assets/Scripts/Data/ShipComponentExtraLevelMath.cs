@@ -84,6 +84,11 @@ namespace TitanOrbit.Data
     /// Weapon bullet speed is ability-only (no ship level, no N):
     /// <c>Base + PerExtraLevel × abilityLevel</c>
     /// </para>
+    /// <para>
+    /// [TITAN-ORBIT] Ramming has no own bottom-HUD slot. Fire Power purchases are the
+    /// stand-in (same mapping as cockpit mesh grow in <c>ShipComponentAttributeScaleLogic</c>):
+    /// <c>Base + PerExtraLevel × (shipLevel + FirePower)</c>.
+    /// </para>
     /// </summary>
     public static class ShipComponentExtraLevelMath
     {
@@ -209,9 +214,11 @@ namespace TitanOrbit.Data
                     shipLevel, 0, n, includeExtraComponentLevels: stackExtras),
                 fireRatePerExtraLevel = primary.fireRatePerExtraLevel,
 
+                // [TITAN-ORBIT] No Ramming chip — Fire Power ability is the stand-in.
+                // Buying Fire Power must raise hull ram the same way it raises gun damage.
                 rammingPower = Evaluate(
                     usedBase(primary.rammingPower), primary.rammingPowerPerExtraLevel,
-                    shipLevel, 0, n, includeExtraComponentLevels: stackExtras),
+                    shipLevel, attrs.FirePower, n, includeExtraComponentLevels: stackExtras),
                 rammingPowerPerExtraLevel = primary.rammingPowerPerExtraLevel,
 
                 healthCap = Evaluate(

@@ -66,6 +66,11 @@ namespace TitanOrbit.Data
         public float fireRatePerExtraLevel;
         /// <summary>Ramming offense rating for hull collisions.</summary>
         public float rammingPower;
+        /// <summary>
+        /// [TITAN-ORBIT] Ramming Per Extra Level — scales with ship level and Fire Power
+        /// ability purchases (no dedicated Ramming chip; Fire Power is the stand-in).
+        /// See <see cref="ShipComponentExtraLevelMath"/>.
+        /// </summary>
         [UnityEngine.Serialization.FormerlySerializedAs("rammingPowerPerAbilityLevel")]
         [UnityEngine.Serialization.FormerlySerializedAs("rammingPowerPerLevel")]
         [UnityEngine.Serialization.FormerlySerializedAs("rammingPowerPerShipLevel")]

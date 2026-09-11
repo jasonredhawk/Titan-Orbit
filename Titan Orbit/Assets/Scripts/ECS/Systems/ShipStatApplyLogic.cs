@@ -563,8 +563,8 @@ namespace TitanOrbit.ECS
                 motor.BrakeDeceleration = ShipMassLogic.DefaultBrakeDeceleration;
                 motor.HullMassReference = liveHullSize;
                 motor.ChassisReferenceHealth = referenceHealth;
-                // [TITAN-ORBIT] Ram/grind damage rating — level-scaled family sum (HUD uses the same field).
-                motor.RammingPower = Mathf.Max(0f, effective.rammingPower);
+                // [TITAN-ORBIT] Ram/grind damage rating — Extra Level family sum
+                // (ship level + Fire Power purchases). HUD reads the same motor field.
 
                 // [TITAN-ORBIT] OVERDRIVE: ExtraSpeedPercent (speed mul) from engines; absolute OD drain
                 // from effective.extraSpeedEnergyDrain (ship-tier + Move Speed ability steps).

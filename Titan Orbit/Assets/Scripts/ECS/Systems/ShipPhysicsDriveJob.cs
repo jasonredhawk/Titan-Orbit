@@ -129,7 +129,11 @@ namespace TitanOrbit.ECS
                 shipPhysicsRadius: PhysicsColliders.HasComponent(entity)
                     ? ShipPhysicsDriveLogic.MeasurePhysicsHullRadiusXZ(
                         PhysicsColliders[entity], transform.ValueRO)
-                    : -1f);
+                    : -1f,
+                hasHullCollider: PhysicsColliders.HasComponent(entity),
+                hullCollider: PhysicsColliders.HasComponent(entity)
+                    ? PhysicsColliders[entity]
+                    : default);
         }
     }
 }

@@ -355,10 +355,12 @@ namespace TitanOrbit.ECS
                 !planetStateById.TryGetValue(orbitPlanetId, out var planetState))
                 return false;
 
+            // [TITAN-ORBIT] InOrbitRing is hull-overlap from the drive job. Keep dwell when
+            // only a wing is in the band — do not require the pivot inside the annulus.
             float planetSize = math.max(0.5f, planetTransform.Scale);
             PlanetOrbitMath.GetRingRadiiWorld(planetSize, planetState.PlanetLevel, out float inner, out float outer, out _);
             float dist = ToroidalMapEcs.ToroidalDistance(shipPos, planetTransform.Position, mapW, mapH);
-            return PlanetOrbitMath.IsInOrbitRing(dist, inner, outer);
+            return PlanetOrbitMath.IsInOrbitRing(dist, inner, outer) || orbit.InOrbitRing;
         }
 
         static int GetShipNetworkId(ref SystemState state, Entity shipEntity)
@@ -941,9 +943,11 @@ namespace TitanOrbit.ECS
             if (moonDock.MoonPlanetId != 0 && moonDock.LandingProgress > 0.01f)
                 return false;
 
+            // [TITAN-ORBIT] InOrbitRing is hull-overlap from the drive job. Keep the load
+            // magnet on a wing-capture tick — do not require the pivot inside the annulus.
             PlanetOrbitMath.GetRingRadiiWorld(planetSize, planetLevel, out float inner, out float outer, out _);
             float dist = ToroidalMapEcs.ToroidalDistance(shipPos, planetPos, mapW, mapH);
-            return PlanetOrbitMath.IsInOrbitRing(dist, inner, outer);
+            return PlanetOrbitMath.IsInOrbitRing(dist, inner, outer) || orbit.InOrbitRing;
         }
 
         static void DeliverLoad(

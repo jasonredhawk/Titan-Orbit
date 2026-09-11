@@ -7,8 +7,8 @@ using Unity.Transforms;
 namespace TitanOrbit.ECS
 {
     /// <summary>
-    /// MEGA and regular ships use one Physics sphere. These helpers aim and test
-    /// against that sphere (compound child walks still work if an old blob remains).
+    /// MEGA and regular ships use one covering box fitted to the hull. These helpers
+    /// aim and test against that box (compound child walks still work if an old blob remains).
     /// </summary>
     public static class MegaShipCombatAim
     {

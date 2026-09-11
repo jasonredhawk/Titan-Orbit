@@ -258,7 +258,7 @@ namespace TitanOrbit.UI
             {
                 case 0:
                     AppendTenPercentPipeline(sb, parts, live, attrs, StatField.FirePower, "Fire Power", lv, live.EffectiveStats.firePower);
-                    AppendRelatedFireExtras(sb, parts, live);
+                    AppendRelatedFireExtras(sb, parts, live, lv);
                     BulletBankHudCopy.AppendFullSection(sb, in live, in attrs);
                     break;
                 case 1:
@@ -1200,11 +1200,15 @@ namespace TitanOrbit.UI
 
         /// <summary>
         /// Related weapon DPS + max ramming at full cruise (not current flight speed).
+        /// Ramming Extra Level uses Fire Power purchases — there is no Ramming chip.
+        /// Called from the Fire Power details card when the HUD snapshot rebuilds.
         /// </summary>
+        /// <param name="firePowerAbilityLv">Bottom-HUD Fire Power purchases (stand-in for RAM).</param>
         static void AppendRelatedFireExtras(
             StringBuilder sb,
             in ShipSpeedometerStatTooltips.PartCache parts,
-            in ShipSpeedometerStatTooltips.LiveContext live)
+            in ShipSpeedometerStatTooltips.LiveContext live,
+            int firePowerAbilityLv)
         {
             ShipStatTooltipChrome.AppendSectionBanner(sb, "RELATED", "FFAA66");
             // Chip / power-bar Fire Power lane uses this product (DPS), not /hit alone.
@@ -1219,7 +1223,10 @@ namespace TitanOrbit.UI
             sb.Append(FResult(dps)).Append("/s  ");
             sb.Append("<color=#5B7A94>").Append(FResult(live.Weapon.FireRate)).Append("/s</color>").AppendLine();
 
-            AppendStatCalcGrid(sb, in parts, in live, StatField.RammingPower, "RAM", 0, live.EffectiveStats.rammingPower);
+            // [TITAN-ORBIT] RAM Extra Level = shipLevel + Fire Power (same as EvaluatePool).
+            AppendStatCalcGrid(
+                sb, in parts, in live, StatField.RammingPower, "RAM",
+                firePowerAbilityLv, live.EffectiveStats.rammingPower);
 
             // [TITAN-ORBIT] Max impact at full cruise — RamAsteroidDamage on LiveContext is filled
             // with that static estimate by ShipSpeedometerHUD (not current speed).

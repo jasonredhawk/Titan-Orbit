@@ -107,7 +107,7 @@ namespace TitanOrbit.ECS
         /// <summary>
         /// Bump when hull material or covering-sphere bake changes so live ships rebuild once.
         /// </summary>
-        public const int HullMaterialRevision = 9;
+        public const int HullMaterialRevision = 10;
 
         struct CoveringBakeKey : System.IEquatable<CoveringBakeKey>
         {
@@ -441,11 +441,19 @@ namespace TitanOrbit.ECS
                     any = true;
                 }
 
+                // MEGA nested modules can lose Colliders after Dedicated Server Optimizations.
+                // Renderer bounds still give a fitted covering box (same as regular ships).
+                if (!any || !hull.IsValid)
+                    any = TryIncludeRendererAabb(root, presentationScale, ref hull);
+
                 if (!any || !hull.IsValid)
                     return false;
 
                 localCenter = hull.Center;
                 localExtents = hull.Extents * 0.5f + 0.04f;
+                // Planet / moon / asteroid spheres sit on y=0. A tall Titan AABB that
+                // lives entirely above the deck misses those worlds and tunnels.
+                IncludeFlightPlane(ref localCenter, ref localExtents);
                 if (math.cmax(localExtents) <= 0.01f)
                     return false;
 
@@ -516,6 +524,52 @@ namespace TitanOrbit.ECS
 #endif
             // Play Mode: destroy now so browsing ships cannot pile deferred clones.
             Object.DestroyImmediate(instance);
+        }
+
+        /// <summary>
+        /// Expands the covering box on Y so it always intersects the flight plane.
+        /// World spheres (planet, moon, asteroid) are centered at y=0; a Titan whose
+        /// measured AABB sits entirely above the deck would miss them and tunnel.
+        /// </summary>
+        static void IncludeFlightPlane(ref float3 center, ref float3 extents)
+        {
+            float top = center.y + extents.y;
+            float bottom = center.y - extents.y;
+            bottom = math.min(bottom, 0f);
+            top = math.max(top, 0f);
+            center.y = (top + bottom) * 0.5f;
+            extents.y = math.max(0.04f, (top - bottom) * 0.5f);
+        }
+
+        /// <summary>
+        /// When prefab Colliders are stripped, approximate the covering AABB from renderers
+        /// (same fallback regular ships used on the old compound bake).
+        /// </summary>
+        static bool TryIncludeRendererAabb(Transform root, float presentationScale, ref Aabb hull)
+        {
+            bool any = false;
+            var renderers = root.GetComponentsInChildren<Renderer>(true);
+            for (int i = 0; i < renderers.Length; i++)
+            {
+                var renderer = renderers[i];
+                if (renderer == null || renderer is ParticleSystemRenderer)
+                    continue;
+
+                Bounds bounds = renderer.bounds;
+                if (bounds.size.sqrMagnitude < 1e-6f)
+                    continue;
+
+                float3 center = (float3)root.InverseTransformPoint(bounds.center) * presentationScale;
+                float3 half = math.abs((float3)bounds.extents) * presentationScale;
+                if (math.cmax(half) < 0.005f)
+                    continue;
+
+                hull.Include(center - half);
+                hull.Include(center + half);
+                any = true;
+            }
+
+            return any && hull.IsValid;
         }
 
         static bool CoveringMatches(in PhysicsCollider existing, float3 center, float3 extents)
@@ -638,11 +692,9 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// MEGA hulls are nested StarSparrow module prefabs. Each module already has
-        /// Collider / Collider2 / … boxes (and occasional capsules). Instantiate once so
-        /// those nested colliders are visible, then bake them into the ghost PhysicsCollider.
-        /// Do not invent a hull sphere or renderer AABB — walking the prefab asset sees
-        /// stripped transforms and would fall back to the ghost-baked sphere.
+        /// MEGA hulls are nested StarSparrow module prefabs. Instantiate once so nested
+        /// colliders (or renderer bounds) are visible, then bake one covering box — the
+        /// same path as regular ships. Do not keep a multi-part compound.
         /// </summary>
         public static bool TryApplyMegaPartColliders(
             EntityManager em,

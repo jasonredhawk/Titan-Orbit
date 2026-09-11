@@ -4,7 +4,7 @@ namespace TitanOrbit.Simulation
 {
     /// <summary>
     /// World-space collision and presentation radii for ships, planets, and asteroids. Aligns
-    /// logical hit tests (bullets, orbit rings) with ECS visual scale — not bullet forgiveness
+    /// logical hit tests (bullets, orbit-ring disk fallback) with ECS visual scale — not bullet forgiveness
     /// radii in <see cref="BulletCollision"/>. Used by mining, orbit math, and legacy minimap.
     /// <para>
     /// [TITAN-ORBIT] Whole-hull tier growth: ship <c>LocalTransform.Scale</c> is

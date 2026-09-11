@@ -150,7 +150,8 @@ namespace TitanOrbit.ECS
                 ResolveMobilityRamInputs(in ship, in motor, out float totalMass, out float taxedAccel);
 
                 // [TITAN-ORBIT] Rating from ShipFamilyDefinition component rammingPower (summed +
-                // level-scaled in ShipStatApplyLogic → motor.RammingPower). Not a flat constant.
+                // Extra Level in ShipStatApplyLogic → motor.RammingPower). Fire Power purchases
+                // are the ability stand-in — there is no Ramming chip. Not a flat constant.
                 float familyRam = motor.RammingPower > 0.001f
                     ? motor.RammingPower
                     : ShipFamilyDefaultFallbackStats.CreateBaseline().rammingPower;

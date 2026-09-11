@@ -19,13 +19,13 @@ namespace TitanOrbit.ECS
     /// Predicted ship↔ship uses two-body impulse at that same <c>e</c>. Client remotes have
     /// no <see cref="PhysicsVelocity"/> — moving wall from ghosted <see cref="ShipKinematics"/>
     /// at the same <c>e</c>. PhysX materials stay restitution 0 so this pass owns rebound.
-    /// MEGA hulls plow asteroids / planets (restore pre-collision motion). Moon, shield,
-    /// planet, and asteroid share one wall bounce. Friendly shields are off via
+    /// MEGA hulls plow asteroids only (restore pre-collision motion). Planets and moons
+    /// use the same wall bounce as regular ships — undoing PhysX depenetration there
+    /// let Titans tunnel through the body. Friendly shields are off via
     /// <see cref="TitanOrbitPhysicsLayers.ShipForTeam"/>. Flying ships that PhysX
     /// exports from the moon rock onto the concentric shield rim get snapshot pose
-    /// restore (same idea as MEGA planet undo). Dock / takeoff skip bounce and restore
-    /// pose so PhysX cannot add a second shove. MEGA + friendly moon/shield also restore
-    /// pose so a regular-length takeoff is not followed by a long-hull depenetration yeet.
+    /// restore. Dock / takeoff skip bounce and restore pose so PhysX cannot add a
+    /// second shove.
     /// Server ram damage + client soft-destroy happen elsewhere.
     /// <para>
     /// Runs on ServerSimulation and ClientSimulation (predicted). Collision-event stream only —
@@ -34,7 +34,7 @@ namespace TitanOrbit.ECS
     /// </para>
     /// Pipeline: Drive → Snapshot → PhysicsSimulation → Export → ContactCollect →
     /// Bounce (this) → Friction → Wrap → Planar → Kinematics.
-    /// All hulls are single spheres (ship, rock, planet, moon, shield).
+    /// Ships use one covering box; rocks / planets / moons / shields are spheres.
     /// </summary>
     [UpdateInGroup(typeof(AfterPhysicsSystemGroup))]
     [UpdateBefore(typeof(ShipAsteroidContactFrictionSystem))]
@@ -168,17 +168,7 @@ namespace TitanOrbit.ECS
                         continue;
                     }
 
-                    bool megaPlanet = megaLookup.HasComponent(pair.Ship)
-                                      && megaLookup[pair.Ship].IsMega;
-                    if (megaPlanet)
-                    {
-                        RestoreUnconstrainedPose(
-                            pair.Ship, ref _working, snapshotLookup, _megaUnconstrained);
-                    }
-                    else
-                    {
-                        ApplyWorldWallBounce(pair, ref _working, snapshotLookup, restitution);
-                    }
+                    ApplyWorldWallBounce(pair, ref _working, snapshotLookup, restitution);
                 }
                 else if (pair.Kind == ShipPhysicsContactKind.Moon
                          || pair.Kind == ShipPhysicsContactKind.Shield)
@@ -186,16 +176,12 @@ namespace TitanOrbit.ECS
                     bool dockOwnsPose = ShouldSkipMoonWorldBounce(pair.Ship, moonDockLookup);
                     bool friendlyMoonWorld = IsFriendlyMoonWorldContact(
                         pair, shipStateLookup, shieldPlanetLookup, planetStateLookup);
-                    bool megaFriendly = megaLookup.HasComponent(pair.Ship)
-                                        && megaLookup[pair.Ship].IsMega
-                                        && friendlyMoonWorld;
 
-                    // Takeoff/landed: restore pose so the long hull cannot add a second shove.
+                    // Takeoff/landed: restore pose so attach cannot fight a second shove.
                     // Friendly shield: pass-through includes pose (not just bounce skip).
-                    // MEGA + friendly moon: regular-length takeoff must not be followed by
-                    // a compound-hull depenetration yeet out of the disc.
+                    // Moon rock (Titan or regular) bounces — restoring pose here tunneled
+                    // Titans through the body.
                     if (dockOwnsPose
-                        || megaFriendly
                         || (pair.Kind == ShipPhysicsContactKind.Shield && friendlyMoonWorld))
                     {
                         RestoreUnconstrainedPose(
@@ -218,7 +204,7 @@ namespace TitanOrbit.ECS
                 velocityLookup[e] = pv;
             }
 
-            // --- Undo PhysX depenetration (MEGA plow / planet only) ---
+            // --- Undo PhysX depenetration (MEGA asteroid plow / dock-owned pose) ---
             // Reconstruct unconstrained pose from the pre-physics snapshot (drive already applied).
             // [PHYSICS] The solver already wrote LocalTransform. Writing it back here is what
             // stops the visible snap; velocity restore alone is not enough.

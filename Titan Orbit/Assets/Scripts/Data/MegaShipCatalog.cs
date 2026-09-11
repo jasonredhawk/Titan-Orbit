@@ -203,7 +203,7 @@ namespace TitanOrbit.Data
         /// <summary>
         /// Bump when MEGA hull collider bake changes so already-spawned hulls rebuild once.
         /// </summary>
-        public const int HullColliderRevision = 4;
+        public const int HullColliderRevision = 5;
 
         /// <summary>Minimum troop cap after resolve.</summary>
         public const float MinHullPeople = 400f;

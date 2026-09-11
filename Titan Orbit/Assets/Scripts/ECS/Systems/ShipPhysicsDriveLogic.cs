@@ -18,7 +18,8 @@ namespace TitanOrbit.ECS
     /// <see cref="PhysicsVelocity.Linear"/> (the solver bounce). It must not snap that
     /// inherited speed back to MaxSpeed — that erased rams and felt scripted.
     /// Unity Physics then integrates position and resolves hull contacts.
-    /// [TITAN-ORBIT] Also detects planet orbit rings (toroidal distance), blends passive orbit
+    /// [TITAN-ORBIT] Also detects planet orbit rings (toroidal hull overlap, not only the pivot),
+    /// blends passive orbit
     /// velocity when coasting, writes <see cref="ShipOrbitState"/> for people-transport dwell /
     /// HUD, latches friendly-triangle speed
     /// (<c>1 + 0.05 × homePlanetLevel</c> — not a ship MovementSpeed attribute) via
@@ -109,6 +110,11 @@ namespace TitanOrbit.ECS
         /// True while <see cref="MegaShipState.IsMega"/>. Disables overdrive and treats
         /// Shift as a heading lock instead of a speed burst.
         /// </param>
+        /// <param name="hasHullCollider">True when <paramref name="hullCollider"/> is on this ship.</param>
+        /// <param name="hullCollider">
+        /// Live covering box. Orbit capture starts when any part of this collider
+        /// overlaps the annulus, not only when the pivot enters.
+        /// </param>
         public static void Step(
             in ShipInput input,
             in ShipMotorConfig motor,
@@ -138,7 +144,9 @@ namespace TitanOrbit.ECS
             float minTurn,
             bool skipMassTax = false,
             bool isMegaShip = false,
-            float shipPhysicsRadius = -1f)
+            float shipPhysicsRadius = -1f,
+            bool hasHullCollider = false,
+            in PhysicsCollider hullCollider = default)
         {
             // --- Guard: fixed-step dt only ---
             if (dt <= 0f)
@@ -287,14 +295,33 @@ namespace TitanOrbit.ECS
             // [TITAN-ORBIT] PeopleTransportDispatchSystem dwells on InOrbitRing; without this write,
             // load/unload never starts. Thrust cancels the passive orbit motor only — Fire does
             // not (weapons are locked in the ring by BulletSimulationSystem). Ring flag stays
-            // true while still inside the annulus (tractor / HUD / dwell can still see it).
+            // true while any part of the covering collider overlaps the annulus
+            // (tractor / HUD / dwell can still see it).
             // While moon-docking (approach / land), skip the orbit motor so radial pull cannot yank
             // the hull out of the dock sphere mid-landing. Detect the friendly zone from snapshots
             // this tick — MoonPlanetId is written later by ShipMoonDockSystem, so waiting on it
             // left one (or more) orbit/brake ticks that shoved the ship off the pad.
+            float3 hullCenter = transform.Position;
+            float2 hullHalfExtents = float2.zero;
+            float hullYaw = 0f;
+            if (hasHullCollider)
+                TryGetHullOrbitBox(hullCollider, transform, out hullCenter, out hullHalfExtents, out hullYaw);
+
+            float orbitHullRadius = shipPhysicsRadius > 0f
+                ? shipPhysicsRadius
+                : BodyCollisionMath.GetShipHullRadiusWorld(transform.Scale);
+
             bool inOrbitRing = TryFindOrbitPlanet(
-                transform.Position, mapW, mapH, in planets,
-                out PlanetState orbitPlanetState, out LocalTransform orbitPlanetTransform);
+                transform.Position,
+                hullCenter,
+                hullHalfExtents,
+                hullYaw,
+                orbitHullRadius,
+                mapW,
+                mapH,
+                in planets,
+                out PlanetState orbitPlanetState,
+                out LocalTransform orbitPlanetTransform);
             float megaDockPad = isMegaShip
                 ? BodyCollisionMath.GetShipHullRadiusWorld(transform.Scale)
                 : 0f;
@@ -406,7 +433,11 @@ namespace TitanOrbit.ECS
                     mapW,
                     mapH,
                     out orbitDesiredVel,
-                    out float alignRate);
+                    out float alignRate,
+                    hullCenter,
+                    hullHalfExtents,
+                    hullYaw,
+                    orbitHullRadius);
                 orbitDesiredVel.y = 0f;
                 float t = math.saturate(alignRate * dt);
                 vel = math.lerp(vel, orbitDesiredVel, t);
@@ -676,11 +707,16 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// Finds the nearest planet whose orbit ring contains the ship (toroidal distance).
-        /// When multiple rings overlap, the closer planet wins.
+        /// Finds the nearest planet whose orbit ring overlaps the ship collider (toroidal).
+        /// Covering box when half-extents are set; otherwise a disk around the pivot.
+        /// When multiple rings overlap, the closer planet (pivot distance) wins.
         /// </summary>
         static bool TryFindOrbitPlanet(
             in float3 shipPos,
+            in float3 hullCenter,
+            in float2 hullHalfExtents,
+            float hullYaw,
+            float hullRadius,
             float mapW,
             float mapH,
             in NativeArray<PlanetMotorSnapshot> planets,
@@ -701,11 +737,14 @@ namespace TitanOrbit.ECS
                 float planetSize = math.max(0.5f, planetXform.Scale);
                 PlanetOrbitMath.GetRingRadiiWorld(planetSize, state.PlanetLevel, out float inner, out float outer, out _);
 
-                // [TITAN-ORBIT] Toroidal distance — Euclidean would fail across map seams.
-                float dist = ToroidalMapEcs.ToroidalDistance(shipPos, planetXform.Position, mapW, mapH);
-                if (!PlanetOrbitMath.IsInOrbitRing(dist, inner, outer))
+                // [TITAN-ORBIT] Any part of the covering collider in the annulus — not only the pivot.
+                if (!PlanetOrbitMath.HullOverlapsOrbitRing(
+                        planetXform.Position, inner, outer, mapW, mapH,
+                        shipPos, hullRadius, hullCenter, hullHalfExtents, hullYaw))
                     continue;
 
+                // [TITAN-ORBIT] Toroidal distance — Euclidean would fail across map seams.
+                float dist = ToroidalMapEcs.ToroidalDistance(shipPos, planetXform.Position, mapW, mapH);
                 if (dist >= bestDist)
                     continue;
 
@@ -1014,13 +1053,39 @@ namespace TitanOrbit.ECS
         public static float MeasurePhysicsHullRadiusXZ(in PhysicsCollider collider, in LocalTransform transform)
         {
             float fallback = BodyCollisionMath.GetShipHullRadiusWorld(transform.Scale);
-            if (!collider.Value.IsCreated)
+            if (!TryGetHullOrbitBox(collider, transform, out _, out float2 halfExtents, out _))
                 return fallback;
 
-            Aabb aabb = collider.Value.Value.CalculateAabb(
-                new RigidTransform(transform.Rotation, transform.Position));
-            float2 he = (aabb.Max.xz - aabb.Min.xz) * 0.5f;
-            return math.max(fallback, math.max(he.x, he.y));
+            return math.max(fallback, math.length(halfExtents));
+        }
+
+        /// <summary>
+        /// Live covering collider as a yaw-aligned XZ box (presentation extents ×
+        /// <c>LocalTransform.Scale</c>). Used so orbit capture starts when a wing
+        /// reaches the ring, not only when the pivot does.
+        /// </summary>
+        public static bool TryGetHullOrbitBox(
+            in PhysicsCollider collider,
+            in LocalTransform transform,
+            out float3 worldCenter,
+            out float2 halfExtents,
+            out float yawRadians)
+        {
+            worldCenter = transform.Position;
+            halfExtents = float2.zero;
+            yawRadians = 0f;
+            if (!collider.Value.IsCreated)
+                return false;
+
+            Aabb aabb = collider.Value.Value.CalculateAabb();
+            float scale = math.max(0.01f, transform.Scale);
+            float3 localHalf = aabb.Extents * 0.5f;
+            worldCenter = transform.Position + math.rotate(transform.Rotation, aabb.Center * scale);
+            worldCenter.y = transform.Position.y;
+            halfExtents = new float2(localHalf.x, localHalf.z) * scale;
+            float3 fwd = math.mul(transform.Rotation, new float3(0f, 0f, 1f));
+            yawRadians = math.atan2(fwd.x, fwd.z);
+            return halfExtents.x > 0.01f && halfExtents.y > 0.01f;
         }
     }
 }
