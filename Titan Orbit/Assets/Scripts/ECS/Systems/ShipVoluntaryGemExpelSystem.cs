@@ -3,6 +3,7 @@ using Unity.Collections;
 using Unity.Entities;
 using Unity.Mathematics;
 using Unity.NetCode;
+using Unity.Physics;
 using Unity.Transforms;
 
 namespace TitanOrbit.ECS
@@ -98,10 +99,10 @@ namespace TitanOrbit.ECS
                 if (SystemAPI.HasComponent<GhostOwner>(entity))
                     sourceNetworkId = SystemAPI.GetComponentRO<GhostOwner>(entity).ValueRO.NetworkId;
 
-                var hull = SystemAPI.HasComponent<ShipHullColliderState>(entity)
-                    ? SystemAPI.GetComponentRO<ShipHullColliderState>(entity).ValueRO
+                var collider = SystemAPI.HasComponent<PhysicsCollider>(entity)
+                    ? SystemAPI.GetComponentRO<PhysicsCollider>(entity).ValueRO
                     : default;
-                float3 nose = ShipGemExpulsion.ResolveNoseTipWorld(transform.ValueRO, hull);
+                float3 nose = ShipGemExpulsion.ResolveNoseTipWorld(transform.ValueRO, collider);
 
                 while (timer.ValueRO.Accum >= interval &&
                        shipState.ValueRO.CurrentGems >= GemEconomyConstants.MinGemSpawnValue)

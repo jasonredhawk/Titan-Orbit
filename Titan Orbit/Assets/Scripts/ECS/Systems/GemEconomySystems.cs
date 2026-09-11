@@ -7,6 +7,7 @@ using Unity.Collections;
 using Unity.Entities;
 using Unity.Mathematics;
 using Unity.NetCode;
+using Unity.Physics;
 using Unity.Transforms;
 using Random = Unity.Mathematics.Random;
 
@@ -1476,12 +1477,13 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// World point at the covering-hull nose (presentation extents × tier scale).
-        /// Fallback is the sphere hull radius along facing when the covering bake is missing.
+        /// World point on the live hull collider's forward face (local AABB max Z).
+        /// Same box as <see cref="ShipPhysicsDriveLogic.TryGetHullOrbitBox"/> — compound
+        /// envelopes included. Fallback is the sphere hull radius when the blob is missing.
         /// </summary>
         public static float3 ResolveNoseTipWorld(
             in LocalTransform transform,
-            in ShipHullColliderState hull)
+            in PhysicsCollider collider)
         {
             float3 forward = math.forward(transform.Rotation);
             forward.y = 0f;
@@ -1490,24 +1492,16 @@ namespace TitanOrbit.ECS
             else
                 forward = math.normalize(forward);
 
-            float scale = math.max(0.01f, transform.Scale);
-            float3 center = ShipHullColliderLogic.GetCachedCoveringCenter(hull);
-            float3 extents = ShipHullColliderLogic.GetCachedCoveringExtents(hull);
-            float alongZ = math.max(0f, extents.z);
-
-            float3 world;
-            if (alongZ > 0.01f)
+            if (ShipPhysicsDriveLogic.TryGetHullOrbitBox(
+                    collider, transform, out float3 worldCenter, out float2 halfExtents, out _))
             {
-                // Presentation-space nose (level-1 covering) × LocalTransform.Scale (tier).
-                float3 localNose = new float3(center.x, 0f, center.z + alongZ);
-                world = transform.Position + math.rotate(transform.Rotation, localNose * scale);
-            }
-            else
-            {
-                float fallback = BodyCollisionMath.GetShipHullRadiusWorld(transform.Scale);
-                world = transform.Position + forward * fallback;
+                float3 nose = worldCenter + forward * halfExtents.y;
+                nose.y = 0f;
+                return nose;
             }
 
+            float fallback = BodyCollisionMath.GetShipHullRadiusWorld(transform.Scale);
+            float3 world = transform.Position + forward * fallback;
             world.y = 0f;
             return world;
         }
@@ -1588,7 +1582,7 @@ namespace TitanOrbit.ECS
         /// Hold-V cargo dump: one gem at the hull nose, launched along planar forward.
         /// Cargo must already be deducted by the caller.
         /// </summary>
-        /// <param name="noseWorld">Covering-hull tip from <see cref="ResolveNoseTipWorld"/>.</param>
+        /// <param name="noseWorld">Live hull-collider front face from <see cref="ResolveNoseTipWorld"/>.</param>
         /// <param name="shipForward">Ship facing on XZ (will be normalized).</param>
         /// <param name="shipVelocity">Current hull velocity so the dump stays ahead of a moving ship.</param>
         public static void SpawnVoluntaryForward(
@@ -1621,9 +1615,7 @@ namespace TitanOrbit.ECS
             else
                 forward = math.normalize(forward);
 
-            // Gem visual half-size so the crystal sits on the tip, not inside the mesh.
-            float gemHalf = math.clamp(math.sqrt(math.max(0.25f, gemValue)) * 0.2f, 0.2f, 0.5f) * 0.5f;
-            float3 spawnPos = noseWorld + forward * gemHalf;
+            float3 spawnPos = noseWorld;
             spawnPos.y = 0f;
 
             float3 addVel = new float3(shipVelocity.x, 0f, shipVelocity.z);
