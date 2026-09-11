@@ -22,7 +22,7 @@ namespace TitanOrbit.Data
         public int EnergyCapacity;
         /// <summary>Energy Regen ability purchases.</summary>
         public int EnergyRegen;
-        /// <summary>Move Speed ability purchases (also scales accel / OVERDRIVE drain).</summary>
+        /// <summary>Move Speed ability purchases (engine Move + thruster Accel + OVERDRIVE drain).</summary>
         public int MovementSpeed;
         /// <summary>Turn / Rotation Speed ability purchases.</summary>
         public int RotationSpeed;
@@ -66,7 +66,8 @@ namespace TitanOrbit.Data
     /// Non-weapons:
     /// <c>PrimaryBase + Σ (part.PerExtra × (shipLevel + abilityLevel))</c>
     /// Buying a second cockpit / engine / wing raises the total by that part’s PerExtra
-    /// steps, not by copying another Base into the hull.
+    /// steps, not by copying another Base into the hull. A second engine adds Move
+    /// PerExtra; a second thruster adds Accel PerExtra.
     /// </para>
     /// <para>
     /// [TITAN-ORBIT] Callers pass Base / PerExtra already multiplied by prefab starting
@@ -160,7 +161,7 @@ namespace TitanOrbit.Data
         /// <summary>
         /// Evaluates every field on one part (or a leftover single-block fallback).
         /// Pass <paramref name="includeBase"/> false for stacked extras — PerExtra still scales,
-        /// Base stays 0 so a second thruster does not double Move Base.
+        /// Base stays 0 so a second engine does not double Move Base.
         /// <c>*PerExtraLevel</c> fields are copied through unchanged (tooltips / next-buy steps).
         /// </summary>
         public static ShipComponentAbilityStats EvaluatePool(
@@ -285,9 +286,11 @@ namespace TitanOrbit.Data
         /// Non-weapon pools keep <b>only the primary Base</b>. Extras add PerExtra × levels.
         /// Weapons keep each barrel’s Base (they fire on their own).
         /// <para>
-        /// [TITAN-ORBIT] Movement is Engine + Thruster: primary Move Base + engine PerExtra
-        /// × levels + thruster PerExtra × levels. A CosmicShark thruster does not inherit
-        /// an AstroEagle engine’s PerExtra, and it does not add a second Move Base.
+        /// [TITAN-ORBIT] Move Speed is engines only (primary Engine Move Base + each
+        /// engine’s PerExtra × levels). Acceleration is thrusters only. A CosmicShark
+        /// thruster does not inherit an AstroEagle engine’s Move PerExtra. Thruster-only
+        /// hulls fall back so thrusters still own Move; engine-only hulls fall back so
+        /// engines still own Accel.
         /// </para>
         /// Weapon projectile speed / range stay <b>max</b> across barrels (one travel speed,
         /// not N× guns). OVERDRIVE percent is also max (AddInPlace already does this).
@@ -311,6 +314,10 @@ namespace TitanOrbit.Data
             int count = Mathf.Min(componentIds.Count, perComponentStats.Count);
             if (count <= 0)
                 return total;
+
+            // --- Role split: engines own Move, thrusters own Accel (with single-role fallbacks) ---
+            ShipPropulsionAggregation.ClassifyPropulsionRoles(
+                componentIds, out bool hasEngines, out bool hasThrusters);
 
             // --- Group by stack pool so we know which part owns Base ---
             var groups = new Dictionary<string, List<int>>(StringComparer.OrdinalIgnoreCase);
@@ -357,6 +364,8 @@ namespace TitanOrbit.Data
                         in attrs,
                         isWeaponPool: weapon,
                         includeBase: includeBase);
+                    evaluated = ShipPropulsionAggregation.MaskAbilityStatsForRole(
+                        componentIds[gi], evaluated, hasEngines, hasThrusters);
 
                     if (weapon)
                     {

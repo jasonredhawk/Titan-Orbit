@@ -208,7 +208,7 @@ namespace TitanOrbit.Data
         /// <summary>Hard cap on MEGA camera height so tracers stay readable.</summary>
         public const float DefaultCameraMaxHeight = 90f;
 
-        /// <summary>Default extra propulsion cruise contribution (2% of every engine/thruster past the fastest).</summary>
+        /// <summary>Default extra propulsion cruise contribution (2% of every engine past the fastest).</summary>
         public const float DefaultExtraEngineSpeedPercent = 0.02f;
 
         /// <summary>Default MEGA turret traverse when a weapon row leaves weaponRotationSpeed at 0.</summary>
@@ -274,7 +274,7 @@ namespace TitanOrbit.Data
         [HideInInspector]
         public float globalScale = DefaultGlobalScale;
 
-        [Tooltip("Cruise speed = fastest engine or thruster + this fraction of every other propulsion part's moveSpeed. Default 0.02 (2%).")]
+        [Tooltip("Cruise speed = fastest engine + this fraction of every other engine's moveSpeed. Thrusters are ignored unless the hull has no engines. Default 0.02 (2%).")]
         [Range(0f, 1f)]
         public float extraEngineSpeedPercent = DefaultExtraEngineSpeedPercent;
 
@@ -792,7 +792,7 @@ namespace TitanOrbit.Data
             return entry != null ? GetScaleForFamily(entry.visualFamily) : GetGlobalScale();
         }
 
-        /// <summary>Extra propulsion cruise fraction (0.02 = 2% of every engine/thruster past the fastest).</summary>
+        /// <summary>Extra propulsion cruise fraction (0.02 = 2% of every engine past the fastest).</summary>
         public float GetExtraEngineSpeedPercent()
         {
             return extraEngineSpeedPercent > 0f ? extraEngineSpeedPercent : DefaultExtraEngineSpeedPercent;

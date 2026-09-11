@@ -103,7 +103,7 @@ namespace TitanOrbit.Data
         }
 
         /// <summary>
-        /// Walks each hull prefab and writes raw sums (cruise = fastest engine/thruster + extra%).
+        /// Walks each hull prefab and writes raw sums (cruise = fastest engine + extra% of other engines).
         /// Zeros stay 0 so orange rows stay honest; in-game defaults/minimums live on the catalog.
         /// </summary>
         public static void RecalcAllShipSums(MegaShipCatalog catalog)
@@ -125,7 +125,10 @@ namespace TitanOrbit.Data
                 return sum;
 
             var counts = new List<MegaShipComponentCount>(16);
-            var propulsionMoves = new List<float>(8);
+            var engineMoves = new List<float>(8);
+            var thrusterMoves = new List<float>(8);
+            float engineAccelSum = 0f;
+            bool anyThruster = false;
             if (entry.prefab != null && catalog != null)
             {
                 var tallies = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
@@ -143,16 +146,25 @@ namespace TitanOrbit.Data
                         ? row.stats
                         : catalog.GetStatsForPartType(partType);
 
-                    // --- Cruise contributors: engines and thrusters are the same kind ---
-                    // [TITAN-ORBIT] Regular families already share move/accel aggregation
-                    // (ShipPropulsionAggregation). MEGA cruise uses the same idea: collect
-                    // moveSpeed from every Engine and Thruster, then max + extra% of the rest.
-                    if (ShipFamilyPartTypes.IsPropulsion(partType))
-                        propulsionMoves.Add(part.moveSpeed);
+                    // --- Cruise = engines; Accel = thrusters (same split as regular ships) ---
+                    bool isEngine = ShipFamilyPartTypes.IsEngineProfile(partType);
+                    bool isThruster = ShipFamilyPartTypes.IsThrusterProfile(partType);
+                    if (isEngine)
+                    {
+                        engineMoves.Add(part.moveSpeed);
+                        engineAccelSum += part.accelerationCap;
+                    }
+                    else if (isThruster)
+                    {
+                        thrusterMoves.Add(part.moveSpeed);
+                        anyThruster = true;
+                    }
 
-                    // Cruise speed is computed from the propulsion list — do not add part.moveSpeed here.
+                    // Cruise is written after the walk. Engines do not add Accel when thrusters exist.
                     var add = part;
                     add.moveSpeed = 0f;
+                    if (isEngine)
+                        add.accelerationCap = 0f;
                     sum = MegaShipPartStats.Sum(sum, add);
 
                     string key = row != null ? row.displayName : id;
@@ -166,9 +178,12 @@ namespace TitanOrbit.Data
                 counts.Sort((a, b) => string.Compare(a.displayName, b.displayName, StringComparison.OrdinalIgnoreCase));
             }
 
-            sum.moveSpeed = CombineEngineCruise(propulsionMoves, catalog != null
+            var cruiseMoves = engineMoves.Count > 0 ? engineMoves : thrusterMoves;
+            sum.moveSpeed = CombineEngineCruise(cruiseMoves, catalog != null
                 ? catalog.GetExtraEngineSpeedPercent()
                 : MegaShipCatalog.DefaultExtraEngineSpeedPercent);
+            if (!anyThruster)
+                sum.accelerationCap += engineAccelSum;
 
             entry.componentCounts = counts;
             entry.hasMissingStats = MegaShipPartStats.HasMissingNonFirepower(sum);
@@ -177,10 +192,11 @@ namespace TitanOrbit.Data
         }
 
         /// <summary>
-        /// Fastest engine or thruster + <paramref name="extraPercent"/> of every other
-        /// propulsion part's moveSpeed. Empty list → 0 (in-game default/minimum fills it).
+        /// Fastest engine + <paramref name="extraPercent"/> of every other engine's
+        /// moveSpeed (callers pass thrusters only when the hull has no engines).
+        /// Empty list → 0 (in-game default/minimum fills it).
         /// </summary>
-        /// <param name="engineMoves">moveSpeed from every Engine and Thruster on the hull.</param>
+        /// <param name="engineMoves">moveSpeed from the owning cruise parts.</param>
         /// <param name="extraPercent">Catalog extraEngineSpeedPercent (0.02 = 2%).</param>
         public static float CombineEngineCruise(List<float> engineMoves, float extraPercent)
         {

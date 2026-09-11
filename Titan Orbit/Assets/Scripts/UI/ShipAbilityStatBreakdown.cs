@@ -372,6 +372,8 @@ namespace TitanOrbit.UI
             StatField field,
             List<GroupedPartRow> into)
         {
+            ShipPropulsionAggregation.ClassifyPropulsionRoles(
+                parts.Ids, out bool hasEngines, out bool hasThrusters);
             var pools = new Dictionary<string, List<int>>(StringComparer.OrdinalIgnoreCase);
             for (int i = 0; i < parts.Ids.Count && i < parts.Stats.Count; i++)
             {
@@ -382,14 +384,14 @@ namespace TitanOrbit.UI
                     && ReadPerExtraLevel(parts.Stats[i], field) <= 0.0001f)
                     continue;
 
-                string key = field is StatField.MoveSpeed or StatField.AccelerationCap
-                    ? ShipComponentStackAggregation.PropulsionPoolKey
-                    : ShipComponentStackAggregation.ResolveStackPoolKey(id);
-                if (field is StatField.MoveSpeed or StatField.AccelerationCap)
-                {
-                    if (!ShipComponentAbilityStats.IsPropulsionComponent(id))
-                        continue;
-                }
+                if (field == StatField.MoveSpeed
+                    && !ShipPropulsionAggregation.ContributesMoveSpeed(id, hasEngines))
+                    continue;
+                if (field == StatField.AccelerationCap
+                    && !ShipPropulsionAggregation.ContributesAcceleration(id, hasThrusters))
+                    continue;
+
+                string key = ShipComponentStackAggregation.ResolveStackPoolKey(id);
 
                 if (!pools.TryGetValue(key, out List<int> list))
                 {
@@ -1006,19 +1008,22 @@ namespace TitanOrbit.UI
                 return;
 
             // --- Group so we can mark the newest store extra as the display primary ---
+            ShipPropulsionAggregation.ClassifyPropulsionRoles(
+                parts.Ids, out bool hasEngines, out bool hasThrusters);
             var groups = new Dictionary<string, List<int>>(StringComparer.OrdinalIgnoreCase);
             for (int i = 0; i < parts.Ids.Count && i < parts.Stats.Count; i++)
             {
                 string id = parts.Ids[i];
                 if (string.IsNullOrWhiteSpace(id) || ShipFamilyPartCalcProfileSet.IsCosmeticPartName(id))
                     continue;
-
-                string key = field is StatField.MoveSpeed or StatField.AccelerationCap
-                    ? ShipComponentStackAggregation.PropulsionPoolKey
-                    : ShipComponentStackAggregation.ResolveStackPoolKey(id);
-                if (field is StatField.MoveSpeed or StatField.AccelerationCap
-                    && !ShipComponentAbilityStats.IsPropulsionComponent(id))
+                if (field == StatField.MoveSpeed
+                    && !ShipPropulsionAggregation.ContributesMoveSpeed(id, hasEngines))
                     continue;
+                if (field == StatField.AccelerationCap
+                    && !ShipPropulsionAggregation.ContributesAcceleration(id, hasThrusters))
+                    continue;
+
+                string key = ShipComponentStackAggregation.ResolveStackPoolKey(id);
 
                 if (!groups.TryGetValue(key, out List<int> list))
                 {
@@ -1256,7 +1261,7 @@ namespace TitanOrbit.UI
 
         /// <summary>
         /// MEGA details card: catalog part sums only. No Extra Level, no Lv / +next,
-        /// no ability purchases. Cruise speed uses fastest engine/thruster + extra%.
+        /// no ability purchases. Cruise speed uses fastest engine + extra% of other engines.
         /// </summary>
         static void AppendMegaAbilityCard(
             StringBuilder sb,
@@ -1403,8 +1408,9 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// MEGA cruise: fastest Engine/Thruster + extra% of the rest — same as
+        /// MEGA cruise: fastest Engine + extra% of the rest — same as
         /// <see cref="MegaShipComponentInventory.CombineEngineCruise"/>.
+        /// Thrusters fill in only when the hull has no engines.
         /// </summary>
         static void AppendMegaMoveCard(
             StringBuilder sb,
@@ -1423,7 +1429,8 @@ namespace TitanOrbit.UI
             }
 
             float extraPercent = catalog.GetExtraEngineSpeedPercent();
-            var moves = new List<float>(8);
+            var engineMoves = new List<float>(8);
+            var thrusterMoves = new List<float>(8);
             for (int i = 0; i < entry.componentCounts.Count; i++)
             {
                 MegaShipComponentCount count = entry.componentCounts[i];
@@ -1437,8 +1444,14 @@ namespace TitanOrbit.UI
                 if (unique.stats.moveSpeed <= 0.0001f)
                     continue;
 
+                bool engine = ShipFamilyPartTypes.IsEngineProfile(unique.partType);
                 for (int n = 0; n < count.count; n++)
-                    moves.Add(unique.stats.moveSpeed);
+                {
+                    if (engine)
+                        engineMoves.Add(unique.stats.moveSpeed);
+                    else
+                        thrusterMoves.Add(unique.stats.moveSpeed);
+                }
 
                 AppendTint(sb, HexCount, count.count.ToString(CultureInfo.InvariantCulture) + "×");
                 sb.Append(" ").Append(count.displayName).Append("  ");
@@ -1448,10 +1461,14 @@ namespace TitanOrbit.UI
                 sb.AppendLine();
             }
 
+            bool usedEngineFallback = engineMoves.Count == 0;
+            var moves = usedEngineFallback ? thrusterMoves : engineMoves;
             ShipStatTooltipChrome.AppendSectionBanner(sb, "CRUISE", "7DFFB2");
             AppendTint(sb, HexMute, "fastest + ");
             AppendTint(sb, HexPerExtra, (extraPercent * 100f).ToString("0.##", CultureInfo.InvariantCulture) + "%");
-            AppendTint(sb, HexMute, " of other engines/thrusters");
+            AppendTint(sb, HexMute, usedEngineFallback
+                ? " of other thrusters (no engines)"
+                : " of other engines");
             sb.AppendLine();
             float combined = MegaShipComponentInventory.CombineEngineCruise(moves, extraPercent);
             if (combined > 0.0001f)

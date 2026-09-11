@@ -27,7 +27,7 @@ namespace TitanOrbit.Data
         /// <para>
         /// [TITAN-ORBIT] Full hulls with multiple parts must use
         /// <see cref="ShipComponentExtraLevelMath.AggregateAndEvaluate"/> so each part keeps
-        /// its own PerExtra (engine ≠ thruster). <paramref name="shipLevelStatGrowthFraction"/> is
+        /// its own PerExtra (engine Move ≠ thruster Accel). <paramref name="shipLevelStatGrowthFraction"/> is
         /// ignored (legacy % tier growth retired).
         /// </para>
         /// </summary>

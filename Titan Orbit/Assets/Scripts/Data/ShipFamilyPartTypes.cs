@@ -7,8 +7,8 @@ namespace TitanOrbit.Data
     /// Name Mappings point at these strings; Scan evaluates the matching profile.
     /// <para>
     /// [TITAN-ORBIT] <see cref="Engine"/> and <see cref="Thruster"/> are separate Part Profiles:
-    /// engines author move/accel + Energy Cap/Regen (power plant); thrusters author move/accel + turn
-    /// and set thrust energy drain. Both still share the same move/accel aggregation rules at runtime
+    /// engines own Move Speed + Energy Cap/Regen (power plant); thrusters own Acceleration + turn
+    /// and set thrust energy drain. Runtime aggregation follows that split
     /// (<see cref="ShipPropulsionAggregation"/>). Only mounts with <c>enablePropulsionVfx</c> get jet
     /// particles. Fin merges into <see cref="Tail"/>. Weapons split into rapid small-shot
     /// <see cref="WeaponBullet"/> vs slow heavy <see cref="WeaponCannon"/> — offense plus
@@ -26,9 +26,9 @@ namespace TitanOrbit.Data
         /// <summary>MEGA sniper — high damage, high speed, very slow cadence.</summary>
         public const string WeaponSniper = "Weapon Sniper";
         public const string Wing = "Wing";
-        /// <summary>Power-plant profile — move/accel + Energy Cap/Regen.</summary>
+        /// <summary>Power-plant profile — Move Speed + Energy Cap/Regen.</summary>
         public const string Engine = "Engine";
-        /// <summary>Maneuver-jet profile — move/accel + turn; thrust energy drain source.</summary>
+        /// <summary>Maneuver-jet profile — Acceleration + turn; thrust energy drain source.</summary>
         public const string Thruster = "Thruster";
         /// <summary>[LEGACY] Pre-split shared propulsion label — Normalize rewrites to Engine or Thruster.</summary>
         public const string LegacyEngineThrust = "Engine/Thrust";
@@ -147,7 +147,7 @@ namespace TitanOrbit.Data
 
         /// <summary>
         /// [TITAN-ORBIT] Power-plant mounts: propulsion that is not thruster-like.
-        /// Engines author Energy Cap/Regen (cumulative across mounts) plus move/accel.
+        /// Engines author Energy Cap/Regen (cumulative across mounts) plus Move Speed.
         /// </summary>
         /// <param name="componentId">Prefab child / family component id.</param>
         public static bool IsEngineLikeName(string componentId)

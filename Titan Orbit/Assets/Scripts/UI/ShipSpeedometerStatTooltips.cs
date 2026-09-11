@@ -83,7 +83,7 @@ namespace TitanOrbit.UI
             /// </summary>
             public List<Vector3> LocalScales;
 
-            /// <summary>Propulsion pool at ship level (each engine/thruster Extra-Leveled, then summed).</summary>
+            /// <summary>Propulsion at ship level (engine Move + thruster Accel, Extra-Leveled then summed).</summary>
             public ShipPropulsionAggregation.Result Propulsion;
         }
 
@@ -399,7 +399,7 @@ namespace TitanOrbit.UI
         static void AppendSpeedTooltip(StringBuilder sb, in PartCache parts, in LiveContext live)
         {
             AppendHeader(sb, "SPD — top speed");
-            sb.AppendLine("<color=#5B7A94>Primary Base + each engine/thruster PerExtra. Capacity values are static ceilings.</color>");
+            sb.AppendLine("<color=#5B7A94>Engine primary Base + each engine PerExtra. Capacity values are static ceilings.</color>");
             ShipAbilityStatBreakdown.AppendStatCalcGrid(
                 sb, in parts, in live,
                 ShipAbilityStatBreakdown.StatField.MoveSpeed,
@@ -427,7 +427,7 @@ namespace TitanOrbit.UI
         static void AppendAccelTooltip(StringBuilder sb, in PartCache parts, in LiveContext live)
         {
             AppendHeader(sb, "ACC — acceleration");
-            sb.AppendLine("<color=#5B7A94>Primary Base + each engine/thruster PerExtra. Capacity values are static ceilings.</color>");
+            sb.AppendLine("<color=#5B7A94>Thruster primary Base + each thruster PerExtra. Capacity values are static ceilings.</color>");
             ShipAbilityStatBreakdown.AppendStatCalcGrid(
                 sb, in parts, in live,
                 ShipAbilityStatBreakdown.StatField.AccelerationCap,
@@ -717,22 +717,45 @@ namespace TitanOrbit.UI
         /// <summary>
         /// Primary propulsion Base Move/Accel plus extra-part count (extras add PerExtra only).
         /// </summary>
-        static bool TryResolvePoolL1(in PartCache parts, out float moveL1, out float accelL1, out int extras)
+        static bool TryResolvePoolL1(
+            in PartCache parts,
+            out float moveL1,
+            out float accelL1,
+            out int moveExtras,
+            out int accelExtras)
         {
             moveL1 = 0f;
             accelL1 = 0f;
-            extras = 0;
-            if (!parts.Valid
-                || parts.Ids == null
-                || parts.Stats == null
-                || parts.Propulsion.primaryIndex < 0
-                || parts.Propulsion.primaryIndex >= parts.Stats.Count)
+            moveExtras = 0;
+            accelExtras = 0;
+            if (!parts.Valid || parts.Ids == null || parts.Stats == null)
                 return false;
 
-            ShipComponentAbilityStats primary = parts.Stats[parts.Propulsion.primaryIndex];
-            moveL1 = Mathf.Max(0f, primary.moveSpeed);
-            accelL1 = Mathf.Max(0f, ShipPropulsionAggregation.GetPropulsionAccelerationContribution(primary, 0));
-            extras = Mathf.Max(0, parts.Propulsion.propulsionCount - 1);
+            int movePrimary = parts.Propulsion.movePrimaryIndex >= 0
+                ? parts.Propulsion.movePrimaryIndex
+                : parts.Propulsion.primaryIndex;
+            int accelPrimary = parts.Propulsion.accelPrimaryIndex >= 0
+                ? parts.Propulsion.accelPrimaryIndex
+                : parts.Propulsion.primaryIndex;
+
+            if (movePrimary >= 0 && movePrimary < parts.Stats.Count)
+                moveL1 = Mathf.Max(0f, parts.Stats[movePrimary].moveSpeed);
+            if (accelPrimary >= 0 && accelPrimary < parts.Stats.Count)
+            {
+                accelL1 = Mathf.Max(
+                    0f,
+                    ShipPropulsionAggregation.GetPropulsionAccelerationContribution(
+                        parts.Stats[accelPrimary], 0));
+            }
+
+            int moveCount = parts.Propulsion.moveCount > 0
+                ? parts.Propulsion.moveCount
+                : parts.Propulsion.propulsionCount;
+            int accelCount = parts.Propulsion.accelCount > 0
+                ? parts.Propulsion.accelCount
+                : parts.Propulsion.propulsionCount;
+            moveExtras = Mathf.Max(0, moveCount - 1);
+            accelExtras = Mathf.Max(0, accelCount - 1);
             return moveL1 > 0.01f || accelL1 > 0.01f;
         }
 
@@ -745,13 +768,15 @@ namespace TitanOrbit.UI
             int shipLevel = Mathf.Max(1, live.Ship.ShipLevel);
             int perLvl = Mathf.Max(0, shipLevel - 1);
 
-            if (!TryResolvePoolL1(parts, out float moveL1, out _, out int extras))
+            if (!TryResolvePoolL1(parts, out float moveL1, out _, out int extras, out _))
             {
                 sb.Append("Chassis Move  ").Append(FResult(live.ChassisMaxSpeed)).AppendLine();
                 return;
             }
 
-            int n = parts.Propulsion.propulsionCount;
+            int n = parts.Propulsion.moveCount > 0
+                ? parts.Propulsion.moveCount
+                : parts.Propulsion.propulsionCount;
             float movePer = Mathf.Max(0f, parts.Propulsion.moveSpeedPerExtraLevel);
             int extraLevelsNoAbility = ShipComponentExtraLevelMath.CountExtraLevels(shipLevel, 0, n);
             float afterExtra = moveL1 + movePer * extraLevelsNoAbility;
@@ -797,13 +822,15 @@ namespace TitanOrbit.UI
             int shipLevel = Mathf.Max(1, live.Ship.ShipLevel);
             int perLvl = Mathf.Max(0, shipLevel - 1);
 
-            if (!TryResolvePoolL1(parts, out float moveL1, out float accelL1, out int extras))
+            if (!TryResolvePoolL1(parts, out float moveL1, out float accelL1, out _, out int extras))
             {
                 sb.Append("Chassis Accel  ").Append(FResult(live.ChassisAccel)).AppendLine();
                 return;
             }
 
-            int n = parts.Propulsion.propulsionCount;
+            int n = parts.Propulsion.accelCount > 0
+                ? parts.Propulsion.accelCount
+                : parts.Propulsion.propulsionCount;
             float accelPer = Mathf.Max(0f, parts.Propulsion.accelerationCapPerExtraLevel);
             int extraLevelsNoAbility = ShipComponentExtraLevelMath.CountExtraLevels(shipLevel, 0, n);
             float afterExtra = accelL1 + accelPer * extraLevelsNoAbility;
@@ -840,9 +867,8 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// Explains one Move Speed ability purchase: sum of every propulsion part’s own
-        /// PerExtraLevel (engine step + thruster step). Same purchase adds Move and Accel —
-        /// <paramref name="forAccel"/> picks which step to show.
+        /// Explains one Move Speed ability purchase: engines add Move PerExtra,
+        /// thrusters add Accel PerExtra. Same purchase still raises both stats.
         /// </summary>
         /// <param name="forAccel">True = Accel/Lvl step; false = Move/Lvl step.</param>
         /// <param name="moveL1">Primary Base Move for fallback when PerExtraLevel is unset.</param>
@@ -853,20 +879,26 @@ namespace TitanOrbit.UI
             bool forAccel,
             float moveL1)
         {
-            sb.AppendLine("<color=#AAAAAA>Move Speed ability: +1 Extra Level of each engine/thruster’s own PerExtra.</color>");
+            sb.AppendLine(forAccel
+                ? "<color=#AAAAAA>Move Speed ability: +1 Extra Level of each thruster’s Accel PerExtra.</color>"
+                : "<color=#AAAAAA>Move Speed ability: +1 Extra Level of each engine’s Move PerExtra.</color>");
 
             float stepTotal = 0f;
             bool usedFallback = false;
             string unitLabel = forAccel ? "Accel/Lvl" : "Move/Lvl";
+            ShipPropulsionAggregation.ClassifyPropulsionRoles(
+                parts.Ids, out bool hasEngines, out bool hasThrusters);
 
-            // --- Sum every propulsion part’s PerExtra (engine ≠ thruster) ---
+            // --- Sum the owning role’s PerExtra (engines → Move, thrusters → Accel) ---
             if (parts.Valid && parts.Stats != null && parts.Ids != null)
             {
                 for (int i = 0; i < parts.Ids.Count && i < parts.Stats.Count; i++)
                 {
-                    if (!ShipComponentAbilityStats.IsPropulsionComponent(parts.Ids[i]))
-                        continue;
-                    if (ShipFamilyPartCalcProfileSet.IsCosmeticPartName(parts.Ids[i]))
+                    string id = parts.Ids[i];
+                    bool include = forAccel
+                        ? ShipPropulsionAggregation.ContributesAcceleration(id, hasThrusters)
+                        : ShipPropulsionAggregation.ContributesMoveSpeed(id, hasEngines);
+                    if (!include)
                         continue;
 
                     ShipComponentAbilityStats part = parts.Stats[i];
@@ -995,7 +1027,7 @@ namespace TitanOrbit.UI
             float moveL1,
             out float accelL1)
         {
-            TryResolvePoolL1(parts, out float move, out accelL1, out _);
+            TryResolvePoolL1(parts, out float move, out accelL1, out _, out _);
             if (moveL1 > 0.01f)
                 move = moveL1;
 

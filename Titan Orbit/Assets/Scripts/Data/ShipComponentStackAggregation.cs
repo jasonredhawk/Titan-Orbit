@@ -14,13 +14,21 @@ namespace TitanOrbit.Data
     /// <para>
     /// Primary for display: the newest moon-store extra in the pool (purchased gear becomes
     /// the main part). When the pool is chassis-only, we keep the highest-valued prefab part.
-    /// Engines + Thrusters share <see cref="PropulsionPoolKey"/>.
+    /// Engines and thrusters are <b>separate</b> pools: engines own Move + Energy,
+    /// thrusters own Accel + Turn. <see cref="PropulsionPoolKey"/> is leftover for
+    /// older HUD binders that still group both.
     /// </para>
     /// </summary>
     public static class ShipComponentStackAggregation
     {
-        /// <summary>Shared pool key for engines and thrusters.</summary>
+        /// <summary>[LEGACY] Old shared engine+thruster key. Live stacking uses Engine / Thruster.</summary>
         public const string PropulsionPoolKey = "Propulsion";
+
+        /// <summary>Engine Extra Level pool — Move Speed + Energy Cap/Regen + OVERDRIVE.</summary>
+        public const string EnginePoolKey = "Engine";
+
+        /// <summary>Thruster Extra Level pool — Acceleration + Turn.</summary>
+        public const string ThrusterPoolKey = "Thruster";
 
         /// <summary>
         /// One stack pool after primary selection — feeds Extra Level evaluation.
@@ -40,14 +48,33 @@ namespace TitanOrbit.Data
             public bool IsWeaponPool;
         }
 
+        /// <summary>True for the Engine Extra Level pool.</summary>
+        public static bool IsEnginePoolKey(string poolKey) =>
+            string.Equals(poolKey, EnginePoolKey, StringComparison.OrdinalIgnoreCase);
+
+        /// <summary>True for the Thruster Extra Level pool.</summary>
+        public static bool IsThrusterPoolKey(string poolKey) =>
+            string.Equals(poolKey, ThrusterPoolKey, StringComparison.OrdinalIgnoreCase);
+
+        /// <summary>True for Engine, Thruster, or the leftover shared Propulsion key.</summary>
+        public static bool IsAnyPropulsionPoolKey(string poolKey) =>
+            IsEnginePoolKey(poolKey)
+            || IsThrusterPoolKey(poolKey)
+            || string.Equals(poolKey, PropulsionPoolKey, StringComparison.OrdinalIgnoreCase);
+
         /// <summary>
-        /// Pool key for stacking: Engines+Thrusters → <see cref="PropulsionPoolKey"/>;
-        /// otherwise canonical part type (Wing, Cockpit, Weapon, …).
+        /// Pool key for stacking: Engine and Thruster stay separate so Move Base
+        /// and Accel Base are not stolen from each other. Other parts use the
+        /// canonical type (Wing, Cockpit, Weapon, …).
         /// </summary>
         public static string ResolveStackPoolKey(string componentId)
         {
+            if (ShipFamilyPartTypes.IsEngineLikeName(componentId))
+                return EnginePoolKey;
+            if (ShipFamilyPartTypes.IsThrusterLikeName(componentId))
+                return ThrusterPoolKey;
             if (ShipComponentAbilityStats.IsPropulsionComponent(componentId))
-                return PropulsionPoolKey;
+                return EnginePoolKey;
 
             string type = ShipComponentAbilityStats.ResolvePartTypeForSuggestedStats(componentId);
             if (string.IsNullOrWhiteSpace(type))
@@ -148,7 +175,15 @@ namespace TitanOrbit.Data
                 poolKey, memberIndices, perComponentStats);
             int primaryGlobal = memberIndices[primaryLocal];
 
-            result.PrimaryStats = perComponentStats[primaryGlobal];
+            // [TITAN-ORBIT] Engine primary must not leak Accel into the hull snapshot
+            // when thrusters exist (and vice versa for Move).
+            ShipPropulsionAggregation.ClassifyPropulsionRoles(
+                componentIds, out bool hasEngines, out bool hasThrusters);
+            string primaryId = componentIds != null && primaryGlobal < componentIds.Count
+                ? componentIds[primaryGlobal]
+                : string.Empty;
+            result.PrimaryStats = ShipPropulsionAggregation.MaskAbilityStatsForRole(
+                primaryId, perComponentStats[primaryGlobal], hasEngines, hasThrusters);
             result.ComponentCount = memberIndices.Count;
             return result;
         }
@@ -169,7 +204,8 @@ namespace TitanOrbit.Data
         /// <summary>
         /// Primary index within <paramref name="memberIndices"/> (local list index, not global).
         /// Newest moon-store extra in the pool wins (Orbit Menu purchase becomes the main part).
-        /// Chassis-only pools: propulsion uses highest moveSpeed; others use the additive score.
+        /// Chassis-only pools: engines use highest moveSpeed; thrusters use highest accel;
+        /// others use the additive score.
         /// </summary>
         /// <param name="storeExtraStartIndex">
         /// First list index that is a moon-store extra (<see cref="int.MaxValue"/> = none).
@@ -202,12 +238,20 @@ namespace TitanOrbit.Data
 
             int bestLocal = 0;
             float bestScore = float.NegativeInfinity;
-            bool propulsion = string.Equals(poolKey, PropulsionPoolKey, StringComparison.OrdinalIgnoreCase);
+            bool enginePool = IsEnginePoolKey(poolKey);
+            bool thrusterPool = IsThrusterPoolKey(poolKey);
+            bool legacyPropulsion = string.Equals(poolKey, PropulsionPoolKey, StringComparison.OrdinalIgnoreCase);
 
             for (int m = 0; m < memberIndices.Count; m++)
             {
                 ShipComponentAbilityStats s = perComponentStats[memberIndices[m]];
-                float score = propulsion ? ScorePropulsionPrimary(s) : ScoreGenericPrimary(s);
+                float score;
+                if (enginePool || legacyPropulsion)
+                    score = ScoreEnginePrimary(s);
+                else if (thrusterPool)
+                    score = ScoreThrusterPrimary(s);
+                else
+                    score = ScoreGenericPrimary(s);
                 if (score > bestScore)
                 {
                     bestScore = score;
@@ -270,12 +314,16 @@ namespace TitanOrbit.Data
             return n;
         }
 
-        static float ScorePropulsionPrimary(in ShipComponentAbilityStats s)
+        /// <summary>Engine chassis primary: cruise first, then energy plant size.</summary>
+        static float ScoreEnginePrimary(in ShipComponentAbilityStats s)
         {
-            // Lexicographic via large place values: move >> accel >> energy.
-            return s.moveSpeed * 1_000_000f
-                   + s.accelerationCap * 1_000f
-                   + s.energyCap;
+            return s.moveSpeed * 1_000_000f + s.energyCap;
+        }
+
+        /// <summary>Thruster chassis primary: thrust first, then turn.</summary>
+        static float ScoreThrusterPrimary(in ShipComponentAbilityStats s)
+        {
+            return s.accelerationCap * 1_000_000f + s.turnSpeed * 1_000f;
         }
 
         static float ScoreGenericPrimary(in ShipComponentAbilityStats s)

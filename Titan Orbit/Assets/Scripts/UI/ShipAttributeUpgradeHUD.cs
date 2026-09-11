@@ -18,8 +18,9 @@ namespace TitanOrbit.UI
     /// ShipState and ShipAttributeUpgradeState from EcsGameBridge; sends purchases via
     /// MoonOrbitRpcClient.PurchaseAttributeUpgrade (server validates in ShipAttributeUpgradeSystem).
     /// Cost = ShipLevel × 5 gems; max levels per attribute = ShipLevel.
-    /// Most abilities are Extra Level purchases; Move Speed adds each engine/thruster’s own
-    /// PerExtra step (move + accel + OD drain together) — see ShipAttributeUpgradeLogic.
+    /// Most abilities are Extra Level purchases; Move Speed adds each engine’s Move
+    /// PerExtra and each thruster’s Accel PerExtra (plus engine OVERDRIVE drain) —
+    /// see ShipAttributeUpgradeLogic.
     /// <para>
     /// [TITAN-ORBIT] Optional quick-stat chips above each button show <b>current</b> and
     /// <c>+per-buy</c> (toggle via a small STATS control). Fire Power's chip is sustained

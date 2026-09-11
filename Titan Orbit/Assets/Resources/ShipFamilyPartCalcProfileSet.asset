@@ -1473,9 +1473,9 @@ MonoBehaviour:
       energyRegen: 3
       energyRegenPerExtraLevel: 1
       moveSpeed: 6
-      moveSpeedPerExtraLevel: 0.1
-      accelerationCap: 6
-      accelerationCapPerExtraLevel: 1
+      moveSpeedPerExtraLevel: 0.3
+      accelerationCap: 0
+      accelerationCapPerExtraLevel: 0
       extraSpeedPercent: 0.25
       extraSpeedPercentPerExtraLevel: 0
       extraSpeedEnergyDrain: 12
@@ -1510,9 +1510,9 @@ MonoBehaviour:
       energyRegen: 1
       energyRegenPerExtraLevel: 0.33333334
       moveSpeed: 2
-      moveSpeedPerExtraLevel: 0.05
-      accelerationCap: 5
-      accelerationCapPerExtraLevel: 1
+      moveSpeedPerExtraLevel: 0.1
+      accelerationCap: 0
+      accelerationCapPerExtraLevel: 0
       extraSpeedPercent: 0
       extraSpeedPercentPerExtraLevel: 0
       extraSpeedEnergyDrain: 2
@@ -1549,10 +1549,10 @@ MonoBehaviour:
       energyCapPerExtraLevel: 0
       energyRegen: 0
       energyRegenPerExtraLevel: 0
-      moveSpeed: 6
-      moveSpeedPerExtraLevel: 0.1
-      accelerationCap: 3
-      accelerationCapPerExtraLevel: 0.1
+      moveSpeed: 0
+      moveSpeedPerExtraLevel: 0
+      accelerationCap: 6
+      accelerationCapPerExtraLevel: 0.3
       extraSpeedPercent: 0
       extraSpeedPercentPerExtraLevel: 0
       extraSpeedEnergyDrain: 0
@@ -1586,10 +1586,10 @@ MonoBehaviour:
       energyCapPerExtraLevel: 0
       energyRegen: 0
       energyRegenPerExtraLevel: 0
-      moveSpeed: 2
-      moveSpeedPerExtraLevel: 0.05
-      accelerationCap: 1
-      accelerationCapPerExtraLevel: 0.05
+      moveSpeed: 0
+      moveSpeedPerExtraLevel: 0
+      accelerationCap: 2
+      accelerationCapPerExtraLevel: 0.1
       extraSpeedPercent: 0
       extraSpeedPercentPerExtraLevel: 0
       extraSpeedEnergyDrain: 0
@@ -1634,8 +1634,8 @@ MonoBehaviour:
       extraSpeedPercentPerExtraLevel: 0
       extraSpeedEnergyDrain: 0
       extraSpeedEnergyDrainPerExtraLevel: 0
-      turnSpeed: 10
-      turnSpeedPerExtraLevel: 2
+      turnSpeed: 15
+      turnSpeedPerExtraLevel: 3
       maxGems: 0
       maxGemsPerExtraLevel: 0
       tractorBeamDistance: 0

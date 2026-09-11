@@ -9,8 +9,8 @@ namespace TitanOrbit.Data
     /// fields are authored for each Stat Category × part type. Used by the ShipFamilyDefinition
     /// Inspector (filter visible fields) and by Scan / Populate when writing component stats.
     /// <para>
-    /// [TITAN-ORBIT] Thruster-like mounts author move/accel/turn; engine-like mounts author
-    /// move/accel + Energy Cap/Regen (power plant); Tail/Fin still author turn. Weapons author
+    /// [TITAN-ORBIT] Thruster-like mounts author Accel + turn; engine-like mounts author
+    /// Move Speed + Energy Cap/Regen (power plant); Tail/Fin still author turn. Weapons author
     /// Offense plus Energy Cap only (extra battery — no Regen). Propulsion particle VFX and
     /// cosmetic covers are controlled on <see cref="ShipFamilyPartNameMapping"/>.
     /// </para>
@@ -114,18 +114,16 @@ namespace TitanOrbit.Data
         /// </summary>
         static readonly string[] WeaponEnergyCapFields =
             { "energyCap", "energyCapPerExtraLevel" };
-        /// <summary>Engine-like movement — move + accel + OVERDRIVE knobs (power plant; OD drain = esp × esep).</summary>
+        /// <summary>Engine-like movement — Move Speed + OVERDRIVE knobs (power plant). Accel is thrusters only.</summary>
         static readonly string[] PropulsionMovementFields =
         {
             "moveSpeed", "moveSpeedPerExtraLevel",
-            "accelerationCap", "accelerationCapPerExtraLevel",
             "extraSpeedPercent", "extraSpeedPercentPerExtraLevel",
             "extraSpeedEnergyDrain", "extraSpeedEnergyDrainPerExtraLevel"
         };
-        /// <summary>Thruster-like movement — move + accel + turn (no OVERDRIVE knobs; engines own those).</summary>
+        /// <summary>Thruster-like movement — Acceleration + turn (no OVERDRIVE knobs; engines own those).</summary>
         static readonly string[] ThrusterMovementFields =
         {
-            "moveSpeed", "moveSpeedPerExtraLevel",
             "accelerationCap", "accelerationCapPerExtraLevel",
             "turnSpeed", "turnSpeedPerExtraLevel"
         };
@@ -231,8 +229,8 @@ namespace TitanOrbit.Data
                 };
             }
 
-            // [TITAN-ORBIT] Engines = Movement + Energy (power plant). Thrusters = Movement only
-            // (move/accel/turn fields). Tail/Fin = Movement (turn fields only).
+            // [TITAN-ORBIT] Engines = Movement + Energy (power plant, Move Speed). Thrusters =
+            // Movement only (Accel + turn). Tail/Fin = Movement (turn fields only).
             if (ShipFamilyPartTypes.IsEngineProfile(partType)
                 || (!string.IsNullOrEmpty(componentId) && ShipFamilyPartTypes.IsEngineLikeName(componentId)
                     && !ShipFamilyPartTypes.IsThrusterProfile(partType)
@@ -304,7 +302,7 @@ namespace TitanOrbit.Data
                         return WeaponEnergyCapFields;
                     return EnergyFields;
                 case ShipComponentStatCategory.Movement:
-                    // [TITAN-ORBIT] Tail/Fin = turn only; Thruster profile = move/accel/turn; Engine = move/accel.
+                    // [TITAN-ORBIT] Tail/Fin = turn only; Thruster = Accel + turn; Engine = Move + OVERDRIVE.
                     partType = ShipFamilyPartTypes.Normalize(partType, componentId);
                     if (ShipFamilyPartTypes.IsTurn(partType))
                         return TurnMovementFields;

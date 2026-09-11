@@ -340,7 +340,8 @@ namespace TitanOrbit.Data
 
         /// <summary>
         /// [TITAN-ORBIT] Maneuver jets: name contains Thruster or Exhaust.
-        /// Author turn + move/accel; set thrust energy drain. Do not own Energy Cap/Regen.
+        /// Author turn + Acceleration; set thrust energy drain. Do not own Energy Cap/Regen
+        /// or Move Speed (engines own cruise).
         /// </summary>
         public static bool IsThrusterComponent(string componentId)
         {
@@ -350,7 +351,7 @@ namespace TitanOrbit.Data
 
         /// <summary>
         /// [TITAN-ORBIT] Power plants: propulsion mounts that are not thruster-like.
-        /// Author Energy Cap/Regen (cumulative) + move/accel; no turn.
+        /// Author Energy Cap/Regen (cumulative) + Move Speed; no turn.
         /// </summary>
         public static bool IsEngineComponent(string componentId)
         {

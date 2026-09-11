@@ -44,13 +44,13 @@ namespace TitanOrbit.Entities
         /// <summary>Per-part scaled stats parallel to <see cref="MatchedComponentIds"/>.</summary>
         public List<ShipComponentAbilityStats> PerComponentStats => perComponentStats;
 
-        /// <summary>Sum of accelerationCap on engine/thruster parts (level 1).</summary>
+        /// <summary>Thruster acceleration Extra Level total (level 1).</summary>
         public float PreviewSumPropulsionAcceleration => previewSumPropulsionAcceleration;
 
-        /// <summary>Sum of accelerationCapPerExtraLevel on engine/thruster parts.</summary>
+        /// <summary>Sum of accelerationCapPerExtraLevel on thruster parts.</summary>
         public float PreviewSumPropulsionAccelerationPerLevel => previewSumPropulsionAccelerationPerLevel;
 
-        /// <summary>Best engine/thruster base moveSpeed (counted once toward top speed).</summary>
+        /// <summary>Best engine base moveSpeed (counted once toward top speed).</summary>
         public float PreviewPrimaryThrusterMoveSpeed => previewPrimaryThrusterMoveSpeed;
 
         /// <summary>Half the sum of moveSpeedPerExtraLevel from non-primary propulsion parts.</summary>
@@ -104,7 +104,7 @@ namespace TitanOrbit.Entities
                 : (shipFamily.familyId ?? string.Empty).Trim();
             RefreshMatchedScaleFactors(familyId);
 
-            // --- Propulsion breakdown (engines + thrusters only) ---
+            // --- Propulsion breakdown (engines = Move, thrusters = Accel) ---
             RefreshPropulsionPreview(shipLevel: 1);
 
             // --- Mass ---

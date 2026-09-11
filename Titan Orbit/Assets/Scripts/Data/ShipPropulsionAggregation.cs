@@ -7,9 +7,12 @@ namespace TitanOrbit.Data
     /// Engine and thruster move-speed and acceleration rules shared by legacy <see cref="Entities.Starship"/>,
     /// ECS motor, and editor previews.
     /// <para>
-    /// [TITAN-ORBIT] Engines and thrusters both contribute Move / Accel using <b>that part’s</b>
-    /// Base and PerExtraLevel (they are not the same number). Extra Level evaluates each part
-    /// then sums. The newest moon-store extra is the display primary.
+    /// [TITAN-ORBIT] Move Speed is engines only. Acceleration is thrusters only.
+    /// Each part still uses <b>its own</b> Base and PerExtraLevel (an AstroEagle engine
+    /// PerExtra is not reused on a CosmicShark thruster). Extra Level evaluates each
+    /// contributor then sums. Newest moon-store extra in that role is the display primary.
+    /// Thruster-only hulls (SpaceExcalibur) fall back: thrusters own Move. Engine-only
+    /// hulls fall back: engines own Accel.
     /// </para>
     /// Paired with <see cref="ShipFamilyStatsCalculator"/>.
     /// </summary>
@@ -156,21 +159,35 @@ namespace TitanOrbit.Data
         public struct Result
         {
             /// <summary>
-            /// Extra Level top speed: sum of each engine/thruster
-            /// <c>Move Base + that part’s PerExtra × shipLevel</c>, then optional level mobility drag.
+            /// Extra Level top speed from <b>engines</b> (thrusters only when the hull has none):
+            /// primary Move Base + each contributing part’s PerExtra × shipLevel, then optional
+            /// level mobility drag.
             /// </summary>
             public float topMoveSpeed;
 
             /// <summary>
-            /// Extra Level accel: primary Accel Base + each engine/thruster PerExtra × shipLevel.
+            /// Extra Level accel from <b>thrusters</b> (engines only when the hull has none):
+            /// primary Accel Base + each contributing part’s PerExtra × shipLevel.
             /// </summary>
             public float sumAcceleration;
 
-            /// <summary>Index of the display primary (newest store extra, else highest moveSpeed).</summary>
+            /// <summary>Same as <see cref="movePrimaryIndex"/> — kept for older HUD / preview binders.</summary>
             public int primaryIndex;
 
-            /// <summary>How many engine/thruster parts participated in the stack (0 if none).</summary>
+            /// <summary>Engine (or fallback thruster) that owns Move Base.</summary>
+            public int movePrimaryIndex;
+
+            /// <summary>Thruster (or fallback engine) that owns Accel Base.</summary>
+            public int accelPrimaryIndex;
+
+            /// <summary>How many propulsion parts participated in Move or Accel (0 if none).</summary>
             public int propulsionCount;
+
+            /// <summary>How many parts contributed to Move (engines, or fallback thrusters).</summary>
+            public int moveCount;
+
+            /// <summary>How many parts contributed to Accel (thrusters, or fallback engines).</summary>
+            public int accelCount;
 
             /// <summary>
             /// Move contributed by non-primary propulsion parts (their own Base + PerExtra at this ship level).
@@ -246,19 +263,167 @@ namespace TitanOrbit.Data
         }
 
         /// <summary>
-        /// Computes shared engine/thruster Move / Accel from per-component stats using Extra Level.
-        /// Each propulsion part uses <b>its own</b> Move / Accel PerExtra; results are summed.
+        /// True when this hull has at least one non-cosmetic engine (power plant) mount.
+        /// Used with <see cref="HasThrusters"/> so Move / Accel can fall back on single-role hulls.
+        /// </summary>
+        /// <param name="componentIds">Prefab + store part ids (cosmetics are skipped).</param>
+        public static void ClassifyPropulsionRoles(
+            IReadOnlyList<string> componentIds,
+            out bool hasEngines,
+            out bool hasThrusters)
+        {
+            hasEngines = false;
+            hasThrusters = false;
+            if (componentIds == null)
+                return;
+
+            for (int i = 0; i < componentIds.Count; i++)
+            {
+                string id = componentIds[i];
+                if (string.IsNullOrWhiteSpace(id))
+                    continue;
+                if (ShipFamilyPartCalcProfileSet.IsCosmeticPartName(id))
+                    continue;
+
+                if (ShipFamilyPartTypes.IsEngineLikeName(id))
+                    hasEngines = true;
+                else if (ShipFamilyPartTypes.IsThrusterLikeName(id))
+                    hasThrusters = true;
+
+                if (hasEngines && hasThrusters)
+                    return;
+            }
+        }
+
+        /// <summary>
+        /// Move Speed contributors: engines, or thrusters when the hull has no engines.
+        /// Cosmetic Place / Cover mounts never contribute.
+        /// </summary>
+        /// <param name="componentId">Prefab child or store catalog id.</param>
+        /// <param name="hasEngines">From <see cref="ClassifyPropulsionRoles"/>.</param>
+        public static bool ContributesMoveSpeed(string componentId, bool hasEngines)
+        {
+            if (string.IsNullOrWhiteSpace(componentId))
+                return false;
+            if (ShipFamilyPartCalcProfileSet.IsCosmeticPartName(componentId))
+                return false;
+            if (!ShipComponentAbilityStats.IsPropulsionComponent(componentId))
+                return false;
+
+            // [TITAN-ORBIT] Engines own cruise. Thrusters only inherit Move on thruster-only hulls.
+            if (ShipFamilyPartTypes.IsEngineLikeName(componentId))
+                return true;
+            return !hasEngines && ShipFamilyPartTypes.IsThrusterLikeName(componentId);
+        }
+
+        /// <summary>
+        /// Acceleration contributors: thrusters, or engines when the hull has no thrusters.
+        /// </summary>
+        /// <param name="componentId">Prefab child or store catalog id.</param>
+        /// <param name="hasThrusters">From <see cref="ClassifyPropulsionRoles"/>.</param>
+        public static bool ContributesAcceleration(string componentId, bool hasThrusters)
+        {
+            if (string.IsNullOrWhiteSpace(componentId))
+                return false;
+            if (ShipFamilyPartCalcProfileSet.IsCosmeticPartName(componentId))
+                return false;
+            if (!ShipComponentAbilityStats.IsPropulsionComponent(componentId))
+                return false;
+
+            // [TITAN-ORBIT] Thrusters own thrust. Engines only inherit Accel on engine-only hulls.
+            if (ShipFamilyPartTypes.IsThrusterLikeName(componentId))
+                return true;
+            return !hasThrusters && ShipFamilyPartTypes.IsEngineLikeName(componentId);
+        }
+
+        /// <summary>
+        /// Zeros Move or Accel on a part that does not own that role for this hull.
+        /// Energy / turn / OVERDRIVE stay as authored — those already have their own owners.
+        /// </summary>
+        /// <param name="componentId">Part being masked.</param>
+        /// <param name="stats">Extra-Leveled or primary snapshot for that part.</param>
+        /// <param name="hasEngines">Hull has at least one engine.</param>
+        /// <param name="hasThrusters">Hull has at least one thruster.</param>
+        public static ShipComponentAbilityStats MaskAbilityStatsForRole(
+            string componentId,
+            in ShipComponentAbilityStats stats,
+            bool hasEngines,
+            bool hasThrusters)
+        {
+            var masked = stats;
+            if (!ContributesMoveSpeed(componentId, hasEngines))
+            {
+                masked.moveSpeed = 0f;
+                masked.moveSpeedPerExtraLevel = 0f;
+            }
+
+            if (!ContributesAcceleration(componentId, hasThrusters))
+            {
+                masked.accelerationCap = 0f;
+                masked.accelerationCapPerExtraLevel = 0f;
+            }
+
+            return masked;
+        }
+
+        /// <summary>
+        /// Newest store extra (else highest role score) among parts that own Move or Accel.
+        /// </summary>
+        static int PickRolePrimaryGlobalIndex(
+            IReadOnlyList<string> componentIds,
+            IReadOnlyList<ShipComponentAbilityStats> perComponentStats,
+            int storeExtraStartIndex,
+            bool hasEngines,
+            bool hasThrusters,
+            bool forMove)
+        {
+            if (componentIds == null || perComponentStats == null)
+                return -1;
+
+            int count = Mathf.Min(componentIds.Count, perComponentStats.Count);
+            var members = new List<int>(4);
+            for (int i = 0; i < count; i++)
+            {
+                string id = componentIds[i];
+                bool include = forMove
+                    ? ContributesMoveSpeed(id, hasEngines)
+                    : ContributesAcceleration(id, hasThrusters);
+                if (!include)
+                    continue;
+                members.Add(i);
+            }
+
+            if (members.Count == 0)
+                return -1;
+
+            // Score Move primaries by cruise; Accel primaries by thrust.
+            string poolKey = forMove
+                ? ShipComponentStackAggregation.EnginePoolKey
+                : ShipComponentStackAggregation.ThrusterPoolKey;
+            int local = ShipComponentStackAggregation.PickPrimaryLocalIndex(
+                poolKey, members, perComponentStats, storeExtraStartIndex);
+            return members[local];
+        }
+
+        /// <summary>
+        /// Computes Move from engines and Accel from thrusters using Extra Level.
+        /// Each contributing part uses <b>its own</b> PerExtra; results are summed.
         /// Ability purchases are 0 here — HUD/sim pass them via
         /// <see cref="ShipComponentExtraLevelMath.AggregateAndEvaluate"/>.
         /// </summary>
-        /// <param name="storeExtraStartIndex">First moon-store extra index (newest extra becomes primary).</param>
+        /// <param name="storeExtraStartIndex">First moon-store extra index (newest extra in that role becomes primary).</param>
         public static Result ComputeThrusterPropulsion(
             IReadOnlyList<string> componentIds,
             IReadOnlyList<ShipComponentAbilityStats> perComponentStats,
             int shipLevel,
             int storeExtraStartIndex = int.MaxValue)
         {
-            var result = new Result { primaryIndex = -1 };
+            var result = new Result
+            {
+                primaryIndex = -1,
+                movePrimaryIndex = -1,
+                accelPrimaryIndex = -1,
+            };
             if (componentIds == null || perComponentStats == null)
                 return result;
 
@@ -271,14 +436,20 @@ namespace TitanOrbit.Data
             float speedPenalty = mobility != null ? mobility.levelMaxSpeedPenaltyFractionPerLevel : 0f;
             float accelPenalty = mobility != null ? mobility.levelAccelPenaltyFractionPerLevel : 0f;
 
-            // --- Display primary: newest store extra, else highest moveSpeed ---
-            result.primaryIndex = ShipComponentStackAggregation.PickPropulsionPrimaryGlobalIndex(
-                componentIds, perComponentStats, storeExtraStartIndex);
-            if (result.primaryIndex < 0)
+            // --- Who owns each role on this hull (plus SpaceExcalibur-style fallbacks) ---
+            ClassifyPropulsionRoles(componentIds, out bool hasEngines, out bool hasThrusters);
+            result.movePrimaryIndex = PickRolePrimaryGlobalIndex(
+                componentIds, perComponentStats, storeExtraStartIndex, hasEngines, hasThrusters, forMove: true);
+            result.accelPrimaryIndex = PickRolePrimaryGlobalIndex(
+                componentIds, perComponentStats, storeExtraStartIndex, hasEngines, hasThrusters, forMove: false);
+            result.primaryIndex = result.movePrimaryIndex;
+            if (result.movePrimaryIndex < 0 && result.accelPrimaryIndex < 0)
                 return result;
 
-            // --- Extra Level each engine / thruster with that part’s PerExtra, then sum ---
+            // --- Extra Level each owner with that part’s PerExtra, then sum ---
             int propulsionCount = 0;
+            int moveCount = 0;
+            int accelCount = 0;
             float moveRaw = 0f;
             float accelRaw = 0f;
             float movePerSum = 0f;
@@ -286,9 +457,10 @@ namespace TitanOrbit.Data
             float extraMove = 0f;
             for (int i = 0; i < count; i++)
             {
-                if (!ShipComponentAbilityStats.IsPropulsionComponent(componentIds[i]))
-                    continue;
-                if (ShipFamilyPartCalcProfileSet.IsCosmeticPartName(componentIds[i]))
+                string id = componentIds[i];
+                bool forMove = ContributesMoveSpeed(id, hasEngines);
+                bool forAccel = ContributesAcceleration(id, hasThrusters);
+                if (!forMove && !forAccel)
                     continue;
 
                 ShipComponentAbilityStats part = perComponentStats[i];
@@ -297,30 +469,40 @@ namespace TitanOrbit.Data
                 if (accelPer <= 0.0001f && movePer > 0f)
                     accelPer = movePer * SuggestedPropulsionAccelerationFractionOfMoveSpeed;
 
-                bool includeBase = i == result.primaryIndex;
-                float partMove = ShipComponentExtraLevelMath.Evaluate(
-                    Mathf.Max(0f, part.moveSpeed),
-                    movePer,
-                    shipLevel,
-                    abilityLevel: 0,
-                    componentCount: 1,
-                    includeExtraComponentLevels: true,
-                    includeBase: includeBase);
-                float partAccel = ShipComponentExtraLevelMath.Evaluate(
-                    Mathf.Max(0f, GetPropulsionAccelerationContribution(part, 0)),
-                    accelPer,
-                    shipLevel,
-                    abilityLevel: 0,
-                    componentCount: 1,
-                    includeExtraComponentLevels: true,
-                    includeBase: includeBase);
+                if (forMove)
+                {
+                    bool includeMoveBase = i == result.movePrimaryIndex;
+                    float partMove = ShipComponentExtraLevelMath.Evaluate(
+                        Mathf.Max(0f, part.moveSpeed),
+                        movePer,
+                        shipLevel,
+                        abilityLevel: 0,
+                        componentCount: 1,
+                        includeExtraComponentLevels: true,
+                        includeBase: includeMoveBase);
+                    moveRaw += partMove;
+                    movePerSum += movePer;
+                    if (!includeMoveBase)
+                        extraMove += partMove;
+                    moveCount++;
+                }
 
-                moveRaw += partMove;
-                accelRaw += partAccel;
-                movePerSum += movePer;
-                accelPerSum += accelPer;
-                if (!includeBase)
-                    extraMove += partMove;
+                if (forAccel)
+                {
+                    bool includeAccelBase = i == result.accelPrimaryIndex;
+                    float partAccel = ShipComponentExtraLevelMath.Evaluate(
+                        Mathf.Max(0f, GetPropulsionAccelerationContribution(part, 0)),
+                        accelPer,
+                        shipLevel,
+                        abilityLevel: 0,
+                        componentCount: 1,
+                        includeExtraComponentLevels: true,
+                        includeBase: includeAccelBase);
+                    accelRaw += partAccel;
+                    accelPerSum += accelPer;
+                    accelCount++;
+                }
+
                 propulsionCount++;
             }
 
@@ -331,6 +513,8 @@ namespace TitanOrbit.Data
             float sumAccel = ApplyShipLevelMobilityScale(accelRaw, levelsAfterFirst, accelPenalty);
 
             result.propulsionCount = propulsionCount;
+            result.moveCount = moveCount;
+            result.accelCount = accelCount;
             result.topMoveSpeed = Mathf.Max(0.1f, topMove);
             result.sumAcceleration = Mathf.Max(0f, sumAccel);
             result.extraMoveSpeedFromAdditional = Mathf.Max(0f, extraMove);

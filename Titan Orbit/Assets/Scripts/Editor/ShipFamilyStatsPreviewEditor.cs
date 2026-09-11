@@ -62,7 +62,7 @@ namespace TitanOrbit.Editor
             {
                 EditorGUILayout.HelpBox(
                     "No stats found yet. Assign a ShipFamilyDefinition and ensure child names follow 'Family_ComponentId' (e.g. AstroEagle_Cockpit). " +
-                    "Non-weapons: most stats scale by average scale (x+y+z)/3. Engines and thrusters use authored move speed and acceleration cap; thrusters also use turn speed (with Tail/Fin) — none scaled by part size. Engines own Energy Cap/Regen. " +
+                    "Non-weapons: most stats scale by average scale (x+y+z)/3. Engines own authored move speed (and Energy Cap/Regen); thrusters own acceleration cap and turn speed (with Tail/Fin) — none scaled by part size. " +
                     "Weapons: catalog fire power, fire rate, and bullet speed — not scaled by part size.",
                     MessageType.Info);
             }
@@ -109,7 +109,7 @@ namespace TitanOrbit.Editor
                 EditorGUILayout.FloatField(
                     new GUIContent(
                         "Acceleration Cap (aggregated)",
-                        "Primary Accel only. Extras add that part’s PerExtra × (shipLevel+ability)."),
+                        "Thruster Accel only. Extra thrusters add that part’s PerExtra × (shipLevel+ability)."),
                     total.accelerationCap);
                 EditorGUILayout.FloatField(
                     new GUIContent(
@@ -119,7 +119,7 @@ namespace TitanOrbit.Editor
                 EditorGUILayout.FloatField(
                     new GUIContent(
                         "Move Speed (aggregated)",
-                        "Primary Move only. Extras raise Extra Level via component count (same pool for engines+thrusters)."),
+                        "Engine Move only. Extra engines raise Extra Level via that part’s PerExtra."),
                     total.moveSpeed);
                 EditorGUILayout.FloatField(
                     new GUIContent(
@@ -128,11 +128,11 @@ namespace TitanOrbit.Editor
                     total.moveSpeedPerExtraLevel);
                 if (preview != null)
                 {
-                    EditorGUILayout.LabelField("Propulsion (engines + thrusters)", EditorStyles.miniBoldLabel);
+                    EditorGUILayout.LabelField("Propulsion (engines = Move, thrusters = Accel)", EditorStyles.miniBoldLabel);
                     EditorGUILayout.FloatField(
                         new GUIContent(
                             "Acceleration Cap (stacked)",
-                            "Primary Accel + each part’s PerExtra × (shipLevel+ability) — matches Extra Level flight math."),
+                            "Thruster Accel + each thruster’s PerExtra × (shipLevel+ability) — matches Extra Level flight math."),
                         preview.PreviewSumPropulsionAcceleration);
                     EditorGUILayout.FloatField(
                         new GUIContent(
@@ -142,12 +142,12 @@ namespace TitanOrbit.Editor
                     EditorGUILayout.FloatField(
                         new GUIContent(
                             "Primary propulsion Move Speed",
-                            "Best engine/thruster base move speed — Base in Extra Level formula."),
+                            "Best engine base move speed — Base in Extra Level formula."),
                         preview.PreviewPrimaryThrusterMoveSpeed);
                     EditorGUILayout.FloatField(
                         new GUIContent(
                             "Extra propulsion Move Speed",
-                            "PerExtraLevel × (propulsionCount − 1) — count contribution from extras only."),
+                            "PerExtraLevel from extra engines only (not thrusters)."),
                         preview.PreviewExtraThrusterMoveSpeed);
                     EditorGUILayout.FloatField(
                         new GUIContent(
@@ -211,7 +211,7 @@ namespace TitanOrbit.Editor
                     if (isWeapon)
                         label += " [weapon: catalog stats, no scale; offense only]";
                     if (isPropulsion)
-                        label += " [engine/thruster: primary Base; extras add Extra Level via count]";
+                        label += " [engine = Move; thruster = Accel; extras add that role’s PerExtra]";
                     EditorGUILayout.LabelField("- " + label);
 
                     if (showPerComponent && perStats != null && i < perStats.Count)
@@ -247,26 +247,26 @@ namespace TitanOrbit.Editor
                             EditorGUILayout.LabelField("Movement", EditorStyles.miniBoldLabel);
                             EditorGUILayout.FloatField(
                                 isPropulsion
-                                    ? new GUIContent("  Move Speed", "Authoritative for engines/thrusters; not multiplied by transform scale. Contributes to top-speed cap (max part).")
+                                    ? new GUIContent("  Move Speed", "Used at runtime on engines only (thrusters ignored unless the hull has no engines). Not multiplied by transform scale.")
                                     : new GUIContent("  Move Speed"),
                                 s.moveSpeed);
                             EditorGUILayout.FloatField(
                                 isPropulsion
-                                    ? new GUIContent("  Move Speed / Extra Level", "Authoritative for engines/thrusters; not multiplied by transform scale.")
+                                    ? new GUIContent("  Move Speed / Extra Level", "Used at runtime on engines only. Not multiplied by transform scale.")
                                     : new GUIContent("  Move Speed / Extra Level"),
                                 s.moveSpeedPerExtraLevel);
                             EditorGUILayout.FloatField(
                                 isPropulsion
                                     ? new GUIContent(
                                         "  Acceleration Cap",
-                                        "Summed across all engines and thrusters for thrust at runtime (ship level 1 base + per-level terms).")
+                                        "Used at runtime on thrusters only (engines ignored unless the hull has no thrusters).")
                                     : new GUIContent("  Acceleration Cap"),
                                 s.accelerationCap);
                             EditorGUILayout.FloatField(
                                 isPropulsion
                                     ? new GUIContent(
                                         "  Acceleration Cap / Extra Level",
-                                        "Added per ship level for each engine/thruster; stacked with base acceleration cap.")
+                                        "Added per Extra Level for each thruster; stacked with thruster Accel Base.")
                                     : new GUIContent("  Acceleration Cap / Extra Level"),
                                 s.accelerationCapPerExtraLevel);
                             EditorGUILayout.FloatField(
