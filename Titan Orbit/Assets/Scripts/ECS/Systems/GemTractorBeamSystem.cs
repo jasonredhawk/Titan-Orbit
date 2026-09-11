@@ -693,13 +693,10 @@ namespace TitanOrbit.ECS
 
         /// <summary>
         /// [TITAN-ORBIT] Ship cannot pull when dead, picking team, moon-docking, or at gem
-        /// capacity. A living 0-HP hull (cargo still aboard) may still lock — dual-resource
-        /// death is hull AND gems empty (see <see cref="ShipDamageLogic"/>).
+        /// capacity. Hull-empty ships are <c>IsDead</c> — leftover cargo bursts from death recording.
         /// </summary>
         static bool IsShipEligibleForPull(in ShipState ship, in ShipMoonDockState moonDock)
         {
-            // [TITAN-ORBIT] Do not treat 0 HP as dead. Grind/ram often zeroes hull while cargo
-            // remains; blocking tractor there left beams on the client and no pull on the server.
             if (ship.IsDead || ship.AwaitingTeamSelection)
                 return false;
             if (moonDock.MoonPlanetId != 0 && moonDock.LandingProgress > 0.01f)

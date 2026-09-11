@@ -10,8 +10,8 @@ namespace TitanOrbit.ECS
     /// Runs each simulation tick before <see cref="BulletSimulationSystem"/> so regen applies
     /// before shots consume energy. Skips dead ships and ships awaiting team selection.
     /// <para>
-    /// [TITAN-ORBIT] Dual-resource death: if hull and cargo are both empty, mark dead
-    /// <b>before</b> hull regen so a 0/0 frame cannot heal out of death (legacy Starship order).
+    /// [TITAN-ORBIT] Hull-empty death: mark dead <b>before</b> hull regen so a 0-HP frame
+    /// cannot heal out of death. Leftover cargo bursts from death recording.
     /// </para>
     /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation)]
@@ -43,7 +43,7 @@ namespace TitanOrbit.ECS
                 float health = s.Health;
                 float gems = s.CurrentGems;
                 bool isDead = s.IsDead;
-                if (ShipDamageLogic.TryMarkDeadIfHullAndGemsDepleted(ref health, ref gems, ref isDead))
+                if (ShipDamageLogic.TryMarkDeadIfHullDepleted(ref health, ref gems, ref isDead))
                 {
                     s.Health = health;
                     s.CurrentGems = gems;

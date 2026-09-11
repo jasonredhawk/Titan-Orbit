@@ -27,6 +27,8 @@ namespace TitanOrbit.Simulation
         const float OrbitRingHalfThicknessLocal = 0.11f * 0.7f;
         /// <summary>Gap between the outermost level band and the inner edge of the ship orbit ring.</summary>
         const float OrbitRingClearanceFromLevelBandsLocal = LevelBandGapLocal * 2f;
+        /// <summary>Scale of the ship/moon orbit ring radius from planet center (1 = sit just outside max-level bands).</summary>
+        const float OrbitRingRadiusFromPlanetCenterScale = 1.1f;
         /// <summary>
         /// Radial spring toward the orbit-ring centerline (world units/s per world-unit of radius error).
         /// [TITAN-ORBIT] Stronger than the old Starship.orbitRadiusPullStrength (2.5) so a coasting
@@ -83,9 +85,10 @@ namespace TitanOrbit.Simulation
         /// <summary>Local-space center radius of the ship orbit ring (fixed for all planet levels).</summary>
         public static float GetOrbitRingCenterRadiusLocal()
         {
-            return GetLevelBandsOuterRadiusLocal(PlanetEconomyMath.MaxPlanetLevel)
+            float baseCenter = GetLevelBandsOuterRadiusLocal(PlanetEconomyMath.MaxPlanetLevel)
                 + OrbitRingClearanceFromLevelBandsLocal
                 + OrbitRingHalfThicknessLocal;
+            return baseCenter * OrbitRingRadiusFromPlanetCenterScale;
         }
 
         public static void GetRingRadiiWorld(float planetSize, int planetLevel, out float innerWorld, out float outerWorld, out float centerWorld)

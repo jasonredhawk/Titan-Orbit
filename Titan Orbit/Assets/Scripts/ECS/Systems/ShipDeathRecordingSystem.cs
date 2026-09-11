@@ -1,8 +1,10 @@
 using TitanOrbit.Core;
+using TitanOrbit.Simulation;
 using Unity.Collections;
 using Unity.Entities;
 using Unity.Mathematics;
 using Unity.NetCode;
+using Unity.Transforms;
 
 namespace TitanOrbit.ECS
 {
@@ -12,9 +14,8 @@ namespace TitanOrbit.ECS
     /// runs before <see cref="ShipRespawnSystem"/>. WithNone&lt;ShipDeathState&gt; ensures this
     /// fires exactly once per death.
     /// <para>
-    /// [TITAN-ORBIT] Death requires hull <b>and</b> cargo depleted (<c>ShipDamageLogic</c>).
-    /// Combat already expelled gems as world entities — do not silently zero leftover cargo here
-    /// without a spawn (that was the ECS regression vs NGO). Clamp tiny leftovers only.
+    /// [TITAN-ORBIT] Death is hull depleted. Leftover cargo bursts as world gems
+    /// (random count + random values) — do not silently zero cargo without a spawn.
     /// </para>
     /// <para>
     /// Also credits <see cref="ShipMatchStats.Kills"/> to the last damager from
@@ -36,10 +37,18 @@ namespace TitanOrbit.ECS
             if (SystemAPI.TryGetSingleton<NetworkTime>(out var networkTime)
                 && networkTime.ServerTick.IsValid)
                 tick = networkTime.ServerTick.TickIndexForValidTick;
+
+            Entity gemPrefab = Entity.Null;
+            if (SystemAPI.TryGetSingleton<GamePrefabs>(out var prefabs))
+                gemPrefab = prefabs.Gem;
+            float spawnServerTime = PlanetGemMoonOrbitClock.GetElapsedSecondsOrFallback(
+                state.EntityManager, now);
+
             var ecb = new EntityCommandBuffer(Allocator.Temp);
 
-            foreach (var (shipState, kinematics, orbitState, entity) in SystemAPI
-                         .Query<RefRW<ShipState>, RefRW<ShipKinematics>, RefRW<ShipOrbitState>>()
+            foreach (var (shipState, kinematics, orbitState, transform, entity) in SystemAPI
+                         .Query<RefRW<ShipState>, RefRW<ShipKinematics>, RefRW<ShipOrbitState>,
+                             RefRO<LocalTransform>>()
                          .WithAll<ShipTag>()
                          .WithNone<ShipDeathState>()
                          .WithEntityAccess())
@@ -51,20 +60,31 @@ namespace TitanOrbit.ECS
                 // [TITAN-ORBIT] Prefer enemy kills only — same-team / self / asteroid deaths skip.
                 CreditKillToLastDamager(state.EntityManager, entity, shipState.ValueRO.Team);
 
-                // --- Death cleanup: stop movement / people (gems should already be empty) ---
-                // Clamp only — world gem burst already happened during the killing damage pulses.
-                if (shipState.ValueRO.CurrentGems > 0.001f)
+                // --- Cargo burst: leftover hold explodes as random-count / random-value gems ---
+                float leftover = shipState.ValueRO.CurrentGems;
+                if (leftover >= GemEconomyConstants.MinGemSpawnValue && gemPrefab != Entity.Null)
                 {
-                    // Safety: if something set IsDead with cargo left, strip without inventing a burst
-                    // (should not happen on the dual-resource path).
-                    shipState.ValueRW.CurrentGems = 0f;
-                }
-                else
-                {
-                    shipState.ValueRW.CurrentGems = 0f;
+                    int sourceNetworkId = 0;
+                    if (state.EntityManager.HasComponent<GhostOwner>(entity))
+                        sourceNetworkId = state.EntityManager.GetComponentData<GhostOwner>(entity).NetworkId;
+
+                    uint seed = math.hash(new uint2((uint)entity.Index, tick != 0 ? tick : (uint)(now * 1000f)));
+                    float3 pos = transform.ValueRO.Position;
+                    pos.y = 0f;
+                    ShipGemExpulsion.SpawnDeathBurst(
+                        ecb,
+                        gemPrefab,
+                        pos,
+                        leftover,
+                        seed,
+                        spawnServerTime,
+                        sourceNetworkId,
+                        kinematics.ValueRO.Velocity);
                 }
 
-                // Cargo still aboard dies with the hull. Unload hops that already left
+                shipState.ValueRW.CurrentGems = 0f;
+
+                // People still aboard die with the hull. Unload hops that already left
                 // the ship keep flying in PeopleTransportSimulationSystem.
                 shipState.ValueRW.CurrentPeople = 0;
                 kinematics.ValueRW.Velocity = Unity.Mathematics.float3.zero;

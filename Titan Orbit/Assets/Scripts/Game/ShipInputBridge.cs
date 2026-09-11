@@ -20,7 +20,8 @@ namespace TitanOrbit.Game
     /// B-key cycles the bullet bank: latches the press (so fixed-tick NetCode does not miss
     /// <c>WasPressedThisFrame</c>), shows floating category name, and relies on
     /// <see cref="ShipCycleBulletSystem"/> + baked <see cref="ShipLoadoutState"/> for the sticky index.
-    /// T-key (when GameManager Cycle All Thruster VFX is on) walks
+    /// V-key hold sets <see cref="ShipInput.WantExpelGems"/> so the server dumps cargo
+    /// forward of the hull. T-key (when GameManager Cycle All Thruster VFX is on) walks
     /// <see cref="ThrusterVfxBank"/> on live ship proxies only — no ghost / RPC.
     /// </para>
     /// </summary>
@@ -210,6 +211,11 @@ namespace TitanOrbit.Game
             // does not fight turret possession.
             bool overdrive = !turretControl && _input.OverdriveHeld;
 
+            // [TITAN-ORBIT] Hold V to dump cargo. Server pulses while this bit stays true.
+            bool wantExpelGems = !turretControl
+                && !MoonOrbitClientState.IsOrbitMenuVisible
+                && _input.ExpelGemsHeld;
+
             return new ShipInput
             {
                 AimPlanarDir = aimDir,
@@ -227,6 +233,7 @@ namespace TitanOrbit.Game
                 AimDistance = aimDistance,
                 SetBulletBank = setBulletBank,
                 SelectedBulletBank = BulletBankSelection.RequestedBankIndex,
+                WantExpelGems = wantExpelGems,
             };
         }
 

@@ -93,6 +93,30 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
+        /// Hold-V dump period: one cargo gem every half second while the key stays down.
+        /// First eligible tick fires immediately (same prime as deposit).
+        /// </summary>
+        public const float VoluntaryGemExpelIntervalSeconds = 0.5f;
+
+        /// <summary>
+        /// Extra launch speed on V-key dumps (relative spit only — ship velocity is not doubled).
+        /// </summary>
+        public const float VoluntaryGemExpelLaunchSpeedMul = 2f;
+
+        /// <summary>
+        /// Cargo dumped on one V-key pulse: <c>shipLevel + gemCapacity upgrades</c>,
+        /// or leftover hold if smaller. Level 6 with 6 gem-capacity upgrades → 12.
+        /// </summary>
+        /// <param name="shipLevel">Current hull level (1 = starter).</param>
+        /// <param name="gemCapacityLevel">Bottom-HUD gem-capacity upgrade count.</param>
+        /// <param name="currentGems">Cargo remaining on the ship right now.</param>
+        public static float GetVoluntaryExpelAmount(int shipLevel, int gemCapacityLevel, float currentGems)
+        {
+            float fullChunk = math.max(1, shipLevel) + math.max(0, gemCapacityLevel);
+            return math.min(fullChunk, math.max(0f, currentGems));
+        }
+
+        /// <summary>
         /// Max toroidal distance (world units) at which a client still hears another ship's
         /// gem-deposit metronome. Beyond this the beat is silent — keeps distant moons quiet.
         /// </summary>
@@ -435,8 +459,8 @@ namespace TitanOrbit.ECS
     /// already pinned to this ship's tractor (a lock on an outer wing sits outside a hull-only
     /// gather). Colour / <c>IsBonusGem</c> is ignored — yellow extra-yield gems scoop like red.
     /// Runs after <see cref="GemMotionSystem"/> so same-tick tractor pull can land in the zone.
-    /// Skips only <c>IsDead</c> / team-select ships. A living 0-HP hull with cargo still aboard
-    /// may scoop — dual-resource death is hull AND gems empty, not hull alone.
+    /// Skips only <c>IsDead</c> / team-select ships. Hull-empty ships are dead; leftover
+    /// cargo bursts from <see cref="ShipDeathRecordingSystem"/> instead of staying scoopable.
     /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation)]
     [UpdateInGroup(typeof(SimulationSystemGroup))]
@@ -883,7 +907,7 @@ namespace TitanOrbit.ECS
                         float h = ship.Health;
                         float g = ship.CurrentGems;
                         bool dead = ship.IsDead;
-                        ShipDamageLogic.TryMarkDeadIfHullAndGemsDepleted(ref h, ref g, ref dead);
+                        ShipDamageLogic.TryMarkDeadIfHullDepleted(ref h, ref g, ref dead);
                         ship.Health = h;
                         ship.CurrentGems = g;
                         ship.IsDead = dead;
@@ -1277,6 +1301,18 @@ namespace TitanOrbit.ECS
         /// <param name="excludePickupUntilServerTime">
         /// ServerTick-timeline seconds when that ship may collect again (0 = no exclusion).
         /// </param>
+        /// <param name="launchDir">
+        /// When XZ length &gt; 0, offset and velocity stay on this heading (V-key dump).
+        /// Default 0 keeps the random burst used by mining / damage spills.
+        /// </param>
+        /// <param name="addVelocity">
+        /// Extra world velocity added after launch (ship velocity so a forward dump
+        /// stays ahead of a moving hull).
+        /// </param>
+        /// <param name="launchSpeedMul">
+        /// Multiplies burst / nudge speed only (not <paramref name="addVelocity"/>).
+        /// V-key dumps pass 2 so gems travel farther from the hull.
+        /// </param>
         public static void Spawn(
             EntityCommandBuffer ecb,
             Entity gemPrefab,
@@ -1290,17 +1326,31 @@ namespace TitanOrbit.ECS
             bool isBonusGem = false,
             float burstIntensity = 1f,
             int excludePickupNetworkId = 0,
-            float excludePickupUntilServerTime = 0f)
+            float excludePickupUntilServerTime = 0f,
+            float3 launchDir = default,
+            float3 addVelocity = default,
+            float launchSpeedMul = 1f)
         {
             if (value <= 0f)
                 return;
 
             settings ??= GemExplosionSettingsCache.ResolveOrDefault();
             var rng = Random.CreateFromIndex(math.hash(position) + salt + 17u);
-            float3 spawnDir = GemExplosionMath.RandomUnitXZ(ref rng);
+
+            // --- Heading ---
+            // [TITAN-ORBIT] Voluntary dump locks to ship forward. Damage / mine bursts stay random XZ.
+            float3 planarLaunch = new float3(launchDir.x, 0f, launchDir.z);
+            bool useForward = math.lengthsq(planarLaunch) > 0.01f;
+            float3 spawnDir = useForward
+                ? math.normalize(planarLaunch)
+                : GemExplosionMath.RandomUnitXZ(ref rng);
+            if (math.lengthsq(spawnDir) < 0.01f)
+                spawnDir = new float3(0f, 0f, 1f);
 
             float radius = burst ? settings.AsteroidExplosionRadius : 0.8f;
-            float3 offset = spawnDir * radius * rng.NextFloat(0.3f, 1f);
+            // Voluntary dump already sits on the hull nose — do not add asteroid-burst radius.
+            float along = useForward ? 0f : radius * rng.NextFloat(0.3f, 1f);
+            float3 offset = spawnDir * along;
             float scale = math.clamp(math.sqrt(value) * 0.2f, 0.2f, 0.5f);
 
             Entity gem = ecb.Instantiate(gemPrefab);
@@ -1331,6 +1381,8 @@ namespace TitanOrbit.ECS
                 TractorExtendDuration = 0f,
             });
 
+            float speedMul = math.max(0.01f, launchSpeedMul);
+
             if (burst)
             {
                 // --- Original NGO GemSpawner launch + tumble (intensity scales ship-damage spills) ---
@@ -1341,6 +1393,9 @@ namespace TitanOrbit.ECS
                     settings.SpeedRandomMax,
                     burstIntensity,
                     ref rng);
+                vel *= speedMul;
+                vel += addVelocity;
+                vel.y = 0f;
                 float3 ang = GemExplosionMath.BurstAngularVelocity(settings.AngularSpeedMax, ref rng);
                 ecb.SetComponent(gem, new GemKinematics { Velocity = vel, AngularVelocity = ang });
             }
@@ -1349,7 +1404,9 @@ namespace TitanOrbit.ECS
                 // Small outward nudge so mined gems are not stuck inside the asteroid mesh.
                 float speed = rng.NextFloat(settings.MiningNudgeSpeedMin, settings.MiningNudgeSpeedMax);
                 float3 ang = GemExplosionMath.BurstAngularVelocity(settings.AngularSpeedMax * 0.35f, ref rng);
-                ecb.SetComponent(gem, new GemKinematics { Velocity = spawnDir * speed, AngularVelocity = ang });
+                float3 vel = spawnDir * (speed * speedMul) + addVelocity;
+                vel.y = 0f;
+                ecb.SetComponent(gem, new GemKinematics { Velocity = vel, AngularVelocity = ang });
             }
         }
     }
@@ -1416,6 +1473,179 @@ namespace TitanOrbit.ECS
                 burstIntensity: math.saturate(intensity),
                 excludePickupNetworkId: excludeId,
                 excludePickupUntilServerTime: blockUntil);
+        }
+
+        /// <summary>
+        /// World point at the covering-hull nose (presentation extents × tier scale).
+        /// Fallback is the sphere hull radius along facing when the covering bake is missing.
+        /// </summary>
+        public static float3 ResolveNoseTipWorld(
+            in LocalTransform transform,
+            in ShipHullColliderState hull)
+        {
+            float3 forward = math.forward(transform.Rotation);
+            forward.y = 0f;
+            if (math.lengthsq(forward) < 0.01f)
+                forward = new float3(0f, 0f, 1f);
+            else
+                forward = math.normalize(forward);
+
+            float scale = math.max(0.01f, transform.Scale);
+            float3 center = ShipHullColliderLogic.GetCachedCoveringCenter(hull);
+            float3 extents = ShipHullColliderLogic.GetCachedCoveringExtents(hull);
+            float alongZ = math.max(0f, extents.z);
+
+            float3 world;
+            if (alongZ > 0.01f)
+            {
+                // Presentation-space nose (level-1 covering) × LocalTransform.Scale (tier).
+                float3 localNose = new float3(center.x, 0f, center.z + alongZ);
+                world = transform.Position + math.rotate(transform.Rotation, localNose * scale);
+            }
+            else
+            {
+                float fallback = BodyCollisionMath.GetShipHullRadiusWorld(transform.Scale);
+                world = transform.Position + forward * fallback;
+            }
+
+            world.y = 0f;
+            return world;
+        }
+
+        /// <summary>
+        /// Ship-death cargo dump: random count + random values, burst outward from the hull
+        /// like an asteroid destroy. Cargo must already be left on the ship (not deducted
+        /// mid-fight). Self-pickup block matches damage spills.
+        /// </summary>
+        public static void SpawnDeathBurst(
+            EntityCommandBuffer ecb,
+            Entity gemPrefab,
+            float3 shipPosition,
+            float remaining,
+            uint seed,
+            float spawnServerTime,
+            int sourceShipNetworkId,
+            float3 addVelocity)
+        {
+            if (gemPrefab == Entity.Null || remaining < GemEconomyConstants.MinGemSpawnValue)
+                return;
+
+            var settings = GemExplosionSettingsCache.ResolveOrDefault();
+            settings.ClampCounts();
+
+            var rng = Random.CreateFromIndex(seed);
+            int count = GemExplosionMath.ResolveGemCountForUnitCap(
+                remaining,
+                settings.DeathMinGemCount,
+                settings.DeathMaxGemCount,
+                settings.MaxGemUnitValue,
+                ref rng);
+
+            var values = new float[count];
+            GemExplosionMath.FillRandomValues(
+                remaining,
+                count,
+                settings.MaxGemUnitValue,
+                GemEconomyConstants.MinGemSpawnValue,
+                ref rng,
+                values);
+
+            float blockUntil = 0f;
+            int excludeId = 0;
+            if (sourceShipNetworkId > 0 && settings.SelfPickupBlockSeconds > 0f)
+            {
+                excludeId = sourceShipNetworkId;
+                blockUntil = spawnServerTime + settings.SelfPickupBlockSeconds;
+            }
+
+            float3 addVel = new float3(addVelocity.x, 0f, addVelocity.z);
+
+            for (int i = 0; i < count; i++)
+            {
+                float value = values[i];
+                if (value < GemEconomyConstants.MinGemSpawnValue)
+                    continue;
+
+                GemSpawning.Spawn(
+                    ecb,
+                    gemPrefab,
+                    shipPosition,
+                    value,
+                    seed + (uint)(i + 1) * 97u,
+                    burst: true,
+                    spawnServerTime,
+                    settings: settings,
+                    burstIndex: (byte)i,
+                    isBonusGem: false,
+                    burstIntensity: 1f,
+                    excludePickupNetworkId: excludeId,
+                    excludePickupUntilServerTime: blockUntil,
+                    addVelocity: addVel);
+            }
+        }
+
+        /// <summary>
+        /// Hold-V cargo dump: one gem at the hull nose, launched along planar forward.
+        /// Cargo must already be deducted by the caller.
+        /// </summary>
+        /// <param name="noseWorld">Covering-hull tip from <see cref="ResolveNoseTipWorld"/>.</param>
+        /// <param name="shipForward">Ship facing on XZ (will be normalized).</param>
+        /// <param name="shipVelocity">Current hull velocity so the dump stays ahead of a moving ship.</param>
+        public static void SpawnVoluntaryForward(
+            EntityCommandBuffer ecb,
+            Entity gemPrefab,
+            float3 noseWorld,
+            float3 shipForward,
+            float3 shipVelocity,
+            float gemValue,
+            uint salt,
+            float spawnServerTime,
+            int sourceShipNetworkId)
+        {
+            if (gemPrefab == Entity.Null || gemValue < GemEconomyConstants.MinGemSpawnValue)
+                return;
+
+            var settings = GemExplosionSettingsCache.ResolveOrDefault();
+            settings.ClampCounts();
+            float blockUntil = 0f;
+            int excludeId = 0;
+            if (sourceShipNetworkId > 0 && settings.SelfPickupBlockSeconds > 0f)
+            {
+                excludeId = sourceShipNetworkId;
+                blockUntil = spawnServerTime + settings.SelfPickupBlockSeconds;
+            }
+
+            float3 forward = new float3(shipForward.x, 0f, shipForward.z);
+            if (math.lengthsq(forward) < 0.01f)
+                forward = new float3(0f, 0f, 1f);
+            else
+                forward = math.normalize(forward);
+
+            // Gem visual half-size so the crystal sits on the tip, not inside the mesh.
+            float gemHalf = math.clamp(math.sqrt(math.max(0.25f, gemValue)) * 0.2f, 0.2f, 0.5f) * 0.5f;
+            float3 spawnPos = noseWorld + forward * gemHalf;
+            spawnPos.y = 0f;
+
+            float3 addVel = new float3(shipVelocity.x, 0f, shipVelocity.z);
+
+            // Soft spit off the nose, 2× relative speed so dumps travel farther.
+            GemSpawning.Spawn(
+                ecb,
+                gemPrefab,
+                spawnPos,
+                gemValue,
+                salt,
+                burst: true,
+                spawnServerTime,
+                settings: settings,
+                burstIndex: 0,
+                isBonusGem: false,
+                burstIntensity: 0.25f,
+                excludePickupNetworkId: excludeId,
+                excludePickupUntilServerTime: blockUntil,
+                launchDir: forward,
+                addVelocity: addVel,
+                launchSpeedMul: GemEconomyConstants.VoluntaryGemExpelLaunchSpeedMul);
         }
     }
 

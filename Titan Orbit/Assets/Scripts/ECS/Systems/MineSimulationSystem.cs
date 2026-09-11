@@ -15,8 +15,8 @@ namespace TitanOrbit.ECS
     /// Server-authoritative mine detonation. Each live <see cref="DeployedMineElement"/> sits
     /// still until an enemy ship or enemy moon (shield shell, or surface if the shield is down)
     /// overlaps it, or until <see cref="DeployedMineElement.ExpireTime"/> — then it explodes
-    /// with the same damage + concussive blast. Hull absorbs first; leftover damage
-    /// expels cargo 1:1. Death still requires hull and gems both empty.
+    /// with the same damage + concussive blast. Hull absorbs first; leftover cargo
+    /// bursts from death recording when the hull is emptied.
     /// <para>
     /// [TITAN-ORBIT] All range tests use <see cref="ToroidalMapEcs.ToroidalDistance"/> /
     /// <see cref="PlanetOrbitMath.GetMoonWorldPositionNear"/>. Friendly ships and friendly moons

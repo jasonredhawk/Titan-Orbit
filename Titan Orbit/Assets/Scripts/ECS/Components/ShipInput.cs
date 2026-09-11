@@ -126,7 +126,16 @@ namespace TitanOrbit.ECS
         [GhostField]
         public int SelectedBulletBank;
 
+        /// <summary>
+        /// True while V is held to dump cargo as world gems. Server
+        /// <c>ShipVoluntaryGemExpelSystem</c> pulses while this is set.
+        /// Appended after <see cref="SelectedBulletBank"/> so older command layouts
+        /// still line up on the fields above.
+        /// </summary>
+        [GhostField]
+        public bool WantExpelGems;
+
         public FixedString512Bytes ToFixedString() =>
-            $"ShipInput[t={Thrust},o={Overdrive},f={Fire.Count},c={CycleBullet.Count},r={FireRocket.Count},m={PlaceMine.Count},b={!DisableSpaceBrakes},d={WantDepositGems},s={SelectedRocketSlot},n={SelectedMineSlot},ad={AimDistance},sb={SetBulletBank.Count},bb={SelectedBulletBank}]";
+            $"ShipInput[t={Thrust},o={Overdrive},f={Fire.Count},c={CycleBullet.Count},r={FireRocket.Count},m={PlaceMine.Count},b={!DisableSpaceBrakes},d={WantDepositGems},s={SelectedRocketSlot},n={SelectedMineSlot},ad={AimDistance},sb={SetBulletBank.Count},bb={SelectedBulletBank},e={WantExpelGems}]";
     }
 }

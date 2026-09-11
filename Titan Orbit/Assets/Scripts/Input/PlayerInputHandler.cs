@@ -81,22 +81,13 @@ namespace TitanOrbit.Input
                 return k != null && k.downArrowKey.wasPressedThisFrame;
             }
         }
-        /// <summary>True while V is held to voluntarily expel carried gems forward at 2 shots/sec.</summary>
-        public bool ExpelGemsHeld
-        {
-            get
-            {
-                var k = Keyboard.current;
-                if (k == null)
-                {
-                    foreach (var d in InputSystem.devices)
-                    {
-                        if (d is Keyboard kb) { k = kb; break; }
-                    }
-                }
-                return k != null && k.vKey.isPressed;
-            }
-        }
+        /// <summary>
+        /// True while V is held to dump cargo as world gems. Server pulses every
+        /// <c>GemEconomyConstants.VoluntaryGemExpelIntervalSeconds</c> (0.5s = 2 dumps/sec).
+        /// Chunk size is ship level + gem-capacity upgrades.
+        /// </summary>
+        public bool ExpelGemsHeld =>
+            TryResolveKeyboard(out var keyboard) && keyboard.vKey.isPressed;
 
         /// <summary>
         /// True the frame the player presses T to cycle debug thruster VFX
