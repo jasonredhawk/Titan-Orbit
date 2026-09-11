@@ -193,6 +193,14 @@ namespace TitanOrbit.UI
         private Dictionary<Transform, RectTransform> markerEdgeMarkers = new Dictionary<Transform, RectTransform>();
         private Dictionary<Transform, Image> markerEdgeMarkerImages = new Dictionary<Transform, Image>();
         private float lastEntityCacheRefreshTime = -999f;
+        /// <summary>
+        /// Next Unity frame we may <see cref="RefreshEntityCache"/> while the local ship
+        /// is missing. Profiler: forced cache every Update before spawn was ~22 ms.
+        /// </summary>
+        int _nextNoShipCacheFrame;
+
+        /// <summary>Last <c>Time.frameCount</c> we regenerated circular sprites (size-change hitch).</summary>
+        int _lastCircularSpriteRebuildFrame = -999;
         // Refresh minimap entity cache less frequently to avoid repeated FindObjectsByType spikes (seen growing to 8–15 ms in logs).
         private const float EntityCacheRefreshInterval = 6f;
         /// <summary>While dead asteroid ghosts exist, only rescan asteroids on this interval (full RefreshEntityCache(true) every blip tick was very expensive).</summary>
@@ -1787,10 +1795,14 @@ namespace TitanOrbit.UI
             if (minimapRect != null)
             {
                 float newSize = minimapRect.sizeDelta.x;
-                if (Mathf.Abs(newSize - displaySize) > 1f)
+                if (Mathf.Abs(newSize - displaySize) > 1f &&
+                    Time.frameCount - _lastCircularSpriteRebuildFrame >= 30)
                 {
                     displaySize = newSize;
                     // Regenerate circular sprites at the new resolution so the minimap stays crisp when resized/expanded.
+                    // [TITAN-ORBIT] HUD show after spawn used to change sizeDelta every frame and
+                    // rebuild textures (Profiler ~22 ms). Cooldown keeps one rebuild per half-second.
+                    _lastCircularSpriteRebuildFrame = Time.frameCount;
                     SetupCircularBackground();
                     SetupCircularBorder();
                     SetupMask();
@@ -1806,7 +1818,9 @@ namespace TitanOrbit.UI
             bool needResolvePlayer = playerAnchor == null || playerTransform == null;
             if (needResolvePlayer)
             {
-                RefreshEntityCache(true);
+                // --- Cheap resolve first (no list copy) ---
+                // [TITAN-ORBIT] Join warmup and the first spawn frames have no local ship.
+                // RefreshEntityCache(true) copied every blip list every Update (~22 ms).
                 playerAnchor = null;
                 playerTransform = null;
 
@@ -1814,8 +1828,10 @@ namespace TitanOrbit.UI
                 if (sync != null && sync.TryGetLocalPlayer(out playerAnchor) && playerAnchor != null)
                     playerTransform = playerAnchor.transform;
 
-                if (playerAnchor == null)
+                if (playerAnchor == null && Time.frameCount >= _nextNoShipCacheFrame)
                 {
+                    _nextNoShipCacheFrame = Time.frameCount + 15;
+                    RefreshEntityCache(true);
                     foreach (var ship in cachedShips)
                     {
                         if (ship == null || !ship.IsLocalPlayer)

@@ -1,10 +1,12 @@
 using System.Collections.Generic;
+using SpaceGraphicsToolkit;
 using TitanOrbit.Core;
 using TitanOrbit.Data;
 using TitanOrbit.Entities;
 using TitanOrbit.NetCode;
 using Unity.Entities;
 using UnityEngine;
+using UnityEngine.Rendering.Universal;
 
 namespace TitanOrbit.Game
 {
@@ -44,6 +46,15 @@ namespace TitanOrbit.Game
         const int VfxInstantiatesPerFrame = 4;
 
         /// <summary>
+        /// Max dirty SGT planet Rebuilds this frame. Profiler: one first Rebuild was ~845 ms —
+        /// keep this at 1 so the overlay absorbs it without stacking.
+        /// </summary>
+        const int SgtPlanetRebuildsPerFrame = 1;
+
+        /// <summary>Small off-screen target so URP does not blit into the Game view overlay.</summary>
+        const int WarmupRtSize = 64;
+
+        /// <summary>
         /// Unused built-in-adjacent layer so the warmup camera can isolate the quad / hull.
         /// Main cameras still use Everything — objects sit at y = −10000, outside the frustum.
         /// </summary>
@@ -63,6 +74,13 @@ namespace TitanOrbit.Game
 
         /// <summary>Hidden camera that we <c>Render()</c> manually (never enabled on the player loop).</summary>
         static Camera s_Camera;
+
+        /// <summary>
+        /// Tiny RenderTexture the warmup camera draws into.
+        /// [UNITY] URP <c>Camera.Render()</c> without a target blits to the Game view and
+        /// fights the overlay (console: BlitFinalToBackBuffer attachment size mismatch).
+        /// </summary>
+        static RenderTexture s_WarmupRt;
 
         /// <summary>Single quad whose <c>sharedMaterial</c> we swap to force each variant.</summary>
         static Renderer s_QuadRenderer;
@@ -119,6 +137,24 @@ namespace TitanOrbit.Game
         /// </summary>
         static bool s_ProxyScanClosed;
 
+        /// <summary>True after every live planet proxy's SgtPlanet has been rebuilt or skipped.</summary>
+        static bool s_SgtPlanetsWarmed;
+
+        /// <summary>Planet entities whose SgtPlanet we already probed this join.</summary>
+        static readonly HashSet<Entity> s_SgtWarmedPlanets = new HashSet<Entity>();
+
+        /// <summary>Reused planet-entity list for SGT warmup (no alloc per tick).</summary>
+        static readonly List<Entity> s_PlanetEntityScratch = new List<Entity>(32);
+
+        /// <summary>Moon-shield prefabs waiting for one Instantiates + draw.</summary>
+        static readonly List<GameObject> s_MoonShieldPrefabs = new List<GameObject>(4);
+
+        /// <summary>How many moon-shield prefabs we have Instantiates/drawn.</summary>
+        static int s_MoonShieldsWarmed;
+
+        /// <summary>True after we copied unique shield prefabs (or found none).</summary>
+        static bool s_MoonShieldsQueued;
+
         /// <summary>
         /// One budgeted warmup slice. Safe to call twice in the same Unity frame — the second
         /// call no-ops. Publishes progress onto <see cref="PresentationJoinWarmupGate"/>.
@@ -167,9 +203,12 @@ namespace TitanOrbit.Game
             TryCreateHullProbe();
             AdvanceHullTeamPaint();
             TryEnqueueVfxPrewarm();
+            QueueMoonShieldPrefabsOnce();
             BulletOneShotVfxPool.TickPrewarm(VfxInstantiatesPerFrame);
             DrawQueuedMaterials();
             TryDrawOneVfxShell();
+            TryRebuildOneDirtyPlanet();
+            TryWarmOneMoonShield();
 
             if (IsWorkComplete())
             {
@@ -199,6 +238,12 @@ namespace TitanOrbit.Game
             s_VfxShellsRendered = 0;
             s_MaterialsRendered = 0;
             s_ProxyScanClosed = false;
+            s_SgtPlanetsWarmed = false;
+            s_MoonShieldsQueued = false;
+            s_MoonShieldsWarmed = 0;
+            s_SgtWarmedPlanets.Clear();
+            s_PlanetEntityScratch.Clear();
+            s_MoonShieldPrefabs.Clear();
             s_MaterialQueue.Clear();
             s_SeenMaterialIds.Clear();
             s_ScannedProxyEntities.Clear();
@@ -228,6 +273,10 @@ namespace TitanOrbit.Game
             if (s_MaterialQueue.Count > 0)
                 return false;
             if (s_VfxShellsRendered < s_VfxShellPrefabs.Count)
+                return false;
+            if (!s_SgtPlanetsWarmed)
+                return false;
+            if (!s_MoonShieldsQueued || s_MoonShieldsWarmed < s_MoonShieldPrefabs.Count)
                 return false;
 
             // --- Do not finish before one full scan of the ready map ---
@@ -272,11 +321,19 @@ namespace TitanOrbit.Game
                 ? (float)s_MaterialsRendered / materialTotal
                 : (s_GemTintsEnqueued ? 1f : 0f);
             float hullFrac = s_HullDone ? 1f : (s_HullProbe != null ? 0.5f : 0f);
+            float sgtFrac = s_SgtPlanetsWarmed ? 1f : 0.4f;
+            float shieldFrac = s_MoonShieldsQueued
+                ? (s_MoonShieldPrefabs.Count > 0
+                    ? (float)s_MoonShieldsWarmed / s_MoonShieldPrefabs.Count
+                    : 1f)
+                : 0f;
             float combined = Mathf.Clamp01(
-                0.40f * materialFrac +
-                0.25f * hullFrac +
-                0.25f * vfxPool +
-                0.10f * (vfxShellTotal > 0 ? (float)s_VfxShellsRendered / vfxShellTotal : 0f));
+                0.30f * materialFrac +
+                0.18f * hullFrac +
+                0.20f * vfxPool +
+                0.08f * (vfxShellTotal > 0 ? (float)s_VfxShellsRendered / vfxShellTotal : 0f) +
+                0.16f * sgtFrac +
+                0.08f * shieldFrac);
 
             PresentationJoinWarmupGate.Publish(
                 false,
@@ -316,6 +373,37 @@ namespace TitanOrbit.Game
             s_Camera.farClipPlane = 32f;
             s_Camera.allowHDR = false;
             s_Camera.allowMSAA = false;
+            s_Camera.depth = -100;
+
+            // --- Isolate URP from the Game-view overlay ---
+            // [UNITY] Camera.Render() without a targetTexture blits into the play-mode
+            // backbuffer. URP then draws UIToolkit/uGUI Overlay at a different size
+            // (console: attachment 2560x1293 vs 2560x1248) and the warmup does not
+            // compile gameplay shaders. A 64² RT + Base camera with an empty stack
+            // keeps the draw off-screen.
+            if (s_WarmupRt == null)
+            {
+                s_WarmupRt = new RenderTexture(WarmupRtSize, WarmupRtSize, 16)
+                {
+                    name = "PresentationJoinWarmupRT",
+                    hideFlags = HideFlags.HideAndDontSave,
+                    antiAliasing = 1,
+                };
+                s_WarmupRt.Create();
+            }
+
+            s_Camera.targetTexture = s_WarmupRt;
+
+            var urp = camGo.GetComponent<UniversalAdditionalCameraData>();
+            if (urp == null)
+                urp = camGo.AddComponent<UniversalAdditionalCameraData>();
+            urp.renderType = CameraRenderType.Base;
+            urp.renderPostProcessing = false;
+            urp.antialiasing = AntialiasingMode.None;
+            urp.renderShadows = false;
+            urp.dithering = false;
+            if (urp.cameraStack != null)
+                urp.cameraStack.Clear();
 
             var quad = GameObject.CreatePrimitive(PrimitiveType.Quad);
             quad.name = "WarmupQuad";
@@ -338,7 +426,16 @@ namespace TitanOrbit.Game
             }
 
             s_QuadRenderer = null;
+            if (s_Camera != null)
+                s_Camera.targetTexture = null;
             s_Camera = null;
+            if (s_WarmupRt != null)
+            {
+                s_WarmupRt.Release();
+                Object.Destroy(s_WarmupRt);
+                s_WarmupRt = null;
+            }
+
             if (s_RigRoot != null)
             {
                 Object.Destroy(s_RigRoot);
@@ -665,6 +762,118 @@ namespace TitanOrbit.Game
             if (!s_SeenVfxPrefabIds.Add(id))
                 return;
             s_VfxShellPrefabs.Add(prefab);
+        }
+
+        /// <summary>
+        /// Copies unique MatrixShield prefabs once so we can Instantiates + draw each under
+        /// the overlay. Profiler: first <c>GemMoonMatrixShieldVisual</c> Instantiates of
+        /// MatrixShieldRed cost ~95 ms after spawn.
+        /// </summary>
+        static void QueueMoonShieldPrefabsOnce()
+        {
+            if (s_MoonShieldsQueued)
+                return;
+
+            GemMoonShieldPrefabLibrary.CopyUniquePrefabs(s_MoonShieldPrefabs);
+            s_MoonShieldsQueued = true;
+        }
+
+        /// <summary>
+        /// Instantiates one moon-shield prefab, draws it on the warmup camera, then destroys
+        /// the probe. The live moon visual Instantiates later from the same prefab — shaders
+        /// and Awake cost are already paid.
+        /// </summary>
+        static void TryWarmOneMoonShield()
+        {
+            if (!s_MoonShieldsQueued || s_Camera == null)
+                return;
+            if (s_MoonShieldsWarmed >= s_MoonShieldPrefabs.Count)
+                return;
+
+            GameObject prefab = s_MoonShieldPrefabs[s_MoonShieldsWarmed];
+            s_MoonShieldsWarmed++;
+            if (prefab == null)
+                return;
+
+            var probe = Object.Instantiate(prefab);
+            probe.name = "PresentationJoinWarmupMoonShield";
+            probe.hideFlags = HideFlags.HideAndDontSave;
+            probe.transform.position = WarmupOrigin;
+            SetLayerRecurse(probe, WarmupLayer);
+            EnqueueRendererMaterials(probe);
+            RenderObject(probe);
+            Object.Destroy(probe);
+        }
+
+        /// <summary>
+        /// Rebuilds at most one dirty planet <see cref="SgtPlanet"/> this frame.
+        /// After map proxies are ready, a full pass with no remaining dirty planets
+        /// latches <see cref="s_SgtPlanetsWarmed"/>. Asteroids are skipped — homes
+        /// are what the spawn camera sees first.
+        /// </summary>
+        static void TryRebuildOneDirtyPlanet()
+        {
+            if (s_SgtPlanetsWarmed)
+                return;
+
+            var visualizer = EcsWorldVisualizer.Active;
+            if (visualizer == null)
+            {
+                if (EcsGameBridge.IsMapProxyCountReady(out _, out _, out _))
+                    s_SgtPlanetsWarmed = true;
+                return;
+            }
+
+            visualizer.CopyPlanetProxyEntities(s_PlanetEntityScratch);
+            int rebuilt = 0;
+            bool pending = false;
+            for (int i = 0; i < s_PlanetEntityScratch.Count; i++)
+            {
+                Entity entity = s_PlanetEntityScratch[i];
+                if (s_SgtWarmedPlanets.Contains(entity))
+                    continue;
+                if (!visualizer.TryGetProxy(entity, out GameObject proxy) || proxy == null)
+                {
+                    s_SgtWarmedPlanets.Add(entity);
+                    continue;
+                }
+
+                var planets = proxy.GetComponentsInChildren<SgtPlanet>(true);
+                bool needed = false;
+                for (int p = 0; p < planets.Length; p++)
+                {
+                    if (!SgtPlanetMeshWarm.NeedsRebuild(planets[p]))
+                        continue;
+                    needed = true;
+                    if (rebuilt >= SgtPlanetRebuildsPerFrame)
+                    {
+                        pending = true;
+                        break;
+                    }
+
+                    planets[p].Rebuild();
+                    rebuilt++;
+                }
+
+                if (pending)
+                    break;
+                s_SgtWarmedPlanets.Add(entity);
+            }
+
+            if (!pending && EcsGameBridge.IsMapProxyCountReady(out _, out _, out _))
+            {
+                bool allSeen = true;
+                for (int i = 0; i < s_PlanetEntityScratch.Count; i++)
+                {
+                    if (s_SgtWarmedPlanets.Contains(s_PlanetEntityScratch[i]))
+                        continue;
+                    allSeen = false;
+                    break;
+                }
+
+                if (allSeen)
+                    s_SgtPlanetsWarmed = true;
+            }
         }
 
         /// <summary>[UNITY] Warmup camera culls by layer — children must match the parent.</summary>
