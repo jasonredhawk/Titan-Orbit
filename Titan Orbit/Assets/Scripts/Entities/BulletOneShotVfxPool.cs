@@ -70,6 +70,20 @@ namespace TitanOrbit.Entities
             s_prewarmQueue.Count == 0 || s_prewarmQueueIndex >= s_prewarmQueue.Count;
 
         /// <summary>
+        /// 0–1 fill of the budgeted Instantiates queue (jobs finished / jobs enqueued).
+        /// Join-load graphics warmup uses this for the loading bar's VFX slice.
+        /// </summary>
+        public static float PrewarmProgress
+        {
+            get
+            {
+                if (s_prewarmQueue.Count <= 0)
+                    return 1f;
+                return Mathf.Clamp01((float)s_prewarmQueueIndex / s_prewarmQueue.Count);
+            }
+        }
+
+        /// <summary>
         /// [UNITY] Domain reload / enter Play without Domain Reload — drop stale GO refs.
         /// </summary>
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
@@ -266,6 +280,27 @@ namespace TitanOrbit.Entities
         /// <summary>Convenience overload when the caller does not need the grew flag.</summary>
         public static bool TryRent(GameObject prefab, out GameObject instance)
         {
+            return TryRent(prefab, out instance, out _);
+        }
+
+        /// <summary>
+        /// Rents only if an idle shell already exists — never Instantiates.
+        /// Join-load graphics warmup uses this so a <c>Camera.Render</c> of a particle
+        /// program does not grow the pool on the overlay frame.
+        /// </summary>
+        /// <param name="prefab">Muzzle or impact prefab from the bank.</param>
+        /// <param name="instance">Active idle shell, or null when the stack is empty.</param>
+        /// <returns>True when an existing idle instance was activated.</returns>
+        public static bool TryRentIdle(GameObject prefab, out GameObject instance)
+        {
+            instance = null;
+            if (prefab == null)
+                return false;
+
+            int key = prefab.GetInstanceID();
+            if (!s_available.TryGetValue(key, out var stack) || stack.Count == 0)
+                return false;
+
             return TryRent(prefab, out instance, out _);
         }
 

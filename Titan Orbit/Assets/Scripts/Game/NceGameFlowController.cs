@@ -16,9 +16,9 @@ namespace TitanOrbit.Game
 {
     /// <summary>
     /// [HYBRID] Drives the NCE (NetCode Entities) vertical-slice UI flow: main menu → local connect →
-    /// loading (map + hidden Orbit Menu warmup) → team pick → gameplay HUD. Wires buttons to
-    /// <see cref="TitanOrbitSessionManager"/> and listens for team-choice / rejoin RPC results.
-    /// Client only — dedicated server has no canvas.
+    /// loading (map + hidden Orbit Menu warmup + graphics warmup) → team pick → gameplay HUD. Wires
+    /// buttons to <see cref="TitanOrbitSessionManager"/> and listens for team-choice / rejoin RPC
+    /// results. Client only — dedicated server has no canvas.
     /// </summary>
     public class NceGameFlowController : MonoBehaviour
     {
@@ -1036,13 +1036,14 @@ namespace TitanOrbit.Game
 
         /// <summary>
         /// True when Join Team may appear: map ghosts/proxies are ready <b>and</b> hidden
-        /// Orbit Menu warmup finished (or was skipped / timed out). First spawn used to
-        /// hitch because those menus built after the ship appeared.
+        /// Orbit Menu warmup <b>and</b> graphics warmup finished (or were skipped / timed out).
+        /// First spawn used to hitch on menus and 60↔30 VSync-bounce on first-draw shaders.
         /// </summary>
         bool IsMapReadyForTeamSelection()
         {
             return EcsGameBridge.IsMapLoadingComplete() &&
-                   OrbitMenuJoinWarmupGate.IsCompleteOrNotNeeded;
+                   OrbitMenuJoinWarmupGate.IsCompleteOrNotNeeded &&
+                   PresentationJoinWarmupGate.IsCompleteOrNotNeeded;
         }
 
         bool IsInGameFlow() => EcsGameBridge.IsNetworkInGame();
@@ -1053,7 +1054,7 @@ namespace TitanOrbit.Game
         /// overlay. Restores CanvasGroup alpha when the ship actually appears.
         /// </summary>
         /// <param name="showGameplayHud">True when the player should see HUD chrome.</param>
-        /// <param name="keepAliveForWarmup">True while hidden minimap / menu warmup still needs the HUD object.</param>
+        /// <param name="keepAliveForWarmup">True while hidden minimap / menu / graphics warmup still needs the HUD object.</param>
         void ApplyGameplayHudRoot(bool showGameplayHud, bool keepAliveForWarmup)
         {
             // --- Repair a shared-canvas fade from the first minimap-warmup bug ---
@@ -1230,6 +1231,8 @@ namespace TitanOrbit.Game
             // FindFirstObjectByType every in-game frame (Profiler: 12–19 ms on this Update).
             if ((connecting || connected) && !OrbitMenuJoinWarmupGate.IsCompleteOrNotNeeded)
                 OrbitMenuJoinWarmupGate.Tick();
+            if ((connecting || connected) && !PresentationJoinWarmupGate.IsCompleteOrNotNeeded)
+                PresentationJoinWarmupGate.Tick();
             if (TitanOrbitSessionManager.IsDedicatedOnlineClient && connected && _dedicatedConnectedAt < 0f)
                 _dedicatedConnectedAt = Time.time;
             if (!connected && !connecting)
@@ -1238,6 +1241,7 @@ namespace TitanOrbit.Game
                 _sharedUiCanvasRestoreDone = false;
                 _gameplayRootHostsJoinFlowResolved = false;
                 OrbitMenuJoinWarmupGate.ResetSession();
+                PresentationJoinWarmupGate.ResetSession();
             }
 
             // --- In-game flying: skip menu/lobby walks ---
@@ -1441,10 +1445,13 @@ namespace TitanOrbit.Game
             bool matchWon = EcsGameBridge.TryGetMatchState(out var match) && match.WinningTeam != TeamId.None;
             bool showGameplayHud = connected && mapReady && hasShip && !showRejoinChoice &&
                                    !ClientTeamFlowState.IsRejoinChoicePending && !matchWon;
-            // Keep HUD alive (hidden) while join warmup Instantiates minimap blips — the HUD
-            // used to stay inactive until spawn, then the first visible frame created every disc.
+            // Keep HUD alive (hidden) while join warmup Instantiates minimap blips / TMP meshes
+            // and while graphics warmup still draws cold shaders. The HUD used to stay inactive
+            // until spawn, then the first visible frame created every disc and compiled HUD fonts.
             bool keepHudAliveForWarmup =
-                (connecting || connected) && !OrbitMenuJoinWarmupGate.IsCompleteOrNotNeeded;
+                (connecting || connected) &&
+                (!OrbitMenuJoinWarmupGate.IsCompleteOrNotNeeded ||
+                 !PresentationJoinWarmupGate.IsCompleteOrNotNeeded);
 
             ApplyGameplayHudRoot(showGameplayHud, keepHudAliveForWarmup);
 

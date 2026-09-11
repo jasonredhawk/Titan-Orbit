@@ -202,6 +202,17 @@ namespace TitanOrbit.Game
         /// <summary>Increments per anticipation CreateTracer so FIFO adopt survives RemoveAtSwap.</summary>
         int _nextAnticipationOrder;
 
+        /// <summary>
+        /// [UNITY] Domain Reload off leaves the join-load VFX enqueue latch sticky.
+        /// Pool stacks are also cleared on SubsystemRegistration — without this reset
+        /// the next Play would skip enqueue and combat would Instantiates cold again.
+        /// </summary>
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        static void ResetJoinLoadVfxLatch()
+        {
+            s_JoinLoadVfxPrewarmQueued = false;
+        }
+
         /// <summary>[UNITY] Attach to session manager when the scene loads.</summary>
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         static void EnsureInstalled()
@@ -1319,6 +1330,12 @@ namespace TitanOrbit.Game
                 BulletVfxBridge.NotifyAnticipationCreated();
         }
 
+        /// <summary>
+        /// Process-wide latch so join-load warmup and LateUpdate <see cref="EnsureBank"/>
+        /// enqueue the VFX Instantiates queue only once.
+        /// </summary>
+        static bool s_JoinLoadVfxPrewarmQueued;
+
         bool _oneShotPoolPrewarmQueued;
 
         /// <summary>
@@ -1378,12 +1395,40 @@ namespace TitanOrbit.Game
             // --- Queue muzzle/impact prewarm (drained a few Instantiates/frame) ---
             // [TITAN-ORBIT] Sync Prewarm of 17×5×12 shells cost spawnMs 531 ms (kill-impact-fix).
             // Enqueue + TickPrewarm keeps combat warm without one giant hitch.
-            if (!_oneShotPoolPrewarmQueued && _bank != null)
+            // Join-load warmup may have already enqueued — TryEnqueue is idempotent.
+            if (!_oneShotPoolPrewarmQueued)
+                _oneShotPoolPrewarmQueued = TryEnqueueJoinLoadVfxPrewarm();
+        }
+
+        /// <summary>
+        /// Enqueues unique muzzle / impact Instantiates and a small tracer prewarm so the
+        /// loading overlay can drain <see cref="BulletOneShotVfxPool.TickPrewarm"/> before
+        /// Join Team. Safe to call from the warmup worker or from <see cref="EnsureBank"/>.
+        /// </summary>
+        /// <returns>
+        /// True when the queue is latched (including mobile skip). False only when the bank
+        /// asset is still missing so the caller can retry next frame.
+        /// </returns>
+        public static bool TryEnqueueJoinLoadVfxPrewarm()
+        {
+            if (s_JoinLoadVfxPrewarmQueued)
+                return true;
+
+            if (Application.isMobilePlatform)
             {
-                _oneShotPoolPrewarmQueued = true;
-                EnqueueOneShotVfxPoolPrewarm(_bank);
-                BulletTracerPool.PrewarmFromBank(_bank, categoryCap: 4, perPrefab: 6);
+                s_JoinLoadVfxPrewarmQueued = true;
+                return true;
             }
+
+            BulletVfxBank bank = BulletVfxBank.LoadDefault();
+            if (bank == null)
+                return false;
+
+            BulletVisualScale.ActiveUpgradeVisualScaleMultiplier = bank.UpgradeVisualScaleMultiplier;
+            EnqueueOneShotVfxPoolPrewarm(bank);
+            BulletTracerPool.PrewarmFromBank(bank, categoryCap: 4, perPrefab: 6);
+            s_JoinLoadVfxPrewarmQueued = true;
+            return true;
         }
 
         /// <summary>

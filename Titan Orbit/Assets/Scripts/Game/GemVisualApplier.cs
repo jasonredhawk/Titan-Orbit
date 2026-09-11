@@ -179,6 +179,21 @@ namespace TitanOrbit.Game
             s_tintReady = s_sharedTintedGemMaterial != null;
         }
 
+        /// <summary>
+        /// Shared red / yellow gem tint materials after <see cref="EnsureSharedTintReady"/>.
+        /// Join-load graphics warmup draws these with a hidden camera so the first crystal
+        /// is not the first URP transparent compile.
+        /// </summary>
+        /// <param name="normal">Red crystal tint, or null if tint setup has not run.</param>
+        /// <param name="bonus">Yellow bonus-gem tint, or null if tint setup has not run.</param>
+        /// <returns>True when both shared materials exist.</returns>
+        public static bool TryGetSharedTintMaterials(out Material normal, out Material bonus)
+        {
+            normal = s_sharedTintedGemMaterial;
+            bonus = s_sharedBonusTintedGemMaterial;
+            return normal != null && bonus != null;
+        }
+
         /// <summary>Maps gem value to uniform local scale via inverse lerp between min and max value.</summary>
         public static float ComputeVisualScale(float gemValue) =>
             GemPresentationScale.ComputeVisualScale(gemValue);

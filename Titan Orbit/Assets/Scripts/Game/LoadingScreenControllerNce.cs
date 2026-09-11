@@ -13,9 +13,9 @@ namespace TitanOrbit.Game
     /// one progress bar (live status + % drawn inside the track).
     /// <para>
     /// Fill is world sync + map visuals + hidden join warmup (Orbit Menu chrome / family
-    /// stores + minimap blips). Join Team stays hidden until
-    /// JoinWorldReadyCache.IsComplete <b>and</b> that warmup finishes
-    /// so first spawn does not Instantiates those widgets.
+    /// stores + minimap blips + graphics / VFX). Join Team stays hidden until
+    /// JoinWorldReadyCache.IsComplete <b>and</b> those warmups finish
+    /// so first spawn does not Instantiates those widgets or compile URP variants.
     /// </para>
     /// <para>
     /// The instruction strip matches the five-step guide from <c>InstructionScreenUI</c>.
@@ -190,19 +190,21 @@ namespace TitanOrbit.Game
         float _stuckWatchSince = -1f;
 
         /// <summary>
-        /// Per-frame: fill is world sync + map visuals + Orbit Menu warmup.
-        /// Overlay names the current step. Menu warmup Instantiates widgets off-screen
-        /// so first spawn does not pay that cost.
+        /// Per-frame: fill is world sync + map visuals + Orbit Menu warmup + graphics warmup.
+        /// Overlay names the current step. Hidden warmup Instantiates widgets and draws
+        /// cold shaders off-screen so first spawn does not pay that cost.
         /// </summary>
         void Update()
         {
             if (!IsVisible)
                 return;
 
-            // --- Hidden Orbit Menu construction while the overlay covers hitchy Instantiates ---
+            // --- Hidden Orbit Menu + graphics construction while the overlay covers hitches ---
             // [TITAN-ORBIT] Game cannot reference TitanOrbit.UI (default assembly). The UI
             // registers a tick handler on OrbitMenuJoinWarmupGate after scene load.
+            // Graphics warmup lives in Game and compiles URP variants via Camera.Render.
             OrbitMenuJoinWarmupGate.Tick();
+            PresentationJoinWarmupGate.Tick();
 
             float networkProgress = 0f;
             EcsGameBridge.TryGetNetworkJoinLoadProgress(out networkProgress);
@@ -210,9 +212,11 @@ namespace TitanOrbit.Game
             EcsGameBridge.TryGetProxyJoinLoadProgress(out proxyProgress);
             float mapCombined = Mathf.Clamp01(0.5f * networkProgress + 0.5f * proxyProgress);
             float menuProgress = OrbitMenuJoinWarmupGate.Progress;
-            // Last 16% is Orbit Menu chrome + family GEAR grids + minimap blips (honest —
-            // bar does not sit at 100% while those widgets are still Instantiating).
-            float combined = Mathf.Clamp01(0.84f * mapCombined + 0.16f * menuProgress);
+            float gfxProgress = PresentationJoinWarmupGate.Progress;
+            // Map stays the bulk of the bar. Menus and graphics are honest tails so the
+            // fill does not sit at 100% while those widgets / shaders are still warming.
+            float combined = Mathf.Clamp01(
+                0.80f * mapCombined + 0.12f * menuProgress + 0.08f * gfxProgress);
 
             // --- Stuck hint after a few seconds (recipe / prefabs vs Instantiates drain) ---
             string mapHint = null;
@@ -235,6 +239,10 @@ namespace TitanOrbit.Game
             if (EcsGameBridge.IsMapLoadingComplete() &&
                 !OrbitMenuJoinWarmupGate.IsCompleteOrNotNeeded)
                 status = OrbitMenuJoinWarmupGate.StatusLabel;
+            else if (EcsGameBridge.IsMapLoadingComplete() &&
+                     OrbitMenuJoinWarmupGate.IsCompleteOrNotNeeded &&
+                     !PresentationJoinWarmupGate.IsCompleteOrNotNeeded)
+                status = PresentationJoinWarmupGate.StatusLabel;
 
             ApplyBar(_loadBar, combined, status, mapHint);
         }
@@ -365,7 +373,7 @@ namespace TitanOrbit.Game
             _titleText.alignment = TextAlignmentOptions.Center;
             _titleText.color = new Color(0.85f, 0.92f, 1f, 1f);
 
-            // --- Combined bar: world sync + map visuals + Orbit Menu warmup ---
+            // --- Combined bar: world sync + map visuals + Orbit Menu + graphics warmup ---
             _loadBar = CreateProgressBar(
                 _contentRoot,
                 "LoadBar",

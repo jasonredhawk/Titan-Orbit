@@ -39,6 +39,13 @@ namespace TitanOrbit.Game
         public static EcsWorldVisualizer Active { get; private set; }
 
         /// <summary>
+        /// Inspector / Awake-resolved ship family used for hybrid hull Instantiates.
+        /// Join-load graphics warmup reads this so the hidden starting-hull probe matches
+        /// the chassis the player will spawn.
+        /// </summary>
+        public ShipFamilyDefinition ResolvedShipFamily => shipFamily;
+
+        /// <summary>
         /// Max new world-body GameObject Instantiates per frame after join settle.
         /// Loading bar advances when these Instantiates succeed (proxy count / meta N).
         /// </summary>
@@ -596,6 +603,90 @@ namespace TitanOrbit.Game
             {
                 proxy = null;
                 return false;
+            }
+
+            return true;
+        }
+
+        /// <summary>
+        /// [HYBRID] Copies unique <c>sharedMaterial</c>s from live map/ship/gem proxies into
+        /// <paramref name="dst"/> so join-load graphics warmup can <c>Camera.Render</c> them.
+        /// Dictionary walk only — no ECS gathers. Caps GO scans and new materials per call
+        /// so a 300-rock map does not hitch one overlay frame.
+        /// </summary>
+        /// <param name="dst">Material queue (appended, not cleared).</param>
+        /// <param name="seenMaterialIds">Material InstanceIDs already queued this join.</param>
+        /// <param name="scannedEntities">Proxy entities already walked this join.</param>
+        /// <param name="maxNewMaterials">Stop after this many newly queued materials.</param>
+        /// <param name="maxNewProxies">Stop after walking this many not-yet-scanned proxies.</param>
+        /// <returns>How many new materials were appended.</returns>
+        public int EnqueueUniqueProxySharedMaterials(
+            List<Material> dst,
+            HashSet<int> seenMaterialIds,
+            HashSet<Entity> scannedEntities,
+            int maxNewMaterials,
+            int maxNewProxies)
+        {
+            if (dst == null || seenMaterialIds == null || scannedEntities == null)
+                return 0;
+            if (maxNewMaterials <= 0 || maxNewProxies <= 0)
+                return 0;
+
+            int added = 0;
+            int proxiesWalked = 0;
+            foreach (var kv in _proxies)
+            {
+                if (proxiesWalked >= maxNewProxies || added >= maxNewMaterials)
+                    break;
+                if (kv.Key == Entity.Null || kv.Value == null)
+                    continue;
+                if (!scannedEntities.Add(kv.Key))
+                    continue;
+
+                proxiesWalked++;
+                var renderers = kv.Value.GetComponentsInChildren<Renderer>(true);
+                for (int i = 0; i < renderers.Length; i++)
+                {
+                    Renderer renderer = renderers[i];
+                    if (renderer == null)
+                        continue;
+                    Material[] mats = renderer.sharedMaterials;
+                    if (mats == null)
+                        continue;
+                    for (int m = 0; m < mats.Length; m++)
+                    {
+                        Material material = mats[m];
+                        if (material == null)
+                            continue;
+                        if (!seenMaterialIds.Add(material.GetInstanceID()))
+                            continue;
+                        dst.Add(material);
+                        added++;
+                        if (added >= maxNewMaterials)
+                            return added;
+                    }
+                }
+            }
+
+            return added;
+        }
+
+        /// <summary>
+        /// True when every live proxy key is already in <paramref name="scannedEntities"/>.
+        /// Used by join-load warmup to know the current Instantiates set has been sampled.
+        /// </summary>
+        /// <param name="scannedEntities">Entities the warmup already walked.</param>
+        public bool HaveScannedAllProxies(HashSet<Entity> scannedEntities)
+        {
+            if (scannedEntities == null)
+                return false;
+
+            foreach (var kv in _proxies)
+            {
+                if (kv.Key == Entity.Null || kv.Value == null)
+                    continue;
+                if (!scannedEntities.Contains(kv.Key))
+                    return false;
             }
 
             return true;
