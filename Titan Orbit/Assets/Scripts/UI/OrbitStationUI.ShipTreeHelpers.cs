@@ -456,7 +456,7 @@ namespace TitanOrbit.UI
             bool upgradeBlockedByStoreLevel = homeAllowsNextUpgrade && nextLevel > storePlanetLevel;
 
             if (IsDebugFreeShipUpgradeTree())
-                shipUpgradeTree.Hint.text = "Debug: click any ship for free. Claimed MEGAs stay with their owner.";
+                shipUpgradeTree.Hint.text = "Debug: click any ship for free. Claimed Titans stay with their owner.";
             else if (canSwapHullAtCurrentSlot)
                 shipUpgradeTree.Hint.text = "Click your ship in the left panel to swap to this moon's hull at your tier (free).";
             else if (storePlanetLevelBlocksSwap)
@@ -464,7 +464,7 @@ namespace TitanOrbit.UI
             else if (upgradeBlockedByStoreLevel)
                 shipUpgradeTree.Hint.text = $"This planet must reach level {nextLevel} to purchase a level {nextLevel} ship.";
             else if (nextLevel == 7)
-                shipUpgradeTree.Hint.text = "MEGA — planet level 6 and a full gem moon unlock these hulls. Each unique hull is in service on one ship at a time.";
+                shipUpgradeTree.Hint.text = "TITAN — planet level 6 and a full gem moon unlock these hulls. Each unique hull is in service on one ship at a time.";
             else if (nextLevel <= 7 && homeLevel < nextLevel)
                 shipUpgradeTree.Hint.text = $"Locked — raise home planet to level {nextLevel}.";
             else

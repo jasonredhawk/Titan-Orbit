@@ -351,10 +351,10 @@ namespace TitanOrbit.Data
                     MegaShipCatalogEntry entry = catalog.entries[i];
                     // Visual line (Craizan Star / Galactic Leopard / Galactic Okamoto) —
                     // same "family" slot regular hulls use for AstroEagle. Not the
-                    // literal "MEGA" pool tag; RANK 1 must name the ship and its line.
+                    // literal Titan pool tag; RANK 1 must name the ship and its line.
                     string visualFamily = entry != null
                         ? DisplayNameFormatting.SplitCamelCase(entry.visualFamily.ToString())
-                        : "MEGA";
+                        : MegaShipCatalog.DisplayClassShort;
                     string megaShipName = DisplayNameFormatting.FormatPrefabShipName(
                         catalog.GetDisplayName(i));
                     if (string.IsNullOrWhiteSpace(megaShipName))

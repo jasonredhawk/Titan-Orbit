@@ -551,7 +551,7 @@ namespace TitanOrbit.UI
                 var catalog = MegaShipCatalog.Load();
                 if (catalog != null)
                     plowMul = catalog.GetAsteroidPlowDamageMultiplier();
-                sb.AppendLine("<color=#FFAA66>MEGA PLOW — rocks die on contact. Hull takes rock HP × catalog slider. Field does not slow the hull.</color>");
+                sb.AppendLine("<color=#FFAA66>TITAN PLOW — rocks die on contact. Hull takes rock HP × catalog slider. Field does not slow the hull.</color>");
                 sb.Append("Plow slider  ").Append(F1(plowMul)).Append("×  <color=#5B7A94>(1 = equal rock HP)</color>").AppendLine();
             }
             sb.Append("Motor Ramming  ").Append(F1(familyRam)).AppendLine();
@@ -630,7 +630,7 @@ namespace TitanOrbit.UI
             ShipStatTooltipChrome.AppendSectionBanner(sb, "MASS TAX", "C9A0FF");
             if (live.Motor.SkipMassTax != 0)
             {
-                sb.AppendLine("<color=#AAEEDD>MEGA hulls ignore mass tax.</color>");
+                sb.AppendLine("<color=#AAEEDD>Titan hulls ignore mass tax.</color>");
                 sb.Append("Cruise  ").Append(FResult(live.ChassisMaxSpeed)).AppendLine();
                 sb.Append("Accel  ").Append(FResult(live.ChassisAccel)).AppendLine();
                 return;

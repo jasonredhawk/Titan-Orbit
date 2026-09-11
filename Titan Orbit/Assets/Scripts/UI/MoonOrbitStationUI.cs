@@ -745,7 +745,7 @@ namespace TitanOrbit.UI
 
             // [TITAN-ORBIT] Debug still unlocks family hulls, but unique MEGAs stay claimed.
             if (IsDebugFreeShipUpgradeTree())
-                _shipTree.Hint.text = "Debug: click any ship for free. Claimed MEGAs stay with their owner.";
+                _shipTree.Hint.text = "Debug: click any ship for free. Claimed Titans stay with their owner.";
             else
                 _shipTree.Hint.text = ShipUpgradeTreeUI.PanelDefaultSubtitle;
         }

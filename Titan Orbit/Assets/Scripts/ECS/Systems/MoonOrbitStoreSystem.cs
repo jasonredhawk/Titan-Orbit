@@ -424,7 +424,7 @@ namespace TitanOrbit.ECS
                     if (!MegaShipPlanetLogic.IsMegaPurchaseUnlocked(
                             storePlanet.PlanetLevel, moon.CurrentMoonGems, moon.MaxMoonGems))
                     {
-                        message = "MEGA locked — planet must be level 6 with a full gem moon.";
+                        message = "Titan locked — planet must be level 6 with a full gem moon.";
                         return false;
                     }
                 }
@@ -432,13 +432,13 @@ namespace TitanOrbit.ECS
                 if (!MegaShipPlanetLogic.TryGetSlot(
                         em, storePlanetEntity, targetBranchIndex, out var megaSlot))
                 {
-                    message = "No MEGA assigned to that slot.";
+                    message = "No Titan assigned to that slot.";
                     return false;
                 }
 
                 if (megaSlot.OccupiedByNetworkId != 0 && megaSlot.OccupiedByNetworkId != networkId)
                 {
-                    message = "That MEGA is already in service.";
+                    message = "That Titan is already in service.";
                     return false;
                 }
 
@@ -452,7 +452,7 @@ namespace TitanOrbit.ECS
                     && catalogOwner != 0
                     && catalogOwner != networkId)
                 {
-                    message = "That MEGA is already owned.";
+                    message = "That Titan is already owned.";
                     return false;
                 }
 
@@ -462,7 +462,7 @@ namespace TitanOrbit.ECS
                 var megaCatalog = MegaShipCatalog.Load();
                 if (megaCatalog == null || !megaCatalog.IsEligibleForMatch(megaCatalogIndex))
                 {
-                    message = "That MEGA has no weapons.";
+                    message = "That Titan has no weapons.";
                     return false;
                 }
             }
@@ -496,7 +496,7 @@ namespace TitanOrbit.ECS
             {
                 if (!MegaShipPlanetLogic.TryOccupySlot(em, storePlanetId, targetBranchIndex, networkId))
                 {
-                    message = "That MEGA is already in service.";
+                    message = "That Titan is already in service.";
                     return false;
                 }
 

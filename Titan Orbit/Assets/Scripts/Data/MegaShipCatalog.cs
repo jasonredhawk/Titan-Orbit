@@ -79,17 +79,26 @@ namespace TitanOrbit.Data
     /// (<see cref="MegaShipPartStats"/> has no Extra Level fields) and are not bottom-bar upgradable.
     /// <para>
     /// [UNITY] Loaded from <c>Resources/MegaShipCatalog</c>. Editor menu
-    /// <c>Titan Orbit / MEGA Ships / Rebuild Catalog From Folders</c> fills the hull list.
+    /// <c>Titan Orbit / Titan Ships / Rebuild Catalog From Folders</c> fills the hull list.
     /// </para>
     /// </summary>
-    [CreateAssetMenu(fileName = "MegaShipCatalog", menuName = "Titan Orbit/MEGA Ship Catalog")]
+    [CreateAssetMenu(fileName = "MegaShipCatalog", menuName = "Titan Orbit/Titan Ship Catalog")]
     public class MegaShipCatalog : ScriptableObject
     {
         /// <summary>Resources path used by <see cref="Load"/>.</summary>
         public const string ResourcesPath = "MegaShipCatalog";
 
-        /// <summary>Chassis-id prefix so MEGA ids never collide with <c>AstroEagle_01</c>.</summary>
+        /// <summary>Chassis-id prefix so Titan ids never collide with <c>AstroEagle_01</c>.</summary>
         public const string ChassisIdPrefix = "MEGA_";
+
+        /// <summary>Player-facing class name (HUD, store cards, toasts). Internal ids stay <c>MEGA_###</c>.</summary>
+        public const string DisplayClassName = "Titan";
+
+        /// <summary>Uppercase HUD / tree caption for a Titan hull slot.</summary>
+        public const string DisplayClassCaption = "TITAN SHIP";
+
+        /// <summary>Short pool tag when a visual family is missing (RANK 1 fallback).</summary>
+        public const string DisplayClassShort = "TITAN";
 
         /// <summary>Contributed-gem cost to buy any MEGA (gem cap is 0 so 2×cap cannot price them).</summary>
         public const float DefaultPurchaseGemCost = 1200f;

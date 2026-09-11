@@ -25,7 +25,7 @@ namespace TitanOrbit.Editor
         };
 
         /// <summary>Creates or refreshes the MEGA catalog from the three visual-family folders.</summary>
-        [MenuItem("Titan Orbit/MEGA Ships/Rebuild Catalog From Folders")]
+        [MenuItem("Titan Orbit/Titan Ships/Rebuild Catalog From Folders")]
         public static void RebuildCatalogFromFolders()
         {
             var catalog = LoadOrCreateCatalog();
@@ -99,7 +99,7 @@ namespace TitanOrbit.Editor
         }
 
         /// <summary>Writes designer-default shared type-table stats (short gun ranges 16 / 20).</summary>
-        [MenuItem("Titan Orbit/MEGA Ships/Apply Default Type-Table Stats")]
+        [MenuItem("Titan Orbit/Titan Ships/Apply Default Type-Table Stats")]
         public static void ApplyDefaultTypeTableStats()
         {
             var catalog = AssetDatabase.LoadAssetAtPath<MegaShipCatalog>(CatalogAssetPath);
@@ -121,7 +121,7 @@ namespace TitanOrbit.Editor
         /// Re-scans every hull prefab into the unique component library. Matching names keep
         /// hand-edited stats; new names get the type-table defaults; all hull sums are rewritten.
         /// </summary>
-        [MenuItem("Titan Orbit/MEGA Ships/Refresh Unique Components")]
+        [MenuItem("Titan Orbit/Titan Ships/Refresh Unique Components")]
         public static void RefreshComponentStatsForAllShips()
         {
             var catalog = AssetDatabase.LoadAssetAtPath<MegaShipCatalog>(CatalogAssetPath);
@@ -145,7 +145,7 @@ namespace TitanOrbit.Editor
         /// Rebuilds the unique library and overwrites every row from the type table, then
         /// rewrites all hull sums. Use after changing the type-table defaults.
         /// </summary>
-        [MenuItem("Titan Orbit/MEGA Ships/Reset Unique Components From Type Table")]
+        [MenuItem("Titan Orbit/Titan Ships/Reset Unique Components From Type Table")]
         public static void ResetComponentStatsFromTypeTable()
         {
             var catalog = AssetDatabase.LoadAssetAtPath<MegaShipCatalog>(CatalogAssetPath);
@@ -165,7 +165,7 @@ namespace TitanOrbit.Editor
         }
 
         /// <summary>Renders 5-team theatrical 3/4 hero thumbs and assigns teamMenuPreviewSprites.</summary>
-        [MenuItem("Titan Orbit/MEGA Ships/Generate Theatrical Menu Previews")]
+        [MenuItem("Titan Orbit/Titan Ships/Generate Theatrical Menu Previews")]
         public static void GenerateTheatricalMenuPreviews()
         {
             var catalog = AssetDatabase.LoadAssetAtPath<MegaShipCatalog>(CatalogAssetPath);
@@ -180,7 +180,7 @@ namespace TitanOrbit.Editor
         }
 
         /// <summary>Bakes MEGA chassis into the Entities Graphics visual catalog after a rebuild.</summary>
-        [MenuItem("Titan Orbit/MEGA Ships/Bake MEGA Visual Catalog Entries")]
+        [MenuItem("Titan Orbit/Titan Ships/Bake Titan Visual Catalog Entries")]
         public static void BakeMegaVisualCatalogEntries()
         {
             RebuildCatalogFromFolders();

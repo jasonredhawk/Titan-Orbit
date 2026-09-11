@@ -206,7 +206,7 @@ namespace TitanOrbit.UI
         /// <summary>
         /// Compact identity string that leads with the <b>ship</b>, then its family.
         /// Regular: <c>Thumper · AstroEagle · L3 · 42</c>.
-        /// MEGA: <c>Void Reaper · Galactic Leopard · 88.1 DPS/s</c> (no L7 — the pool is MEGA-only).
+        /// Titan: <c>Void Reaper · Galactic Leopard · 88.1 DPS/s</c> (no L7 — the pool is Titan-only).
         /// </summary>
         public static string FormatLeaderLine(in ShipPowerBarStatLeader leader, string unit)
         {
@@ -217,11 +217,12 @@ namespace TitanOrbit.UI
             var line = new StringBuilder(64);
             line.Append(ship);
 
-            // Family / MEGA visual line. Regular hulls skip it when the ship token
-            // already contains the family (NightAye16). MEGAs always include the
+            // Family / Titan visual line. Regular hulls skip it when the ship token
+            // already contains the family (NightAye16). Titans always include the
             // visual family so Craizan / Leopard / Okamoto is visible next to the hull name.
             if (!string.IsNullOrEmpty(family)
-                && !string.Equals(family, "MEGA", System.StringComparison.OrdinalIgnoreCase))
+                && !string.Equals(family, "MEGA", System.StringComparison.OrdinalIgnoreCase)
+                && !string.Equals(family, MegaShipCatalog.DisplayClassShort, System.StringComparison.OrdinalIgnoreCase))
             {
                 bool alreadyInName = !mega
                     && ship.IndexOf(family, System.StringComparison.OrdinalIgnoreCase) >= 0;

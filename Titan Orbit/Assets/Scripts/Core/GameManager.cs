@@ -96,11 +96,11 @@ namespace TitanOrbit.Core
         [Tooltip("After 2 seconds, your own rockets and mines treat you (and your team) as an enemy so you can test hits and blasts on yourself. Local Editor / MPPM host only.")]
         [SerializeField] bool debugSelfHarmRocketsAndMines;
 
-        [Header("Debug — MEGA Ships")]
-        [Tooltip("When enabled, MEGA guns can auto-aim asteroids in damage mode — lowest priority after ships, planetary defense turrets, and moon shields. Heal mode is unchanged. Local Editor / MPPM host only.")]
+        [Header("Debug — Titan Ships")]
+        [Tooltip("When enabled, Titan guns can auto-aim asteroids in damage mode — lowest priority after ships, planetary defense turrets, and moon shields. Heal mode is unchanged. Local Editor / MPPM host only.")]
         [SerializeField] bool debugMegaShipsAutoFireAsteroids;
 
-        [Tooltip("Temporary isolate: skip MegaShipAutoFireSystem (no MEGA auto-aim / turret slew). Leave OFF for normal play. Shift+Fire still aims at the mouse in BulletSimulationSystem. Honored on dedicated after rebuild.")]
+        [Tooltip("Temporary isolate: skip MegaShipAutoFireSystem (no Titan auto-aim / turret slew). Leave OFF for normal play. Shift+Fire still aims at the mouse in BulletSimulationSystem. Honored on dedicated after rebuild.")]
         [SerializeField] bool debugDisableMegaShipAutoFire;
 
         [Header("Debug — Asteroid Destroy Hitch")]

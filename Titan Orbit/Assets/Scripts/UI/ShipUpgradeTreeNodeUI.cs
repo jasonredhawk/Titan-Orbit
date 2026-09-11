@@ -13,7 +13,7 @@ namespace TitanOrbit.UI
     /// scaling and price-button chrome.
     /// The family line sits under the hull name and just above the buy chip
     /// (CosmicShark → Cosmic Shark, smaller than the ship name).
-    /// Level-7 MEGA cards use a separate bronze-void fill, gold frame, and "MEGA SHIP" caption
+    /// Level-7 Titan cards use a separate bronze-void fill, gold frame, and "TITAN SHIP" caption
     /// so they read as boss hulls next to the navy L1–L6 family cards.
     /// </summary>
     public class ShipUpgradeTreeNodeUI : MonoBehaviour
@@ -40,7 +40,7 @@ namespace TitanOrbit.UI
             public const float FamilyFontSize = 8f;
             public const float FamilyHeight = 12f;
             public const float FamilyMinHeight = 11f;
-            /// <summary>MEGA SHIP overlay — 2pt above the ship name so it reads as the card rank.</summary>
+            /// <summary>TITAN SHIP overlay — 2pt above the ship name so it reads as the card rank.</summary>
             public const float MegaCaptionFontExtra = 2f;
             /// <summary>Tight tray inset — a few pixels so lanes sit inside the dark well.</summary>
             public const float PowerBarTrackPadX = 3f;
@@ -695,7 +695,7 @@ namespace TitanOrbit.UI
             }
         }
 
-        /// <summary>Puts Lv N / MEGA SHIP back in the left-column stack (not a card overlay).</summary>
+        /// <summary>Puts Lv N / TITAN SHIP back in the left-column stack (not a card overlay).</summary>
         void RestoreInFlowLevelLabel()
         {
             if (levelText == null)
@@ -1227,7 +1227,7 @@ namespace TitanOrbit.UI
         private const float PriceBorderInset = 1f;
 
         /// <summary>L7 HUD caption. Regular slots keep "Lv N". Must not be ellipsed.</summary>
-        public const string MegaShipLevelCaption = "MEGA SHIP";
+        public const string MegaShipLevelCaption = MegaShipCatalog.DisplayClassCaption;
 
         // --- MEGA card palette (warm bronze void vs cool navy family cards) ---
         // [TITAN-ORBIT] Thin gold rails, not a full-panel gold flood — same rule as tooltip chrome.
@@ -1512,8 +1512,8 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// Orbit Menu tree caption for one slot. Regular hulls stay "Lv 3"; MEGA slots
-        /// show <c>MEGA SHIP</c> instead of "Lv 7".
+        /// Orbit Menu tree caption for one slot. Regular hulls stay "Lv 3"; Titan slots
+        /// show <c>TITAN SHIP</c> instead of "Lv 7".
         /// </summary>
         public static string FormatTreeLevelCaption(int level, bool moonHorizontal)
         {
@@ -1574,7 +1574,7 @@ namespace TitanOrbit.UI
 
         /// <summary>
         /// Sidebar hero only: drop the in-flow level so the hull name sits above the art.
-        /// Tree cards keep Lv N / MEGA SHIP in the left column.
+        /// Tree cards keep Lv N / TITAN SHIP in the left column.
         /// </summary>
         void CollapseInFlowLevelLabel()
         {

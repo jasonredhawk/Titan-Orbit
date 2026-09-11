@@ -718,7 +718,7 @@ namespace TitanOrbit.UI
             {
                 if (writeComposition)
                 {
-                    AppendTint(sb, HexResult, "MEGA hulls ignore mass tax.");
+                    AppendTint(sb, HexResult, "Titan hulls ignore mass tax.");
                     sb.AppendLine();
                 }
 
@@ -1242,7 +1242,7 @@ namespace TitanOrbit.UI
             if (live.Motor.SkipMassTax != 0)
             {
                 ShipStatTooltipChrome.AppendSectionBanner(sb, "MASS TAX", HexMass);
-                AppendTint(sb, HexMass, "MEGA hulls ignore mass tax.");
+                AppendTint(sb, HexMass, "Titan hulls ignore mass tax.");
                 sb.AppendLine();
                 return;
             }
@@ -1285,7 +1285,7 @@ namespace TitanOrbit.UI
             if (!string.IsNullOrEmpty(unit))
                 AppendTint(sb, HexMute, unit);
             sb.AppendLine();
-            AppendTint(sb, HexMute, "MEGA hull — static catalog (not Extra Level)");
+                AppendTint(sb, HexMute, "Titan hull — static catalog (not Extra Level)");
             sb.AppendLine();
 
             StatField field = abilityIndex switch
@@ -1307,7 +1307,7 @@ namespace TitanOrbit.UI
             {
                 // Gem cap is forced to 0 on every MEGA (MegaShipStatsCalculator).
                 ShipStatTooltipChrome.AppendSectionBanner(sb, "CATALOG", HexMute);
-                AppendTint(sb, HexMute, "MEGA hulls cannot carry gems.");
+                AppendTint(sb, HexMute, "Titan hulls cannot carry gems.");
                 sb.AppendLine();
                 AppendTotalLine(sb, 0f, unit);
                 return;
