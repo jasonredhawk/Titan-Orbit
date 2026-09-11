@@ -83,7 +83,7 @@ MonoBehaviour:
   menuPreviewBackgroundColor: {r: 0, g: 0, b: 0, a: 1}
   components:
   - componentId: SpaceExcalibur_Ammunition
-    displayName: Weapon Bullet 1
+    displayName: Ammunition
     statCategories: 0000000002000000
     stats:
       firePower: 3
@@ -160,7 +160,7 @@ MonoBehaviour:
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
   - componentId: SpaceExcalibur_Armor_01
-    displayName: Hull 1
+    displayName: Armor 01
     statCategories: 01000000
     stats:
       firePower: 0
@@ -237,7 +237,7 @@ MonoBehaviour:
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
   - componentId: SpaceExcalibur_Armor_02
-    displayName: Hull 2
+    displayName: Armor 02
     statCategories: 01000000
     stats:
       firePower: 0
@@ -314,7 +314,7 @@ MonoBehaviour:
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
   - componentId: SpaceExcalibur_Body_01
-    displayName: Hull 1
+    displayName: Body 01
     statCategories: 01000000
     stats:
       firePower: 0
@@ -391,7 +391,7 @@ MonoBehaviour:
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
   - componentId: SpaceExcalibur_Body_02
-    displayName: Hull 2
+    displayName: Body 02
     statCategories: 01000000
     stats:
       firePower: 0
@@ -468,7 +468,7 @@ MonoBehaviour:
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
   - componentId: SpaceExcalibur_Body_03
-    displayName: Hull 3
+    displayName: Body 03
     statCategories: 01000000
     stats:
       firePower: 0
@@ -545,7 +545,7 @@ MonoBehaviour:
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
   - componentId: SpaceExcalibur_Cockpit
-    displayName: Cockpit 1
+    displayName: Cockpit
     statCategories: 000000000100000004000000
     stats:
       firePower: 0
@@ -622,7 +622,7 @@ MonoBehaviour:
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
   - componentId: SpaceExcalibur_Hatch
-    displayName: Hull 1
+    displayName: Hatch
     statCategories: 01000000
     stats:
       firePower: 0
@@ -699,7 +699,7 @@ MonoBehaviour:
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
   - componentId: SpaceExcalibur_Machinegun
-    displayName: Weapon Bullet 1
+    displayName: Machinegun
     statCategories: 0000000002000000
     stats:
       firePower: 3
@@ -776,7 +776,7 @@ MonoBehaviour:
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
   - componentId: SpaceExcalibur_Missile
-    displayName: Hull 1
+    displayName: Missile
     statCategories: 01000000
     stats:
       firePower: 0
@@ -853,7 +853,7 @@ MonoBehaviour:
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
   - componentId: SpaceExcalibur_Missile_Launcher
-    displayName: Weapon Cannon 1
+    displayName: Missile Launcher
     statCategories: 0000000002000000
     stats:
       firePower: 12
@@ -930,7 +930,7 @@ MonoBehaviour:
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
   - componentId: SpaceExcalibur_Small_Wing
-    displayName: Wing 1
+    displayName: Small Wing
     statCategories: 0100000004000000
     stats:
       firePower: 0
@@ -1007,7 +1007,7 @@ MonoBehaviour:
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
   - componentId: SpaceExcalibur_Something
-    displayName: Hull 1
+    displayName: Something
     statCategories: 01000000
     stats:
       firePower: 0
@@ -1084,7 +1084,7 @@ MonoBehaviour:
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
   - componentId: SpaceExcalibur_Thrusters
-    displayName: Thruster 1
+    displayName: Thrusters
     statCategories: 03000000
     stats:
       firePower: 0
@@ -1107,7 +1107,7 @@ MonoBehaviour:
       energyRegenPerExtraLevel: 0
       moveSpeed: 0
       moveSpeedPerExtraLevel: 0
-      accelerationCap: 6
+      accelerationCap: 8
       accelerationCapPerExtraLevel: 0.3
       extraSpeedPercent: 0
       extraSpeedPercentPerExtraLevel: 0
@@ -1161,7 +1161,7 @@ MonoBehaviour:
     enablePropulsionVfx: 1
     propulsionVfxScale: 1
   - componentId: SpaceExcalibur_Thrusters_Big
-    displayName: Thruster 1
+    displayName: Thrusters Big
     statCategories: 03000000
     stats:
       firePower: 0
@@ -1184,7 +1184,7 @@ MonoBehaviour:
       energyRegenPerExtraLevel: 0
       moveSpeed: 0
       moveSpeedPerExtraLevel: 0
-      accelerationCap: 6
+      accelerationCap: 8
       accelerationCapPerExtraLevel: 0.3
       extraSpeedPercent: 0
       extraSpeedPercentPerExtraLevel: 0
@@ -1238,7 +1238,7 @@ MonoBehaviour:
     enablePropulsionVfx: 1
     propulsionVfxScale: 1.5
   - componentId: SpaceExcalibur_Thruster_Place
-    displayName: Thruster 1
+    displayName: Thruster Place
     statCategories: 03000000
     stats:
       firePower: 0
@@ -1315,7 +1315,7 @@ MonoBehaviour:
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
   - componentId: SpaceExcalibur_Tiny_Thrusters
-    displayName: Thruster 1
+    displayName: Tiny Thrusters
     statCategories: 03000000
     stats:
       firePower: 0
@@ -1338,7 +1338,7 @@ MonoBehaviour:
       energyRegenPerExtraLevel: 0
       moveSpeed: 0
       moveSpeedPerExtraLevel: 0
-      accelerationCap: 6
+      accelerationCap: 8
       accelerationCapPerExtraLevel: 0.3
       extraSpeedPercent: 0
       extraSpeedPercentPerExtraLevel: 0
@@ -1392,7 +1392,7 @@ MonoBehaviour:
     enablePropulsionVfx: 1
     propulsionVfxScale: 0.45
   - componentId: SpaceExcalibur_Tiny_Wing
-    displayName: Wing 1
+    displayName: Tiny Wing
     statCategories: 0100000004000000
     stats:
       firePower: 0
@@ -1469,7 +1469,7 @@ MonoBehaviour:
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
   - componentId: SpaceExcalibur_Wing_01
-    displayName: Wing 1
+    displayName: Wing 01
     statCategories: 0100000004000000
     stats:
       firePower: 0
@@ -1546,7 +1546,7 @@ MonoBehaviour:
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
   - componentId: SpaceExcalibur_Wing_02
-    displayName: Wing 2
+    displayName: Wing 02
     statCategories: 0100000004000000
     stats:
       firePower: 0
@@ -1623,7 +1623,7 @@ MonoBehaviour:
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
   - componentId: SpaceExcalibur_Wing_03
-    displayName: Wing 3
+    displayName: Wing 03
     statCategories: 0100000004000000
     stats:
       firePower: 0
@@ -1744,7 +1744,7 @@ MonoBehaviour:
       offense: 78.11
       defense: 45.82898
       energy: 111
-      mobility: 23.45
+      mobility: 25.45
       capacity: 27
       firePower: 16.8
       bulletSpeed: 10.559999
@@ -1763,7 +1763,7 @@ MonoBehaviour:
       offense: 84.11
       defense: 76.52847
       energy: 147
-      mobility: 28.25
+      mobility: 30.250002
       capacity: 36
       firePower: 20.16
       bulletSpeed: 13.2
@@ -1824,7 +1824,7 @@ MonoBehaviour:
       offense: 78.11
       defense: 99.62136
       energy: 111
-      mobility: 20.25
+      mobility: 22.25
       capacity: 64.1035
       firePower: 16.8
       bulletSpeed: 10.559999
@@ -1843,7 +1843,7 @@ MonoBehaviour:
       offense: 101.22
       defense: 327.32037
       energy: 219
-      mobility: 25.05
+      mobility: 27.05
       capacity: 145.47235
       firePower: 26.880001
       bulletSpeed: 15.84
@@ -1904,7 +1904,7 @@ MonoBehaviour:
       offense: 78.11
       defense: 80.6003
       energy: 111
-      mobility: 24.250002
+      mobility: 26.250002
       capacity: 56.9
       firePower: 16.8
       bulletSpeed: 10.559999
@@ -1923,7 +1923,7 @@ MonoBehaviour:
       offense: 101.22
       defense: 258.47522
       energy: 219
-      mobility: 41.05
+      mobility: 43.05
       capacity: 122.54001
       firePower: 26.880001
       bulletSpeed: 15.84
@@ -1984,7 +1984,7 @@ MonoBehaviour:
       offense: 78.11
       defense: 110.35168
       energy: 111
-      mobility: 25.050001
+      mobility: 27.050001
       capacity: 85.47067
       firePower: 16.8
       bulletSpeed: 10.559999
@@ -2003,7 +2003,7 @@ MonoBehaviour:
       offense: 118.33
       defense: 515.37103
       energy: 291
-      mobility: 57.05
+      mobility: 59.05
       capacity: 270.15625
       firePower: 33.6
       bulletSpeed: 18.48
@@ -2064,7 +2064,7 @@ MonoBehaviour:
       offense: 85.31
       defense: 86.757
       energy: 138
-      mobility: 20.25
+      mobility: 22.25
       capacity: 59.774788
       firePower: 21
       bulletSpeed: 10.559999
@@ -2083,7 +2083,7 @@ MonoBehaviour:
       offense: 129.73
       defense: 393.9031
       energy: 363
-      mobility: 28.25
+      mobility: 30.25
       capacity: 164.40547
       firePower: 42
       bulletSpeed: 18.48
@@ -2144,7 +2144,7 @@ MonoBehaviour:
       offense: 78.11
       defense: 126.41761
       energy: 111
-      mobility: 20.25
+      mobility: 22.25
       capacity: 61.123962
       firePower: 16.8
       bulletSpeed: 10.559999
@@ -2163,7 +2163,7 @@ MonoBehaviour:
       offense: 118.33
       defense: 514.47064
       energy: 291
-      mobility: 28.25
+      mobility: 30.25
       capacity: 165.46997
       firePower: 33.6
       bulletSpeed: 18.48
@@ -2224,7 +2224,7 @@ MonoBehaviour:
       offense: 78.11
       defense: 137.50352
       energy: 111
-      mobility: 21.85
+      mobility: 23.85
       capacity: 107.19006
       firePower: 16.8
       bulletSpeed: 10.559999
@@ -2243,7 +2243,7 @@ MonoBehaviour:
       offense: 135.44
       defense: 924.86566
       energy: 363
-      mobility: 44.25
+      mobility: 46.25
       capacity: 514.5205
       firePower: 40.32
       bulletSpeed: 21.119999
@@ -2304,7 +2304,7 @@ MonoBehaviour:
       offense: 78.11
       defense: 167.25867
       energy: 111
-      mobility: 19.45
+      mobility: 21.45
       capacity: 101.89151
       firePower: 16.8
       bulletSpeed: 10.559999
@@ -2323,7 +2323,7 @@ MonoBehaviour:
       offense: 135.44
       defense: 1036.3444
       energy: 363
-      mobility: 25.05
+      mobility: 27.05
       capacity: 494.3486
       firePower: 40.32
       bulletSpeed: 21.119999
@@ -2384,7 +2384,7 @@ MonoBehaviour:
       offense: 78.11
       defense: 167.25867
       energy: 111
-      mobility: 19.45
+      mobility: 21.45
       capacity: 101.89151
       firePower: 16.8
       bulletSpeed: 10.559999
@@ -2403,7 +2403,7 @@ MonoBehaviour:
       offense: 135.44
       defense: 1036.3444
       energy: 363
-      mobility: 25.05
+      mobility: 27.05
       capacity: 494.3486
       firePower: 40.32
       bulletSpeed: 21.119999
@@ -2464,7 +2464,7 @@ MonoBehaviour:
       offense: 78.11
       defense: 163.16411
       energy: 111
-      mobility: 20.25
+      mobility: 22.25
       capacity: 77.131546
       firePower: 16.8
       bulletSpeed: 10.559999
@@ -2483,7 +2483,7 @@ MonoBehaviour:
       offense: 135.44
       defense: 990.8343
       energy: 363
-      mobility: 31.449999
+      mobility: 33.45
       capacity: 375.24573
       firePower: 40.32
       bulletSpeed: 21.119999
@@ -2544,7 +2544,7 @@ MonoBehaviour:
       offense: 78.11
       defense: 210.98602
       energy: 111
-      mobility: 25.050001
+      mobility: 27.050001
       capacity: 149.05533
       firePower: 16.8
       bulletSpeed: 10.559999
@@ -2563,7 +2563,7 @@ MonoBehaviour:
       offense: 152.55
       defense: 1813.426
       energy: 435
-      mobility: 82.65
+      mobility: 84.65
       capacity: 998.46075
       firePower: 47.04
       bulletSpeed: 23.76
@@ -2624,7 +2624,7 @@ MonoBehaviour:
       offense: 78.11
       defense: 183.01996
       energy: 111
-      mobility: 26.650002
+      mobility: 28.650002
       capacity: 122.70464
       firePower: 16.8
       bulletSpeed: 10.559999
@@ -2643,7 +2643,7 @@ MonoBehaviour:
       offense: 152.55
       defense: 1594.9811
       energy: 435
-      mobility: 98.65
+      mobility: 100.65
       capacity: 786.04645
       firePower: 47.04
       bulletSpeed: 23.76
@@ -2704,7 +2704,7 @@ MonoBehaviour:
       offense: 106.81
       defense: 153.873
       energy: 207
-      mobility: 20.25
+      mobility: 22.25
       capacity: 80.9474
       firePower: 42
       bulletSpeed: 10.559999
@@ -2723,7 +2723,7 @@ MonoBehaviour:
       offense: 232.61
       defense: 1153.9004
       energy: 639
-      mobility: 34.65
+      mobility: 36.65
       capacity: 444.14417
       firePower: 117.6
       bulletSpeed: 23.76
@@ -2784,7 +2784,7 @@ MonoBehaviour:
       offense: 106.909996
       defense: 168.35696
       energy: 219
-      mobility: 25.050001
+      mobility: 27.050001
       capacity: 63.34588
       firePower: 33.6
       bulletSpeed: 10.559999
@@ -2803,7 +2803,7 @@ MonoBehaviour:
       offense: 211.59
       defense: 1103.2343
       energy: 867
-      mobility: 82.65
+      mobility: 84.65
       capacity: 305.08072
       firePower: 94.08
       bulletSpeed: 23.76
@@ -2864,7 +2864,7 @@ MonoBehaviour:
       offense: 121.21
       defense: 136.23752
       energy: 261
-      mobility: 24.250002
+      mobility: 26.250002
       capacity: 58
       firePower: 50.4
       bulletSpeed: 10.559999
@@ -2883,7 +2883,7 @@ MonoBehaviour:
       offense: 262.13
       defense: 906.9525
       energy: 855
-      mobility: 74.65
+      mobility: 76.65
       capacity: 283
       firePower: 141.12
       bulletSpeed: 23.76
@@ -2944,7 +2944,7 @@ MonoBehaviour:
       offense: 114.01
       defense: 321.4544
       energy: 234
-      mobility: 21.85
+      mobility: 23.85
       capacity: 186.76517
       firePower: 46.2
       bulletSpeed: 10.559999
@@ -2963,7 +2963,7 @@ MonoBehaviour:
       offense: 277.74
       defense: 3284.537
       energy: 861
-      mobility: 57.050003
+      mobility: 59.050003
       capacity: 1607.1959
       firePower: 147.84
       bulletSpeed: 26.4
@@ -3024,7 +3024,7 @@ MonoBehaviour:
       offense: 150.01
       defense: 212.24055
       energy: 369
-      mobility: 23.45
+      mobility: 25.45
       capacity: 125.36325
       firePower: 67.2
       bulletSpeed: 10.559999
@@ -3043,7 +3043,7 @@ MonoBehaviour:
       offense: 359.94
       defense: 2039.2734
       energy: 1491
-      mobility: 76.25
+      mobility: 78.25
       capacity: 941.47754
       firePower: 215.04001
       bulletSpeed: 26.4
@@ -3104,7 +3104,7 @@ MonoBehaviour:
       offense: 121.21
       defense: 237.06401
       energy: 261
-      mobility: 23.45
+      mobility: 25.45
       capacity: 122.52342
       firePower: 50.4
       bulletSpeed: 10.559999
@@ -3123,7 +3123,7 @@ MonoBehaviour:
       offense: 294.18
       defense: 2386.0083
       energy: 987
-      mobility: 76.25
+      mobility: 78.25
       capacity: 931.2811
       firePower: 161.28
       bulletSpeed: 26.4
@@ -3184,7 +3184,7 @@ MonoBehaviour:
       offense: 121.46
       defense: 212.4114
       energy: 261
-      mobility: 25.050001
+      mobility: 27.050001
       capacity: 108.39997
       firePower: 50.4
       bulletSpeed: 10.559999
@@ -3203,7 +3203,7 @@ MonoBehaviour:
       offense: 295.68
       defense: 2041.7975
       energy: 987
-      mobility: 95.450005
+      mobility: 97.45
       capacity: 775.411
       firePower: 161.28
       bulletSpeed: 26.4
@@ -3264,7 +3264,7 @@ MonoBehaviour:
       offense: 106.909996
       defense: 259.52927
       energy: 219
-      mobility: 23.45
+      mobility: 25.45
       capacity: 105.77357
       firePower: 33.6
       bulletSpeed: 10.559999
@@ -3283,7 +3283,7 @@ MonoBehaviour:
       offense: 235.42
       defense: 2315.065
       energy: 1011
-      mobility: 76.25
+      mobility: 78.25
       capacity: 815.87537
       firePower: 107.520004
       bulletSpeed: 26.4
@@ -3344,7 +3344,7 @@ MonoBehaviour:
       offense: 121.21
       defense: 183.74826
       energy: 261
-      mobility: 19.45
+      mobility: 21.45
       capacity: 74.00001
       firePower: 50.4
       bulletSpeed: 10.559999
@@ -3363,7 +3363,7 @@ MonoBehaviour:
       offense: 294.18
       defense: 1538.2493
       energy: 987
-      mobility: 28.25
+      mobility: 30.25
       capacity: 525
       firePower: 161.28
       bulletSpeed: 26.4

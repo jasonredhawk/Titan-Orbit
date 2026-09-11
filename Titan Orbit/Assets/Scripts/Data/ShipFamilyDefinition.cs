@@ -671,10 +671,40 @@ namespace TitanOrbit.Data
             }
 
             EnforceComponentStatCategories();
+            RefreshComponentDisplayNamesFromIds();
             PrepopulateBlankUpgradeTreeShipNames();
             InvalidateComponentStatsLookup();
             InvalidateGlobalMaxUpgradeTreeTurnSpeedCache();
             _runtimeProceduralCards = null;
+        }
+
+        /// <summary>
+        /// Writes each component's display name from its Component ID
+        /// (<c>SpaceExcalibur_Tiny_Thrusters</c> → Tiny Thrusters). Returns true when any row changed.
+        /// </summary>
+        public bool RefreshComponentDisplayNamesFromIds()
+        {
+            if (components == null)
+                return false;
+
+            bool changed = false;
+            for (int i = 0; i < components.Count; i++)
+            {
+                ShipFamilyComponentEntry entry = components[i];
+                if (entry == null || string.IsNullOrWhiteSpace(entry.componentId))
+                    continue;
+
+                string generated = DisplayNameFormatting.FormatComponentDisplayName(entry.componentId, familyId);
+                if (string.IsNullOrWhiteSpace(generated))
+                    continue;
+                if (string.Equals(entry.displayName, generated, StringComparison.Ordinal))
+                    continue;
+
+                entry.displayName = generated;
+                changed = true;
+            }
+
+            return changed;
         }
 
         /// <summary>

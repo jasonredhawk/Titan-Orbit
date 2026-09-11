@@ -118,22 +118,26 @@ namespace TitanOrbit.Data
             return Mathf.Max(MinimumComponentGemPrice, Mathf.RoundToInt(power * GemCostPerPowerPoint * levelMult));
         }
 
-        /// <summary>Resolves player-facing title with displayName → formatted componentId fallback.</summary>
+        /// <summary>
+        /// Player-facing title from Component ID (<c>SpaceExcalibur_Tiny_Thrusters</c> → Tiny Thrusters).
+        /// </summary>
         public static string GetDisplayName(ShipFamilyComponentEntry entry)
         {
             if (entry == null)
                 return "Component";
-            if (!string.IsNullOrWhiteSpace(entry.displayName))
-                return entry.displayName.Trim();
             return FormatComponentId(entry.componentId);
         }
 
+        /// <summary>
+        /// Family prefix stripped, underscores / CamelCase spaced.
+        /// <c>SpaceExcalibur_Tiny_Thrusters</c> → Tiny Thrusters.
+        /// </summary>
         public static string FormatComponentId(string componentId)
         {
             if (string.IsNullOrWhiteSpace(componentId))
                 return "Component";
-            string id = componentId.Trim().Replace('_', ' ');
-            return id;
+            string formatted = DisplayNameFormatting.FormatComponentDisplayName(componentId);
+            return string.IsNullOrWhiteSpace(formatted) ? "Component" : formatted;
         }
 
         /// <summary>Unicode glyph for compact list rows when no sprite is available.</summary>

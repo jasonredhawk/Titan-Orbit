@@ -1,11 +1,13 @@
+using System;
 using System.Text;
 
 namespace TitanOrbit.Core
 {
     /// <summary>
-    /// Human-readable labels from machine identifiers (CamelCase family ids, prefab names).
-    /// Used by orbit station UI, ship tree, and store rows so "AstroEagle" and
-    /// "SpaceExcalibur_7" display as spaced words. Client-only string formatting — no gameplay effect.
+    /// Human-readable labels from machine identifiers (CamelCase family ids, prefab names, component ids).
+    /// Used by orbit station UI, ship tree, and store rows so "AstroEagle",
+    /// "SpaceExcalibur_7", and "SpaceExcalibur_Tiny_Thrusters" display as spaced words.
+    /// Client-only string formatting — no gameplay effect.
     /// </summary>
     public static class DisplayNameFormatting
     {
@@ -74,6 +76,92 @@ namespace TitanOrbit.Core
             // Unity instances append " (Clone)" — strip so the Orbit Menu stays clean.
             string name = prefabName.Replace("(Clone)", string.Empty).Trim();
             return SplitCamelCase(name);
+        }
+
+        /// <summary>
+        /// Player-facing part label from a family-prefixed component id.
+        /// <c>SpaceExcalibur_Tiny_Thrusters</c> → Tiny Thrusters.
+        /// Strips <paramref name="familyId"/> when provided; otherwise drops a leading
+        /// PascalCase family token (two or more capitals) so <c>Engine_2</c> stays Engine 2.
+        /// </summary>
+        /// <param name="componentId">Catalog id such as SpaceExcalibur_Tiny_Thrusters.</param>
+        /// <param name="familyId">Optional family prefix to strip (SpaceExcalibur).</param>
+        public static string FormatComponentDisplayName(string componentId, string familyId = null)
+        {
+            if (string.IsNullOrWhiteSpace(componentId))
+                return string.Empty;
+
+            string id = componentId.Trim();
+            id = StripFamilyPrefix(id, familyId);
+            return SplitCamelCase(id);
+        }
+
+        /// <summary>
+        /// Removes <c>FamilyId_</c> from a component id. When family id is unknown,
+        /// only the first underscore token is dropped if it looks like a family name
+        /// (letters only, at least two capitals) and the remainder still has a letter.
+        /// </summary>
+        static string StripFamilyPrefix(string componentId, string familyId)
+        {
+            if (string.IsNullOrEmpty(componentId))
+                return componentId;
+
+            if (!string.IsNullOrWhiteSpace(familyId))
+            {
+                string fid = familyId.Trim();
+                if (componentId.StartsWith(fid + "_", StringComparison.OrdinalIgnoreCase))
+                    return componentId.Substring(fid.Length + 1);
+                return componentId;
+            }
+
+            int underscore = componentId.IndexOf('_');
+            if (underscore <= 0 || underscore >= componentId.Length - 1)
+                return componentId;
+
+            string head = componentId.Substring(0, underscore);
+            if (!LooksLikeFamilyPrefix(head))
+                return componentId;
+
+            string rest = componentId.Substring(underscore + 1);
+            if (!ContainsLetter(rest))
+                return componentId;
+
+            return rest;
+        }
+
+        /// <summary>
+        /// True for tokens like SpaceExcalibur / AstroEagle (compound PascalCase, no digits).
+        /// False for part tokens like Engine, Tiny, Wing.
+        /// </summary>
+        static bool LooksLikeFamilyPrefix(string token)
+        {
+            if (string.IsNullOrEmpty(token))
+                return false;
+
+            int uppers = 0;
+            for (int i = 0; i < token.Length; i++)
+            {
+                char c = token[i];
+                if (!char.IsLetter(c))
+                    return false;
+                if (char.IsUpper(c))
+                    uppers++;
+            }
+
+            return uppers >= 2;
+        }
+
+        static bool ContainsLetter(string value)
+        {
+            if (string.IsNullOrEmpty(value))
+                return false;
+            for (int i = 0; i < value.Length; i++)
+            {
+                if (char.IsLetter(value[i]))
+                    return true;
+            }
+
+            return false;
         }
     }
 }

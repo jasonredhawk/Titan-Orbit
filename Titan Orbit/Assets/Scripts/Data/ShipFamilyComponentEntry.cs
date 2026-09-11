@@ -274,7 +274,11 @@ namespace TitanOrbit.Data
     {
         /// <summary>Stable id matching USC child name, e.g. AstroEagle_Engine_2.</summary>
         public string componentId;
-        /// <summary>Override label for moon-dock cards; falls back to formatted <see cref="componentId"/>.</summary>
+        /// <summary>
+        /// Moon-dock / Inspector label derived from <see cref="componentId"/>
+        /// (<c>SpaceExcalibur_Tiny_Thrusters</c> → Tiny Thrusters). Scan and Recalculate rewrite this.
+        /// </summary>
+        [Tooltip("Shown on moon-dock cards. Scan / Recalculate fill this from Component ID (SpaceExcalibur_Tiny_Thrusters \u2192 Tiny Thrusters).")]
         public string displayName;
         /// <summary>Which stat categories tint the card border and filter Inspector fields.</summary>
         public List<ShipComponentStatCategory> statCategories = new List<ShipComponentStatCategory>();

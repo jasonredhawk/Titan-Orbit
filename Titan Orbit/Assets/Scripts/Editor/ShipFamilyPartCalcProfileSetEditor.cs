@@ -190,9 +190,7 @@ namespace TitanOrbit.Editor
 
             if (GUILayout.Button("Fill Empty Per-Level Fields On All Profiles"))
             {
-                // --- Bake EvaluateAtVersion PerLevel fills into the asset ---
-                // [EDITOR] Profiles often store 0 for *PerLevel and fill at Scan time; this writes
-                // the same numbers into the rows so they match ShipFamilyDefinition.
+                // Opt-in only — Scan / Inspector no longer treat 0 as "unset".
                 Undo.RecordObject(set, "Fill Profile Per-Level Fields");
                 int filled = 0;
                 if (set.partProfiles != null)
@@ -217,8 +215,8 @@ namespace TitanOrbit.Editor
             EditorGUILayout.Space(8);
             EditorGUILayout.HelpBox(
                 "Part Profiles: Default Categories filter which stats appear under Base At Version 1 " +
-                "and Per Version Increment (including *Per Level). Empty Per Level fields auto-fill " +
-                "from base × fraction when you expand a row (same math as Scan).\n\n" +
+                "and Per Version Increment (including *Per Level). 0 is kept — it means no extra-level " +
+                "growth. Use Fill Empty Per-Level Fields to bake base × fraction into zeros.\n\n" +
                 "OVERDRIVE ExtraSpeed fields are on the Engine Part Profile (not a global ProfileSet block).",
                 MessageType.None);
             DrawPropertiesExcluding(serializedObject, "m_Script");

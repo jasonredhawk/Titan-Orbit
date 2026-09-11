@@ -132,7 +132,7 @@ namespace TitanOrbit.ECS
             // --- Global dampener (editable on the ProfileSet asset in the Inspector) ---
             rates.GlobalUpgradeScaleMultiplier = Mathf.Max(0f, profileSet.globalUpgradeScaleMultiplier);
 
-            // --- Resolve version-1 stats (FillPerLevelIfZero runs inside EvaluateAtVersion) ---
+            // --- Resolve version-1 stats from authored Part Profile numbers ---
             ShipComponentAbilityStats cockpit = EvaluateOrDefault(profileSet, ShipFamilyPartTypes.Cockpit);
             ShipComponentAbilityStats wing = EvaluateOrDefault(profileSet, ShipFamilyPartTypes.Wing);
             ShipComponentAbilityStats engine = EvaluateOrDefault(profileSet, ShipFamilyPartTypes.Engine);

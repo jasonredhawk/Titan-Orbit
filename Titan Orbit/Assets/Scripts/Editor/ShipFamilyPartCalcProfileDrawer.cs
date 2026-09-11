@@ -10,7 +10,7 @@ namespace TitanOrbit.Editor
     /// Custom Inspector row for one Part Profile on <see cref="ShipFamilyPartCalcProfileSet"/>.
     /// Shows only ability fields allowed by <c>defaultCategories</c> under Base At Version 1 and
     /// Per Version Increment (same field allowlist as ShipFamilyDefinition component rows).
-    /// Also fills empty *PerLevel from base × fraction so values match Scan / Definition.
+    /// Authored 0 on *PerLevel is kept (use the ProfileSet fill button for empty-field defaults).
     /// </summary>
     [CustomPropertyDrawer(typeof(ShipFamilyPartCalcProfile))]
     public sealed class ShipFamilyPartCalcProfileDrawer : PropertyDrawer
@@ -103,10 +103,6 @@ namespace TitanOrbit.Editor
 
             string[] fields = ShipFamilyComponentPartKey.GetAuthoringStatFieldNames(categories, partType);
 
-            // --- Sync empty *PerLevel into the asset (matches EvaluateAtVersion / Definition) ---
-            // [EDITOR] Only writes when PerLevel is still 0 and base is non-zero.
-            SyncAuthoredPerLevels(property, partType);
-
             // --- Zero fields outside the allowlist so hidden categories stay cleared ---
             SerializedProperty baseProp = property.FindPropertyRelative("baseAtVersion1");
             SerializedProperty incrProp = property.FindPropertyRelative("perVersionIncrement");
@@ -130,75 +126,6 @@ namespace TitanOrbit.Editor
 
             EditorGUI.indentLevel--;
             EditorGUI.EndProperty();
-        }
-
-        /// <summary>
-        /// Fills zero *PerLevel floats from base × ResolvePerLevelFraction on the live object.
-        /// Dirtying happens through SerializedProperty writes so Undo works with the parent asset.
-        /// </summary>
-        static void SyncAuthoredPerLevels(SerializedProperty profileProp, string partType)
-        {
-            if (profileProp == null)
-                return;
-
-            // Read fraction override from the serialized row.
-            float fracOverride = profileProp.FindPropertyRelative("perLevelFractionOverride")?.floatValue ?? 0f;
-            float frac = fracOverride > 0.0001f
-                ? fracOverride
-                : (ShipFamilyPartTypes.IsPropulsion(partType)
-                    ? ShipPropulsionAggregation.PropulsionPerLevelFractionOfBase
-                    : ShipPropulsionAggregation.PerLevelFractionOfBase);
-
-            FillPerLevelPropsIfZero(profileProp.FindPropertyRelative("baseAtVersion1"), frac, partType);
-            FillPerLevelPropsIfZero(profileProp.FindPropertyRelative("perVersionIncrement"), frac, partType);
-        }
-
-        /// <summary>For each base/perLevel pair, write perLevel = base × frac when perLevel is zero.</summary>
-        static void FillPerLevelPropsIfZero(SerializedProperty statsProp, float frac, string partType)
-        {
-            if (statsProp == null)
-                return;
-
-            TryFillPair(statsProp, "firePower", "firePowerPerExtraLevel", frac);
-            TryFillPair(statsProp, "bulletSpeed", "bulletSpeedPerExtraLevel", frac);
-            TryFillPair(statsProp, "bulletRange", "bulletRangePerExtraLevel", frac);
-            // Weapons keep fireRate flat (EvaluateAtVersion zeroes fireRatePerExtraLevel).
-            if (!ShipFamilyPartTypes.IsWeapon(partType))
-                TryFillPair(statsProp, "fireRate", "fireRatePerExtraLevel", frac);
-            else
-            {
-                SerializedProperty fireRatePerExtraLevel = statsProp.FindPropertyRelative("fireRatePerExtraLevel");
-                if (fireRatePerExtraLevel != null)
-                    fireRatePerExtraLevel.floatValue = 0f;
-            }
-
-            TryFillPair(statsProp, "rammingPower", "rammingPowerPerExtraLevel", frac);
-            TryFillPair(statsProp, "healthCap", "healthCapPerExtraLevel", frac);
-            TryFillPair(statsProp, "healthRegen", "healthRegenPerExtraLevel", frac);
-            TryFillPair(statsProp, "energyCap", "energyCapPerExtraLevel", frac);
-            TryFillPair(statsProp, "energyRegen", "energyRegenPerExtraLevel", frac);
-            TryFillPair(statsProp, "moveSpeed", "moveSpeedPerExtraLevel", frac);
-            TryFillPair(statsProp, "accelerationCap", "accelerationCapPerExtraLevel", frac);
-            // [TITAN-ORBIT] ExtraSpeedPercent ability step stays 0 unless designers type a value.
-            // ExtraSpeedEnergyDrain PerExtraLevel matches moveSpeed's fraction of base (Move Speed HUD).
-            TryFillPair(statsProp, "extraSpeedEnergyDrain", "extraSpeedEnergyDrainPerExtraLevel", frac);
-            TryFillPair(statsProp, "turnSpeed", "turnSpeedPerExtraLevel", frac);
-            TryFillPair(statsProp, "maxGems", "maxGemsPerExtraLevel", frac);
-            TryFillPair(statsProp, "tractorBeamDistance", "tractorBeamDistancePerExtraLevel", frac);
-            TryFillPair(statsProp, "tractorBeamPower", "tractorBeamPowerPerExtraLevel", frac);
-
-            // Same float multiply as FillPerLevelIfZero — no integer rounding.
-            TryFillPair(statsProp, "maxPeople", "maxPeoplePerExtraLevel", frac);
-        }
-
-        static void TryFillPair(SerializedProperty statsProp, string baseName, string perLevelName, float frac)
-        {
-            SerializedProperty baseField = statsProp.FindPropertyRelative(baseName);
-            SerializedProperty perLevelField = statsProp.FindPropertyRelative(perLevelName);
-            if (baseField == null || perLevelField == null)
-                return;
-            if (perLevelField.floatValue == 0f && baseField.floatValue != 0f)
-                perLevelField.floatValue = baseField.floatValue * frac;
         }
 
         /// <summary>Draws a labeled block of category-allowed float fields.</summary>

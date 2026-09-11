@@ -611,7 +611,7 @@ namespace TitanOrbit.Editor
                 var entry = new ShipFamilyComponentEntry
                 {
                     componentId = componentId,
-                    displayName = $"{type} {version}".Trim(),
+                    displayName = DisplayNameFormatting.FormatComponentDisplayName(componentId, familyId),
                     statCategories = categories,
                     stats = stats,
                     enablePropulsionVfx = enableVfx,
@@ -757,7 +757,7 @@ namespace TitanOrbit.Editor
             int profilesUpdated = 0;
             if (refreshProfiles)
             {
-                // --- Refresh every Part Profile first (so EvaluateAtVersion uses current seeds) ---
+                // --- Ensure missing Part Profile rows exist (does not overwrite authored zeros) ---
                 Undo.RecordObject(profileSet, "Refresh Part Profiles For Recalculate");
                 profilesUpdated = RefreshAllPartProfiles(profileSet);
                 profileSet.InvalidateLookups();
@@ -785,23 +785,19 @@ namespace TitanOrbit.Editor
                 else
                     partType = ShipFamilyPartTypes.Normalize(partType, componentId);
 
-                int version = ShipFamilyPartCalcProfileSet.ExtractVersion(componentId);
                 bool hasProfile = profileSet.TryGetProfile(partType, out _);
                 if (!hasProfile)
                     missingProfile++;
 
                 List<ShipComponentStatCategory> categories;
                 ShipComponentAbilityStats stats;
-                string displayName;
+                string displayName = DisplayNameFormatting.FormatComponentDisplayName(componentId, def.familyId);
 
                 // Cosmetics stay in the family list for mass/scale grouping but get zero ability stats.
                 if (!profileSet.ContributesAbilityStats(componentId))
                 {
                     categories = new List<ShipComponentStatCategory>();
                     stats = default;
-                    displayName = string.IsNullOrWhiteSpace(old.displayName)
-                        ? $"{partType} {version}".Trim()
-                        : old.displayName;
                     cosmetics++;
                 }
                 else
@@ -814,7 +810,6 @@ namespace TitanOrbit.Editor
                         categories = ShipFamilyComponentPartKey.InferDefaultStatCategories(componentId);
 
                     stats = profileSet.SuggestStatsForComponent(componentId, categories);
-                    displayName = $"{partType} {version}".Trim();
                     updated++;
                 }
 
@@ -974,8 +969,8 @@ namespace TitanOrbit.Editor
         }
 
         /// <summary>
-        /// Ensures every Part Profile has filled *PerLevel fields so Recalculate / Scan evaluate
-        /// from complete authoring. Does not wipe authored base stats — only fills empty per-level.
+        /// Ensures missing Part Profile rows exist and weapons keep fire-rate-per-level flat.
+        /// Does not fill *PerLevel zeros — 0 is a valid authored "no extra-level growth" value.
         /// </summary>
         /// <returns>Number of profiles touched.</returns>
         public static int RefreshAllPartProfiles(ShipFamilyPartCalcProfileSet profileSet)
@@ -995,8 +990,6 @@ namespace TitanOrbit.Editor
                 ShipFamilyPartCalcProfile profile = profileSet.partProfiles[i];
                 if (profile == null)
                     continue;
-
-                profile.EnsureAuthoredPerLevelFilled();
 
                 // Weapons keep fireRatePerExtraLevel flat.
                 if (ShipFamilyPartTypes.IsWeapon(profile.partType))

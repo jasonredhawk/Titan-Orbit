@@ -79,15 +79,6 @@ namespace TitanOrbit.Data
             AddScaled(ref s, baseAtVersion1, 1f);
             AddScaled(ref s, perVersionIncrement, steps);
 
-            float frac = perLevelFractionOverride > 0.0001f
-                ? perLevelFractionOverride
-                : (IsPropulsionPartType(partType)
-                    ? ShipPropulsionAggregation.PropulsionPerLevelFractionOfBase
-                    : ShipPropulsionAggregation.PerLevelFractionOfBase);
-
-            // Fill *PerLevel from bases when still zero so scan produces growth curves.
-            FillPerLevelIfZero(ref s, frac);
-
             // [TITAN-ORBIT] Weapons never grow fire rate per ship level — keep authored rate flat.
             if (ShipFamilyPartTypes.IsWeapon(partType))
                 s.fireRatePerExtraLevel = 0f;
@@ -108,9 +99,9 @@ namespace TitanOrbit.Data
         }
 
         /// <summary>
-        /// Writes filled *PerLevel values into <see cref="baseAtVersion1"/> and
-        /// <see cref="perVersionIncrement"/> when they are still zero so the Inspector matches
-        /// what Scan / <see cref="EvaluateAtVersion"/> already applies (and what ShipFamilyDefinition shows).
+        /// Opt-in: writes *PerLevel = base × fraction where PerLevel is still 0.
+        /// Used by Create Default Profile and the Inspector fill button — never on every draw or Scan,
+        /// so designers can author 0 to mean no extra-level growth.
         /// </summary>
         public void EnsureAuthoredPerLevelFilled()
         {
@@ -177,7 +168,7 @@ namespace TitanOrbit.Data
 
         /// <summary>
         /// Fills each <c>*PerExtraLevel</c> from its base × <paramref name="frac"/> when still zero.
-        /// Used by Scan / Inspector so Extra Level steps are authored alongside bases.
+        /// Opt-in only (new profiles / fill button). 0 is a valid authored value elsewhere.
         /// </summary>
         public static void FillPerLevelIfZero(ref ShipComponentAbilityStats s, float frac)
         {
