@@ -33,8 +33,8 @@ namespace TitanOrbit.ECS
         public float LoadAccumulator;
 
         /// <summary>
-        /// Fractional accumulator toward the next unload batch.
-        /// Ideal batch size is ship level only (planet level does not multiply).
+        /// Seconds parked at ship center toward the next escort unload launch.
+        /// Fires at <see cref="PeopleTransportConstants.UnloadDispatchIntervalSeconds"/>.
         /// </summary>
         public float UnloadAccumulator;
 

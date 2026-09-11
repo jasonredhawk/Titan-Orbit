@@ -508,8 +508,9 @@ namespace TitanOrbit.Simulation
         }
 
         /// <summary>
-        /// Follow at own 4–6 cruise. Ready capsules ride the moving ship center
-        /// and ease to a stop — they do not teleport onto the hull.
+        /// Follow at own 4–6 cruise, then latch onto the hashed seat so orbit yaw
+        /// cannot leave capsules chasing a moving home (stepped ring motion).
+        /// Ready capsules ride the moving ship center and ease to a stop.
         /// </summary>
         public static void IntegrateEscortFollow(
             ref float3 pos,
@@ -523,7 +524,8 @@ namespace TitanOrbit.Simulation
             float mapH,
             bool readyToCenter)
         {
-            bool parkedAtCenter = riding && readyToCenter;
+            bool wasRiding = riding;
+            bool parkedAtCenter = wasRiding && readyToCenter;
             riding = false;
             pos.y = 0f;
             target.y = 0f;
@@ -569,6 +571,21 @@ namespace TitanOrbit.Simulation
                 return;
             }
 
+            // Parked formation: once caught, snap to the current seat. Orbit yaw
+            // moves that home every tick — chasing it at 4–6 u/s reads as steps.
+            if (wasRiding)
+            {
+                float rideDist = ToroidalMapEcs.ToroidalDistance(pos, target, mapW, mapH);
+                if (rideDist <= EscortRideBreak)
+                {
+                    pos = target;
+                    pos.y = 0f;
+                    vel = float3.zero;
+                    riding = true;
+                    return;
+                }
+            }
+
             float followCruise = GetEscortFollowCruise(peopleAmount);
             vel = SteerEscortVelocity(
                 pos, target, vel, dt, followCruise, peopleAmount, mapW, mapH);
@@ -576,6 +593,9 @@ namespace TitanOrbit.Simulation
             pos.y = 0f;
             if (ToroidalMapEcs.IsValidMapSize(mapW, mapH))
                 pos = ToroidalMapEcs.Wrap(pos, mapW, mapH);
+
+            if (TrySettleEscort(ref pos, ref vel, target, mapW, mapH))
+                riding = true;
         }
 
         static void GetEscortShipBasis(

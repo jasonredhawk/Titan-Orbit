@@ -487,7 +487,29 @@ namespace TitanOrbit.ECS
 
             var slots = em.GetBuffer<PeopleEscortSlot>(shipEntity);
             var vitals = em.GetBuffer<PeopleEscortVitalElement>(shipEntity);
-            vitals.ResizeUninitialized(slots.Length);
+            bool dirty = vitals.Length != slots.Length;
+            if (!dirty)
+            {
+                for (int i = 0; i < slots.Length; i++)
+                {
+                    var slot = slots[i];
+                    byte hp = (byte)math.clamp((int)math.round(math.max(0f, slot.Health)), 0, 255);
+                    byte amt = (byte)math.clamp((int)math.round(math.max(0f, slot.Amount)), 0, 255);
+                    var v = vitals[i];
+                    if (v.SeatId != slot.SeatId || v.Health != hp || v.Amount != amt ||
+                        v.InFlight != slot.InFlight)
+                    {
+                        dirty = true;
+                        break;
+                    }
+                }
+            }
+
+            if (!dirty)
+                return;
+
+            if (vitals.Length != slots.Length)
+                vitals.ResizeUninitialized(slots.Length);
             for (int i = 0; i < slots.Length; i++)
             {
                 var slot = slots[i];

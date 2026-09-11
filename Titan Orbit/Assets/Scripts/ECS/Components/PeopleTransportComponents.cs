@@ -194,7 +194,10 @@ namespace TitanOrbit.ECS
     /// Ghosted escort HP / amount for nameplates. One element per live capsule
     /// (matched by <see cref="SeatId"/>). 4 bytes each — not a per-capsule ghost.
     /// Must bake on the starship ghost so GhostFields replicate.
+    /// Owner-predicted ships do not receive this (avoids rollback hitch in the orbit ring);
+    /// interpolated remotes still get live bars.
     /// </summary>
+    [GhostComponent(SendTypeOptimization = GhostSendType.OnlyInterpolatedClients)]
     [InternalBufferCapacity(16)]
     public struct PeopleEscortVitalElement : IBufferElementData
     {

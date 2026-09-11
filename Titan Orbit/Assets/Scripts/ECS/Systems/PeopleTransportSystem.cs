@@ -25,9 +25,9 @@ namespace TitanOrbit.ECS
 
         /// <summary>
         /// Seconds between escort unload launches at 1× transfer speed.
-        /// Same cadence as the old packed-sphere dispatcher (accumulator hits one chunk).
+        /// Ready capsule must already be parked at ship center; this is the hold after that.
         /// </summary>
-        public const float UnloadDispatchIntervalSeconds = 1f;
+        public const float UnloadDispatchIntervalSeconds = 0.5f;
 
         /// <summary>Fallback hull radius when ship collider scale is unavailable.</summary>
         public const float DefaultShipHullRadius = 1f;
@@ -251,17 +251,17 @@ namespace TitanOrbit.ECS
                         PeopleTransportEscortLogic.TryPromoteReadySlot(
                             ref escortSlots, in shipTransform.ValueRO, extX, extZ, shipNetworkId, mapW, mapH);
 
-                        float unloadChunk = PeopleTransportMath.GetUnloadChunk(shipLevel);
                         // Cadence only while the ready capsule is parked at center — do not
                         // spend the hold during the preload flight (that skipped the ready pose).
                         if (PeopleTransportEscortLogic.IsReadySlotParkedAtShipCenter(
                                 escortSlots, shipTransform.ValueRO.Position, hull, mapW, mapH))
                         {
                             transfer.UnloadAccumulator +=
-                                unloadChunk * dt * PeopleTransportConstants.TransferSpeedMultiplier * transferMul;
+                                dt * PeopleTransportConstants.TransferSpeedMultiplier * transferMul;
                         }
 
-                        if (transfer.UnloadAccumulator >= unloadChunk)
+                        if (transfer.UnloadAccumulator >=
+                            PeopleTransportConstants.UnloadDispatchIntervalSeconds)
                         {
                             if (PeopleTransportEscortLogic.TryLaunchReadySlot(
                                     ref escortSlots, in shipTransform.ValueRO, hull,
