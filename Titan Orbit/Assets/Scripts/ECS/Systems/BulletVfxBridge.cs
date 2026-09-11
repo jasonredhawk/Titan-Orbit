@@ -97,6 +97,11 @@ namespace TitanOrbit.ECS
             /// VFX does not use this; HitRpc apply does.
             /// </summary>
             public int AsteroidLayoutSlot;
+
+            public int TroopShipNetworkId;
+            public byte TroopSeatId;
+            public float TroopHealthAfter;
+            public uint TroopSequence;
         }
 
         static readonly ConcurrentQueue<SpawnRequest> SpawnQueue = new ConcurrentQueue<SpawnRequest>();

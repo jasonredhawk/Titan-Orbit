@@ -15,8 +15,9 @@ namespace TitanOrbit.ECS
     public static class PeopleTransportNetNotify
     {
         /// <summary>
-        /// Broadcasts an Active pose (or Consumed / Destroyed end) and mirrors it into the host
-        /// VFX bridge when a ClientWorld exists in-process.
+        /// Broadcasts Consumed / Destroyed / Returned (end of a load hop) and mirrors it into
+        /// the host VFX bridge when a ClientWorld exists in-process. Do not send Active —
+        /// clients magnet to the live ship ghost.
         /// </summary>
         public static void SendPose(
             ref EntityCommandBuffer ecb,

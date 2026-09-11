@@ -142,7 +142,7 @@ namespace TitanOrbit.ECS.Authoring
                 // [NETCODE] Match-long kill/mine/transport scores — must be baked so GhostFields replicate.
                 // Runtime-only AddComponent would leave clients stuck at zero (same trap as ShipLoadoutState).
                 AddComponent(entity, new ShipMatchStats());
-                // [NETCODE] Escort HP / amount for transport nameplates — must bake to replicate.
+                // [NETCODE] Unused leftover buffer — keep baked so ghost layout stays stable.
                 AddBuffer<PeopleEscortVitalElement>(entity);
                 // [TITAN-ORBIT] Server-only last-damager for kill credit — not ghosted.
                 AddComponent(entity, new ShipCombatAttribution());

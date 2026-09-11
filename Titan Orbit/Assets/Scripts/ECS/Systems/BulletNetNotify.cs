@@ -104,7 +104,11 @@ namespace TitanOrbit.ECS
             byte planetaryDefenseSlotIndex = 0,
             float planetaryDefenseHealthAfter = -1f,
             int mountIndex = -1,
-            int asteroidLayoutSlot = -1)
+            int asteroidLayoutSlot = -1,
+            int troopShipNetworkId = 0,
+            byte troopSeatId = 0,
+            float troopHealthAfter = -1f,
+            uint troopSequence = 0)
         {
             if (bullet.Sequence == 0)
                 return;
@@ -125,13 +129,16 @@ namespace TitanOrbit.ECS
                 PlanetaryDefenseSlotIndex = planetaryDefenseSlotIndex,
                 PlanetaryDefenseHealthAfter = planetaryDefenseHealthAfter,
                 AsteroidLayoutSlot = asteroidHealthAfter >= 0f ? asteroidLayoutSlot : -1,
+                TroopShipNetworkId = troopShipNetworkId,
+                TroopSeatId = troopSeatId,
+                TroopHealthAfter = troopHealthAfter,
+                TroopSequence = troopSequence,
             };
 
             if (ClientServerBootstrap.ClientWorld != null && ClientServerBootstrap.ClientWorld.IsCreated)
                 BulletVfxBridge.EnqueueHit(req);
 
-            Entity rpcEntity = ecb.CreateEntity();
-            ecb.AddComponent(rpcEntity, new BulletHitRpc
+            var rpc = new BulletHitRpc
             {
                 Sequence = bullet.Sequence,
                 HitPosition = hitPosition,
@@ -146,7 +153,11 @@ namespace TitanOrbit.ECS
                 OwnerNetworkId = bullet.OwnerNetworkId,
                 MountIndex = mountIndex,
                 AsteroidLayoutSlot = asteroidHealthAfter >= 0f ? asteroidLayoutSlot : -1,
-            });
+            };
+            rpc.PackTroop(troopShipNetworkId, troopSeatId, troopHealthAfter, troopSequence);
+
+            Entity rpcEntity = ecb.CreateEntity();
+            ecb.AddComponent(rpcEntity, rpc);
             ecb.AddComponent(rpcEntity, new SendRpcCommandRequest { TargetConnection = Entity.Null });
         }
 

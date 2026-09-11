@@ -351,19 +351,19 @@ namespace TitanOrbit.ECS
     }
 
     /// <summary>
-    /// [NETCODE] Server → all clients: authoritative people-transport pose / end-of-life.
-    /// Server sim + bullets own the entity; clients only mirror this for VFX (no PeopleTransportGhost).
-    /// Wire size ~36 bytes (includes Health) — must match Linux headless layout.
+    /// [NETCODE] Server → all clients: people-transport end-of-life (Consumed / Destroyed / Returned).
+    /// Load hops magnet locally toward the live ship ghost — there is no per-tick Active stream.
+    /// Wire layout must match Linux headless.
     /// </summary>
     public struct PeopleTransportPoseRpc : IRpcCommand
     {
         /// <summary>Same id as <see cref="PeopleTransportSpawnRpc.Sequence"/>.</summary>
         public uint Sequence;
 
-        /// <summary>Server logical XZ position this tick.</summary>
+        /// <summary>End pose (snap / despawn). Unused for voyage swarm seats.</summary>
         public float3 Position;
 
-        /// <summary>Server planar velocity (client dead-reckons between pose RPCs).</summary>
+        /// <summary>Server planar velocity at end (VFX facing).</summary>
         public float3 Velocity;
 
         /// <summary>
@@ -437,7 +437,9 @@ namespace TitanOrbit.ECS
 
     /// <summary>
     /// [NETCODE] Server → all clients: impact VFX when an authoritative bullet hits.
-    /// Wire layout must match Linux headless.
+    /// Wire size is 60 bytes — do not add fields (SizeInChunk mismatch aborts the whole
+    /// RpcSystem ECB and breaks asteroid occupancy / ram). Troop HP rides unused
+    /// asteroid/PD slots when those hits are idle: see <see cref="UnpackTroop"/>.
     /// </summary>
     public struct BulletHitRpc : IRpcCommand
     {
@@ -507,8 +509,62 @@ namespace TitanOrbit.ECS
         /// <summary>
         /// Blueprint asteroid slot for O(1) client HP apply. −1 = not an asteroid / unknown.
         /// Same index as <see cref="AsteroidOccupancyRpc"/> bit i and <see cref="AsteroidLayoutSlot"/>.
+        /// When <see cref="AsteroidHealthAfter"/> is unused (&lt; 0) and
+        /// <see cref="PlanetaryDefensePlanetId"/> is 0: &gt; 0 = troop escort ship NetworkId;
+        /// ≤ −2 = load-flight sequence packed as <c>-1 - sequence</c>.
         /// </summary>
         public int AsteroidLayoutSlot;
+
+        /// <summary>
+        /// Reads packed troop HP from unused asteroid/PD slots. No-op when this RPC is
+        /// an asteroid or planetary-defense hit.
+        /// </summary>
+        public void UnpackTroop(
+            out int troopShipNetworkId,
+            out byte troopSeatId,
+            out float troopHealthAfter,
+            out uint troopSequence)
+        {
+            troopShipNetworkId = 0;
+            troopSeatId = 0;
+            troopHealthAfter = -1f;
+            troopSequence = 0;
+            if (AsteroidHealthAfter >= 0f || PlanetaryDefensePlanetId > 0)
+                return;
+
+            if (AsteroidLayoutSlot > 0)
+            {
+                troopShipNetworkId = AsteroidLayoutSlot;
+                troopSeatId = PlanetaryDefenseSlotIndex;
+                troopHealthAfter = PlanetaryDefenseHealthAfter;
+            }
+            else if (AsteroidLayoutSlot <= -2)
+            {
+                troopSequence = (uint)(-AsteroidLayoutSlot - 1);
+                troopHealthAfter = PlanetaryDefenseHealthAfter;
+            }
+        }
+
+        /// <summary>
+        /// Packs troop HP into unused asteroid/PD slots. Caller must not also mark this
+        /// RPC as an asteroid or PD hit.
+        /// </summary>
+        public void PackTroop(int troopShipNetworkId, byte troopSeatId, float troopHealthAfter, uint troopSequence)
+        {
+            if (AsteroidHealthAfter >= 0f || PlanetaryDefensePlanetId > 0)
+                return;
+            if (troopShipNetworkId > 0)
+            {
+                AsteroidLayoutSlot = troopShipNetworkId;
+                PlanetaryDefenseSlotIndex = troopSeatId;
+                PlanetaryDefenseHealthAfter = troopHealthAfter;
+            }
+            else if (troopSequence != 0)
+            {
+                AsteroidLayoutSlot = -1 - (int)troopSequence;
+                PlanetaryDefenseHealthAfter = troopHealthAfter;
+            }
+        }
     }
 
     /// <summary>

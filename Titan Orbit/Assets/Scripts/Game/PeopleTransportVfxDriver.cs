@@ -7,6 +7,7 @@ using TitanOrbit.NetCode;
 using TitanOrbit.Simulation;
 using Unity.Entities;
 using Unity.Mathematics;
+using Unity.Transforms;
 using UnityEngine;
 
 namespace TitanOrbit.Game
@@ -15,11 +16,11 @@ namespace TitanOrbit.Game
     /// Owns people-transport GameObject VFX (load / unload) and the arrive transfer SFX.
     /// <para>
     /// Server remains authoritative: non-ghost transport entities move, take bullet hits, and
-    /// deliver people. This driver only Instantiates cosmetic spheres and mirrors
-    /// <see cref="PeopleTransportPoseRpc"/> (same positions the server uses for combat).
-    /// Between pose RPCs the sphere dead-reckons with the last server velocity — it does
-    /// <b>not</b> independently magnet-chase a local ship pose (that caused Windows clients to
-    /// fly toward a stale orbit point).
+    /// deliver people. This driver Instantiates cosmetic spheres from
+    /// <see cref="PeopleTransportSpawnRpc"/> and end poses (Consumed / Destroyed / Returned).
+    /// Load hops magnet toward the live ship ghost while it stays eligible (orbit ring,
+    /// idle). If the ship leaves before consume, the sphere retargets to the source planet
+    /// surface — same rule as server <c>StepTransportMotion</c>. No per-tick Active pose stream.
     /// </para>
     /// <para>
     /// On <see cref="PeopleTransportPoseStatus.Consumed"/> we play the people transfer one-shot
@@ -68,6 +69,7 @@ namespace TitanOrbit.Game
             public int TargetPlanetId;
             public int TargetShipNetworkId;
             public float Amount;
+            public float CruiseSpeed;
             public byte Team;
             public float RemainingLifetime;
             public int TileK;
@@ -110,6 +112,26 @@ namespace TitanOrbit.Game
 
         /// <summary>Live driver instance, or null when disabled.</summary>
         public static PeopleTransportVfxDriver Active => s_Instance;
+
+        /// <summary>Authoritative load-flight HP from <see cref="BulletHitRpc"/>.</summary>
+        public static void ApplyTroopHealth(uint sequence, float healthAfter)
+        {
+            if (s_Instance == null || sequence == 0)
+                return;
+
+            if (!s_Instance._indexBySequence.TryGetValue(sequence, out int index) ||
+                index < 0 || index >= s_Instance._flights.Count)
+                return;
+
+            var f = s_Instance._flights[index];
+            if (f.Sequence != sequence)
+                return;
+
+            f.Health = healthAfter;
+            s_Instance._flights[index] = f;
+            if (healthAfter <= 0.01f)
+                s_Instance.DestroyFlightAt(index, showArrivePopup: false);
+        }
 
         /// <summary>
         /// Join-safe cosmetic spheres for bullet tracers. Transports are not client ghosts —
@@ -279,9 +301,74 @@ namespace TitanOrbit.Game
                     continue;
                 }
 
-                // --- Dead-reckon with last server velocity between pose RPCs ---
+                // --- Magnet toward the live ship (load) or planet (return / unload) ---
+                // Same eligibility as server StepTransportMotion: leave the ring / thrust
+                // before consume → steer home. Missing eligibility data keeps the last ship
+                // chase (ghost orbit can lag a tick behind leave).
+                // Unload hops always magnet to the destination planet — they keep flying if
+                // the source ship dies.
+                float3 target = f.LogicalPos + f.Velocity;
+                bool magnetToShip = false;
+                float3 shipPos = default;
+                float shipScale = 1f;
+                if (f.IsLoad != 0 && f.TargetShipNetworkId > 0 &&
+                    EcsGameBridge.TryGetShipSimTransformByNetworkId(
+                        f.TargetShipNetworkId, out var liveShipXf))
+                {
+                    bool shipEligible = true;
+                    if (EcsGameBridge.TryIsShipEligibleForPeopleLoad(
+                            f.TargetShipNetworkId, f.SourcePlanetId, out bool eligible))
+                    {
+                        shipEligible = eligible;
+                    }
+
+                    if (shipEligible)
+                    {
+                        magnetToShip = true;
+                        shipPos = liveShipXf.Position;
+                        shipScale = liveShipXf.Scale;
+                    }
+                }
+
+                if (magnetToShip)
+                {
+                    float hull = PeopleTransportMath.GetShipHullRadius(shipScale);
+                    target = PeopleTransportMath.GetShipMagnetTarget(
+                        shipPos, hull, f.LogicalPos, mapW, mapH);
+                }
+                else if (f.IsLoad != 0 && f.SourcePlanetId != 0 &&
+                         EcsGameBridge.TryGetPlanetPoseByPlanetId(
+                             f.SourcePlanetId, out float3 planetPos, out float planetScale, out _))
+                {
+                    target = PeopleTransportMath.GetPlanetSurfaceToward(
+                        planetPos, math.max(0.5f, planetScale), f.LogicalPos, mapW, mapH);
+                }
+                else if (f.TargetPlanetId != 0 &&
+                         EcsGameBridge.TryGetPlanetPoseByPlanetId(
+                             f.TargetPlanetId, out float3 destPos, out float destScale, out _))
+                {
+                    target = PeopleTransportMath.GetPlanetSurfaceToward(
+                        destPos, math.max(0.5f, destScale), f.LogicalPos, mapW, mapH);
+                }
+                else if (f.SourcePlanetId != 0 &&
+                         EcsGameBridge.TryGetPlanetPoseByPlanetId(
+                             f.SourcePlanetId, out float3 fallbackPos, out float fallbackScale, out _))
+                {
+                    target = PeopleTransportMath.GetPlanetSurfaceToward(
+                        fallbackPos, math.max(0.5f, fallbackScale), f.LogicalPos, mapW, mapH);
+                }
+
+                float cruise = f.CruiseSpeed > 0.08f
+                    ? f.CruiseSpeed
+                    : PeopleTransportMath.ComputeCruiseSpeed(
+                        f.LogicalPos, target, f.IsLoad != 0, mapW, mapH);
+                f.CruiseSpeed = cruise;
+                f.Velocity = PeopleTransportMath.SteerMagnetVelocity(
+                    f.LogicalPos, target, f.Velocity, dt, cruise, mapW, mapH);
                 f.LogicalPos += f.Velocity * dt;
                 f.LogicalPos.y = 0f;
+                if (ToroidalMapEcs.IsValidMapSize(mapW, mapH))
+                    f.LogicalPos = ToroidalMapEcs.Wrap(f.LogicalPos, mapW, mapH);
 
                 // --- Display unwrap (cosmetic only) ---
                 int k = f.TileK;
@@ -301,8 +388,8 @@ namespace TitanOrbit.Game
                     f.Thruster = PeopleTransportVisualApplier.EnsureThruster(f.Go);
                 if (f.Thruster != null)
                 {
-                    float cruise = PeopleTransportMath.GetEscortFollowCruise(f.Amount);
-                    f.Thruster.SetMotion(math.length(flatVel), cruise);
+                    float followCruise = PeopleTransportMath.GetEscortFollowCruise(f.Amount);
+                    f.Thruster.SetMotion(math.length(flatVel), followCruise);
                 }
 
                 int ownerId = f.TargetShipNetworkId;
@@ -408,17 +495,6 @@ namespace TitanOrbit.Game
                 }
 
                 PlayPeopleArriveSound(in f, loadReturnedToPlanet);
-                if (!loadReturnedToPlanet &&
-                    f.IsLoad != 0 &&
-                    f.Go != null &&
-                    PeopleTransportEscortPresenter.TryAdopt(
-                        f.TargetShipNetworkId, f.Go, f.Amount, f.Team, f.LogicalPos))
-                {
-                    f.Go = null;
-                    RemoveFlightAt(index);
-                    return;
-                }
-
                 DestroyFlightAt(index, showArrivePopup: false);
                 return;
             }
@@ -429,7 +505,7 @@ namespace TitanOrbit.Game
                 return;
             }
 
-            // --- Active: snap / blend to server combat position ---
+            // --- Active (unused for load hops): snap if a leftover pose arrives ---
             float3 serverPos = pose.Position;
             serverPos.y = 0f;
             if (f.HasServerPose)
@@ -494,14 +570,15 @@ namespace TitanOrbit.Game
                     TargetPlanetId = req.TargetPlanetId,
                     TargetShipNetworkId = req.TargetShipNetworkId,
                     Amount = math.max(1f, req.Amount),
+                    CruiseSpeed = req.CruiseSpeed,
                     Team = req.Team,
                     RemainingLifetime = MaxLifetimeSeconds,
                     TileK = int.MinValue,
                     TileM = int.MinValue,
                     LeavePopupShown = false,
-                    HasServerPose = false,
+                    HasServerPose = true,
                     Thruster = PeopleTransportVisualApplier.EnsureThruster(go),
-                    Health = -1f,
+                    Health = PeopleTransportMath.ComputeMaxHealth(math.max(1f, req.Amount)),
                 };
 
                 // Leave: planet −N (load) or ship −N (unload). Arrive is a separate target.

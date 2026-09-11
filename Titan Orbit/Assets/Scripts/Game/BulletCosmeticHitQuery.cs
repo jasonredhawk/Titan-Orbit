@@ -363,7 +363,6 @@ namespace TitanOrbit.Game
             }
 
             PeopleTransportVfxDriver.AppendBulletObstacles(Obstacles);
-            PeopleTransportEscortPresenter.AppendBulletObstacles(Obstacles);
             AppendDroneObstacles(em);
             RebuildObstacleGrid();
             RebuildSweepBodies(em);

@@ -208,7 +208,7 @@ namespace TitanOrbit.ECS
 
                     if (!TryFindNearestHostile(
                             muzzle, (TeamId)ownerTeam, engageRangeSq, mapW, mapH,
-                            enemyShips, transports,
+                            enemyShips, transports, SystemAPI.Time.ElapsedTime,
                             out float3 targetPos, out float3 targetVel))
                         continue;
 
@@ -315,6 +315,7 @@ namespace TitanOrbit.ECS
             float mapH,
             NativeArray<Entity> enemyShips,
             NativeArray<Entity> transports,
+            double timeSeconds,
             out float3 targetPos,
             out float3 targetVel)
         {
@@ -323,7 +324,7 @@ namespace TitanOrbit.ECS
             float bestMuzzleDistSq = float.MaxValue;
             bool found = false;
 
-            // --- Enemy ships ---
+            // --- Enemy ships + that ship's troop orbs (ship-local, not a map-wide list) ---
             for (int i = 0; i < enemyShips.Length; i++)
             {
                 Entity e = enemyShips[i];
@@ -332,36 +333,34 @@ namespace TitanOrbit.ECS
                     continue;
                 if (ship.Team == ownerTeam)
                     continue;
-                // Landed on a moon — immune to hull damage; do not acquire or fire.
-                if (ShipMoonDockState.IsFullyLandedOnMoon(EntityManager, e))
-                    continue;
 
-                var shipXf = EntityManager.GetComponentData<LocalTransform>(e);
-                float3 pos = MegaShipCombatAim.GetAimPoint(EntityManager, e, shipXf);
-                pos.y = PlanetaryDefenseMath.FixedY;
-
-                float3 fromMuzzle = ToroidalMapEcs.ShortestOffsetXZ(muzzle, pos, mapW, mapH);
-                float muzzleDistSq = math.lengthsq(new float3(fromMuzzle.x, 0f, fromMuzzle.z));
-                if (muzzleDistSq > engageRangeSq || muzzleDistSq >= bestMuzzleDistSq)
-                    continue;
-
-                bestMuzzleDistSq = muzzleDistSq;
-                targetPos = pos;
-                // [NETCODE] ShipKinematics — ghosted copy of PhysicsVelocity.Linear after
-                // ShipKinematicsSyncSystem (PredictedFixedStep, OrderLast). Combat runs later
-                // in SimulationSystemGroup, so this is the post-physics velocity for this tick.
-                targetVel = float3.zero;
-                if (EntityManager.HasComponent<ShipKinematics>(e))
+                bool moonStowed = ShipMoonDockState.IsFullyLandedOnMoon(EntityManager, e);
+                if (!moonStowed)
                 {
-                    float3 vel = EntityManager.GetComponentData<ShipKinematics>(e).Velocity;
-                    vel.y = 0f;
-                    targetVel = vel;
-                }
+                    var shipXf = EntityManager.GetComponentData<LocalTransform>(e);
+                    float3 pos = MegaShipCombatAim.GetAimPoint(EntityManager, e, shipXf);
+                    pos.y = PlanetaryDefenseMath.FixedY;
 
-                found = true;
+                    float3 fromMuzzle = ToroidalMapEcs.ShortestOffsetXZ(muzzle, pos, mapW, mapH);
+                    float muzzleDistSq = math.lengthsq(new float3(fromMuzzle.x, 0f, fromMuzzle.z));
+                    if (muzzleDistSq <= engageRangeSq && muzzleDistSq < bestMuzzleDistSq)
+                    {
+                        bestMuzzleDistSq = muzzleDistSq;
+                        targetPos = pos;
+                        targetVel = float3.zero;
+                        if (EntityManager.HasComponent<ShipKinematics>(e))
+                        {
+                            float3 vel = EntityManager.GetComponentData<ShipKinematics>(e).Velocity;
+                            vel.y = 0f;
+                            targetVel = vel;
+                        }
+
+                        found = true;
+                    }
+                }
             }
 
-            // --- Enemy people transports (descending / landing pods) ---
+            // --- Enemy people transports (planet→ship load hops) ---
             for (int i = 0; i < transports.Length; i++)
             {
                 Entity e = transports[i];
@@ -382,49 +381,10 @@ namespace TitanOrbit.ECS
 
                 bestMuzzleDistSq = muzzleDistSq;
                 targetPos = pos;
-                // [TITAN-ORBIT] Transports are not ships — velocity lives on PeopleTransportState
-                // (magnet steer writes it each server tick). Zero here was why landing pods were missed.
                 float3 vel = t.Velocity;
                 vel.y = 0f;
                 targetVel = vel;
                 found = true;
-            }
-
-            // --- Derived troop escorts (follow / landing) — same as in-flight transports ---
-            for (int i = 0; i < enemyShips.Length; i++)
-            {
-                Entity ship = enemyShips[i];
-                if (!EntityManager.HasBuffer<PeopleEscortSlot>(ship) ||
-                    !EntityManager.HasComponent<ShipState>(ship))
-                    continue;
-                var shipState = EntityManager.GetComponentData<ShipState>(ship);
-                if (shipState.IsDead || shipState.Team == TeamId.None || shipState.Team == ownerTeam)
-                    continue;
-
-                var slots = EntityManager.GetBuffer<PeopleEscortSlot>(ship);
-                int count = slots.Length;
-                for (int s = 0; s < count; s++)
-                {
-                    var slot = slots[s];
-                    if (slot.Amount <= 0.01f || slot.Health <= 0f)
-                        continue;
-                    if (slot.InFlight == 0 &&
-                        ShipMoonDockState.IsFullyLandedOnMoon(EntityManager, ship))
-                        continue;
-                    float3 pos = slot.Position;
-                    pos.y = PlanetaryDefenseMath.FixedY;
-
-                    float3 fromMuzzle = ToroidalMapEcs.ShortestOffsetXZ(muzzle, pos, mapW, mapH);
-                    float muzzleDistSq = math.lengthsq(new float3(fromMuzzle.x, 0f, fromMuzzle.z));
-                    if (muzzleDistSq > engageRangeSq || muzzleDistSq >= bestMuzzleDistSq)
-                        continue;
-
-                    bestMuzzleDistSq = muzzleDistSq;
-                    targetPos = pos;
-                    targetVel = slot.Velocity;
-                    targetVel.y = 0f;
-                    found = true;
-                }
             }
 
             return found;

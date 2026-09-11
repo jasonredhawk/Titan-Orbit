@@ -1973,29 +1973,6 @@ namespace TitanOrbit.Game
                 _transportAimScratch.Clear();
             }
 
-            int escortStart = _transportAimScratch.Count;
-            PeopleTransportEscortPresenter.CopyAimEscorts(_transportAimScratch);
-            for (int i = escortStart; i < _transportAimScratch.Count; i++)
-            {
-                var sample = _transportAimScratch[i];
-                var team = (TeamId)sample.Team;
-                if (team == TeamId.None || team == ownerTeam)
-                    continue;
-
-                float3 pos = sample.DisplayPos;
-                pos.y = PlanetaryDefenseMath.FixedY;
-                float3 d = ToroidalMapEcs.ShortestOffsetXZ(muzzleDisplay, pos, mapW, mapH);
-                float distSq = math.lengthsq(new float3(d.x, 0f, d.z));
-                if (distSq > bestDistSq)
-                    continue;
-
-                bestDistSq = distSq;
-                targetPos = pos;
-                targetVel = sample.Velocity;
-                targetVel.y = 0f;
-                found = true;
-            }
-
             return found;
         }
 

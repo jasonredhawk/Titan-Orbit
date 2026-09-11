@@ -760,6 +760,13 @@ namespace TitanOrbit.Game
             EnsureBank();
             while (BulletVfxBridge.TryDequeueHit(out var hit))
             {
+                if (hit.TroopHealthAfter >= 0f &&
+                    (hit.TroopSequence != 0 || hit.TroopShipNetworkId > 0))
+                {
+                    if (hit.TroopSequence != 0)
+                        PeopleTransportVfxDriver.ApplyTroopHealth(hit.TroopSequence, hit.TroopHealthAfter);
+                }
+
                 Vector3 hitPos = hit.HitPosition;
                 if (ToroidalDisplay.TryGetReferencePosition(out var reference))
                     hitPos = ToroidalDisplay.ToDisplayPosition(hitPos, reference);

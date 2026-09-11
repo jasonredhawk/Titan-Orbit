@@ -10,8 +10,10 @@ namespace TitanOrbit.Game
     /// World-upright plate under a troop transport: health bar twice the capsule
     /// width, owner badge centered on the bar. Unparented so hull yaw does not
     /// spin the chrome. Screen-below like regular ship plates — not on top.
+    /// After escort presenter (67020) and its onBeforeRender pin — posing earlier
+    /// left the bar on last-frame capsule position while the orb snapped to the hull.
     /// </summary>
-    [DefaultExecutionOrder(67010)]
+    [DefaultExecutionOrder(67030)]
     public sealed class PeopleTransportNameplate : MonoBehaviour
     {
         const int BarSortingOrder = 5000;
@@ -109,10 +111,28 @@ namespace TitanOrbit.Game
 
         void LateUpdate()
         {
-            if (!_ready || _labelRoot == null)
-                return;
-
             ApplyBadge();
+            FollowHostNow();
+        }
+
+        /// <summary>
+        /// Snap the unparented plate to the capsule after escort pin / magnet.
+        /// </summary>
+        public static void FollowHost(GameObject host)
+        {
+            if (host == null)
+                return;
+            var plate = host.GetComponent<PeopleTransportNameplate>();
+            plate?.FollowHostNow();
+        }
+
+        /// <summary>
+        /// World pose only — badge/HP bind stays on LateUpdate / Sync.
+        /// </summary>
+        public void FollowHostNow()
+        {
+            if (!_ready || _labelRoot == null || !isActiveAndEnabled)
+                return;
 
             float diameter = Mathf.Max(
                 MinTransportWidth,

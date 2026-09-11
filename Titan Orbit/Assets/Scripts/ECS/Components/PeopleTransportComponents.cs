@@ -13,8 +13,8 @@ namespace TitanOrbit.ECS
 
     /// <summary>
     /// Server-only in-flight people transport (combat + delivery). Not a ghost — clients Instantiates
-    /// VFX from <see cref="PeopleTransportSpawnRpc"/> (including late-join catch-up) and follow
-    /// <see cref="PeopleTransportPoseRpc"/>.
+    /// VFX from <see cref="PeopleTransportSpawnRpc"/> (including late-join catch-up) and magnet
+    /// toward the live ship. End-of-life is <see cref="PeopleTransportPoseRpc"/> (Consumed / Destroyed / Returned).
     /// Bullet hits use this entity’s <see cref="Unity.Transforms.LocalTransform"/> on the server.
     /// </summary>
     public struct PeopleTransportState : IComponentData
@@ -70,7 +70,7 @@ namespace TitanOrbit.ECS
     /// </summary>
     public static class PeopleTransportPoseStatus
     {
-        /// <summary>Server sim pose for this tick — client snaps / dead-reckons the float.</summary>
+        /// <summary>Unused for voyage orbs. Load hops magnet locally; do not stream Active poses.</summary>
         public const byte Active = 0;
 
         /// <summary>Delivered to the intended target (ship for load, planet for unload).</summary>
@@ -130,72 +130,8 @@ namespace TitanOrbit.ECS
     }
 
     /// <summary>
-    /// Server-only packed escort capsule. Pose is formation-follow while waiting
-    /// or magnet kinematics while that slot is the active unloader — never ghosted.
-    /// Amount is the intact load size (a +36 stays +36).
-    /// </summary>
-    public struct PeopleEscortSlot : IBufferElementData
-    {
-        /// <summary>Planar world center (Y forced to 0).</summary>
-        public float3 Position;
-
-        /// <summary>Planar velocity (hover follow and landing magnet).</summary>
-        public float3 Velocity;
-
-        /// <summary>People packed in this sphere.</summary>
-        public float Amount;
-
-        /// <summary>Hull points. Replicated to clients via <see cref="PeopleEscortVitalElement"/>.</summary>
-        public float Health;
-
-        /// <summary>Landing cruise speed (world units / sec).</summary>
-        public float CruiseSpeed;
-
-        /// <summary>Position when this capsule launched toward the planet.</summary>
-        public float3 SpawnPosition;
-
-        /// <summary>1 when launched one-way at the planet; 0 otherwise.</summary>
-        public byte InFlight;
-
-        /// <summary>1 when called to ship center (preload / ready). Not launched yet.</summary>
-        public byte Ready;
-
-        /// <summary>Planet this launched capsule is committed to; 0 if not launched.</summary>
-        public int TargetPlanetId;
-
-        /// <summary>Seconds since this capsule launched (min-time contact gate).</summary>
-        public float FlightElapsed;
-
-        /// <summary>
-        /// 1 when this capsule has caught its formation / ready seat and should
-        /// ride the ship pose. 0 while still swarming in at its own cruise.
-        /// </summary>
-        public byte Riding;
-
-        /// <summary>
-        /// Stable aft-pack seat. Assigned at spawn and never reused until this
-        /// slot is destroyed — adding or losing a capsule must not move the others.
-        /// </summary>
-        public byte SeatId;
-    }
-
-    /// <summary>
-    /// Server-only landing latch. <see cref="PlanetId"/> 0 = follow beside the ship.
-    /// Launches are paced by the old unload accumulator — several capsules may be in flight.
-    /// Not ghosted — clients infer unload from orbit ring + dwell + planet ownership.
-    /// </summary>
-    public struct PeopleEscortLandingState : IComponentData
-    {
-        /// <summary>Planet being dropped on; 0 when escorts follow the ship.</summary>
-        public int PlanetId;
-    }
-
-    /// <summary>
-    /// Ghosted escort HP / amount for nameplates. One element per live capsule
-    /// (matched by <see cref="SeatId"/>). 4 bytes each — not a per-capsule ghost.
-    /// Must bake on the starship ghost so GhostFields replicate.
-    /// Owner-predicted ships do not receive this (avoids rollback hitch in the orbit ring);
-    /// interpolated remotes still get live bars.
+    /// Ghosted leftover buffer on the starship. Kept baked so the ghost layout stays stable
+    /// after voyage escorts were removed. Always empty at runtime.
     /// </summary>
     [GhostComponent(SendTypeOptimization = GhostSendType.OnlyInterpolatedClients)]
     [InternalBufferCapacity(16)]

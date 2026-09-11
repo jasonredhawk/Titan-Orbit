@@ -95,7 +95,8 @@ namespace TitanOrbit.ECS
             using var transportXf = transportQuery.ToComponentDataArray<LocalTransform>(Allocator.Temp);
             using var transportStates = transportQuery.ToComponentDataArray<PeopleTransportState>(Allocator.Temp);
 
-            int n = ships.Length + asteroids.Length + transports.Length;
+            int n = ships.Length + asteroids.Length + transports.Length
+                     + ships.Length * PeopleTransportMath.MaxEscortVisualSlots;
             // MEGA hulls stamp many cells — oversize so the map does not resize mid-build.
             var hash = new BulletObstacleSpatialHash
             {

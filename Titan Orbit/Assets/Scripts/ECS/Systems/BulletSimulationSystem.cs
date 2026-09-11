@@ -74,11 +74,10 @@ namespace TitanOrbit.ECS
         /// <summary>Equipment slot of the winning drone hit (−1 when not a drone).</summary>
         static int s_BestDroneSlot = -1;
 
-        /// <summary>Derived escort spheres this tick (no escort ghosts — pose from ship + cargo).</summary>
-        static readonly List<PeopleEscortHitTarget> s_EscortHitTargets = new List<PeopleEscortHitTarget>(64);
-
-        /// <summary>Winning escort slot (−1 when the transport hit is an in-flight entity).</summary>
-        static int s_BestEscortSlot = -1;
+        static int s_TroopShipNetworkId;
+        static byte s_TroopSeatId;
+        static float s_TroopHealthAfter = -1f;
+        static uint s_TroopSequence;
 
         /// <summary>Throttles expensive shield-sphere rebuilds.</summary>
         static int s_DroneHitRebuildCounter;
@@ -257,17 +256,6 @@ namespace TitanOrbit.ECS
             else if (!needDroneHits)
             {
                 s_DroneHitTargets.Clear();
-            }
-
-            if (needDroneHits && (s_EscortHitTargets.Count == 0 || (s_DroneHitRebuildCounter % 3) == 0))
-            {
-                using var escortShips = _allShipQuery.ToEntityArray(Allocator.Temp);
-                PeopleTransportEscortHitScan.RebuildTargets(
-                    state.EntityManager, escortShips, mapW, mapH, s_EscortHitTargets);
-            }
-            else if (!needDroneHits)
-            {
-                s_EscortHitTargets.Clear();
             }
 
             // --- Planetary defense hit spheres ---
@@ -843,7 +831,8 @@ namespace TitanOrbit.ECS
                 BulletNetNotify.SendHit(
                     ref ecb, spawn, spawnHitPoint, spawnAsteroidHealthAfter,
                     spawnPdPlanetId, spawnPdSlotIndex, spawnPdHealthAfter,
-                    mountIdx, spawnAsteroidLayoutSlot);
+                    mountIdx, spawnAsteroidLayoutSlot,
+                    s_TroopShipNetworkId, s_TroopSeatId, s_TroopHealthAfter, s_TroopSequence);
             }
             else
             {
@@ -997,7 +986,11 @@ namespace TitanOrbit.ECS
                         BulletNetNotify.SendHit(
                             ref ecb, b, hitPoint, asteroidHealthAfter,
                             pdPlanetId, pdSlotIndex, pdHealthAfter,
-                            asteroidLayoutSlot: asteroidLayoutSlot);
+                            asteroidLayoutSlot: asteroidLayoutSlot,
+                            troopShipNetworkId: s_TroopShipNetworkId,
+                            troopSeatId: s_TroopSeatId,
+                            troopHealthAfter: s_TroopHealthAfter,
+                            troopSequence: s_TroopSequence);
                         bullets = state.EntityManager.GetBuffer<BulletElement>(bulletEntity);
                         bullets.RemoveAtSwapBack(i);
                     }
@@ -1131,8 +1124,11 @@ namespace TitanOrbit.ECS
             var bestKind = BulletHitKind.None;
             Entity bestEntity = Entity.Null;
             s_BestDroneSlot = -1;
-            s_BestEscortSlot = -1;
             s_BestDefenseSlot = -1;
+            s_TroopShipNetworkId = 0;
+            s_TroopSeatId = 0;
+            s_TroopHealthAfter = -1f;
+            s_TroopSequence = 0;
 
             // --- Planets + gem-moon shields ---
             foreach (var (planetState, planetTransform, moonState, planetEntity) in SystemAPI
@@ -1193,6 +1189,8 @@ namespace TitanOrbit.ECS
                     switch (entry.Kind)
                     {
                         case BulletObstacleKind.Ship:
+                            if (HasAlreadyConsideredHashedShip(n, entry.Entity))
+                                break;
                             if (wantShip)
                                 ConsiderHashedShip(
                                     em, in b, from, to, mapW, mapH, healFriendly, entry.Entity,
@@ -1226,19 +1224,6 @@ namespace TitanOrbit.ECS
                 bestKind = BulletHitKind.Drone;
                 bestEntity = hitDrone.ShipEntity;
                 s_BestDroneSlot = hitDrone.SlotIndex;
-            }
-
-            // --- Derived troop escorts (follow formation / landing wave) ---
-            // Same Transport filter as in-flight capsules — fighters still pass through.
-            if (AllowsHitKind(b.DamageFilter, BulletHitKind.Transport) &&
-                PeopleTransportEscortHitScan.TryKeepNearestEscortHit(
-                    in b, from, to, mapW, mapH, s_EscortHitTargets,
-                    ref bestT, ref bestHit, out int escortIdx))
-            {
-                PeopleEscortHitTarget hitEscort = s_EscortHitTargets[escortIdx];
-                bestKind = BulletHitKind.Transport;
-                bestEntity = hitEscort.ShipEntity;
-                s_BestEscortSlot = hitEscort.SlotIndex;
             }
 
             // --- Planetary defense turrets (derived spheres on owned planets) ---
@@ -1496,22 +1481,23 @@ namespace TitanOrbit.ECS
 
                 case BulletHitKind.Transport:
                 {
-                    if (s_BestEscortSlot >= 0 &&
-                        state.EntityManager.HasBuffer<PeopleEscortSlot>(bestEntity))
-                    {
-                        PeopleTransportEscortLogic.ApplyDamageToSlot(
-                            state.EntityManager, bestEntity, s_BestEscortSlot, hitDamage);
-                        PeopleTransportEscortLogic.WriteEscortVitals(
-                            state.EntityManager, bestEntity);
-                    }
-                    else if (state.EntityManager.HasComponent<PeopleTransportState>(bestEntity))
+                    if (state.EntityManager.HasComponent<PeopleTransportState>(bestEntity))
                     {
                         var t = state.EntityManager.GetComponentData<PeopleTransportState>(bestEntity);
                         t.Health -= hitDamage;
+                        s_TroopSequence = t.Sequence;
+                        s_TroopShipNetworkId = 0;
+                        s_TroopSeatId = 0;
                         if (t.Health <= 0f)
+                        {
+                            s_TroopHealthAfter = 0f;
                             PeopleTransportSimulationSystem.DestroyFromBulletDamage(ref state, bestEntity, t);
+                        }
                         else
+                        {
+                            s_TroopHealthAfter = t.Health;
                             state.EntityManager.SetComponentData(bestEntity, t);
+                        }
                     }
 
                     TrySpawnWell(ref state, hitPoint, profile, serverElapsed, mapW, mapH, in b, ecb, gemPrefab, hitDamage, bestEntity);
@@ -1793,6 +1779,22 @@ namespace TitanOrbit.ECS
             bestT = t;
             bestHit = candidateHit;
             return true;
+        }
+
+        /// <summary>
+        /// Escort seats share the parent ship entity in the hash. Skip hull/escort
+        /// tests already done for an earlier entry of the same hull.
+        /// </summary>
+        bool HasAlreadyConsideredHashedShip(int current, Entity ship)
+        {
+            for (int i = 0; i < current; i++)
+            {
+                var prev = _obstacleHash.Entries[_nearbyObstacles[i]];
+                if (prev.Kind == BulletObstacleKind.Ship && prev.Entity == ship)
+                    return true;
+            }
+
+            return false;
         }
 
         /// <summary>

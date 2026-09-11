@@ -50,6 +50,11 @@ namespace TitanOrbit.ECS
                 var r = rpc.ValueRO;
                 float3 hit = r.HitPosition;
                 hit.y = 0f;
+                r.UnpackTroop(
+                    out int troopShipNetworkId,
+                    out byte troopSeatId,
+                    out float troopHealthAfter,
+                    out uint troopSequence);
 
                 BulletVfxBridge.EnqueueHit(new BulletVfxBridge.HitRequest
                 {
@@ -66,6 +71,10 @@ namespace TitanOrbit.ECS
                     PlanetaryDefenseSlotIndex = r.PlanetaryDefenseSlotIndex,
                     PlanetaryDefenseHealthAfter = r.PlanetaryDefenseHealthAfter,
                     AsteroidLayoutSlot = r.AsteroidLayoutSlot,
+                    TroopShipNetworkId = troopShipNetworkId,
+                    TroopSeatId = troopSeatId,
+                    TroopHealthAfter = troopHealthAfter,
+                    TroopSequence = troopSequence,
                 });
 
                 if (r.AsteroidHealthAfter >= 0f)

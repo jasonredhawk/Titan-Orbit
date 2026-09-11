@@ -33,8 +33,9 @@ namespace TitanOrbit.ECS
         public float LoadAccumulator;
 
         /// <summary>
-        /// Seconds parked at ship center toward the next escort unload launch.
-        /// Fires at <see cref="PeopleTransportConstants.UnloadDispatchIntervalSeconds"/>.
+        /// <see cref="Unity.Core.TimeData.ElapsedTime"/> of the last unload hop, or 0 if none
+        /// this dwell. Cadence is wall-clock <see cref="PeopleTransportConstants.UnloadDispatchIntervalSeconds"/>
+        /// — not scaled by transfer-speed cards or SimulationSystemGroup DeltaTime.
         /// </summary>
         public float UnloadAccumulator;
 
