@@ -485,7 +485,7 @@ namespace TitanOrbit.Game
             // Exact component tip — BankPivot may lift Y; that is intentional for the flash.
             fireOrigin = live.Weapon.position;
 
-            // --- Unbanked planar aim (strip BankPivot roll, keep weapon local yaw/pitch facing) ---
+            // --- Unbanked planar aim (strip BankPivot roll + pitch, keep weapon local yaw/pitch facing) ---
             Vector3 unbankedFwd = GetUnbankedWorldForward(live.Weapon);
             if (!TryBuildPlanarAimFromWeaponForward(unbankedFwd, live.DirectionAngleDeg, out fireForward))
                 return false;
@@ -499,8 +499,8 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// World forward of <paramref name="weapon"/> with <c>BankPivot</c> roll removed so aim
-        /// matches the hull-relative weapon component (same facing the player sees on the mesh).
+        /// World forward of <paramref name="weapon"/> with <c>BankPivot</c> roll and pitch removed
+        /// so aim matches the hull-relative weapon component (same facing the player sees on the mesh).
         /// </summary>
         static Vector3 GetUnbankedWorldForward(Transform weapon)
         {

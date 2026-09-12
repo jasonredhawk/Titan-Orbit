@@ -3,8 +3,8 @@ using UnityEngine;
 namespace TitanOrbit.Data
 {
     /// <summary>
-    /// Designer asset for client-only ship bank (roll-while-turning).
-    /// Create via Assets → Create → Titan Orbit → Ship Bank Visual Settings.
+    /// Designer asset for client-only ship bank (roll-while-turning) and pitch
+    /// (accel + collision). Create via Assets → Create → Titan Orbit → Ship Bank Visual Settings.
     /// Assign on each <see cref="ShipFamilyDefinition.bankVisualSettings"/>, or on
     /// <see cref="MegaShipCatalog.bankVisualSettings"/> for every MEGA hull. Consumed by
     /// <see cref="TitanOrbit.Game.ShipBankVisualApplier"/> and published into
@@ -57,6 +57,47 @@ namespace TitanOrbit.Data
         [Min(0f)]
         public float referenceTurnDegreesPerSecond = 0f;
 
+        [Header("Pitch Angle (min / max)")]
+        [Tooltip(
+            "Peak nose-down pitch in degrees (brake or slam into a planet / asteroid / hull). " +
+            "This is the max forward pitch.")]
+        [Range(0f, 45f)]
+        public float maxPitchDownDegrees = ShipPropulsionAggregation.VisualPitchDefaultMaxDownDegrees;
+
+        [Tooltip(
+            "Peak nose-up pitch in degrees (forward acceleration). " +
+            "This is the max backward pitch.")]
+        [Range(0f, 45f)]
+        public float maxPitchUpDegrees = ShipPropulsionAggregation.VisualPitchDefaultMaxUpDegrees;
+
+        [Header("Pitch from acceleration")]
+        [Tooltip("Forward accel (world u/s²) that reaches max pitch when Pitch Sensitivity is 1.")]
+        [Min(0.01f)]
+        public float referenceAccel = ShipPropulsionAggregation.VisualPitchReferenceAccel;
+
+        [Tooltip("How hard cruise accel leans the nose. 1 = linear with the reference accel.")]
+        [Range(0.01f, 8f)]
+        public float pitchSensitivity = 1f;
+
+        [Tooltip("How quickly cruise pitch catches the target. Higher = snappier.")]
+        [Range(0.01f, 24f)]
+        public float pitchSmoothing = 6f;
+
+        [Header("Pitch from collision")]
+        [Tooltip(
+            "Planar speed change (u/s) in one render frame that counts as an impact. " +
+            "Cruise thrust stays below this; a ram or planet hit is well above.")]
+        [Min(0.01f)]
+        public float impactDeltaSpeed = 1.75f;
+
+        [Tooltip("Degrees of pitch per u/s of sudden planar-speed change on impact.")]
+        [Min(0f)]
+        public float impactDegreesPerSpeed = 2f;
+
+        [Tooltip("How quickly impact pitch springs back to the cruise pose. Higher = faster recovery.")]
+        [Range(0.5f, 24f)]
+        public float impactDecay = 8f;
+
         /// <summary>Peak roll (°), clamped for runtime consumers.</summary>
         public float ClampedMaxBankAngleDegrees => Mathf.Clamp(maxBankAngleDegrees, 1f, 180f);
 
@@ -76,6 +117,30 @@ namespace TitanOrbit.Data
                 return referenceTurnDegreesPerSecond;
             return ShipPropulsionAggregation.GetGlobalMaxTurnSpeedDegreesPerSecond();
         }
+
+        /// <summary>Peak nose-down pitch (°).</summary>
+        public float ClampedMaxPitchDownDegrees => Mathf.Clamp(maxPitchDownDegrees, 0f, 45f);
+
+        /// <summary>Peak nose-up pitch (°).</summary>
+        public float ClampedMaxPitchUpDegrees => Mathf.Clamp(maxPitchUpDegrees, 0f, 45f);
+
+        /// <summary>Cruise-accel denominator (u/s²), kept above zero.</summary>
+        public float ClampedReferenceAccel => Mathf.Max(0.01f, referenceAccel);
+
+        /// <summary>Cruise-accel → pitch multiplier, never negative.</summary>
+        public float ClampedPitchSensitivity => Mathf.Max(0f, pitchSensitivity);
+
+        /// <summary>Cruise pitch lerp rate, kept above zero so exp smoothing stays defined.</summary>
+        public float ClampedPitchSmoothing => Mathf.Max(0.01f, pitchSmoothing);
+
+        /// <summary>|Δv| (u/s) that counts as a collision punch.</summary>
+        public float ClampedImpactDeltaSpeed => Mathf.Max(0.01f, impactDeltaSpeed);
+
+        /// <summary>Impact pitch (° per u/s of sudden planar-speed change).</summary>
+        public float ClampedImpactDegreesPerSpeed => Mathf.Max(0f, impactDegreesPerSpeed);
+
+        /// <summary>Impact spring-back rate, kept above zero.</summary>
+        public float ClampedImpactDecay => Mathf.Max(0.5f, impactDecay);
 
         /// <summary>
         /// Loads the shared default from Resources (player builds). Editor can create one via the menu.
@@ -135,6 +200,14 @@ namespace TitanOrbit.Data
             bankSensitivity = Mathf.Max(0f, bankSensitivity);
             bankSmoothing = Mathf.Max(0.01f, bankSmoothing);
             referenceTurnDegreesPerSecond = Mathf.Max(0f, referenceTurnDegreesPerSecond);
+            maxPitchDownDegrees = Mathf.Clamp(maxPitchDownDegrees, 0f, 45f);
+            maxPitchUpDegrees = Mathf.Clamp(maxPitchUpDegrees, 0f, 45f);
+            referenceAccel = Mathf.Max(0.01f, referenceAccel);
+            pitchSensitivity = Mathf.Max(0f, pitchSensitivity);
+            pitchSmoothing = Mathf.Max(0.01f, pitchSmoothing);
+            impactDeltaSpeed = Mathf.Max(0.01f, impactDeltaSpeed);
+            impactDegreesPerSpeed = Mathf.Max(0f, impactDegreesPerSpeed);
+            impactDecay = Mathf.Max(0.5f, impactDecay);
             // Only the shared Resources default drives the process-wide cache (EG regular hulls /
             // planetary turrets). MEGA and family-specific assets are sampled from the bound instance.
             if (name == DefaultResourcesName)

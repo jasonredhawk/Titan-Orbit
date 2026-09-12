@@ -95,6 +95,9 @@ namespace TitanOrbit.UI
             live.AllGunDps *= dpsMul;
             live.AllGunDpsNextStep *= dpsMul;
             live.RamRating *= ram;
+            // Impact / self snapshots were built from pre-bank rating — keep them in lockstep.
+            live.RamAsteroidDamage *= ram;
+            live.RamSelfDamage *= ram;
         }
 
         /// <summary>One-line chip glance, e.g. <c>Fireballs</c> or <c>EnergySpheres  HEAL</c>.</summary>

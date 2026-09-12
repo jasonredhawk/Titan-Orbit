@@ -460,8 +460,8 @@ namespace TitanOrbit.ECS
     /// already pinned to this ship's tractor (a lock on an outer wing sits outside a hull-only
     /// gather). Colour / <c>IsBonusGem</c> is ignored — yellow extra-yield gems scoop like red.
     /// Runs after <see cref="GemMotionSystem"/> so same-tick tractor pull can land in the zone.
-    /// Skips only <c>IsDead</c> / team-select ships. Hull-empty ships are dead; leftover
-    /// cargo bursts from <see cref="ShipDeathRecordingSystem"/> instead of staying scoopable.
+    /// Skips only <c>IsDead</c> / team-select ships. A living 0-HP hull with cargo still aboard
+    /// may scoop — dual-resource death is hull AND gems empty, not hull alone.
     /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation)]
     [UpdateInGroup(typeof(SimulationSystemGroup))]
@@ -908,7 +908,7 @@ namespace TitanOrbit.ECS
                         float h = ship.Health;
                         float g = ship.CurrentGems;
                         bool dead = ship.IsDead;
-                        ShipDamageLogic.TryMarkDeadIfHullDepleted(ref h, ref g, ref dead);
+                        ShipDamageLogic.TryMarkDeadIfHullAndGemsDepleted(ref h, ref g, ref dead);
                         ship.Health = h;
                         ship.CurrentGems = g;
                         ship.IsDead = dead;
@@ -1504,78 +1504,6 @@ namespace TitanOrbit.ECS
             float3 world = transform.Position + forward * fallback;
             world.y = 0f;
             return world;
-        }
-
-        /// <summary>
-        /// Ship-death cargo dump: random count + random values, burst outward from the hull
-        /// like an asteroid destroy. Cargo must already be left on the ship (not deducted
-        /// mid-fight). Self-pickup block matches damage spills.
-        /// </summary>
-        public static void SpawnDeathBurst(
-            EntityCommandBuffer ecb,
-            Entity gemPrefab,
-            float3 shipPosition,
-            float remaining,
-            uint seed,
-            float spawnServerTime,
-            int sourceShipNetworkId,
-            float3 addVelocity)
-        {
-            if (gemPrefab == Entity.Null || remaining < GemEconomyConstants.MinGemSpawnValue)
-                return;
-
-            var settings = GemExplosionSettingsCache.ResolveOrDefault();
-            settings.ClampCounts();
-
-            var rng = Random.CreateFromIndex(seed);
-            int count = GemExplosionMath.ResolveGemCountForUnitCap(
-                remaining,
-                settings.DeathMinGemCount,
-                settings.DeathMaxGemCount,
-                settings.MaxGemUnitValue,
-                ref rng);
-
-            var values = new float[count];
-            GemExplosionMath.FillRandomValues(
-                remaining,
-                count,
-                settings.MaxGemUnitValue,
-                GemEconomyConstants.MinGemSpawnValue,
-                ref rng,
-                values);
-
-            float blockUntil = 0f;
-            int excludeId = 0;
-            if (sourceShipNetworkId > 0 && settings.SelfPickupBlockSeconds > 0f)
-            {
-                excludeId = sourceShipNetworkId;
-                blockUntil = spawnServerTime + settings.SelfPickupBlockSeconds;
-            }
-
-            float3 addVel = new float3(addVelocity.x, 0f, addVelocity.z);
-
-            for (int i = 0; i < count; i++)
-            {
-                float value = values[i];
-                if (value < GemEconomyConstants.MinGemSpawnValue)
-                    continue;
-
-                GemSpawning.Spawn(
-                    ecb,
-                    gemPrefab,
-                    shipPosition,
-                    value,
-                    seed + (uint)(i + 1) * 97u,
-                    burst: true,
-                    spawnServerTime,
-                    settings: settings,
-                    burstIndex: (byte)i,
-                    isBonusGem: false,
-                    burstIntensity: 1f,
-                    excludePickupNetworkId: excludeId,
-                    excludePickupUntilServerTime: blockUntil,
-                    addVelocity: addVel);
-            }
         }
 
         /// <summary>

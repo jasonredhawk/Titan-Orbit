@@ -4,10 +4,13 @@ namespace TitanOrbit.Simulation
 {
     /// <summary>
     /// Shared server hull + cargo damage rules ported from the pre-ECS <c>Starship.ApplyDamageOnServer</c>.
-    /// Hull absorbs damage first. Death is hull depleted — remaining cargo stays on the ship so
-    /// <c>ShipDeathRecordingSystem</c> can burst it as world gems (random count + random values).
-    /// Mid-fight hits do not dribble cargo. Pickup is blocked when <c>IsDead</c>.
-    /// Pure math (no Entities / spawning).
+    /// Hull absorbs damage first. Once hull is 0, each hit expels a gem worth that hit's
+    /// damage (10 ram → gem 10, 50-damage bullet → gem 50), clamped by remaining cargo.
+    /// Death requires both hull and carried gems depleted — not hull alone — for every combat source
+    /// (bullets, burn, mines, rockets, ram). A living 0-HP ship (cargo still aboard,
+    /// <c>IsDead</c> false) may still tractor and scoop gems. Pickup is blocked only when
+    /// <c>IsDead</c>. Pure math (no Entities / spawning); callers spawn world gems from
+    /// <see cref="Result.GemsToExpel"/>.
     /// </summary>
     public static class ShipDamageLogic
     {
@@ -15,8 +18,8 @@ namespace TitanOrbit.Simulation
         public const float DeathThreshold = 0.001f;
 
         /// <summary>
-        /// [LEGACY] Former 1:1 cargo spill rate after hull-zero. Combat no longer dribbles
-        /// gems; leftover hold bursts from death recording.
+        /// 1:1 cargo spill: gem value equals incoming damage once hull is 0.
+        /// Death still needs leftover cargo emptied by later hits.
         /// </summary>
         public const float ExcessDamageGemExpulsionPerHullDamage = 1f;
 
@@ -26,12 +29,13 @@ namespace TitanOrbit.Simulation
         public const float LegacyGemExpulsionPerDamage = 0.5f;
 
         /// <summary>
-        /// [LEGACY] Former cap on gem spill on the hull-breaking bullet hit. Unused after full dump.
+        /// [LEGACY] Former cap on gem spill on the hull-breaking hit. Unused — spill is 1:1
+        /// with incoming damage once hull is 0 (clamped only by remaining cargo).
         /// </summary>
         public const float MaxLethalExpulsionFraction = 0.6f;
 
         /// <summary>
-        /// [LEGACY] Former per-hit cargo fraction while hull was already 0. Unused after full dump.
+        /// [LEGACY] Former per-hit cargo fraction while hull was already 0. Unused — same 1:1 rule.
         /// </summary>
         public const float MaxPostDeathExpulsionFraction = 0.4f;
 
@@ -41,12 +45,10 @@ namespace TitanOrbit.Simulation
         /// </summary>
         public struct Result
         {
-            /// <summary>
-            /// [LEGACY] Combat no longer deducts cargo here. Death recording bursts leftover hold.
-            /// </summary>
+            /// <summary>Cargo value to spawn as world gems (already deducted from CurrentGems).</summary>
             public float GemsToExpel;
 
-            /// <summary>True when this call set IsDead because hull is empty.</summary>
+            /// <summary>True when this call set IsDead because hull and gems are both empty.</summary>
             public bool BecameDead;
 
             /// <summary>True when Health decreased (regen delay should latch).</summary>
@@ -57,21 +59,21 @@ namespace TitanOrbit.Simulation
         }
 
         /// <summary>
-        /// Applies hull damage and marks death when hull is empty. Does not spawn entities
-        /// and does not deduct cargo — leftover gems explode from death recording.
+        /// Applies hull damage and computes gem expulsion. Does not spawn entities.
         /// Friendly fire (matching non-None teams) and already-dead ships are no-ops.
         /// </summary>
         /// <param name="health">Current hull; written when damage applies.</param>
-        /// <param name="currentGems">Cargo hold; left intact for the death burst.</param>
-        /// <param name="isDead">Lethal flag; set when hull is depleted.</param>
+        /// <param name="currentGems">Cargo hold; reduced when gems spill.</param>
+        /// <param name="isDead">Lethal flag; set only when hull and gems are both depleted.</param>
         /// <param name="damage">Incoming damage amount (must be &gt; 0 to matter).</param>
         /// <param name="shipTeam">Target ship team.</param>
         /// <param name="attackerTeam">Attacker team; <see cref="TeamId.None"/> skips friendly check (ram/self).</param>
         /// <param name="gemExpulsionPerHullDamage">
-        /// Unused. Kept so existing combat callers compile. Death cargo uses the death burst.
+        /// Cargo value per unit of incoming damage once hull is 0. ≤ 0 is treated as
+        /// <see cref="ExcessDamageGemExpulsionPerHullDamage"/> (1:1). Clamped only by remaining cargo.
         /// </param>
-        /// <param name="isImmune">True when fully moon-docked — no damage or death.</param>
-        /// <returns>Death/hull flags for the caller. <see cref="Result.GemsToExpel"/> stays 0.</returns>
+        /// <param name="isImmune">True when fully moon-docked — no damage or spill.</param>
+        /// <returns>Expulsion amount and death/hull flags for the caller.</returns>
         public static Result ApplyHullAndGemDamage(
             ref float health,
             ref float currentGems,
@@ -93,10 +95,9 @@ namespace TitanOrbit.Simulation
             if (isImmune)
                 return result;
 
-            // Cargo is left on the hull for the death burst. Rate kept for caller signature.
-            _ = currentGems;
-            _ = gemExpulsionPerHullDamage;
-
+            float expulsionRate = gemExpulsionPerHullDamage > 0f
+                ? gemExpulsionPerHullDamage
+                : ExcessDamageGemExpulsionPerHullDamage;
             float healthBefore = health;
             bool wasAlive = healthBefore > DeathThreshold;
 
@@ -111,46 +112,55 @@ namespace TitanOrbit.Simulation
                 result.AppliedHullDamage = true;
             }
 
-            // --- Death (hull empty). Cargo stays for ShipDeathRecordingSystem. ---
-            if (TryMarkDeadIfHullDepleted(ref health, ref currentGems, ref isDead))
+            // --- Gem spill once hull is gone ---
+            // [TITAN-ORBIT] 10 ram damage → gem 10. 50-damage bullet → gem 50.
+            // Value is the full incoming hit, not leftover-after-hull, so the crystal
+            // matches the blow that landed. Only remaining cargo can shrink it.
+            // Death still needs hull and gems both empty.
+            float gemsToExpel = 0f;
+            if (currentGems > 0.0001f && damage > 0.0001f && health <= DeathThreshold)
+            {
+                gemsToExpel = damage * expulsionRate;
+                if (gemsToExpel > currentGems)
+                    gemsToExpel = currentGems;
+            }
+
+            if (gemsToExpel > 0.0001f)
+            {
+                currentGems -= gemsToExpel;
+                if (currentGems < 0f)
+                    currentGems = 0f;
+                result.GemsToExpel = gemsToExpel;
+            }
+
+            // --- Dual-resource death ---
+            if (TryMarkDeadIfHullAndGemsDepleted(ref health, ref currentGems, ref isDead))
                 result.BecameDead = true;
 
             return result;
         }
 
         /// <summary>
-        /// Sets <paramref name="isDead"/> when hull is at/below <see cref="DeathThreshold"/>.
-        /// Leaves <paramref name="currentGems"/> so death recording can burst leftover cargo.
-        /// Call after deposit / upgrade gem spends and before hull regen so a 0-HP frame
-        /// cannot heal out of death.
+        /// Sets <paramref name="isDead"/> when both hull and cargo are at/below
+        /// <see cref="DeathThreshold"/>. Call after deposit / upgrade gem spends and before hull regen
+        /// so a 0/0 frame cannot heal out of death.
         /// </summary>
         /// <returns>True when this call newly marked the ship dead.</returns>
-        public static bool TryMarkDeadIfHullDepleted(
+        public static bool TryMarkDeadIfHullAndGemsDepleted(
             ref float health,
             ref float currentGems,
             ref bool isDead)
         {
             if (isDead)
                 return false;
-            if (health > DeathThreshold)
+            if (health > DeathThreshold || currentGems > DeathThreshold)
                 return false;
 
+            // Clamp tiny leftovers so ghost snapshots stay clean.
             health = 0f;
+            currentGems = 0f;
             isDead = true;
-            _ = currentGems;
             return true;
-        }
-
-        /// <summary>
-        /// [LEGACY name] Hull-empty death. Remaining cargo is not cleared.
-        /// Prefer <see cref="TryMarkDeadIfHullDepleted"/>.
-        /// </summary>
-        public static bool TryMarkDeadIfHullAndGemsDepleted(
-            ref float health,
-            ref float currentGems,
-            ref bool isDead)
-        {
-            return TryMarkDeadIfHullDepleted(ref health, ref currentGems, ref isDead);
         }
 
     }

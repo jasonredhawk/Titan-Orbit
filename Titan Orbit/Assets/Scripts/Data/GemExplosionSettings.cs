@@ -3,8 +3,7 @@ using UnityEngine;
 namespace TitanOrbit.Data
 {
     /// <summary>
-    /// [UNITY] Designer-tunable asteroid gem burst, ship-death cargo burst, asteroid respawn
-    /// delay, and gem lifetime.
+    /// [UNITY] Designer-tunable asteroid gem burst, asteroid respawn delay, and gem lifetime.
     /// Sole asset: <c>Assets/Resources/GemExplosionSettings.asset</c> (Create via Assets → Create →
     /// Titan Orbit → Gem Explosion Settings, or TitanOrbit → Create Gem Explosion Settings Asset).
     /// Loaded at play by <see cref="Game.GemExplosionSettingsLoader"/> via <c>Resources.Load</c>
@@ -88,15 +87,6 @@ namespace TitanOrbit.Data
         [Min(0f)]
         public float GemShrinkDurationSeconds = 3f;
 
-        [Header("Death burst (ship cargo)")]
-        [Tooltip("Minimum gems spawned from leftover cargo when a ship dies (clamped by remaining value).")]
-        [Range(1, 10)]
-        public int DeathMinGemCount = 2;
-
-        [Tooltip("Maximum gems spawned from leftover cargo when a ship dies (clamped by remaining value and unit cap).")]
-        [Range(1, 10)]
-        public int DeathMaxGemCount = 8;
-
         [Header("Damage expulsion (ship cargo spill)")]
         [Tooltip(
             "Seconds after a ship spills gems from damage before THAT ship may tractor them. " +
@@ -113,10 +103,6 @@ namespace TitanOrbit.Data
             MaxGemCount = Mathf.Clamp(MaxGemCount, 1, 10);
             if (MaxGemCount < MinGemCount)
                 MaxGemCount = MinGemCount;
-            DeathMinGemCount = Mathf.Clamp(DeathMinGemCount, 1, 10);
-            DeathMaxGemCount = Mathf.Clamp(DeathMaxGemCount, 1, 10);
-            if (DeathMaxGemCount < DeathMinGemCount)
-                DeathMaxGemCount = DeathMinGemCount;
             // [TITAN-ORBIT] Piano-width default is 88 (chromatic); never allow a zero/negative unit cap.
             MaxGemUnitValue = Mathf.Max(1f, MaxGemUnitValue);
             if (SpeedRandomMax < SpeedRandomMin)

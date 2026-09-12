@@ -1411,8 +1411,9 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// Estimates asteroid impact damage: rating × mobility totalMass × current speed
-        /// (same product as <see cref="ShipRammingCollisionDamageSystem"/>).
+        /// Estimates asteroid impact at <paramref name="inboundSpeed"/> using the shared
+        /// grind-DPS × ram-speed helpers (<see cref="ShipRammingCollisionDamageSystem"/>).
+        /// Mass stays in the product: grindDps = rating × (totalMass / MassReference).
         /// </summary>
         static void GetRamDamageEstimate(
             in ShipState ship,
@@ -1437,7 +1438,7 @@ namespace TitanOrbit.UI
                     : ShipFamilyDefaultFallbackStats.CreateBaseline().rammingPower);
             ramRating = ShipComponentRammingSuggestions.ComputeDamageRatingFromFamilyPower(familyRammingPower);
 
-            // [TITAN-ORBIT] Same totalMass + product as server ram/grind — HUD cannot drift.
+            // [TITAN-ORBIT] Same totalMass + grind/ram helpers as the server — HUD cannot drift.
             ShipMobilityResolution.TaxedMotorStats taxed = ShipMobilityResolution.ApplyMassTaxFromCargo(
                 motor.MaxSpeed,
                 motor.EngineThrust,

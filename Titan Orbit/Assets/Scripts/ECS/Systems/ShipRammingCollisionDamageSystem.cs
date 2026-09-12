@@ -16,8 +16,10 @@ namespace TitanOrbit.ECS
     /// PhysX collision-event pairs after movers wrap onto the canonical chart.
     /// No proximity skin — flying past an asteroid does not chip hull.
     /// <para>
-    /// [TITAN-ORBIT] Damage uses mobility <c>totalMass</c> and after-tax motion:
-    /// Impact = rating × totalMass × closingSpeed; Grind = rating × totalMass × taxedAccel × dt.
+    /// [TITAN-ORBIT] The RAM chip is grind HP/s at MassReference; mass stays in both products:
+    /// grindDps = rating × (totalMass / MassReference);
+    /// impact = grindDps × (1 + closingSpeed / RamClosingSpeedForDouble).
+    /// After-tax Accel only gates grind (must thrust into the rock) — it does not scale damage.
     /// Same helpers as the HUD (<see cref="ShipComponentRammingSuggestions"/>).
     /// Bounce / PhysX still use <see cref="ShipMassLogic.ComputeRammingMass"/> elsewhere.
     /// </para>
@@ -254,7 +256,7 @@ namespace TitanOrbit.ECS
                     continue;
                 }
 
-                // --- Impact on contact enter: rating × totalMass × closingSpeed ---
+                // --- Impact on contact enter: grindDps × (1 + closing / ram-double speed) ---
                 if (isNewContact && closing >= ImpactMinClosingSpeed)
                 {
                     if (!otherIsShip)
@@ -304,10 +306,11 @@ namespace TitanOrbit.ECS
                     MarkColliding(ref state, other, shipEntity, now);
                 }
 
-                // --- Asteroid grind: rating × totalMass × taxedAccel × pulseInterval (4 Hz) ---
+                // --- Asteroid grind: rating × (totalMass / MassReference) × pulseInterval (4 Hz) ---
                 // [TITAN-ORBIT] Interval is authored on AsteroidSettings (default 0.25s).
-                // Damage per pulse already × interval, so four pulses/s = four gems/s, each gem
-                // sized to that pulse's expelled cargo (no bank-until-N).
+                // Damage per pulse already × interval, so four pulses/s = the RAM-chip DPS
+                // (scaled by mass). Each gem is sized to that pulse's expelled cargo.
+                // Accel only gates "thrusting into the rock" — it is not a damage lever.
                 // Skip if impact already killed the rock this tick (would double the kill boom).
                 if (!otherIsShip && input.Thrust && !IsDeadAsteroid(ref state, other))
                 {
@@ -315,7 +318,8 @@ namespace TitanOrbit.ECS
                         state.EntityManager.GetComponentData<LocalTransform>(shipEntity).Rotation,
                         new float3(0f, 0f, 1f));
                     forward.y = 0f;
-                    // [TITAN-ORBIT] Gate push uses taxedAccel — same after-tax Accel as drive / grind damage.
+                    // [TITAN-ORBIT] Gate push uses taxedAccel — same after-tax Accel as drive.
+                    // Below GrindMinPushNewtons the hull is sliding past, not grinding.
                     float3 driveForce = float3.zero;
                     if (math.lengthsq(forward) > 1e-6f)
                         driveForce = math.normalize(forward) * math.max(0f, taxedAccel);
@@ -329,10 +333,10 @@ namespace TitanOrbit.ECS
                     {
                         float pulse = ShipComponentRammingSuggestions.GrindPulseIntervalSeconds;
                         float asteroidPulse = ShipComponentRammingSuggestions.ComputeGrindDamagePerPulse(
-                            ramRating, totalMass, taxedAccel, pulse);
+                            ramRating, totalMass, pulse);
 
                         float selfPulse = ShipComponentRammingSuggestions.ComputeGrindSelfDamagePerPulse(
-                            ramRating, totalMass, taxedAccel, pulse);
+                            ramRating, totalMass, pulse);
                         float grindIntensity =
                             ShipComponentRammingSuggestions.ComputeRamGrindGemExpulsionIntensity(
                                 taxedAccel, selfPulse);
@@ -571,7 +575,7 @@ namespace TitanOrbit.ECS
         /// <param name="ship">Current vitals (gems / people).</param>
         /// <param name="motor">Untaxed chassis baselines + HullMassReference (ComponentSize).</param>
         /// <param name="totalMass">Gems×mG + people×mP + size×mCS. MEGA skip-tax reports 0 (plow ignores this).</param>
-        /// <param name="taxedAccel">After-tax acceleration used for grind damage and the push gate.</param>
+        /// <param name="taxedAccel">After-tax acceleration used only for the grind push gate.</param>
         static void ResolveMobilityRamInputs(
             in ShipState ship,
             in ShipMotorConfig motor,

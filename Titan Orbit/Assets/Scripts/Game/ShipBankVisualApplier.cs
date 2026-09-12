@@ -1,17 +1,19 @@
 using TitanOrbit.Data;
 using TitanOrbit.ECS;
 using Unity.Entities;
+using Unity.Mathematics;
 using UnityEngine;
 
 namespace TitanOrbit.Game
 {
     /// <summary>
-    /// Client-side roll banking on ship GameObject proxies (ported from legacy Starship ApplyVisualBanking).
-    /// Root transform yaw comes from ECS presentation sync; roll is applied on a BankPivot child so
-    /// EcsWorldVisualizer does not overwrite it. Bank follows yaw rate only — no forward thrust
-    /// required. Suppressed during moon dock. Cosmetic only — no sim effect.
+    /// Client-side roll + pitch on ship GameObject proxies (ported from legacy Starship ApplyVisualBanking).
+    /// Root transform yaw comes from ECS presentation sync; roll and pitch are applied on a BankPivot
+    /// child so EcsWorldVisualizer does not overwrite them. Bank follows yaw rate; pitch follows
+    /// forward acceleration and sudden heading-speed loss (collisions). Suppressed during moon dock.
+    /// Cosmetic only — no sim effect.
     /// <para>
-    /// Tune Max Bank / Sensitivity / Smoothing / Reference Turn on <see cref="ShipBankVisualSettings"/>
+    /// Tune bank and pitch knobs on <see cref="ShipBankVisualSettings"/>
     /// (family field, <see cref="MegaShipCatalog.bankVisualSettings"/>, or Resources default).
     /// Bound assets are sampled each frame so Inspector tweaks apply without respawning.
     /// </para>
@@ -44,6 +46,12 @@ namespace TitanOrbit.Game
         float _prevBankYawDeg;
         bool _bankYawInitialized;
         bool _bankingInitialized;
+        float _currentPitchAngle;
+        float _smoothedForwardAccel;
+        float _accelPitchAngle;
+        float _impactPitchAngle;
+        float _prevForwardSpeed;
+        bool _pitchSpeedInitialized;
 
         /// <summary>Links to ship entity and ensures BankPivot hierarchy exists under the proxy root.</summary>
         /// <param name="shipEntity">ECS ship ghost this proxy follows.</param>
@@ -76,7 +84,7 @@ namespace TitanOrbit.Game
 
         /// <summary>
         /// Creates BankPivot → Prefab container and reparents existing mesh children so roll
-        /// does not fight yaw written by EcsWorldVisualizer on the root transform.
+        /// and pitch do not fight yaw written by EcsWorldVisualizer on the root transform.
         /// </summary>
         void EnsureBankPivotHierarchy()
         {
@@ -125,6 +133,12 @@ namespace TitanOrbit.Game
             _cachedBankAngularVelDegPerSec = 0f;
             _currentBankAngle = 0f;
             _bankingInitialized = false;
+            _currentPitchAngle = 0f;
+            _smoothedForwardAccel = 0f;
+            _accelPitchAngle = 0f;
+            _impactPitchAngle = 0f;
+            _prevForwardSpeed = 0f;
+            _pitchSpeedInitialized = false;
             if (_bankPivot != null)
                 _bankPivot.localRotation = Quaternion.identity;
         }
@@ -166,6 +180,11 @@ namespace TitanOrbit.Game
                     _cachedBankAngularVelDegPerSec = 0f;
                     _prevBankYawDeg = GetPlanarYawDegrees(transform.rotation);
                     _bankYawInitialized = true;
+                    _currentPitchAngle = 0f;
+                    _smoothedForwardAccel = 0f;
+                    _accelPitchAngle = 0f;
+                    _impactPitchAngle = 0f;
+                    _pitchSpeedInitialized = false;
                     return;
                 }
             }
@@ -174,6 +193,7 @@ namespace TitanOrbit.Game
             float smoothing = ResolveSmoothing();
             SampleBankAngularVelocity(dt, smoothing);
             ApplyVisualBanking(dt, smoothing);
+            ApplyVisualPitch(em, dt);
         }
 
         /// <summary>Peak roll from per-proxy override, else the bound asset / cache.</summary>
@@ -210,6 +230,46 @@ namespace TitanOrbit.Game
             _settings != null
                 ? _settings.ResolveReferenceTurnDegreesPerSecond()
                 : ShipBankVisualSettingsCache.ReferenceTurnDegreesPerSecond;
+
+        float ResolveMaxPitchDown() =>
+            _settings != null
+                ? _settings.ClampedMaxPitchDownDegrees
+                : ShipBankVisualSettingsCache.MaxPitchDownDegrees;
+
+        float ResolveMaxPitchUp() =>
+            _settings != null
+                ? _settings.ClampedMaxPitchUpDegrees
+                : ShipBankVisualSettingsCache.MaxPitchUpDegrees;
+
+        float ResolveReferenceAccel() =>
+            _settings != null
+                ? _settings.ClampedReferenceAccel
+                : ShipBankVisualSettingsCache.ReferenceAccel;
+
+        float ResolvePitchSensitivity() =>
+            _settings != null
+                ? _settings.ClampedPitchSensitivity
+                : ShipBankVisualSettingsCache.PitchSensitivity;
+
+        float ResolvePitchSmoothing() =>
+            _settings != null
+                ? _settings.ClampedPitchSmoothing
+                : ShipBankVisualSettingsCache.PitchSmoothing;
+
+        float ResolveImpactDeltaSpeed() =>
+            _settings != null
+                ? _settings.ClampedImpactDeltaSpeed
+                : ShipBankVisualSettingsCache.ImpactDeltaSpeed;
+
+        float ResolveImpactDegreesPerSpeed() =>
+            _settings != null
+                ? _settings.ClampedImpactDegreesPerSpeed
+                : ShipBankVisualSettingsCache.ImpactDegreesPerSpeed;
+
+        float ResolveImpactDecay() =>
+            _settings != null
+                ? _settings.ClampedImpactDecay
+                : ShipBankVisualSettingsCache.ImpactDecay;
 
         /// <summary>Smooths yaw rate from proxy root rotation (presentation pose).</summary>
         void SampleBankAngularVelocity(float dt, float smoothing)
@@ -261,7 +321,51 @@ namespace TitanOrbit.Game
 
             float bankT = 1f - Mathf.Exp(-smoothing * dt);
             _currentBankAngle = Mathf.Lerp(_currentBankAngle, targetBankAngle, bankT);
-            _bankPivot.localRotation = Quaternion.Euler(0f, 0f, -_currentBankAngle);
+            WritePivotRotation();
+        }
+
+        /// <summary>
+        /// Maps planar accel + collision Δv → target pitch and lerps the pivot.
+        /// Uses ghosted <see cref="ShipKinematics"/> so remotes pitch without extra ghost fields.
+        /// Planar speed (not heading-aligned) so a turn at cruise does not read as a slam.
+        /// </summary>
+        void ApplyVisualPitch(EntityManager em, float dt)
+        {
+            if (!_bankingInitialized)
+                return;
+
+            float planarSpeed = 0f;
+            if (em.HasComponent<ShipKinematics>(_shipEntity))
+            {
+                float3 vel = em.GetComponentData<ShipKinematics>(_shipEntity).Velocity;
+                planarSpeed = math.sqrt(vel.x * vel.x + vel.z * vel.z);
+            }
+
+            _currentPitchAngle = ShipPropulsionAggregation.StepVisualPitch(
+                planarSpeed,
+                dt,
+                ResolveMaxPitchDown(),
+                ResolveMaxPitchUp(),
+                ResolveReferenceAccel(),
+                ResolvePitchSensitivity(),
+                ResolvePitchSmoothing(),
+                ResolveImpactDeltaSpeed(),
+                ResolveImpactDegreesPerSpeed(),
+                ResolveImpactDecay(),
+                ref _prevForwardSpeed,
+                ref _pitchSpeedInitialized,
+                ref _smoothedForwardAccel,
+                ref _accelPitchAngle,
+                ref _impactPitchAngle);
+            WritePivotRotation();
+        }
+
+        /// <summary>Writes roll + pitch onto the BankPivot (yaw stays on the proxy root).</summary>
+        void WritePivotRotation()
+        {
+            if (_bankPivot == null)
+                return;
+            _bankPivot.localRotation = Quaternion.Euler(_currentPitchAngle, 0f, -_currentBankAngle);
         }
 
         /// <summary>Planar yaw (degrees) from a world rotation — ignores pitch so bank tracks turn only.</summary>

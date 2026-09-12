@@ -21,7 +21,7 @@ namespace TitanOrbit.UI
         Accel = 1,
         /// <summary>MASS on the ACC line — mobility totalMass (gems + people + ComponentSize).</summary>
         Mass = 2,
-        /// <summary>RAM line — rating × totalMass × speed (impact); grind uses taxed Accel.</summary>
+        /// <summary>RAM line — grind DPS (rating × mass / MassReference); ram multiplies by closing speed.</summary>
         Ram = 3,
         /// <summary>BUL line — hull-average firepower / rate from weapon parts.</summary>
         Bullets = 4
@@ -115,7 +115,7 @@ namespace TitanOrbit.UI
             public float ChassisTurnDeg;
             /// <summary>
             /// After-tax Accel (mobility tax only — no territory / OVERDRIVE).
-            /// Grind damage uses this lever.
+            /// Grind uses this only as a "thrusting into the rock" gate, not a damage scale.
             /// </summary>
             public float TaxedAccel;
             /// <summary>
@@ -509,13 +509,16 @@ namespace TitanOrbit.UI
             }
         }
 
-        /// <summary>RAM: parts with rammingPower + max impact at full cruise (rating × mass × cruise).</summary>
+        /// <summary>
+        /// RAM: parts with rammingPower, grind DPS at current mass, and max ram at full cruise.
+        /// Recomputes from rating × mass so a live B-key ram mul cannot drift from the snapshot.
+        /// </summary>
         static void AppendRamTooltip(StringBuilder sb, in PartCache parts, in LiveContext live)
         {
-            AppendHeader(sb, "RAM — impact damage");
+            AppendHeader(sb, "RAM — grind / impact");
             ShipStatTooltipChrome.AppendSectionBanner(sb, "PARTS", "FFAA66");
-            sb.AppendLine("<color=#5B7A94>Impact = rating x totalMass x closing speed (after-tax flight).</color>");
-            sb.AppendLine("<color=#5B7A94>Grind = rating x totalMass x taxed Accel x pulse (while thrusting into rock).</color>");
+            sb.AppendLine("<color=#5B7A94>Grind = rating x (totalMass / MassRef) HP/s while thrusting into rock.</color>");
+            sb.AppendLine("<color=#5B7A94>Ram = grind DPS x (1 + closing / ram-double speed) on first contact.</color>");
 
             int written = 0;
             float sumRam = 0f;
@@ -556,12 +559,21 @@ namespace TitanOrbit.UI
             }
             sb.Append("Motor Ramming  ").Append(F1(familyRam)).AppendLine();
             sb.Append("Rating  ").Append(F1(live.RamRating)).AppendLine();
-            sb.Append("totalMass  ").Append(F1(live.TotalMass)).AppendLine();
-            sb.Append("Taxed Accel  ").Append(F1(live.TaxedAccel));
-            sb.Append(" <color=#5B7A94>(grind lever)</color>").AppendLine();
+            sb.Append("totalMass  ").Append(F1(live.TotalMass));
+            sb.Append(" / ref ").Append(F1(ShipComponentRammingSuggestions.MassReference)).AppendLine();
+
+            // --- Live products (same helpers as the server) ---
+            // [TITAN-ORBIT] Recompute from RamRating after B-key muls so the tip matches authority.
+            float grindDps = ShipComponentRammingSuggestions.ComputeGrindDps(live.RamRating, live.TotalMass);
+            float ramAst = ShipComponentRammingSuggestions.ComputeImpactDamage(
+                live.RamRating, live.TotalMass, fullCruise);
+            float ramSelf = ShipComponentRammingSuggestions.ComputeImpactSelfDamage(
+                live.RamRating, live.TotalMass, fullCruise);
+            sb.Append("Grind  ").Append(F1(grindDps)).Append("/s");
+            sb.Append(" <color=#5B7A94>(mass-scaled RAM chip)</color>").AppendLine();
             sb.Append("At full cruise  ").Append(F1(fullCruise)).Append("/s -> ");
-            sb.Append("ast <color=#FFAA66>").Append(F1(live.RamAsteroidDamage)).Append("</color>  ");
-            sb.Append("hull <color=#FF6666>").Append(F1(live.RamSelfDamage)).Append("</color>");
+            sb.Append("ast <color=#FFAA66>").Append(F1(ramAst)).Append("</color>  ");
+            sb.Append("hull <color=#FF6666>").Append(F1(ramSelf)).Append("</color>");
         }
 
         /// <summary>BUL: weapon parts + hull-average config the HUD shows.</summary>
@@ -701,7 +713,7 @@ namespace TitanOrbit.UI
             if (includeAccel)
             {
                 float taxed = Mathf.Max(minAccel, live.ChassisAccel - accelDrag);
-                // Prefer live TaxedAccel when available (matches grind lever / motor).
+                // Prefer live TaxedAccel when available (same after-tax Accel the motor uses).
                 float taxedShown = live.TaxedAccel > 0.01f ? live.TaxedAccel : taxed;
 
                 sb.Append("Accel drag  totalMass x ").Append(F2(accelW))

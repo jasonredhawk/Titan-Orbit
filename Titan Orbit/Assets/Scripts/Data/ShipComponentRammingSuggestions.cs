@@ -6,16 +6,20 @@ namespace TitanOrbit.Data
     /// Shared ramming / grinding damage helpers. Used by the HUD and server
     /// <c>ShipRammingCollisionDamageSystem</c> so display and authority cannot drift.
     /// <para>
-    /// [TITAN-ORBIT] Simple product aligned with mobility mass tax:
-    /// <c>Impact = rating × totalMass × closingSpeed</c>
-    /// <c>GrindPulse = rating × totalMass × taxedAccel × pulseInterval</c>
-    /// where <c>totalMass</c> is the same gems/people/ComponentSize mass as SPD/ACC/TURN,
-    /// closing speed is live approach (after-tax flight), and taxedAccel is
-    /// <see cref="ShipMobilityResolution"/> after-tax acceleration.
+    /// [TITAN-ORBIT] The RAM chip (family <c>rammingPower</c>, e.g. 5.8) is grind HP per second
+    /// at <see cref="MassReference"/>. Mass stays in both formulas so a heavier hull or a
+    /// cargo-loaded ship hits harder:
+    /// <c>grindDps = rating × (totalMass / MassReference)</c>
+    /// <c>impact = grindDps × (1 + closingSpeed / RamClosingSpeedForDouble)</c>
+    /// where <c>rating = rammingPower × GlobalDamageMultiplier</c> and <c>totalMass</c> is the
+    /// same gems/people/ComponentSize mass as SPD/ACC/TURN.
+    /// After-tax Accel is a grind <b>gate</b> only (must thrust into the rock) — it does not
+    /// scale damage. Closing speed is live approach (after-tax flight).
     /// </para>
     /// <para>
     /// Balance via <see cref="ShipRammingSettings"/> —
-    /// <see cref="GlobalDamageMultiplier"/>, <see cref="SelfToAsteroidDamageRatio"/> —
+    /// <see cref="GlobalDamageMultiplier"/>, <see cref="MassReference"/>,
+    /// <see cref="RamClosingSpeedForDouble"/>, <see cref="SelfToAsteroidDamageRatio"/> —
     /// grind pulse interval on <see cref="AsteroidSettings"/> —
     /// and each ShipFamilyDefinition component's <c>rammingPower</c>.
     /// No MaxHealth fraction caps — calculated damage is applied as-is.
@@ -26,8 +30,9 @@ namespace TitanOrbit.Data
         /// <summary>
         /// Fallback when no <see cref="ShipRammingSettings"/> asset is loaded.
         /// Prefer editing Assets/Resources/ShipRammingSettings.asset in the Inspector.
+        /// 1 = RAM chip is grind DPS at <see cref="DefaultMassReference"/>.
         /// </summary>
-        public const float DefaultGlobalDamageMultiplier = 0.5f;
+        public const float DefaultGlobalDamageMultiplier = 1f;
 
         /// <summary>
         /// Fallback self-to-target ratio when no settings asset is loaded.
@@ -36,12 +41,39 @@ namespace TitanOrbit.Data
         public const float DefaultSelfToAsteroidDamageRatio = 2f;
 
         /// <summary>
+        /// Fallback mobility totalMass at which grind DPS equals the RAM chip.
+        /// Typical empty hull after HullMassScale lands near this.
+        /// </summary>
+        public const float DefaultMassReference = 10f;
+
+        /// <summary>
+        /// Fallback closing speed (world u/s) at which a ram burst is 2× grind DPS.
+        /// </summary>
+        public const float DefaultRamClosingSpeedForDouble = 10f;
+
+        /// <summary>
         /// Scales summed family <c>rammingPower</c> into a damage rating.
-        /// Lower = softer rams/grinds overall; raise to make ramming meaner.
+        /// 1 = the RAM chip is grind DPS at <see cref="MassReference"/>.
         /// Source: <see cref="ShipRammingSettings.GlobalDamageMultiplier"/>.
         /// </summary>
         public static float GlobalDamageMultiplier =>
             ShipRammingSettingsCache.ResolveOrDefault().GlobalDamageMultiplier;
+
+        /// <summary>
+        /// Mobility totalMass at which grind DPS equals the RAM chip × Global.
+        /// Heavier ships scale above; lighter ships scale below.
+        /// Source: <see cref="ShipRammingSettings.MassReference"/>.
+        /// </summary>
+        public static float MassReference =>
+            Mathf.Max(0.01f, ShipRammingSettingsCache.ResolveOrDefault().MassReference);
+
+        /// <summary>
+        /// Closing speed that doubles grind DPS into a ram burst
+        /// (<c>ramMul = 1 + closing / this</c>).
+        /// Source: <see cref="ShipRammingSettings.RamClosingSpeedForDouble"/>.
+        /// </summary>
+        public static float RamClosingSpeedForDouble =>
+            Mathf.Max(0.01f, ShipRammingSettingsCache.ResolveOrDefault().RamClosingSpeedForDouble);
 
         /// <summary>
         /// Self hull chip vs damage dealt on the same hit. Below 1 = you hurt the rock/enemy more
@@ -85,7 +117,7 @@ namespace TitanOrbit.Data
         /// <summary>
         /// Min seconds between grind damage pulses per asteroid contact.
         /// Source: <see cref="AsteroidSettings.GrindPulseIntervalSeconds"/> (default 0.25 = 4 Hz).
-        /// Damage per pulse multiplies by this interval, then one gem spawns with that pulse's
+        /// Damage per pulse is grind DPS × this interval, then one gem spawns with that pulse's
         /// expelled cargo — 4 Hz means 4 gems/s, no banking.
         /// </summary>
         public static float GrindPulseIntervalSeconds
@@ -120,9 +152,37 @@ namespace TitanOrbit.Data
         /// <summary>
         /// Converts summed family-component <c>rammingPower</c> (level-scaled via
         /// <c>ShipStatApplyLogic</c> → <c>ShipMotorConfig.RammingPower</c>) into a damage rating.
+        /// At Global 1 this equals the RAM chip (the grind DPS at <see cref="MassReference"/>).
         /// </summary>
         public static float ComputeDamageRatingFromFamilyPower(float summedFamilyRammingPower) =>
             Mathf.Max(0.05f, summedFamilyRammingPower) * GlobalDamageMultiplier;
+
+        /// <summary>
+        /// Mass scale wired into both grind and ram: <c>totalMass / MassReference</c>.
+        /// 1 at the reference hull; 2 when the ship is twice as heavy (cargo or a bigger chassis).
+        /// </summary>
+        /// <param name="totalMass">Mobility totalMass (gems + people + ComponentSize).</param>
+        public static float ComputeMassFactor(float totalMass) =>
+            Mathf.Max(0f, totalMass) / MassReference;
+
+        /// <summary>
+        /// Sustained grind HP per second while thrusting into a rock:
+        /// <c>rating × (totalMass / MassReference)</c>.
+        /// Accel is not in this product — it only gates whether grind is allowed.
+        /// </summary>
+        /// <param name="ramDamageRating">Family rammingPower × GlobalDamageMultiplier.</param>
+        /// <param name="totalMass">Mobility totalMass (gems + people + ComponentSize).</param>
+        public static float ComputeGrindDps(float ramDamageRating, float totalMass) =>
+            Mathf.Max(0f, ramDamageRating * ComputeMassFactor(totalMass));
+
+        /// <summary>
+        /// Ram burst multiplier from live closing speed.
+        /// <c>1 + closing / RamClosingSpeedForDouble</c> — 1× at a dead stop (impact still
+        /// gated at 0.35 u/s), 2× at the reference speed, 3× at twice that.
+        /// </summary>
+        /// <param name="closingSpeed">Live approach speed (world u/s).</param>
+        public static float ComputeRamSpeedMultiplier(float closingSpeed) =>
+            1f + Mathf.Max(0f, closingSpeed) / RamClosingSpeedForDouble;
 
         /// <summary>
         /// Builds closing speed for impact formulas. Prefers measured approach speed; falls back to
@@ -141,6 +201,9 @@ namespace TitanOrbit.Data
             float closing = Mathf.Max(0f, measuredClosingSpeed);
             if (estimatedImpulse > 0.01f)
             {
+                // --- Impulse hint ---
+                // [PHYSICS] Solver impulse is not world u/s. Divide by mass and scale so a
+                // glancing bump cannot outrank a real measured approach.
                 float mass = Mathf.Max(0.5f, massForImpulse);
                 float fromImpulse = (estimatedImpulse / mass) * ImpulseToClosingSpeedScale;
                 fromImpulse = Mathf.Min(fromImpulse, MaxClosingSpeedFromImpulse);
@@ -151,9 +214,9 @@ namespace TitanOrbit.Data
         }
 
         /// <summary>
-        /// Impact damage to an asteroid or enemy hull:
-        /// <c>rating × totalMass × closingSpeed</c>.
-        /// Closing speed already reflects after-tax flight.
+        /// Impact damage to an asteroid or enemy hull — one burst on contact enter:
+        /// <c>grindDps × (1 + closingSpeed / RamClosingSpeedForDouble)</c>.
+        /// Mass is already inside grind DPS. Closing speed already reflects after-tax flight.
         /// </summary>
         /// <param name="ramDamageRating">Family rammingPower × GlobalDamageMultiplier.</param>
         /// <param name="totalMass">Mobility totalMass (gems + people + ComponentSize).</param>
@@ -163,9 +226,11 @@ namespace TitanOrbit.Data
             float totalMass,
             float closingSpeed)
         {
+            // --- Ram = grind baseline × speed multiplier ---
+            // [TITAN-ORBIT] Same mass term as grind, then closing speed makes the first hit harder.
             return Mathf.Max(
                 0f,
-                ramDamageRating * Mathf.Max(0f, totalMass) * Mathf.Max(0f, closingSpeed));
+                ComputeGrindDps(ramDamageRating, totalMass) * ComputeRamSpeedMultiplier(closingSpeed));
         }
 
         /// <summary>
@@ -181,23 +246,18 @@ namespace TitanOrbit.Data
                 ComputeImpactDamage(ramDamageRating, totalMass, closingSpeed) * SelfToAsteroidDamageRatio);
 
         /// <summary>
-        /// Grind pulse to asteroid:
-        /// <c>rating × totalMass × taxedAccel × pulseInterval</c>.
-        /// <paramref name="taxedAccel"/> is after-tax acceleration (same as drive), not chassis
-        /// untaxed <c>ShipMotorConfig.EngineThrust</c>.
+        /// Grind pulse to asteroid: <c>grindDps × pulseInterval</c>.
+        /// Four pulses per second at the default 0.25 s interval equals full grind DPS.
         /// </summary>
+        /// <param name="ramDamageRating">Family rammingPower × GlobalDamageMultiplier.</param>
+        /// <param name="totalMass">Mobility totalMass (gems + people + ComponentSize).</param>
+        /// <param name="pulseInterval">Seconds this pulse represents (usually 0.25).</param>
         public static float ComputeGrindDamagePerPulse(
             float ramDamageRating,
             float totalMass,
-            float taxedAccel,
             float pulseInterval)
         {
-            return Mathf.Max(
-                0f,
-                ramDamageRating
-                * Mathf.Max(0f, totalMass)
-                * Mathf.Max(0f, taxedAccel)
-                * Mathf.Max(0f, pulseInterval));
+            return Mathf.Max(0f, ComputeGrindDps(ramDamageRating, totalMass) * Mathf.Max(0f, pulseInterval));
         }
 
         /// <summary>
@@ -206,11 +266,10 @@ namespace TitanOrbit.Data
         public static float ComputeGrindSelfDamagePerPulse(
             float ramDamageRating,
             float totalMass,
-            float taxedAccel,
             float pulseInterval) =>
             Mathf.Max(
                 0f,
-                ComputeGrindDamagePerPulse(ramDamageRating, totalMass, taxedAccel, pulseInterval)
+                ComputeGrindDamagePerPulse(ramDamageRating, totalMass, pulseInterval)
                 * SelfToAsteroidDamageRatio);
 
         /// <summary>

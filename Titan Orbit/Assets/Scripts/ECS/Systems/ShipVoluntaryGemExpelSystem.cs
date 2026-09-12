@@ -121,7 +121,7 @@ namespace TitanOrbit.ECS
                     float h = ship.Health;
                     float g = ship.CurrentGems;
                     bool dead = ship.IsDead;
-                    ShipDamageLogic.TryMarkDeadIfHullDepleted(ref h, ref g, ref dead);
+                    ShipDamageLogic.TryMarkDeadIfHullAndGemsDepleted(ref h, ref g, ref dead);
                     ship.Health = h;
                     ship.CurrentGems = g;
                     ship.IsDead = dead;

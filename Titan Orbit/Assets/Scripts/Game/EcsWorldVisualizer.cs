@@ -97,7 +97,7 @@ namespace TitanOrbit.Game
         [Header("Ship Propulsion VFX")]
         [SerializeField] ShipPropulsionVisualApplier.Settings propulsionVfxSettings;
 
-        // Ship banking knobs live on ShipBankVisualSettings (Resources default, family field, or MegaShipCatalog).
+        // Ship bank + pitch knobs live on ShipBankVisualSettings (Resources default, family field, or MegaShipCatalog).
 
         // --- Runtime proxy registries (entity → GameObject) ---
 

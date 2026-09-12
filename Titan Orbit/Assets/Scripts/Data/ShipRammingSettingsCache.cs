@@ -6,7 +6,7 @@ namespace TitanOrbit.Data
     /// Runtime pointer to the active <see cref="ShipRammingSettings"/> ScriptableObject.
     /// Set by <see cref="Game.ShipRammingSettingsLoader"/> at boot; read by
     /// <see cref="ShipComponentRammingSuggestions"/> so server damage and HUD estimates match.
-    /// Null → code defaults (Global 0.5, SelfToAsteroid 2).
+    /// Null → code defaults (Global 1, MassReference 10, ram-double speed 10, SelfToAsteroid 2).
     /// </summary>
     public static class ShipRammingSettingsCache
     {
@@ -22,8 +22,10 @@ namespace TitanOrbit.Data
             // --- Code defaults (same as ScriptableObject field defaults) ---
             var fallback = ScriptableObject.CreateInstance<ShipRammingSettings>();
             fallback.hideFlags = HideFlags.HideAndDontSave;
-            fallback.GlobalDamageMultiplier = 0.5f;
-            fallback.SelfToAsteroidDamageRatio = 2f;
+            fallback.GlobalDamageMultiplier = ShipComponentRammingSuggestions.DefaultGlobalDamageMultiplier;
+            fallback.SelfToAsteroidDamageRatio = ShipComponentRammingSuggestions.DefaultSelfToAsteroidDamageRatio;
+            fallback.MassReference = ShipComponentRammingSuggestions.DefaultMassReference;
+            fallback.RamClosingSpeedForDouble = ShipComponentRammingSuggestions.DefaultRamClosingSpeedForDouble;
             Settings = fallback;
             return Settings;
         }

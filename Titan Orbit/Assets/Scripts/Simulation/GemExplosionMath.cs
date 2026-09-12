@@ -8,9 +8,8 @@ namespace TitanOrbit.Simulation
     /// Tunables come from <see cref="Data.GemExplosionSettings"/> (Editor ScriptableObject).
     /// Defaults match mature NGO <c>GemSpawner</c> / <c>Gem</c> (speed 2.2, damping 0.5, tumble ±1.5).
     /// <see cref="ResolveGemCountForUnitCap"/> keeps each spawned gem ≤ MaxGemUnitValue (88)
-    /// so pickup SFX stays on the chromatic piano ladder. Asteroid multi-gem splits use
-    /// <see cref="GemChordValues"/> (C-major dyad / triad / maj7); ship-death bursts use
-    /// <see cref="FillRandomValues"/> so exploded cargo is mixed sizes.
+    /// so pickup SFX stays on the chromatic piano ladder. Multi-gem value splits use
+    /// <see cref="GemChordValues"/> (C-major dyad / triad / maj7) instead of equal copies.
     /// </summary>
     public static class GemExplosionMath
     {
@@ -85,95 +84,6 @@ namespace TitanOrbit.Simulation
             }
 
             return math.clamp(count, AbsoluteMinGemCount, AbsoluteMaxGemCount);
-        }
-
-        /// <summary>
-        /// Splits <paramref name="remaining"/> into <paramref name="count"/> random values that
-        /// sum to remaining. Each piece stays in [minValue, maxUnitValue] when the total allows.
-        /// Used by ship-death cargo bursts so exploded gems are mixed sizes, not equal copies.
-        /// </summary>
-        public static void FillRandomValues(
-            float remaining,
-            int count,
-            float maxUnitValue,
-            float minValue,
-            ref Random rng,
-            float[] values)
-        {
-            if (values == null || count <= 0)
-                return;
-
-            count = math.clamp(count, AbsoluteMinGemCount, AbsoluteMaxGemCount);
-            if (count > values.Length)
-                count = values.Length;
-
-            float unit = math.max(minValue, maxUnitValue);
-            float minV = math.max(0.0001f, minValue);
-            float total = math.max(0f, remaining);
-
-            for (int i = 0; i < count; i++)
-                values[i] = 0f;
-
-            if (total < minV)
-            {
-                values[0] = total;
-                return;
-            }
-
-            if (count == 1)
-            {
-                values[0] = math.min(total, unit);
-                return;
-            }
-
-            // --- Reserve a visible minimum, then throw the rest with random weights ---
-            float reserved = minV * count;
-            if (reserved > total)
-            {
-                reserved = 0f;
-                minV = 0f;
-            }
-
-            float leftover = total - reserved;
-            float weightSum = 0f;
-            for (int i = 0; i < count; i++)
-            {
-                float w = rng.NextFloat(0.2f, 1f);
-                values[i] = w;
-                weightSum += w;
-            }
-
-            if (weightSum < 1e-6f)
-                weightSum = 1f;
-
-            for (int i = 0; i < count; i++)
-                values[i] = minV + leftover * (values[i] / weightSum);
-
-            // --- Cap oversized pieces and push overflow onto gems that still have room ---
-            float overflow = 0f;
-            for (int i = 0; i < count; i++)
-            {
-                if (values[i] <= unit)
-                    continue;
-                overflow += values[i] - unit;
-                values[i] = unit;
-            }
-
-            for (int i = 0; i < count && overflow > 0.0001f; i++)
-            {
-                float room = unit - values[i];
-                if (room <= 0f)
-                    continue;
-                float add = math.min(room, overflow);
-                values[i] += add;
-                overflow -= add;
-            }
-
-            // Exact sum: last gem absorbs crumbs (may exceed unit only if count was too low).
-            float sum = 0f;
-            for (int i = 0; i < count - 1; i++)
-                sum += values[i];
-            values[count - 1] = math.max(0f, total - sum);
         }
 
         /// <summary>Equal split of remaining value across <paramref name="count"/> gems (sums to remaining).</summary>

@@ -155,9 +155,9 @@ namespace TitanOrbit.Data
             "Leave empty to fall back to Resources/ShipDamageSmokeSettings.")]
         public ShipDamageSmokeSettings damageSmokeSettings;
 
-        [Header("Ship Banking (visual roll)")]
+        [Header("Ship Banking (visual roll + pitch)")]
         [Tooltip(
-            "Client-only roll-while-turning profile for this family. " +
+            "Client-only roll-while-turning and pitch-from-accel/collision profile for this family. " +
             "Create via Assets → Create → Titan Orbit → Ship Bank Visual Settings. " +
             "Families may share one asset today; assign a unique asset later for per-family lean. " +
             "Leave empty to fall back to Resources/ShipBankVisualSettings.")]

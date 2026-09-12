@@ -97,6 +97,153 @@ namespace TitanOrbit.Data
             return Mathf.Sign(signedAngularVelDegPerSec) * turnRatio * maxBankDegrees;
         }
 
+        /// <summary>Nose-down Euler X (°) at the reference forward accel when sensitivity is 1.</summary>
+        public const float VisualPitchDefaultMaxDownDegrees = 18f;
+
+        /// <summary>Nose-up Euler X magnitude (°) at the reference forward accel when sensitivity is 1.</summary>
+        public const float VisualPitchDefaultMaxUpDegrees = 12f;
+
+        /// <summary>Forward accel (world u/s²) treated as “full” for the cruise pitch curve.</summary>
+        public const float VisualPitchReferenceAccel = 6f;
+
+        /// <summary>
+        /// Target visual pitch (°): +X is nose down. Speed-up pitches the nose up;
+        /// braking / slamming into a body pitches it down. Clamped to
+        /// <paramref name="maxPitchDownDegrees"/> / <paramref name="maxPitchUpDegrees"/>.
+        /// </summary>
+        /// <param name="signedForwardAccel">Smoothed forward accel (u/s²); + = speeding up along heading.</param>
+        /// <param name="maxPitchDownDegrees">Peak nose-down (°).</param>
+        /// <param name="maxPitchUpDegrees">Peak nose-up (°).</param>
+        /// <param name="referenceAccel">Accel that reaches peak pitch when sensitivity is 1.</param>
+        /// <param name="sensitivity">Multiplier on accel fraction before clamp.</param>
+        public static float ComputeVisualPitchTargetAngle(
+            float signedForwardAccel,
+            float maxPitchDownDegrees,
+            float maxPitchUpDegrees,
+            float referenceAccel,
+            float sensitivity = 1f)
+        {
+            if (referenceAccel <= 0.01f || Mathf.Abs(signedForwardAccel) <= 0f)
+                return 0f;
+
+            float ratio = Mathf.Clamp01(
+                Mathf.Abs(signedForwardAccel) / referenceAccel * Mathf.Max(0f, sensitivity));
+            // Speed-up → nose up (negative Euler X). Brake / hit → nose down (positive Euler X).
+            if (signedForwardAccel >= 0f)
+                return -ratio * Mathf.Max(0f, maxPitchUpDegrees);
+            return ratio * Mathf.Max(0f, maxPitchDownDegrees);
+        }
+
+        /// <summary>
+        /// Sudden planar-speed change → signed Euler X impulse. Speed loss pitches
+        /// the nose down; a shove that speeds the hull up pitches it up. Below the threshold, 0.
+        /// </summary>
+        /// <param name="forwardSpeedDelta">This-frame change in heading-aligned speed (u/s).</param>
+        /// <param name="impactDeltaSpeedThreshold">|Δv| that counts as a hit, not cruise thrust.</param>
+        /// <param name="degreesPerSpeed">Degrees of pitch per u/s of sudden Δv.</param>
+        /// <param name="maxPitchDownDegrees">Nose-down clamp (°).</param>
+        /// <param name="maxPitchUpDegrees">Nose-up clamp (°).</param>
+        public static float ComputeVisualPitchImpactDelta(
+            float forwardSpeedDelta,
+            float impactDeltaSpeedThreshold,
+            float degreesPerSpeed,
+            float maxPitchDownDegrees,
+            float maxPitchUpDegrees)
+        {
+            if (Mathf.Abs(forwardSpeedDelta) < Mathf.Max(0.01f, impactDeltaSpeedThreshold))
+                return 0f;
+
+            float impulse = -forwardSpeedDelta * Mathf.Max(0f, degreesPerSpeed);
+            return ClampVisualPitchDegrees(impulse, maxPitchDownDegrees, maxPitchUpDegrees);
+        }
+
+        /// <summary>Clamps Euler X pitch to [−maxUp, +maxDown].</summary>
+        public static float ClampVisualPitchDegrees(
+            float pitchDeg,
+            float maxPitchDownDegrees,
+            float maxPitchUpDegrees)
+        {
+            return Mathf.Clamp(pitchDeg, -Mathf.Max(0f, maxPitchUpDegrees), Mathf.Max(0f, maxPitchDownDegrees));
+        }
+
+        /// <summary>
+        /// Client cosmetic pitch step shared by hybrid proxies and Entities Graphics.
+        /// Uses planar speed magnitude so turning at constant speed does not fake a slam.
+        /// Cruise accel is smoothed; collision-sized Δv punches a decaying impact term.
+        /// Combined result is clamped to the authored min/max (down / up).
+        /// </summary>
+        public static float StepVisualPitch(
+            float planarSpeed,
+            float dt,
+            float maxPitchDownDegrees,
+            float maxPitchUpDegrees,
+            float referenceAccel,
+            float sensitivity,
+            float smoothing,
+            float impactDeltaSpeed,
+            float impactDegreesPerSpeed,
+            float impactDecay,
+            ref float prevForwardSpeed,
+            ref bool speedInitialized,
+            ref float smoothedAccel,
+            ref float accelPitchDeg,
+            ref float impactPitchDeg)
+        {
+            dt = Mathf.Max(1e-5f, dt);
+            if (!speedInitialized)
+            {
+                prevForwardSpeed = planarSpeed;
+                speedInitialized = true;
+                smoothedAccel = 0f;
+                accelPitchDeg = 0f;
+                impactPitchDeg = 0f;
+                return 0f;
+            }
+
+            float speedDelta = planarSpeed - prevForwardSpeed;
+            prevForwardSpeed = planarSpeed;
+            float instantAccel = speedDelta / dt;
+            // Kill interpolation / rest jitter so cruise pitch does not fidget at idle.
+            if (Mathf.Abs(instantAccel) < 0.35f)
+                instantAccel = 0f;
+
+            float impact = ComputeVisualPitchImpactDelta(
+                speedDelta,
+                impactDeltaSpeed,
+                impactDegreesPerSpeed,
+                maxPitchDownDegrees,
+                maxPitchUpDegrees);
+            if (impact != 0f)
+            {
+                impactPitchDeg += impact;
+                impactPitchDeg = ClampVisualPitchDegrees(
+                    impactPitchDeg, maxPitchDownDegrees, maxPitchUpDegrees);
+                smoothedAccel = 0f;
+            }
+            else
+            {
+                float accelT = 1f - Mathf.Exp(-Mathf.Max(0.01f, smoothing) * dt);
+                smoothedAccel = Mathf.Lerp(smoothedAccel, instantAccel, accelT);
+            }
+
+            float decayT = 1f - Mathf.Exp(-Mathf.Max(0.01f, impactDecay) * dt);
+            impactPitchDeg = Mathf.Lerp(impactPitchDeg, 0f, decayT);
+
+            float targetAccelPitch = ComputeVisualPitchTargetAngle(
+                smoothedAccel,
+                maxPitchDownDegrees,
+                maxPitchUpDegrees,
+                referenceAccel,
+                sensitivity);
+            float pitchT = 1f - Mathf.Exp(-Mathf.Max(0.01f, smoothing) * dt);
+            accelPitchDeg = Mathf.Lerp(accelPitchDeg, targetAccelPitch, pitchT);
+
+            return ClampVisualPitchDegrees(
+                accelPitchDeg + impactPitchDeg,
+                maxPitchDownDegrees,
+                maxPitchUpDegrees);
+        }
+
         /// <summary>Global max ship turn speed in °/s for visual banking (family definition units × scale).</summary>
         public static float GetGlobalMaxTurnSpeedDegreesPerSecond(
             float definitionUnitsToDegreesPerSecond = TurnDefinitionToDegreesPerSecond)

@@ -1,9 +1,10 @@
 namespace TitanOrbit.Data
 {
     /// <summary>
-    /// Process-wide cosmetic bank (roll-while-turning) knobs for hybrid ship proxies and
-    /// Entities Graphics bank pivots. Lives in <c>TitanOrbit.Data</c> so both
-    /// <c>TitanOrbit.Game</c> and <c>TitanOrbit.ECS</c> can read it (ECS cannot reference Game).
+    /// Process-wide cosmetic bank (roll-while-turning) and pitch (accel + collision)
+    /// knobs for hybrid ship proxies and Entities Graphics bank pivots. Lives in
+    /// <c>TitanOrbit.Data</c> so both <c>TitanOrbit.Game</c> and <c>TitanOrbit.ECS</c>
+    /// can read it (ECS cannot reference Game).
     /// Published from <see cref="ShipBankVisualSettings"/> (shared Resources default, or a
     /// family-specific asset). No sim or NetCode impact.
     /// Paired with <c>ShipBankVisualApplier</c> and <c>ShipEntitiesGraphicsBankSystem</c>.
@@ -41,6 +42,44 @@ namespace TitanOrbit.Data
             _active != null
                 ? _active.ResolveReferenceTurnDegreesPerSecond()
                 : ShipPropulsionAggregation.GetGlobalMaxTurnSpeedDegreesPerSecond();
+
+        /// <summary>Peak nose-down pitch (°). Reads the published asset when set.</summary>
+        public static float MaxPitchDownDegrees =>
+            _active != null
+                ? _active.ClampedMaxPitchDownDegrees
+                : ShipPropulsionAggregation.VisualPitchDefaultMaxDownDegrees;
+
+        /// <summary>Peak nose-up pitch (°). Reads the published asset when set.</summary>
+        public static float MaxPitchUpDegrees =>
+            _active != null
+                ? _active.ClampedMaxPitchUpDegrees
+                : ShipPropulsionAggregation.VisualPitchDefaultMaxUpDegrees;
+
+        /// <summary>Forward accel (u/s²) treated as full cruise pitch.</summary>
+        public static float ReferenceAccel =>
+            _active != null
+                ? _active.ClampedReferenceAccel
+                : ShipPropulsionAggregation.VisualPitchReferenceAccel;
+
+        /// <summary>Cruise-accel → pitch multiplier.</summary>
+        public static float PitchSensitivity =>
+            _active != null ? _active.ClampedPitchSensitivity : 1f;
+
+        /// <summary>Exponential catch-up rate for cruise pitch.</summary>
+        public static float PitchSmoothing =>
+            _active != null ? _active.ClampedPitchSmoothing : 6f;
+
+        /// <summary>|Δv| (u/s) that counts as a collision punch.</summary>
+        public static float ImpactDeltaSpeed =>
+            _active != null ? _active.ClampedImpactDeltaSpeed : 1.75f;
+
+        /// <summary>Impact pitch (° per u/s of sudden heading-speed change).</summary>
+        public static float ImpactDegreesPerSpeed =>
+            _active != null ? _active.ClampedImpactDegreesPerSpeed : 2f;
+
+        /// <summary>Impact spring-back rate.</summary>
+        public static float ImpactDecay =>
+            _active != null ? _active.ClampedImpactDecay : 8f;
 
         /// <summary>
         /// Points the cache at a designer asset so EG / turret bank and unset hybrid proxies

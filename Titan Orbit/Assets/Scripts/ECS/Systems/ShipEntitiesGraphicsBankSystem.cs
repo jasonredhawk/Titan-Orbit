@@ -6,12 +6,12 @@ using Unity.Transforms;
 namespace TitanOrbit.ECS
 {
     /// <summary>
-    /// Client-only visual roll banking for Entities Graphics ships. Applies cosmetic Z-roll on
-    /// <see cref="ShipVisualBankPivotTag"/> children so hull meshes bank during turns without
-    /// affecting physics yaw. Bank follows yaw rate only — no forward thrust required.
-    /// Ported from <c>ShipBankVisualApplier</c> (hybrid proxy path).
-    /// Reads Max Bank / Sensitivity / Smoothing from <see cref="ShipBankVisualSettingsCache"/>
-    /// for regular hulls, and <see cref="MegaShipCatalog.bankVisualSettings"/> for MEGAs.
+    /// Client-only visual roll + pitch for Entities Graphics ships. Applies cosmetic Z-roll and
+    /// X-pitch on <see cref="ShipVisualBankPivotTag"/> children so hull meshes bank during turns
+    /// and dip on accel / collisions without affecting physics yaw. Ported from
+    /// <c>ShipBankVisualApplier</c> (hybrid proxy path).
+    /// Reads knobs from <see cref="ShipBankVisualSettingsCache"/> for regular hulls, and
+    /// <see cref="MegaShipCatalog.bankVisualSettings"/> for MEGAs.
     /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ClientSimulation)]
     [UpdateInGroup(typeof(PresentationSystemGroup))]
@@ -22,8 +22,8 @@ namespace TitanOrbit.ECS
         const float RestBankAngularVelDeadbandDegPerSec = 2f;
 
         /// <summary>
-        /// [ECS/DOTS] Presentation tick: sample yaw rate per bank pivot, map to target roll, lerp.
-        /// Skipped under TransformQuarantine (hybrid GO path owns bank instead).
+        /// [ECS/DOTS] Presentation tick: sample yaw rate and planar speed per bank pivot,
+        /// map to target roll + pitch, lerp. Skipped under TransformQuarantine (hybrid GO path owns attitude).
         /// </summary>
         protected override void OnUpdate()
         {
@@ -42,6 +42,14 @@ namespace TitanOrbit.ECS
             float defaultSensitivity = ShipBankVisualSettingsCache.BankSensitivity;
             float defaultSmoothing = ShipBankVisualSettingsCache.BankSmoothing;
             float defaultRefTurn = ShipBankVisualSettingsCache.ReferenceTurnDegreesPerSecond;
+            float defaultMaxPitchDown = ShipBankVisualSettingsCache.MaxPitchDownDegrees;
+            float defaultMaxPitchUp = ShipBankVisualSettingsCache.MaxPitchUpDegrees;
+            float defaultRefAccel = ShipBankVisualSettingsCache.ReferenceAccel;
+            float defaultPitchSensitivity = ShipBankVisualSettingsCache.PitchSensitivity;
+            float defaultPitchSmoothing = ShipBankVisualSettingsCache.PitchSmoothing;
+            float defaultImpactDelta = ShipBankVisualSettingsCache.ImpactDeltaSpeed;
+            float defaultImpactDegPerSpeed = ShipBankVisualSettingsCache.ImpactDegreesPerSpeed;
+            float defaultImpactDecay = ShipBankVisualSettingsCache.ImpactDecay;
             ShipBankVisualSettings megaSettings = MegaShipCatalog.Load()?.GetBankVisualSettings();
 
             foreach (var (pivotTag, bankState, pivotTransform, entity) in SystemAPI
@@ -73,6 +81,7 @@ namespace TitanOrbit.ECS
                     bankState.ValueRW.PrevYawDeg = GetPlanarYawDegrees(
                         EntityManager.GetComponentData<LocalTransform>(shipEntity).Rotation);
                     bankState.ValueRW.YawInitialized = true;
+                    ResetPitchState(ref bankState.ValueRW);
                     pivotTransform.ValueRW.Rotation = quaternion.identity;
                     continue;
                 }
@@ -83,12 +92,28 @@ namespace TitanOrbit.ECS
                 float sensitivity = defaultSensitivity;
                 float smoothing = defaultSmoothing;
                 float referenceTurn = defaultRefTurn;
+                float maxPitchDown = defaultMaxPitchDown;
+                float maxPitchUp = defaultMaxPitchUp;
+                float referenceAccel = defaultRefAccel;
+                float pitchSensitivity = defaultPitchSensitivity;
+                float pitchSmoothing = defaultPitchSmoothing;
+                float impactDelta = defaultImpactDelta;
+                float impactDegPerSpeed = defaultImpactDegPerSpeed;
+                float impactDecay = defaultImpactDecay;
                 if (isMega && megaSettings != null)
                 {
                     maxBank = megaSettings.ClampedMaxBankAngleDegrees;
                     sensitivity = megaSettings.ClampedBankSensitivity;
                     smoothing = megaSettings.ClampedBankSmoothing;
                     referenceTurn = megaSettings.ResolveReferenceTurnDegreesPerSecond();
+                    maxPitchDown = megaSettings.ClampedMaxPitchDownDegrees;
+                    maxPitchUp = megaSettings.ClampedMaxPitchUpDegrees;
+                    referenceAccel = megaSettings.ClampedReferenceAccel;
+                    pitchSensitivity = megaSettings.ClampedPitchSensitivity;
+                    pitchSmoothing = megaSettings.ClampedPitchSmoothing;
+                    impactDelta = megaSettings.ClampedImpactDeltaSpeed;
+                    impactDegPerSpeed = megaSettings.ClampedImpactDegreesPerSpeed;
+                    impactDecay = megaSettings.ClampedImpactDecay;
                 }
 
                 var shipTransform = EntityManager.GetComponentData<LocalTransform>(shipEntity);
@@ -113,9 +138,41 @@ namespace TitanOrbit.ECS
                     targetBank,
                     bankT);
 
+                float planarSpeed = SamplePlanarSpeed(shipEntity);
+                float prevForwardSpeed = bankState.ValueRO.PrevForwardSpeed;
+                bool pitchSpeedInitialized = bankState.ValueRO.PitchSpeedInitialized;
+                float smoothedForwardAccel = bankState.ValueRO.SmoothedForwardAccel;
+                float accelPitchDeg = bankState.ValueRO.AccelPitchAngleDeg;
+                float impactPitchDeg = bankState.ValueRO.ImpactPitchAngleDeg;
+                float pitchDeg = ShipPropulsionAggregation.StepVisualPitch(
+                    planarSpeed,
+                    dt,
+                    maxPitchDown,
+                    maxPitchUp,
+                    referenceAccel,
+                    pitchSensitivity,
+                    pitchSmoothing,
+                    impactDelta,
+                    impactDegPerSpeed,
+                    impactDecay,
+                    ref prevForwardSpeed,
+                    ref pitchSpeedInitialized,
+                    ref smoothedForwardAccel,
+                    ref accelPitchDeg,
+                    ref impactPitchDeg);
+                bankState.ValueRW.PrevForwardSpeed = prevForwardSpeed;
+                bankState.ValueRW.PitchSpeedInitialized = pitchSpeedInitialized;
+                bankState.ValueRW.SmoothedForwardAccel = smoothedForwardAccel;
+                bankState.ValueRW.AccelPitchAngleDeg = accelPitchDeg;
+                bankState.ValueRW.ImpactPitchAngleDeg = impactPitchDeg;
+                bankState.ValueRW.CurrentPitchAngleDeg = pitchDeg;
+
                 pivotTransform.ValueRW = LocalTransform.FromPositionRotationScale(
                     pivotTransform.ValueRO.Position,
-                    quaternion.RotateZ(math.radians(-bankState.ValueRO.CurrentBankAngleDeg)),
+                    quaternion.EulerZXY(
+                        math.radians(bankState.ValueRO.CurrentPitchAngleDeg),
+                        0f,
+                        math.radians(-bankState.ValueRO.CurrentBankAngleDeg)),
                     pivotTransform.ValueRO.Scale);
                 SyncPivotLocalToWorld(entity, pivotTransform.ValueRO);
             }
@@ -146,6 +203,29 @@ namespace TitanOrbit.ECS
             var moonDock = EntityManager.GetComponentData<ShipMoonDockState>(shipEntity);
             return moonDock.IsTakingOff ||
                    (moonDock.MoonPlanetId != 0 && moonDock.LandingProgress > 0.001f);
+        }
+
+        static void ResetPitchState(ref ShipVisualBankState bankState)
+        {
+            bankState.CurrentPitchAngleDeg = 0f;
+            bankState.SmoothedForwardAccel = 0f;
+            bankState.AccelPitchAngleDeg = 0f;
+            bankState.ImpactPitchAngleDeg = 0f;
+            bankState.PrevForwardSpeed = 0f;
+            bankState.PitchSpeedInitialized = false;
+        }
+
+        /// <summary>
+        /// Planar speed from ghosted <see cref="ShipKinematics"/>.
+        /// No extra ghost fields — remotes interpolate the same velocity the HUD already shows.
+        /// </summary>
+        float SamplePlanarSpeed(Entity shipEntity)
+        {
+            if (!EntityManager.HasComponent<ShipKinematics>(shipEntity))
+                return 0f;
+
+            float3 vel = EntityManager.GetComponentData<ShipKinematics>(shipEntity).Velocity;
+            return math.sqrt(vel.x * vel.x + vel.z * vel.z);
         }
 
         /// <summary>Exponentially smooths planar yaw rate (°/s) for stable bank targets.</summary>

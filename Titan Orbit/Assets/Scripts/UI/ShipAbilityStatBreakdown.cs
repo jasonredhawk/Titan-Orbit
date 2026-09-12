@@ -1228,15 +1228,21 @@ namespace TitanOrbit.UI
                 sb, in parts, in live, StatField.RammingPower, "RAM",
                 firePowerAbilityLv, live.EffectiveStats.rammingPower);
 
-            // [TITAN-ORBIT] Max impact at full cruise — RamAsteroidDamage on LiveContext is filled
-            // with that static estimate by ShipSpeedometerHUD (not current speed).
+            // [TITAN-ORBIT] Recompute grind / ram from rating × mass so B-key muls stay honest.
             float impactSpeed = live.CruiseMaxSpeed > 0.01f ? live.CruiseMaxSpeed : live.ChassisMaxSpeed;
-            ShipStatTooltipChrome.AppendSectionBanner(sb, "MAX IMPACT", "FFCC66");
-            sb.Append("At full cruise  ").Append(FDetail(impactSpeed)).Append("/s").AppendLine();
-            sb.Append("RAM  ").Append(FDetail(live.RamRating))
-                .Append(" x m").Append(FDetail(live.TotalMass))
-                .Append(" -> ast ").Append(FResult(live.RamAsteroidDamage))
-                .Append("  hull ").Append(FResult(live.RamSelfDamage)).AppendLine();
+            float grindDps = ShipComponentRammingSuggestions.ComputeGrindDps(live.RamRating, live.TotalMass);
+            float ramAst = ShipComponentRammingSuggestions.ComputeImpactDamage(
+                live.RamRating, live.TotalMass, impactSpeed);
+            float ramSelf = ShipComponentRammingSuggestions.ComputeImpactSelfDamage(
+                live.RamRating, live.TotalMass, impactSpeed);
+            ShipStatTooltipChrome.AppendSectionBanner(sb, "GRIND / RAM", "FFCC66");
+            sb.Append("Grind  ").Append(FResult(grindDps)).Append("/s");
+            sb.Append(" <color=#5B7A94>(RAM x mass / ")
+                .Append(FDetail(ShipComponentRammingSuggestions.MassReference))
+                .Append(")</color>").AppendLine();
+            sb.Append("At full cruise  ").Append(FDetail(impactSpeed)).Append("/s -> ");
+            sb.Append("ast ").Append(FResult(ramAst))
+                .Append("  hull ").Append(FResult(ramSelf)).AppendLine();
         }
 
         /// <summary>

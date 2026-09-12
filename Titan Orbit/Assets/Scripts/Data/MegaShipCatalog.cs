@@ -295,7 +295,7 @@ namespace TitanOrbit.Data
         public float thrusterVfxScale = DefaultThrusterVfxScale;
 
         [Tooltip(
-            "Client-only roll-while-turning profile for every MEGA hull. " +
+            "Client-only roll-while-turning and pitch-from-accel/collision profile for every MEGA hull. " +
             "Create via Assets → Create → Titan Orbit → Ship Bank Visual Settings. " +
             "Leave empty to fall back to Resources/MegaShipBankVisualSettings, then the shared ship default.")]
         public ShipBankVisualSettings bankVisualSettings;
