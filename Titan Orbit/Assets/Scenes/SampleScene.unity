@@ -1238,6 +1238,71 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &252337101
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 252337103}
+  - component: {fileID: 252337102}
+  m_Layer: 0
+  m_Name: StarfieldBackground
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &252337102
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 252337101}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: c0e5a3f26d4f6089b3c7e0f2a5b8d461, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::TitanOrbit.Camera.ParallaxStarfieldBackground
+  targetCamera: {fileID: 711795281}
+  depthOffset: 80
+  sizeMargin: 1.35
+  tint: {r: 1, g: 1, b: 1, a: 1}
+  brightness: 1
+  twinkle: 0.18
+  farDensity: 0.42
+  farParallax: 0.0015
+  farSize: 0.028
+  farBrightness: 0.4
+  farOccupancy: 0.55
+  midDensity: 0.22
+  midParallax: 0.0035
+  midSize: 0.038
+  midBrightness: 0.7
+  midOccupancy: 0.38
+  nearDensity: 0.11
+  nearParallax: 0.007
+  nearSize: 0.05
+  nearBrightness: 0.95
+  nearOccupancy: 0.28
+--- !u!4 &252337103
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 252337101}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &259437811
 GameObject:
   m_ObjectHideFlags: 0
@@ -8625,6 +8690,8 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::TitanOrbit.Core.GameManager
   editorMultiplayerMode: 1
   showSpeedometer: 1
+  showSpaceBackground: 1
+  showStarfieldBackground: 1
   debugFreeShipUpgradeTree: 1
   debugFreeGear: 1
   debugFreeCards: 1
@@ -13350,6 +13417,7 @@ SceneRoots:
   - {fileID: 711795282}
   - {fileID: 1443126313}
   - {fileID: 252336436}
+  - {fileID: 252337103}
   - {fileID: 1536533390}
   - {fileID: 259437814}
   - {fileID: 1959116599}

@@ -20,15 +20,16 @@ namespace TitanOrbit.Core
     }
 
     /// <summary>
-    /// Scene singleton that holds designer-tunable HUD options, debug flags for local play, and the
-    /// Editor Test / Production multiplayer toggle. Lives on <c>NceGameRoot</c> in SampleScene
-    /// (Inspector → Game Manager). Moon orbit UI reads <see cref="DebugFreeShipUpgradeTree"/>,
-    /// <see cref="DebugFreeGear"/>, and <see cref="DebugFreeCards"/> so you can click any
-    /// upgrade-tree node, buy GEAR, or spin CARDS for free during testing. Also gates optional
-    /// tools such as Instruction Image Capture (F8/F9 reference plates) and the stutter isolator.
-    /// Publishes debug values to <see cref="TitanOrbitDebugFlags"/> so other assemblies can honor
-    /// toggles without referencing this Core assembly. Dedicated server builds normally leave
-    /// debug flags false.
+    /// Scene singleton that holds designer-tunable HUD options, background presentation toggles,
+    /// debug flags for local play, and the Editor Test / Production multiplayer toggle. Lives on
+    /// <c>NceGameRoot</c> in SampleScene (Inspector → Game Manager). Moon orbit UI reads
+    /// <see cref="DebugFreeShipUpgradeTree"/>, <see cref="DebugFreeGear"/>, and
+    /// <see cref="DebugFreeCards"/> so you can click any upgrade-tree node, buy GEAR, or spin
+    /// CARDS for free during testing. Also gates optional tools such as Instruction Image Capture
+    /// (F8/F9 reference plates) and the stutter isolator. Background checkboxes independently
+    /// enable the nebula quad and the shader starfield (both can be on at once). Publishes debug
+    /// values to <see cref="TitanOrbitDebugFlags"/> so other assemblies can honor toggles without
+    /// referencing this Core assembly. Dedicated server builds normally leave debug flags false.
     /// </summary>
     public class GameManager : MonoBehaviour
     {
@@ -40,6 +41,18 @@ namespace TitanOrbit.Core
         /// <c>ShipSpeedometerHUD</c> can disable its own component (no LateUpdate) when off.
         /// </summary>
         public static event Action<bool> ShowSpeedometerChanged;
+
+        /// <summary>
+        /// Play Mode only: fired when <see cref="ShowSpaceBackground"/> is published so
+        /// <c>ScrollingSpaceBackground</c> can hide its nebula quad and skip LateUpdate when off.
+        /// </summary>
+        public static event Action<bool> ShowSpaceBackgroundChanged;
+
+        /// <summary>
+        /// Play Mode only: fired when <see cref="ShowStarfieldBackground"/> is published so
+        /// <c>ParallaxStarfieldBackground</c> can hide its star quad and skip LateUpdate when off.
+        /// </summary>
+        public static event Action<bool> ShowStarfieldBackgroundChanged;
 
         // [EDITOR] / [TITAN-ORBIT] Inspector Test|Production toolbar (see GameManagerEditor) applies
         // the same NetCode prefs as Titan Orbit > Configure Multiplayer For Local Play / Dedicated Server.
@@ -60,6 +73,27 @@ namespace TitanOrbit.Core
 
         /// <summary>Mirror of the last published showSpeedometer for change detection.</summary>
         bool _lastPublishedShowSpeedometer;
+
+        // [UNITY] / [TITAN-ORBIT] Independent presentation toggles. Both default on so the nebula
+        // and the shader starfield can composite together; flip either off without touching the other.
+        [Header("Background")]
+        [Tooltip("Old space background: the scrolling nebula quad (ScrollingSpaceBackground). Off hides the quad and skips its LateUpdate. Can stay on together with the starfield.")]
+        [SerializeField] bool showSpaceBackground = true;
+
+        [Tooltip("New parallax starfield: shader-drawn star layers that shift as you fly. Off hides the star quad and skips its LateUpdate. Can stay on together with the nebula.")]
+        [SerializeField] bool showStarfieldBackground = true;
+
+        /// <summary>Last value pushed to <see cref="ShowSpaceBackgroundChanged"/> (avoids spam while editing).</summary>
+        bool _hasPublishedShowSpaceBackground;
+
+        /// <summary>Mirror of the last published showSpaceBackground for change detection.</summary>
+        bool _lastPublishedShowSpaceBackground;
+
+        /// <summary>Last value pushed to <see cref="ShowStarfieldBackgroundChanged"/> (avoids spam while editing).</summary>
+        bool _hasPublishedShowStarfieldBackground;
+
+        /// <summary>Mirror of the last published showStarfieldBackground for change detection.</summary>
+        bool _lastPublishedShowStarfieldBackground;
 
         // [UNITY] Inspector toggle — when true, ship upgrade tree treats all nodes as free / clickable.
         [Header("Debug — Ship Upgrade Tree")]
@@ -133,6 +167,12 @@ namespace TitanOrbit.Core
         /// <summary>True when the local-player speedometer HUD should run (Inspector on NceGameRoot).</summary>
         public bool ShowSpeedometer => showSpeedometer;
 
+        /// <summary>True when the scrolling nebula space background should draw (Inspector on NceGameRoot).</summary>
+        public bool ShowSpaceBackground => showSpaceBackground;
+
+        /// <summary>True when the shader parallax starfield should draw (Inspector on NceGameRoot).</summary>
+        public bool ShowStarfieldBackground => showStarfieldBackground;
+
         /// <summary>True when designers enabled free upgrades in the Inspector (client + local-host convenience).</summary>
         public bool DebugFreeShipUpgradeTree => debugFreeShipUpgradeTree;
 
@@ -169,6 +209,20 @@ namespace TitanOrbit.Core
         /// </summary>
         public static bool IsShowSpeedometerActive =>
             Instance == null || Instance.showSpeedometer;
+
+        /// <summary>
+        /// Safe static check for the nebula space background. Defaults <b>on</b> when no
+        /// GameManager exists yet so early frames still match the previous always-on look.
+        /// </summary>
+        public static bool IsShowSpaceBackgroundActive =>
+            Instance == null || Instance.showSpaceBackground;
+
+        /// <summary>
+        /// Safe static check for the shader starfield. Defaults <b>on</b> when no GameManager
+        /// exists yet so a missing singleton does not hide the new background.
+        /// </summary>
+        public static bool IsShowStarfieldBackgroundActive =>
+            Instance == null || Instance.showStarfieldBackground;
 
         /// <summary>
         /// Safe static check used by moon orbit UI. Also true when the Shared flag was published
@@ -272,12 +326,14 @@ namespace TitanOrbit.Core
                 TitanOrbitDebugFlags.StutterIsolatorEnabled = false;
                 ClearIsolationFlags();
                 _hasPublishedShowSpeedometer = false;
+                _hasPublishedShowSpaceBackground = false;
+                _hasPublishedShowStarfieldBackground = false;
             }
         }
 
         /// <summary>
         /// Copies Inspector fields into <see cref="TitanOrbitDebugFlags"/> for ECS / other assemblies,
-        /// and notifies HUD listeners when Show Speedometer changes in Play Mode.
+        /// and notifies HUD / background listeners when presentation toggles change in Play Mode.
         /// </summary>
         public void PublishDebugFlags()
         {
@@ -333,8 +389,10 @@ namespace TitanOrbit.Core
                 ClearIsolationFlags();
             }
 
-            // --- HUD: speedometer on/off ---
+            // --- HUD + backgrounds: presentation on/off ---
             NotifyShowSpeedometerChangedIfNeeded();
+            NotifyShowSpaceBackgroundChangedIfNeeded();
+            NotifyShowStarfieldBackgroundChangedIfNeeded();
         }
 
         /// <summary>
@@ -343,16 +401,64 @@ namespace TitanOrbit.Core
         /// </summary>
         void NotifyShowSpeedometerChangedIfNeeded()
         {
-            // [UNITY] Edit Mode OnValidate must not poke play-mode HUD components.
+            NotifyBoolChangedIfNeeded(
+                ref _hasPublishedShowSpeedometer,
+                ref _lastPublishedShowSpeedometer,
+                showSpeedometer,
+                ShowSpeedometerChanged);
+        }
+
+        /// <summary>
+        /// Invokes <see cref="ShowSpaceBackgroundChanged"/> in Play Mode when the nebula toggle
+        /// changes (or on the first publish after Awake).
+        /// </summary>
+        void NotifyShowSpaceBackgroundChangedIfNeeded()
+        {
+            NotifyBoolChangedIfNeeded(
+                ref _hasPublishedShowSpaceBackground,
+                ref _lastPublishedShowSpaceBackground,
+                showSpaceBackground,
+                ShowSpaceBackgroundChanged);
+        }
+
+        /// <summary>
+        /// Invokes <see cref="ShowStarfieldBackgroundChanged"/> in Play Mode when the starfield
+        /// toggle changes (or on the first publish after Awake).
+        /// </summary>
+        void NotifyShowStarfieldBackgroundChangedIfNeeded()
+        {
+            NotifyBoolChangedIfNeeded(
+                ref _hasPublishedShowStarfieldBackground,
+                ref _lastPublishedShowStarfieldBackground,
+                showStarfieldBackground,
+                ShowStarfieldBackgroundChanged);
+        }
+
+        /// <summary>
+        /// Shared Play Mode publisher for Inspector bools that drive client presentation.
+        /// Skips Edit Mode so OnValidate cannot poke live components. Fires on first publish
+        /// and whenever <paramref name="current"/> differs from the last sent value.
+        /// </summary>
+        /// <param name="hasPublished">Per-flag latch so the first Play Mode publish always fires.</param>
+        /// <param name="lastPublished">Last value sent to <paramref name="evt"/>.</param>
+        /// <param name="current">Inspector field value right now.</param>
+        /// <param name="evt">Static event listeners subscribe to (HUD, nebula, starfield).</param>
+        static void NotifyBoolChangedIfNeeded(
+            ref bool hasPublished,
+            ref bool lastPublished,
+            bool current,
+            Action<bool> evt)
+        {
+            // [UNITY] Edit Mode OnValidate must not poke play-mode presentation components.
             if (!Application.isPlaying)
                 return;
 
-            if (_hasPublishedShowSpeedometer && _lastPublishedShowSpeedometer == showSpeedometer)
+            if (hasPublished && lastPublished == current)
                 return;
 
-            _hasPublishedShowSpeedometer = true;
-            _lastPublishedShowSpeedometer = showSpeedometer;
-            ShowSpeedometerChanged?.Invoke(showSpeedometer);
+            hasPublished = true;
+            lastPublished = current;
+            evt?.Invoke(current);
         }
 
         /// <summary>Resets all Shift+F isolation bits to off (normal gameplay).</summary>

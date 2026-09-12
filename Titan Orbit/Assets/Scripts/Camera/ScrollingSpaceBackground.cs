@@ -1,3 +1,4 @@
+using TitanOrbit.Core;
 using TitanOrbit.Game;
 using TitanOrbit.NetCode;
 using TitanOrbit.Shared;
@@ -11,6 +12,8 @@ namespace TitanOrbit.Camera
     /// seamless parallax. [HYBRID] Follows <see cref="ShipDisplayPose.LocalPosition"/> when
     /// available, else camera position. WebGL/Android: uses TitanOrbit/SpaceBackgroundUnlit
     /// and _UVScroll on instance material (no MaterialPropertyBlock) for GLES compatibility.
+    /// GameManager → Show Space Background hides this quad independently of the shader
+    /// starfield so both can stay on, or either can run alone.
     /// </summary>
     /// <remarks>
     /// WebGL and Android GLES often fail to animate URP Unlit UVs when mixing MaterialPropertyBlock
@@ -69,6 +72,11 @@ namespace TitanOrbit.Camera
                 return;
             }
 
+            // Subscribe after the headless bail so a GameManager tick cannot re-enable this
+            // on a dedicated server. Unsubscribe only in OnDestroy — enabled=false must not
+            // drop the listener we need to turn the nebula back on.
+            GameManager.ShowSpaceBackgroundChanged += OnShowSpaceBackgroundChanged;
+
             ResolveTargetCamera();
             if (targetCamera == null)
             {
@@ -79,6 +87,14 @@ namespace TitanOrbit.Camera
             EnsureBackgroundQuad();
         }
 
+        /// <summary>
+        /// [UNITY] Start — sync with GameManager if its Awake fired before we subscribed.
+        /// </summary>
+        private void Start()
+        {
+            ApplyFeatureEnabled(GameManager.IsShowSpaceBackgroundActive);
+        }
+
         private void OnEnable()
         {
             // --- Unity lifecycle ---
@@ -86,6 +102,60 @@ namespace TitanOrbit.Camera
                 ResolveTargetCamera();
             if (meshRenderer == null && targetCamera != null)
                 EnsureBackgroundQuad();
+            if (meshRenderer != null && GameManager.IsShowSpaceBackgroundActive)
+                meshRenderer.enabled = true;
+        }
+
+        /// <summary>
+        /// [UNITY] OnDisable — hide the nebula so a disabled component never leaves a leftover draw.
+        /// The quad stays in the hierarchy so turning the GameManager toggle back on is free.
+        /// </summary>
+        private void OnDisable()
+        {
+            if (meshRenderer != null)
+                meshRenderer.enabled = false;
+        }
+
+        /// <summary>
+        /// GameManager published a new Show Space Background value (Play Mode Inspector or Awake).
+        /// </summary>
+        /// <param name="show">True when the nebula quad should draw and LateUpdate.</param>
+        void OnShowSpaceBackgroundChanged(bool show) => ApplyFeatureEnabled(show);
+
+        /// <summary>
+        /// Turns the nebula fully on or off. Off hides the renderer and sets
+        /// <c>enabled = false</c> so Unity skips LateUpdate. The quad is kept so a later
+        /// toggle-on does not Instantiate again.
+        /// </summary>
+        /// <param name="show">GameManager toggle value.</param>
+        void ApplyFeatureEnabled(bool show)
+        {
+            if (!TitanOrbitDedicatedServerAutoBoot.ShouldRunClientPresentation())
+            {
+                if (enabled)
+                    enabled = false;
+                return;
+            }
+
+            if (!show)
+            {
+                if (meshRenderer != null)
+                    meshRenderer.enabled = false;
+                if (enabled)
+                    enabled = false;
+                return;
+            }
+
+            if (!enabled)
+                enabled = true;
+
+            // Skip the idle frames so we do not add a huge UV jump when the toggle comes back.
+            hasLastScrollPos = false;
+
+            if (meshRenderer == null)
+                EnsureBackgroundQuad();
+            if (meshRenderer != null)
+                meshRenderer.enabled = true;
         }
 
         private void ResolveTargetCamera()
@@ -155,6 +225,7 @@ namespace TitanOrbit.Camera
             meshRenderer.SetPropertyBlock(null);
             meshRenderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
             meshRenderer.receiveShadows = false;
+            meshRenderer.enabled = GameManager.IsShowSpaceBackgroundActive;
         }
 
         private void LateUpdate()
@@ -234,6 +305,7 @@ namespace TitanOrbit.Camera
 
         private void OnDestroy()
         {
+            GameManager.ShowSpaceBackgroundChanged -= OnShowSpaceBackgroundChanged;
             if (bgMaterial != null)
                 Object.Destroy(bgMaterial);
         }
