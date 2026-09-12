@@ -5,8 +5,8 @@ namespace TitanOrbit.Simulation
 {
     /// <summary>
     /// Planet orbit ring geometry for ship passive orbit, gem-moon placement, and decorative level bands.
-    /// Ring membership uses the covering hull (box or disk), not only the ship pivot, so a
-    /// wing in the annulus starts the passive pull. Range tests stay toroidal
+    /// Ring membership uses the ship pivot (toroidal distance from planet center), not the
+    /// covering collider — a wing in the annulus is not enough. Range tests stay toroidal
     /// (see titan-orbit-toroidal-map rule).
     /// <para>
     /// [TITAN-ORBIT] <see cref="GetOrbitRingSpeed"/> is the single tangential speed for a planet's
@@ -104,112 +104,11 @@ namespace TitanOrbit.Simulation
         }
 
         /// <summary>
-        /// True when <paramref name="dist"/> from planet center lies inside the orbit annulus.
-        /// Pass <paramref name="hullRadius"/> so a collider disk around that sample point
-        /// counts — any overlap with the ring, not only the pivot.
+        /// True when the ship pivot distance from planet center lies inside the orbit annulus.
         /// </summary>
         public static bool IsInOrbitRing(float dist, float innerWorld, float outerWorld)
         {
-            return IsInOrbitRing(dist, innerWorld, outerWorld, 0f);
-        }
-
-        /// <inheritdoc cref="IsInOrbitRing(float,float,float)"/>
-        public static bool IsInOrbitRing(float dist, float innerWorld, float outerWorld, float hullRadius)
-        {
-            float r = math.max(0f, hullRadius);
-            return dist + r >= innerWorld && dist - r <= outerWorld;
-        }
-
-        /// <summary>
-        /// True when a yaw-aligned XZ covering box overlaps the orbit annulus on the torus.
-        /// Min distance to the box must reach the outer lip; some point of the box must
-        /// reach the inner lip — that is "any part of the collider is in the ring."
-        /// </summary>
-        public static bool OrientedBoxOverlapsOrbitRing(
-            float3 planetPos,
-            float3 boxCenter,
-            float2 halfExtents,
-            float yawRadians,
-            float innerWorld,
-            float outerWorld,
-            float mapWidth,
-            float mapHeight)
-        {
-            if (halfExtents.x <= 0.01f || halfExtents.y <= 0.01f)
-                return false;
-
-            float3 planetNear = boxCenter + ToroidalMapEcs.ShortestOffsetXZ(boxCenter, planetPos, mapWidth, mapHeight);
-            planetNear.y = 0f;
-            float3 center = boxCenter;
-            center.y = 0f;
-
-            float minDist = DistancePointToOrientedBoxXZ(planetNear, center, halfExtents, yawRadians);
-            float maxDist = MaxDistancePointToOrientedBoxXZ(planetNear, center, halfExtents, yawRadians);
-            return maxDist >= innerWorld && minDist <= outerWorld;
-        }
-
-        /// <summary>
-        /// Hull vs orbit annulus: covering box when half-extents are set, otherwise a disk
-        /// of <paramref name="hullRadius"/> around <paramref name="samplePos"/>.
-        /// </summary>
-        public static bool HullOverlapsOrbitRing(
-            float3 planetPos,
-            float innerWorld,
-            float outerWorld,
-            float mapWidth,
-            float mapHeight,
-            float3 samplePos,
-            float hullRadius,
-            float3 hullCenter,
-            float2 hullHalfExtents,
-            float hullYaw)
-        {
-            if (hullHalfExtents.x > 0.01f && hullHalfExtents.y > 0.01f)
-            {
-                return OrientedBoxOverlapsOrbitRing(
-                    planetPos, hullCenter, hullHalfExtents, hullYaw,
-                    innerWorld, outerWorld, mapWidth, mapHeight);
-            }
-
-            float dist = ToroidalMapEcs.ToroidalDistance(samplePos, planetPos, mapWidth, mapHeight);
-            return IsInOrbitRing(dist, innerWorld, outerWorld, hullRadius);
-        }
-
-        /// <summary>XZ distance from a point to a yaw-aligned box (0 when inside).</summary>
-        static float DistancePointToOrientedBoxXZ(
-            float3 point,
-            float3 center,
-            float2 halfExtents,
-            float yawRadians)
-        {
-            float2 he = math.max(halfExtents, new float2(0.001f, 0.001f));
-            quaternion inv = math.inverse(quaternion.RotateY(yawRadians));
-            float3 local = math.rotate(inv, point - center);
-            float2 closest = math.clamp(new float2(local.x, local.z), -he, he);
-            return math.distance(new float2(local.x, local.z), closest);
-        }
-
-        /// <summary>Farthest XZ distance from a point to any corner of a yaw-aligned box.</summary>
-        static float MaxDistancePointToOrientedBoxXZ(
-            float3 point,
-            float3 center,
-            float2 halfExtents,
-            float yawRadians)
-        {
-            float2 he = math.max(halfExtents, new float2(0.001f, 0.001f));
-            quaternion rot = quaternion.RotateY(yawRadians);
-            float maxDist = 0f;
-            for (int i = 0; i < 4; i++)
-            {
-                float3 local = new float3(
-                    (i & 1) == 0 ? -he.x : he.x,
-                    0f,
-                    (i & 2) == 0 ? -he.y : he.y);
-                float3 corner = center + math.rotate(rot, local);
-                maxDist = math.max(maxDist, math.distance(point.xz, corner.xz));
-            }
-
-            return maxDist;
+            return dist >= innerWorld && dist <= outerWorld;
         }
 
         /// <summary>
@@ -377,7 +276,7 @@ namespace TitanOrbit.Simulation
 
         /// <summary>
         /// Builds desired tangential velocity and alignment rate for the passive ship orbit motor
-        /// when the hull is inside a planet orbit ring. Called from shared
+        /// when the ship pivot is inside a planet orbit ring. Called from shared
         /// <see cref="TitanOrbit.ECS.ShipPhysicsDriveLogic"/> before Unity Physics integrates position.
         /// Radial spring is stronger near the inner/outer lips so coasting ships stay in the zone;
         /// thrust still cancels this motor entirely (player can always leave).
@@ -391,10 +290,6 @@ namespace TitanOrbit.Simulation
         /// <param name="mapHeight">Toroidal map height from <c>MapStateSingleton</c>.</param>
         /// <param name="desiredVelocity">Clockwise tangential velocity plus radial spring toward ring centerline (stronger at the lips).</param>
         /// <param name="alignRate">Lerp rate toward desired velocity (1/s), scaled by gravity, edge capture, and 1/sqrt(mass).</param>
-        /// <param name="hullCenter">Covering-collider world center (same as pivot when unused).</param>
-        /// <param name="hullHalfExtents">Covering-collider XZ half-extents. Zero = disk test at <paramref name="shipPos"/>.</param>
-        /// <param name="hullYaw">Covering-collider yaw around Y (radians).</param>
-        /// <param name="hullRadius">Disk radius around <paramref name="shipPos"/> when the box is unused.</param>
         public static void BuildOrbitMotorParams(
             float3 shipPos,
             float3 planetPos,
@@ -404,11 +299,7 @@ namespace TitanOrbit.Simulation
             float mapWidth,
             float mapHeight,
             out float3 desiredVelocity,
-            out float alignRate,
-            float3 hullCenter,
-            float2 hullHalfExtents,
-            float hullYaw,
-            float hullRadius)
+            out float alignRate)
         {
             desiredVelocity = float3.zero;
             alignRate = 0f;
@@ -420,9 +311,7 @@ namespace TitanOrbit.Simulation
                 return;
 
             GetRingRadiiWorld(planetSize, planetLevel, out float innerWorld, out float outerWorld, out float centerWorld);
-            if (!HullOverlapsOrbitRing(
-                    planetPos, innerWorld, outerWorld, mapWidth, mapHeight,
-                    shipPos, hullRadius, hullCenter, hullHalfExtents, hullYaw))
+            if (!IsInOrbitRing(dist, innerWorld, outerWorld))
                 return;
 
             // --- Clockwise tangent from shortest planet→ship offset ---
@@ -444,10 +333,6 @@ namespace TitanOrbit.Simulation
             // Tangential ring speed is unchanged — only the radial (in/out) component is corrected.
             float radiusError = dist - centerWorld;
             float halfThickness = math.max(0.01f, (outerWorld - innerWorld) * 0.5f);
-            // Hull-overlap can start while the pivot is still outside the visual band.
-            // Cap the spring at lip strength so a long hull is not yanked from a wing tip.
-            if (!IsInOrbitRing(dist, innerWorld, outerWorld))
-                radiusError = math.sign(radiusError) * halfThickness;
             // 0 on the centerline, 1 at either lip of the visual annulus.
             float edgeT = math.saturate(math.abs(radiusError) / halfThickness);
             float edgeTSq = edgeT * edgeT;

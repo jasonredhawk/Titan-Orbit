@@ -1189,7 +1189,11 @@ namespace TitanOrbit.UI
         /// pool for this hull: regular-family maxes on L1–L6 nodes, MEGA catalog maxes on L7.
         /// Hover tips use the same pool for RANK 1.
         /// </summary>
-        public void ApplyPowerBreakdown(ShipFamilyPowerScoreBreakdown breakdown, in ShipPowerBarStatMaxes globalMaxes)
+        /// <param name="chassisId">Optional hull id so the hover card can mark this slot as RANK 1.</param>
+        public void ApplyPowerBreakdown(
+            ShipFamilyPowerScoreBreakdown breakdown,
+            in ShipPowerBarStatMaxes globalMaxes,
+            string chassisId = null)
         {
             // --- Apply changes ---
             if (powerBar == null)
@@ -1202,8 +1206,8 @@ namespace TitanOrbit.UI
 
             float track = PowerBarTrackWidth > 0.01f ? PowerBarTrackWidth : NodeButtonWidth;
             // MEGA cards use the MEGA catalog maxes — RANK 1 must come from that same pool.
-            bool megaPool = ShipFamilyPowerBarNorm.UsesMegaPowerBarPool(Level);
-            powerBar.ApplyBreakdown(breakdown, in globalMaxes, track, megaPool);
+            bool megaPool = ShipFamilyPowerBarNorm.UsesMegaPowerBarPool(Level, chassisId);
+            powerBar.ApplyBreakdown(breakdown, in globalMaxes, track, megaPool, chassisId);
             if (_powerBarLe != null)
             {
                 _powerBarLe.minWidth = 0f;

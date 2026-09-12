@@ -307,15 +307,17 @@ namespace TitanOrbit.UI
         /// Called when a tree node or store tile paints its colourful stats bar.
         /// </summary>
         /// <param name="megaPool">True when <paramref name="globalMaxes"/> came from the MEGA catalog (RANK 1 must match).</param>
+        /// <param name="chassisId">Optional hull id so RANK 1 can say "this hull" on the hover card.</param>
         public void ApplyBreakdown(
             ShipFamilyPowerScoreBreakdown breakdown,
             in ShipPowerBarStatMaxes globalMaxes,
             float trackWidth,
-            bool megaPool = false)
+            bool megaPool = false,
+            string chassisId = null)
         {
             EnsureSlotLayers();
-            // Hover tips must use this paint's breakdown and pool (regular vs MEGA).
-            BindHoverContext(breakdown, in globalMaxes, megaPool, chassisId: null);
+            // Hover tips must use this paint's breakdown, pool (regular vs MEGA), and hull id.
+            BindHoverContext(breakdown, in globalMaxes, megaPool, chassisId);
             TrackWidth = Mathf.Max(0f, trackWidth);
             float nodeW = TrackWidth > 0.01f ? TrackWidth : 100f;
             float scaledBarHeight = barHeight * _heightScale;
@@ -847,6 +849,8 @@ namespace TitanOrbit.UI
         /// <summary>
         /// Adds a transparent, layout-ignored overlay that is taller than the 10px bar
         /// so the tiny stacked lanes are actually hoverable. Click/drag still reach the card.
+        /// Lives on the dark PowerBarTrack when that tray exists — the track has a stable
+        /// height, while the colourful row can be 0px for one layout frame.
         /// </summary>
         void EnsureHoverRelay()
         {
@@ -856,12 +860,22 @@ namespace TitanOrbit.UI
                 return;
             }
 
-            Transform existing = transform.Find("HoverHit");
+            // --- Hit parent ---
+            // [TITAN-ORBIT] Tree cards wrap this row in PowerBarTrack. Hovering the tray
+            // (not only the 4px stacked fills) is what the player expects.
+            Transform hitParent = transform;
+            if (transform.parent != null && transform.parent.name == "PowerBarTrack")
+                hitParent = transform.parent;
+
+            Transform existing = hitParent.Find("HoverHit");
+            if (existing == null && hitParent != transform)
+                existing = transform.Find("HoverHit");
+
             GameObject hitGo = existing != null ? existing.gameObject : null;
             if (hitGo == null)
             {
                 hitGo = new GameObject("HoverHit");
-                hitGo.transform.SetParent(transform, false);
+                hitGo.transform.SetParent(hitParent, false);
                 RectTransform hitRt = hitGo.AddComponent<RectTransform>();
                 hitRt.anchorMin = Vector2.zero;
                 hitRt.anchorMax = Vector2.one;
@@ -871,8 +885,13 @@ namespace TitanOrbit.UI
                 var hitLe = hitGo.AddComponent<LayoutElement>();
                 hitLe.ignoreLayout = true;
                 var hitImg = hitGo.AddComponent<Image>();
+                // [UNITY] Alpha 0 still receives EventSystem hits unless alphaHitTestMinimumThreshold > 0.
                 hitImg.color = new Color(0f, 0f, 0f, 0f);
                 hitImg.raycastTarget = true;
+            }
+            else if (hitGo.transform.parent != hitParent)
+            {
+                hitGo.transform.SetParent(hitParent, false);
             }
 
             _hoverRelay = hitGo.GetComponent<ShipPowerBarStatHoverRelay>();

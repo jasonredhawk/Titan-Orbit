@@ -8,6 +8,8 @@ namespace TitanOrbit.UI
     /// <summary>
     /// Invisible padded hit target over a colourful power bar. Maps the pointer to
     /// one of the ten tiny ODEMC slots and opens <see cref="ShipPowerBarStatTooltip"/>.
+    /// The shared tip parents itself to this bar's Orbit Menu canvas — not the first
+    /// HUD canvas in the scene — so the STAT TELEMETRY card draws above the dock.
     /// Forwards click and drag to the parent <see cref="Button"/> / <see cref="ScrollRect"/>
     /// so hovering a slot does not steal chassis purchase or list scroll.
     /// <para>

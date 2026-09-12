@@ -851,7 +851,8 @@ namespace TitanOrbit.UI
             // MEGA hulls fill against the armed MEGA catalog only.
             view.ApplyPowerBreakdown(
                 GetPowerBreakdownForTreeNode(view.Level, view.BranchIndex),
-                ShipFamilyPowerBarNorm.ResolveForTreeLevel(view.Level, maxes));
+                ShipFamilyPowerBarNorm.ResolveForTreeLevel(view.Level, maxes, chassisId),
+                chassisId);
             UnityEngine.Events.UnityAction click = () => OnUpgradeTreeNodeClicked(view.Level, view.BranchIndex);
             view.SetClickHandler(clickable ? click : null);
             view.SetPriceClickHandler(clickable ? click : null);
@@ -905,7 +906,8 @@ namespace TitanOrbit.UI
 
             view.ApplyPowerBreakdown(
                 GetPowerBreakdownForTreeNode(level, branch),
-                ShipFamilyPowerBarNorm.ResolveForTreeLevel(level, maxes));
+                ShipFamilyPowerBarNorm.ResolveForTreeLevel(level, maxes, chassisId),
+                chassisId);
 
             UnityEngine.Events.UnityAction click = () => OnUpgradeTreeNodeClicked(level, branch);
             view.SetClickHandler(clickable ? click : null);
@@ -1040,7 +1042,8 @@ namespace TitanOrbit.UI
             // Sidebar "You" card uses the MEGA pool when this hull is a catalog MEGA.
             view.ApplyPowerBreakdown(
                 GetCurrentShipPowerBreakdown(),
-                ShipFamilyPowerBarNorm.ResolveForTreeLevel(ShipLevel, maxes));
+                ShipFamilyPowerBarNorm.ResolveForTreeLevel(ShipLevel, maxes, currentChassisId),
+                currentChassisId);
         }
 
         /// <summary>

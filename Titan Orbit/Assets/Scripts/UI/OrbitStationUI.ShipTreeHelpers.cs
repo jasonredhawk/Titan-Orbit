@@ -265,8 +265,9 @@ namespace TitanOrbit.UI
                 isNextChoice = _shipTreeNextTargets.Contains(view.BranchIndex);
             }
 
-            bool ladderOk = !string.IsNullOrEmpty(
-                CardShopSystem.Instance.GetChassisIdForUpgradeLadderSlot(currentShip, storePlanet.PlanetId, view.Level, view.BranchIndex));
+            string viewChassisId = CardShopSystem.Instance.GetChassisIdForUpgradeLadderSlot(
+                currentShip, storePlanet.PlanetId, view.Level, view.BranchIndex);
+            bool ladderOk = !string.IsNullOrEmpty(viewChassisId);
             bool canApplyPurchase = ladderOk || (view.Node != null && view.Node.shipData != null);
             bool canSwapHull = isCurrent && !tierBlockedByHome
                 && CardShopSystem.Instance.CanSwapShipAtSameTreeSlot(currentShip, storePlanet, view.Level, view.BranchIndex, out _);
@@ -329,7 +330,8 @@ namespace TitanOrbit.UI
             // ceilings would shrink regular bars and flatten every MEGA bar to full.
             view.ApplyPowerBreakdown(
                 GetPowerBreakdownForTreeNode(view.Level, view.BranchIndex),
-                ShipFamilyPowerBarNorm.ResolveForTreeLevel(view.Level, maxes));
+                ShipFamilyPowerBarNorm.ResolveForTreeLevel(view.Level, maxes, viewChassisId),
+                viewChassisId);
         }
 
         private void PopulateTreeNodeDebug(ShipUpgradeTreeNodeUI view, ShipPowerBarStatMaxes maxes)
@@ -379,9 +381,14 @@ namespace TitanOrbit.UI
             else
                 view.SetPrice("Free");
 
+            string debugChassisId = storePlanet != null
+                ? CardShopSystem.Instance.GetChassisIdForUpgradeLadderSlot(
+                    currentShip, storePlanet.PlanetId, nodeLevel, nodeBranch)
+                : null;
             view.ApplyPowerBreakdown(
                 GetPowerBreakdownForTreeNode(view.Level, view.BranchIndex),
-                ShipFamilyPowerBarNorm.ResolveForTreeLevel(view.Level, maxes));
+                ShipFamilyPowerBarNorm.ResolveForTreeLevel(view.Level, maxes, debugChassisId),
+                debugChassisId);
             view.SetPriceClickHandler(clickable ? () => OnUpgradeTreeNodeClicked(nodeLevel, nodeBranch) : null);
             if (megaOccupied)
                 view.SetOwnedOccupantStyle();
@@ -416,7 +423,8 @@ namespace TitanOrbit.UI
             // Sidebar "You" card uses the same pool as the tree node for this hull.
             view.ApplyPowerBreakdown(
                 GetCurrentShipPowerBreakdown(),
-                ShipFamilyPowerBarNorm.ResolveForTreeLevel(currentLevel, maxes, currentShip.CurrentChassisId));
+                ShipFamilyPowerBarNorm.ResolveForTreeLevel(currentLevel, maxes, currentShip.CurrentChassisId),
+                currentShip.CurrentChassisId);
         }
 
         private void UpdateShipTreeHintText()

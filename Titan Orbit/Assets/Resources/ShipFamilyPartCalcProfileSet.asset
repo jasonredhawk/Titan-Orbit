@@ -870,6 +870,22 @@ MonoBehaviour:
     seenInFamilies: SpaceExcalibur
     notes: 
     includeInPopulate: 1
+  - discoveredName: SpaceExcalibur_Engine
+    partType: Engine
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: SpaceExcalibur
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: SpaceExcalibur_Engine_Grill
+    partType: Engine
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: SpaceExcalibur
+    notes: 
+    includeInPopulate: 1
   - discoveredName: SpaceExcalibur_Hatch
     partType: Hull
     contributesAbilityStats: 1
@@ -1473,7 +1489,7 @@ MonoBehaviour:
       energyRegen: 3
       energyRegenPerExtraLevel: 1
       moveSpeed: 6
-      moveSpeedPerExtraLevel: 0.1
+      moveSpeedPerExtraLevel: 0.2
       accelerationCap: 0
       accelerationCapPerExtraLevel: 0
       extraSpeedPercent: 0.25
@@ -1510,7 +1526,7 @@ MonoBehaviour:
       energyRegen: 1
       energyRegenPerExtraLevel: 0.33333334
       moveSpeed: 2
-      moveSpeedPerExtraLevel: 0.05
+      moveSpeedPerExtraLevel: 0.1
       accelerationCap: 0
       accelerationCapPerExtraLevel: 0
       extraSpeedPercent: 0

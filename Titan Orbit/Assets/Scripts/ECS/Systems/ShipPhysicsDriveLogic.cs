@@ -18,7 +18,7 @@ namespace TitanOrbit.ECS
     /// <see cref="PhysicsVelocity.Linear"/> (the solver bounce). It must not snap that
     /// inherited speed back to MaxSpeed — that erased rams and felt scripted.
     /// Unity Physics then integrates position and resolves hull contacts.
-    /// [TITAN-ORBIT] Also detects planet orbit rings (toroidal hull overlap, not only the pivot),
+    /// [TITAN-ORBIT] Also detects planet orbit rings (ship pivot vs the annulus, toroidal),
     /// blends passive orbit
     /// velocity when coasting, writes <see cref="ShipOrbitState"/> for people-transport dwell /
     /// HUD, latches friendly-triangle speed
@@ -110,11 +110,7 @@ namespace TitanOrbit.ECS
         /// True while <see cref="MegaShipState.IsMega"/>. Disables overdrive and treats
         /// Shift as a heading lock instead of a speed burst.
         /// </param>
-        /// <param name="hasHullCollider">True when <paramref name="hullCollider"/> is on this ship.</param>
-        /// <param name="hullCollider">
-        /// Live covering box. Orbit capture starts when any part of this collider
-        /// overlaps the annulus, not only when the pivot enters.
-        /// </param>
+        /// <param name="shipPhysicsRadius">Live PhysX covering radius for moon-dock attach only.</param>
         public static void Step(
             in ShipInput input,
             in ShipMotorConfig motor,
@@ -144,9 +140,7 @@ namespace TitanOrbit.ECS
             float minTurn,
             bool skipMassTax = false,
             bool isMegaShip = false,
-            float shipPhysicsRadius = -1f,
-            bool hasHullCollider = false,
-            in PhysicsCollider hullCollider = default)
+            float shipPhysicsRadius = -1f)
         {
             // --- Guard: fixed-step dt only ---
             if (dt <= 0f)
@@ -295,28 +289,13 @@ namespace TitanOrbit.ECS
             // [TITAN-ORBIT] PeopleTransportDispatchSystem dwells on InOrbitRing; without this write,
             // load/unload never starts. Thrust cancels the passive orbit motor only — Fire does
             // not (weapons are locked in the ring by BulletSimulationSystem). Ring flag stays
-            // true while any part of the covering collider overlaps the annulus
-            // (tractor / HUD / dwell can still see it).
+            // true only while the ship pivot sits inside the annulus (tractor / HUD / dwell).
             // While moon-docking (approach / land), skip the orbit motor so radial pull cannot yank
             // the hull out of the dock sphere mid-landing. Detect the friendly zone from snapshots
             // this tick — MoonPlanetId is written later by ShipMoonDockSystem, so waiting on it
             // left one (or more) orbit/brake ticks that shoved the ship off the pad.
-            float3 hullCenter = transform.Position;
-            float2 hullHalfExtents = float2.zero;
-            float hullYaw = 0f;
-            if (hasHullCollider)
-                TryGetHullOrbitBox(hullCollider, transform, out hullCenter, out hullHalfExtents, out hullYaw);
-
-            float orbitHullRadius = shipPhysicsRadius > 0f
-                ? shipPhysicsRadius
-                : BodyCollisionMath.GetShipHullRadiusWorld(transform.Scale);
-
             bool inOrbitRing = TryFindOrbitPlanet(
                 transform.Position,
-                hullCenter,
-                hullHalfExtents,
-                hullYaw,
-                orbitHullRadius,
                 mapW,
                 mapH,
                 in planets,
@@ -433,11 +412,7 @@ namespace TitanOrbit.ECS
                     mapW,
                     mapH,
                     out orbitDesiredVel,
-                    out float alignRate,
-                    hullCenter,
-                    hullHalfExtents,
-                    hullYaw,
-                    orbitHullRadius);
+                    out float alignRate);
                 orbitDesiredVel.y = 0f;
                 float t = math.saturate(alignRate * dt);
                 vel = math.lerp(vel, orbitDesiredVel, t);
@@ -707,16 +682,11 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// Finds the nearest planet whose orbit ring overlaps the ship collider (toroidal).
-        /// Covering box when half-extents are set; otherwise a disk around the pivot.
-        /// When multiple rings overlap, the closer planet (pivot distance) wins.
+        /// Finds the nearest planet whose orbit ring contains the ship pivot (toroidal).
+        /// When multiple rings contain the pivot, the closer planet wins.
         /// </summary>
         static bool TryFindOrbitPlanet(
             in float3 shipPos,
-            in float3 hullCenter,
-            in float2 hullHalfExtents,
-            float hullYaw,
-            float hullRadius,
             float mapW,
             float mapH,
             in NativeArray<PlanetMotorSnapshot> planets,
@@ -737,14 +707,12 @@ namespace TitanOrbit.ECS
                 float planetSize = math.max(0.5f, planetXform.Scale);
                 PlanetOrbitMath.GetRingRadiiWorld(planetSize, state.PlanetLevel, out float inner, out float outer, out _);
 
-                // [TITAN-ORBIT] Any part of the covering collider in the annulus — not only the pivot.
-                if (!PlanetOrbitMath.HullOverlapsOrbitRing(
-                        planetXform.Position, inner, outer, mapW, mapH,
-                        shipPos, hullRadius, hullCenter, hullHalfExtents, hullYaw))
+                // [TITAN-ORBIT] Pivot vs annulus — a wing in the band is not enough.
+                float dist = ToroidalMapEcs.ToroidalDistance(shipPos, planetXform.Position, mapW, mapH);
+                if (!PlanetOrbitMath.IsInOrbitRing(dist, inner, outer))
                     continue;
 
                 // [TITAN-ORBIT] Toroidal distance — Euclidean would fail across map seams.
-                float dist = ToroidalMapEcs.ToroidalDistance(shipPos, planetXform.Position, mapW, mapH);
                 if (dist >= bestDist)
                     continue;
 
@@ -1061,8 +1029,8 @@ namespace TitanOrbit.ECS
 
         /// <summary>
         /// Live covering collider as a yaw-aligned XZ box (presentation extents ×
-        /// <c>LocalTransform.Scale</c>). Used so orbit capture starts when a wing
-        /// reaches the ring, not only when the pivot does.
+        /// <c>LocalTransform.Scale</c>). Used for moon-dock attach radius and gem
+        /// pickup — planet orbit capture uses the ship pivot, not this box.
         /// </summary>
         public static bool TryGetHullOrbitBox(
             in PhysicsCollider collider,
