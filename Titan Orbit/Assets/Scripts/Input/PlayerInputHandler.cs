@@ -8,7 +8,8 @@ namespace TitanOrbit.Input
     /// <summary>
     /// [UNITY] Cross-platform player input — New Input System actions plus keyboard/mouse fallbacks.
     /// Feeds ShipInputBridge with move, shoot, aim world position, ALT (focused
-    /// rocket or mine), and toggle flags (space brakes, gem expel).
+    /// rocket or mine), and toggle flags (space brakes, gem expel). Hold-S is
+    /// sampled as <see cref="CommsHeld"/> for the keyword comms matrix.
     /// Client only — server has no player input handler.
     ///
     /// [TITAN-ORBIT] Left mouse is both "fire weapon" and "click UI". When the pointer sits over a
@@ -135,6 +136,22 @@ namespace TitanOrbit.Input
         /// Desktop only; mobile has no overdrive control yet.
         /// </summary>
         public bool OverdriveHeld => overdriveHeld;
+
+        /// <summary>
+        /// [TITAN-ORBIT] S held — open the keyword comms matrix. Gameplay never reads WASD
+        /// for thrust (RMB does that), so S is free. Desktop only; mobile has no mapping yet.
+        /// <c>ShipCommsPanel</c> owns show/send; this property is the raw key sample.
+        /// </summary>
+        public bool CommsHeld
+        {
+            get
+            {
+                if (Application.isMobilePlatform)
+                    return false;
+                return TryResolveKeyboard(out var keyboard) && keyboard.sKey.isPressed;
+            }
+        }
+
         public bool IsMobile => Application.isMobilePlatform;
 
         /// <summary>WASD / Move action planar direction (x = world X, y = world Z).</summary>

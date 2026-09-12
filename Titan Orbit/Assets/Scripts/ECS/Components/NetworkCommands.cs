@@ -697,4 +697,59 @@ namespace TitanOrbit.ECS
 
     /// <summary>Server connection tag: in-flight people-transport SpawnRpcs dumped once.</summary>
     public struct PeopleTransportCatchUpSent : IComponentData { }
+
+    /// <summary>
+    /// [NETCODE] Client → server: hold-S comms sentence. Payload is keyword <b>indices</b>
+    /// into <c>ShipCommsKeywordCatalog</c> — never strings. The server reads the owner from
+    /// <see cref="ReceiveRpcCommandRequest.SourceConnection"/> (this struct has no NetworkId
+    /// so a client cannot spoof another ship). Adding fields changes RPC layout: client and
+    /// Linux headless must rebuild together.
+    /// </summary>
+    public struct ShipCommsCommand : IRpcCommand
+    {
+        /// <summary>How many chips are live (1–3). Slots after this are ignored.</summary>
+        public byte Count;
+
+        /// <summary>First keyword index. Required when <see cref="Count"/> ≥ 1.</summary>
+        public byte K0;
+
+        /// <summary>Second keyword index. Ignored when <see cref="Count"/> is 1.</summary>
+        public byte K1;
+
+        /// <summary>Third keyword index. Ignored when <see cref="Count"/> is under 3.</summary>
+        public byte K2;
+    }
+
+    /// <summary>
+    /// [NETCODE] Server → all clients: one player's 1–3 keyword callout. Presentation-only
+    /// on the client (<c>ShipCommsInbox</c> → chips above the hull). Not a ghost field —
+    /// the sentence is ephemeral and must not pay snapshot bandwidth every tick.
+    /// </summary>
+    public struct ShipCommsRpc : IRpcCommand
+    {
+        /// <summary>[NETCODE] Speaker's GhostOwner.NetworkId (from the connection, not the client).</summary>
+        public int NetworkId;
+
+        /// <summary>How many chips are live (1–3).</summary>
+        public byte Count;
+
+        /// <summary>First keyword index. See <see cref="ShipCommsCommand.K0"/>.</summary>
+        public byte K0;
+
+        /// <summary>Second keyword index. See <see cref="ShipCommsCommand.K1"/>.</summary>
+        public byte K1;
+
+        /// <summary>Third keyword index. See <see cref="ShipCommsCommand.K2"/>.</summary>
+        public byte K2;
+    }
+
+    /// <summary>
+    /// [NETCODE] Per-connection last successful comms send time. Written by
+    /// <c>ShipCommsServerSystem</c> so a client cannot flood the match. Not a ghost.
+    /// </summary>
+    public struct ShipCommsCooldown : IComponentData
+    {
+        /// <summary>[ECS/DOTS] <c>SystemAPI.Time.ElapsedTime</c> of the last accepted send.</summary>
+        public double LastSendElapsed;
+    }
 }

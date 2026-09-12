@@ -135,6 +135,8 @@ namespace TitanOrbit.Game
 
             if (MoonOrbitClientState.IsOrbitMenuVisible)
                 return;
+            if (ShipCommsClientState.IsOpen)
+                return;
 
             // --- Turret possession: Fire drives the pad, not ship mounts ---
             // [TITAN-ORBIT] Ship anticipation would fly hull-forward and steal PD SpawnRpc adopt.

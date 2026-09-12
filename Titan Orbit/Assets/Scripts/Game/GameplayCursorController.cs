@@ -240,6 +240,8 @@ namespace TitanOrbit.Game
                 return true;
             if (MoonOrbitClientState.IsOrbitMenuVisible)
                 return true;
+            if (ShipCommsClientState.IsOpen)
+                return true;
             if (DeathScreenController.IsShowing)
                 return true;
             if (MatchEndScreenController.IsShowing)

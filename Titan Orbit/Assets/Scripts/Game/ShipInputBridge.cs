@@ -181,8 +181,12 @@ namespace TitanOrbit.Game
             bool thrust = _input.MoveForwardPressed;
 
             // [NETCODE] InputEvent.Set() marks fire as pressed this tick (one-shot for ghost input).
+            // [TITAN-ORBIT] Orbit menu and the hold-S comms matrix both use LMB on HUD tiles —
+            // those clicks must not also shoot.
             var fire = new InputEvent();
-            if (_input.ShootPressed && !MoonOrbitClientState.IsOrbitMenuVisible)
+            if (_input.ShootPressed
+                && !MoonOrbitClientState.IsOrbitMenuVisible
+                && !ShipCommsClientState.IsOpen)
                 fire.Set();
 
             // [TITAN-ORBIT] B / CycleBullet — latch + Set; ShipPendingInput.Set merges latch again.
