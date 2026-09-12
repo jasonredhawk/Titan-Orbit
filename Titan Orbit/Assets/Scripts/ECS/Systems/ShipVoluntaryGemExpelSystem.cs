@@ -61,6 +61,7 @@ namespace TitanOrbit.ECS
                 bool canDump = wantExpel
                     && !shipState.ValueRO.IsDead
                     && !shipState.ValueRO.AwaitingTeamSelection
+                    && !ShipImpactSpinApply.IsWrecked(state.EntityManager, entity, now)
                     && shipState.ValueRO.CurrentGems >= GemEconomyConstants.MinGemSpawnValue;
 
                 if (canDump &&

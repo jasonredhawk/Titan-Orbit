@@ -30,6 +30,8 @@ namespace TitanOrbit.ECS
         public Entity Other;
         public float3 NormalShipFromOther;
         public float ClosingSpeed;
+        /// <summary>XZ offset from ship center to the contact (planar lever for yaw).</summary>
+        public float2 ContactOffsetShipXZ;
         public byte Kind;
     }
 }

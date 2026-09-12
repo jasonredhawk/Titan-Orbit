@@ -320,7 +320,8 @@ namespace TitanOrbit.ECS
                          .WithAll<ShipTag>()
                          .WithEntityAccess())
             {
-                if (shipState.ValueRO.IsDead)
+                if (shipState.ValueRO.IsDead ||
+                    ShipImpactSpinApply.IsWrecked(state.EntityManager, entity, SystemAPI.Time.ElapsedTime))
                     continue;
 
                 // --- Turret possession: Fire drives the pad, not ship mounts ---
@@ -1363,8 +1364,10 @@ namespace TitanOrbit.ECS
                         CardEffectQuery.ScaleIncomingDamage(state.EntityManager, bestEntity, hitDamage),
                         ship.Team,
                         damageTeam,
-                        gemExpulsionPerHullDamage: ShipDamageLogic.ExcessDamageGemExpulsionPerHullDamage,
-                        isImmune: moonImmune);
+                        gemExpulsionPerHullDamage: ShipImpactSpinSettingsCache.ResolveOrDefault().LeftoverFirepowerGemRate,
+                        isImmune: moonImmune,
+                        isWrecked: ShipImpactSpinApply.IsWrecked(state.EntityManager, bestEntity, serverElapsed),
+                        minGemSpawn: GemEconomyConstants.MinGemSpawnValue);
 
                     ship.Health = health;
                     ship.CurrentGems = gems;
@@ -1381,7 +1384,7 @@ namespace TitanOrbit.ECS
                     // --- Kill attribution (last damager for ShipMatchStats.Kills) ---
                     // [TITAN-ORBIT] Stamp whenever real damage landed so ShipDeathRecordingSystem
                     // can credit the bullet owner even if death happens on a later gem-spill hit.
-                    if (result.AppliedHullDamage || result.GemsToExpel > 0.0001f || result.BecameDead)
+                    if (result.AppliedHullDamage || result.GemsToExpel > 0.0001f || result.BecameDead || result.BecameWrecked)
                     {
                         float2 impulse = new float2(b.Velocity.x, b.Velocity.z);
                         ShipMatchStatsLogic.SetLastDamager(
@@ -1391,6 +1394,21 @@ namespace TitanOrbit.ECS
                             (float)serverElapsed,
                             impulse,
                             hitDamage);
+                    }
+
+                    if (state.EntityManager.HasComponent<LocalTransform>(bestEntity))
+                    {
+                        float3 wreckPos = state.EntityManager.GetComponentData<LocalTransform>(bestEntity).Position;
+                        ShipImpactSpinApply.AfterDamage(
+                            state.EntityManager,
+                            bestEntity,
+                            in result,
+                            hitPoint,
+                            wreckPos,
+                            new float2(b.Velocity.x, b.Velocity.z),
+                            mapW,
+                            mapH,
+                            serverElapsed);
                     }
 
                     if (result.GemsToExpel > 0.0001f &&

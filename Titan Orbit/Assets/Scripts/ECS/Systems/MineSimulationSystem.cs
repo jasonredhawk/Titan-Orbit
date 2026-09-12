@@ -263,8 +263,10 @@ namespace TitanOrbit.ECS
                     ref health, ref gems, ref isDead,
                     CardEffectQuery.ScaleIncomingDamage(em, contactShip, mine.Damage),
                     ship.Team, damageTeam,
-                    gemExpulsionPerHullDamage: ShipDamageLogic.ExcessDamageGemExpulsionPerHullDamage,
-                    isImmune: moonImmune);
+                    gemExpulsionPerHullDamage: ShipImpactSpinSettingsCache.ResolveOrDefault().LeftoverFirepowerGemRate,
+                    isImmune: moonImmune,
+                    isWrecked: ShipImpactSpinApply.IsWrecked(em, contactShip, serverElapsed),
+                    minGemSpawn: GemEconomyConstants.MinGemSpawnValue);
                 ship.Health = health;
                 ship.CurrentGems = gems;
                 ship.IsDead = isDead;
@@ -277,27 +279,30 @@ namespace TitanOrbit.ECS
                     em.SetComponentData(contactShip, vitals);
                 }
 
-                if (result.AppliedHullDamage || result.GemsToExpel > 0.0001f || result.BecameDead)
+                float3 contactShipPos = em.HasComponent<LocalTransform>(contactShip)
+                    ? em.GetComponentData<LocalTransform>(contactShip).Position
+                    : hitPoint;
+                float2 mineImpulse = float2.zero;
+                if (ToroidalMapEcs.IsValidMapSize(mapW, mapH))
                 {
-                    float2 mineImpulse = float2.zero;
-                    if (em.HasComponent<LocalTransform>(contactShip))
-                    {
-                        float3 shipPos = em.GetComponentData<LocalTransform>(contactShip).Position;
-                        if (ToroidalMapEcs.IsValidMapSize(mapW, mapH))
-                        {
-                            float3 off = ToroidalMapEcs.ShortestOffsetXZ(hitPoint, shipPos, mapW, mapH);
-                            mineImpulse = new float2(off.x, off.z);
-                        }
-                        else
-                        {
-                            mineImpulse = new float2(shipPos.x - hitPoint.x, shipPos.z - hitPoint.z);
-                        }
-                    }
+                    float3 off = ToroidalMapEcs.ShortestOffsetXZ(hitPoint, contactShipPos, mapW, mapH);
+                    mineImpulse = new float2(off.x, off.z);
+                }
+                else
+                {
+                    mineImpulse = new float2(contactShipPos.x - hitPoint.x, contactShipPos.z - hitPoint.z);
+                }
 
+                if (result.AppliedHullDamage || result.GemsToExpel > 0.0001f || result.BecameDead || result.BecameWrecked)
+                {
                     ShipMatchStatsLogic.SetLastDamager(
                         em, contactShip, mine.OwnerNetworkId, (float)serverElapsed,
                         mineImpulse, mine.Damage);
                 }
+
+                ShipImpactSpinApply.AfterDamage(
+                    em, contactShip, in result, hitPoint, contactShipPos, mineImpulse,
+                    mapW, mapH, serverElapsed);
 
                 if (result.GemsToExpel > 0.0001f &&
                     em.HasComponent<LocalTransform>(contactShip) &&

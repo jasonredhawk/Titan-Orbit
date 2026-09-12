@@ -1,5 +1,6 @@
 using TitanOrbit.Data;
 using TitanOrbit.Generation;
+using TitanOrbit.Simulation;
 using Unity.Collections;
 using Unity.Entities;
 using Unity.Mathematics;
@@ -75,6 +76,7 @@ namespace TitanOrbit.ECS
 
             // --- Subtractive mass tax weights (Burst job cannot read ScriptableObject) ---
             ShipCargoMobilitySettings mobility = ShipCargoMobilitySettingsCache.ResolveOrDefault();
+            var spinTuning = ShipImpactSpinLogic.FromSettings(ShipImpactSpinSettingsCache.ResolveOrDefault());
 
             // [NETCODE] Fixed-step dt from PredictedFixedStepSimulationSystemGroup — not frame delta.
             var job = new ShipPhysicsDriveJob
@@ -95,6 +97,7 @@ namespace TitanOrbit.ECS
                 MinSpeed = mobility.minSpeed,
                 MinAccel = mobility.minAccel,
                 MinTurn = mobility.minTurn,
+                SpinTuning = spinTuning,
                 PhysicsColliders = SystemAPI.GetComponentLookup<PhysicsCollider>(true),
             };
             state.Dependency = job.ScheduleParallel(state.Dependency);

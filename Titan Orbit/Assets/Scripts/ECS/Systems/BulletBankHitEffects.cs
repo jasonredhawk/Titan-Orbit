@@ -554,7 +554,11 @@ namespace TitanOrbit.ECS
                 var result = ShipDamageLogic.ApplyHullAndGemDamage(
                     ref health, ref gems, ref isDead,
                     CardEffectQuery.ScaleIncomingDamage(em, shipEntity, splash),
-                    ship.Team, damageTeam, gemExpulsionPerHullDamage, isImmune: moonImmune);
+                    ship.Team, damageTeam,
+                    gemExpulsionPerHullDamage,
+                    isImmune: moonImmune,
+                    isWrecked: ShipImpactSpinApply.IsWrecked(em, shipEntity, serverElapsed),
+                    minGemSpawn: GemEconomyConstants.MinGemSpawnValue);
                 ship.Health = health;
                 ship.CurrentGems = gems;
                 ship.IsDead = isDead;
@@ -567,13 +571,17 @@ namespace TitanOrbit.ECS
                     em.SetComponentData(shipEntity, vitals);
                 }
 
-                if (result.AppliedHullDamage || result.GemsToExpel > 0.0001f || result.BecameDead)
+                float3 off = ToroidalMapEcs.ShortestOffsetXZ(center, pos, mapW, mapH);
+                if (result.AppliedHullDamage || result.GemsToExpel > 0.0001f || result.BecameDead || result.BecameWrecked)
                 {
-                    float3 off = ToroidalMapEcs.ShortestOffsetXZ(center, pos, mapW, mapH);
                     ShipMatchStatsLogic.SetLastDamager(
                         em, shipEntity, ownerNet, (float)serverElapsed,
                         new float2(off.x, off.z), splash);
                 }
+
+                ShipImpactSpinApply.AfterDamage(
+                    em, shipEntity, in result, center, pos, new float2(off.x, off.z),
+                    mapW, mapH, serverElapsed);
 
                 if (result.GemsToExpel > 0.0001f && gemPrefab != Entity.Null)
                 {

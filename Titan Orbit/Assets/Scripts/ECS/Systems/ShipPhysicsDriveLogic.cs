@@ -138,9 +138,11 @@ namespace TitanOrbit.ECS
             float minSpeed,
             float minAccel,
             float minTurn,
-            bool skipMassTax = false,
-            bool isMegaShip = false,
-            float shipPhysicsRadius = -1f)
+            bool skipMassTax,
+            bool isMegaShip,
+            float shipPhysicsRadius,
+            ref ShipImpactSpinState spin,
+            in ShipImpactSpinTuning spinTuning)
         {
             // --- Guard: fixed-step dt only ---
             if (dt <= 0f)
@@ -150,6 +152,27 @@ namespace TitanOrbit.ECS
             if (shipState.IsDead || shipState.AwaitingTeamSelection)
             {
                 physicsVelocity = PhysicsVelocity.Zero;
+                physicsDamping = default;
+                orbitState = default;
+                ClearTerritoryBoostLatch(ref territoryLatch);
+                shipState.OverdriveLockout = false;
+                spin.YawRateDegPerSec = 0f;
+                spin.WreckExpiresAt = 0f;
+                return;
+            }
+
+            // --- Wreck: 0 HP with cargo still aboard — coast + spin, no aim / thrust / orbit ---
+            bool wrecked = shipState.Health <= ShipDamageLogic.DeathThreshold
+                           || ShipImpactSpinLogic.IsWreckActive(spin.WreckExpiresAt, elapsedSeconds);
+            if (wrecked)
+            {
+                ShipImpactSpinLogic.IntegrateYaw(ref transform.Rotation, spin.YawRateDegPerSec, dt);
+                ShipImpactSpinLogic.DecayYawRate(
+                    ref spin.YawRateDegPerSec, spinTuning.WreckDecayHalfLifeSeconds, dt);
+                float3 wreckVel = physicsVelocity.Linear;
+                wreckVel.y = 0f;
+                physicsVelocity.Linear = wreckVel;
+                physicsVelocity.Angular = float3.zero;
                 physicsDamping = default;
                 orbitState = default;
                 ClearTerritoryBoostLatch(ref territoryLatch);
@@ -276,6 +299,11 @@ namespace TitanOrbit.ECS
 
             float rotationSpeed = taxed.RotationSpeed;
 
+            // --- Impact spin: integrate leftover yaw, then reduced aim recover ---
+            ShipImpactSpinLogic.IntegrateYaw(ref transform.Rotation, spin.YawRateDegPerSec, dt);
+            rotationSpeed *= ShipImpactSpinLogic.LivingRecoverScale(
+                spin.YawRateDegPerSec, spinTuning.LivingRecoverRefDegPerSec);
+
             // --- Yaw: dt-capped slerp toward aim (never snap to mouse in one frame) ---
             // [TITAN-ORBIT] MEGA + Shift: lock heading. Mouse still aims unoccupied
             // auto-guns (MegaShipAutoFireSystem); the hull keeps flying the last facing.
@@ -284,6 +312,9 @@ namespace TitanOrbit.ECS
                 AimWorldPoint(in transform.Position, in transform.Rotation, in input.AimPlanarDir, out float2 aimWorldXz);
                 TryRotateTowardAim(ref transform, in aimWorldXz, rotationSpeed, dt);
             }
+
+            ShipImpactSpinLogic.DecayYawRate(
+                ref spin.YawRateDegPerSec, spinTuning.DecayHalfLifeSeconds, dt);
 
             // --- Orbit ring detection (toroidal) ---
             // [TITAN-ORBIT] PeopleTransportDispatchSystem dwells on InOrbitRing; without this write,

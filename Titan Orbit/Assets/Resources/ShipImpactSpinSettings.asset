@@ -1,0 +1,30 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 37ca0097ac03c5a44b1d07e97dfb7c6a, type: 3}
+  m_Name: ShipImpactSpinSettings
+  m_EditorClassIdentifier: TitanOrbit.Data::TitanOrbit.Data.ShipImpactSpinSettings
+  MinGlancingSpeed: 1.25
+  MinClosingSpeed: 2
+  CollisionYawScale: 0.22
+  BulletYawScale: 0.18
+  CollisionClosingRef: 16
+  DamageRef: 28
+  HeadOnSpinMul: 0.08
+  FullHealthSpinMul: 0.16
+  ZeroHealthSpinMul: 1.85
+  RandomSpread: 0.4
+  MaxYawRateDegPerSec: 150
+  DecayHalfLifeSeconds: 0.4
+  WreckDecayHalfLifeSeconds: 1.1
+  LivingRecoverRefDegPerSec: 90
+  WreckMaxSeconds: 3
+  LeftoverFirepowerGemRate: 1

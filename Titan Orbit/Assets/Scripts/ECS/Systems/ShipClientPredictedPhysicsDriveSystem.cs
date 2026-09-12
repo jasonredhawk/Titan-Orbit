@@ -130,6 +130,7 @@ namespace TitanOrbit.ECS
 
             // --- Subtractive mass tax weights (must match server job) ---
             ShipCargoMobilitySettings mobility = ShipCargoMobilitySettingsCache.ResolveOrDefault();
+            var spinTuning = ShipImpactSpinLogic.FromSettings(ShipImpactSpinSettingsCache.ResolveOrDefault());
 
             var job = new ShipPhysicsDriveJob
             {
@@ -149,6 +150,7 @@ namespace TitanOrbit.ECS
                 MinSpeed = mobility.minSpeed,
                 MinAccel = mobility.minAccel,
                 MinTurn = mobility.minTurn,
+                SpinTuning = spinTuning,
                 PhysicsColliders = SystemAPI.GetComponentLookup<PhysicsCollider>(true),
             };
             state.Dependency = job.ScheduleParallel(state.Dependency);

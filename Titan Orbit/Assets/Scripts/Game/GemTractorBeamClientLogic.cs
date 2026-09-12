@@ -419,6 +419,8 @@ namespace TitanOrbit.Game
         {
             if (ship.IsDead || ship.AwaitingTeamSelection)
                 return false;
+            if (ship.Health <= ShipDamageLogic.DeathThreshold)
+                return false;
             if (ship.CurrentGems >= ship.GemCapacity - 0.001f)
                 return false;
             return true;

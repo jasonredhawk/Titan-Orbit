@@ -96,8 +96,10 @@ namespace TitanOrbit.ECS
                         CardEffectQuery.ScaleIncomingDamage(state.EntityManager, entity, damage),
                         ship.Team,
                         (TeamId)inst.SourceTeam,
-                        gemExpulsionPerHullDamage: ShipDamageLogic.ExcessDamageGemExpulsionPerHullDamage,
-                        isImmune: false);
+                        gemExpulsionPerHullDamage: ShipImpactSpinSettingsCache.ResolveOrDefault().LeftoverFirepowerGemRate,
+                        isImmune: false,
+                        isWrecked: ShipImpactSpinApply.IsWrecked(state.EntityManager, entity, elapsed),
+                        minGemSpawn: GemEconomyConstants.MinGemSpawnValue);
                     ship.Health = health;
                     ship.CurrentGems = gems;
                     ship.IsDead = isDead;
@@ -105,7 +107,7 @@ namespace TitanOrbit.ECS
                     if (result.AppliedHullDamage)
                         vitalsRw.ValueRW.LastHullDamageTime = elapsed;
 
-                    if (result.AppliedHullDamage || result.GemsToExpel > 0.0001f || result.BecameDead)
+                    if (result.AppliedHullDamage || result.GemsToExpel > 0.0001f || result.BecameDead || result.BecameWrecked)
                     {
                         float tickDamage = math.abs(result.HealthDelta);
                         if (tickDamage < 0.0001f)
@@ -124,7 +126,7 @@ namespace TitanOrbit.ECS
                             asteroidHealthAfter: -1f);
                     }
 
-                    if (result.AppliedHullDamage || result.GemsToExpel > 0.0001f || result.BecameDead)
+                    if (result.AppliedHullDamage || result.GemsToExpel > 0.0001f || result.BecameDead || result.BecameWrecked)
                     {
                         // Burn ticks have no clear direction — keep last impulse, credit damager.
                         ShipMatchStatsLogic.SetLastDamager(
@@ -133,6 +135,19 @@ namespace TitanOrbit.ECS
                             inst.SourceNetworkId,
                             (float)elapsed);
                     }
+
+                    float3 burnHit = bodyPos + inst.HitOffset;
+                    burnHit.y = 0f;
+                    ShipImpactSpinApply.AfterDamage(
+                        state.EntityManager,
+                        entity,
+                        in result,
+                        burnHit,
+                        bodyPos,
+                        new float2(inst.HitOffset.x, inst.HitOffset.z),
+                        0f,
+                        0f,
+                        elapsed);
 
                     if (result.GemsToExpel > 0.0001f && gemPrefab != Entity.Null)
                     {

@@ -55,6 +55,8 @@ namespace TitanOrbit.ECS
         public float MinAccel;
         public float MinTurn;
 
+        public ShipImpactSpinTuning SpinTuning;
+
         [ReadOnly] public ComponentLookup<PhysicsCollider> PhysicsColliders;
 
         /// <summary>
@@ -78,6 +80,7 @@ namespace TitanOrbit.ECS
             RefRO<ShipAsteroidContactState> asteroidContact,
             RefRO<ShipElectricShockState> electricShock,
             RefRO<MegaShipState> megaState,
+            RefRW<ShipImpactSpinState> spin,
             Entity entity)
         {
             // --- Stowed in planetary defense turret: freeze hull (server + predicted client) ---
@@ -129,7 +132,9 @@ namespace TitanOrbit.ECS
                 shipPhysicsRadius: PhysicsColliders.HasComponent(entity)
                     ? ShipPhysicsDriveLogic.MeasurePhysicsHullRadiusXZ(
                         PhysicsColliders[entity], transform.ValueRO)
-                    : -1f);
+                    : -1f,
+                spin: ref spin.ValueRW,
+                spinTuning: in SpinTuning);
         }
     }
 }

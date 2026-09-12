@@ -36,10 +36,13 @@ namespace TitanOrbit.ECS
                 if (ship.ValueRO.IsDead || ship.ValueRO.AwaitingTeamSelection)
                     continue;
 
+                bool wrecked = ShipImpactSpinApply.IsWrecked(state.EntityManager, entity, now);
+                if (wrecked)
+                    continue;
+
                 ref var s = ref ship.ValueRW;
 
-                // --- Death latch before regen ---
-                // Deposit / combat may leave Health=0 and Gems=0 without setting IsDead yet.
+                // --- Death latch before regen: hull AND gems empty ---
                 float health = s.Health;
                 float gems = s.CurrentGems;
                 bool isDead = s.IsDead;

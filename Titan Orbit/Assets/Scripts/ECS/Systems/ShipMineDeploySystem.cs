@@ -53,7 +53,8 @@ namespace TitanOrbit.ECS
             {
                 if (!input.ValueRO.PlaceMine.IsSet)
                     continue;
-                if (shipState.ValueRO.IsDead || shipState.ValueRO.AwaitingTeamSelection)
+                if (shipState.ValueRO.IsDead || shipState.ValueRO.AwaitingTeamSelection ||
+                    ShipImpactSpinApply.IsWrecked(state.EntityManager, entity, SystemAPI.Time.ElapsedTime))
                     continue;
 
                 // --- Possession / orbit gates (same as rockets) ---

@@ -75,6 +75,9 @@ namespace TitanOrbit.ECS
                     spawnPos);
                 physicsVelocity.ValueRW = PhysicsVelocity.Zero;
 
+                if (state.EntityManager.HasComponent<ShipImpactSpinState>(entity))
+                    state.EntityManager.SetComponentData(entity, new ShipImpactSpinState());
+
                 // --- Clear kill attribution only (match stats stay match-long) ---
                 // [TITAN-ORBIT] LastDamager must not carry across lives; Kills/Gems/People do.
                 if (state.EntityManager.HasComponent<ShipCombatAttribution>(entity))

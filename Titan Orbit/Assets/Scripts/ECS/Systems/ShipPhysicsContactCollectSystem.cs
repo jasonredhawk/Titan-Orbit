@@ -1,3 +1,4 @@
+using TitanOrbit.Simulation;
 using Unity.Burst;
 using Unity.Collections;
 using Unity.Entities;
@@ -5,6 +6,7 @@ using Unity.Mathematics;
 using Unity.NetCode;
 using Unity.Physics;
 using Unity.Physics.Systems;
+using Unity.Transforms;
 
 namespace TitanOrbit.ECS
 {
@@ -52,9 +54,11 @@ namespace TitanOrbit.ECS
             queue.Clear();
 
             var pairs = new NativeList<ShipPhysicsContactElement>(64, state.WorldUpdateAllocator);
+            var physicsWorld = SystemAPI.GetSingleton<PhysicsWorldSingleton>().PhysicsWorld;
             state.Dependency = new ClassifyContactsJob
             {
                 Pairs = pairs,
+                PhysicsWorld = physicsWorld,
                 Ships = SystemAPI.GetComponentLookup<ShipTag>(true),
                 Asteroids = SystemAPI.GetComponentLookup<AsteroidTag>(true),
                 Planets = SystemAPI.GetComponentLookup<PlanetTag>(true),
@@ -62,6 +66,7 @@ namespace TitanOrbit.ECS
                 Shields = SystemAPI.GetComponentLookup<PlanetGemMoonShieldColliderTag>(true),
                 Velocities = SystemAPI.GetComponentLookup<PhysicsVelocity>(true),
                 PreCollision = SystemAPI.GetComponentLookup<ShipPreCollisionVelocity>(true),
+                Transforms = SystemAPI.GetComponentLookup<LocalTransform>(true),
             }.Schedule(SystemAPI.GetSingleton<SimulationSingleton>(), state.Dependency);
             state.Dependency.Complete();
 
@@ -77,6 +82,7 @@ namespace TitanOrbit.ECS
         struct ClassifyContactsJob : ICollisionEventsJob
         {
             public NativeList<ShipPhysicsContactElement> Pairs;
+            public PhysicsWorld PhysicsWorld;
 
             [ReadOnly] public ComponentLookup<ShipTag> Ships;
             [ReadOnly] public ComponentLookup<AsteroidTag> Asteroids;
@@ -85,6 +91,7 @@ namespace TitanOrbit.ECS
             [ReadOnly] public ComponentLookup<PlanetGemMoonShieldColliderTag> Shields;
             [ReadOnly] public ComponentLookup<PhysicsVelocity> Velocities;
             [ReadOnly] public ComponentLookup<ShipPreCollisionVelocity> PreCollision;
+            [ReadOnly] public ComponentLookup<LocalTransform> Transforms;
 
             public void Execute(CollisionEvent collisionEvent)
             {
@@ -146,6 +153,7 @@ namespace TitanOrbit.ECS
                 vShip.y = 0f;
                 vOther.y = 0f;
                 float closing = math.max(0f, -math.dot(vShip - vOther, normalShipFromOther));
+                float2 lever = ResolveContactLever(collisionEvent, ship, vShip - vOther, normalShipFromOther);
 
                 Pairs.Add(new ShipPhysicsContactElement
                 {
@@ -153,8 +161,47 @@ namespace TitanOrbit.ECS
                     Other = other,
                     NormalShipFromOther = normalShipFromOther,
                     ClosingSpeed = closing,
+                    ContactOffsetShipXZ = lever,
                     Kind = kind,
                 });
+            }
+
+            float2 ResolveContactLever(
+                CollisionEvent collisionEvent,
+                Entity ship,
+                float3 relVel,
+                float3 normalShipFromOther)
+            {
+                float hullRadius = 0.7f;
+                float3 shipPos = float3.zero;
+                if (Transforms.HasComponent(ship))
+                {
+                    var xf = Transforms[ship];
+                    shipPos = xf.Position;
+                    hullRadius = BodyCollisionMath.GetShipHullRadiusWorld(xf.Scale);
+                }
+
+                float2 fallback = ShipImpactSpinLogic.FallbackLeverXZ(
+                    new float2(normalShipFromOther.x, normalShipFromOther.z),
+                    new float2(relVel.x, relVel.z),
+                    hullRadius);
+
+                var world = PhysicsWorld;
+                var details = collisionEvent.CalculateDetails(ref world);
+                if (!details.EstimatedContactPointPositions.IsCreated
+                    || details.EstimatedContactPointPositions.Length == 0)
+                {
+                    if (details.EstimatedContactPointPositions.IsCreated)
+                        details.EstimatedContactPointPositions.Dispose();
+                    return fallback;
+                }
+
+                float3 contact = details.AverageContactPointPosition;
+                details.EstimatedContactPointPositions.Dispose();
+                float2 lever = new float2(contact.x - shipPos.x, contact.z - shipPos.z);
+                if (math.lengthsq(lever) < 1e-8f)
+                    return fallback;
+                return lever;
             }
 
             float3 LinearOf(Entity entity)

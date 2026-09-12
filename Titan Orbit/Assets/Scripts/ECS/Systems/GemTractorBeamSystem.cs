@@ -702,6 +702,8 @@ namespace TitanOrbit.ECS
             // remains; blocking tractor there left beams on the client and no pull on the server.
             if (ship.IsDead || ship.AwaitingTeamSelection)
                 return false;
+            if (ship.Health <= ShipDamageLogic.DeathThreshold)
+                return false;
             if (moonDock.MoonPlanetId != 0 && moonDock.LandingProgress > 0.01f)
                 return false;
             if (ship.CurrentGems >= ship.GemCapacity - 0.001f)

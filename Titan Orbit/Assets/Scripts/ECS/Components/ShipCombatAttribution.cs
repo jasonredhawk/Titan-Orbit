@@ -38,5 +38,10 @@ namespace TitanOrbit.ECS
         /// <see cref="ShipDeathVfxState.Packed"/> on death.
         /// </summary>
         public float LastImpulsePower;
+
+        /// <summary>
+        /// 1 when kill credit was already applied at wreck enter so death recording does not double-count.
+        /// </summary>
+        public byte KillCredited;
     }
 }

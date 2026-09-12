@@ -234,6 +234,11 @@ namespace TitanOrbit.ECS
                 ecb.AddComponent(entity, new ShipElectricShockState());
 
             foreach (var (_, entity) in SystemAPI.Query<RefRO<ShipTag>>()
+                         .WithNone<ShipImpactSpinState>()
+                         .WithEntityAccess())
+                ecb.AddComponent(entity, new ShipImpactSpinState());
+
+            foreach (var (_, entity) in SystemAPI.Query<RefRO<ShipTag>>()
                          .WithNone<ShipBurnOverTimeState>()
                          .WithEntityAccess())
                 ecb.AddComponent(entity, new ShipBurnOverTimeState());

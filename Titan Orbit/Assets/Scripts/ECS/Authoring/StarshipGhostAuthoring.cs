@@ -154,6 +154,7 @@ namespace TitanOrbit.ECS.Authoring
                 // [NETCODE] Shock expiry must bake so GhostField replicates to owner prediction.
                 AddComponent(entity, new ShipElectricShockState());
                 AddComponent(entity, new ShipBurnOverTimeState());
+                AddComponent(entity, new ShipImpactSpinState());
                 BakeWeaponMounts(authoring, entity);
                 BakeWingTractorBeams(authoring, entity);
                 BakeShipPhysicsBody(entity, authoring.Mass);

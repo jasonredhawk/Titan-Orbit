@@ -845,12 +845,15 @@ namespace TitanOrbit.ECS
                 CardEffectQuery.ScaleIncomingDamage(state.EntityManager, shipEntity, damage),
                 ship.Team,
                 TeamId.None,
-                gemExpulsionPerHullDamage: ShipDamageLogic.ExcessDamageGemExpulsionPerHullDamage,
-                isImmune: false);
+                gemExpulsionPerHullDamage: ShipImpactSpinSettingsCache.ResolveOrDefault().LeftoverFirepowerGemRate,
+                isImmune: false,
+                isWrecked: ShipImpactSpinApply.IsWrecked(state.EntityManager, shipEntity, now),
+                minGemSpawn: GemEconomyConstants.MinGemSpawnValue);
 
             ship.Health = health;
             ship.CurrentGems = gems;
             ship.IsDead = isDead;
+            state.EntityManager.SetComponentData(shipEntity, ship);
 
             if (result.AppliedHullDamage &&
                 state.EntityManager.HasComponent<ShipVitalsState>(shipEntity))
@@ -861,7 +864,7 @@ namespace TitanOrbit.ECS
             }
 
             // --- Kill attribution + death-impulse ---
-            if (result.AppliedHullDamage || result.GemsToExpel > 0.0001f || result.BecameDead)
+            if (result.AppliedHullDamage || result.GemsToExpel > 0.0001f || result.BecameDead || result.BecameWrecked)
             {
                 float power = impulsePower >= 0f ? impulsePower : damage;
                 ShipMatchStatsLogic.SetLastDamager(
@@ -872,6 +875,17 @@ namespace TitanOrbit.ECS
                     impulseXZ,
                     power);
             }
+
+            ShipImpactSpinApply.AfterDamage(
+                state.EntityManager,
+                shipEntity,
+                in result,
+                shipPos + new float3(impulseXZ.x, 0f, impulseXZ.y),
+                shipPos,
+                impulseXZ,
+                0f,
+                0f,
+                now);
 
             if (result.GemsToExpel > 0.0001f)
             {

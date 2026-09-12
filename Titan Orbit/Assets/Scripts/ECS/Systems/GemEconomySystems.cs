@@ -223,7 +223,8 @@ namespace TitanOrbit.ECS
                          .WithAll<ShipTag>()
                          .WithEntityAccess())
             {
-                if (shipState.ValueRO.IsDead || shipState.ValueRO.AwaitingTeamSelection)
+                if (shipState.ValueRO.IsDead || shipState.ValueRO.AwaitingTeamSelection ||
+                    ShipImpactSpinApply.IsWrecked(state.EntityManager, shipEntity, SystemAPI.Time.ElapsedTime))
                     continue;
 
                 foreach (var (asteroidState, asteroidTransform, asteroidEntity) in SystemAPI
@@ -460,8 +461,8 @@ namespace TitanOrbit.ECS
     /// already pinned to this ship's tractor (a lock on an outer wing sits outside a hull-only
     /// gather). Colour / <c>IsBonusGem</c> is ignored — yellow extra-yield gems scoop like red.
     /// Runs after <see cref="GemMotionSystem"/> so same-tick tractor pull can land in the zone.
-    /// Skips only <c>IsDead</c> / team-select ships. A living 0-HP hull with cargo still aboard
-    /// may scoop — dual-resource death is hull AND gems empty, not hull alone.
+    /// Skips dead, team-select, and 0-HP wrecks. Death is hull AND gems empty;
+    /// wrecks stay hittable for leftover-firepower gem spill but cannot scoop.
     /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation)]
     [UpdateInGroup(typeof(SimulationSystemGroup))]
@@ -565,7 +566,8 @@ namespace TitanOrbit.ECS
                 // [TITAN-ORBIT] Dual-resource: only a dead ship is barred from scoop.
                 // 0-HP + remaining cargo is still alive (regen can restore hull). Blocking
                 // pickup here left grinding ships staring at gems they could never consume.
-                if (shipState.ValueRO.IsDead || shipState.ValueRO.AwaitingTeamSelection)
+                if (shipState.ValueRO.IsDead || shipState.ValueRO.AwaitingTeamSelection ||
+                    ShipImpactSpinApply.IsWrecked(state.EntityManager, shipEntity, SystemAPI.Time.ElapsedTime))
                     continue;
 
                 float capacityLeft = shipState.ValueRO.GemCapacity - shipState.ValueRO.CurrentGems;
@@ -838,7 +840,8 @@ namespace TitanOrbit.ECS
                          .WithEntityAccess())
             {
                 // --- Skip ships that cannot deposit ---
-                if (shipState.ValueRO.IsDead || shipState.ValueRO.AwaitingTeamSelection)
+                if (shipState.ValueRO.IsDead || shipState.ValueRO.AwaitingTeamSelection ||
+                    ShipImpactSpinApply.IsWrecked(state.EntityManager, shipEntity, SystemAPI.Time.ElapsedTime))
                     continue;
                 if (shipState.ValueRO.Team == TeamId.None || shipState.ValueRO.CurrentGems <= 0f)
                     continue;
