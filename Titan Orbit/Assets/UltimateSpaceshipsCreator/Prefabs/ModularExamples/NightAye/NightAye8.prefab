@@ -23,6 +23,7 @@ Transform:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 4646355584880552056}
+  serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
   m_LocalPosition: {x: 0, y: 0, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
@@ -51,13 +52,13 @@ Transform:
   - {fileID: 6418663586414767002}
   - {fileID: 6418663586857451944}
   m_Father: {fileID: 0}
-  m_RootOrder: 0
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1001 &4719673726222885855
 PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 5418106766733177538}
     m_Modifications:
     - target: {fileID: 3690847656625824555, guid: ed18609d56fc4a34a9930173a9f3d859, type: 3}
@@ -119,12 +120,15 @@ PrefabInstance:
     - target: {fileID: 6336609839091902751, guid: ed18609d56fc4a34a9930173a9f3d859, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: 4a6947bc4c87de34f9f678c67ebf55ee, type: 2}
+      objectReference: {fileID: 2100000, guid: 17edd0f9831634744972b3b9fdb0f659, type: 2}
     - target: {fileID: 6449473102569023064, guid: ed18609d56fc4a34a9930173a9f3d859, type: 3}
       propertyPath: m_Name
       value: NightAye_Cockpit
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: ed18609d56fc4a34a9930173a9f3d859, type: 3}
 --- !u!4 &8234586023280083188 stripped
 Transform:
@@ -136,12 +140,13 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 5418106766733177538}
     m_Modifications:
     - target: {fileID: 1126392439723934460, guid: 659df901b9d3b1f419d2802428309742, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: 4a6947bc4c87de34f9f678c67ebf55ee, type: 2}
+      objectReference: {fileID: 2100000, guid: 17edd0f9831634744972b3b9fdb0f659, type: 2}
     - target: {fileID: 6980200232097439933, guid: 659df901b9d3b1f419d2802428309742, type: 3}
       propertyPath: m_Name
       value: NightAye_WingMini
@@ -203,6 +208,9 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 659df901b9d3b1f419d2802428309742, type: 3}
 --- !u!4 &3643621539557078416 stripped
 Transform:
@@ -214,12 +222,13 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 5418106766733177538}
     m_Modifications:
     - target: {fileID: 1126392439723934460, guid: 659df901b9d3b1f419d2802428309742, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: 4a6947bc4c87de34f9f678c67ebf55ee, type: 2}
+      objectReference: {fileID: 2100000, guid: 17edd0f9831634744972b3b9fdb0f659, type: 2}
     - target: {fileID: 6980200232097439933, guid: 659df901b9d3b1f419d2802428309742, type: 3}
       propertyPath: m_Name
       value: NightAye_WingMini
@@ -281,6 +290,9 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 659df901b9d3b1f419d2802428309742, type: 3}
 --- !u!4 &3643621539650178603 stripped
 Transform:
@@ -292,6 +304,7 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 5418106766733177538}
     m_Modifications:
     - target: {fileID: 1666835046342615093, guid: d7162569a1c708e4289f157d2e9b7de2, type: 3}
@@ -301,7 +314,7 @@ PrefabInstance:
     - target: {fileID: 3731473088833353938, guid: d7162569a1c708e4289f157d2e9b7de2, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: 4a6947bc4c87de34f9f678c67ebf55ee, type: 2}
+      objectReference: {fileID: 2100000, guid: 17edd0f9831634744972b3b9fdb0f659, type: 2}
     - target: {fileID: 6172113442441228852, guid: d7162569a1c708e4289f157d2e9b7de2, type: 3}
       propertyPath: m_RootOrder
       value: 14
@@ -359,6 +372,9 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: d7162569a1c708e4289f157d2e9b7de2, type: 3}
 --- !u!4 &1502062926863670653 stripped
 Transform:
@@ -370,6 +386,7 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 5418106766733177538}
     m_Modifications:
     - target: {fileID: 1027355216786292201, guid: a9841160ea17d8141959ac3fb9c3ea00, type: 3}
@@ -431,12 +448,15 @@ PrefabInstance:
     - target: {fileID: 3699514112083006956, guid: a9841160ea17d8141959ac3fb9c3ea00, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: 4a6947bc4c87de34f9f678c67ebf55ee, type: 2}
+      objectReference: {fileID: 2100000, guid: 17edd0f9831634744972b3b9fdb0f659, type: 2}
     - target: {fileID: 4358868973042702450, guid: a9841160ea17d8141959ac3fb9c3ea00, type: 3}
       propertyPath: m_Name
       value: NightAye_Missile
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: a9841160ea17d8141959ac3fb9c3ea00, type: 3}
 --- !u!4 &5710071882693351324 stripped
 Transform:
@@ -448,6 +468,7 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 5418106766733177538}
     m_Modifications:
     - target: {fileID: 1027355216786292201, guid: a9841160ea17d8141959ac3fb9c3ea00, type: 3}
@@ -509,12 +530,15 @@ PrefabInstance:
     - target: {fileID: 3699514112083006956, guid: a9841160ea17d8141959ac3fb9c3ea00, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: 4a6947bc4c87de34f9f678c67ebf55ee, type: 2}
+      objectReference: {fileID: 2100000, guid: 17edd0f9831634744972b3b9fdb0f659, type: 2}
     - target: {fileID: 4358868973042702450, guid: a9841160ea17d8141959ac3fb9c3ea00, type: 3}
       propertyPath: m_Name
       value: NightAye_Missile
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: a9841160ea17d8141959ac3fb9c3ea00, type: 3}
 --- !u!4 &5710071882804354313 stripped
 Transform:
@@ -526,6 +550,7 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 5418106766733177538}
     m_Modifications:
     - target: {fileID: 1759793346565744705, guid: fbb914ceaeaddc24391f2b9ce7400fd4, type: 3}
@@ -591,8 +616,11 @@ PrefabInstance:
     - target: {fileID: 8821865819233880734, guid: fbb914ceaeaddc24391f2b9ce7400fd4, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: 4a6947bc4c87de34f9f678c67ebf55ee, type: 2}
+      objectReference: {fileID: 2100000, guid: 17edd0f9831634744972b3b9fdb0f659, type: 2}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: fbb914ceaeaddc24391f2b9ce7400fd4, type: 3}
 --- !u!4 &6418663586414767002 stripped
 Transform:
@@ -604,6 +632,7 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 5418106766733177538}
     m_Modifications:
     - target: {fileID: 1759793346565744705, guid: fbb914ceaeaddc24391f2b9ce7400fd4, type: 3}
@@ -669,8 +698,11 @@ PrefabInstance:
     - target: {fileID: 8821865819233880734, guid: fbb914ceaeaddc24391f2b9ce7400fd4, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: 4a6947bc4c87de34f9f678c67ebf55ee, type: 2}
+      objectReference: {fileID: 2100000, guid: 17edd0f9831634744972b3b9fdb0f659, type: 2}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: fbb914ceaeaddc24391f2b9ce7400fd4, type: 3}
 --- !u!4 &6418663586857451944 stripped
 Transform:
@@ -682,12 +714,13 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 5418106766733177538}
     m_Modifications:
     - target: {fileID: 1710650887476040032, guid: 9779779e7d4b0a1469f8347fedb5abe0, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: 4a6947bc4c87de34f9f678c67ebf55ee, type: 2}
+      objectReference: {fileID: 2100000, guid: 17edd0f9831634744972b3b9fdb0f659, type: 2}
     - target: {fileID: 4285610801583892730, guid: 9779779e7d4b0a1469f8347fedb5abe0, type: 3}
       propertyPath: m_Name
       value: NightAye_Spike
@@ -749,6 +782,9 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 9779779e7d4b0a1469f8347fedb5abe0, type: 3}
 --- !u!4 &1498799217731673105 stripped
 Transform:
@@ -760,6 +796,7 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 5418106766733177538}
     m_Modifications:
     - target: {fileID: 1027355216786292201, guid: a9841160ea17d8141959ac3fb9c3ea00, type: 3}
@@ -821,12 +858,15 @@ PrefabInstance:
     - target: {fileID: 3699514112083006956, guid: a9841160ea17d8141959ac3fb9c3ea00, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: 4a6947bc4c87de34f9f678c67ebf55ee, type: 2}
+      objectReference: {fileID: 2100000, guid: 17edd0f9831634744972b3b9fdb0f659, type: 2}
     - target: {fileID: 4358868973042702450, guid: a9841160ea17d8141959ac3fb9c3ea00, type: 3}
       propertyPath: m_Name
       value: NightAye_Missile
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: a9841160ea17d8141959ac3fb9c3ea00, type: 3}
 --- !u!4 &5710071882364394288 stripped
 Transform:
@@ -838,6 +878,7 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 5418106766733177538}
     m_Modifications:
     - target: {fileID: 6465796589333559351, guid: 4ceb4b8b01060e74b8fe0305c8885403, type: 3}
@@ -891,8 +932,11 @@ PrefabInstance:
     - target: {fileID: 8012717070506700578, guid: 4ceb4b8b01060e74b8fe0305c8885403, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: 4a6947bc4c87de34f9f678c67ebf55ee, type: 2}
+      objectReference: {fileID: 2100000, guid: 17edd0f9831634744972b3b9fdb0f659, type: 2}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 4ceb4b8b01060e74b8fe0305c8885403, type: 3}
 --- !u!4 &2892073035585417871 stripped
 Transform:
@@ -904,12 +948,13 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 5418106766733177538}
     m_Modifications:
     - target: {fileID: 1710650887476040032, guid: 9779779e7d4b0a1469f8347fedb5abe0, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: 4a6947bc4c87de34f9f678c67ebf55ee, type: 2}
+      objectReference: {fileID: 2100000, guid: 17edd0f9831634744972b3b9fdb0f659, type: 2}
     - target: {fileID: 4285610801583892730, guid: 9779779e7d4b0a1469f8347fedb5abe0, type: 3}
       propertyPath: m_Name
       value: NightAye_Spike
@@ -971,6 +1016,9 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 9779779e7d4b0a1469f8347fedb5abe0, type: 3}
 --- !u!4 &1498799217682051733 stripped
 Transform:
@@ -982,12 +1030,13 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 5418106766733177538}
     m_Modifications:
     - target: {fileID: 1710650887476040032, guid: 9779779e7d4b0a1469f8347fedb5abe0, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: 4a6947bc4c87de34f9f678c67ebf55ee, type: 2}
+      objectReference: {fileID: 2100000, guid: 17edd0f9831634744972b3b9fdb0f659, type: 2}
     - target: {fileID: 4285610801583892730, guid: 9779779e7d4b0a1469f8347fedb5abe0, type: 3}
       propertyPath: m_Name
       value: NightAye_Spike
@@ -1049,6 +1098,9 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 9779779e7d4b0a1469f8347fedb5abe0, type: 3}
 --- !u!4 &1498799218405024004 stripped
 Transform:
@@ -1060,6 +1112,7 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 5418106766733177538}
     m_Modifications:
     - target: {fileID: 2631590408050242232, guid: 90f6101fb7617f841a6ab6553ebfe423, type: 3}
@@ -1121,12 +1174,15 @@ PrefabInstance:
     - target: {fileID: 5432690990053989611, guid: 90f6101fb7617f841a6ab6553ebfe423, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: 4a6947bc4c87de34f9f678c67ebf55ee, type: 2}
+      objectReference: {fileID: 2100000, guid: 17edd0f9831634744972b3b9fdb0f659, type: 2}
     - target: {fileID: 7913433378844853820, guid: 90f6101fb7617f841a6ab6553ebfe423, type: 3}
       propertyPath: m_Name
       value: NightAye_Hull
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 90f6101fb7617f841a6ab6553ebfe423, type: 3}
 --- !u!4 &7348449313124790252 stripped
 Transform:
@@ -1138,12 +1194,13 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 5418106766733177538}
     m_Modifications:
     - target: {fileID: 1710650887476040032, guid: 9779779e7d4b0a1469f8347fedb5abe0, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: 4a6947bc4c87de34f9f678c67ebf55ee, type: 2}
+      objectReference: {fileID: 2100000, guid: 17edd0f9831634744972b3b9fdb0f659, type: 2}
     - target: {fileID: 4285610801583892730, guid: 9779779e7d4b0a1469f8347fedb5abe0, type: 3}
       propertyPath: m_Name
       value: NightAye_Spike
@@ -1205,6 +1262,9 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 9779779e7d4b0a1469f8347fedb5abe0, type: 3}
 --- !u!4 &1498799218452137538 stripped
 Transform:
@@ -1216,6 +1276,7 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 5418106766733177538}
     m_Modifications:
     - target: {fileID: 1666835046342615093, guid: d7162569a1c708e4289f157d2e9b7de2, type: 3}
@@ -1225,7 +1286,7 @@ PrefabInstance:
     - target: {fileID: 3731473088833353938, guid: d7162569a1c708e4289f157d2e9b7de2, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: 4a6947bc4c87de34f9f678c67ebf55ee, type: 2}
+      objectReference: {fileID: 2100000, guid: 17edd0f9831634744972b3b9fdb0f659, type: 2}
     - target: {fileID: 6172113442441228852, guid: d7162569a1c708e4289f157d2e9b7de2, type: 3}
       propertyPath: m_RootOrder
       value: 13
@@ -1283,6 +1344,9 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: d7162569a1c708e4289f157d2e9b7de2, type: 3}
 --- !u!4 &1502062928302861256 stripped
 Transform:
@@ -1294,12 +1358,13 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 5418106766733177538}
     m_Modifications:
     - target: {fileID: 1710650887476040032, guid: 9779779e7d4b0a1469f8347fedb5abe0, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: 4a6947bc4c87de34f9f678c67ebf55ee, type: 2}
+      objectReference: {fileID: 2100000, guid: 17edd0f9831634744972b3b9fdb0f659, type: 2}
     - target: {fileID: 4285610801583892730, guid: 9779779e7d4b0a1469f8347fedb5abe0, type: 3}
       propertyPath: m_Name
       value: NightAye_Spike
@@ -1361,6 +1426,9 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 9779779e7d4b0a1469f8347fedb5abe0, type: 3}
 --- !u!4 &1498799218246943320 stripped
 Transform:
@@ -1372,6 +1440,7 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 5418106766733177538}
     m_Modifications:
     - target: {fileID: 1666835046342615093, guid: d7162569a1c708e4289f157d2e9b7de2, type: 3}
@@ -1381,7 +1450,7 @@ PrefabInstance:
     - target: {fileID: 3731473088833353938, guid: d7162569a1c708e4289f157d2e9b7de2, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: 4a6947bc4c87de34f9f678c67ebf55ee, type: 2}
+      objectReference: {fileID: 2100000, guid: 17edd0f9831634744972b3b9fdb0f659, type: 2}
     - target: {fileID: 6172113442441228852, guid: d7162569a1c708e4289f157d2e9b7de2, type: 3}
       propertyPath: m_RootOrder
       value: 15
@@ -1439,6 +1508,9 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: d7162569a1c708e4289f157d2e9b7de2, type: 3}
 --- !u!4 &1502062928453440220 stripped
 Transform:
@@ -1450,12 +1522,13 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 5418106766733177538}
     m_Modifications:
     - target: {fileID: 1126392439723934460, guid: 659df901b9d3b1f419d2802428309742, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: 4a6947bc4c87de34f9f678c67ebf55ee, type: 2}
+      objectReference: {fileID: 2100000, guid: 17edd0f9831634744972b3b9fdb0f659, type: 2}
     - target: {fileID: 6980200232097439933, guid: 659df901b9d3b1f419d2802428309742, type: 3}
       propertyPath: m_Name
       value: NightAye_WingMini
@@ -1517,6 +1590,9 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 659df901b9d3b1f419d2802428309742, type: 3}
 --- !u!4 &3643621539229469642 stripped
 Transform:
@@ -1528,6 +1604,7 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 5418106766733177538}
     m_Modifications:
     - target: {fileID: 1666835046342615093, guid: d7162569a1c708e4289f157d2e9b7de2, type: 3}
@@ -1537,7 +1614,7 @@ PrefabInstance:
     - target: {fileID: 3731473088833353938, guid: d7162569a1c708e4289f157d2e9b7de2, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: 4a6947bc4c87de34f9f678c67ebf55ee, type: 2}
+      objectReference: {fileID: 2100000, guid: 17edd0f9831634744972b3b9fdb0f659, type: 2}
     - target: {fileID: 6172113442441228852, guid: d7162569a1c708e4289f157d2e9b7de2, type: 3}
       propertyPath: m_RootOrder
       value: 12
@@ -1595,6 +1672,9 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: d7162569a1c708e4289f157d2e9b7de2, type: 3}
 --- !u!4 &1502062928554476246 stripped
 Transform:
@@ -1606,12 +1686,13 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 5418106766733177538}
     m_Modifications:
     - target: {fileID: 1710650887476040032, guid: 9779779e7d4b0a1469f8347fedb5abe0, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: 4a6947bc4c87de34f9f678c67ebf55ee, type: 2}
+      objectReference: {fileID: 2100000, guid: 17edd0f9831634744972b3b9fdb0f659, type: 2}
     - target: {fileID: 4285610801583892730, guid: 9779779e7d4b0a1469f8347fedb5abe0, type: 3}
       propertyPath: m_Name
       value: NightAye_Spike
@@ -1673,6 +1754,9 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 9779779e7d4b0a1469f8347fedb5abe0, type: 3}
 --- !u!4 &1498799218214172798 stripped
 Transform:
@@ -1684,12 +1768,13 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 5418106766733177538}
     m_Modifications:
     - target: {fileID: 1126392439723934460, guid: 659df901b9d3b1f419d2802428309742, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: 4a6947bc4c87de34f9f678c67ebf55ee, type: 2}
+      objectReference: {fileID: 2100000, guid: 17edd0f9831634744972b3b9fdb0f659, type: 2}
     - target: {fileID: 6980200232097439933, guid: 659df901b9d3b1f419d2802428309742, type: 3}
       propertyPath: m_Name
       value: NightAye_WingMini
@@ -1751,6 +1836,9 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 659df901b9d3b1f419d2802428309742, type: 3}
 --- !u!4 &3643621539339818909 stripped
 Transform:

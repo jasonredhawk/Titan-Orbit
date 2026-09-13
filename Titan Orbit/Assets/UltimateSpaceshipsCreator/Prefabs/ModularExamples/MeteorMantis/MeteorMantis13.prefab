@@ -23,6 +23,7 @@ Transform:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 193457954238526299}
+  serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
   m_LocalPosition: {x: 0, y: 0, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
@@ -42,13 +43,13 @@ Transform:
   - {fileID: 1174256567510164894}
   - {fileID: 2716639401346155091}
   m_Father: {fileID: 0}
-  m_RootOrder: 0
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1001 &1159633390647625917
 PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 712866511058643425}
     m_Modifications:
     - target: {fileID: 471911019857611106, guid: 31300ab6a8630464abf128d90f437b05, type: 3}
@@ -114,8 +115,11 @@ PrefabInstance:
     - target: {fileID: 8052046405224139313, guid: 31300ab6a8630464abf128d90f437b05, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: 3fafd66b0f79d474e9a18433697e2a44, type: 2}
+      objectReference: {fileID: 2100000, guid: 889ab226f8cba374ca90a7b16ad9ec96, type: 2}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 31300ab6a8630464abf128d90f437b05, type: 3}
 --- !u!4 &1628975947041423839 stripped
 Transform:
@@ -127,6 +131,7 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 712866511058643425}
     m_Modifications:
     - target: {fileID: 879945254528876886, guid: b0ae2bdb57b171e4bb674365534d0126, type: 3}
@@ -188,12 +193,15 @@ PrefabInstance:
     - target: {fileID: 4632846469376895101, guid: b0ae2bdb57b171e4bb674365534d0126, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: 3fafd66b0f79d474e9a18433697e2a44, type: 2}
+      objectReference: {fileID: 2100000, guid: 889ab226f8cba374ca90a7b16ad9ec96, type: 2}
     - target: {fileID: 5662077399112951412, guid: b0ae2bdb57b171e4bb674365534d0126, type: 3}
       propertyPath: m_Name
       value: MeteorMantis_Body
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: b0ae2bdb57b171e4bb674365534d0126, type: 3}
 --- !u!4 &1885145399487991940 stripped
 Transform:
@@ -205,6 +213,7 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 712866511058643425}
     m_Modifications:
     - target: {fileID: 2315022631925302421, guid: eb1d4671e9703144382c04170d6c9adc, type: 3}
@@ -270,8 +279,11 @@ PrefabInstance:
     - target: {fileID: 4129032269147130294, guid: eb1d4671e9703144382c04170d6c9adc, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: 3fafd66b0f79d474e9a18433697e2a44, type: 2}
+      objectReference: {fileID: 2100000, guid: 889ab226f8cba374ca90a7b16ad9ec96, type: 2}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: eb1d4671e9703144382c04170d6c9adc, type: 3}
 --- !u!4 &789186219235033866 stripped
 Transform:
@@ -283,12 +295,13 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 712866511058643425}
     m_Modifications:
     - target: {fileID: 1898641664003630614, guid: 0450bf9af62ce63459f88bc7d768055b, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: 3fafd66b0f79d474e9a18433697e2a44, type: 2}
+      objectReference: {fileID: 2100000, guid: 889ab226f8cba374ca90a7b16ad9ec96, type: 2}
     - target: {fileID: 2383618041674702033, guid: 0450bf9af62ce63459f88bc7d768055b, type: 3}
       propertyPath: m_RootOrder
       value: 11
@@ -350,6 +363,9 @@ PrefabInstance:
       value: MeteorMantis_Weapon
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 0450bf9af62ce63459f88bc7d768055b, type: 3}
 --- !u!4 &1174256567510164894 stripped
 Transform:
@@ -361,12 +377,13 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 712866511058643425}
     m_Modifications:
     - target: {fileID: 3812398911370294126, guid: cacb431a579fc42448f454acf738d605, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: 3fafd66b0f79d474e9a18433697e2a44, type: 2}
+      objectReference: {fileID: 2100000, guid: 889ab226f8cba374ca90a7b16ad9ec96, type: 2}
     - target: {fileID: 3981577455011423417, guid: cacb431a579fc42448f454acf738d605, type: 3}
       propertyPath: m_Name
       value: MeteorMantis_Tail
@@ -428,6 +445,9 @@ PrefabInstance:
       value: -115.00001
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: cacb431a579fc42448f454acf738d605, type: 3}
 --- !u!4 &6828828369979643961 stripped
 Transform:
@@ -439,6 +459,7 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 712866511058643425}
     m_Modifications:
     - target: {fileID: 231560184199387292, guid: 9ad7e5a78ec706e4d94ef954513c643c, type: 3}
@@ -500,12 +521,15 @@ PrefabInstance:
     - target: {fileID: 2574781384483750877, guid: 9ad7e5a78ec706e4d94ef954513c643c, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: 3fafd66b0f79d474e9a18433697e2a44, type: 2}
+      objectReference: {fileID: 2100000, guid: 889ab226f8cba374ca90a7b16ad9ec96, type: 2}
     - target: {fileID: 7654818365242820068, guid: 9ad7e5a78ec706e4d94ef954513c643c, type: 3}
       propertyPath: m_Name
       value: MeteorMantis_Joint
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 9ad7e5a78ec706e4d94ef954513c643c, type: 3}
 --- !u!4 &4244556205528303767 stripped
 Transform:
@@ -517,6 +541,7 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 712866511058643425}
     m_Modifications:
     - target: {fileID: 3939647740544172736, guid: bfa9a202390087040838b170bd5f1ca0, type: 3}
@@ -578,12 +603,15 @@ PrefabInstance:
     - target: {fileID: 4446739710079313842, guid: bfa9a202390087040838b170bd5f1ca0, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: 3fafd66b0f79d474e9a18433697e2a44, type: 2}
+      objectReference: {fileID: 2100000, guid: 889ab226f8cba374ca90a7b16ad9ec96, type: 2}
     - target: {fileID: 5415656523017369285, guid: bfa9a202390087040838b170bd5f1ca0, type: 3}
       propertyPath: m_Name
       value: MeteorMantis_Shell
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: bfa9a202390087040838b170bd5f1ca0, type: 3}
 --- !u!4 &745888644544847996 stripped
 Transform:
@@ -595,12 +623,13 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 712866511058643425}
     m_Modifications:
     - target: {fileID: 392945801934298266, guid: e7847e62b021ae64fb837a3446143c6c, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: 3fafd66b0f79d474e9a18433697e2a44, type: 2}
+      objectReference: {fileID: 2100000, guid: 889ab226f8cba374ca90a7b16ad9ec96, type: 2}
     - target: {fileID: 1166823068947237999, guid: e7847e62b021ae64fb837a3446143c6c, type: 3}
       propertyPath: m_Name
       value: MeteorMantis_Engine
@@ -662,6 +691,9 @@ PrefabInstance:
       value: 110.00001
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: e7847e62b021ae64fb837a3446143c6c, type: 3}
 --- !u!4 &5430153761414911594 stripped
 Transform:
@@ -673,6 +705,7 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 712866511058643425}
     m_Modifications:
     - target: {fileID: 231560184199387292, guid: 9ad7e5a78ec706e4d94ef954513c643c, type: 3}
@@ -734,12 +767,15 @@ PrefabInstance:
     - target: {fileID: 2574781384483750877, guid: 9ad7e5a78ec706e4d94ef954513c643c, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: 3fafd66b0f79d474e9a18433697e2a44, type: 2}
+      objectReference: {fileID: 2100000, guid: 889ab226f8cba374ca90a7b16ad9ec96, type: 2}
     - target: {fileID: 7654818365242820068, guid: 9ad7e5a78ec706e4d94ef954513c643c, type: 3}
       propertyPath: m_Name
       value: MeteorMantis_Joint
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 9ad7e5a78ec706e4d94ef954513c643c, type: 3}
 --- !u!4 &5122201579809410923 stripped
 Transform:
@@ -751,6 +787,7 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 712866511058643425}
     m_Modifications:
     - target: {fileID: 879945254528876886, guid: b0ae2bdb57b171e4bb674365534d0126, type: 3}
@@ -812,12 +849,15 @@ PrefabInstance:
     - target: {fileID: 4632846469376895101, guid: b0ae2bdb57b171e4bb674365534d0126, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: 3fafd66b0f79d474e9a18433697e2a44, type: 2}
+      objectReference: {fileID: 2100000, guid: 889ab226f8cba374ca90a7b16ad9ec96, type: 2}
     - target: {fileID: 5662077399112951412, guid: b0ae2bdb57b171e4bb674365534d0126, type: 3}
       propertyPath: m_Name
       value: MeteorMantis_Body
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: b0ae2bdb57b171e4bb674365534d0126, type: 3}
 --- !u!4 &6791476000285410293 stripped
 Transform:
@@ -829,6 +869,7 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 712866511058643425}
     m_Modifications:
     - target: {fileID: 3732890002904520325, guid: 02de71542e441b141b210f905ce63440, type: 3}
@@ -838,7 +879,7 @@ PrefabInstance:
     - target: {fileID: 7969788836114726558, guid: 02de71542e441b141b210f905ce63440, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: 3fafd66b0f79d474e9a18433697e2a44, type: 2}
+      objectReference: {fileID: 2100000, guid: 889ab226f8cba374ca90a7b16ad9ec96, type: 2}
     - target: {fileID: 8530153265090076119, guid: 02de71542e441b141b210f905ce63440, type: 3}
       propertyPath: m_RootOrder
       value: 12
@@ -896,6 +937,9 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 02de71542e441b141b210f905ce63440, type: 3}
 --- !u!4 &2716639401346155091 stripped
 Transform:
@@ -907,12 +951,13 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 712866511058643425}
     m_Modifications:
     - target: {fileID: 392945801934298266, guid: e7847e62b021ae64fb837a3446143c6c, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: 3fafd66b0f79d474e9a18433697e2a44, type: 2}
+      objectReference: {fileID: 2100000, guid: 889ab226f8cba374ca90a7b16ad9ec96, type: 2}
     - target: {fileID: 1166823068947237999, guid: e7847e62b021ae64fb837a3446143c6c, type: 3}
       propertyPath: m_Name
       value: MeteorMantis_Engine
@@ -974,6 +1019,9 @@ PrefabInstance:
       value: -110.00001
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: e7847e62b021ae64fb837a3446143c6c, type: 3}
 --- !u!4 &3142532845634200060 stripped
 Transform:
@@ -985,12 +1033,13 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 712866511058643425}
     m_Modifications:
     - target: {fileID: 3812398911370294126, guid: cacb431a579fc42448f454acf738d605, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: 3fafd66b0f79d474e9a18433697e2a44, type: 2}
+      objectReference: {fileID: 2100000, guid: 889ab226f8cba374ca90a7b16ad9ec96, type: 2}
     - target: {fileID: 3981577455011423417, guid: cacb431a579fc42448f454acf738d605, type: 3}
       propertyPath: m_Name
       value: MeteorMantis_Tail
@@ -1052,6 +1101,9 @@ PrefabInstance:
       value: 115.00001
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: cacb431a579fc42448f454acf738d605, type: 3}
 --- !u!4 &63464195868809185 stripped
 Transform:

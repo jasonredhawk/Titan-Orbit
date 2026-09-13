@@ -23,6 +23,7 @@ Transform:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 3086048336993431180}
+  serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
   m_LocalPosition: {x: 0, y: 0, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
@@ -55,13 +56,13 @@ Transform:
   - {fileID: 3094244619958615816}
   - {fileID: 3094244619002322817}
   m_Father: {fileID: 0}
-  m_RootOrder: 0
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1001 &5024978804963254553
 PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 2420693802980078646}
     m_Modifications:
     - target: {fileID: 5495114660699996797, guid: 1a9df065abe80c54fa34b742c3263c76, type: 3}
@@ -123,12 +124,15 @@ PrefabInstance:
     - target: {fileID: 5663976393267987994, guid: 1a9df065abe80c54fa34b742c3263c76, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: 47939a49552aa1d4398113ecf10b5706, type: 2}
+      objectReference: {fileID: 2100000, guid: 95703bb8484fc394eac49da58ea12d39, type: 2}
     - target: {fileID: 5774744833552945697, guid: 1a9df065abe80c54fa34b742c3263c76, type: 3}
       propertyPath: m_Name
       value: GalaxyRaptor_Detail
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 1a9df065abe80c54fa34b742c3263c76, type: 3}
 --- !u!4 &720257300625040228 stripped
 Transform:
@@ -140,12 +144,13 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 2420693802980078646}
     m_Modifications:
     - target: {fileID: 1664380561674007578, guid: bf8f6c131d254484c8d9a8c8aea35e86, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: 47939a49552aa1d4398113ecf10b5706, type: 2}
+      objectReference: {fileID: 2100000, guid: 95703bb8484fc394eac49da58ea12d39, type: 2}
     - target: {fileID: 3682323158034624761, guid: bf8f6c131d254484c8d9a8c8aea35e86, type: 3}
       propertyPath: m_RootOrder
       value: 5
@@ -207,6 +212,9 @@ PrefabInstance:
       value: GalaxyRaptor_Engine
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: bf8f6c131d254484c8d9a8c8aea35e86, type: 3}
 --- !u!4 &8549647380458429637 stripped
 Transform:
@@ -218,12 +226,13 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 2420693802980078646}
     m_Modifications:
     - target: {fileID: 815818038759474246, guid: 6e0717fef4fb5f347ba897f7024116f6, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: 47939a49552aa1d4398113ecf10b5706, type: 2}
+      objectReference: {fileID: 2100000, guid: 95703bb8484fc394eac49da58ea12d39, type: 2}
     - target: {fileID: 8019987963859021669, guid: 6e0717fef4fb5f347ba897f7024116f6, type: 3}
       propertyPath: m_RootOrder
       value: 22
@@ -285,6 +294,9 @@ PrefabInstance:
       value: GalaxyRaptor_Wing3
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 6e0717fef4fb5f347ba897f7024116f6, type: 3}
 --- !u!4 &3094244618383826044 stripped
 Transform:
@@ -296,12 +308,13 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 2420693802980078646}
     m_Modifications:
     - target: {fileID: 815818038759474246, guid: 6e0717fef4fb5f347ba897f7024116f6, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: 47939a49552aa1d4398113ecf10b5706, type: 2}
+      objectReference: {fileID: 2100000, guid: 95703bb8484fc394eac49da58ea12d39, type: 2}
     - target: {fileID: 8019987963859021669, guid: 6e0717fef4fb5f347ba897f7024116f6, type: 3}
       propertyPath: m_RootOrder
       value: 23
@@ -363,6 +376,9 @@ PrefabInstance:
       value: GalaxyRaptor_Wing3
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 6e0717fef4fb5f347ba897f7024116f6, type: 3}
 --- !u!4 &3094244617901852768 stripped
 Transform:
@@ -374,6 +390,7 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 2420693802980078646}
     m_Modifications:
     - target: {fileID: 661851866310404275, guid: c92eb22991c188c4ea756e8651a1e07d, type: 3}
@@ -439,8 +456,11 @@ PrefabInstance:
     - target: {fileID: 8764595947411289636, guid: c92eb22991c188c4ea756e8651a1e07d, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: 47939a49552aa1d4398113ecf10b5706, type: 2}
+      objectReference: {fileID: 2100000, guid: 95703bb8484fc394eac49da58ea12d39, type: 2}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: c92eb22991c188c4ea756e8651a1e07d, type: 3}
 --- !u!4 &8595251350602976944 stripped
 Transform:
@@ -452,6 +472,7 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 2420693802980078646}
     m_Modifications:
     - target: {fileID: 5495114660699996797, guid: 1a9df065abe80c54fa34b742c3263c76, type: 3}
@@ -513,12 +534,15 @@ PrefabInstance:
     - target: {fileID: 5663976393267987994, guid: 1a9df065abe80c54fa34b742c3263c76, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: 47939a49552aa1d4398113ecf10b5706, type: 2}
+      objectReference: {fileID: 2100000, guid: 95703bb8484fc394eac49da58ea12d39, type: 2}
     - target: {fileID: 5774744833552945697, guid: 1a9df065abe80c54fa34b742c3263c76, type: 3}
       propertyPath: m_Name
       value: GalaxyRaptor_Detail
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 1a9df065abe80c54fa34b742c3263c76, type: 3}
 --- !u!4 &720257300458996569 stripped
 Transform:
@@ -530,6 +554,7 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 2420693802980078646}
     m_Modifications:
     - target: {fileID: 1486009042955569933, guid: 56ce888796dffc144a605660aac06d39, type: 3}
@@ -539,7 +564,7 @@ PrefabInstance:
     - target: {fileID: 3198707023216174087, guid: 56ce888796dffc144a605660aac06d39, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: 47939a49552aa1d4398113ecf10b5706, type: 2}
+      objectReference: {fileID: 2100000, guid: 95703bb8484fc394eac49da58ea12d39, type: 2}
     - target: {fileID: 4141699698098720746, guid: 56ce888796dffc144a605660aac06d39, type: 3}
       propertyPath: m_RootOrder
       value: 15
@@ -597,6 +622,9 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 56ce888796dffc144a605660aac06d39, type: 3}
 --- !u!4 &8990885213466196564 stripped
 Transform:
@@ -608,12 +636,13 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 2420693802980078646}
     m_Modifications:
     - target: {fileID: 815818038759474246, guid: 6e0717fef4fb5f347ba897f7024116f6, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: 47939a49552aa1d4398113ecf10b5706, type: 2}
+      objectReference: {fileID: 2100000, guid: 95703bb8484fc394eac49da58ea12d39, type: 2}
     - target: {fileID: 8019987963859021669, guid: 6e0717fef4fb5f347ba897f7024116f6, type: 3}
       propertyPath: m_RootOrder
       value: 24
@@ -675,6 +704,9 @@ PrefabInstance:
       value: GalaxyRaptor_Wing3
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 6e0717fef4fb5f347ba897f7024116f6, type: 3}
 --- !u!4 &3094244619958615816 stripped
 Transform:
@@ -686,12 +718,13 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 2420693802980078646}
     m_Modifications:
     - target: {fileID: 4148793663688989133, guid: f253b7edffc23844e9e7e293559100b9, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: 47939a49552aa1d4398113ecf10b5706, type: 2}
+      objectReference: {fileID: 2100000, guid: 95703bb8484fc394eac49da58ea12d39, type: 2}
     - target: {fileID: 6505369190145888873, guid: f253b7edffc23844e9e7e293559100b9, type: 3}
       propertyPath: m_RootOrder
       value: 12
@@ -753,6 +786,9 @@ PrefabInstance:
       value: GalaxyRaptor_MainBody2
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: f253b7edffc23844e9e7e293559100b9, type: 3}
 --- !u!4 &2304709784116710338 stripped
 Transform:
@@ -764,6 +800,7 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 2420693802980078646}
     m_Modifications:
     - target: {fileID: 4333887180306424289, guid: e329f41a32004db4982c140673cb5081, type: 3}
@@ -829,8 +866,11 @@ PrefabInstance:
     - target: {fileID: 4333887180308849409, guid: e329f41a32004db4982c140673cb5081, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: 47939a49552aa1d4398113ecf10b5706, type: 2}
+      objectReference: {fileID: 2100000, guid: 95703bb8484fc394eac49da58ea12d39, type: 2}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: e329f41a32004db4982c140673cb5081, type: 3}
 --- !u!4 &8762105968471383937 stripped
 Transform:
@@ -842,12 +882,13 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 2420693802980078646}
     m_Modifications:
     - target: {fileID: 6307053476394042074, guid: b268bcb651a9a3647a9ee11cd494c6d6, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: 47939a49552aa1d4398113ecf10b5706, type: 2}
+      objectReference: {fileID: 2100000, guid: 95703bb8484fc394eac49da58ea12d39, type: 2}
     - target: {fileID: 6307053476395941946, guid: b268bcb651a9a3647a9ee11cd494c6d6, type: 3}
       propertyPath: m_RootOrder
       value: 2
@@ -909,6 +950,9 @@ PrefabInstance:
       value: GalaxyRaptor_Cockpit
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: b268bcb651a9a3647a9ee11cd494c6d6, type: 3}
 --- !u!4 &1313758210021276367 stripped
 Transform:
@@ -920,6 +964,7 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 2420693802980078646}
     m_Modifications:
     - target: {fileID: 661851866310404275, guid: c92eb22991c188c4ea756e8651a1e07d, type: 3}
@@ -985,8 +1030,11 @@ PrefabInstance:
     - target: {fileID: 8764595947411289636, guid: c92eb22991c188c4ea756e8651a1e07d, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: 47939a49552aa1d4398113ecf10b5706, type: 2}
+      objectReference: {fileID: 2100000, guid: 95703bb8484fc394eac49da58ea12d39, type: 2}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: c92eb22991c188c4ea756e8651a1e07d, type: 3}
 --- !u!4 &8595251350185487867 stripped
 Transform:
@@ -998,6 +1046,7 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 2420693802980078646}
     m_Modifications:
     - target: {fileID: 1486009042955569933, guid: 56ce888796dffc144a605660aac06d39, type: 3}
@@ -1007,7 +1056,7 @@ PrefabInstance:
     - target: {fileID: 3198707023216174087, guid: 56ce888796dffc144a605660aac06d39, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: 47939a49552aa1d4398113ecf10b5706, type: 2}
+      objectReference: {fileID: 2100000, guid: 95703bb8484fc394eac49da58ea12d39, type: 2}
     - target: {fileID: 4141699698098720746, guid: 56ce888796dffc144a605660aac06d39, type: 3}
       propertyPath: m_RootOrder
       value: 17
@@ -1065,6 +1114,9 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 56ce888796dffc144a605660aac06d39, type: 3}
 --- !u!4 &8990885213670871730 stripped
 Transform:
@@ -1076,6 +1128,7 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 2420693802980078646}
     m_Modifications:
     - target: {fileID: 4333887180306424289, guid: e329f41a32004db4982c140673cb5081, type: 3}
@@ -1141,8 +1194,11 @@ PrefabInstance:
     - target: {fileID: 4333887180308849409, guid: e329f41a32004db4982c140673cb5081, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: 47939a49552aa1d4398113ecf10b5706, type: 2}
+      objectReference: {fileID: 2100000, guid: 95703bb8484fc394eac49da58ea12d39, type: 2}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: e329f41a32004db4982c140673cb5081, type: 3}
 --- !u!4 &8762105968610798163 stripped
 Transform:
@@ -1154,6 +1210,7 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 2420693802980078646}
     m_Modifications:
     - target: {fileID: 1486009042955569933, guid: 56ce888796dffc144a605660aac06d39, type: 3}
@@ -1163,7 +1220,7 @@ PrefabInstance:
     - target: {fileID: 3198707023216174087, guid: 56ce888796dffc144a605660aac06d39, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: 47939a49552aa1d4398113ecf10b5706, type: 2}
+      objectReference: {fileID: 2100000, guid: 95703bb8484fc394eac49da58ea12d39, type: 2}
     - target: {fileID: 4141699698098720746, guid: 56ce888796dffc144a605660aac06d39, type: 3}
       propertyPath: m_RootOrder
       value: 13
@@ -1221,6 +1278,9 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 56ce888796dffc144a605660aac06d39, type: 3}
 --- !u!4 &8990885214006357901 stripped
 Transform:
@@ -1232,6 +1292,7 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 2420693802980078646}
     m_Modifications:
     - target: {fileID: 4333887180306424289, guid: e329f41a32004db4982c140673cb5081, type: 3}
@@ -1297,8 +1358,11 @@ PrefabInstance:
     - target: {fileID: 4333887180308849409, guid: e329f41a32004db4982c140673cb5081, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: 47939a49552aa1d4398113ecf10b5706, type: 2}
+      objectReference: {fileID: 2100000, guid: 95703bb8484fc394eac49da58ea12d39, type: 2}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: e329f41a32004db4982c140673cb5081, type: 3}
 --- !u!4 &8762105968153181606 stripped
 Transform:
@@ -1310,6 +1374,7 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 2420693802980078646}
     m_Modifications:
     - target: {fileID: 250802045755079468, guid: 39879d0bfe2c4bc4cbfac0dd7163f034, type: 3}
@@ -1371,12 +1436,15 @@ PrefabInstance:
     - target: {fileID: 5791784521810920577, guid: 39879d0bfe2c4bc4cbfac0dd7163f034, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: 47939a49552aa1d4398113ecf10b5706, type: 2}
+      objectReference: {fileID: 2100000, guid: 95703bb8484fc394eac49da58ea12d39, type: 2}
     - target: {fileID: 8090804397381696149, guid: 39879d0bfe2c4bc4cbfac0dd7163f034, type: 3}
       propertyPath: m_Name
       value: GalaxyRaptor_MainBody1
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 39879d0bfe2c4bc4cbfac0dd7163f034, type: 3}
 --- !u!4 &5100125059694545724 stripped
 Transform:
@@ -1388,6 +1456,7 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 2420693802980078646}
     m_Modifications:
     - target: {fileID: 1486009042955569933, guid: 56ce888796dffc144a605660aac06d39, type: 3}
@@ -1397,7 +1466,7 @@ PrefabInstance:
     - target: {fileID: 3198707023216174087, guid: 56ce888796dffc144a605660aac06d39, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: 47939a49552aa1d4398113ecf10b5706, type: 2}
+      objectReference: {fileID: 2100000, guid: 95703bb8484fc394eac49da58ea12d39, type: 2}
     - target: {fileID: 4141699698098720746, guid: 56ce888796dffc144a605660aac06d39, type: 3}
       propertyPath: m_RootOrder
       value: 16
@@ -1455,6 +1524,9 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 56ce888796dffc144a605660aac06d39, type: 3}
 --- !u!4 &8990885213932886181 stripped
 Transform:
@@ -1466,12 +1538,13 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 2420693802980078646}
     m_Modifications:
     - target: {fileID: 1664380561674007578, guid: bf8f6c131d254484c8d9a8c8aea35e86, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: 47939a49552aa1d4398113ecf10b5706, type: 2}
+      objectReference: {fileID: 2100000, guid: 95703bb8484fc394eac49da58ea12d39, type: 2}
     - target: {fileID: 3682323158034624761, guid: bf8f6c131d254484c8d9a8c8aea35e86, type: 3}
       propertyPath: m_RootOrder
       value: 6
@@ -1533,6 +1606,9 @@ PrefabInstance:
       value: GalaxyRaptor_Engine
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: bf8f6c131d254484c8d9a8c8aea35e86, type: 3}
 --- !u!4 &8549647381876875960 stripped
 Transform:
@@ -1544,12 +1620,13 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 2420693802980078646}
     m_Modifications:
     - target: {fileID: 8149611993263695285, guid: 1abc005e4eac77b4dab81a5eed20dcd5, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: 47939a49552aa1d4398113ecf10b5706, type: 2}
+      objectReference: {fileID: 2100000, guid: 95703bb8484fc394eac49da58ea12d39, type: 2}
     - target: {fileID: 8872931615806978700, guid: 1abc005e4eac77b4dab81a5eed20dcd5, type: 3}
       propertyPath: m_Name
       value: GalaxyRaptor_Acc_Mirrored
@@ -1611,6 +1688,9 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 1abc005e4eac77b4dab81a5eed20dcd5, type: 3}
 --- !u!4 &4051549084542099211 stripped
 Transform:
@@ -1622,6 +1702,7 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 2420693802980078646}
     m_Modifications:
     - target: {fileID: 661851866310404275, guid: c92eb22991c188c4ea756e8651a1e07d, type: 3}
@@ -1687,8 +1768,11 @@ PrefabInstance:
     - target: {fileID: 8764595947411289636, guid: c92eb22991c188c4ea756e8651a1e07d, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: 47939a49552aa1d4398113ecf10b5706, type: 2}
+      objectReference: {fileID: 2100000, guid: 95703bb8484fc394eac49da58ea12d39, type: 2}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: c92eb22991c188c4ea756e8651a1e07d, type: 3}
 --- !u!4 &8595251349282469850 stripped
 Transform:
@@ -1700,6 +1784,7 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 2420693802980078646}
     m_Modifications:
     - target: {fileID: 661851866310404275, guid: c92eb22991c188c4ea756e8651a1e07d, type: 3}
@@ -1765,8 +1850,11 @@ PrefabInstance:
     - target: {fileID: 8764595947411289636, guid: c92eb22991c188c4ea756e8651a1e07d, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: 47939a49552aa1d4398113ecf10b5706, type: 2}
+      objectReference: {fileID: 2100000, guid: 95703bb8484fc394eac49da58ea12d39, type: 2}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: c92eb22991c188c4ea756e8651a1e07d, type: 3}
 --- !u!4 &8595251349664709524 stripped
 Transform:
@@ -1778,12 +1866,13 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 2420693802980078646}
     m_Modifications:
     - target: {fileID: 6576428935213529344, guid: 0957ee5ed79e10f47816972dc7182e3c, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: 47939a49552aa1d4398113ecf10b5706, type: 2}
+      objectReference: {fileID: 2100000, guid: 95703bb8484fc394eac49da58ea12d39, type: 2}
     - target: {fileID: 6576428935215720384, guid: 0957ee5ed79e10f47816972dc7182e3c, type: 3}
       propertyPath: m_Name
       value: GalaxyRaptor_Acc
@@ -1845,6 +1934,9 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 0957ee5ed79e10f47816972dc7182e3c, type: 3}
 --- !u!4 &2231644511848738425 stripped
 Transform:
@@ -1856,12 +1948,13 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 2420693802980078646}
     m_Modifications:
     - target: {fileID: 815818038759474246, guid: 6e0717fef4fb5f347ba897f7024116f6, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: 47939a49552aa1d4398113ecf10b5706, type: 2}
+      objectReference: {fileID: 2100000, guid: 95703bb8484fc394eac49da58ea12d39, type: 2}
     - target: {fileID: 8019987963859021669, guid: 6e0717fef4fb5f347ba897f7024116f6, type: 3}
       propertyPath: m_RootOrder
       value: 25
@@ -1923,6 +2016,9 @@ PrefabInstance:
       value: GalaxyRaptor_Wing3
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 6e0717fef4fb5f347ba897f7024116f6, type: 3}
 --- !u!4 &3094244619002322817 stripped
 Transform:
@@ -1934,12 +2030,13 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 2420693802980078646}
     m_Modifications:
     - target: {fileID: 4148793663688989133, guid: f253b7edffc23844e9e7e293559100b9, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: 47939a49552aa1d4398113ecf10b5706, type: 2}
+      objectReference: {fileID: 2100000, guid: 95703bb8484fc394eac49da58ea12d39, type: 2}
     - target: {fileID: 6505369190145888873, guid: f253b7edffc23844e9e7e293559100b9, type: 3}
       propertyPath: m_RootOrder
       value: 14
@@ -2001,6 +2098,9 @@ PrefabInstance:
       value: GalaxyRaptor_MainBody2
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: f253b7edffc23844e9e7e293559100b9, type: 3}
 --- !u!4 &2304709783184698770 stripped
 Transform:
@@ -2012,6 +2112,7 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 2420693802980078646}
     m_Modifications:
     - target: {fileID: 4333887180306424289, guid: e329f41a32004db4982c140673cb5081, type: 3}
@@ -2077,8 +2178,11 @@ PrefabInstance:
     - target: {fileID: 4333887180308849409, guid: e329f41a32004db4982c140673cb5081, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: 47939a49552aa1d4398113ecf10b5706, type: 2}
+      objectReference: {fileID: 2100000, guid: 95703bb8484fc394eac49da58ea12d39, type: 2}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: e329f41a32004db4982c140673cb5081, type: 3}
 --- !u!4 &8762105967982869424 stripped
 Transform:

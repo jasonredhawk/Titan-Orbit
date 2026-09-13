@@ -23,6 +23,7 @@ Transform:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 5958319471255366090}
+  serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
   m_LocalPosition: {x: 0, y: 0, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
@@ -68,13 +69,13 @@ Transform:
   - {fileID: 6308416116081462611}
   - {fileID: 830242678494539909}
   m_Father: {fileID: 0}
-  m_RootOrder: 0
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1001 &269385476159890200
 PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 5958319471255366085}
     m_Modifications:
     - target: {fileID: 1262733812090756113, guid: 0797ff67abfdb354db8e90b7bf8dea2c, type: 3}
@@ -136,12 +137,15 @@ PrefabInstance:
     - target: {fileID: 2302289672656449909, guid: 0797ff67abfdb354db8e90b7bf8dea2c, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: bd4643fccabefdd40a6fd0870dfa5e81, type: 2}
+      objectReference: {fileID: 2100000, guid: 703db32340910a644abd3019f731485b, type: 2}
     - target: {fileID: 8170338503103601862, guid: 0797ff67abfdb354db8e90b7bf8dea2c, type: 3}
       propertyPath: m_Name
       value: StarForce_Flap
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 0797ff67abfdb354db8e90b7bf8dea2c, type: 3}
 --- !u!4 &1313693331597016841 stripped
 Transform:
@@ -153,12 +157,13 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 5958319471255366085}
     m_Modifications:
     - target: {fileID: 4030756889084171829, guid: 00ae1091a457976479d2685e989c9456, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: bd4643fccabefdd40a6fd0870dfa5e81, type: 2}
+      objectReference: {fileID: 2100000, guid: 703db32340910a644abd3019f731485b, type: 2}
     - target: {fileID: 7130538442835425708, guid: 00ae1091a457976479d2685e989c9456, type: 3}
       propertyPath: m_Name
       value: StarForce_Thruster
@@ -220,6 +225,9 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 00ae1091a457976479d2685e989c9456, type: 3}
 --- !u!4 &8724999904540125890 stripped
 Transform:
@@ -231,6 +239,7 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 5958319471255366085}
     m_Modifications:
     - target: {fileID: 4857825973099791022, guid: cba837992d2fe7342a311880f43707b9, type: 3}
@@ -240,7 +249,7 @@ PrefabInstance:
     - target: {fileID: 5141911306238665585, guid: cba837992d2fe7342a311880f43707b9, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: bd4643fccabefdd40a6fd0870dfa5e81, type: 2}
+      objectReference: {fileID: 2100000, guid: 703db32340910a644abd3019f731485b, type: 2}
     - target: {fileID: 7629827587127987744, guid: cba837992d2fe7342a311880f43707b9, type: 3}
       propertyPath: m_RootOrder
       value: 3
@@ -298,6 +307,9 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: cba837992d2fe7342a311880f43707b9, type: 3}
 --- !u!4 &6982222938935926081 stripped
 Transform:
@@ -309,6 +321,7 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 5958319471255366085}
     m_Modifications:
     - target: {fileID: 1262733812090756113, guid: 0797ff67abfdb354db8e90b7bf8dea2c, type: 3}
@@ -370,12 +383,15 @@ PrefabInstance:
     - target: {fileID: 2302289672656449909, guid: 0797ff67abfdb354db8e90b7bf8dea2c, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: bd4643fccabefdd40a6fd0870dfa5e81, type: 2}
+      objectReference: {fileID: 2100000, guid: 703db32340910a644abd3019f731485b, type: 2}
     - target: {fileID: 8170338503103601862, guid: 0797ff67abfdb354db8e90b7bf8dea2c, type: 3}
       propertyPath: m_Name
       value: StarForce_Flap
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 0797ff67abfdb354db8e90b7bf8dea2c, type: 3}
 --- !u!4 &1737885687602988876 stripped
 Transform:
@@ -387,6 +403,7 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 5958319471255366085}
     m_Modifications:
     - target: {fileID: 879945254528876886, guid: b0ae2bdb57b171e4bb674365534d0126, type: 3}
@@ -436,12 +453,15 @@ PrefabInstance:
     - target: {fileID: 4632846469376895101, guid: b0ae2bdb57b171e4bb674365534d0126, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: c88b8c436376e01438b71a1934ea204d, type: 2}
+      objectReference: {fileID: 2100000, guid: 6420d57a534cc064d8a73902b738029b, type: 2}
     - target: {fileID: 5662077399112951412, guid: b0ae2bdb57b171e4bb674365534d0126, type: 3}
       propertyPath: m_Name
       value: MeteorMantis_Body
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: b0ae2bdb57b171e4bb674365534d0126, type: 3}
 --- !u!4 &571105557889031911 stripped
 Transform:
@@ -453,6 +473,7 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 5958319471255366085}
     m_Modifications:
     - target: {fileID: 1262733812090756113, guid: 0797ff67abfdb354db8e90b7bf8dea2c, type: 3}
@@ -514,12 +535,15 @@ PrefabInstance:
     - target: {fileID: 2302289672656449909, guid: 0797ff67abfdb354db8e90b7bf8dea2c, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: bd4643fccabefdd40a6fd0870dfa5e81, type: 2}
+      objectReference: {fileID: 2100000, guid: 703db32340910a644abd3019f731485b, type: 2}
     - target: {fileID: 8170338503103601862, guid: 0797ff67abfdb354db8e90b7bf8dea2c, type: 3}
       propertyPath: m_Name
       value: StarForce_Flap
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 0797ff67abfdb354db8e90b7bf8dea2c, type: 3}
 --- !u!4 &69967047993706120 stripped
 Transform:
@@ -531,6 +555,7 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 5958319471255366085}
     m_Modifications:
     - target: {fileID: 4857825973099791022, guid: cba837992d2fe7342a311880f43707b9, type: 3}
@@ -540,7 +565,7 @@ PrefabInstance:
     - target: {fileID: 5141911306238665585, guid: cba837992d2fe7342a311880f43707b9, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: bd4643fccabefdd40a6fd0870dfa5e81, type: 2}
+      objectReference: {fileID: 2100000, guid: 703db32340910a644abd3019f731485b, type: 2}
     - target: {fileID: 7629827587127987744, guid: cba837992d2fe7342a311880f43707b9, type: 3}
       propertyPath: m_RootOrder
       value: 4
@@ -598,6 +623,9 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: cba837992d2fe7342a311880f43707b9, type: 3}
 --- !u!4 &8487916001163672689 stripped
 Transform:
@@ -609,6 +637,7 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 5958319471255366085}
     m_Modifications:
     - target: {fileID: 946996845024269181, guid: 42d8e08481782c4409ed73ceb71fc21a, type: 3}
@@ -658,12 +687,15 @@ PrefabInstance:
     - target: {fileID: 4274505793388576443, guid: 42d8e08481782c4409ed73ceb71fc21a, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: bd4643fccabefdd40a6fd0870dfa5e81, type: 2}
+      objectReference: {fileID: 2100000, guid: 703db32340910a644abd3019f731485b, type: 2}
     - target: {fileID: 8547088207555201517, guid: 42d8e08481782c4409ed73ceb71fc21a, type: 3}
       propertyPath: m_Name
       value: StarForce_Body2
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 42d8e08481782c4409ed73ceb71fc21a, type: 3}
 --- !u!4 &1414451069654000196 stripped
 Transform:
@@ -675,6 +707,7 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 5958319471255366085}
     m_Modifications:
     - target: {fileID: 2315022631925302421, guid: eb1d4671e9703144382c04170d6c9adc, type: 3}
@@ -728,8 +761,11 @@ PrefabInstance:
     - target: {fileID: 4129032269147130294, guid: eb1d4671e9703144382c04170d6c9adc, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: c88b8c436376e01438b71a1934ea204d, type: 2}
+      objectReference: {fileID: 2100000, guid: 6420d57a534cc064d8a73902b738029b, type: 2}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: eb1d4671e9703144382c04170d6c9adc, type: 3}
 --- !u!4 &4494508008462796363 stripped
 Transform:
@@ -741,12 +777,13 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 5958319471255366085}
     m_Modifications:
     - target: {fileID: 392945801934298266, guid: e7847e62b021ae64fb837a3446143c6c, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: c88b8c436376e01438b71a1934ea204d, type: 2}
+      objectReference: {fileID: 2100000, guid: 6420d57a534cc064d8a73902b738029b, type: 2}
     - target: {fileID: 1166823068947237999, guid: e7847e62b021ae64fb837a3446143c6c, type: 3}
       propertyPath: m_Name
       value: MeteorMantis_Engine
@@ -796,6 +833,9 @@ PrefabInstance:
       value: 90.00001
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: e7847e62b021ae64fb837a3446143c6c, type: 3}
 --- !u!4 &6308416116081462611 stripped
 Transform:
@@ -807,6 +847,7 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 5958319471255366085}
     m_Modifications:
     - target: {fileID: 1262733812090756113, guid: 0797ff67abfdb354db8e90b7bf8dea2c, type: 3}
@@ -868,12 +909,15 @@ PrefabInstance:
     - target: {fileID: 2302289672656449909, guid: 0797ff67abfdb354db8e90b7bf8dea2c, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: bd4643fccabefdd40a6fd0870dfa5e81, type: 2}
+      objectReference: {fileID: 2100000, guid: 703db32340910a644abd3019f731485b, type: 2}
     - target: {fileID: 8170338503103601862, guid: 0797ff67abfdb354db8e90b7bf8dea2c, type: 3}
       propertyPath: m_Name
       value: StarForce_Flap
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 0797ff67abfdb354db8e90b7bf8dea2c, type: 3}
 --- !u!4 &3751892430739810364 stripped
 Transform:
@@ -885,12 +929,13 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 5958319471255366085}
     m_Modifications:
     - target: {fileID: 4030756889084171829, guid: 00ae1091a457976479d2685e989c9456, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: bd4643fccabefdd40a6fd0870dfa5e81, type: 2}
+      objectReference: {fileID: 2100000, guid: 703db32340910a644abd3019f731485b, type: 2}
     - target: {fileID: 7130538442835425708, guid: 00ae1091a457976479d2685e989c9456, type: 3}
       propertyPath: m_Name
       value: StarForce_Thruster
@@ -952,6 +997,9 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 00ae1091a457976479d2685e989c9456, type: 3}
 --- !u!4 &6369240259371439407 stripped
 Transform:
@@ -963,6 +1011,7 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 5958319471255366085}
     m_Modifications:
     - target: {fileID: 1262733812090756113, guid: 0797ff67abfdb354db8e90b7bf8dea2c, type: 3}
@@ -1024,12 +1073,15 @@ PrefabInstance:
     - target: {fileID: 2302289672656449909, guid: 0797ff67abfdb354db8e90b7bf8dea2c, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: bd4643fccabefdd40a6fd0870dfa5e81, type: 2}
+      objectReference: {fileID: 2100000, guid: 703db32340910a644abd3019f731485b, type: 2}
     - target: {fileID: 8170338503103601862, guid: 0797ff67abfdb354db8e90b7bf8dea2c, type: 3}
       propertyPath: m_Name
       value: StarForce_Flap
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 0797ff67abfdb354db8e90b7bf8dea2c, type: 3}
 --- !u!4 &4515898728793506902 stripped
 Transform:
@@ -1041,6 +1093,7 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 5958319471255366085}
     m_Modifications:
     - target: {fileID: 4030535837687648902, guid: d952a5374fc0f3c45a29b621b6ac6625, type: 3}
@@ -1102,12 +1155,15 @@ PrefabInstance:
     - target: {fileID: 6449461133465399829, guid: d952a5374fc0f3c45a29b621b6ac6625, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: c88b8c436376e01438b71a1934ea204d, type: 2}
+      objectReference: {fileID: 2100000, guid: 6420d57a534cc064d8a73902b738029b, type: 2}
     - target: {fileID: 7813116797383423119, guid: d952a5374fc0f3c45a29b621b6ac6625, type: 3}
       propertyPath: m_Name
       value: MeteorMantis_Cockpit_Base (1)
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: d952a5374fc0f3c45a29b621b6ac6625, type: 3}
 --- !u!4 &1778735130123329036 stripped
 Transform:
@@ -1119,6 +1175,7 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 5958319471255366085}
     m_Modifications:
     - target: {fileID: 1262733812090756113, guid: 0797ff67abfdb354db8e90b7bf8dea2c, type: 3}
@@ -1180,12 +1237,15 @@ PrefabInstance:
     - target: {fileID: 2302289672656449909, guid: 0797ff67abfdb354db8e90b7bf8dea2c, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: bd4643fccabefdd40a6fd0870dfa5e81, type: 2}
+      objectReference: {fileID: 2100000, guid: 703db32340910a644abd3019f731485b, type: 2}
     - target: {fileID: 8170338503103601862, guid: 0797ff67abfdb354db8e90b7bf8dea2c, type: 3}
       propertyPath: m_Name
       value: StarForce_Flap
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 0797ff67abfdb354db8e90b7bf8dea2c, type: 3}
 --- !u!4 &2838497392818764420 stripped
 Transform:
@@ -1197,6 +1257,7 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 5958319471255366085}
     m_Modifications:
     - target: {fileID: 854546670060476649, guid: c41deb7a79860e74cbae10dbe3e92139, type: 3}
@@ -1246,12 +1307,15 @@ PrefabInstance:
     - target: {fileID: 6601104939363626194, guid: c41deb7a79860e74cbae10dbe3e92139, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: bd4643fccabefdd40a6fd0870dfa5e81, type: 2}
+      objectReference: {fileID: 2100000, guid: 703db32340910a644abd3019f731485b, type: 2}
     - target: {fileID: 8493360586339286139, guid: c41deb7a79860e74cbae10dbe3e92139, type: 3}
       propertyPath: m_Name
       value: StarForce_Body1
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: c41deb7a79860e74cbae10dbe3e92139, type: 3}
 --- !u!4 &3559217361379572758 stripped
 Transform:
@@ -1263,6 +1327,7 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 5958319471255366085}
     m_Modifications:
     - target: {fileID: 530424653256426271, guid: 79d57d348bbeb624696fc3765bb48cad, type: 3}
@@ -1272,7 +1337,7 @@ PrefabInstance:
     - target: {fileID: 4948996738188465946, guid: 79d57d348bbeb624696fc3765bb48cad, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: bd4643fccabefdd40a6fd0870dfa5e81, type: 2}
+      objectReference: {fileID: 2100000, guid: 703db32340910a644abd3019f731485b, type: 2}
     - target: {fileID: 7526017006703933874, guid: 79d57d348bbeb624696fc3765bb48cad, type: 3}
       propertyPath: m_RootOrder
       value: 6
@@ -1330,6 +1395,9 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 79d57d348bbeb624696fc3765bb48cad, type: 3}
 --- !u!4 &6156448942686411871 stripped
 Transform:
@@ -1341,12 +1409,13 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 5958319471255366085}
     m_Modifications:
     - target: {fileID: 4030756889084171829, guid: 00ae1091a457976479d2685e989c9456, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: bd4643fccabefdd40a6fd0870dfa5e81, type: 2}
+      objectReference: {fileID: 2100000, guid: 703db32340910a644abd3019f731485b, type: 2}
     - target: {fileID: 7130538442835425708, guid: 00ae1091a457976479d2685e989c9456, type: 3}
       propertyPath: m_Name
       value: StarForce_Thruster
@@ -1408,6 +1477,9 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 00ae1091a457976479d2685e989c9456, type: 3}
 --- !u!4 &3680273509921195706 stripped
 Transform:
@@ -1419,12 +1491,13 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 5958319471255366085}
     m_Modifications:
     - target: {fileID: 4859527713866142441, guid: 3f52dd327656f8c4b8c3b4850ff6cdc8, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: bd4643fccabefdd40a6fd0870dfa5e81, type: 2}
+      objectReference: {fileID: 2100000, guid: 703db32340910a644abd3019f731485b, type: 2}
     - target: {fileID: 5253912861064769547, guid: 3f52dd327656f8c4b8c3b4850ff6cdc8, type: 3}
       propertyPath: m_Name
       value: StarForce_Cockpit
@@ -1474,6 +1547,9 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 3f52dd327656f8c4b8c3b4850ff6cdc8, type: 3}
 --- !u!4 &2275426829156531513 stripped
 Transform:
@@ -1485,6 +1561,7 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 5958319471255366085}
     m_Modifications:
     - target: {fileID: 4030535837687648902, guid: d952a5374fc0f3c45a29b621b6ac6625, type: 3}
@@ -1546,12 +1623,15 @@ PrefabInstance:
     - target: {fileID: 6449461133465399829, guid: d952a5374fc0f3c45a29b621b6ac6625, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: c88b8c436376e01438b71a1934ea204d, type: 2}
+      objectReference: {fileID: 2100000, guid: 6420d57a534cc064d8a73902b738029b, type: 2}
     - target: {fileID: 7813116797383423119, guid: d952a5374fc0f3c45a29b621b6ac6625, type: 3}
       propertyPath: m_Name
       value: MeteorMantis_Cockpit_Base
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: d952a5374fc0f3c45a29b621b6ac6625, type: 3}
 --- !u!4 &8401385963059236078 stripped
 Transform:
@@ -1563,12 +1643,13 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 5958319471255366085}
     m_Modifications:
     - target: {fileID: 4030756889084171829, guid: 00ae1091a457976479d2685e989c9456, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: bd4643fccabefdd40a6fd0870dfa5e81, type: 2}
+      objectReference: {fileID: 2100000, guid: 703db32340910a644abd3019f731485b, type: 2}
     - target: {fileID: 7130538442835425708, guid: 00ae1091a457976479d2685e989c9456, type: 3}
       propertyPath: m_Name
       value: StarForce_Thruster
@@ -1630,6 +1711,9 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 00ae1091a457976479d2685e989c9456, type: 3}
 --- !u!4 &3858322374922332531 stripped
 Transform:
@@ -1641,6 +1725,7 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 5958319471255366085}
     m_Modifications:
     - target: {fileID: 1262733812090756113, guid: 0797ff67abfdb354db8e90b7bf8dea2c, type: 3}
@@ -1702,12 +1787,15 @@ PrefabInstance:
     - target: {fileID: 2302289672656449909, guid: 0797ff67abfdb354db8e90b7bf8dea2c, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: bd4643fccabefdd40a6fd0870dfa5e81, type: 2}
+      objectReference: {fileID: 2100000, guid: 703db32340910a644abd3019f731485b, type: 2}
     - target: {fileID: 8170338503103601862, guid: 0797ff67abfdb354db8e90b7bf8dea2c, type: 3}
       propertyPath: m_Name
       value: StarForce_Flap
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 0797ff67abfdb354db8e90b7bf8dea2c, type: 3}
 --- !u!4 &6468464685087828649 stripped
 Transform:
@@ -1719,6 +1807,7 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 5958319471255366085}
     m_Modifications:
     - target: {fileID: 231560184199387292, guid: 9ad7e5a78ec706e4d94ef954513c643c, type: 3}
@@ -1780,12 +1869,15 @@ PrefabInstance:
     - target: {fileID: 2574781384483750877, guid: 9ad7e5a78ec706e4d94ef954513c643c, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: c88b8c436376e01438b71a1934ea204d, type: 2}
+      objectReference: {fileID: 2100000, guid: 6420d57a534cc064d8a73902b738029b, type: 2}
     - target: {fileID: 7654818365242820068, guid: 9ad7e5a78ec706e4d94ef954513c643c, type: 3}
       propertyPath: m_Name
       value: MeteorMantis_Joint
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 9ad7e5a78ec706e4d94ef954513c643c, type: 3}
 --- !u!4 &5440178486637189807 stripped
 Transform:
@@ -1797,6 +1889,7 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 5958319471255366085}
     m_Modifications:
     - target: {fileID: 231560184199387292, guid: 9ad7e5a78ec706e4d94ef954513c643c, type: 3}
@@ -1858,12 +1951,15 @@ PrefabInstance:
     - target: {fileID: 2574781384483750877, guid: 9ad7e5a78ec706e4d94ef954513c643c, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: c88b8c436376e01438b71a1934ea204d, type: 2}
+      objectReference: {fileID: 2100000, guid: 6420d57a534cc064d8a73902b738029b, type: 2}
     - target: {fileID: 7654818365242820068, guid: 9ad7e5a78ec706e4d94ef954513c643c, type: 3}
       propertyPath: m_Name
       value: MeteorMantis_Joint (1)
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 9ad7e5a78ec706e4d94ef954513c643c, type: 3}
 --- !u!4 &5270308816696390812 stripped
 Transform:
@@ -1875,6 +1971,7 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 5958319471255366085}
     m_Modifications:
     - target: {fileID: 1262733812090756113, guid: 0797ff67abfdb354db8e90b7bf8dea2c, type: 3}
@@ -1936,12 +2033,15 @@ PrefabInstance:
     - target: {fileID: 2302289672656449909, guid: 0797ff67abfdb354db8e90b7bf8dea2c, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: bd4643fccabefdd40a6fd0870dfa5e81, type: 2}
+      objectReference: {fileID: 2100000, guid: 703db32340910a644abd3019f731485b, type: 2}
     - target: {fileID: 8170338503103601862, guid: 0797ff67abfdb354db8e90b7bf8dea2c, type: 3}
       propertyPath: m_Name
       value: StarForce_Flap
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 0797ff67abfdb354db8e90b7bf8dea2c, type: 3}
 --- !u!4 &6547802542258502591 stripped
 Transform:
@@ -1953,6 +2053,7 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 5958319471255366085}
     m_Modifications:
     - target: {fileID: 1262733812090756113, guid: 0797ff67abfdb354db8e90b7bf8dea2c, type: 3}
@@ -2014,12 +2115,15 @@ PrefabInstance:
     - target: {fileID: 2302289672656449909, guid: 0797ff67abfdb354db8e90b7bf8dea2c, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: bd4643fccabefdd40a6fd0870dfa5e81, type: 2}
+      objectReference: {fileID: 2100000, guid: 703db32340910a644abd3019f731485b, type: 2}
     - target: {fileID: 8170338503103601862, guid: 0797ff67abfdb354db8e90b7bf8dea2c, type: 3}
       propertyPath: m_Name
       value: StarForce_Flap
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 0797ff67abfdb354db8e90b7bf8dea2c, type: 3}
 --- !u!4 &5329274928938889423 stripped
 Transform:
@@ -2031,6 +2135,7 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 5958319471255366085}
     m_Modifications:
     - target: {fileID: 471911019857611106, guid: 31300ab6a8630464abf128d90f437b05, type: 3}
@@ -2096,8 +2201,11 @@ PrefabInstance:
     - target: {fileID: 8052046405224139313, guid: 31300ab6a8630464abf128d90f437b05, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: c88b8c436376e01438b71a1934ea204d, type: 2}
+      objectReference: {fileID: 2100000, guid: 6420d57a534cc064d8a73902b738029b, type: 2}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 31300ab6a8630464abf128d90f437b05, type: 3}
 --- !u!4 &6907352399297850661 stripped
 Transform:
@@ -2109,6 +2217,7 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 5958319471255366085}
     m_Modifications:
     - target: {fileID: 1262733812090756113, guid: 0797ff67abfdb354db8e90b7bf8dea2c, type: 3}
@@ -2170,12 +2279,15 @@ PrefabInstance:
     - target: {fileID: 2302289672656449909, guid: 0797ff67abfdb354db8e90b7bf8dea2c, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: bd4643fccabefdd40a6fd0870dfa5e81, type: 2}
+      objectReference: {fileID: 2100000, guid: 703db32340910a644abd3019f731485b, type: 2}
     - target: {fileID: 8170338503103601862, guid: 0797ff67abfdb354db8e90b7bf8dea2c, type: 3}
       propertyPath: m_Name
       value: StarForce_Flap
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 0797ff67abfdb354db8e90b7bf8dea2c, type: 3}
 --- !u!4 &5545882928970641735 stripped
 Transform:
@@ -2187,6 +2299,7 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 5958319471255366085}
     m_Modifications:
     - target: {fileID: 1007344827440843541, guid: afc3de6886bf46a459356b53fa6abc11, type: 3}
@@ -2252,8 +2365,11 @@ PrefabInstance:
     - target: {fileID: 8982326493631101466, guid: afc3de6886bf46a459356b53fa6abc11, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: bd4643fccabefdd40a6fd0870dfa5e81, type: 2}
+      objectReference: {fileID: 2100000, guid: 703db32340910a644abd3019f731485b, type: 2}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: afc3de6886bf46a459356b53fa6abc11, type: 3}
 --- !u!4 &6006927828598439684 stripped
 Transform:
@@ -2265,6 +2381,7 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 5958319471255366085}
     m_Modifications:
     - target: {fileID: 1262733812090756113, guid: 0797ff67abfdb354db8e90b7bf8dea2c, type: 3}
@@ -2326,12 +2443,15 @@ PrefabInstance:
     - target: {fileID: 2302289672656449909, guid: 0797ff67abfdb354db8e90b7bf8dea2c, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: bd4643fccabefdd40a6fd0870dfa5e81, type: 2}
+      objectReference: {fileID: 2100000, guid: 703db32340910a644abd3019f731485b, type: 2}
     - target: {fileID: 8170338503103601862, guid: 0797ff67abfdb354db8e90b7bf8dea2c, type: 3}
       propertyPath: m_Name
       value: StarForce_Flap
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 0797ff67abfdb354db8e90b7bf8dea2c, type: 3}
 --- !u!4 &5724013866678493443 stripped
 Transform:
@@ -2343,6 +2463,7 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 5958319471255366085}
     m_Modifications:
     - target: {fileID: 2315022631925302421, guid: eb1d4671e9703144382c04170d6c9adc, type: 3}
@@ -2396,8 +2517,11 @@ PrefabInstance:
     - target: {fileID: 4129032269147130294, guid: eb1d4671e9703144382c04170d6c9adc, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: c88b8c436376e01438b71a1934ea204d, type: 2}
+      objectReference: {fileID: 2100000, guid: 6420d57a534cc064d8a73902b738029b, type: 2}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: eb1d4671e9703144382c04170d6c9adc, type: 3}
 --- !u!4 &9205971626277485452 stripped
 Transform:
@@ -2409,6 +2533,7 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 5958319471255366085}
     m_Modifications:
     - target: {fileID: 1262733812090756113, guid: 0797ff67abfdb354db8e90b7bf8dea2c, type: 3}
@@ -2470,12 +2595,15 @@ PrefabInstance:
     - target: {fileID: 2302289672656449909, guid: 0797ff67abfdb354db8e90b7bf8dea2c, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: bd4643fccabefdd40a6fd0870dfa5e81, type: 2}
+      objectReference: {fileID: 2100000, guid: 703db32340910a644abd3019f731485b, type: 2}
     - target: {fileID: 8170338503103601862, guid: 0797ff67abfdb354db8e90b7bf8dea2c, type: 3}
       propertyPath: m_Name
       value: StarForce_Flap
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 0797ff67abfdb354db8e90b7bf8dea2c, type: 3}
 --- !u!4 &8277321451651630838 stripped
 Transform:
@@ -2487,6 +2615,7 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 5958319471255366085}
     m_Modifications:
     - target: {fileID: 1262733812090756113, guid: 0797ff67abfdb354db8e90b7bf8dea2c, type: 3}
@@ -2548,12 +2677,15 @@ PrefabInstance:
     - target: {fileID: 2302289672656449909, guid: 0797ff67abfdb354db8e90b7bf8dea2c, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: bd4643fccabefdd40a6fd0870dfa5e81, type: 2}
+      objectReference: {fileID: 2100000, guid: 703db32340910a644abd3019f731485b, type: 2}
     - target: {fileID: 8170338503103601862, guid: 0797ff67abfdb354db8e90b7bf8dea2c, type: 3}
       propertyPath: m_Name
       value: StarForce_Flap
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 0797ff67abfdb354db8e90b7bf8dea2c, type: 3}
 --- !u!4 &8493493620323610480 stripped
 Transform:
@@ -2565,6 +2697,7 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 5958319471255366085}
     m_Modifications:
     - target: {fileID: 1262733812090756113, guid: 0797ff67abfdb354db8e90b7bf8dea2c, type: 3}
@@ -2626,12 +2759,15 @@ PrefabInstance:
     - target: {fileID: 2302289672656449909, guid: 0797ff67abfdb354db8e90b7bf8dea2c, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: bd4643fccabefdd40a6fd0870dfa5e81, type: 2}
+      objectReference: {fileID: 2100000, guid: 703db32340910a644abd3019f731485b, type: 2}
     - target: {fileID: 8170338503103601862, guid: 0797ff67abfdb354db8e90b7bf8dea2c, type: 3}
       propertyPath: m_Name
       value: StarForce_Flap
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 0797ff67abfdb354db8e90b7bf8dea2c, type: 3}
 --- !u!4 &8365083519802448078 stripped
 Transform:
@@ -2643,6 +2779,7 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 5958319471255366085}
     m_Modifications:
     - target: {fileID: 1262733812090756113, guid: 0797ff67abfdb354db8e90b7bf8dea2c, type: 3}
@@ -2704,12 +2841,15 @@ PrefabInstance:
     - target: {fileID: 2302289672656449909, guid: 0797ff67abfdb354db8e90b7bf8dea2c, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: bd4643fccabefdd40a6fd0870dfa5e81, type: 2}
+      objectReference: {fileID: 2100000, guid: 703db32340910a644abd3019f731485b, type: 2}
     - target: {fileID: 8170338503103601862, guid: 0797ff67abfdb354db8e90b7bf8dea2c, type: 3}
       propertyPath: m_Name
       value: StarForce_Flap
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 0797ff67abfdb354db8e90b7bf8dea2c, type: 3}
 --- !u!4 &9050049349641793788 stripped
 Transform:
@@ -2721,6 +2861,7 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 5958319471255366085}
     m_Modifications:
     - target: {fileID: 530424653256426271, guid: 79d57d348bbeb624696fc3765bb48cad, type: 3}
@@ -2730,7 +2871,7 @@ PrefabInstance:
     - target: {fileID: 4948996738188465946, guid: 79d57d348bbeb624696fc3765bb48cad, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: bd4643fccabefdd40a6fd0870dfa5e81, type: 2}
+      objectReference: {fileID: 2100000, guid: 703db32340910a644abd3019f731485b, type: 2}
     - target: {fileID: 7526017006703933874, guid: 79d57d348bbeb624696fc3765bb48cad, type: 3}
       propertyPath: m_RootOrder
       value: 5
@@ -2788,6 +2929,9 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 79d57d348bbeb624696fc3765bb48cad, type: 3}
 --- !u!4 &1965298555907226342 stripped
 Transform:
@@ -2799,6 +2943,7 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 5958319471255366085}
     m_Modifications:
     - target: {fileID: 1007344827440843541, guid: afc3de6886bf46a459356b53fa6abc11, type: 3}
@@ -2864,8 +3009,11 @@ PrefabInstance:
     - target: {fileID: 8982326493631101466, guid: afc3de6886bf46a459356b53fa6abc11, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: bd4643fccabefdd40a6fd0870dfa5e81, type: 2}
+      objectReference: {fileID: 2100000, guid: 703db32340910a644abd3019f731485b, type: 2}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: afc3de6886bf46a459356b53fa6abc11, type: 3}
 --- !u!4 &8426337590215004577 stripped
 Transform:
@@ -2877,6 +3025,7 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 5958319471255366085}
     m_Modifications:
     - target: {fileID: 1262733812090756113, guid: 0797ff67abfdb354db8e90b7bf8dea2c, type: 3}
@@ -2938,12 +3087,15 @@ PrefabInstance:
     - target: {fileID: 2302289672656449909, guid: 0797ff67abfdb354db8e90b7bf8dea2c, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: bd4643fccabefdd40a6fd0870dfa5e81, type: 2}
+      objectReference: {fileID: 2100000, guid: 703db32340910a644abd3019f731485b, type: 2}
     - target: {fileID: 8170338503103601862, guid: 0797ff67abfdb354db8e90b7bf8dea2c, type: 3}
       propertyPath: m_Name
       value: StarForce_Flap
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 0797ff67abfdb354db8e90b7bf8dea2c, type: 3}
 --- !u!4 &7870792874502932275 stripped
 Transform:
@@ -2955,12 +3107,13 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 5958319471255366085}
     m_Modifications:
     - target: {fileID: 392945801934298266, guid: e7847e62b021ae64fb837a3446143c6c, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: c88b8c436376e01438b71a1934ea204d, type: 2}
+      objectReference: {fileID: 2100000, guid: 6420d57a534cc064d8a73902b738029b, type: 2}
     - target: {fileID: 1166823068947237999, guid: e7847e62b021ae64fb837a3446143c6c, type: 3}
       propertyPath: m_Name
       value: MeteorMantis_Engine (1)
@@ -3010,6 +3163,9 @@ PrefabInstance:
       value: -90.00001
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: e7847e62b021ae64fb837a3446143c6c, type: 3}
 --- !u!4 &830242678494539909 stripped
 Transform:

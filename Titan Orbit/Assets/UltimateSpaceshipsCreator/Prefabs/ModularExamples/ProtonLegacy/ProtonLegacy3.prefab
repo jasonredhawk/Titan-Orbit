@@ -23,6 +23,7 @@ Transform:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1922911173954680808}
+  serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
   m_LocalPosition: {x: 0, y: 0, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
@@ -43,13 +44,13 @@ Transform:
   - {fileID: 7180393213036396269}
   - {fileID: 3685945709816488991}
   m_Father: {fileID: 0}
-  m_RootOrder: 0
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1001 &855315367782594613
 PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 1289257831668837714}
     m_Modifications:
     - target: {fileID: 798273778452656088, guid: 5f9749da825a87248a5250e15e7ab257, type: 3}
@@ -59,7 +60,7 @@ PrefabInstance:
     - target: {fileID: 7546895166853683814, guid: 5f9749da825a87248a5250e15e7ab257, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: 829ecea7258e212459faf8a01125c08b, type: 2}
+      objectReference: {fileID: 2100000, guid: dc28626af2872df4080f6bce9aa7a04e, type: 2}
     - target: {fileID: 7961863403298090036, guid: 5f9749da825a87248a5250e15e7ab257, type: 3}
       propertyPath: m_RootOrder
       value: 0
@@ -105,6 +106,9 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 5f9749da825a87248a5250e15e7ab257, type: 3}
 --- !u!4 &7323002936854762497 stripped
 Transform:
@@ -116,12 +120,13 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 1289257831668837714}
     m_Modifications:
     - target: {fileID: 4626181717966132948, guid: d2dfd5ea72249494b87509c2164dc8db, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: 829ecea7258e212459faf8a01125c08b, type: 2}
+      objectReference: {fileID: 2100000, guid: dc28626af2872df4080f6bce9aa7a04e, type: 2}
     - target: {fileID: 6066297481092148678, guid: d2dfd5ea72249494b87509c2164dc8db, type: 3}
       propertyPath: m_RootOrder
       value: 7
@@ -183,6 +188,9 @@ PrefabInstance:
       value: ProtonLegacy_Solar
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: d2dfd5ea72249494b87509c2164dc8db, type: 3}
 --- !u!4 &5179588897317860820 stripped
 Transform:
@@ -194,12 +202,13 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 1289257831668837714}
     m_Modifications:
     - target: {fileID: 8165869075823399829, guid: 7e01b1c029a9b03428e3443b6b190b8d, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: 829ecea7258e212459faf8a01125c08b, type: 2}
+      objectReference: {fileID: 2100000, guid: dc28626af2872df4080f6bce9aa7a04e, type: 2}
     - target: {fileID: 8274673120078594124, guid: 7e01b1c029a9b03428e3443b6b190b8d, type: 3}
       propertyPath: m_Name
       value: ProtonLegacy_Wing_Mirrored
@@ -261,6 +270,9 @@ PrefabInstance:
       value: 150
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 7e01b1c029a9b03428e3443b6b190b8d, type: 3}
 --- !u!4 &7180393213036396269 stripped
 Transform:
@@ -272,6 +284,7 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 1289257831668837714}
     m_Modifications:
     - target: {fileID: 1654093406572484308, guid: 3060959b9bab0ba4caa5a5d224e50eb9, type: 3}
@@ -337,8 +350,11 @@ PrefabInstance:
     - target: {fileID: 8123874021769066668, guid: 3060959b9bab0ba4caa5a5d224e50eb9, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: 829ecea7258e212459faf8a01125c08b, type: 2}
+      objectReference: {fileID: 2100000, guid: dc28626af2872df4080f6bce9aa7a04e, type: 2}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 3060959b9bab0ba4caa5a5d224e50eb9, type: 3}
 --- !u!4 &2318060551628263340 stripped
 Transform:
@@ -350,6 +366,7 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 1289257831668837714}
     m_Modifications:
     - target: {fileID: 1884015819053709882, guid: 12b03c1dccf9d274badd9baad905eb95, type: 3}
@@ -359,7 +376,7 @@ PrefabInstance:
     - target: {fileID: 7078411233046647441, guid: 12b03c1dccf9d274badd9baad905eb95, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: 829ecea7258e212459faf8a01125c08b, type: 2}
+      objectReference: {fileID: 2100000, guid: dc28626af2872df4080f6bce9aa7a04e, type: 2}
     - target: {fileID: 8928001151807600419, guid: 12b03c1dccf9d274badd9baad905eb95, type: 3}
       propertyPath: m_RootOrder
       value: 8
@@ -417,6 +434,9 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 12b03c1dccf9d274badd9baad905eb95, type: 3}
 --- !u!4 &6883583160914555462 stripped
 Transform:
@@ -428,12 +448,13 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 1289257831668837714}
     m_Modifications:
     - target: {fileID: 1238125092696366909, guid: 63846e1fb5ce3224e887eb9c9858c5c6, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: 829ecea7258e212459faf8a01125c08b, type: 2}
+      objectReference: {fileID: 2100000, guid: dc28626af2872df4080f6bce9aa7a04e, type: 2}
     - target: {fileID: 1752825333575287572, guid: 63846e1fb5ce3224e887eb9c9858c5c6, type: 3}
       propertyPath: m_RootOrder
       value: 4
@@ -483,6 +504,9 @@ PrefabInstance:
       value: ProtonLegacy_Ring
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 63846e1fb5ce3224e887eb9c9858c5c6, type: 3}
 --- !u!4 &2954899878691762047 stripped
 Transform:
@@ -494,12 +518,13 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 1289257831668837714}
     m_Modifications:
     - target: {fileID: 8165869075823399829, guid: 7e01b1c029a9b03428e3443b6b190b8d, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: 829ecea7258e212459faf8a01125c08b, type: 2}
+      objectReference: {fileID: 2100000, guid: dc28626af2872df4080f6bce9aa7a04e, type: 2}
     - target: {fileID: 8274673120078594124, guid: 7e01b1c029a9b03428e3443b6b190b8d, type: 3}
       propertyPath: m_Name
       value: ProtonLegacy_Wing_Mirrored
@@ -561,6 +586,9 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 7e01b1c029a9b03428e3443b6b190b8d, type: 3}
 --- !u!4 &3685945709816488991 stripped
 Transform:
@@ -572,6 +600,7 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 1289257831668837714}
     m_Modifications:
     - target: {fileID: 2578625905274950411, guid: 8f64e57ff336b364ea1c6ded6f36e3ea, type: 3}
@@ -633,12 +662,15 @@ PrefabInstance:
     - target: {fileID: 2733190879365338172, guid: 8f64e57ff336b364ea1c6ded6f36e3ea, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: 829ecea7258e212459faf8a01125c08b, type: 2}
+      objectReference: {fileID: 2100000, guid: dc28626af2872df4080f6bce9aa7a04e, type: 2}
     - target: {fileID: 4874136362651824522, guid: 8f64e57ff336b364ea1c6ded6f36e3ea, type: 3}
       propertyPath: m_Name
       value: ProtonLegacy_Core
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 8f64e57ff336b364ea1c6ded6f36e3ea, type: 3}
 --- !u!4 &8234738726029815867 stripped
 Transform:
@@ -650,6 +682,7 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 1289257831668837714}
     m_Modifications:
     - target: {fileID: 1884015819053709882, guid: 12b03c1dccf9d274badd9baad905eb95, type: 3}
@@ -659,7 +692,7 @@ PrefabInstance:
     - target: {fileID: 7078411233046647441, guid: 12b03c1dccf9d274badd9baad905eb95, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: 829ecea7258e212459faf8a01125c08b, type: 2}
+      objectReference: {fileID: 2100000, guid: dc28626af2872df4080f6bce9aa7a04e, type: 2}
     - target: {fileID: 8928001151807600419, guid: 12b03c1dccf9d274badd9baad905eb95, type: 3}
       propertyPath: m_RootOrder
       value: 9
@@ -717,6 +750,9 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 12b03c1dccf9d274badd9baad905eb95, type: 3}
 --- !u!4 &3273663605709004642 stripped
 Transform:
@@ -728,12 +764,13 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 1289257831668837714}
     m_Modifications:
     - target: {fileID: 1238125092696366909, guid: 63846e1fb5ce3224e887eb9c9858c5c6, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: 829ecea7258e212459faf8a01125c08b, type: 2}
+      objectReference: {fileID: 2100000, guid: dc28626af2872df4080f6bce9aa7a04e, type: 2}
     - target: {fileID: 1752825333575287572, guid: 63846e1fb5ce3224e887eb9c9858c5c6, type: 3}
       propertyPath: m_RootOrder
       value: 5
@@ -783,6 +820,9 @@ PrefabInstance:
       value: ProtonLegacy_Ring
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 63846e1fb5ce3224e887eb9c9858c5c6, type: 3}
 --- !u!4 &8825893953421156359 stripped
 Transform:
@@ -794,12 +834,13 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 1289257831668837714}
     m_Modifications:
     - target: {fileID: 4781884410979918382, guid: f9cc78cab19c8b945a903fc14deb35be, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: 829ecea7258e212459faf8a01125c08b, type: 2}
+      objectReference: {fileID: 2100000, guid: dc28626af2872df4080f6bce9aa7a04e, type: 2}
     - target: {fileID: 6851799821074544535, guid: f9cc78cab19c8b945a903fc14deb35be, type: 3}
       propertyPath: m_RootOrder
       value: 1
@@ -861,6 +902,9 @@ PrefabInstance:
       value: ProtonLegacy_Cockpit
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: f9cc78cab19c8b945a903fc14deb35be, type: 3}
 --- !u!4 &3711199604555102197 stripped
 Transform:
@@ -872,6 +916,7 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 1289257831668837714}
     m_Modifications:
     - target: {fileID: 1654093406572484308, guid: 3060959b9bab0ba4caa5a5d224e50eb9, type: 3}
@@ -937,8 +982,11 @@ PrefabInstance:
     - target: {fileID: 8123874021769066668, guid: 3060959b9bab0ba4caa5a5d224e50eb9, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: 829ecea7258e212459faf8a01125c08b, type: 2}
+      objectReference: {fileID: 2100000, guid: dc28626af2872df4080f6bce9aa7a04e, type: 2}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 3060959b9bab0ba4caa5a5d224e50eb9, type: 3}
 --- !u!4 &5737196689152084100 stripped
 Transform:
@@ -950,12 +998,13 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 1289257831668837714}
     m_Modifications:
     - target: {fileID: 1238125092696366909, guid: 63846e1fb5ce3224e887eb9c9858c5c6, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: 829ecea7258e212459faf8a01125c08b, type: 2}
+      objectReference: {fileID: 2100000, guid: dc28626af2872df4080f6bce9aa7a04e, type: 2}
     - target: {fileID: 1752825333575287572, guid: 63846e1fb5ce3224e887eb9c9858c5c6, type: 3}
       propertyPath: m_RootOrder
       value: 3
@@ -1017,6 +1066,9 @@ PrefabInstance:
       value: ProtonLegacy_Ring
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 63846e1fb5ce3224e887eb9c9858c5c6, type: 3}
 --- !u!4 &7116366238155708173 stripped
 Transform:
@@ -1028,12 +1080,13 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 1289257831668837714}
     m_Modifications:
     - target: {fileID: 4626181717966132948, guid: d2dfd5ea72249494b87509c2164dc8db, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: 829ecea7258e212459faf8a01125c08b, type: 2}
+      objectReference: {fileID: 2100000, guid: dc28626af2872df4080f6bce9aa7a04e, type: 2}
     - target: {fileID: 6066297481092148678, guid: d2dfd5ea72249494b87509c2164dc8db, type: 3}
       propertyPath: m_RootOrder
       value: 6
@@ -1095,6 +1148,9 @@ PrefabInstance:
       value: ProtonLegacy_Solar
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: d2dfd5ea72249494b87509c2164dc8db, type: 3}
 --- !u!4 &3440080676671254566 stripped
 Transform:

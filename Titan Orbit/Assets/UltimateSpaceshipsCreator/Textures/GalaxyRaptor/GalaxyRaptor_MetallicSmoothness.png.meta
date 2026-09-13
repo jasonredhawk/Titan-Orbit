@@ -1,12 +1,12 @@
 fileFormatVersion: 2
-guid: ac488e90e95196941b774797f9bbe7b8
+guid: 3444e5e6dcbb84c4cb343a8eb449a4ea
 AssetOrigin:
   serializedVersion: 1
   productId: 196802
   packageName: Ultimate Spaceships Creator
-  packageVersion: 4.2
+  packageVersion: 7.0
   assetPath: Assets/UltimateSpaceshipsCreator/Textures/GalaxyRaptor/GalaxyRaptor_MetallicSmoothness.png
-  uploadId: 766649
+  uploadId: 980232
 TextureImporter:
   internalIDToNameTable: []
   externalObjects: {}
@@ -72,11 +72,11 @@ TextureImporter:
   ignorePngGamma: 0
   applyGammaDecoding: 0
   swizzle: 50462976
-  cookieLightType: 1
+  cookieLightType: 0
   platformSettings:
   - serializedVersion: 4
     buildTarget: DefaultTexturePlatform
-    maxTextureSize: 2048
+    maxTextureSize: 4096
     resizeAlgorithm: 0
     textureFormat: -1
     textureCompression: 1
@@ -114,12 +114,25 @@ TextureImporter:
     androidETC2FallbackOverride: 0
     forceMaximumCompressionQuality_BC6H_BC7: 0
   - serializedVersion: 4
+    buildTarget: Server
+    maxTextureSize: 2048
+    resizeAlgorithm: 0
+    textureFormat: -1
+    textureCompression: 1
+    compressionQuality: 50
+    crunchedCompression: 0
+    allowsAlphaSplitting: 0
+    overridden: 0
+    ignorePlatformSupport: 0
+    androidETC2FallbackOverride: 0
+    forceMaximumCompressionQuality_BC6H_BC7: 0
+  - serializedVersion: 4
     buildTarget: WebGL
     maxTextureSize: 512
     resizeAlgorithm: 0
     textureFormat: 4
     textureCompression: 0
-    compressionQuality: 30
+    compressionQuality: 50
     crunchedCompression: 0
     allowsAlphaSplitting: 0
     overridden: 1
@@ -128,7 +141,7 @@ TextureImporter:
     forceMaximumCompressionQuality_BC6H_BC7: 0
   - serializedVersion: 4
     buildTarget: iOS
-    maxTextureSize: 2048
+    maxTextureSize: 4096
     resizeAlgorithm: 0
     textureFormat: -1
     textureCompression: 1

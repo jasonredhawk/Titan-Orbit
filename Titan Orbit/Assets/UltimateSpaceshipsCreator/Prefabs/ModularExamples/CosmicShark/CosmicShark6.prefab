@@ -23,6 +23,7 @@ Transform:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 7692812396446286679}
+  serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
   m_LocalPosition: {x: 0, y: 0, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
@@ -49,13 +50,13 @@ Transform:
   - {fileID: 1228230151932393331}
   - {fileID: 4457053772296186122}
   m_Father: {fileID: 0}
-  m_RootOrder: 0
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1001 &838954090639743132
 PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 7028303386925029869}
     m_Modifications:
     - target: {fileID: 285338716024228316, guid: 6d07ce23516e43d4bb3c787d7258f805, type: 3}
@@ -121,8 +122,11 @@ PrefabInstance:
     - target: {fileID: 8780983622189695443, guid: 6d07ce23516e43d4bb3c787d7258f805, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: cecbb2d6656a48e40a7f09946eddb154, type: 2}
+      objectReference: {fileID: 2100000, guid: 1de6c8a7e9d425349972f91e9c45bd10, type: 2}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 6d07ce23516e43d4bb3c787d7258f805, type: 3}
 --- !u!4 &3221803559239266663 stripped
 Transform:
@@ -134,12 +138,13 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 7028303386925029869}
     m_Modifications:
     - target: {fileID: 1840292869635567772, guid: 24be880bbc181bf4b87d0baf5c3e5ec9, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: cecbb2d6656a48e40a7f09946eddb154, type: 2}
+      objectReference: {fileID: 2100000, guid: 1de6c8a7e9d425349972f91e9c45bd10, type: 2}
     - target: {fileID: 2299077169310839589, guid: 24be880bbc181bf4b87d0baf5c3e5ec9, type: 3}
       propertyPath: m_Name
       value: CosmicShark_Weapon
@@ -201,6 +206,9 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 24be880bbc181bf4b87d0baf5c3e5ec9, type: 3}
 --- !u!4 &8666372118998826277 stripped
 Transform:
@@ -212,6 +220,7 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 7028303386925029869}
     m_Modifications:
     - target: {fileID: 1551529362932842079, guid: b7327582f4369ec4d9178f97cdabdf9b, type: 3}
@@ -277,8 +286,11 @@ PrefabInstance:
     - target: {fileID: 9140167483278280366, guid: b7327582f4369ec4d9178f97cdabdf9b, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: cecbb2d6656a48e40a7f09946eddb154, type: 2}
+      objectReference: {fileID: 2100000, guid: 1de6c8a7e9d425349972f91e9c45bd10, type: 2}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: b7327582f4369ec4d9178f97cdabdf9b, type: 3}
 --- !u!4 &8631807243038247400 stripped
 Transform:
@@ -290,6 +302,7 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 7028303386925029869}
     m_Modifications:
     - target: {fileID: 285338716024228316, guid: 6d07ce23516e43d4bb3c787d7258f805, type: 3}
@@ -355,8 +368,11 @@ PrefabInstance:
     - target: {fileID: 8780983622189695443, guid: 6d07ce23516e43d4bb3c787d7258f805, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: cecbb2d6656a48e40a7f09946eddb154, type: 2}
+      objectReference: {fileID: 2100000, guid: 1de6c8a7e9d425349972f91e9c45bd10, type: 2}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 6d07ce23516e43d4bb3c787d7258f805, type: 3}
 --- !u!4 &1055704477582275307 stripped
 Transform:
@@ -368,6 +384,7 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 7028303386925029869}
     m_Modifications:
     - target: {fileID: 5194252924339965426, guid: 6dcc895dec6436b4ebb6c8c63eedf918, type: 3}
@@ -429,12 +446,15 @@ PrefabInstance:
     - target: {fileID: 5831620916532342414, guid: 6dcc895dec6436b4ebb6c8c63eedf918, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: cecbb2d6656a48e40a7f09946eddb154, type: 2}
+      objectReference: {fileID: 2100000, guid: 1de6c8a7e9d425349972f91e9c45bd10, type: 2}
     - target: {fileID: 7262058056197475979, guid: 6dcc895dec6436b4ebb6c8c63eedf918, type: 3}
       propertyPath: m_Name
       value: CosmicShark_Thruster
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 6dcc895dec6436b4ebb6c8c63eedf918, type: 3}
 --- !u!4 &7109355915090561171 stripped
 Transform:
@@ -446,6 +466,7 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 7028303386925029869}
     m_Modifications:
     - target: {fileID: 1757085045188498580, guid: fe4daebb9e8d6864ba231fa405e93345, type: 3}
@@ -455,7 +476,7 @@ PrefabInstance:
     - target: {fileID: 6815066401343145698, guid: fe4daebb9e8d6864ba231fa405e93345, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: cecbb2d6656a48e40a7f09946eddb154, type: 2}
+      objectReference: {fileID: 2100000, guid: 1de6c8a7e9d425349972f91e9c45bd10, type: 2}
     - target: {fileID: 8164202969771710473, guid: fe4daebb9e8d6864ba231fa405e93345, type: 3}
       propertyPath: m_RootOrder
       value: 2
@@ -513,6 +534,9 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: fe4daebb9e8d6864ba231fa405e93345, type: 3}
 --- !u!4 &6823036215612653404 stripped
 Transform:
@@ -524,6 +548,7 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 7028303386925029869}
     m_Modifications:
     - target: {fileID: 5194252924339965426, guid: 6dcc895dec6436b4ebb6c8c63eedf918, type: 3}
@@ -585,12 +610,15 @@ PrefabInstance:
     - target: {fileID: 5831620916532342414, guid: 6dcc895dec6436b4ebb6c8c63eedf918, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: cecbb2d6656a48e40a7f09946eddb154, type: 2}
+      objectReference: {fileID: 2100000, guid: 1de6c8a7e9d425349972f91e9c45bd10, type: 2}
     - target: {fileID: 7262058056197475979, guid: 6dcc895dec6436b4ebb6c8c63eedf918, type: 3}
       propertyPath: m_Name
       value: CosmicShark_Thruster
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 6dcc895dec6436b4ebb6c8c63eedf918, type: 3}
 --- !u!4 &8859202664826933006 stripped
 Transform:
@@ -602,6 +630,7 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 7028303386925029869}
     m_Modifications:
     - target: {fileID: 1898543379173811168, guid: 6b59249296279eb4aa2749cf99d5ebdf, type: 3}
@@ -667,8 +696,11 @@ PrefabInstance:
     - target: {fileID: 9092631842716215024, guid: 6b59249296279eb4aa2749cf99d5ebdf, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: cecbb2d6656a48e40a7f09946eddb154, type: 2}
+      objectReference: {fileID: 2100000, guid: 1de6c8a7e9d425349972f91e9c45bd10, type: 2}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 6b59249296279eb4aa2749cf99d5ebdf, type: 3}
 --- !u!4 &1978058356795583991 stripped
 Transform:
@@ -680,6 +712,7 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 7028303386925029869}
     m_Modifications:
     - target: {fileID: 1757085045188498580, guid: fe4daebb9e8d6864ba231fa405e93345, type: 3}
@@ -689,7 +722,7 @@ PrefabInstance:
     - target: {fileID: 6815066401343145698, guid: fe4daebb9e8d6864ba231fa405e93345, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: cecbb2d6656a48e40a7f09946eddb154, type: 2}
+      objectReference: {fileID: 2100000, guid: 1de6c8a7e9d425349972f91e9c45bd10, type: 2}
     - target: {fileID: 8164202969771710473, guid: fe4daebb9e8d6864ba231fa405e93345, type: 3}
       propertyPath: m_RootOrder
       value: 1
@@ -747,6 +780,9 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: fe4daebb9e8d6864ba231fa405e93345, type: 3}
 --- !u!4 &5058477617955201359 stripped
 Transform:
@@ -758,6 +794,7 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 7028303386925029869}
     m_Modifications:
     - target: {fileID: 4779101707246289051, guid: 3a7940580e3ca2648b43c87bdf6a175b, type: 3}
@@ -823,8 +860,11 @@ PrefabInstance:
     - target: {fileID: 7092379326252066024, guid: 3a7940580e3ca2648b43c87bdf6a175b, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: cecbb2d6656a48e40a7f09946eddb154, type: 2}
+      objectReference: {fileID: 2100000, guid: 1de6c8a7e9d425349972f91e9c45bd10, type: 2}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 3a7940580e3ca2648b43c87bdf6a175b, type: 3}
 --- !u!4 &8082110411018491956 stripped
 Transform:
@@ -836,6 +876,7 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 7028303386925029869}
     m_Modifications:
     - target: {fileID: 285338716024228316, guid: 6d07ce23516e43d4bb3c787d7258f805, type: 3}
@@ -901,8 +942,11 @@ PrefabInstance:
     - target: {fileID: 8780983622189695443, guid: 6d07ce23516e43d4bb3c787d7258f805, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: cecbb2d6656a48e40a7f09946eddb154, type: 2}
+      objectReference: {fileID: 2100000, guid: 1de6c8a7e9d425349972f91e9c45bd10, type: 2}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 6d07ce23516e43d4bb3c787d7258f805, type: 3}
 --- !u!4 &1222028747602777507 stripped
 Transform:
@@ -914,12 +958,13 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 7028303386925029869}
     m_Modifications:
     - target: {fileID: 1913879139937138212, guid: 7295f40fe24c4fe4dbc68cd31f6a06f4, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: cecbb2d6656a48e40a7f09946eddb154, type: 2}
+      objectReference: {fileID: 2100000, guid: 1de6c8a7e9d425349972f91e9c45bd10, type: 2}
     - target: {fileID: 6841638417189107075, guid: 7295f40fe24c4fe4dbc68cd31f6a06f4, type: 3}
       propertyPath: m_Name
       value: CosmicShark_Wing2
@@ -981,6 +1026,9 @@ PrefabInstance:
       value: 145
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 7295f40fe24c4fe4dbc68cd31f6a06f4, type: 3}
 --- !u!4 &4457053772296186122 stripped
 Transform:
@@ -992,12 +1040,13 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 7028303386925029869}
     m_Modifications:
     - target: {fileID: 1802118543806578814, guid: a5788b44c5f85684a9f875f29aa06c8c, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: cecbb2d6656a48e40a7f09946eddb154, type: 2}
+      objectReference: {fileID: 2100000, guid: 1de6c8a7e9d425349972f91e9c45bd10, type: 2}
     - target: {fileID: 4923816053339359067, guid: a5788b44c5f85684a9f875f29aa06c8c, type: 3}
       propertyPath: m_Name
       value: CosmicShark_Engine2
@@ -1059,6 +1108,9 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: a5788b44c5f85684a9f875f29aa06c8c, type: 3}
 --- !u!4 &1489030354744668063 stripped
 Transform:
@@ -1070,6 +1122,7 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 7028303386925029869}
     m_Modifications:
     - target: {fileID: 285338716024228316, guid: 6d07ce23516e43d4bb3c787d7258f805, type: 3}
@@ -1135,8 +1188,11 @@ PrefabInstance:
     - target: {fileID: 8780983622189695443, guid: 6d07ce23516e43d4bb3c787d7258f805, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: cecbb2d6656a48e40a7f09946eddb154, type: 2}
+      objectReference: {fileID: 2100000, guid: 1de6c8a7e9d425349972f91e9c45bd10, type: 2}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 6d07ce23516e43d4bb3c787d7258f805, type: 3}
 --- !u!4 &9222590395480423481 stripped
 Transform:
@@ -1148,12 +1204,13 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 7028303386925029869}
     m_Modifications:
     - target: {fileID: 1802118543806578814, guid: a5788b44c5f85684a9f875f29aa06c8c, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: cecbb2d6656a48e40a7f09946eddb154, type: 2}
+      objectReference: {fileID: 2100000, guid: 1de6c8a7e9d425349972f91e9c45bd10, type: 2}
     - target: {fileID: 4923816053339359067, guid: a5788b44c5f85684a9f875f29aa06c8c, type: 3}
       propertyPath: m_Name
       value: CosmicShark_Engine2
@@ -1215,6 +1272,9 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: a5788b44c5f85684a9f875f29aa06c8c, type: 3}
 --- !u!4 &1678552018909161003 stripped
 Transform:
@@ -1226,6 +1286,7 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 7028303386925029869}
     m_Modifications:
     - target: {fileID: 285338716024228316, guid: 6d07ce23516e43d4bb3c787d7258f805, type: 3}
@@ -1291,8 +1352,11 @@ PrefabInstance:
     - target: {fileID: 8780983622189695443, guid: 6d07ce23516e43d4bb3c787d7258f805, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: cecbb2d6656a48e40a7f09946eddb154, type: 2}
+      objectReference: {fileID: 2100000, guid: 1de6c8a7e9d425349972f91e9c45bd10, type: 2}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 6d07ce23516e43d4bb3c787d7258f805, type: 3}
 --- !u!4 &5123966136315433268 stripped
 Transform:
@@ -1304,6 +1368,7 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 7028303386925029869}
     m_Modifications:
     - target: {fileID: 1898543379173811168, guid: 6b59249296279eb4aa2749cf99d5ebdf, type: 3}
@@ -1369,8 +1434,11 @@ PrefabInstance:
     - target: {fileID: 9092631842716215024, guid: 6b59249296279eb4aa2749cf99d5ebdf, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: cecbb2d6656a48e40a7f09946eddb154, type: 2}
+      objectReference: {fileID: 2100000, guid: 1de6c8a7e9d425349972f91e9c45bd10, type: 2}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 6b59249296279eb4aa2749cf99d5ebdf, type: 3}
 --- !u!4 &6797243037146346252 stripped
 Transform:
@@ -1382,6 +1450,7 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 7028303386925029869}
     m_Modifications:
     - target: {fileID: 285338716024228316, guid: 6d07ce23516e43d4bb3c787d7258f805, type: 3}
@@ -1447,8 +1516,11 @@ PrefabInstance:
     - target: {fileID: 8780983622189695443, guid: 6d07ce23516e43d4bb3c787d7258f805, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: cecbb2d6656a48e40a7f09946eddb154, type: 2}
+      objectReference: {fileID: 2100000, guid: 1de6c8a7e9d425349972f91e9c45bd10, type: 2}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 6d07ce23516e43d4bb3c787d7258f805, type: 3}
 --- !u!4 &6065963929173633685 stripped
 Transform:
@@ -1460,12 +1532,13 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 7028303386925029869}
     m_Modifications:
     - target: {fileID: 1840292869635567772, guid: 24be880bbc181bf4b87d0baf5c3e5ec9, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: cecbb2d6656a48e40a7f09946eddb154, type: 2}
+      objectReference: {fileID: 2100000, guid: 1de6c8a7e9d425349972f91e9c45bd10, type: 2}
     - target: {fileID: 2299077169310839589, guid: 24be880bbc181bf4b87d0baf5c3e5ec9, type: 3}
       propertyPath: m_Name
       value: CosmicShark_Weapon
@@ -1527,6 +1600,9 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 24be880bbc181bf4b87d0baf5c3e5ec9, type: 3}
 --- !u!4 &283772586676360333 stripped
 Transform:
@@ -1538,12 +1614,13 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 7028303386925029869}
     m_Modifications:
     - target: {fileID: 1913879139937138212, guid: 7295f40fe24c4fe4dbc68cd31f6a06f4, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: cecbb2d6656a48e40a7f09946eddb154, type: 2}
+      objectReference: {fileID: 2100000, guid: 1de6c8a7e9d425349972f91e9c45bd10, type: 2}
     - target: {fileID: 6841638417189107075, guid: 7295f40fe24c4fe4dbc68cd31f6a06f4, type: 3}
       propertyPath: m_Name
       value: CosmicShark_Wing2
@@ -1605,6 +1682,9 @@ PrefabInstance:
       value: -145
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 7295f40fe24c4fe4dbc68cd31f6a06f4, type: 3}
 --- !u!4 &1228230151932393331 stripped
 Transform:
