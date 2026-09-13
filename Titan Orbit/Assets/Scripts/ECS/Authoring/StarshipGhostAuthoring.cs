@@ -136,6 +136,8 @@ namespace TitanOrbit.ECS.Authoring
                 AddComponent(entity, new ShipTurretControlState());
                 // [NETCODE] MEGA identity + per-mount aim slots — must bake so GhostFields replicate.
                 AddComponent(entity, new MegaShipState());
+                // [NETCODE] Colorize Color2 / Color3 / Emission1–3 — must bake so remotes see paint.
+                AddComponent(entity, new ShipAccentColors());
                 AddBuffer<MegaShipGunnerSlotElement>(entity);
                 AddComponent(entity, new ShipDepositIntent());
                 // [NETCODE] Server bumps BeatSequence each deposit chunk; clients play SFX/UI from it.

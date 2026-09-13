@@ -57,6 +57,7 @@ namespace TitanOrbit.Game
             InvalidateLocalPlayerShipFrameCache();
             PlayerNameRosterCache.Clear();
             PlayerNameRpcClient.ResetSession();
+            ShipAccentColorsRpcClient.ResetSession();
         }
 
         // --- Per-frame local ship cache (avoids N× CreateEntityQuery in HUD / dock / deposit) ---
@@ -2040,6 +2041,7 @@ namespace TitanOrbit.Game
             GemTractorBeamVisibilityTracker.Clear();
             PlayerNameRosterCache.Clear();
             PlayerNameRpcClient.ResetSession();
+            ShipAccentColorsRpcClient.ResetSession();
         }
 
         /// <summary>

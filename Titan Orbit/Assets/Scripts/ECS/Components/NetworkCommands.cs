@@ -11,7 +11,8 @@ namespace TitanOrbit.ECS
     /// replication. Each struct implements <c>IRpcCommand</c>; clients send requests, server systems
     /// validate and reply. Handlers: <see cref="TeamManagementSystem"/>,
     /// <see cref="RejoinShipManagementSystem"/>, <see cref="ShipRespawnSystem"/>,
-    /// <see cref="PlayerNameServerSystem"/>, moon orbit store systems, attribute upgrade systems.
+    /// <see cref="PlayerNameServerSystem"/>, <see cref="ShipAccentColorsServerSystem"/>,
+    /// moon orbit store systems, attribute upgrade systems.
     /// Ghost replication handles continuous state; RPCs handle discrete player actions.
     /// </summary>
 
@@ -136,6 +137,33 @@ namespace TitanOrbit.ECS
     {
         /// <summary>True = fire the shared EnergySpheres heal bank.</summary>
         public bool HealingActive;
+    }
+
+    /// <summary>
+    /// [NETCODE] Client publishes Colorize Color2 / Color3 / Emission1–3 after GoInGame
+    /// or when the player paints a well. Server writes <see cref="ShipAccentColors"/>
+    /// on the owned ship ghost. Color1 is not in this payload — it stays the team material.
+    /// Adding fields changes RPC layout: client and Linux headless must rebuild together.
+    /// </summary>
+    public struct SetShipAccentColorsCommand : IRpcCommand
+    {
+        /// <summary>0 = use baked Colorize accents; 1 = apply the packed colors.</summary>
+        public byte HasCustom;
+
+        /// <summary>Packed RGBA for Color2.</summary>
+        public uint Color2Packed;
+
+        /// <summary>Packed RGBA for Color3.</summary>
+        public uint Color3Packed;
+
+        /// <summary>Packed RGBA for Emission1.</summary>
+        public uint EmissionPacked;
+
+        /// <summary>Packed RGBA for Emission2.</summary>
+        public uint Emission2Packed;
+
+        /// <summary>Packed RGBA for Emission3.</summary>
+        public uint Emission3Packed;
     }
 
     /// <summary>

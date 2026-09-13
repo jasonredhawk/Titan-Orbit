@@ -4343,6 +4343,10 @@ namespace TitanOrbit.UI
             bool healingActive = EcsGameBridge.TryGetLocalShipLoadout(out ShipLoadoutState healLoadout)
                 && healLoadout.HealingBulletsActive;
             orbitDockSidebar.RefreshHealingBulletsToggle(healingActive);
+            TeamId paintTeam = currentShip != null
+                ? TeamManager.ToTeamId(currentShip.ShipTeam)
+                : TeamId.None;
+            orbitDockSidebar.RefreshAccentPicker(paintTeam);
             ShipPowerBarStatMaxes maxes = shipUpgradeTree != null
                 ? shipUpgradeTree.GetPowerBarStatMaxes()
                 : ShipFamilyPowerBarNorm.GetGlobalMaxPerStat();

@@ -133,6 +133,13 @@ namespace TitanOrbit.ECS
                          .WithEntityAccess())
                 ecb.AddComponent(entity, new MegaShipState());
 
+            // [NETCODE] Prefer baking ShipAccentColors. Runtime add covers older SubScenes;
+            // GhostFields will not replicate until the ship ghost is rebaked.
+            foreach (var (_, entity) in SystemAPI.Query<RefRO<ShipTag>>()
+                         .WithNone<ShipAccentColors>()
+                         .WithEntityAccess())
+                ecb.AddComponent(entity, new ShipAccentColors());
+
             foreach (var (_, entity) in SystemAPI.Query<RefRO<ShipTag>>()
                          .WithNone<MegaShipGunnerSlotElement>()
                          .WithEntityAccess())

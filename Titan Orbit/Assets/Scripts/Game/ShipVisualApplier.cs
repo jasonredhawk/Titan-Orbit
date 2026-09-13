@@ -95,18 +95,32 @@ namespace TitanOrbit.Game
             instance = Object.Instantiate(prefab);
             instance.name = prefab.name + "Proxy";
             StripPhysicsAndNetworking(instance, keepColliders: false);
-            ApplyTeamMaterials(family, instance, team);
+            ApplyTeamMaterials(family, instance, team, chassisId);
             return true;
         }
 
-        /// <summary>Swaps renderer sharedMaterials with team palette from ShipFamilyDefinition.</summary>
+        /// <summary>Swaps renderer sharedMaterials with the team Colorize palette.</summary>
         public static void ApplyTeamMaterials(ShipFamilyDefinition family, GameObject root, TeamId team)
         {
+            ApplyTeamMaterials(family, root, team, chassisId: null);
+        }
+
+        /// <summary>
+        /// Swaps renderer sharedMaterials with the team Colorize palette.
+        /// MEGA chassis ids use the Titan visual-line mats (CraizanStar / Leopard / Okamoto),
+        /// not the gameplay family's AstroEagle (etc.) textures.
+        /// </summary>
+        public static void ApplyTeamMaterials(
+            ShipFamilyDefinition family,
+            GameObject root,
+            TeamId team,
+            string chassisId)
+        {
             // --- Apply changes ---
-            if (family == null || root == null || team == TeamId.None)
+            if (root == null || team == TeamId.None)
                 return;
 
-            List<Material> teamMats = family.GetMaterialsForTeam(team);
+            List<Material> teamMats = ResolveTeamMaterials(family, team, chassisId);
             if (teamMats == null || teamMats.Count == 0)
                 return;
 
@@ -130,6 +144,29 @@ namespace TitanOrbit.Game
 
                 renderer.sharedMaterials = replaced;
             }
+        }
+
+        /// <summary>
+        /// Titan visual-family Colorize mats when <paramref name="chassisId"/> is MEGA_###;
+        /// otherwise the gameplay family's teamMaterials.
+        /// </summary>
+        public static List<Material> ResolveTeamMaterials(
+            ShipFamilyDefinition family,
+            TeamId team,
+            string chassisId)
+        {
+            if (MegaShipCatalog.IsMegaChassisId(chassisId))
+            {
+                var mega = MegaShipCatalog.Load();
+                if (mega != null && mega.TryGetVisualFamily(chassisId, out MegaShipVisualFamily visualFamily))
+                {
+                    List<Material> megaMats = mega.GetMaterialsForTeam(visualFamily, team);
+                    if (megaMats != null && megaMats.Count > 0)
+                        return megaMats;
+                }
+            }
+
+            return family != null ? family.GetMaterialsForTeam(team) : null;
         }
 
         /// <summary>

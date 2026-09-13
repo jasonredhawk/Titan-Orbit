@@ -7,15 +7,16 @@ using UnityEngine.UI;
 namespace TitanOrbit.Game
 {
     /// <summary>
-    /// Main Menu profile-badge chip plus a cancelable full-grid overlay.
-    /// Built at runtime by <see cref="MainMenuPresenter"/> — client presentation only.
+    /// Profile-badge chip plus a cancelable full-grid overlay.
+    /// Hosted on <see cref="ShipCustomizeScreen"/> — client presentation only.
+    /// Overlay sorting sits above the customize studio (540) so the grid is clickable.
     /// </summary>
     public sealed class MainMenuBadgePicker : MonoBehaviour
     {
         public const string RootObjectName = "PlayerBadgePicker";
         public const string OverlayObjectName = "PlayerBadgeOverlay";
 
-        const int OverlaySortingOrder = 520;
+        const int OverlaySortingOrder = 560;
         const int GridColumns = 7;
         const float TileSize = 72f;
         const float TileSpacing = 8f;

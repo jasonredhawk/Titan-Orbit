@@ -1,5 +1,7 @@
 using System;
+using TitanOrbit.Core;
 using TitanOrbit.Data;
+using TitanOrbit.Game;
 using TitanOrbit.Simulation;
 using TMPro;
 using UnityEngine;
@@ -97,6 +99,8 @@ namespace TitanOrbit.UI
         private Action<NavTarget> _onNavSelected;
         private NavTarget _activeNav = NavTarget.Ships;
         private bool _built;
+        private Button _customizeHullButton;
+        private TeamId _paintTeam = TeamId.TeamA;
 
         public RectTransform LoadoutHost => _loadoutHost;
         public RectTransform EquipmentHost => _equipmentHost;
@@ -135,6 +139,9 @@ namespace TitanOrbit.UI
                     CreateAutoDepositToggle(_contentRoot);
                 if (_damageModeButton == null)
                     CreateHealingBulletsToggle(_contentRoot);
+                if (_customizeHullButton == null)
+                    CreateCustomizeHullButton(_contentRoot);
+                DestroyChildIfPresent(_contentRoot, "PlayerAccentPicker");
                 return;
             }
 
@@ -219,6 +226,7 @@ namespace TitanOrbit.UI
             CreateBankBalanceBanner(_contentRoot);
             CreateAutoDepositToggle(_contentRoot);
             CreateHealingBulletsToggle(_contentRoot);
+            CreateCustomizeHullButton(_contentRoot);
 
             var loadoutGap = CreateStretchHost(_contentRoot, "LoadoutTopGap", 16f);
             var loadoutGapLe = loadoutGap.GetComponent<LayoutElement>();
@@ -524,6 +532,13 @@ namespace TitanOrbit.UI
         {
             EnsureBuilt();
             SetHealingToggleVisual(healingActive, notify: false);
+        }
+
+        /// <summary>Stores the docked ship's team so the hull studio locks Color1 correctly.</summary>
+        public void RefreshAccentPicker(TeamId team)
+        {
+            EnsureBuilt();
+            _paintTeam = team == TeamId.None ? TeamId.TeamA : team;
         }
 
         public void RefreshAutoDepositToggle(bool enabled)
@@ -950,6 +965,78 @@ namespace TitanOrbit.UI
                 PlayerPrefs.Save();
                 _onAutoDepositChanged?.Invoke(enabled);
             }
+        }
+
+        void CreateCustomizeHullButton(Transform parent)
+        {
+            if (parent == null)
+                return;
+
+            DestroyChildIfPresent(parent, "PlayerAccentPicker");
+
+            Transform existing = parent.Find("CustomizeHullButton");
+            GameObject go = existing != null
+                ? existing.gameObject
+                : new GameObject("CustomizeHullButton", typeof(RectTransform), typeof(Image), typeof(Button));
+            if (existing == null)
+                go.transform.SetParent(parent, false);
+
+            var le = go.GetComponent<LayoutElement>();
+            if (le == null)
+                le = go.AddComponent<LayoutElement>();
+            le.minHeight = AutoDepositToggleHeight;
+            le.preferredHeight = AutoDepositToggleHeight;
+            le.flexibleHeight = 0f;
+            le.flexibleWidth = 1f;
+
+            var bg = go.GetComponent<Image>();
+            bg.color = new Color(0.14f, 0.18f, 0.28f, 0.95f);
+            if (buttonSprite != null)
+            {
+                bg.sprite = buttonSprite;
+                bg.type = Image.Type.Sliced;
+            }
+
+            _customizeHullButton = go.GetComponent<Button>();
+            _customizeHullButton.targetGraphic = bg;
+            _customizeHullButton.onClick.RemoveAllListeners();
+            _customizeHullButton.onClick.AddListener(OpenCustomizeHull);
+
+            Transform labelTf = go.transform.Find("Label");
+            GameObject labelGo = labelTf != null
+                ? labelTf.gameObject
+                : new GameObject("Label", typeof(RectTransform), typeof(TextMeshProUGUI));
+            if (labelTf == null)
+                labelGo.transform.SetParent(go.transform, false);
+            var labelRt = labelGo.GetComponent<RectTransform>();
+            labelRt.anchorMin = Vector2.zero;
+            labelRt.anchorMax = Vector2.one;
+            labelRt.offsetMin = Vector2.zero;
+            labelRt.offsetMax = Vector2.zero;
+            var label = labelGo.GetComponent<TextMeshProUGUI>();
+            label.text = "CUSTOMIZE HULL";
+            label.fontSize = 12f;
+            label.fontStyle = FontStyles.Bold;
+            label.alignment = TextAlignmentOptions.Center;
+            label.color = new Color(0.88f, 0.92f, 1f, 0.98f);
+            label.raycastTarget = false;
+            ApplyFont(label);
+        }
+
+        void OpenCustomizeHull()
+        {
+            Canvas canvas = GetComponentInParent<Canvas>();
+            Transform root = canvas != null ? canvas.rootCanvas.transform : transform;
+            ShipCustomizeScreen.Open(root, _paintTeam);
+        }
+
+        static void DestroyChildIfPresent(Transform parent, string childName)
+        {
+            if (parent == null)
+                return;
+            Transform existing = parent.Find(childName);
+            if (existing != null)
+                Destroy(existing.gameObject);
         }
 
         private void CreateHealingBulletsToggle(Transform parent)

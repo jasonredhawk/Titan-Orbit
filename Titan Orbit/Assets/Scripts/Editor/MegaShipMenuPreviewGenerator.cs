@@ -50,7 +50,6 @@ namespace TitanOrbit.Editor
             }
 
             EnsureAssetFolder(OutputFolder);
-            PreviewVariant[] variants = BuildPreviewVariants(catalog);
 
             int done = 0;
             int skipped = 0;
@@ -81,6 +80,7 @@ namespace TitanOrbit.Editor
                     string chassisId = MegaShipCatalog.FormatChassisId(entry.catalogIndex);
                     string fileBase = SanitizeFileName(chassisId);
                     Sprite firstSprite = null;
+                    PreviewVariant[] variants = BuildPreviewVariants(catalog, entry.visualFamily);
 
                     for (int v = 0; v < variants.Length; v++)
                     {
@@ -132,7 +132,7 @@ namespace TitanOrbit.Editor
             MegaShipCatalog.InvalidateCache();
             EditorUtility.DisplayDialog(
                 "MEGA Theatrical Menu Previews",
-                $"Generated {done} image(s) across {variants.Length} team variant(s). Skipped {skipped} (no prefab or no mesh).\nOutput: {OutputFolder}/TeamA|…",
+                $"Generated {done} image(s) across 5 team variant(s). Skipped {skipped} (no prefab or no mesh).\nOutput: {OutputFolder}/TeamA|…",
                 "OK");
         }
 
@@ -262,13 +262,24 @@ namespace TitanOrbit.Editor
         }
 
         /// <summary>
-        /// Builds TeamA–TeamE variants. Prefers catalog <see cref="MegaShipCatalog.teamMaterials"/>,
-        /// then fills gaps from regular <see cref="ShipFamilyDefinition.teamMaterials"/> so MEGA
-        /// thumbs use the same in-game team palettes.
+        /// Builds TeamA–TeamE variants. Prefers per-visual-family Colorize mats, then the
+        /// legacy catalog list, then regular family teamMaterials.
         /// </summary>
-        static PreviewVariant[] BuildPreviewVariants(MegaShipCatalog catalog)
+        static PreviewVariant[] BuildPreviewVariants(
+            MegaShipCatalog catalog,
+            MegaShipVisualFamily visualFamily)
         {
             var byTeam = new Dictionary<TeamManager.Team, PreviewVariant>();
+            if (catalog != null && catalog.visualFamilyTeamMaterials != null)
+            {
+                for (int i = 0; i < catalog.visualFamilyTeamMaterials.Count; i++)
+                {
+                    MegaShipVisualFamilyTeamMaterials row = catalog.visualFamilyTeamMaterials[i];
+                    if (row != null && row.visualFamily == visualFamily)
+                        CollectMaterialSets(row.teamMaterials, byTeam);
+                }
+            }
+
             CollectMaterialSets(catalog != null ? catalog.teamMaterials : null, byTeam);
 
             if (byTeam.Count < 5)

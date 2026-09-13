@@ -120,6 +120,7 @@ namespace TitanOrbit.Game
         readonly Dictionary<Entity, string> _proxyChassisIds = new Dictionary<Entity, string>();
         /// <summary>Last applied team — triggers material swap on capture.</summary>
         readonly Dictionary<Entity, TeamId> _proxyTeams = new Dictionary<Entity, TeamId>();
+        readonly Dictionary<Entity, int> _proxyAccentKeys = new Dictionary<Entity, int>();
         /// <summary>Planet visual identity — rebuild when home/team/level/id changes.</summary>
         readonly Dictionary<Entity, PlanetVisualKey> _proxyPlanetVisuals = new Dictionary<Entity, PlanetVisualKey>();
 
@@ -2388,6 +2389,21 @@ namespace TitanOrbit.Game
                     _proxyBranchIndices[entity] = Mathf.Max(0, ship.BranchIndex);
                     ApplyShipDeathOrStowPresentation(em, entity, go, in ship);
 
+                    // Owner paint comes from local prefs so your hull does not wait on
+                    // a ghost/RPC that may still be Default after join.
+                    ShipAccentColors ghostAccents = default;
+                    if (em.HasComponent<ShipAccentColors>(entity))
+                        ghostAccents = em.GetComponentData<ShipAccentColors>(entity);
+                    ShipAccentColors accents = LocalPlayerShipAccents.ResolveForPresentation(
+                        isLocalPlayerShip, ghostAccents);
+                    int accentKey = accents.CacheKey;
+                    _proxyAccentKeys.TryGetValue(entity, out int lastAccent);
+                    if (lastAccent != accentKey)
+                    {
+                        ShipColorizeAccentApplier.ApplyFromCapturedBase(go, accents);
+                        _proxyAccentKeys[entity] = accentKey;
+                    }
+
                     // --- Nameplate vitals / role candidates (no extra ship gather) ---
                     QueueShipNameplate(em, entity, go, networkId, ship);
                 }
@@ -2455,6 +2471,22 @@ namespace TitanOrbit.Game
             _proxyTeams[entity] = team;
             _proxies[entity] = go;
             RegisterProxyKind(entity, ProxyVisualKind.Ship);
+
+            ShipAccentColors spawnGhost = default;
+            var visWorld = EcsGameBridge.GetVisualizationWorld();
+            if (visWorld != null && visWorld.IsCreated)
+            {
+                var visEm = visWorld.EntityManager;
+                if (visEm.Exists(entity) && visEm.HasComponent<ShipAccentColors>(entity))
+                    spawnGhost = visEm.GetComponentData<ShipAccentColors>(entity);
+            }
+
+            int localNetworkId = EcsGameBridge.GetLocalNetworkId();
+            bool isLocalOwner = localNetworkId > 0 && networkId == localNetworkId;
+            ShipAccentColors spawnAccents = LocalPlayerShipAccents.ResolveForPresentation(
+                isLocalOwner, spawnGhost);
+            ShipColorizeAccentApplier.CaptureBaseAndApply(go, spawnAccents);
+            _proxyAccentKeys[entity] = spawnAccents.CacheKey;
 
             // Family prefix from chassis id (AstroEagle_T2 → AstroEagle) when available.
             ShipFamilyDefinition bindFamily = shipFamily;
@@ -2963,6 +2995,7 @@ namespace TitanOrbit.Game
                 _proxyBranchIndices.Remove(entity);
                 _proxyChassisIds.Remove(entity);
                 _proxyTeams.Remove(entity);
+                _proxyAccentKeys.Remove(entity);
                 _proxyPlanetVisuals.Remove(entity);
                 _proxyAsteroidTerritory.Remove(entity);
                 _proxyGemBonusTint.Remove(entity);
@@ -3514,6 +3547,7 @@ namespace TitanOrbit.Game
             _proxyBranchIndices.Clear();
             _proxyChassisIds.Clear();
             _proxyTeams.Clear();
+            _proxyAccentKeys.Clear();
             _proxyPlanetVisuals.Clear();
             _proxyAsteroidTerritory.Clear();
             _proxyGemBonusTint.Clear();

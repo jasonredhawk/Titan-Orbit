@@ -150,6 +150,18 @@ namespace TitanOrbit.Game
                 return;
 
             RefreshDependents(weaponOnly: !remapNonWeapons);
+
+            // Part remaps replace sharedMaterials. Recapture the team base, then
+            // re-apply paint. The owner uses local prefs so a late ghost does not
+            // wipe the studio colors after Bind.
+            ShipAccentColors ghostAccents = default;
+            if (em.HasComponent<ShipAccentColors>(_shipEntity))
+                ghostAccents = em.GetComponentData<ShipAccentColors>(_shipEntity);
+            int localId = EcsGameBridge.GetLocalNetworkId();
+            bool isLocalOwner = localId > 0 && _networkId == localId;
+            ShipColorizeAccentApplier.CaptureBaseAndApply(
+                gameObject,
+                LocalPlayerShipAccents.ResolveForPresentation(isLocalOwner, ghostAccents));
         }
 
         void RefreshDependents(bool weaponOnly)
