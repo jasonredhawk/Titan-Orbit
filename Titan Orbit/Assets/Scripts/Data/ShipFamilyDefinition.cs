@@ -298,6 +298,32 @@ namespace TitanOrbit.Data
             }
         }
 
+        /// <summary>
+        /// One Colorize material set for this family. Color1 is not taken from the
+        /// .mat — <see cref="TeamColor1Palette"/> writes it at apply time so every
+        /// team shares the same Colorize asset.
+        /// Prefers the Team A slot, then the first non-empty set.
+        /// </summary>
+        public List<Material> GetColorizeBaseMaterials()
+        {
+            if (teamMaterials == null || teamMaterials.Count == 0)
+                return null;
+
+            List<Material> fallback = null;
+            for (int i = 0; i < teamMaterials.Count; i++)
+            {
+                var set = teamMaterials[i];
+                if (set == null || set.materials == null || set.materials.Count == 0)
+                    continue;
+                if (set.team == TeamId.TeamA)
+                    return set.materials;
+                if (fallback == null)
+                    fallback = set.materials;
+            }
+
+            return fallback;
+        }
+
         /// <summary>Team-tinted hull materials for visual proxies, or null when none are configured.</summary>
         public List<Material> GetMaterialsForTeam(TeamId team)
         {

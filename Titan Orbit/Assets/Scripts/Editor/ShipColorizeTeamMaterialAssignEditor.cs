@@ -29,6 +29,28 @@ namespace TitanOrbit.Editor
             (TeamId.TeamE, "Purple", new[] { "Purple", "Violet" }),
         };
 
+        const string TeamColor1PalettePath = "Assets/Resources/TeamColor1Palette.asset";
+
+        [MenuItem("TitanOrbit/Ships/Create Team Color 1 Palette")]
+        public static void CreateTeamColor1Palette()
+        {
+            var existing = AssetDatabase.LoadAssetAtPath<TeamColor1Palette>(TeamColor1PalettePath);
+            if (existing != null)
+            {
+                Selection.activeObject = existing;
+                EditorGUIUtility.PingObject(existing);
+                Debug.Log("[TitanOrbit] TeamColor1Palette already exists at " + TeamColor1PalettePath);
+                return;
+            }
+
+            var asset = ScriptableObject.CreateInstance<TeamColor1Palette>();
+            AssetDatabase.CreateAsset(asset, TeamColor1PalettePath);
+            AssetDatabase.SaveAssets();
+            Selection.activeObject = asset;
+            EditorGUIUtility.PingObject(asset);
+            Debug.Log("[TitanOrbit] Created " + TeamColor1PalettePath + " — edit Color1 per team here.");
+        }
+
         [MenuItem("TitanOrbit/Ships/Assign Colorize Team Materials")]
         public static void AssignAll()
         {

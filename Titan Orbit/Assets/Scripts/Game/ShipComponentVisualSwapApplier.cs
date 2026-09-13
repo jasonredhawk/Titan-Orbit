@@ -161,7 +161,8 @@ namespace TitanOrbit.Game
             bool isLocalOwner = localId > 0 && _networkId == localId;
             ShipColorizeAccentApplier.CaptureBaseAndApply(
                 gameObject,
-                LocalPlayerShipAccents.ResolveForPresentation(isLocalOwner, ghostAccents));
+                LocalPlayerShipAccents.ResolveForPresentation(isLocalOwner, ghostAccents),
+                _team);
         }
 
         void RefreshDependents(bool weaponOnly)

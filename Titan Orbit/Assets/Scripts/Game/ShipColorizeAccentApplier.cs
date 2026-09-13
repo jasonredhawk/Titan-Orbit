@@ -1,19 +1,25 @@
 using System.Collections.Generic;
+using TitanOrbit.Core;
+using TitanOrbit.Data;
 using TitanOrbit.ECS;
 using UnityEngine;
 
 namespace TitanOrbit.Game
 {
     /// <summary>
-    /// Applies Colorize Color2 / Color3 / Emission1–3 on ship proxies without writing Color1
-    /// and without MaterialPropertyBlock (WebGL often draws nothing for URP + MPB).
+    /// Applies Colorize colors on ship proxies without MaterialPropertyBlock
+    /// (WebGL often draws nothing for URP + MPB).
+    /// Color1 always comes from <see cref="TeamColor1Palette"/> — players cannot change it.
+    /// Color2 / Color3 / Emission1–3 come from <see cref="ShipAccentColors"/> when custom.
     /// <para>
-    /// Instances are cached by (base material, packed colors) so two Red/Black ships
-    /// share one copy. Apply happens on spawn / accent change — never every frame.
+    /// Instances are cached by (base material, team Color1, packed accents) so two
+    /// ships that share a palette share one copy. Apply happens on spawn / paint
+    /// change — never every frame.
     /// </para>
     /// </summary>
     public static class ShipColorizeAccentApplier
     {
+        static readonly int Color1Id = Shader.PropertyToID("_Color1");
         static readonly int Color2Id = Shader.PropertyToID("_Color2");
         static readonly int Color3Id = Shader.PropertyToID("_Color3");
         static readonly int SecondaryId = Shader.PropertyToID("_SecondaryColor");
@@ -31,19 +37,23 @@ namespace TitanOrbit.Game
         struct AccentCacheKey : System.IEquatable<AccentCacheKey>
         {
             public int BaseId;
+            public uint Color1;
             public uint Color2;
             public uint Color3;
             public uint Emission;
             public uint Emission2;
             public uint Emission3;
+            public byte HasCustom;
 
             public bool Equals(AccentCacheKey other) =>
                 BaseId == other.BaseId
+                && Color1 == other.Color1
                 && Color2 == other.Color2
                 && Color3 == other.Color3
                 && Emission == other.Emission
                 && Emission2 == other.Emission2
-                && Emission3 == other.Emission3;
+                && Emission3 == other.Emission3
+                && HasCustom == other.HasCustom;
 
             public override bool Equals(object obj) => obj is AccentCacheKey other && Equals(other);
 
@@ -52,6 +62,8 @@ namespace TitanOrbit.Game
                 unchecked
                 {
                     int hash = BaseId;
+                    hash = (hash * 397) ^ (int)Color1;
+                    hash = (hash * 397) ^ HasCustom;
                     hash = (hash * 397) ^ (int)Color2;
                     hash = (hash * 397) ^ (int)Color3;
                     hash = (hash * 397) ^ (int)Emission;
@@ -70,10 +82,10 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Snapshots the current sharedMaterials as the team-base palette, then tints
-        /// when <paramref name="accents"/> is custom.
+        /// Snapshots the current shared Colorize assets, then stamps team Color1
+        /// and optional player accents onto cached instances.
         /// </summary>
-        public static void CaptureBaseAndApply(GameObject root, in ShipAccentColors accents)
+        public static void CaptureBaseAndApply(GameObject root, in ShipAccentColors accents, TeamId team)
         {
             if (root == null)
                 return;
@@ -81,6 +93,7 @@ namespace TitanOrbit.Game
             var state = root.GetComponent<ShipAccentTintState>();
             if (state == null)
                 state = root.AddComponent<ShipAccentTintState>();
+            state.Team = team == TeamId.None ? TeamId.TeamA : team;
 
             var renderers = root.GetComponentsInChildren<Renderer>(true);
             state.Renderers = renderers;
@@ -108,37 +121,39 @@ namespace TitanOrbit.Game
             }
 
             state.LastAccentKey = int.MinValue;
-            ApplyFromCapturedBase(state, accents);
+            ApplyFromCapturedBase(state, accents, state.Team);
         }
 
         /// <summary>
         /// Re-tints an existing proxy from the captured Colorize assets. No destroy/recreate.
         /// </summary>
-        public static void ApplyFromCapturedBase(GameObject root, in ShipAccentColors accents)
+        public static void ApplyFromCapturedBase(GameObject root, in ShipAccentColors accents, TeamId team)
         {
             if (root == null)
                 return;
             var state = root.GetComponent<ShipAccentTintState>();
             if (state == null)
             {
-                CaptureBaseAndApply(root, accents);
+                CaptureBaseAndApply(root, accents, team);
                 return;
             }
 
-            ApplyFromCapturedBase(state, accents);
+            state.Team = team == TeamId.None ? TeamId.TeamA : team;
+            ApplyFromCapturedBase(state, accents, state.Team);
         }
 
-        static void ApplyFromCapturedBase(ShipAccentTintState state, in ShipAccentColors accents)
+        static void ApplyFromCapturedBase(ShipAccentTintState state, in ShipAccentColors accents, TeamId team)
         {
             if (state == null || state.Renderers == null || state.BaseSharedMaterials == null)
                 return;
 
-            int key = accents.CacheKey;
+            Color color1 = TeamColor1Palette.GetColor1(team);
+            uint color1Packed = ShipAccentColors.Pack(Opaque(color1));
+            int key = unchecked((int)color1Packed * 397) ^ accents.CacheKey;
             if (state.LastAccentKey == key && state.LastAccentKey != 0)
                 return;
             state.LastAccentKey = key;
 
-            bool custom = accents.IsCustom;
             for (int i = 0; i < state.Renderers.Length; i++)
             {
                 var renderer = state.Renderers[i];
@@ -148,18 +163,12 @@ namespace TitanOrbit.Game
                 if (renderer == null || bases == null || bases.Length == 0)
                     continue;
 
-                if (!custom)
-                {
-                    renderer.sharedMaterials = bases;
-                    continue;
-                }
-
                 var replaced = new Material[bases.Length];
                 for (int s = 0; s < bases.Length; s++)
                 {
                     Material source = bases[s];
                     replaced[s] = source != null
-                        ? GetOrCreateTinted(source, accents)
+                        ? GetOrCreateTinted(source, accents, color1Packed, color1)
                         : null;
                 }
 
@@ -318,11 +327,17 @@ namespace TitanOrbit.Game
                 255);
         }
 
-        static Material GetOrCreateTinted(Material source, in ShipAccentColors accents)
+        static Material GetOrCreateTinted(
+            Material source,
+            in ShipAccentColors accents,
+            uint color1Packed,
+            Color color1)
         {
             var key = new AccentCacheKey
             {
                 BaseId = source.GetInstanceID(),
+                Color1 = color1Packed,
+                HasCustom = accents.HasCustom,
                 Color2 = accents.Color2Packed,
                 Color3 = accents.Color3Packed,
                 Emission = accents.EmissionPacked,
@@ -336,13 +351,18 @@ namespace TitanOrbit.Game
             {
                 name = source.name + "_Accent",
             };
-            WriteAccentColors(instance, accents);
+            WriteAccentColors(instance, accents, color1);
             Cache[key] = instance;
             return instance;
         }
 
-        static void WriteAccentColors(Material material, in ShipAccentColors accents)
+        static void WriteAccentColors(Material material, in ShipAccentColors accents, Color color1)
         {
+            TrySet(material, Color1Id, color1);
+
+            if (!accents.IsCustom)
+                return;
+
             Color color2 = (Color)accents.Color2;
             Color color3 = (Color)accents.Color3;
             Color emission1 = (Color)accents.Emission;

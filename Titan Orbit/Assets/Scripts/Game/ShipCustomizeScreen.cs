@@ -64,6 +64,7 @@ namespace TitanOrbit.Game
         TextMeshProUGUI _badgeCaption;
         TextMeshProUGUI _paintStateLabel;
         MainMenuBadgePicker _badgePicker;
+        readonly Image[] _teamChips = new Image[5];
 
         GameObject _previewRoot;
         Camera _previewCam;
@@ -167,9 +168,11 @@ namespace TitanOrbit.Game
                 BuildFullChrome();
 
             BindChromeRefs();
+            EnsureTeamStrip();
             EnsureBadgeRow();
             EnsurePickerCloseButton();
             EnsurePanelDismissesPicker();
+            PaintTeamStrip();
         }
 
         void BuildFullChrome()
@@ -210,7 +213,7 @@ namespace TitanOrbit.Game
             var subtitle = CreateTmp(
                 panel.transform,
                 "Subtitle",
-                "Team color stays locked. Tap a well to paint. Reset restores baked Colorize colors.",
+                "Color1 is the team preset (edit TeamColor1Palette). Tap A–E to preview. Accents are yours.",
                 14f,
                 FontStyles.Normal);
             PlaceTop(subtitle.rectTransform, 54f, 24f);
@@ -238,8 +241,8 @@ namespace TitanOrbit.Game
             // Two columns so Color2 / Color3 / Glow 1–3 fit without burying the footer.
             const float leftX = -132f;
             const float rightX = 132f;
-            float wellY = -348f;
-            _teamSwatch = CreateLockedWell(panel.transform, "COLOR 1  TEAM", leftX, wellY);
+            float wellY = -382f;
+            _teamSwatch = CreateLockedWell(panel.transform, "COLOR 1  LOCKED", leftX, wellY);
             _color2Well = CreatePickWell(panel.transform, "COLOR 2", rightX, wellY, AccentSlot.Color2);
             wellY -= 58f;
             _color3Well = CreatePickWell(panel.transform, "COLOR 3", leftX, wellY, AccentSlot.Color3);
@@ -300,6 +303,103 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
+        /// Team A–E chips so the player can preview Color1 presets. This does not
+        /// change their match team — Color1 is still locked to the palette asset.
+        /// </summary>
+        void EnsureTeamStrip()
+        {
+            Transform panel = transform.Find("Panel");
+            if (panel == null)
+                return;
+
+            Transform existing = panel.Find("TeamStrip");
+            GameObject row = existing != null
+                ? existing.gameObject
+                : CreateUi("TeamStrip", panel, typeof(Image));
+            var rt = row.GetComponent<RectTransform>();
+            rt.anchorMin = new Vector2(0.5f, 1f);
+            rt.anchorMax = new Vector2(0.5f, 1f);
+            rt.pivot = new Vector2(0.5f, 1f);
+            rt.sizeDelta = new Vector2(520f, 40f);
+            rt.anchoredPosition = new Vector2(0f, -278f);
+            row.GetComponent<Image>().color = new Color(0.07f, 0.09f, 0.14f, 0.96f);
+
+            Transform labelTf = row.transform.Find("Label");
+            TextMeshProUGUI label = labelTf != null
+                ? labelTf.GetComponent<TextMeshProUGUI>()
+                : CreateTmp(row.transform, "Label", "PREVIEW TEAM", 12f, FontStyles.Bold);
+            var labelRt = label.rectTransform;
+            labelRt.anchorMin = new Vector2(0f, 0f);
+            labelRt.anchorMax = new Vector2(0.32f, 1f);
+            labelRt.offsetMin = new Vector2(10f, 0f);
+            labelRt.offsetMax = Vector2.zero;
+            label.alignment = TextAlignmentOptions.MidlineLeft;
+            label.color = CaptionColor;
+
+            for (int i = 0; i < 5; i++)
+            {
+                TeamId team = (TeamId)(i + 1);
+                string name = "Team" + team.ToLetter();
+                Transform chipTf = row.transform.Find(name);
+                GameObject chipGo = chipTf != null
+                    ? chipTf.gameObject
+                    : CreateUi(name, row.transform, typeof(Image), typeof(Button));
+                var chipRt = chipGo.GetComponent<RectTransform>();
+                chipRt.anchorMin = new Vector2(0.34f, 0.15f);
+                chipRt.anchorMax = new Vector2(0.34f, 0.15f);
+                chipRt.pivot = new Vector2(0f, 0f);
+                chipRt.sizeDelta = new Vector2(32f, 28f);
+                chipRt.anchoredPosition = new Vector2(i * 36f, 0f);
+                var chipImg = chipGo.GetComponent<Image>();
+                chipImg.sprite = _whiteSprite;
+                chipImg.color = ShipColorizeAccentApplier.Opaque(TeamColor1Palette.GetColor1(team));
+                var button = chipGo.GetComponent<Button>();
+                button.targetGraphic = chipImg;
+                button.transition = Selectable.Transition.None;
+                button.onClick.RemoveAllListeners();
+                TeamId captured = team;
+                button.onClick.AddListener(() => SelectPreviewTeam(captured));
+
+                Transform letterTf = chipGo.transform.Find("Letter");
+                TextMeshProUGUI letter = letterTf != null
+                    ? letterTf.GetComponent<TextMeshProUGUI>()
+                    : CreateTmp(chipGo.transform, "Letter", team.ToLetter(), 13f, FontStyles.Bold);
+                StretchFull(letter.rectTransform);
+                letter.alignment = TextAlignmentOptions.Center;
+                letter.color = BodyColor;
+                letter.raycastTarget = false;
+                _teamChips[i] = chipImg;
+            }
+        }
+
+        void SelectPreviewTeam(TeamId team)
+        {
+            if (team == TeamId.None)
+                team = TeamId.TeamA;
+            _team = team;
+            HidePicker();
+            PaintWells();
+            PaintTeamStrip();
+            PaintPreview();
+        }
+
+        void PaintTeamStrip()
+        {
+            for (int i = 0; i < _teamChips.Length; i++)
+            {
+                Image chip = _teamChips[i];
+                if (chip == null)
+                    continue;
+                TeamId team = (TeamId)(i + 1);
+                Color fill = TeamColor1Palette.GetColor1(team);
+                bool selected = team == _team;
+                chip.color = selected
+                    ? ShipColorizeAccentApplier.Opaque(fill)
+                    : Color.Lerp(ShipColorizeAccentApplier.Opaque(fill), Color.black, 0.35f);
+            }
+        }
+
+        /// <summary>
         /// Badge chip above the color wells. Opens the same grid overlay the Main Menu used.
         /// </summary>
         void EnsureBadgeRow()
@@ -311,10 +411,10 @@ namespace TitanOrbit.Game
             Transform existing = panel.Find("BadgeRow");
             GameObject row = existing != null
                 ? existing.gameObject
-                : CreateWellRow(panel, "BadgeRow", "BADGE", 0f, -278f);
+                : CreateWellRow(panel, "BadgeRow", "BADGE", 0f, -322f);
             var rt = row.GetComponent<RectTransform>();
             rt.sizeDelta = new Vector2(520f, 56f);
-            rt.anchoredPosition = new Vector2(0f, -278f);
+            rt.anchoredPosition = new Vector2(0f, -322f);
 
             Transform wellTf = row.transform.Find("Well");
             if (wellTf != null)
@@ -705,9 +805,9 @@ namespace TitanOrbit.Game
             _previewCam.transform.localPosition = new Vector3(0f, 0.45f, 0f);
             _previewCam.transform.LookAt(hull.transform);
             _previewHull = hull;
-            ShipColorizeAccentApplier.CaptureBaseAndApply(hull, ShipAccentColors.Default);
+            ShipColorizeAccentApplier.CaptureBaseAndApply(hull, ShipAccentColors.Default, _team);
             if (_teamSwatch != null)
-                _teamSwatch.color = ShipColorizeAccentApplier.Opaque(_team.ToColor());
+                _teamSwatch.color = ShipColorizeAccentApplier.Opaque(TeamColor1Palette.GetColor1(_team));
         }
 
         void RefreshFromStore()
@@ -829,6 +929,8 @@ namespace TitanOrbit.Game
 
         void PaintWells()
         {
+            if (_teamSwatch != null)
+                _teamSwatch.color = ShipColorizeAccentApplier.Opaque(TeamColor1Palette.GetColor1(_team));
             if (_color2Well != null)
                 _color2Well.color = (Color)_color2;
             if (_color3Well != null)
@@ -850,7 +952,7 @@ namespace TitanOrbit.Game
             ShipAccentColors accents = _hasCustom
                 ? CurrentCustomAccents()
                 : ShipAccentColors.Default;
-            ShipColorizeAccentApplier.ApplyFromCapturedBase(_previewHull, accents);
+            ShipColorizeAccentApplier.ApplyFromCapturedBase(_previewHull, accents, _team);
         }
 
         Color32 ColorForSlot(AccentSlot slot)

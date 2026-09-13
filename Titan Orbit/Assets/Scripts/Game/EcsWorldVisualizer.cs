@@ -2400,7 +2400,7 @@ namespace TitanOrbit.Game
                     _proxyAccentKeys.TryGetValue(entity, out int lastAccent);
                     if (lastAccent != accentKey)
                     {
-                        ShipColorizeAccentApplier.ApplyFromCapturedBase(go, accents);
+                        ShipColorizeAccentApplier.ApplyFromCapturedBase(go, accents, ship.Team);
                         _proxyAccentKeys[entity] = accentKey;
                     }
 
@@ -2485,7 +2485,7 @@ namespace TitanOrbit.Game
             bool isLocalOwner = localNetworkId > 0 && networkId == localNetworkId;
             ShipAccentColors spawnAccents = LocalPlayerShipAccents.ResolveForPresentation(
                 isLocalOwner, spawnGhost);
-            ShipColorizeAccentApplier.CaptureBaseAndApply(go, spawnAccents);
+            ShipColorizeAccentApplier.CaptureBaseAndApply(go, spawnAccents, team);
             _proxyAccentKeys[entity] = spawnAccents.CacheKey;
 
             // Family prefix from chassis id (AstroEagle_T2 → AstroEagle) when available.

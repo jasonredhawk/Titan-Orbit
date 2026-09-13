@@ -120,7 +120,7 @@ namespace TitanOrbit.Game
             if (root == null || team == TeamId.None)
                 return;
 
-            List<Material> teamMats = ResolveTeamMaterials(family, team, chassisId);
+            List<Material> teamMats = ResolveColorizeBaseMaterials(family, chassisId);
             if (teamMats == null || teamMats.Count == 0)
                 return;
 
@@ -147,12 +147,12 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Titan visual-family Colorize mats when <paramref name="chassisId"/> is MEGA_###;
-        /// otherwise the gameplay family's teamMaterials.
+        /// One Colorize material set. Team Color1 is written later from
+        /// <see cref="TeamColor1Palette"/> — we do not swap a Red/Blue/Green .mat per team.
+        /// MEGA chassis ids use the Titan visual-line mats (CraizanStar / Leopard / Okamoto).
         /// </summary>
-        public static List<Material> ResolveTeamMaterials(
+        public static List<Material> ResolveColorizeBaseMaterials(
             ShipFamilyDefinition family,
-            TeamId team,
             string chassisId)
         {
             if (MegaShipCatalog.IsMegaChassisId(chassisId))
@@ -160,13 +160,22 @@ namespace TitanOrbit.Game
                 var mega = MegaShipCatalog.Load();
                 if (mega != null && mega.TryGetVisualFamily(chassisId, out MegaShipVisualFamily visualFamily))
                 {
-                    List<Material> megaMats = mega.GetMaterialsForTeam(visualFamily, team);
+                    List<Material> megaMats = mega.GetColorizeBaseMaterials(visualFamily);
                     if (megaMats != null && megaMats.Count > 0)
                         return megaMats;
                 }
             }
 
-            return family != null ? family.GetMaterialsForTeam(team) : null;
+            return family != null ? family.GetColorizeBaseMaterials() : null;
+        }
+
+        /// <summary>Legacy name — same as <see cref="ResolveColorizeBaseMaterials"/>.</summary>
+        public static List<Material> ResolveTeamMaterials(
+            ShipFamilyDefinition family,
+            TeamId team,
+            string chassisId)
+        {
+            return ResolveColorizeBaseMaterials(family, chassisId);
         }
 
         /// <summary>

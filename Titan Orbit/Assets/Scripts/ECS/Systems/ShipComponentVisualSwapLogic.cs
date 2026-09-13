@@ -764,7 +764,7 @@ namespace TitanOrbit.ECS
             if (family == null || root == null || team == TeamId.None)
                 return;
 
-            List<Material> teamMats = family.GetMaterialsForTeam(team);
+            List<Material> teamMats = family.GetColorizeBaseMaterials();
             if (teamMats == null || teamMats.Count == 0)
                 return;
 

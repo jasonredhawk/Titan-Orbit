@@ -489,6 +489,18 @@ namespace TitanOrbit.Data
             return FindMaterialsInSets(teamMaterials, team);
         }
 
+        /// <summary>
+        /// One Colorize set for a Titan visual line. Color1 comes from
+        /// <see cref="TeamColor1Palette"/> at apply time, not from a per-team .mat.
+        /// </summary>
+        public List<Material> GetColorizeBaseMaterials(MegaShipVisualFamily family)
+        {
+            List<Material> fromFamily = FindColorizeBaseInSets(FindVisualFamilySets(family));
+            if (fromFamily != null)
+                return fromFamily;
+            return FindColorizeBaseInSets(teamMaterials);
+        }
+
         List<ShipFamilyTeamMaterialSet> FindVisualFamilySets(MegaShipVisualFamily family)
         {
             if (visualFamilyTeamMaterials == null)
@@ -517,6 +529,26 @@ namespace TitanOrbit.Data
             }
 
             return null;
+        }
+
+        static List<Material> FindColorizeBaseInSets(List<ShipFamilyTeamMaterialSet> sets)
+        {
+            if (sets == null || sets.Count == 0)
+                return null;
+
+            List<Material> fallback = null;
+            for (int i = 0; i < sets.Count; i++)
+            {
+                ShipFamilyTeamMaterialSet set = sets[i];
+                if (set == null || set.materials == null || set.materials.Count == 0)
+                    continue;
+                if (set.team == TeamId.TeamA)
+                    return set.materials;
+                if (fallback == null)
+                    fallback = set.materials;
+            }
+
+            return fallback;
         }
 
         /// <summary>Display name for tree UI (authored name, else prefab name, else chassis id).</summary>
