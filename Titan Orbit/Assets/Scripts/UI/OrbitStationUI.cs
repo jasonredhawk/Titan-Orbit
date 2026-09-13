@@ -10,6 +10,7 @@ using TitanOrbit.ECS;
 using TitanOrbit.Game;
 using TitanOrbit.Systems;
 using TitanOrbit.Data;
+using TitanOrbit.Services;
 #if ENABLE_INPUT_SYSTEM
 using UnityEngine.InputSystem;
 #endif
@@ -139,6 +140,12 @@ namespace TitanOrbit.UI
         private TextMeshProUGUI[] equipmentTitleTexts;
         private TextMeshProUGUI[] equipmentDescTexts;
         private Button[] equipmentDeleteButtons;
+
+        /// <summary>
+        /// Per-slot "WATCH AD" control for the locked +1 loadout row.
+        /// Hidden on filled / normal-empty slots.
+        /// </summary>
+        private Button[] equipmentBonusAdButtons;
         private GameObject equipmentRemoveConfirmRoot;
         private TextMeshProUGUI equipmentRemoveConfirmBodyText;
         private int _pendingRemoveEquipmentSlotIndex = -1;
@@ -1701,12 +1708,14 @@ namespace TitanOrbit.UI
             equipmentTitleTexts = new TextMeshProUGUI[MaxSlotRows];
             equipmentDescTexts = new TextMeshProUGUI[MaxSlotRows];
             equipmentDeleteButtons = new Button[MaxSlotRows];
+            equipmentBonusAdButtons = new Button[MaxSlotRows];
             for (int i = 0; i < MaxSlotRows; i++)
             {
                 CreateSlotBoxForGrid(equipmentGridRoot.transform, SlotCardWidth, SlotCardHeight, i, out equipmentBoxes[i], out equipmentBgImages[i], out equipmentBorderImages[i], out equipmentChargeTexts[i], out equipmentTitleTexts[i], out equipmentDescTexts[i], out equipmentDeleteButtons[i]);
                 int idx = i;
                 if (equipmentDeleteButtons[i] != null)
                     equipmentDeleteButtons[i].onClick.AddListener(() => ShowEquipmentRemoveConfirm(idx));
+                equipmentBonusAdButtons[i] = CreateEquipmentBonusAdButton(equipmentBoxes[i].transform);
             }
 
             // —— Store Panel ——
@@ -2708,6 +2717,7 @@ namespace TitanOrbit.UI
             equipmentTitleTexts = new TextMeshProUGUI[MaxSlotRows];
             equipmentDescTexts = new TextMeshProUGUI[MaxSlotRows];
             equipmentDeleteButtons = new Button[MaxSlotRows];
+            equipmentBonusAdButtons = new Button[MaxSlotRows];
 
             for (int i = 0; i < MaxSlotRows; i++)
             {
@@ -2742,6 +2752,8 @@ namespace TitanOrbit.UI
 
                 if (equipmentDeleteButtons[i] != null)
                     equipmentDeleteButtons[i].onClick.AddListener(() => ShowEquipmentRemoveConfirm(idx));
+                if (equipmentBoxes[i] != null)
+                    equipmentBonusAdButtons[i] = CreateEquipmentBonusAdButton(equipmentBoxes[i].transform);
             }
         }
 
@@ -6361,7 +6373,11 @@ namespace TitanOrbit.UI
             var equipment = currentShip.EquippedEquipment;
             int gearCount = equipment != null ? equipment.Count : 0;
             int emptyNeeded = Mathf.Max(0, cap - cardCount - gearCount);
-            int slotCount = gearCount + emptyNeeded;
+            // Locked +1 row sits below level-capped empties until the rewarded bonus is granted.
+            bool showLockedExtra = currentShip.LoadoutBonusSlots <= 0
+                && (TitanOrbitRewardedAds.CanOfferRewarded || !TitanOrbitAdsGate.ShouldShowAds);
+            int slotCount = gearCount + emptyNeeded + (showLockedExtra ? 1 : 0);
+            int lockedIndex = showLockedExtra ? slotCount - 1 : -1;
 
             if (equipmentSectionLabel != null)
                 equipmentSectionLabel.text = OrbitDockSidebarPanelUI.SectionTitleEquipment;
@@ -6379,7 +6395,19 @@ namespace TitanOrbit.UI
                 if (equipmentBoxes[i] == null) continue;
                 bool visible = i < slotCount;
                 equipmentBoxes[i].SetActive(visible);
-                if (!visible) continue;
+                if (!visible)
+                {
+                    SetEquipmentBonusAdButtonVisible(i, visible: false);
+                    continue;
+                }
+
+                if (i == lockedIndex)
+                {
+                    PaintLockedBonusEquipmentSlot(i);
+                    continue;
+                }
+
+                SetEquipmentBonusAdButtonVisible(i, visible: false);
 
                 EquippedEquipmentEntry entry = (equipment != null && i < gearCount) ? equipment[i] : default;
                 bool filled = i < gearCount;
@@ -6475,6 +6503,156 @@ namespace TitanOrbit.UI
                 ApplySidebarEquipmentGridLayout(slotCount);
 
             UpdateLegacyOrbitStorePanelTop(currentShip.SlotCount, slotCount);
+        }
+
+        /// <summary>
+        /// Dim locked row under the level-capped slots. Clicking WATCH AD / UNLOCK
+        /// plays a rewarded video then RPCs <see cref="MoonOrbitRpcClient.ClaimRewardedBonusSlot"/>.
+        /// </summary>
+        void PaintLockedBonusEquipmentSlot(int index)
+        {
+            if (equipmentTitleTexts != null && index < equipmentTitleTexts.Length && equipmentTitleTexts[index] != null)
+                equipmentTitleTexts[index].text = "+1 SLOT";
+            if (equipmentDescTexts != null && index < equipmentDescTexts.Length && equipmentDescTexts[index] != null)
+                equipmentDescTexts[index].text = "Watch a reward ad to unlock this match";
+            if (equipmentChargeTexts != null && index < equipmentChargeTexts.Length && equipmentChargeTexts[index] != null)
+            {
+                equipmentChargeTexts[index].text = "AD";
+                var bubble = equipmentChargeTexts[index].transform.parent;
+                if (bubble != null)
+                    bubble.gameObject.SetActive(true);
+            }
+            if (equipmentBgImages != null && index < equipmentBgImages.Length && equipmentBgImages[index] != null)
+                equipmentBgImages[index].color = new Color(0.10f, 0.12f, 0.18f, 0.92f);
+            if (equipmentBorderImages != null && index < equipmentBorderImages.Length && equipmentBorderImages[index] != null)
+            {
+                equipmentBorderImages[index].enabled = true;
+                equipmentBorderImages[index].color = new Color(0.55f, 0.42f, 0.22f, 0.85f);
+            }
+            if (equipmentDeleteButtons != null && index < equipmentDeleteButtons.Length && equipmentDeleteButtons[index] != null)
+            {
+                equipmentDeleteButtons[index].gameObject.SetActive(false);
+                equipmentDeleteButtons[index].interactable = false;
+            }
+
+            SidebarEquipmentSlotUi slotUi = _equipmentSlotRichLayoutActive && _sidebarEquipmentSlotUi != null && index < _sidebarEquipmentSlotUi.Length
+                ? _sidebarEquipmentSlotUi[index]
+                : null;
+            if (slotUi != null)
+            {
+                if (slotUi.accentImage != null)
+                    slotUi.accentImage.color = new Color(0.85f, 0.62f, 0.28f, 0.9f);
+                if (slotUi.sublineText != null)
+                {
+                    slotUi.sublineText.text = "LOCKED · THIS MATCH";
+                    slotUi.sublineText.gameObject.SetActive(true);
+                }
+                if (slotUi.iconRoot != null)
+                    slotUi.iconRoot.SetActive(false);
+                if (slotUi.placementToggleRow != null)
+                    slotUi.placementToggleRow.SetActive(false);
+                if (slotUi.placementPanel != null)
+                    slotUi.placementPanel.SetActive(false);
+                if (slotUi.cardLayout != null)
+                {
+                    float h = SidebarEquipmentSlotCardHeightEmpty + 22f;
+                    slotUi.cardLayout.preferredHeight = h;
+                    slotUi.cardLayout.minHeight = h;
+                }
+            }
+
+            SetEquipmentBonusAdButtonVisible(index, visible: true);
+        }
+
+        /// <summary>Builds the per-slot rewarded-ad button (hidden until the row is the locked extra).</summary>
+        Button CreateEquipmentBonusAdButton(Transform parent)
+        {
+            var go = new GameObject("BonusAdButton");
+            go.transform.SetParent(parent, false);
+            var le = go.AddComponent<LayoutElement>();
+            le.preferredHeight = 22f;
+            le.minHeight = 20f;
+
+            var img = go.AddComponent<Image>();
+            img.color = new Color(0.16f, 0.20f, 0.12f, 0.95f);
+            img.raycastTarget = true;
+
+            var btn = go.AddComponent<Button>();
+            btn.targetGraphic = img;
+            btn.onClick.AddListener(OnBonusLoadoutSlotAdClicked);
+
+            var labelGo = new GameObject("Label");
+            labelGo.transform.SetParent(go.transform, false);
+            var labelRt = labelGo.AddComponent<RectTransform>();
+            labelRt.anchorMin = Vector2.zero;
+            labelRt.anchorMax = Vector2.one;
+            labelRt.offsetMin = Vector2.zero;
+            labelRt.offsetMax = Vector2.zero;
+            var tmp = labelGo.AddComponent<TextMeshProUGUI>();
+            tmp.text = TitanOrbitAdsGate.ShouldShowAds ? "WATCH AD" : "UNLOCK";
+            tmp.fontSize = 11f;
+            tmp.fontStyle = FontStyles.Bold;
+            tmp.alignment = TextAlignmentOptions.Center;
+            tmp.color = new Color(0.92f, 0.88f, 0.62f, 1f);
+            tmp.raycastTarget = false;
+            if (fontAsset != null)
+                tmp.font = fontAsset;
+
+            go.SetActive(false);
+            return btn;
+        }
+
+        /// <summary>Shows or hides one slot's WATCH AD button and paints UNLOCK vs WATCH AD.</summary>
+        void SetEquipmentBonusAdButtonVisible(int index, bool visible)
+        {
+            if (equipmentBonusAdButtons == null || index < 0 || index >= equipmentBonusAdButtons.Length)
+                return;
+            Button btn = equipmentBonusAdButtons[index];
+            if (btn == null)
+                return;
+            btn.gameObject.SetActive(visible);
+            if (!visible)
+                return;
+            btn.interactable = !TitanOrbitRewardedAds.IsShowing;
+            var label = btn.GetComponentInChildren<TextMeshProUGUI>();
+            if (label != null)
+                label.text = TitanOrbitAdsGate.ShouldShowAds ? "WATCH AD" : "UNLOCK";
+        }
+
+        /// <summary>
+        /// Plays a rewarded ad (or instant-grants for remove-ads) then asks the server
+        /// for the match-only extra slot. Failure leaves the row locked.
+        /// </summary>
+        void OnBonusLoadoutSlotAdClicked()
+        {
+            if (TitanOrbitRewardedAds.IsShowing)
+                return;
+            if (currentShip != null && currentShip.LoadoutBonusSlots > 0)
+                return;
+
+            SetBonusAdButtonsInteractable(false);
+            TitanOrbitRewardedAds.Show(TitanOrbitRewardedAds.PlacementBonusSlot, result =>
+            {
+                SetBonusAdButtonsInteractable(true);
+                if (result != TitanOrbitRewardedAdResult.Completed)
+                    return;
+                MoonOrbitRpcClient.ClaimRewardedBonusSlot();
+                if (currentShip != null)
+                    currentShip.InvalidateLoadoutCache();
+                RefreshEquipmentSlots();
+            });
+        }
+
+        /// <summary>Disables every bonus-ad button while a video is in flight.</summary>
+        void SetBonusAdButtonsInteractable(bool interactable)
+        {
+            if (equipmentBonusAdButtons == null)
+                return;
+            for (int i = 0; i < equipmentBonusAdButtons.Length; i++)
+            {
+                if (equipmentBonusAdButtons[i] != null)
+                    equipmentBonusAdButtons[i].interactable = interactable;
+            }
         }
 
         /// <summary>

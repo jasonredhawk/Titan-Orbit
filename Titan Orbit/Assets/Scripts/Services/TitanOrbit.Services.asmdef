@@ -15,6 +15,12 @@
     "precompiledReferences": [],
     "autoReferenced": true,
     "defineConstraints": [],
-    "versionDefines": [],
+    "versionDefines": [
+        {
+            "name": "com.unity.services.levelplay",
+            "expression": "",
+            "define": "TITAN_ORBIT_LEVELPLAY"
+        }
+    ],
     "noEngineReferences": false
 }

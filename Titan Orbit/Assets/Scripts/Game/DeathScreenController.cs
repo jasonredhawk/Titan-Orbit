@@ -1,4 +1,5 @@
 using TitanOrbit.ECS;
+using TitanOrbit.Services;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
@@ -8,8 +9,10 @@ namespace TitanOrbit.Game
     /// <summary>
     /// Client-only death telemetry plaque while the local ship is destroyed and waiting to pick
     /// a respawn planet on the expanded minimap. Reads <see cref="EcsGameBridge"/> local ship
-    /// death state each frame and shows a 10s countdown. Hidden when not in-game, when the ship
-    /// is alive, or when <see cref="PlayerEliminatedScreenController"/> takes over.
+    /// death state each frame and shows a 10s countdown. After that beat, a keep/forfeit card
+    /// offers a rewarded ad to keep the loadout (cards + equipment) or respawn empty.
+    /// Hidden when not in-game, when the ship is alive, or when
+    /// <see cref="PlayerEliminatedScreenController"/> takes over.
     /// <para>
     /// [TITAN-ORBIT] This is presentation only — the server still owns death and respawn
     /// (<see cref="ShipDeathRecordingSystem"/> / <see cref="ShipRespawnSystem"/>). We never write
@@ -38,11 +41,32 @@ namespace TitanOrbit.Game
         public static bool IsRespawnReady => IsShowing && RemainingSeconds <= 0.05f;
 
         /// <summary>
+        /// True after the player picked keep-via-ad or forfeit, or when the loadout was empty
+        /// (nothing to keep). The minimap planet picker waits on this.
+        /// </summary>
+        public static bool IsLoadoutChoiceResolved { get; private set; }
+
+        /// <summary>
+        /// Sent on the respawn RPC. True only after a completed keep-loadout ad or remove-ads skip.
+        /// </summary>
+        public static bool KeepLoadoutOnRespawn { get; private set; }
+
+        /// <summary>
+        /// Planet picker may open: 10s beat is over and the keep/forfeit choice is done.
+        /// </summary>
+        public static bool CanPickRespawnPlanet => IsRespawnReady && IsLoadoutChoiceResolved;
+
+        /// <summary>
         /// [UNITY] Domain Reload off leaves this static hot. Called from
         /// <see cref="GameplayCursorController"/> before scene load so a leftover plaque
         /// from the last Play Mode session cannot pin the system cursor.
         /// </summary>
-        public static void ClearShowingFlag() => IsShowing = false;
+        public static void ClearShowingFlag()
+        {
+            IsShowing = false;
+            IsLoadoutChoiceResolved = false;
+            KeepLoadoutOnRespawn = false;
+        }
 
         /// <summary>
         /// Plaque root we show/hide. Built at runtime if the Inspector fields are empty
@@ -79,6 +103,21 @@ namespace TitanOrbit.Game
         /// Fallback only — used if the ghost has not received <see cref="ShipDeathState"/> yet.
         /// </summary>
         float _clientDeathStartTime = -1f;
+
+        /// <summary>Choice card under the plaque (watch ad / forfeit). Null until first death.</summary>
+        GameObject _choiceRoot;
+
+        /// <summary>Watch-ad (or instant keep) button.</summary>
+        Button _keepButton;
+
+        /// <summary>Respawn without cards + equipment.</summary>
+        Button _forfeitButton;
+
+        /// <summary>Keep-button label — swaps to KEEP LOADOUT when remove-ads is owned.</summary>
+        TextMeshProUGUI _keepLabel;
+
+        /// <summary>WATCHING / AD FAILED line under the buttons.</summary>
+        TextMeshProUGUI _choiceStatus;
 
         // --- Palette: same void glass as ShipStatTooltipChrome; amber rail = hull-critical warning ---
         static readonly Color FillColor = new Color(0.012f, 0.016f, 0.028f, 0.94f);
@@ -141,7 +180,10 @@ namespace TitanOrbit.Game
 
             // First dead frame this life — latch a client clock for the fallback countdown.
             if (!_wasDead)
+            {
                 _clientDeathStartTime = Time.time;
+                ResetLoadoutChoice();
+            }
 
             _wasDead = true;
             Show();
@@ -170,6 +212,7 @@ namespace TitanOrbit.Game
             RemainingSeconds = remaining;
             PaintCountdown(remaining);
             PulseTimer(remaining);
+            TickLoadoutChoice(remaining);
         }
 
         /// <summary>
@@ -245,6 +288,9 @@ namespace TitanOrbit.Game
             _lastShownSeconds = int.MinValue;
             RemainingSeconds = ShipRespawnSystem.RespawnDelaySeconds;
             IsShowing = false;
+            ResetLoadoutChoice();
+            if (_choiceRoot != null)
+                _choiceRoot.SetActive(false);
         }
 
         /// <summary>[UNITY] Clears the static flag if this instance was the one showing.</summary>
@@ -260,7 +306,7 @@ namespace TitanOrbit.Game
         /// </summary>
         void EnsureUi()
         {
-            if (overlayRoot != null && messageText != null && _timerText != null)
+            if (overlayRoot != null && messageText != null && _timerText != null && _choiceRoot != null)
                 return;
 
             // --- Tear down a stale overlay (old centred text, or a hot-reload leftover) ---
@@ -275,6 +321,11 @@ namespace TitanOrbit.Game
             _timerText = null;
             _timerCaption = null;
             _progressFill = null;
+            _choiceRoot = null;
+            _keepButton = null;
+            _forfeitButton = null;
+            _keepLabel = null;
+            _choiceStatus = null;
 
             // [UNITY] Screen Space Overlay paints on top of the 3D view. No GraphicRaycaster —
             // this plaque must not steal clicks from the game or other HUD.
@@ -289,6 +340,12 @@ namespace TitanOrbit.Game
             scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
             scaler.referenceResolution = new Vector2(1920f, 1080f);
             scaler.matchWidthOrHeight = 0.5f;
+
+            // Choice buttons need raycasts. Plaque images stay raycastTarget=false so they
+            // do not eat minimap clicks after the player decides.
+            canvasGo.AddComponent<GraphicRaycaster>();
+
+            BuildLoadoutChoiceUi(canvasGo.transform);
 
             // --- Plaque: compact HUD card, top-centre, well above the explosion ---
             // Speedometer / upgrade chrome already hide while the local ship is dead, so this
@@ -429,6 +486,199 @@ namespace TitanOrbit.Game
             sepRt.sizeDelta = new Vector2(-28f, 1f);
             sep.color = WarningDim;
             sep.raycastTarget = false;
+        }
+
+        /// <summary>
+        /// Clears keep/forfeit flags at the start of a death so a previous life cannot leak.
+        /// </summary>
+        static void ResetLoadoutChoice()
+        {
+            IsLoadoutChoiceResolved = false;
+            KeepLoadoutOnRespawn = false;
+        }
+
+        /// <summary>
+        /// After the 10s beat: skip the ad if the loadout is empty, otherwise show keep/forfeit.
+        /// Hides the card while the countdown is still running.
+        /// </summary>
+        void TickLoadoutChoice(float remaining)
+        {
+            if (_choiceRoot == null)
+                return;
+
+            if (remaining > 0.05f || IsLoadoutChoiceResolved)
+            {
+                _choiceRoot.SetActive(false);
+                return;
+            }
+
+            if (!EcsGameBridge.TryGetLocalLoadoutUsedCount(out int used) || used <= 0)
+            {
+                // Nothing to keep — forfeit is a no-op on empty buffers.
+                KeepLoadoutOnRespawn = false;
+                IsLoadoutChoiceResolved = true;
+                _choiceRoot.SetActive(false);
+                return;
+            }
+
+            _choiceRoot.SetActive(true);
+            PaintKeepButtonLabel();
+            if (_choiceStatus != null && !TitanOrbitRewardedAds.IsShowing)
+                _choiceStatus.text = "CHOOSE HOW TO REBOOT";
+        }
+
+        /// <summary>Builds the keep/forfeit card once under the death canvas.</summary>
+        void BuildLoadoutChoiceUi(Transform canvas)
+        {
+            var card = new GameObject("LoadoutChoice");
+            card.transform.SetParent(canvas, false);
+            var rt = card.AddComponent<RectTransform>();
+            rt.anchorMin = new Vector2(0.5f, 1f);
+            rt.anchorMax = new Vector2(0.5f, 1f);
+            rt.pivot = new Vector2(0.5f, 1f);
+            rt.anchoredPosition = new Vector2(0f, -118f);
+            rt.sizeDelta = new Vector2(440f, 132f);
+            _choiceRoot = card;
+            card.SetActive(false);
+
+            Image fill = CreateChildImage(card.transform, "Fill", stretch: true);
+            fill.color = FillColor;
+            fill.raycastTarget = false;
+
+            var outline = card.AddComponent<Outline>();
+            outline.effectColor = FrameTint;
+            outline.effectDistance = new Vector2(1.2f, -1.2f);
+
+            Image accent = CreateChildImage(card.transform, "Accent", stretch: false);
+            RectTransform accentRt = accent.rectTransform;
+            accentRt.anchorMin = new Vector2(0f, 1f);
+            accentRt.anchorMax = new Vector2(1f, 1f);
+            accentRt.pivot = new Vector2(0.5f, 1f);
+            accentRt.anchoredPosition = Vector2.zero;
+            accentRt.sizeDelta = new Vector2(-16f, 2.5f);
+            accent.color = WarningAccent;
+            accent.raycastTarget = false;
+
+            var caption = CreateLabel(
+                card.transform, "Caption", "LOADOUT AT RISK", 11f, CaptionTextColor, TextAlignmentOptions.MidlineLeft);
+            caption.fontStyle = FontStyles.Bold;
+            caption.characterSpacing = 2.4f;
+            Stretch(caption.rectTransform, 14f, 104f, 14f, 8f);
+
+            _keepButton = CreateChoiceButton(
+                card.transform, "KeepButton", new Vector2(14f, -36f), new Vector2(412f, 36f), OnKeepLoadoutClicked);
+            _keepLabel = _keepButton.GetComponentInChildren<TextMeshProUGUI>();
+
+            _forfeitButton = CreateChoiceButton(
+                card.transform, "ForfeitButton", new Vector2(14f, -76f), new Vector2(412f, 28f), OnForfeitLoadoutClicked);
+            var forfeitLabel = _forfeitButton.GetComponentInChildren<TextMeshProUGUI>();
+            if (forfeitLabel != null)
+            {
+                forfeitLabel.text = "RESPAWN WITHOUT LOADOUT";
+                forfeitLabel.fontSize = 13f;
+            }
+
+            _choiceStatus = CreateLabel(
+                card.transform, "Status", "CHOOSE HOW TO REBOOT", 10f, CaptionTextColor, TextAlignmentOptions.Midline);
+            Stretch(_choiceStatus.rectTransform, 14f, 4f, 14f, 108f);
+        }
+
+        /// <summary>Dark-space HUD button used by keep / forfeit.</summary>
+        Button CreateChoiceButton(Transform parent, string name, Vector2 anchoredPos, Vector2 size, UnityEngine.Events.UnityAction onClick)
+        {
+            var go = new GameObject(name);
+            go.transform.SetParent(parent, false);
+            var rt = go.AddComponent<RectTransform>();
+            rt.anchorMin = new Vector2(0f, 1f);
+            rt.anchorMax = new Vector2(0f, 1f);
+            rt.pivot = new Vector2(0f, 1f);
+            rt.anchoredPosition = anchoredPos;
+            rt.sizeDelta = size;
+
+            var img = go.AddComponent<Image>();
+            img.color = new Color(0.08f, 0.12f, 0.18f, 0.96f);
+            img.raycastTarget = true;
+
+            var btn = go.AddComponent<Button>();
+            btn.targetGraphic = img;
+            var colors = btn.colors;
+            colors.normalColor = new Color(0.10f, 0.16f, 0.24f, 1f);
+            colors.highlightedColor = new Color(0.16f, 0.24f, 0.34f, 1f);
+            colors.pressedColor = new Color(0.06f, 0.10f, 0.16f, 1f);
+            colors.disabledColor = new Color(0.08f, 0.08f, 0.10f, 0.7f);
+            btn.colors = colors;
+            btn.onClick.AddListener(onClick);
+
+            var label = CreateLabel(go.transform, "Label", "WATCH AD — KEEP LOADOUT", 14f, BodyTextColor, TextAlignmentOptions.Midline);
+            label.fontStyle = FontStyles.Bold;
+            label.raycastTarget = false;
+            Stretch(label.rectTransform, 8f, 2f, 8f, 2f);
+            return btn;
+        }
+
+        /// <summary>Remove-ads owners see KEEP LOADOUT (no video). Others see WATCH AD.</summary>
+        void PaintKeepButtonLabel()
+        {
+            if (_keepLabel == null)
+                return;
+            bool skipVideo = !TitanOrbitAdsGate.ShouldShowAds;
+            _keepLabel.text = skipVideo ? "KEEP LOADOUT" : "WATCH AD — KEEP LOADOUT";
+            if (_keepButton != null)
+                _keepButton.gameObject.SetActive(skipVideo || TitanOrbitRewardedAds.CanOfferRewarded);
+        }
+
+        /// <summary>Disables both buttons while a video is playing.</summary>
+        void SetChoiceInteractable(bool interactable)
+        {
+            if (_keepButton != null)
+                _keepButton.interactable = interactable;
+            if (_forfeitButton != null)
+                _forfeitButton.interactable = interactable;
+        }
+
+        /// <summary>
+        /// Keep path: remove-ads / Editor simulate / AppLixir / LevelPlay.
+        /// On fail we stay on the card — the player can retry or forfeit.
+        /// </summary>
+        void OnKeepLoadoutClicked()
+        {
+            if (IsLoadoutChoiceResolved || TitanOrbitRewardedAds.IsShowing)
+                return;
+
+            SetChoiceInteractable(false);
+            if (_choiceStatus != null)
+                _choiceStatus.text = TitanOrbitAdsGate.ShouldShowAds ? "WATCHING…" : "GRANTING…";
+
+            TitanOrbitRewardedAds.Show(TitanOrbitRewardedAds.PlacementKeepLoadout, result =>
+            {
+                if (result == TitanOrbitRewardedAdResult.Completed)
+                {
+                    KeepLoadoutOnRespawn = true;
+                    IsLoadoutChoiceResolved = true;
+                    if (_choiceRoot != null)
+                        _choiceRoot.SetActive(false);
+                    return;
+                }
+
+                SetChoiceInteractable(true);
+                if (_choiceStatus != null)
+                {
+                    _choiceStatus.text = result == TitanOrbitRewardedAdResult.Unavailable
+                        ? "AD UNAVAILABLE — FORFEIT OR RETRY"
+                        : "AD FAILED — FORFEIT OR RETRY";
+                }
+            });
+        }
+
+        /// <summary>Player accepts the death penalty: cards + equipment clear on respawn.</summary>
+        void OnForfeitLoadoutClicked()
+        {
+            if (IsLoadoutChoiceResolved)
+                return;
+            KeepLoadoutOnRespawn = false;
+            IsLoadoutChoiceResolved = true;
+            if (_choiceRoot != null)
+                _choiceRoot.SetActive(false);
         }
 
         /// <summary>Creates a full-stretch or empty-rect child <see cref="Image"/>.</summary>

@@ -55,6 +55,13 @@ namespace TitanOrbit.ECS
         /// 0 = ready.
         /// </summary>
         [GhostField] public double NextMinePlaceTime;
+
+        /// <summary>
+        /// Extra loadout slots granted this match after a rewarded ad (0 or 1).
+        /// [NETCODE] Ghosted so orbit UI and store buy gates match the server cap.
+        /// Death does not clear this — only a new ship bake starts at 0.
+        /// </summary>
+        [GhostField] public int LoadoutBonusSlots;
     }
 
     /// <summary>

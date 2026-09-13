@@ -3,10 +3,16 @@ using UnityEngine;
 namespace TitanOrbit.Services
 {
     /// <summary>
-    /// Entry point for ad eligibility (remove-ads IAP). Showing interstitials is a no-op while Unity Ads is not in the project.
+    /// Entry point for ad eligibility (remove-ads IAP).
+    /// Interstitials stay a no-op. Rewarded video goes through
+    /// <see cref="TitanOrbitRewardedAds"/> after this gate.
     /// </summary>
     public static class TitanOrbitAdsGate
     {
+        /// <summary>
+        /// True when this client should play a video (no remove-ads entitlement).
+        /// Remove-ads owners still get death / extra-slot rewards instantly via the facade.
+        /// </summary>
         public static bool ShouldShowAds => !TitanOrbitEntitlements.IsRemoveAdsOwned;
 
         public static bool TryBeginInterstitial(string placementId, out string skipReason)

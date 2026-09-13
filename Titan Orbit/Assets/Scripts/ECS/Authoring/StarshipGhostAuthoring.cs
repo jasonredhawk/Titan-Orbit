@@ -70,6 +70,7 @@ namespace TitanOrbit.ECS.Authoring
                     RuntimeBulletIndex = 0,
                     BranchIndex = 0,
                     ChassisIndex = 0,
+                    LoadoutBonusSlots = 0,
                 });
                 // [NETCODE] Loadout buffers must be baked so GhostFields replicate. Runtime-only
                 // AddBuffer from ShipEnsureComponentsSystem does not register them on the ghost.

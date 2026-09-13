@@ -677,6 +677,10 @@ namespace TitanOrbit.ECS
                         hash = hash * 31 + cards[i].CardId.GetHashCode();
                 }
 
+                // Bonus slot is not an item, but orbit UI must rebuild when it flips 0→1.
+                if (em.HasComponent<ShipLoadoutState>(shipEntity))
+                    hash = hash * 31 + em.GetComponentData<ShipLoadoutState>(shipEntity).LoadoutBonusSlots;
+
                 return hash;
             }
         }

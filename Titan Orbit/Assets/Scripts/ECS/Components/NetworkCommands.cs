@@ -293,7 +293,21 @@ namespace TitanOrbit.ECS
     {
         /// <summary>[TITAN-ORBIT] Stable <see cref="PlanetState.PlanetId"/> the player clicked.</summary>
         public int PlanetId;
+
+        /// <summary>
+        /// 1 = keep cards + equipment through this respawn (player watched a rewarded ad
+        /// or owns remove-ads). 0 = server clears the whole loadout. Adding this field
+        /// changes RPC layout — client and Linux headless must rebuild together.
+        /// </summary>
+        public byte KeepLoadout;
     }
+
+    /// <summary>
+    /// [NETCODE] Client claims the match-only +1 loadout slot after a rewarded ad
+    /// (or remove-ads instant grant). Server sets <see cref="ShipLoadoutState.LoadoutBonusSlots"/>
+    /// to 1 once. Empty payload — the watch already happened on the client.
+    /// </summary>
+    public struct ClaimRewardedBonusSlotCommand : IRpcCommand { }
 
     /// <summary>
     /// [NETCODE] Server response to resume/abandon rejoin choice. Handled by

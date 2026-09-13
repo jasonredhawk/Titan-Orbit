@@ -891,6 +891,28 @@ namespace TitanOrbit.Game
             return false;
         }
 
+        /// <summary>
+        /// How many upgrade cards + equipment items the local ship currently holds.
+        /// Death UI uses this to skip the keep-loadout ad when there is nothing to keep.
+        /// </summary>
+        public static bool TryGetLocalLoadoutUsedCount(out int used)
+        {
+            used = 0;
+            var world = GetLocalPlayerShipWorld();
+            if (world == null || !world.IsCreated)
+                return false;
+
+            var em = world.EntityManager;
+            if (!TryGetLocalShipEntity(em, out var shipEntity))
+                return false;
+
+            if (em.HasBuffer<EquippedCardElement>(shipEntity))
+                used += em.GetBuffer<EquippedCardElement>(shipEntity).Length;
+            if (em.HasBuffer<EquippedEquipmentElement>(shipEntity))
+                used += em.GetBuffer<EquippedEquipmentElement>(shipEntity).Length;
+            return true;
+        }
+
         // --- Session / network readiness ---
 
         /// <summary>
