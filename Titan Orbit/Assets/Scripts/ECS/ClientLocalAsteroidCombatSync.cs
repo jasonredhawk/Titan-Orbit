@@ -328,7 +328,14 @@ namespace TitanOrbit.ECS
                 Size = size,
             };
             Entity spawned = ClientLocalMapBodySpawn.SpawnAsteroid(em, asteroidPrefab, body, layoutSlot);
-            return spawned != Entity.Null;
+            if (spawned == Entity.Null)
+                return false;
+
+            // Mesh grows from a pebble; hull stays no-collide until the grow finishes so a
+            // telegraphed Instantiates cannot ram the ship before the player sees the rock.
+            AsteroidRespawnGrowInLogic.Begin(
+                em, spawned, math.max(0.01f, scale), AsteroidRespawnGrowInLogic.ResolveDurationSeconds());
+            return true;
         }
 
         /// <summary>

@@ -78,6 +78,14 @@ namespace TitanOrbit.Data
         [Min(1f)]
         public float AsteroidRespawnDelaySeconds = 30f;
 
+        [Tooltip(
+            "Seconds the respawned rock grows from a pebble to full size. The server also sends " +
+            "the respawn RPC this far before Instantiates so the mesh is on screen before the " +
+            "hull can shove a ship. 0.55–0.85 is quick but visible. Values below 0.05 (unset " +
+            "legacy assets) fall back to 0.7.")]
+        [Min(0f)]
+        public float AsteroidRespawnGrowInSeconds = 0.7f;
+
         [Header("Gem lifetime (original Gem.lifetimeSeconds / shrinkDuration)")]
         [Tooltip("Seconds before an uncollected gem despawns on the server (original 20).")]
         [Min(1f)]
@@ -108,6 +116,10 @@ namespace TitanOrbit.Data
             if (SpeedRandomMax < SpeedRandomMin)
                 SpeedRandomMax = SpeedRandomMin;
             AsteroidRespawnDelaySeconds = Mathf.Max(1f, AsteroidRespawnDelaySeconds);
+            // Old GemExplosionSettings.asset files lack this field → Unity deserializes 0
+            // and would skip the grow / telegraph (invisible shove, then pop).
+            if (AsteroidRespawnGrowInSeconds < 0.05f)
+                AsteroidRespawnGrowInSeconds = 0.7f;
             GemLifetimeSeconds = Mathf.Max(1f, GemLifetimeSeconds);
             GemShrinkDurationSeconds = Mathf.Max(0f, GemShrinkDurationSeconds);
             if (GemShrinkDurationSeconds > GemLifetimeSeconds)

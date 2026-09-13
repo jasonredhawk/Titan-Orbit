@@ -168,6 +168,7 @@ namespace TitanOrbit.ECS
             }
 
             var rpc = _cachedRpc;
+            bool havePending = SystemAPI.TryGetSingletonBuffer<PendingAsteroidRespawnElement>(out var pendingRespawns);
 
             var connections = _pendingConnQuery.ToEntityArray(Allocator.Temp);
             var connData = _pendingConnQuery.ToComponentDataArray<NetworkStreamConnection>(Allocator.Temp);
@@ -182,6 +183,29 @@ namespace TitanOrbit.ECS
                 ecb.AddComponent(send, rpc);
                 ecb.AddComponent(send, new SendRpcCommandRequest { TargetConnection = connections[i] });
                 ecb.AddComponent<AsteroidOccupancySent>(connections[i]);
+
+                // Late join during the grow telegraph: occupancy treats RpcSent slots as
+                // alive (keeps the seed rock), and this catch-up RPC is a no-op when the
+                // rock is already there — or Instantiates grow-in if hydrate culled it.
+                if (!havePending)
+                    continue;
+                for (int p = 0; p < pendingRespawns.Length; p++)
+                {
+                    var pending = pendingRespawns[p];
+                    if (pending.RpcSent == 0)
+                        continue;
+                    Entity respawnSend = ecb.CreateEntity();
+                    ecb.AddComponent(respawnSend, new AsteroidRespawnRpc
+                    {
+                        Position = pending.Position,
+                        Scale = pending.Scale,
+                        GemValue = pending.GemValue,
+                        MaxHealth = pending.MaxHealth,
+                        Size = pending.Size,
+                        LayoutSlot = pending.LayoutSlot,
+                    });
+                    ecb.AddComponent(respawnSend, new SendRpcCommandRequest { TargetConnection = connections[i] });
+                }
             }
 
             ecb.Playback(state.EntityManager);
@@ -241,6 +265,9 @@ namespace TitanOrbit.ECS
                 livePos.Add(p);
             }
 
+            bool havePending = SystemAPI.TryGetSingletonBuffer<PendingAsteroidRespawnElement>(
+                out var pendingRespawns);
+
             rpc.MatchSeed = seed;
             int slot = 0;
             int dead = 0;
@@ -259,6 +286,25 @@ namespace TitanOrbit.ECS
                     {
                         alive = true;
                         break;
+                    }
+                }
+
+                // Telegraph window: RPC is out, hull is not Instantiates yet. Treat the
+                // slot as alive so a late joiner does not cull the seed rock and then miss
+                // the already-broadcast respawn RPC.
+                if (!alive && havePending)
+                {
+                    for (int q = 0; q < pendingRespawns.Length; q++)
+                    {
+                        var pending = pendingRespawns[q];
+                        if (pending.RpcSent == 0)
+                            continue;
+                        if (pending.LayoutSlot == slot ||
+                            (pending.LayoutSlot < 0 && math.distancesq(pending.Position, want) <= epsSq))
+                        {
+                            alive = true;
+                            break;
+                        }
                     }
                 }
 

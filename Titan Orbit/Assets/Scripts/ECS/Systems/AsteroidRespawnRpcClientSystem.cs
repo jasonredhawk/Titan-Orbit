@@ -23,6 +23,7 @@ namespace TitanOrbit.ECS
     /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ClientSimulation | WorldSystemFilterFlags.ThinClientSimulation)]
     [UpdateInGroup(typeof(SimulationSystemGroup))]
+    [UpdateAfter(typeof(AsteroidOccupancyClientSystem))]
     public partial struct AsteroidRespawnRpcClientSystem : ISystem
     {
         /// <summary>Scratch copy of one inbound respawn RPC (blittable).</summary>

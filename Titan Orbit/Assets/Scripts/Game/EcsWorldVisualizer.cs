@@ -1080,7 +1080,9 @@ namespace TitanOrbit.Game
                     continue;
 
                 var lt = em.GetComponentData<LocalTransform>(entity);
-                float scale = math.max(0.25f, lt.Scale);
+                float scale = kind == ProxyVisualKind.Asteroid
+                    ? ResolveAsteroidDisplayScale(em, entity, lt.Scale)
+                    : math.max(0.25f, lt.Scale);
                 float gemValue = 0f;
                 if (isGem && em.HasComponent<GemState>(entity))
                 {
@@ -1446,6 +1448,17 @@ namespace TitanOrbit.Game
             var batch = _pendingBodyBatchScratch;
             batch.Clear();
 
+            // Pass 0: respawn grow-in — bypass the world-body budget so the pebble is
+            // Instantiates the same frame the client entity exists (not a second later).
+            int created = 0;
+            for (int i = 0; i < entities.Length; i++)
+            {
+                if (!em.HasComponent<AsteroidRespawnGrowIn>(entities[i]))
+                    continue;
+                if (TryConsumePendingWorldBodyProxy(em, entities[i], alive, consumeBudget: false))
+                    created++;
+            }
+
             // Pass 1: gems only
             for (int i = 0; i < entities.Length && batch.Count < frameBudget; i++)
             {
@@ -1453,48 +1466,76 @@ namespace TitanOrbit.Game
                     batch.Add(entities[i]);
             }
 
-            // Pass 2: remaining world bodies
+            // Pass 2: remaining world bodies (skip grow-in — already handled)
             for (int i = 0; i < entities.Length && batch.Count < frameBudget; i++)
             {
-                if (!em.HasComponent<GemTag>(entities[i]))
-                    batch.Add(entities[i]);
+                if (em.HasComponent<GemTag>(entities[i]) ||
+                    em.HasComponent<AsteroidRespawnGrowIn>(entities[i]))
+                    continue;
+                batch.Add(entities[i]);
             }
 
-            int created = 0;
             for (int i = 0; i < batch.Count; i++)
             {
                 if (!TryConsumeWorldBodyProxyBudget())
                     break;
-
-                Entity entity = batch[i];
-                if (!em.Exists(entity) || !em.HasComponent<LocalTransform>(entity))
-                {
-                    ClearVisualQueueTags(em, entity);
-                    continue;
-                }
-
-                if (_proxies.TryGetValue(entity, out var existing) && existing != null)
-                {
-                    ClearVisualQueueTags(em, entity);
-                    if (!em.HasComponent<MapBodyHybridVisualLinked>(entity))
-                        em.AddComponentData(entity, new MapBodyHybridVisualLinked());
-                    alive.Add(entity);
-                    continue;
-                }
-
-                var lt = em.GetComponentData<LocalTransform>(entity);
-                if (!TryCreateWorldBodyProxyForEntity(em, entity, lt, out _))
-                    continue; // Leave queue tags for next frame.
-
-                ClearVisualQueueTags(em, entity);
-                if (!em.HasComponent<MapBodyHybridVisualLinked>(entity))
-                    em.AddComponentData(entity, new MapBodyHybridVisualLinked());
-
-                alive.Add(entity);
-                created++;
+                if (TryConsumePendingWorldBodyProxy(em, batch[i], alive, consumeBudget: true))
+                    created++;
             }
 
             return created;
+        }
+
+        /// <summary>
+        /// Instantiates one Pending/SpawnRequest world-body proxy. When
+        /// <paramref name="consumeBudget"/> is false the caller already decided this GO
+        /// must appear this frame (respawn grow-in).
+        /// </summary>
+        bool TryConsumePendingWorldBodyProxy(
+            EntityManager em,
+            Entity entity,
+            HashSet<Entity> alive,
+            bool consumeBudget)
+        {
+            if (!em.Exists(entity) || !em.HasComponent<LocalTransform>(entity))
+            {
+                ClearVisualQueueTags(em, entity);
+                return false;
+            }
+
+            if (_proxies.TryGetValue(entity, out var existing) && existing != null)
+            {
+                ClearVisualQueueTags(em, entity);
+                if (!em.HasComponent<MapBodyHybridVisualLinked>(entity))
+                    em.AddComponentData(entity, new MapBodyHybridVisualLinked());
+                alive.Add(entity);
+                return false;
+            }
+
+            var lt = em.GetComponentData<LocalTransform>(entity);
+            if (!TryCreateWorldBodyProxyForEntity(em, entity, lt, out _))
+                return false;
+
+            ClearVisualQueueTags(em, entity);
+            if (!em.HasComponent<MapBodyHybridVisualLinked>(entity))
+                em.AddComponentData(entity, new MapBodyHybridVisualLinked());
+
+            alive.Add(entity);
+            if (!consumeBudget)
+                _newWorldBodyProxiesThisFrame++;
+            return true;
+        }
+
+        /// <summary>
+        /// Hybrid asteroid scale: grow-in uses the eased pebble→full curve (no 0.25 floor,
+        /// or the start of the grow would be invisible on small rocks).
+        /// </summary>
+        static float ResolveAsteroidDisplayScale(EntityManager em, Entity entity, float ltScale)
+        {
+            if (em.Exists(entity) && em.HasComponent<AsteroidRespawnGrowIn>(entity))
+                return AsteroidRespawnGrowInLogic.ComputeVisualScale(
+                    em.GetComponentData<AsteroidRespawnGrowIn>(entity));
+            return math.max(0.25f, ltScale);
         }
 
         /// <summary>Removes baked Pending and/or runtime SpawnRequest after a proxy is handled.</summary>
@@ -1557,6 +1598,7 @@ namespace TitanOrbit.Game
 
             if (em.HasComponent<AsteroidState>(entity) || em.HasComponent<AsteroidTag>(entity))
             {
+                scale = ResolveAsteroidDisplayScale(em, entity, lt.Scale);
                 if (!WorldBodyVisualApplier.TryCreateAsteroidVisual(
                         asteroidVisualPrefab, lt.Position, scale, out go))
                 {

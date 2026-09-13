@@ -26,16 +26,22 @@ Material:
     m_TexEnvs: []
     m_Ints: []
     m_Floats:
-    - _Brightness: 1
-    - _Twinkle: 0.18
+    - _Brightness: 0.9
+    - _GasIntensity: 0.36
+    - _GasOcclude: 0.42
     - _Surface: 0
+    - _Twinkle: 0.18
     m_Colors:
-    - _Tint: {r: 1, g: 1, b: 1, a: 1}
     - _FollowXZ: {r: 0, g: 0, b: 0, a: 0}
-    - _QuadScale: {r: 100, g: 100, b: 0, a: 0}
+    - _GasParallax: {r: 0.014, g: 0.022, b: 0, a: 0}
+    - _GasScale: {r: 0.024, g: 0.038, b: 0, a: 0}
+    - _GasTintA: {r: 0.32, g: 0.42, b: 0.82, a: 1}
+    - _GasTintB: {r: 0.25882357, g: 0.5526919, b: 0.5803922, a: 1}
+    - _LayerFar: {r: 0.42, g: 0.0022, b: 0.028, a: 0.45}
+    - _LayerMid: {r: 0.22, g: 0.005, b: 0.038, a: 0.7}
+    - _LayerNear: {r: 0.11, g: 0.01, b: 0.05, a: 0.95}
     - _Occupancy: {r: 0.55, g: 0.38, b: 0.28, a: 0}
-    - _LayerFar: {r: 0.42, g: 0.0015, b: 0.028, a: 0.4}
-    - _LayerMid: {r: 0.22, g: 0.0035, b: 0.038, a: 0.7}
-    - _LayerNear: {r: 0.11, g: 0.007, b: 0.05, a: 0.95}
+    - _QuadScale: {r: 100, g: 100, b: 0, a: 0}
+    - _Tint: {r: 1, g: 1, b: 1, a: 1}
   m_BuildTextureStacks: []
   m_AllowLocking: 1

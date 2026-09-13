@@ -4,14 +4,14 @@ using UnityEngine;
 namespace TitanOrbit.Core
 {
     /// <summary>
-    /// Client-only ring of the last five sentences this player sent from the hold-S matrix.
+    /// Client-only ring of the last ten sentences this player sent from the hold-S matrix.
     /// <c>ShipCommsPanel</c> paints them as quick-select chips. Not networked — each machine
     /// only remembers what <b>this</b> player composed.
     /// </summary>
     public static class ShipCommsHistory
     {
         /// <summary>How many recent sentences the compose panel shows.</summary>
-        public const int MaxEntries = 5;
+        public const int MaxEntries = 10;
 
         /// <summary>One 1–3 keyword sentence stored as catalog indices.</summary>
         public struct Sentence
@@ -44,7 +44,7 @@ namespace TitanOrbit.Core
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
         static void ResetStatics() => s_Recent.Clear();
 
-        /// <summary>Newest-first sentences. Count is 0–5.</summary>
+        /// <summary>Newest-first sentences. Count is 0–10.</summary>
         public static IReadOnlyList<Sentence> Recent => s_Recent;
 
         /// <summary>

@@ -271,7 +271,11 @@ namespace TitanOrbit.Game
             // on the opposite side of the hull, still on the play plane. Add half the canvas
             // height so the near edge clears the hull (the pivot is the chip row center).
             // Anchor XZ from mesh bounds center — hull.position is often off the visual midline.
-            float halfChipWorld = (ChipHeight + 8f) * WorldCanvasScale * 0.5f;
+            // Scale with camera height so L2+ / MEGA zoom-out keeps the same on-screen size
+            // as L1 — same factor as floating gem/heal counts.
+            float zoom = WorldFloatingCountManager.ResolveCameraZoomScale();
+            float scale = WorldCanvasScale * zoom;
+            float halfChipWorld = (ChipHeight + 8f) * scale * 0.5f;
             Vector3 pos = centerWorld
                 + ScreenAboveWorld * (xzRadius + PaddingPastHull + halfChipWorld);
             pos.y = centerWorld.y + HeightAbovePlane;
@@ -279,8 +283,7 @@ namespace TitanOrbit.Game
             // [TITAN-ORBIT] Euler −90 X lays the canvas on XZ. Negative Y scale un-mirrors
             // UI after that tilt — same trick as the nameplate label root.
             bubble.Root.transform.SetPositionAndRotation(pos, Quaternion.Euler(-90f, 0f, 0f));
-            bubble.Root.transform.localScale = new Vector3(
-                WorldCanvasScale, -WorldCanvasScale, WorldCanvasScale);
+            bubble.Root.transform.localScale = new Vector3(scale, -scale, scale);
 
             if (_cachedCamera == null)
                 _cachedCamera = Camera.main;
@@ -314,9 +317,10 @@ namespace TitanOrbit.Game
             rect.anchorMin = new Vector2(0.5f, 0.5f);
             rect.anchorMax = new Vector2(0.5f, 0.5f);
             rect.sizeDelta = new Vector2(ChipWidth, ChipHeight + 8f);
+            float zoom = WorldFloatingCountManager.ResolveCameraZoomScale();
+            float scale = WorldCanvasScale * zoom;
             root.transform.SetPositionAndRotation(Vector3.zero, Quaternion.Euler(-90f, 0f, 0f));
-            root.transform.localScale = new Vector3(
-                WorldCanvasScale, -WorldCanvasScale, WorldCanvasScale);
+            root.transform.localScale = new Vector3(scale, -scale, scale);
 
             var row = new GameObject("Row", typeof(RectTransform), typeof(HorizontalLayoutGroup));
             row.transform.SetParent(root.transform, false);

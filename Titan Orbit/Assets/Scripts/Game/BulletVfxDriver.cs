@@ -799,6 +799,9 @@ namespace TitanOrbit.Game
                     float3 sparkNormal = EstimateRamSparkNormal(display, hit.HitPosition);
                     ShipRamSparksDriver.NotifyRamContact(
                         display, sparkNormal, ramScale, killBoom, ramBank, ramTeam);
+                    // Sequence-0 is also the grind metronome (4 Hz). Local hull SFX is predicted
+                    // from contacts; remotes hear these pulses (skip-near-local inside the driver).
+                    ShipCollisionSfxDriver.NotifyRemoteRamPulse(display, hit.Damage, killBoom);
                     if (killBoom)
                     {
                         BulletImpactAttach.PlayAtLogicalPoint(

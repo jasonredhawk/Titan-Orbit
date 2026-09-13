@@ -45,8 +45,11 @@ namespace TitanOrbit.Game
         /// </summary>
         [SerializeField] float edgeHeightAboveFill = 0.08f;
 
-        /// <summary>Fill alpha for territory triangles (original ~0.04).</summary>
-        [SerializeField] float triangleAlpha = 0.04f;
+        /// <summary>
+        /// Fill alpha for territory triangles. High enough that team colour washes the
+        /// dim starfield (stars draw earlier, this pass composites on top) without hiding hulls.
+        /// </summary>
+        [SerializeField] float triangleAlpha = 0.07f;
 
         /// <summary>Edge thickness in meters (triangle sides + lone edges).</summary>
         [SerializeField] float triangleBorderThickness = 0.2f;
@@ -138,6 +141,9 @@ namespace TitanOrbit.Game
                 Draw.ResetAllDrawStates();
                 Draw.ThicknessSpace = ThicknessSpace.Meters;
                 Draw.BlendMode = ShapesBlendMode.Transparent;
+                // Default ZTest (LEqual): fill sits above the starfield/nebula in the colour
+                // buffer, but still loses to ships/planets that wrote closer depth. Do not use
+                // Always — that would paint territory on top of hulls at post-process time.
 
                 Vector3 referencePos = ResolveDisplayReference(cam, em);
                 if (!ToroidalMap.TryGetMapSize(out float mapW, out float mapH))

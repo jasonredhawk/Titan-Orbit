@@ -27,7 +27,7 @@ namespace TitanOrbit.Core
     /// <see cref="DebugFreeCards"/> so you can click any upgrade-tree node, buy GEAR, or spin
     /// CARDS for free during testing. Also gates optional tools such as Instruction Image Capture
     /// (F8/F9 reference plates) and the stutter isolator. Background checkboxes independently
-    /// enable the nebula quad and the shader starfield (both can be on at once). Publishes debug
+    /// enable the shader starfield (production) and the optional legacy nebula quad. Publishes debug
     /// values to <see cref="TitanOrbitDebugFlags"/> so other assemblies can honor toggles without
     /// referencing this Core assembly. Dedicated server builds normally leave debug flags false.
     /// </summary>
@@ -74,13 +74,13 @@ namespace TitanOrbit.Core
         /// <summary>Mirror of the last published showSpeedometer for change detection.</summary>
         bool _lastPublishedShowSpeedometer;
 
-        // [UNITY] / [TITAN-ORBIT] Independent presentation toggles. Both default on so the nebula
-        // and the shader starfield can composite together; flip either off without touching the other.
+        // [UNITY] / [TITAN-ORBIT] Production uses the shader starfield (stars + procedural gas).
+        // The old DinV nebula quad stays available as an optional overlay.
         [Header("Background")]
-        [Tooltip("Old space background: the scrolling nebula quad (ScrollingSpaceBackground). Off hides the quad and skips its LateUpdate. Can stay on together with the starfield.")]
-        [SerializeField] bool showSpaceBackground = true;
+        [Tooltip("Legacy DinV nebula quad (ScrollingSpaceBackground). Leave OFF — the starfield now owns stars + gas. On only if you want the old texture back.")]
+        [SerializeField] bool showSpaceBackground;
 
-        [Tooltip("New parallax starfield: shader-drawn star layers that shift as you fly. Off hides the star quad and skips its LateUpdate. Can stay on together with the nebula.")]
+        [Tooltip("Parallax starfield + procedural nebula gas. Off hides the quad and skips its LateUpdate.")]
         [SerializeField] bool showStarfieldBackground = true;
 
         /// <summary>Last value pushed to <see cref="ShowSpaceBackgroundChanged"/> (avoids spam while editing).</summary>
@@ -211,11 +211,11 @@ namespace TitanOrbit.Core
             Instance == null || Instance.showSpeedometer;
 
         /// <summary>
-        /// Safe static check for the nebula space background. Defaults <b>on</b> when no
-        /// GameManager exists yet so early frames still match the previous always-on look.
+        /// Safe static check for the legacy nebula quad. Defaults <b>off</b> when no
+        /// GameManager exists — production uses the shader starfield instead.
         /// </summary>
         public static bool IsShowSpaceBackgroundActive =>
-            Instance == null || Instance.showSpaceBackground;
+            Instance != null && Instance.showSpaceBackground;
 
         /// <summary>
         /// Safe static check for the shader starfield. Defaults <b>on</b> when no GameManager

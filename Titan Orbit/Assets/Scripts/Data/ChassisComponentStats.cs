@@ -162,7 +162,7 @@ namespace TitanOrbit.Data
             for (int i = 0; i < root.childCount; i++)
             {
                 Transform child = root.GetChild(i);
-                if (child == null)
+                if (child == null || ShouldSkipPresentationChild(child))
                     continue;
 
                 string componentType = ResolveCanonicalPartType(child.name, familyPrefix);
@@ -195,7 +195,7 @@ namespace TitanOrbit.Data
             for (int i = 0; i < parent.childCount; i++)
             {
                 Transform child = parent.GetChild(i);
-                if (child == null)
+                if (child == null || ShouldSkipPresentationChild(child))
                     continue;
 
                 string componentType = ResolveCanonicalPartType(child.name, familyPrefix);
@@ -301,6 +301,32 @@ namespace TitanOrbit.Data
             // Nested remaps keep a source-family child (CosmicShark_Thruster) under the
             // host slot. Both names enable VFX — keep only the outermost slot.
             PruneNestedPropulsionVfxMounts(stats);
+        }
+
+        /// <summary>
+        /// Runtime jets / damage smoke parented to the hull proxy. Their names contain
+        /// "Thruster" / "Smoke", so substring classification would treat them as scale mounts
+        /// and triangle / OVERDRIVE bloom would rewrite ParticleSystem localScale (blink).
+        /// Does not use <see cref="IsJetFlameChildName"/> — that also matches chassis names
+        /// with Fire / Flame / Exhaust.
+        /// </summary>
+        static bool ShouldSkipPresentationChild(Transform t)
+        {
+            if (t == null)
+                return true;
+            if (IsUnderOriginalStash(t) || IsUnderJetInstance(t))
+                return true;
+            if (t.name == ThrusterVfxBank.JetInstanceName || IsDamageSmokeInstanceName(t.name))
+                return true;
+            // Live VFX instances carry ParticleSystem on the root — chassis meshes do not.
+            return t.GetComponent<ParticleSystem>() != null
+                || t.GetComponent<ParticleSystemRenderer>() != null;
+        }
+
+        static bool IsDamageSmokeInstanceName(string name)
+        {
+            return !string.IsNullOrEmpty(name)
+                && name.StartsWith("ShipDamageSmoke", System.StringComparison.Ordinal);
         }
 
         static bool IsUnderJetInstance(Transform t)
@@ -732,7 +758,7 @@ namespace TitanOrbit.Data
             for (int i = 0; i < source.Count; i++)
             {
                 Transform t = source[i];
-                if (t == null)
+                if (t == null || ShouldSkipPresentationChild(t))
                     continue;
                 if (!MatchesLegacyAttributeScaleType(t.name, familyPrefix, legacyType))
                     continue;
@@ -771,6 +797,8 @@ namespace TitanOrbit.Data
         public static bool MatchesLegacyAttributeScaleType(string name, string familyPrefix, string legacyType)
         {
             if (string.IsNullOrEmpty(name) || string.IsNullOrEmpty(legacyType))
+                return false;
+            if (name == ThrusterVfxBank.JetInstanceName || IsDamageSmokeInstanceName(name))
                 return false;
 
             string token = ParseComponentType(name, familyPrefix);

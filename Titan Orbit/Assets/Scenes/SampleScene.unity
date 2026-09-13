@@ -1271,23 +1271,31 @@ MonoBehaviour:
   depthOffset: 80
   sizeMargin: 1.35
   tint: {r: 1, g: 1, b: 1, a: 1}
-  brightness: 1
+  brightness: 0.9
   twinkle: 0.18
   farDensity: 0.42
-  farParallax: 0.0015
+  farParallax: 0.0022
   farSize: 0.028
-  farBrightness: 0.4
+  farBrightness: 0.45
   farOccupancy: 0.55
   midDensity: 0.22
-  midParallax: 0.0035
+  midParallax: 0.005
   midSize: 0.038
   midBrightness: 0.7
   midOccupancy: 0.38
   nearDensity: 0.11
-  nearParallax: 0.007
+  nearParallax: 0.01
   nearSize: 0.05
   nearBrightness: 0.95
   nearOccupancy: 0.28
+  gasTintA: {r: 0.2627451, g: 0.2627451, b: 0.48235294, a: 1}
+  gasTintB: {r: 0.47058824, g: 0.47058824, b: 0.47058824, a: 1}
+  gasIntensity: 0.36
+  gasOcclude: 0.281
+  gasFarScale: 0.001
+  gasNearScale: 0.038
+  gasFarParallax: 0.014
+  gasNearParallax: 0.022
 --- !u!4 &252337103
 Transform:
   m_ObjectHideFlags: 0
@@ -8690,7 +8698,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::TitanOrbit.Core.GameManager
   editorMultiplayerMode: 1
   showSpeedometer: 1
-  showSpaceBackground: 1
+  showSpaceBackground: 0
   showStarfieldBackground: 1
   debugFreeShipUpgradeTree: 1
   debugFreeGear: 1

@@ -23,6 +23,8 @@ namespace TitanOrbit.Game
     /// <para>
     /// Prefab loads via the settings asset (usually <c>Resources/ShipDamageSmoke</c>).
     /// Particles use world simulation space so smoke stays behind the moving hull.
+    /// Instances are excluded from attribute-scale groups — triangle / OVERDRIVE bloom
+    /// used to rewrite emitter <c>localScale</c> and blink the trail.
     /// </para>
     /// </summary>
     [DefaultExecutionOrder(105)]
@@ -152,8 +154,10 @@ namespace TitanOrbit.Game
         void SpawnSmokeInstance(Transform anchor, int index)
         {
             GameObject go = Instantiate(_config.smokePrefab, transform);
+            // Keep "Thruster" out of the name — ChassisComponentStats substring
+            // classification would otherwise treat these as scale mounts.
             go.name = anchor != null
-                ? $"ShipDamageSmoke_{index}_{anchor.name}"
+                ? $"ShipDamageSmoke_{index}"
                 : "ShipDamageSmoke";
 
             if (anchor == null)
@@ -212,8 +216,14 @@ namespace TitanOrbit.Game
             for (int i = 0; i < _smokeInstances.Count; i++)
             {
                 GameObject go = _smokeInstances[i];
-                if (go != null)
-                    go.transform.localScale = local;
+                if (go == null)
+                    continue;
+                // Assigning the same localScale still dirties the transform and can
+                // restart ParticleSystems (triangle / OVERDRIVE used to blink this way).
+                Vector3 current = go.transform.localScale;
+                if ((current - local).sqrMagnitude < 1e-8f)
+                    continue;
+                go.transform.localScale = local;
             }
         }
 
@@ -402,17 +412,29 @@ namespace TitanOrbit.Game
             bool shouldEmit = _intensity > 0.01f;
             float intensityDelta = math.abs(_intensity - _lastAppliedIntensity);
             float speedDelta = math.abs(speedFactor - _lastAppliedSpeedFactor);
-            bool needsRefresh =
-                shouldEmit != _wasEmitting ||
-                intensityDelta >= 0.02f ||
-                (shouldEmit && speedDelta >= 0.05f);
-            if (!needsRefresh)
-                return;
+            bool emitToggled = shouldEmit != _wasEmitting;
+            bool intensityChanged = intensityDelta >= 0.02f;
+            bool speedChanged = shouldEmit && speedDelta >= 0.05f;
 
-            ApplySmokeIntensity(_intensity, speedFactor);
-            _lastAppliedIntensity = _intensity;
-            _lastAppliedSpeedFactor = speedFactor;
-            _wasEmitting = shouldEmit;
+            // Speed jumps (territory triangle / OVERDRIVE) must not rewrite startSize /
+            // startLifetime / localScale — those ParticleSystem writes restart in-flight puffs.
+            if (emitToggled || intensityChanged)
+            {
+                ApplySmokeIntensity(_intensity, speedFactor);
+                _lastAppliedIntensity = _intensity;
+                _lastAppliedSpeedFactor = speedFactor;
+                _wasEmitting = shouldEmit;
+                return;
+            }
+
+            if (speedChanged)
+            {
+                ApplyRateOverDistanceOnly(_intensity, speedFactor);
+                _lastAppliedSpeedFactor = speedFactor;
+            }
+
+            if (shouldEmit)
+                ResumeStoppedEmitters();
         }
 
         /// <summary>
@@ -473,6 +495,44 @@ namespace TitanOrbit.Game
             }
         }
 
+        /// <summary>
+        /// Speed-only trail density. Does not touch startSize / lifetime / localScale.
+        /// </summary>
+        void ApplyRateOverDistanceOnly(float intensity, float speedFactor)
+        {
+            if (_config == null)
+                return;
+
+            intensity = math.saturate(intensity);
+            speedFactor = math.saturate(speedFactor);
+            float sizeT = intensity * intensity * (3f - 2f * intensity);
+            float rateOverDistance = _config.maxRateOverDistance * sizeT * speedFactor;
+
+            for (int i = 0; i < _particleSystems.Count; i++)
+            {
+                ParticleSystem ps = _particleSystems[i];
+                if (ps == null)
+                    continue;
+
+                var emission = ps.emission;
+                emission.rateOverDistance = rateOverDistance;
+            }
+        }
+
+        /// <summary>
+        /// Parent-scale writes can stop a ParticleSystem without clearing emit intent.
+        /// Play() without Stop+Clear keeps in-flight puffs (same self-heal as thruster jets).
+        /// </summary>
+        void ResumeStoppedEmitters()
+        {
+            for (int i = 0; i < _particleSystems.Count; i++)
+            {
+                ParticleSystem ps = _particleSystems[i];
+                if (ps != null && !ps.isPlaying)
+                    ps.Play();
+            }
+        }
+
         /// <summary>Caches particle systems on <paramref name="root"/> and forces world simulation space.</summary>
         void CollectAndConfigureParticleSystems(GameObject root)
         {
@@ -488,11 +548,18 @@ namespace TitanOrbit.Game
 
                 var main = ps.main;
                 main.simulationSpace = ParticleSystemSimulationSpace.World;
+                // Hierarchy: localScale is (targetWorld / hullLossy) so world size stays
+                // ~maxWorldScale. Local mode used that 5× compensation as the particle
+                // size and made puffs huge.
                 main.scalingMode = ParticleSystemScalingMode.Hierarchy;
+                main.emitterVelocityMode = ParticleSystemEmitterVelocityMode.Transform;
                 main.playOnAwake = false;
                 main.loop = true;
                 main.startSpeed = new ParticleSystem.MinMaxCurve(0.15f, 0.55f);
                 main.startColor = new ParticleSystem.MinMaxGradient(Color.white);
+
+                var inheritVelocity = ps.inheritVelocity;
+                inheritVelocity.enabled = false;
 
                 var colorOverLifetime = ps.colorOverLifetime;
                 colorOverLifetime.enabled = true;

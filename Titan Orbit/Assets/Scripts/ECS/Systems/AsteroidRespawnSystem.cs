@@ -1,4 +1,5 @@
 using TitanOrbit.Core;
+using TitanOrbit.Data;
 using Unity.Entities;
 using Unity.Mathematics;
 using Unity.NetCode;
@@ -12,7 +13,10 @@ namespace TitanOrbit.ECS
     /// Restores the NGO-era <c>AsteroidRespawnManager</c> behavior (default 30s) under NetCode/ECS.
     /// <para>
     /// Flow: <see cref="AsteroidDestructionSystem"/> enqueues <see cref="PendingAsteroidRespawnElement"/>
-    /// → this system Instantiates a fresh asteroid when <c>ElapsedTime</c> is due.
+    /// → this system telegraphs <see cref="AsteroidRespawnRpc"/>
+    /// <c>AsteroidRespawnGrowInSeconds</c> early, then Instantiates the hull when
+    /// <c>ElapsedTime</c> is due. Clients grow the mesh in during that lead so a ship
+    /// sitting in the slot is not shoved by an invisible rock.
     /// Fresh instances avoid carrying stale destroyed state (same reason the original despawned + respawned).
     /// Instances are not NetCode ghosts — relevancy never streams asteroids (seed-hydrate).
     /// </para>
@@ -36,7 +40,10 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// Spawns every due pending asteroid this tick (same position / scale / MaxGems as before destroy).
+        /// Telegraphs each due rock to clients, then Instantiates the authoritative hull when
+        /// <c>ElapsedTime</c> hits <see cref="PendingAsteroidRespawnElement.RespawnAtElapsedTime"/>.
+        /// The RPC is sent <c>AsteroidRespawnGrowInSeconds</c> early so the hybrid mesh can grow
+        /// in before the server hull can shove a ship sitting in the slot.
         /// </summary>
         public void OnUpdate(ref SystemState state)
         {
@@ -44,32 +51,54 @@ namespace TitanOrbit.ECS
             if (!SystemAPI.TryGetSingleton<GamePrefabs>(out var prefabs) || prefabs.Asteroid == Entity.Null)
                 return;
 
-            // --- Collect due entries first ---
-            // [ECS/DOTS] Instantiate / CreateEntity invalidates DynamicBuffer handles. Copy out,
-            // remove from the buffer, then spawn + send RPCs.
+            float telegraph = AsteroidRespawnGrowInLogic.ResolveDurationSeconds();
             var buffer = SystemAPI.GetSingletonBuffer<PendingAsteroidRespawnElement>();
             double now = SystemAPI.Time.ElapsedTime;
-            var due = new Unity.Collections.NativeList<PendingAsteroidRespawnElement>(8, Unity.Collections.Allocator.Temp);
+
+            // --- Collect first ---
+            // [ECS/DOTS] Instantiate / CreateEntity invalidates DynamicBuffer handles. Copy
+            // telegraph + spawn lists out, patch RpcSent in place, then spawn + send RPCs.
+            var telegraphDue = new Unity.Collections.NativeList<PendingAsteroidRespawnElement>(
+                8, Unity.Collections.Allocator.Temp);
+            var spawnDue = new Unity.Collections.NativeList<PendingAsteroidRespawnElement>(
+                8, Unity.Collections.Allocator.Temp);
             for (int i = buffer.Length - 1; i >= 0; i--)
             {
-                if (now < buffer[i].RespawnAtElapsedTime)
+                var pending = buffer[i];
+                if (now >= pending.RespawnAtElapsedTime)
+                {
+                    spawnDue.Add(pending);
+                    buffer.RemoveAt(i);
                     continue;
-                due.Add(buffer[i]);
-                buffer.RemoveAt(i);
+                }
+
+                if (pending.RpcSent != 0)
+                    continue;
+                if (now < pending.RespawnAtElapsedTime - telegraph)
+                    continue;
+
+                pending.RpcSent = 1;
+                buffer[i] = pending;
+                telegraphDue.Add(pending);
             }
 
-            if (due.Length == 0)
+            if (telegraphDue.Length == 0 && spawnDue.Length == 0)
             {
-                due.Dispose();
+                telegraphDue.Dispose();
+                spawnDue.Dispose();
                 return;
             }
 
             var em = state.EntityManager;
             var rpcEcb = new EntityCommandBuffer(Unity.Collections.Allocator.Temp);
 
-            for (int i = 0; i < due.Length; i++)
+            // --- Clients build the mesh (and grow-in) before the server hull exists ---
+            for (int i = 0; i < telegraphDue.Length; i++)
+                QueueRespawnRpc(rpcEcb, telegraphDue[i]);
+
+            for (int i = 0; i < spawnDue.Length; i++)
             {
-                var pending = due[i];
+                var pending = spawnDue[i];
                 AsteroidSpawning.Spawn(
                     em,
                     prefabs.Asteroid,
@@ -80,23 +109,31 @@ namespace TitanOrbit.ECS
                     pending.Size,
                     pending.LayoutSlot);
 
-                // --- Clients hydrate asteroids locally (not ghost-relevant) ---
-                Entity rpcEntity = rpcEcb.CreateEntity();
-                rpcEcb.AddComponent(rpcEntity, new AsteroidRespawnRpc
-                {
-                    Position = pending.Position,
-                    Scale = pending.Scale,
-                    GemValue = pending.GemValue,
-                    MaxHealth = pending.MaxHealth,
-                    Size = pending.Size,
-                    LayoutSlot = pending.LayoutSlot,
-                });
-                rpcEcb.AddComponent(rpcEntity, new SendRpcCommandRequest());
+                // Fallback: Instantiates-on-time when telegraph never fired (duration 0 / first tick).
+                if (pending.RpcSent == 0)
+                    QueueRespawnRpc(rpcEcb, pending);
             }
 
             rpcEcb.Playback(em);
             rpcEcb.Dispose();
-            due.Dispose();
+            telegraphDue.Dispose();
+            spawnDue.Dispose();
+        }
+
+        /// <summary>Records one <see cref="AsteroidRespawnRpc"/> send entity on <paramref name="ecb"/>.</summary>
+        static void QueueRespawnRpc(EntityCommandBuffer ecb, in PendingAsteroidRespawnElement pending)
+        {
+            Entity rpcEntity = ecb.CreateEntity();
+            ecb.AddComponent(rpcEntity, new AsteroidRespawnRpc
+            {
+                Position = pending.Position,
+                Scale = pending.Scale,
+                GemValue = pending.GemValue,
+                MaxHealth = pending.MaxHealth,
+                Size = pending.Size,
+                LayoutSlot = pending.LayoutSlot,
+            });
+            ecb.AddComponent(rpcEntity, new SendRpcCommandRequest());
         }
     }
 

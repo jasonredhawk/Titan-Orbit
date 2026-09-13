@@ -113,7 +113,7 @@ namespace TitanOrbit.Data
             new ShipCommsKeyword { label = "Sorry", category = ShipCommsKeywordCategory.Social },
             new ShipCommsKeyword { label = "Ready", category = ShipCommsKeywordCategory.Social },
             new ShipCommsKeyword { label = "Go", category = ShipCommsKeywordCategory.Social },
-            new ShipCommsKeyword { label = "Nice", category = ShipCommsKeywordCategory.Social },
+            new ShipCommsKeyword { label = "Good", category = ShipCommsKeywordCategory.Social },
             new ShipCommsKeyword { label = "Planet", category = ShipCommsKeywordCategory.Subject },
             new ShipCommsKeyword { label = "Moon", category = ShipCommsKeywordCategory.Subject },
             new ShipCommsKeyword { label = "Gems", category = ShipCommsKeywordCategory.Subject },
@@ -121,6 +121,13 @@ namespace TitanOrbit.Data
             new ShipCommsKeyword { label = "Titan", category = ShipCommsKeywordCategory.Subject },
             new ShipCommsKeyword { label = "Capture", category = ShipCommsKeywordCategory.Tactical },
             new ShipCommsKeyword { label = "Transport", category = ShipCommsKeywordCategory.Subject },
+            new ShipCommsKeyword { label = "Kill", category = ShipCommsKeywordCategory.Tactical },
+            new ShipCommsKeyword { label = "Ship", category = ShipCommsKeywordCategory.Subject },
+            new ShipCommsKeyword { label = "Team", category = ShipCommsKeywordCategory.Subject },
+            new ShipCommsKeyword { label = "Dock", category = ShipCommsKeywordCategory.Subject },
+            new ShipCommsKeyword { label = "Bad", category = ShipCommsKeywordCategory.Social },
+            new ShipCommsKeyword { label = "Oops", category = ShipCommsKeywordCategory.Social },
+            new ShipCommsKeyword { label = "Good Luck", category = ShipCommsKeywordCategory.Social },
         };
 
         /// <summary>

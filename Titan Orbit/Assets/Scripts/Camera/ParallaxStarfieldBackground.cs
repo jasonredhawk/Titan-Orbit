@@ -6,17 +6,15 @@ using UnityEngine;
 namespace TitanOrbit.Camera
 {
     /// <summary>
-    /// Client-only shader starfield that sits behind gameplay and shifts as the local ship flies.
-    /// Three hash-drawn layers (far / mid / near) use different parallax scales so nearer stars
-    /// slide faster — the cheap “flying through space” feel without a Unity ParticleSystem.
-    /// All three layers share one Background-queue quad so they stay behind ships, planets,
-    /// and other gameplay opaques.
+    /// Client-only shader background: hashed stars plus procedural nebula gas on one quad.
+    /// Three star layers (far / mid / near) use different parallax scales; two FBM gas wisps
+    /// sit in front and hide stars where the cloud is thick. No ParticleSystem, no DinV texture.
     /// <para>
-    /// Lives on the <c>StarfieldBackground</c> scene object (sibling of <c>SpaceBackground</c>,
-    /// not a child — <see cref="ScrollingSpaceBackground"/> writes that parent’s world Y).
+    /// Lives on the <c>StarfieldBackground</c> scene object (sibling of the legacy
+    /// <c>SpaceBackground</c> GO — do not parent them; that script writes parent Y).
     /// Follows <see cref="ShipDisplayPose.LocalPosition"/> after the camera
-    /// (<c>DefaultExecutionOrder 67110</c>). GameManager → Show Starfield Background turns this
-    /// on or off independently of the nebula; both can draw at once (additive stars over the quad).
+    /// (<c>DefaultExecutionOrder 67110</c>). GameManager → Show Starfield Background is the
+    /// production toggle; the old space quad stays off unless you flip Show Space Background.
     /// Headless dedicated servers skip setup via <see cref="TitanOrbitDedicatedServerAutoBoot.ShouldRunClientPresentation"/>.
     /// </para>
     /// </summary>
@@ -50,8 +48,8 @@ namespace TitanOrbit.Camera
         [Tooltip("Star color tint (usually cool white). Multiplies the hashed brightness.")]
         [SerializeField] Color tint = Color.white;
 
-        [Tooltip("Master brightness. 1 = designed defaults; raise if stars vanish on a bright nebula.")]
-        [SerializeField] float brightness = 1f;
+        [Tooltip("Master star brightness. ~0.9 with per-star hash dim still keeps variation.")]
+        [SerializeField] float brightness = 0.9f;
 
         [Tooltip("0 = static stars. ~0.18 = a gentle twinkle. Keep low — this is a multiply in the shader, not extra draws.")]
         [SerializeField] [Range(0f, 1f)] float twinkle = 0.18f;
@@ -60,11 +58,11 @@ namespace TitanOrbit.Camera
         [Tooltip("Cells per world unit. Higher = more tiny distant stars.")]
         [SerializeField] float farDensity = 0.42f;
         [Tooltip("Ship-travel slide. Keep tiny — this layer is “infinity.” Nebula scroll is ~0.01.")]
-        [SerializeField] float farParallax = 0.0015f;
+        [SerializeField] float farParallax = 0.0022f;
         [Tooltip("Star radius as a fraction of one cell.")]
         [SerializeField] float farSize = 0.028f;
         [Tooltip("Per-star brightness for the distant layer.")]
-        [SerializeField] float farBrightness = 0.4f;
+        [SerializeField] float farBrightness = 0.45f;
         [Tooltip("Chance a cell actually draws a star (avoids a regular grid).")]
         [SerializeField] [Range(0f, 1f)] float farOccupancy = 0.55f;
 
@@ -72,7 +70,7 @@ namespace TitanOrbit.Camera
         [Tooltip("Cells per world unit for the middle parallax layer.")]
         [SerializeField] float midDensity = 0.22f;
         [Tooltip("Still far behind the nebula. Only a hint of drift vs the far layer.")]
-        [SerializeField] float midParallax = 0.0035f;
+        [SerializeField] float midParallax = 0.005f;
         [Tooltip("Star radius as a fraction of one cell.")]
         [SerializeField] float midSize = 0.038f;
         [Tooltip("Per-star brightness for the middle layer.")]
@@ -84,13 +82,38 @@ namespace TitanOrbit.Camera
         [Tooltip("Cells per world unit. Lower = sparser close stars.")]
         [SerializeField] float nearDensity = 0.11f;
         [Tooltip("Fastest of the three, but still slower than the nebula (~0.01) so it reads as far back.")]
-        [SerializeField] float nearParallax = 0.007f;
+        [SerializeField] float nearParallax = 0.01f;
         [Tooltip("Star radius as a fraction of one cell.")]
         [SerializeField] float nearSize = 0.05f;
         [Tooltip("Per-star brightness for the near layer.")]
         [SerializeField] float nearBrightness = 0.95f;
         [Tooltip("Chance a near-layer cell draws a star.")]
         [SerializeField] [Range(0f, 1f)] float nearOccupancy = 0.28f;
+
+        [Header("Nebula gas (in front of stars)")]
+        [Tooltip("Cool-blue wisp colour. Mixed with tint B from the second noise layer.")]
+        [SerializeField] Color gasTintA = new Color(0.32f, 0.42f, 0.82f, 1f);
+
+        [Tooltip("Magenta/pink wisp colour.")]
+        [SerializeField] Color gasTintB = new Color(0.58f, 0.26f, 0.52f, 1f);
+
+        [Tooltip("How strong the additive gas is. Soft mist needs a bit more than hard blobs.")]
+        [SerializeField] float gasIntensity = 0.36f;
+
+        [Tooltip("How much thick gas hides stars (0 = stars shine through, 1 = full cover). Keep mid so mist stays translucent.")]
+        [SerializeField] [Range(0f, 1f)] float gasOcclude = 0.42f;
+
+        [Tooltip("Far-wisp spatial scale (world). Higher = smaller / more broken clouds.")]
+        [SerializeField] float gasFarScale = 0.024f;
+
+        [Tooltip("Near-wisp spatial scale (world). Higher = finer filaments.")]
+        [SerializeField] float gasNearScale = 0.038f;
+
+        [Tooltip("Far-wisp slide vs ship. Faster than the star layers so clouds read in front.")]
+        [SerializeField] float gasFarParallax = 0.014f;
+
+        [Tooltip("Near-wisp slide vs ship. Fastest layer in this shader.")]
+        [SerializeField] float gasNearParallax = 0.022f;
 
         /// <summary>Runtime quad renderer. Hidden when the GameManager toggle is off; never destroyed for a cheap re-enable.</summary>
         MeshRenderer meshRenderer;
@@ -122,6 +145,12 @@ namespace TitanOrbit.Camera
         static readonly int LayerFarId = Shader.PropertyToID("_LayerFar");
         static readonly int LayerMidId = Shader.PropertyToID("_LayerMid");
         static readonly int LayerNearId = Shader.PropertyToID("_LayerNear");
+        static readonly int GasTintAId = Shader.PropertyToID("_GasTintA");
+        static readonly int GasTintBId = Shader.PropertyToID("_GasTintB");
+        static readonly int GasIntensityId = Shader.PropertyToID("_GasIntensity");
+        static readonly int GasOccludeId = Shader.PropertyToID("_GasOcclude");
+        static readonly int GasScaleId = Shader.PropertyToID("_GasScale");
+        static readonly int GasParallaxId = Shader.PropertyToID("_GasParallax");
 
         /// <summary>
         /// [UNITY] Awake — subscribe to GameManager, then either bail on a headless server or
@@ -338,6 +367,12 @@ namespace TitanOrbit.Camera
             starMaterial.SetVector(LayerFarId, new Vector4(farDensity, farParallax, farSize, farBrightness));
             starMaterial.SetVector(LayerMidId, new Vector4(midDensity, midParallax, midSize, midBrightness));
             starMaterial.SetVector(LayerNearId, new Vector4(nearDensity, nearParallax, nearSize, nearBrightness));
+            starMaterial.SetColor(GasTintAId, gasTintA);
+            starMaterial.SetColor(GasTintBId, gasTintB);
+            starMaterial.SetFloat(GasIntensityId, gasIntensity);
+            starMaterial.SetFloat(GasOccludeId, gasOcclude);
+            starMaterial.SetVector(GasScaleId, new Vector4(gasFarScale, gasNearScale, 0f, 0f));
+            starMaterial.SetVector(GasParallaxId, new Vector4(gasFarParallax, gasNearParallax, 0f, 0f));
         }
 
         /// <summary>

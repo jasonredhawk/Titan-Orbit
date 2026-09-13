@@ -92,7 +92,7 @@ namespace TitanOrbit.UI
             public Outline Outline;
         }
 
-        /// <summary>One of the five last-sent sentence chips.</summary>
+        /// <summary>One of the last-sent sentence chips in the RECENT column.</summary>
         struct RecentSlot
         {
             public Image Fill;
@@ -288,11 +288,23 @@ namespace TitanOrbit.UI
                 ShipCommsInbox.Enqueue(localId, (byte)count, k0, k1, k2);
         }
 
-        /// <summary>Appends a keyword if the sentence still has a free slot.</summary>
+        /// <summary>
+        /// Adds a keyword, or removes it when that tile is already on so the player can
+        /// correct the sentence without clearing the whole hold.
+        /// </summary>
         void OnKeywordClicked(byte index)
         {
             if (!ShipCommsClientState.IsOpen)
                 return;
+
+            int existing = IndexOfSequence(index);
+            if (existing >= 0)
+            {
+                _sequence.RemoveAt(existing);
+                PaintSequence();
+                return;
+            }
+
             if (_sequence.Count >= ShipCommsKeywordCatalog.MaxSequenceLength)
                 return;
 
@@ -578,7 +590,7 @@ namespace TitanOrbit.UI
             y += TileHeight;
         }
 
-        /// <summary>Slim right-rail of the last five sentences.</summary>
+        /// <summary>Slim right-rail of the last ten sentences.</summary>
         void BuildRecentColumn(RectTransform parent)
         {
             var rail = CreateIgnoredImage(parent, "Rail", SeparatorColor);

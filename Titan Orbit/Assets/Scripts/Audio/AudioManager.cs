@@ -7,9 +7,10 @@ namespace TitanOrbit.Audio
     /// Central client audio hub for music and gameplay SFX.
     /// Owns pooled <see cref="AudioSource"/>s for weapons, gems, and impacts so overlapping
     /// one-shots can use different pitches without fighting a single source.
-    /// Gem deposit/collect and bullet muzzle/projectile/impact share
+    /// Gem deposit/collect, bullet muzzle/projectile/impact, and hull ram/grind share
     /// <see cref="GemMusicalPitch"/> (chromatic 88-key piano). Gems key off cargo value;
-    /// bullets key off per-shot fire power via <see cref="ResolveFirePowerPitch"/>.
+    /// bullets and collisions key off fire power / ram-grind damage via
+    /// <see cref="ResolveFirePowerPitch"/>.
     /// Multi-gem collect batches play a C-major chord via <see cref="GemChordValues"/>.
     /// Singleton with DontDestroyOnLoad — UI and hybrid presenters call into <see cref="Instance"/>.
     /// </summary>
@@ -226,8 +227,21 @@ namespace TitanOrbit.Audio
 
         public void PlayAsteroidCollisionSound(float pitch)
         {
+            PlayAsteroidCollisionSound(pitch, 1f);
+        }
+
+        /// <summary>
+        /// Ship↔asteroid (or other hard-body) collision. Pitch is the fire-power piano
+        /// (<see cref="ResolveFirePowerPitch"/>); do not squash into
+        /// <see cref="IMPACT_PITCH_MIN"/> / <see cref="IMPACT_PITCH_MAX"/>.
+        /// <paramref name="volumeScale"/> is extra attenuation on top of
+        /// <see cref="asteroidCollisionVolume"/>.
+        /// </summary>
+        public void PlayAsteroidCollisionSound(float pitch, float volumeScale)
+        {
             AudioClip clip = asteroidCollisionSound != null ? asteroidCollisionSound : impactSound;
-            PlayPooledImpactSound(clip, asteroidCollisionVolume, pitch);
+            PlayPooledImpactSound(
+                clip, asteroidCollisionVolume, pitch, clampToImpactRange: false, volumeScale: volumeScale);
         }
 
         public void PlayShipCollisionSound()
@@ -237,22 +251,45 @@ namespace TitanOrbit.Audio
 
         public void PlayShipCollisionSound(float pitch)
         {
+            PlayShipCollisionSound(pitch, 1f);
+        }
+
+        /// <summary>
+        /// Ship↔ship collision. Pitch is the fire-power piano
+        /// (<see cref="ResolveFirePowerPitch"/>). <paramref name="volumeScale"/> is extra
+        /// attenuation on top of <see cref="shipCollisionVolume"/>.
+        /// </summary>
+        public void PlayShipCollisionSound(float pitch, float volumeScale)
+        {
             AudioClip clip = shipCollisionSound != null ? shipCollisionSound : impactSound;
-            PlayPooledImpactSound(clip, shipCollisionVolume, pitch);
+            PlayPooledImpactSound(
+                clip, shipCollisionVolume, pitch, clampToImpactRange: false, volumeScale: volumeScale);
+        }
+
+        /// <summary>
+        /// Planet / moon / shield wall hit. Uses <see cref="impactSound"/> (same clip as bullets
+        /// unless a dedicated wall clip is added later). Pitch is the fire-power piano.
+        /// </summary>
+        public void PlayWorldCollisionSound(float pitch, float volumeScale = 1f)
+        {
+            PlayPooledImpactSound(
+                impactSound, impactVolume, pitch, clampToImpactRange: false, volumeScale: volumeScale);
         }
 
         private void PlayPooledImpactSound(
             AudioClip clip,
             float clipVolumeMultiplier,
             float pitch,
-            bool clampToImpactRange = true)
+            bool clampToImpactRange = true,
+            float volumeScale = 1f)
         {
             // --- PlayPooledImpactSound ---
             if (clip == null) return;
             EnsureImpactSoundPool();
+            float volume = GetSFXVolume(clipVolumeMultiplier * Mathf.Clamp01(volumeScale));
             if (impactSoundSources == null || impactSoundSources.Length == 0)
             {
-                PlaySFX(clip, clipVolumeMultiplier);
+                PlaySFX(clip, clipVolumeMultiplier * Mathf.Clamp01(volumeScale));
                 return;
             }
 
@@ -264,7 +301,7 @@ namespace TitanOrbit.Audio
             if (src != null)
             {
                 src.pitch = p;
-                src.PlayOneShot(clip, GetSFXVolume(clipVolumeMultiplier));
+                src.PlayOneShot(clip, volume);
             }
         }
 

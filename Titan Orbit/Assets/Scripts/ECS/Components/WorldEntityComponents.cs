@@ -204,6 +204,30 @@ namespace TitanOrbit.ECS
 
         /// <summary>Blueprint slot to stamp on the respawned rock. −1 if the dead rock had none.</summary>
         public int LayoutSlot;
+
+        /// <summary>
+        /// 1 after the server has already sent <see cref="AsteroidRespawnRpc"/> (telegraph).
+        /// Instantiates still waits for <see cref="RespawnAtElapsedTime"/> so clients can build
+        /// the mesh before the authoritative hull exists.
+        /// </summary>
+        public byte RpcSent;
+    }
+
+    /// <summary>
+    /// Client-only: a just-respawned asteroid is growing its hybrid mesh and must not collide
+    /// yet. <c>LocalTransform.Scale</c> stays at the designer size (mining / match / restore);
+    /// presentation reads <see cref="AsteroidRespawnGrowInLogic.ComputeVisualScale"/>.
+    /// </summary>
+    public struct AsteroidRespawnGrowIn : IComponentData
+    {
+        /// <summary>Final uniform mesh scale when the grow finishes.</summary>
+        public float TargetScale;
+
+        /// <summary>Seconds since the client Instantiates (presentation + collision arm).</summary>
+        public float Elapsed;
+
+        /// <summary>Grow duration (same value the server used as the Instantiates telegraph).</summary>
+        public float Duration;
     }
 
     /// <summary>[ECS/DOTS] Query filter — entity is a planet (home or neutral).</summary>
