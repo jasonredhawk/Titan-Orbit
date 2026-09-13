@@ -5,12 +5,15 @@ using Unity.NetCode;
 namespace TitanOrbit.ECS
 {
     /// <summary>
-    /// [NETCODE] 4-byte death-explosion instruction on the ship ghost. 0 = alive / no show.
+    /// [NETCODE] 4-byte death-explosion instruction on the ship ghost. 0 = alive / no seed yet.
     /// Non-zero packs a 16-bit seed, 8-bit XZ impulse angle, and 8-bit impulse power so every
     /// client plays the same cosmetic breakup without an RPC.
     /// <para>
     /// Must be baked on StarshipGhost — runtime <c>AddComponent</c> does not register GhostFields.
     /// Written by <see cref="ShipDeathRecordingSystem"/>; cleared by <see cref="ShipRespawnSystem"/>.
+    /// Packed uses <see cref="SmoothingAction.Clamp"/> so the 0 → seed → 0 → seed cycle does not
+    /// lerp. Clients still explode when this is 0 if <c>ShipState.IsDead</c> is already true
+    /// (ShipDeathDebrisDriver).
     /// </para>
     /// </summary>
     public struct ShipDeathVfxState : IComponentData
@@ -20,8 +23,15 @@ namespace TitanOrbit.ECS
 
         /// <summary>
         /// 0 = alive. Bits 0–15 seed, 16–23 angle (0–255 = 360°), 24–31 power (0–255).
+        /// <para>
+        /// [NETCODE] Clamp, not Interpolate. This is an event word (0 → seed → 0 → new seed),
+        /// not a quantity to lerp. Interpolating a uint from 0 to a packed seed left the
+        /// second death at 0 for a few ticks while <c>ShipState.IsDead</c> was already true,
+        /// so the hull hid with no breakup.
+        /// </para>
         /// </summary>
-        [GhostField] public uint Packed;
+        [GhostField(Smoothing = SmoothingAction.Clamp)]
+        public uint Packed;
 
         /// <summary>True when clients should play / keep the breakup.</summary>
         public bool HasExplosion => Packed != 0;

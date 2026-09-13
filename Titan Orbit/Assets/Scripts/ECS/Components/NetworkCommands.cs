@@ -10,8 +10,8 @@ namespace TitanOrbit.ECS
     /// [NETCODE] RPC commands (Remote Procedure Calls) — one-shot network messages outside ghost
     /// replication. Each struct implements <c>IRpcCommand</c>; clients send requests, server systems
     /// validate and reply. Handlers: <see cref="TeamManagementSystem"/>,
-    /// <see cref="RejoinShipManagementSystem"/>, <see cref="PlayerNameServerSystem"/>,
-    /// moon orbit store systems, attribute upgrade systems.
+    /// <see cref="RejoinShipManagementSystem"/>, <see cref="ShipRespawnSystem"/>,
+    /// <see cref="PlayerNameServerSystem"/>, moon orbit store systems, attribute upgrade systems.
     /// Ghost replication handles continuous state; RPCs handle discrete player actions.
     /// </summary>
 
@@ -282,6 +282,18 @@ namespace TitanOrbit.ECS
     /// CommandTarget. Handled by <see cref="RejoinShipManagementSystem"/>.
     /// </summary>
     public struct AbandonShipForRejoinCommand : IRpcCommand { }
+
+    /// <summary>
+    /// [NETCODE] Dead player picks a friendly planet on the expanded minimap after the 10s
+    /// death beat. Server: <see cref="ShipRespawnSystem"/> validates ownership + timer, then
+    /// teleports the hull into that planet's interior rings. Adding fields changes RPC layout:
+    /// client and Linux headless must rebuild together.
+    /// </summary>
+    public struct RequestRespawnPlanetCommand : IRpcCommand
+    {
+        /// <summary>[TITAN-ORBIT] Stable <see cref="PlanetState.PlanetId"/> the player clicked.</summary>
+        public int PlanetId;
+    }
 
     /// <summary>
     /// [NETCODE] Server response to resume/abandon rejoin choice. Handled by

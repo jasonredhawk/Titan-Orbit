@@ -18,9 +18,12 @@ namespace TitanOrbit.Game
     /// <summary>
     /// Client-only: clones every prefab component on a dying ship and flies them as
     /// non-interactive debris until that ship respawns. Motion is seeded from
-    /// <see cref="ShipDeathVfxState.Packed"/> so all clients match.
+    /// <see cref="ShipDeathVfxState.Packed"/> so all clients match when that ghost
+    /// word has arrived; if it is still 0 we still explode with a local fallback seed
+    /// so a late Packed (common on the second death) cannot vanish the hull.
     /// <para>
     /// Hooked from <see cref="EcsWorldVisualizer"/> (no extra ship entity queries).
+    /// The visualizer hides the live proxy only after <see cref="TryBegin"/> has a wreck.
     /// </para>
     /// </summary>
     public sealed class ShipDeathDebrisDriver : MonoBehaviour
@@ -101,23 +104,38 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Snapshot the live proxy (still active) and start debris. No-op when already playing
-        /// this Packed value, or when Packed is 0.
+        /// Snapshot the live proxy and start debris. Returns true when this death already has
+        /// a wreck (new or existing). Does not require <see cref="ShipDeathVfxState.Packed"/>
+        /// — a 0 word still explodes with a fallback seed.
         /// </summary>
-        public static void TryBegin(Entity ship, GameObject proxy, EntityManager em)
+        /// <param name="ship">Dying ship ghost.</param>
+        /// <param name="proxy">Hybrid hull GameObject. Force-activated for the snapshot if hidden.</param>
+        /// <param name="em">Client presentation EntityManager.</param>
+        /// <returns>True when flying pieces exist for this ship.</returns>
+        public static bool TryBegin(Entity ship, GameObject proxy, EntityManager em)
         {
             if (s_instance == null || ship == Entity.Null || proxy == null)
-                return;
+                return false;
             if (!em.Exists(ship) || !em.HasComponent<ShipState>(ship))
-                return;
+                return false;
+
+            // --- Already exploding this death ---
+            // Do not snapshot again: the visualizer hides the hull after the first success,
+            // and a second Collect on an inactive proxy is how the second death used to vanish.
+            if (s_instance._wrecks.ContainsKey(ship))
+                return true;
 
             uint packed = 0;
             if (em.HasComponent<ShipDeathVfxState>(ship))
                 packed = em.GetComponentData<ShipDeathVfxState>(ship).Packed;
-            if (packed == 0)
-                return;
 
-            s_instance.Begin(ship, proxy, em, packed);
+            return s_instance.Begin(ship, proxy, em, packed);
+        }
+
+        /// <summary>True when this ship already has flying debris (hide the live hull).</summary>
+        public static bool IsPlaying(Entity ship)
+        {
+            return s_instance != null && ship != Entity.Null && s_instance._wrecks.ContainsKey(ship);
         }
 
         /// <summary>Destroys debris for this ship (respawn or proxy teardown).</summary>
@@ -128,19 +146,45 @@ namespace TitanOrbit.Game
             s_instance.DestroyWreck(ship);
         }
 
-        void Begin(Entity ship, GameObject proxy, EntityManager em, uint packed)
+        /// <summary>
+        /// Clones hull modules, kicks them outward, and stores the wreck. Force-activates
+        /// <paramref name="proxy"/> so an already-hidden hull can still be snapshotted.
+        /// </summary>
+        /// <returns>True when at least one piece was created.</returns>
+        bool Begin(Entity ship, GameObject proxy, EntityManager em, uint packed)
         {
-            if (_wrecks.TryGetValue(ship, out var existing) && existing.Packed == packed)
-                return;
-            DestroyWreck(ship);
+            if (_wrecks.ContainsKey(ship))
+                return true;
+
+            // --- Packed may still be 0 on the death frame ---
+            // [NETCODE] IsDead lives on ShipState; Packed is a second ghost component.
+            // After respawn Packed is cleared to 0, then written again on the next death.
+            // The first death usually delivered both in one snapshot. Later deaths can
+            // show IsDead a tick earlier — we still explode, then keep this wreck if
+            // Packed arrives later (do not restart from the hidden hull).
+            if (packed == 0)
+                packed = FallbackPacked(ship);
 
             bool isMega = em.HasComponent<MegaShipState>(ship)
                           && em.GetComponentData<MegaShipState>(ship).IsMega;
             string prefix = ResolveFamilyPrefix(em, ship);
 
-            ShipDeathDebrisParts.Collect(proxy.transform, isMega, prefix, s_partScratch);
+            // [UNITY] Instantiate copies activeSelf. A child of an inactive proxy is
+            // inactive-in-hierarchy; force the hull on so clones spawn visible.
+            bool restoredActive = false;
+            if (!proxy.activeSelf)
+            {
+                proxy.SetActive(true);
+                restoredActive = true;
+            }
+
+            ShipDeathDebrisParts.CollectOrFallback(proxy.transform, isMega, prefix, s_partScratch);
             if (s_partScratch.Count == 0)
-                return;
+            {
+                if (restoredActive)
+                    proxy.SetActive(false);
+                return false;
+            }
 
             ShipDeathVfxState.Unpack(packed, out uint seed, out float2 impulseDir, out float power01);
 
@@ -187,6 +231,7 @@ namespace TitanOrbit.Game
 
                 GameObject clone = Instantiate(src.gameObject);
                 clone.name = src.name + "_Debris";
+                clone.SetActive(true);
                 StripCollectedDescendants(clone.transform, src, collected);
                 StripInteractive(clone);
 
@@ -223,6 +268,9 @@ namespace TitanOrbit.Game
                 sizes.Add(EstimateSize(clone));
             }
 
+            if (wreck.Pieces.Count == 0)
+                return false;
+
             QueueStaggeredBurns(wreck, sizes, seed);
             _wrecks[ship] = wreck;
 
@@ -230,6 +278,20 @@ namespace TitanOrbit.Game
             var audio = AudioManager.GetOrFind();
             if (audio != null)
                 audio.PlayShipDeathSound();
+            return true;
+        }
+
+        /// <summary>
+        /// Local seed when the ghosted Packed word is still 0. Motion will not match other
+        /// clients for this one death; seeing a breakup is the priority.
+        /// </summary>
+        static uint FallbackPacked(Entity ship)
+        {
+            uint seed = (uint)math.max(1, ship.Index);
+            seed ^= (uint)(Time.frameCount * 747796405);
+            if (seed == 0)
+                seed = 1;
+            return ShipDeathVfxState.Pack(seed, float2.zero, 0f);
         }
 
         void LateUpdate()
@@ -238,6 +300,11 @@ namespace TitanOrbit.Game
             RefreshMapSize();
             if (_wrecks.Count == 0)
                 return;
+
+            // --- Drop wrecks whose ship is alive again ---
+            // [HYBRID] Visualizer already calls End on respawn. This catches frames where
+            // the proxy sync was skipped (Instantiates backlog) so the next death can start.
+            EndWrecksIfShipAlive();
 
             float dt = Time.deltaTime;
             if (dt <= 0f)
@@ -409,6 +476,35 @@ namespace TitanOrbit.Game
                 pitch,
                 scale,
                 BulletVisualFactory.DefaultImpactDuration);
+        }
+
+        /// <summary>
+        /// Ends any wreck whose ghost is gone or <see cref="ShipState.IsDead"/> is false
+        /// so a later death is not skipped as "already playing".
+        /// </summary>
+        void EndWrecksIfShipAlive()
+        {
+            var world = EcsGameBridge.GetVisualizationWorld();
+            if (world == null || !world.IsCreated)
+                return;
+
+            var em = world.EntityManager;
+            _endScratch.Clear();
+            foreach (var kv in _wrecks)
+            {
+                Entity ship = kv.Key;
+                if (!em.Exists(ship) || !em.HasComponent<ShipState>(ship))
+                {
+                    _endScratch.Add(ship);
+                    continue;
+                }
+
+                if (!em.GetComponentData<ShipState>(ship).IsDead)
+                    _endScratch.Add(ship);
+            }
+
+            for (int i = 0; i < _endScratch.Count; i++)
+                DestroyWreck(_endScratch[i]);
         }
 
         void DestroyWreck(Entity ship)

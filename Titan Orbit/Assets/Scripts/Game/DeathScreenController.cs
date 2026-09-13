@@ -6,9 +6,10 @@ using UnityEngine.UI;
 namespace TitanOrbit.Game
 {
     /// <summary>
-    /// Client-only death telemetry plaque while the local ship is destroyed and waiting to respawn.
-    /// Reads <see cref="EcsGameBridge"/> local ship death state each frame and shows a countdown
-    /// from the server-authoritative respawn timer. Hidden when not in-game or when the ship is alive.
+    /// Client-only death telemetry plaque while the local ship is destroyed and waiting to pick
+    /// a respawn planet on the expanded minimap. Reads <see cref="EcsGameBridge"/> local ship
+    /// death state each frame and shows a 10s countdown. Hidden when not in-game, when the ship
+    /// is alive, or when <see cref="PlayerEliminatedScreenController"/> takes over.
     /// <para>
     /// [TITAN-ORBIT] This is presentation only — the server still owns death and respawn
     /// (<see cref="ShipDeathRecordingSystem"/> / <see cref="ShipRespawnSystem"/>). We never write
@@ -26,6 +27,15 @@ namespace TitanOrbit.Game
         /// reads this to restore the OS arrow so the countdown card feels like UI.
         /// </summary>
         public static bool IsShowing { get; private set; }
+
+        /// <summary>
+        /// Seconds until the player may click a friendly planet. 0 means the 10s beat is over.
+        /// The expanded minimap reads this so clicks before the timer are ignored.
+        /// </summary>
+        public static float RemainingSeconds { get; private set; } = 10f;
+
+        /// <summary>True when the local ship is dead and the 10s wait has elapsed.</summary>
+        public static bool IsRespawnReady => IsShowing && RemainingSeconds <= 0.05f;
 
         /// <summary>
         /// [UNITY] Domain Reload off leaves this static hot. Called from
@@ -119,12 +129,13 @@ namespace TitanOrbit.Game
             // --- Alive again: dismiss overlay ---
             // [NETCODE] IsDead is a ghost field. When the server respawns, this flips false
             // and we hide so the player is not staring at a stale countdown.
-            if (!ship.IsDead)
+            if (!ship.IsDead || PlayerEliminatedScreenController.IsLocalPlayerEliminated(ship))
             {
                 if (_wasDead)
                     Hide();
                 _wasDead = false;
                 _clientDeathStartTime = -1f;
+                RemainingSeconds = ShipRespawnSystem.RespawnDelaySeconds;
                 return;
             }
 
@@ -156,6 +167,7 @@ namespace TitanOrbit.Game
                 remaining = Mathf.Max(0f, ShipRespawnSystem.RespawnDelaySeconds - (Time.time - _clientDeathStartTime));
             }
 
+            RemainingSeconds = remaining;
             PaintCountdown(remaining);
             PulseTimer(remaining);
         }
@@ -184,10 +196,10 @@ namespace TitanOrbit.Game
             _lastShownSeconds = seconds;
 
             if (messageText != null)
-                messageText.text = assembling ? "REASSEMBLING" : "SHIP DESTROYED";
+                messageText.text = assembling ? "SELECT RESPAWN WORLD" : "SHIP DESTROYED";
 
             if (_timerCaption != null)
-                _timerCaption.text = assembling ? "REBOOT" : "REASSEMBLY";
+                _timerCaption.text = assembling ? "CLICK A FRIENDLY PLANET" : "REASSEMBLY";
 
             if (_timerText != null)
                 _timerText.text = assembling ? "--" : seconds.ToString("00");
@@ -231,6 +243,7 @@ namespace TitanOrbit.Game
             if (overlayRoot != null)
                 overlayRoot.SetActive(false);
             _lastShownSeconds = int.MinValue;
+            RemainingSeconds = ShipRespawnSystem.RespawnDelaySeconds;
             IsShowing = false;
         }
 

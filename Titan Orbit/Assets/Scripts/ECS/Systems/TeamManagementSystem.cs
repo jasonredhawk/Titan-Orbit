@@ -122,7 +122,7 @@ namespace TitanOrbit.ECS
         /// <param name="team">Assigned team, or None on failure.</param>
         /// <param name="success">True when team assign + ship Instantiates succeeded.</param>
         /// <param name="message">Rejection text for lobby UI (empty on success).</param>
-        /// <param name="spawnPos">Unbounded home-ring spawn written to the ship LocalTransform.</param>
+        /// <param name="spawnPos">Interior home-planet spawn written to the ship LocalTransform.</param>
         /// <param name="hasSpawnPos">True when <paramref name="spawnPos"/> is the server spawn.</param>
         static void SendTeamChoiceResult(
             EntityCommandBuffer ecb,
@@ -318,8 +318,8 @@ namespace TitanOrbit.ECS
             if (shipPrefab == Entity.Null || !em.Exists(shipPrefab))
                 return false;
 
-            // --- Resolve spawn on home orbit ring (outside moon dock zone) ---
-            // [TITAN-ORBIT] Same helper as death respawn / rejoin — random ring angle, not fixed +X.
+            // --- Resolve spawn inside home planet rings (outside moon dock disc) ---
+            // [TITAN-ORBIT] Same helper as death respawn / rejoin — interior annulus, not the orbit rail.
             int hz = 0;
             if (SystemAPI.TryGetSingleton<ClientServerTickRate>(out var tickRate))
                 hz = tickRate.SimulationTickRate;

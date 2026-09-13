@@ -2122,21 +2122,7 @@ namespace TitanOrbit.Game
                 _proxyShipLevels[shipEntity] = Mathf.Max(1, ship.ShipLevel);
                 _proxyTeams[shipEntity] = ship.Team;
                 _proxyBranchIndices[shipEntity] = Mathf.Max(0, ship.BranchIndex);
-                // --- Hide dead hulls and ships stowed in planetary defense turrets ---
-                bool stowedInTurret = IsShipHullStowed(em, shipEntity);
-                if (ship.IsDead)
-                {
-                    ShipDeathDebrisDriver.TryBegin(shipEntity, proxyGo, em);
-                    proxyGo.SetActive(false);
-                }
-                else
-                {
-                    ShipDeathDebrisDriver.End(shipEntity);
-                    if (stowedInTurret)
-                        proxyGo.SetActive(false);
-                    else if (!proxyGo.activeSelf)
-                        proxyGo.SetActive(true);
-                }
+                ApplyShipDeathOrStowPresentation(em, shipEntity, proxyGo, in ship);
 
                 // --- Local nameplate during Instantiates backlog (seeded path only) ---
                 // [TITAN-ORBIT] Full SyncShipProxyTransforms is skipped while ShouldSkipShipEntityQueries;
@@ -2156,6 +2142,7 @@ namespace TitanOrbit.Game
 
                 // [TITAN-ORBIT] Same fully-landed / turret-stow gates as the batched nameplate path.
                 bool landedOnMoon = IsShipFullyLandedOnMoon(em, shipEntity);
+                bool stowedInTurret = IsShipHullStowed(em, shipEntity);
                 ApplyShipNameplatePresentation(
                     proxyGo, networkId, ship, kills, gemsDeposited, peopleDelivered,
                     landedOnMoon, stowedInTurret, IsMegaNameplateHull(em, shipEntity));
@@ -2399,21 +2386,7 @@ namespace TitanOrbit.Game
                     _proxyShipLevels[entity] = Mathf.Max(1, ship.ShipLevel);
                     _proxyTeams[entity] = ship.Team;
                     _proxyBranchIndices[entity] = Mathf.Max(0, ship.BranchIndex);
-                    // --- Hide dead hulls and ships stowed in planetary defense turrets ---
-                    bool stowedInTurret = IsShipHullStowed(em, entity);
-                    if (ship.IsDead)
-                    {
-                        ShipDeathDebrisDriver.TryBegin(entity, go, em);
-                        go.SetActive(false);
-                    }
-                    else
-                    {
-                        ShipDeathDebrisDriver.End(entity);
-                        if (stowedInTurret)
-                            go.SetActive(false);
-                        else if (!go.activeSelf)
-                            go.SetActive(true);
-                    }
+                    ApplyShipDeathOrStowPresentation(em, entity, go, in ship);
 
                     // --- Nameplate vitals / role candidates (no extra ship gather) ---
                     QueueShipNameplate(em, entity, go, networkId, ship);
@@ -2894,6 +2867,52 @@ namespace TitanOrbit.Game
             // Mesh is gone — strip ECS collision now or the ship rams empty space.
             ClientAsteroidCollisionCull.TryDisablePhysicsCollider(entity);
             // Intentionally skip AsteroidClientEntityRegistry.NotifyDestroyed — ECS zombie remains.
+        }
+
+        /// <summary>
+        /// Starts the cosmetic death breakup, then hides the live hull — or hides a turret-stowed
+        /// ship, or shows the hull again after respawn.
+        /// <para>
+        /// [TITAN-ORBIT] We do <b>not</b> <c>SetActive(false)</c> until debris actually exists.
+        /// <see cref="ShipState.IsDead"/> can replicate a tick before
+        /// <see cref="ShipDeathVfxState.Packed"/> (different ghost components; Packed is an
+        /// event word that goes 0 → seed → 0 → new seed). The first death usually had both in
+        /// the same first snapshot. The second death hid the still-intact proxy while Packed
+        /// was still 0, so <see cref="ShipDeathDebrisDriver.TryBegin"/> no-op'd and the ship
+        /// popped out. Hiding only after a wreck is playing (and retrying while it is not)
+        /// keeps every death exploding.
+        /// </para>
+        /// </summary>
+        /// <param name="em">Client presentation EntityManager.</param>
+        /// <param name="shipEntity">Ship ghost this proxy follows.</param>
+        /// <param name="proxyGo">Hybrid GameObject hull (must still be snapshot-able).</param>
+        /// <param name="ship">This frame's ghosted <see cref="ShipState"/>.</param>
+        void ApplyShipDeathOrStowPresentation(
+            EntityManager em,
+            Entity shipEntity,
+            GameObject proxyGo,
+            in ShipState ship)
+        {
+            if (proxyGo == null)
+                return;
+
+            // --- Dead: explode first, hide only when wreckage is in the world ---
+            if (ship.IsDead)
+            {
+                bool wreckPlaying = ShipDeathDebrisDriver.TryBegin(shipEntity, proxyGo, em)
+                                    || ShipDeathDebrisDriver.IsPlaying(shipEntity);
+                if (wreckPlaying && proxyGo.activeSelf)
+                    proxyGo.SetActive(false);
+                return;
+            }
+
+            // --- Alive: drop last death's debris and show the hull again (unless turret-stowed) ---
+            ShipDeathDebrisDriver.End(shipEntity);
+            bool stowedInTurret = IsShipHullStowed(em, shipEntity);
+            if (stowedInTurret)
+                proxyGo.SetActive(false);
+            else if (!proxyGo.activeSelf)
+                proxyGo.SetActive(true);
         }
 
         /// <summary>Tears down proxy GameObject and clears all per-entity registry entries.</summary>

@@ -71,6 +71,13 @@ namespace TitanOrbit.ECS
         /// </summary>
         [GhostField] public bool IsDead;
 
+        /// <summary>
+        /// [TITAN-ORBIT] True when this player is out of the match: they died and their team
+        /// owns zero planets, so there is no legal respawn world. Ghosted so dedicated clients
+        /// can show the personal game-over overlay. Server never respawns an eliminated hull.
+        /// </summary>
+        [GhostField] public bool IsEliminated;
+
         /// <summary>[TITAN-ORBIT] True at spawn until RequestTeamCommand assigns a team.</summary>
         [GhostField] public bool AwaitingTeamSelection;
 

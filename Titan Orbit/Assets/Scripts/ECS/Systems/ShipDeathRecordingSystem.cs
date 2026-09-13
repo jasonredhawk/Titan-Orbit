@@ -84,7 +84,11 @@ namespace TitanOrbit.ECS
 
                 PackDeathVfx(state.EntityManager, entity, now, tick, ecb);
 
-                // [TITAN-ORBIT] Schedule respawn — ShipRespawnSystem removes this component later.
+                // [TITAN-ORBIT] Earliest the player may click a friendly planet. No auto-respawn.
+                // If the team already owns zero worlds, they are out of the match this death.
+                if (!ShipHomeSpawnLogic.TeamOwnsAnyPlanet(state.EntityManager, shipState.ValueRO.Team))
+                    shipState.ValueRW.IsEliminated = true;
+
                 ecb.AddComponent(entity, new ShipDeathState
                 {
                     RespawnAtTime = now + ShipRespawnSystem.RespawnDelaySeconds,

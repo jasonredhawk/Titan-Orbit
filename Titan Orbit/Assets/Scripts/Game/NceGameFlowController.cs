@@ -386,6 +386,8 @@ namespace TitanOrbit.Game
                 gameObject.AddComponent<MatchEndScreenController>();
             if (GetComponent<DeathScreenController>() == null)
                 gameObject.AddComponent<DeathScreenController>();
+            if (GetComponent<PlayerEliminatedScreenController>() == null)
+                gameObject.AddComponent<PlayerEliminatedScreenController>();
             if (GetComponent<InGameEscapeMenuController>() == null)
                 gameObject.AddComponent<InGameEscapeMenuController>();
             if (GetComponent<GameplayCursorController>() == null)

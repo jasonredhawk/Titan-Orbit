@@ -19,6 +19,30 @@ namespace TitanOrbit.Game
         static readonly HashSet<Transform> s_set = new HashSet<Transform>();
 
         /// <summary>
+        /// Same as <see cref="Collect"/>, then flies the chassis root as one piece when the
+        /// named-module scan found nothing (respawned / unclassified hull).
+        /// </summary>
+        /// <param name="proxyRoot">Hybrid ship GameObject (force-active before calling).</param>
+        /// <param name="isMega">True when the ghost is a MEGA hull.</param>
+        /// <param name="familyPrefix">USC family token, e.g. AstroEagle.</param>
+        /// <param name="into">Cleared then filled with one transform per debris piece.</param>
+        public static void CollectOrFallback(Transform proxyRoot, bool isMega, string familyPrefix, List<Transform> into)
+        {
+            Collect(proxyRoot, isMega, familyPrefix, into);
+            if (into.Count > 0)
+                return;
+
+            // --- Fallback: named-module + renderer scan both missed ---
+            // [TITAN-ORBIT] Vanishing with zero pieces looks like a pop-out. Fly the
+            // whole chassis as one chunk so the player still sees a breakup.
+            Transform chassis = FindChassisRoot(proxyRoot);
+            if (chassis == null)
+                chassis = proxyRoot;
+            if (chassis != null)
+                into.Add(chassis);
+        }
+
+        /// <summary>
         /// Fills <paramref name="into"/> with component roots under the live proxy (still active).
         /// </summary>
         public static void Collect(Transform proxyRoot, bool isMega, string familyPrefix, List<Transform> into)

@@ -415,6 +415,9 @@ namespace TitanOrbit.ECS.Editor
             if (root.GetComponent<DeathScreenController>() == null)
                 root.AddComponent<DeathScreenController>();
 
+            if (root.GetComponent<PlayerEliminatedScreenController>() == null)
+                root.AddComponent<PlayerEliminatedScreenController>();
+
             if (root.GetComponent<InGameEscapeMenuController>() == null)
                 root.AddComponent<InGameEscapeMenuController>();
 

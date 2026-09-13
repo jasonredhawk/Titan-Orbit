@@ -2829,6 +2829,37 @@ namespace TitanOrbit.Game
             return dest.Count;
         }
 
+        /// <summary>
+        /// True when this frame's planet cache has at least one world owned by <paramref name="team"/>.
+        /// Used by death / elimination UI so we do not open the respawn picker when there is
+        /// nowhere to land. Empty cache (join settle) returns false — callers should wait.
+        /// </summary>
+        /// <param name="team">Local ship team. <see cref="TeamId.None"/> never owns planets.</param>
+        public static bool TeamOwnsAnyPlanet(TeamId team)
+        {
+            if (team == TeamId.None)
+                return false;
+
+            EnsurePlanetStateCacheForFrame();
+            foreach (var pair in s_PlanetStateByIdCache)
+            {
+                if (pair.Value.Ownership == team)
+                    return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// How many planets are in this frame's cache. Zero means the list is not ready yet
+        /// (join settle / quarantine) — do not treat that as "team owns nothing."
+        /// </summary>
+        public static int GetCachedPlanetCount()
+        {
+            EnsurePlanetStateCacheForFrame();
+            return s_PlanetStateByIdCache.Count;
+        }
+
         /// <summary><see cref="PlanetState"/> by stable <see cref="PlanetState.PlanetId"/> across host/client worlds.</summary>
         public static bool TryGetPlanetStateByPlanetId(int planetId, out PlanetState state)
         {

@@ -120,6 +120,7 @@ namespace TitanOrbit.Game
         {
             DeathScreenController.ClearShowingFlag();
             MatchEndScreenController.ClearShowingFlag();
+            PlayerEliminatedScreenController.ClearShowingFlag();
             MoonOrbitClientState.SetOrbitMenuVisible(false);
         }
 
@@ -243,6 +244,8 @@ namespace TitanOrbit.Game
             if (ShipCommsClientState.IsOpen)
                 return true;
             if (DeathScreenController.IsShowing)
+                return true;
+            if (PlayerEliminatedScreenController.IsShowing)
                 return true;
             if (MatchEndScreenController.IsShowing)
                 return true;

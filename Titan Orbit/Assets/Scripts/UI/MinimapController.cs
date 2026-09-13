@@ -81,6 +81,21 @@ namespace TitanOrbit.UI
         private TextMeshProUGUI expandButtonLabel;
         private static Sprite _whiteUiSprite;
         private bool isExpanded = false;
+
+        /// <summary>
+        /// Scene instance so death UI can force-expand the picker without a Find.
+        /// Set in OnEnable; cleared in OnDisable.
+        /// </summary>
+        public static MinimapController Instance { get; private set; }
+
+        /// <summary>
+        /// True while the local player is dead, not eliminated, and choosing a respawn planet.
+        /// Locks expanded mode (M / collapse button ignored) until they respawn or are out.
+        /// </summary>
+        bool _respawnSelectLocked;
+
+        /// <summary>Unscaled time of the last respawn RPC so a double-click cannot spam the server.</summary>
+        float _lastRespawnRequestTime = -10f;
         private Vector2 originalAnchoredPosition;
         private Vector2 originalSizeDelta;
         private Vector2 originalAnchorMin;
@@ -438,6 +453,42 @@ namespace TitanOrbit.UI
 
         /// <summary>True while the minimap is expanded to (near) full-map view.</summary>
         public bool IsExpanded => isExpanded;
+
+        /// <summary>
+        /// Locks the map in expanded mode so the dead player can click a friendly planet.
+        /// Idempotent — already-locked calls just keep it expanded.
+        /// </summary>
+        void EnterRespawnPlanetSelect()
+        {
+            _respawnSelectLocked = true;
+            if (expandButton != null)
+                expandButton.gameObject.SetActive(false);
+            if (!isExpanded)
+                SetExpanded(true);
+        }
+
+        /// <summary>
+        /// Leaves death-picker mode, collapses the map, and resets blip scale pulses.
+        /// </summary>
+        void ExitRespawnPlanetSelect()
+        {
+            _respawnSelectLocked = false;
+            if (expandButton != null)
+                expandButton.gameObject.SetActive(true);
+            ResetRespawnSelectBlipScales();
+            if (isExpanded)
+                SetExpanded(false);
+        }
+
+        /// <summary>Clears the friendly-planet pulse scale so live play is not left enlarged.</summary>
+        void ResetRespawnSelectBlipScales()
+        {
+            foreach (var kv in blips)
+            {
+                if (kv.Value != null)
+                    kv.Value.localScale = Vector3.one;
+            }
+        }
 
         /// <summary>
         /// Programmatically expand or collapse the minimap (same as the M key / expand button).
@@ -1262,6 +1313,10 @@ namespace TitanOrbit.UI
         
         private void ToggleExpand()
         {
+            // Death picker stays full-map so every friendly world is clickable.
+            if (_respawnSelectLocked)
+                return;
+
             isExpanded = !isExpanded;
 
             if (isExpanded)
@@ -1449,6 +1504,8 @@ namespace TitanOrbit.UI
                 return true;
             if (canvas.GetComponentInParent<DeathScreenController>() != null)
                 return true;
+            if (canvas.GetComponentInParent<PlayerEliminatedScreenController>() != null)
+                return true;
             if (canvas.GetComponentInParent<MatchEndScreenController>() != null)
                 return true;
             return false;
@@ -1496,14 +1553,26 @@ namespace TitanOrbit.UI
             _nonMinimapUiRestore.Clear();
         }
 
+        /// <summary>
+        /// [UNITY] Component disabled (scene unload, HUD hide). Restore sibling HUD we faded
+        /// while expanded, and drop the singleton if this instance owned it.
+        /// </summary>
         private void OnDisable()
         {
+            if (Instance == this)
+                Instance = null;
             HUDController.SetMinimapExpandedObscuresHud(false);
             RestoreNonMinimapUi();
         }
 
+        /// <summary>
+        /// [UNITY] Component enabled. Latch the singleton so death / elimination UI can force
+        /// the respawn picker, then restore expanded HUD fade if we were already full-map.
+        /// </summary>
         private void OnEnable()
         {
+            Instance = this;
+
             // Force role-dot rebuild next frame (size/color tweaks after script reload).
             _shipRoleDotMask.Clear();
 
@@ -1855,9 +1924,32 @@ namespace TitanOrbit.UI
                 return;
             }
 
-            // --- Death: hide the radar so the explosion and death plaque stay unobstructed ---
-            // [TITAN-ORBIT] LocalPlayerDeathHidesHud is cached once per frame (HUDController).
-            if (HUDController.LocalPlayerDeathHidesHud || playerAnchor.IsDead)
+            // --- Death: hide the radar for the 10s beat, then expand as the planet picker ---
+            // [TITAN-ORBIT] The explosion and death plaque stay unobstructed until
+            // DeathScreenController.IsRespawnReady. After that, lock expanded so they can click
+            // a friendly world. Eliminated players never get the picker.
+            bool localDead = HUDController.LocalPlayerDeathHidesHud || playerAnchor.IsDead;
+            bool eliminated = EcsGameBridge.TryGetLocalShipState(out var localShip)
+                && PlayerEliminatedScreenController.IsLocalPlayerEliminated(localShip);
+            bool canPickWorld = localDead
+                && !eliminated
+                && DeathScreenController.IsRespawnReady
+                && playerAnchor.Team != TeamId.None
+                && EcsGameBridge.TeamOwnsAnyPlanet(playerAnchor.Team);
+
+            if (canPickWorld)
+            {
+                EnterRespawnPlanetSelect();
+                SetMinimapVisible(true);
+                UpdateBlips();
+                HandleMinimapClicks();
+                return;
+            }
+
+            if (_respawnSelectLocked)
+                ExitRespawnPlanetSelect();
+
+            if (localDead || eliminated)
             {
                 SetMinimapVisible(false);
                 return;
@@ -1878,8 +1970,8 @@ namespace TitanOrbit.UI
         
         private void HandleMinimapClicks()
         {
-            // Allow marker placement on both minimized and expanded minimap
-            if (markerMenu == null)
+            // Marker menu is unused in the ECS build — death planet pick must still run.
+            if (markerMenu == null && !_respawnSelectLocked)
             {
                 Debug.LogWarning("HandleMinimapClicks: markerMenu is null!");
                 return;
@@ -2013,6 +2105,13 @@ namespace TitanOrbit.UI
                                 return; // Don't show menu if clicking button
                             }
                         }
+
+                        // Death picker: click a friendly planet instead of the unused marker menu.
+                        if (_respawnSelectLocked)
+                        {
+                            TryHandleRespawnPlanetClick(clickPos);
+                            return;
+                        }
                         
                         // Don't show menu if clicking on the menu itself
                         if (markerMenu != null && markerMenu.gameObject.activeSelf && markerMenu.menuRect != null)
@@ -2069,6 +2168,105 @@ namespace TitanOrbit.UI
         {
             // Attack/defend markers are not wired to NetCode for Entities yet.
             Debug.Log($"Minimap marker placement ({markerType}) is not available in the ECS build yet.");
+        }
+
+        /// <summary>
+        /// Death-picker click: hit-test the nearest friendly planet blip and send
+        /// <see cref="ShipRespawnRpcClient.TryRequestRespawnAtPlanet"/> after the 10s beat.
+        /// Clicks before the timer or on enemy/neutral worlds are ignored.
+        /// </summary>
+        /// <param name="clickPos">Screen-space mouse / touch position.</param>
+        void TryHandleRespawnPlanetClick(Vector2 clickPos)
+        {
+            if (!DeathScreenController.IsRespawnReady)
+                return;
+            if (playerAnchor == null || playerAnchor.Team == TeamId.None)
+                return;
+            if (Time.unscaledTime - _lastRespawnRequestTime < 0.35f)
+                return;
+            if (!TryFindFriendlyPlanetBlipAtScreen(clickPos, playerAnchor.Team, out int planetId))
+                return;
+
+            if (ShipRespawnRpcClient.TryRequestRespawnAtPlanet(planetId))
+                _lastRespawnRequestTime = Time.unscaledTime;
+        }
+
+        /// <summary>
+        /// Finds the closest friendly planet blip under the click. Uses screen distance to
+        /// the blip centre (overlay canvas positions are already pixels).
+        /// </summary>
+        bool TryFindFriendlyPlanetBlipAtScreen(Vector2 clickPos, TeamId team, out int planetId)
+        {
+            planetId = 0;
+            float best = float.MaxValue;
+            ConsiderPlanetList(cachedPlanets, clickPos, team, ref best, ref planetId);
+            ConsiderPlanetList(cachedHomePlanets, clickPos, team, ref best, ref planetId);
+            return planetId > 0;
+        }
+
+        /// <summary>Walks one cached planet list and keeps the nearest friendly hit.</summary>
+        void ConsiderPlanetList(
+            MinimapBlipAnchor[] list,
+            Vector2 clickPos,
+            TeamId team,
+            ref float best,
+            ref int planetId)
+        {
+            if (list == null)
+                return;
+
+            for (int i = 0; i < list.Length; i++)
+            {
+                var p = list[i];
+                if (p == null || p.PlanetId <= 0 || p.Team != team)
+                    continue;
+                if (!blips.TryGetValue(p.transform, out RectTransform rt) || rt == null || !rt.gameObject.activeInHierarchy)
+                    continue;
+
+                // Overlay canvas: RectTransform.position is the screen pixel of the blip centre.
+                Vector2 blipScreen = rt.position;
+                float dist = Vector2.Distance(clickPos, blipScreen);
+                float hitR = Mathf.Max(MinimapPlanetHoverTip.MinHitSize, rt.sizeDelta.x * 0.55f + 10f);
+                if (dist > hitR || dist >= best)
+                    continue;
+
+                best = dist;
+                planetId = p.PlanetId;
+            }
+        }
+
+        /// <summary>
+        /// While choosing a respawn world: pulse friendly planet fills and dim the rest
+        /// so the clickable set is obvious. No extra GameObjects — retints existing Images.
+        /// </summary>
+        void ApplyRespawnSelectPlanetTint(RectTransform blipRt, MinimapBlipAnchor p)
+        {
+            if (!_respawnSelectLocked || blipRt == null || p == null)
+                return;
+
+            Transform fillTf = blipRt.Find("PlanetFill");
+            if (fillTf == null)
+                return;
+            Image img = fillTf.GetComponent<Image>();
+            if (img == null)
+                return;
+
+            bool friendly = playerAnchor != null && p.Team == playerAnchor.Team && p.Team != TeamId.None;
+            if (friendly)
+            {
+                float wave = 0.5f + 0.5f * Mathf.Sin(Time.unscaledTime * 4.2f);
+                Color c = GetTeamColor(p.Team);
+                c.a = 0.78f + 0.22f * wave;
+                img.color = c;
+                float s = 1f + 0.07f * wave;
+                blipRt.localScale = new Vector3(s, s, 1f);
+            }
+            else
+            {
+                Color baseColor = p.Team == TeamId.None ? planetColor : GetTeamColor(p.Team);
+                img.color = new Color(baseColor.r * 0.35f, baseColor.g * 0.35f, baseColor.b * 0.35f, 0.32f);
+                blipRt.localScale = Vector3.one;
+            }
         }
 
         private void UpdateBlips()
@@ -2282,6 +2480,7 @@ namespace TitanOrbit.UI
                     {
                         blips[p.transform].gameObject.SetActive(true);
                         UpdatePlanetBlip(blips[p.transform], p, planetBlipColor, planetBlipSize, worldToMinimapScale);
+                        ApplyRespawnSelectPlanetTint(blips[p.transform], p);
                     }
                     else
                     {
@@ -2331,6 +2530,7 @@ namespace TitanOrbit.UI
                     {
                         blips[hp.transform].gameObject.SetActive(true);
                         UpdatePlanetBlip(blips[hp.transform], hp, homeBlipColor, homeBlipSize, worldToMinimapScale);
+                        ApplyRespawnSelectPlanetTint(blips[hp.transform], hp);
                     }
                     else
                     {

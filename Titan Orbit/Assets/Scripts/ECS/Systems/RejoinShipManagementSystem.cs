@@ -13,9 +13,9 @@ namespace TitanOrbit.ECS
     /// they can resume their existing ship (<see cref="ResumeExistingShipCommand"/>) or abandon
     /// it and pick a fresh team (<see cref="AbandonShipForRejoinCommand"/>). Updates CommandTarget
     /// so NetCode routes input to the correct ghost. On resume, the ship is teleported to a
-    /// random point on the team's home orbit ring (same helper as new spawn / death respawn,
-    /// outside the moon dock zone) with cleared velocity so reconnect never continues from the
-    /// disconnect location. Runs after TeamManagementSystem.
+    /// random point inside the team's home planet rings (same helper as new spawn / death
+    /// respawn, outside the moon dock disc) with cleared velocity so reconnect never continues
+    /// from the disconnect location. Eliminated ships cannot resume. Runs after TeamManagementSystem.
     /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation)]
     [UpdateInGroup(typeof(SimulationSystemGroup))]
@@ -80,9 +80,16 @@ namespace TitanOrbit.ECS
                 return;
             }
 
-            // --- Teleport to home orbit ring (never resume at last disconnect position) ---
-            // [TITAN-ORBIT] Same random ring spawn as TeamManagementSystem / ShipRespawnSystem,
-            // excluding the gem-moon dock zone so reconnect does not open the Orbit Menu.
+            // Eliminated players have no friendly worlds — resume would dump them into a dead match.
+            if (shipState.IsEliminated)
+            {
+                SendResult(ecb, connection, success: false, choice: 1, team: shipState.Team, "No worlds remaining.");
+                return;
+            }
+
+            // --- Teleport inside home planet rings (never resume at last disconnect position) ---
+            // [TITAN-ORBIT] Same interior spawn as TeamManagementSystem / death respawn,
+            // excluding the gem-moon dock disc so reconnect does not open the Orbit Menu.
             int hz = 0;
             if (SystemAPI.TryGetSingleton<ClientServerTickRate>(out var tickRate))
                 hz = tickRate.SimulationTickRate;
