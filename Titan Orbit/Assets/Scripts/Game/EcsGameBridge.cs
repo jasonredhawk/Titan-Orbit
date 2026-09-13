@@ -913,6 +913,65 @@ namespace TitanOrbit.Game
             return true;
         }
 
+        /// <summary>
+        /// Player-facing names of equipped store gear then upgrade cards.
+        /// Death-choice UI paints these as a horizontal strip so the player sees what they
+        /// keep or lose. <paramref name="dest"/> is cleared first. Returns how many names
+        /// were added (0 if the local ship is missing).
+        /// </summary>
+        public static int CopyLocalLoadoutPreviewNames(List<string> dest)
+        {
+            if (dest == null)
+                return 0;
+            dest.Clear();
+
+            var world = GetLocalPlayerShipWorld();
+            if (world == null || !world.IsCreated)
+                return 0;
+
+            var em = world.EntityManager;
+            if (!TryGetLocalShipEntity(em, out var shipEntity))
+                return 0;
+
+            // --- Equipment (drones, rockets, mines, ship parts) ---
+            if (em.HasBuffer<EquippedEquipmentElement>(shipEntity))
+            {
+                var buf = em.GetBuffer<EquippedEquipmentElement>(shipEntity);
+                for (int i = 0; i < buf.Length; i++)
+                {
+                    EquippedEquipmentElement e = buf[i];
+                    var kind = (StoreItemType)e.ItemType;
+                    string name;
+                    if (kind == StoreItemType.ShipComponent)
+                        name = ShipComponentStoreData.FormatComponentId(e.ComponentId.ToString());
+                    else if (e.ItemLevel > 0)
+                        name = StoreItemData.GetDisplayName(kind, e.ItemLevel);
+                    else
+                        name = StoreItemData.GetShortDisplayName(kind);
+                    if (!string.IsNullOrWhiteSpace(name))
+                        dest.Add(name);
+                }
+            }
+
+            // --- Upgrade cards (same loadout pool) ---
+            if (em.HasBuffer<EquippedCardElement>(shipEntity))
+            {
+                var cards = em.GetBuffer<EquippedCardElement>(shipEntity);
+                for (int i = 0; i < cards.Length; i++)
+                {
+                    string cardId = cards[i].CardId.ToString();
+                    CardData card = ShipStatApplyLogic.FindCardAnywhere(cardId);
+                    string name = card != null
+                        ? card.GetDisplayNameOrDefault()
+                        : cardId;
+                    if (!string.IsNullOrWhiteSpace(name))
+                        dest.Add(name);
+                }
+            }
+
+            return dest.Count;
+        }
+
         // --- Session / network readiness ---
 
         /// <summary>

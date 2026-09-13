@@ -6,7 +6,7 @@ namespace TitanOrbit.Editor.Build
 {
     /// <summary>
     /// [EDITOR] Post-process step for WebGL production builds — copies Cloudflare Pages
-    /// <c>_headers</c> (CSP, caching) and <c>ads.txt</c> (AppLixir / IAB) into the build
+    /// <c>_headers</c> (CSP, caching) and <c>ads.txt</c> (Google Ad Manager / IAB) into the build
     /// output folder. Required for browser security headers and rewarded-ad fill when
     /// deploying to Cloudflare Pages. Safe to skip if a source file is missing (logs warning).
     /// </summary>
@@ -16,7 +16,7 @@ namespace TitanOrbit.Editor.Build
         private const string HeadersSourcePath = "Assets/CloudflarePages/_headers";
 
         /// <summary>
-        /// AppLixir (and other web ad networks) require <c>/ads.txt</c> at the site root.
+        /// Google Ad Manager (and other IAB networks) require <c>/ads.txt</c> at the site root.
         /// Paste dashboard rows into this file before a production WebGL build.
         /// </summary>
         private const string AdsTxtSourcePath = "Assets/CloudflarePages/ads.txt";

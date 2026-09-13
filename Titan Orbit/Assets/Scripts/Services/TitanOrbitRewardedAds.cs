@@ -5,7 +5,7 @@ namespace TitanOrbit.Services
 {
     /// <summary>
     /// Client-only rewarded-ad facade. Gameplay UI calls <see cref="Show"/>; this type
-    /// picks AppLixir (WebGL), LevelPlay (Android/iOS), an Editor simulate, or "unavailable".
+    /// picks Google IMA / VAST (WebGL), LevelPlay (Android/iOS), an Editor simulate, or "unavailable".
     /// Dedicated server never creates this component.
     /// <para>
     /// [TITAN-ORBIT] Rewards that change sim state (keep loadout, extra slot) still go
@@ -28,9 +28,9 @@ namespace TitanOrbit.Services
         /// <summary>True while a video (or Editor simulate) is in flight. Buttons should disable.</summary>
         public static bool IsShowing { get; private set; }
 
-        [Header("AppLixir (WebGL)")]
-        [Tooltip("Publisher API key from client.applixir.com. Empty = WebGL ads report Unavailable.")]
-        [SerializeField] string applixirApiKey;
+        [Header("Google IMA / VAST (WebGL)")]
+        [Tooltip("VAST tag for Cloudflare WebGL. Empty falls back to TitanOrbitRewardedAdsKeys.VastAdTagUrl (Google sample).")]
+        [SerializeField] string vastAdTagUrl;
 
         [Header("LevelPlay (Android / iOS)")]
         [Tooltip("LevelPlay Android app key. Used only in Android player builds.")]
@@ -46,7 +46,7 @@ namespace TitanOrbit.Services
         [SerializeField] string levelPlayIosRewardedAdUnitId;
 
         [Header("Editor")]
-        [Tooltip("Play Mode cannot show a real AppLixir/LevelPlay video. When true, Show() completes so death/slot flows can be tested.")]
+        [Tooltip("Play Mode cannot show a real IMA/LevelPlay video. When true, Show() completes so death/slot flows can be tested.")]
         [SerializeField] bool editorSimulateCompleted = true;
 
         /// <summary>Pending UI callback. Invoked once on the main thread after the SDK (or simulate) finishes.</summary>
@@ -78,8 +78,8 @@ namespace TitanOrbit.Services
         /// </summary>
         void ApplyKeyFallbacks()
         {
-            if (string.IsNullOrWhiteSpace(applixirApiKey))
-                applixirApiKey = TitanOrbitRewardedAdsKeys.AppLixirApiKey;
+            if (string.IsNullOrWhiteSpace(vastAdTagUrl))
+                vastAdTagUrl = TitanOrbitRewardedAdsKeys.VastAdTagUrl;
             if (string.IsNullOrWhiteSpace(levelPlayAndroidAppKey))
                 levelPlayAndroidAppKey = TitanOrbitRewardedAdsKeys.LevelPlayAndroidAppKey;
             if (string.IsNullOrWhiteSpace(levelPlayIosAppKey))
@@ -133,7 +133,7 @@ namespace TitanOrbit.Services
                 return false;
 #elif UNITY_WEBGL
                 return TitanOrbitEntitlements.IsRemoveAdsOwned
-                    || (Instance != null && !string.IsNullOrWhiteSpace(Instance.applixirApiKey));
+                    || (Instance != null && !string.IsNullOrWhiteSpace(Instance.vastAdTagUrl));
 #elif UNITY_ANDROID || UNITY_IOS
                 return TitanOrbitEntitlements.IsRemoveAdsOwned
                     || (Instance != null && Instance.HasLevelPlayKeys);
@@ -212,7 +212,7 @@ namespace TitanOrbit.Services
             }
 
 #if UNITY_EDITOR
-            // AppLixir and LevelPlay cannot play inside the Editor. Simulate so death/slot
+            // IMA and LevelPlay cannot play inside the Editor. Simulate so death/slot
             // UI can be click-tested in Play Mode / MPPM.
             if (editorSimulateCompleted)
             {
@@ -235,13 +235,13 @@ namespace TitanOrbit.Services
             _pendingPlacement = placementId;
 
 #if UNITY_WEBGL && !UNITY_EDITOR
-            if (string.IsNullOrWhiteSpace(applixirApiKey))
+            if (string.IsNullOrWhiteSpace(vastAdTagUrl))
             {
                 Finish(TitanOrbitRewardedAdResult.Unavailable);
                 return;
             }
 
-            TitanOrbitAppLixirBackend.Play(gameObject.name, nameof(OnAppLixirStatus), applixirApiKey);
+            TitanOrbitImaBackend.Play(gameObject.name, nameof(OnImaStatus), vastAdTagUrl);
             return;
 #elif UNITY_ANDROID || UNITY_IOS
             if (!TitanOrbitLevelPlayBackend.TryShow(OnLevelPlayFinished))
@@ -253,31 +253,20 @@ namespace TitanOrbit.Services
         }
 
         /// <summary>
-        /// [HYBRID] AppLixir jslib calls this via SendMessage with status.type
-        /// ("complete", "skipped", "error", …). Grant only on complete.
+        /// [HYBRID] IMA jslib calls this via SendMessage with a status string
+        /// ("complete", "skipped", "error", "sdk-not-loaded"). Grant only on complete.
         /// </summary>
-        public void OnAppLixirStatus(string status)
+        public void OnImaStatus(string status)
         {
-            // --- Map AppLixir status.type to our enum ---
-            // Official bridge: https://github.com/applixirinc/applixir-integration
             TitanOrbitRewardedAdResult result = TitanOrbitRewardedAdResult.Failed;
-            if (string.Equals(status, "complete", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(status, "ad-watched", StringComparison.OrdinalIgnoreCase))
-            {
+            if (string.Equals(status, "complete", StringComparison.OrdinalIgnoreCase))
                 result = TitanOrbitRewardedAdResult.Completed;
-            }
             else if (string.Equals(status, "sdk-not-loaded", StringComparison.OrdinalIgnoreCase)
                      || string.Equals(status, "error", StringComparison.OrdinalIgnoreCase)
-                     || string.Equals(status, "no-ad", StringComparison.OrdinalIgnoreCase)
-                     || string.Equals(status, "allAdsCompleted", StringComparison.OrdinalIgnoreCase))
-            {
-                // allAdsCompleted also fires when no ad was available — not a reward.
-                result = string.Equals(status, "allAdsCompleted", StringComparison.OrdinalIgnoreCase)
-                    ? TitanOrbitRewardedAdResult.Failed
-                    : TitanOrbitRewardedAdResult.Unavailable;
-            }
+                     || string.Equals(status, "no-ad", StringComparison.OrdinalIgnoreCase))
+                result = TitanOrbitRewardedAdResult.Unavailable;
 
-            Debug.Log("[TitanOrbitRewardedAds] AppLixir status=" + status + " placement=" + _pendingPlacement);
+            Debug.Log("[TitanOrbitRewardedAds] IMA status=" + status + " placement=" + _pendingPlacement);
             Finish(result);
         }
 

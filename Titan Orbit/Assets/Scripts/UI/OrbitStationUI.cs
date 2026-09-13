@@ -71,6 +71,11 @@ namespace TitanOrbit.UI
         private const float SidebarEquipmentSlotCardHeight = 88f;
         /// <summary>Empty equipment slot — title row only so unused slots do not waste scroll space.</summary>
         private const float SidebarEquipmentSlotCardHeightEmpty = 40f;
+        /// <summary>
+        /// Locked +1 row: accent + "+1 SLOT" + a full-width WATCH AD button (no power bar).
+        /// Taller than empty so the button has a usable hit target inside the same card chrome.
+        /// </summary>
+        private const float SidebarEquipmentSlotCardHeightLocked = 64f;
         /// <summary>Extra height when the player expands mount Move/Turn controls on a component.</summary>
         private const float SidebarEquipmentPlacementPanelHeight = 118f;
         /// <summary>Height of the collapsed "Adjust mount" toggle row on component cards.</summary>
@@ -6514,13 +6519,12 @@ namespace TitanOrbit.UI
             if (equipmentTitleTexts != null && index < equipmentTitleTexts.Length && equipmentTitleTexts[index] != null)
                 equipmentTitleTexts[index].text = "+1 SLOT";
             if (equipmentDescTexts != null && index < equipmentDescTexts.Length && equipmentDescTexts[index] != null)
-                equipmentDescTexts[index].text = "Watch a reward ad to unlock this match";
+                equipmentDescTexts[index].text = string.Empty;
             if (equipmentChargeTexts != null && index < equipmentChargeTexts.Length && equipmentChargeTexts[index] != null)
             {
-                equipmentChargeTexts[index].text = "AD";
                 var bubble = equipmentChargeTexts[index].transform.parent;
                 if (bubble != null)
-                    bubble.gameObject.SetActive(true);
+                    bubble.gameObject.SetActive(false);
             }
             if (equipmentBgImages != null && index < equipmentBgImages.Length && equipmentBgImages[index] != null)
                 equipmentBgImages[index].color = new Color(0.10f, 0.12f, 0.18f, 0.92f);
@@ -6542,40 +6546,54 @@ namespace TitanOrbit.UI
             {
                 if (slotUi.accentImage != null)
                     slotUi.accentImage.color = new Color(0.85f, 0.62f, 0.28f, 0.9f);
+                // Locked row is title + watch-ad button only — hide the empty-slot power bar,
+                // icon, charges, and mount chrome so the button can fill the card body.
                 if (slotUi.sublineText != null)
-                {
-                    slotUi.sublineText.text = "LOCKED · THIS MATCH";
-                    slotUi.sublineText.gameObject.SetActive(true);
-                }
+                    slotUi.sublineText.gameObject.SetActive(false);
                 if (slotUi.iconRoot != null)
                     slotUi.iconRoot.SetActive(false);
+                if (slotUi.statsFooter != null)
+                    slotUi.statsFooter.SetActive(false);
+                if (slotUi.powerBar != null)
+                    slotUi.powerBar.gameObject.SetActive(false);
                 if (slotUi.placementToggleRow != null)
                     slotUi.placementToggleRow.SetActive(false);
                 if (slotUi.placementPanel != null)
                     slotUi.placementPanel.SetActive(false);
                 if (slotUi.cardLayout != null)
                 {
-                    float h = SidebarEquipmentSlotCardHeightEmpty + 22f;
-                    slotUi.cardLayout.preferredHeight = h;
-                    slotUi.cardLayout.minHeight = h;
+                    slotUi.cardLayout.preferredHeight = SidebarEquipmentSlotCardHeightLocked;
+                    slotUi.cardLayout.minHeight = SidebarEquipmentSlotCardHeightLocked;
                 }
             }
 
             SetEquipmentBonusAdButtonVisible(index, visible: true);
+            if (equipmentBoxes != null && index < equipmentBoxes.Length && equipmentBoxes[index] != null)
+                LayoutRebuilder.ForceRebuildLayoutImmediate(equipmentBoxes[index].transform as RectTransform);
         }
 
-        /// <summary>Builds the per-slot rewarded-ad button (hidden until the row is the locked extra).</summary>
+        /// <summary>
+        /// Builds the per-slot rewarded-ad button. Hidden until the row is the locked extra.
+        /// Sized as the body of the loadout card (full width, one action row).
+        /// </summary>
         Button CreateEquipmentBonusAdButton(Transform parent)
         {
             var go = new GameObject("BonusAdButton");
             go.transform.SetParent(parent, false);
             var le = go.AddComponent<LayoutElement>();
-            le.preferredHeight = 22f;
-            le.minHeight = 20f;
+            le.flexibleWidth = 1f;
+            le.flexibleHeight = 1f;
+            le.minHeight = 26f;
+            le.preferredHeight = 32f;
 
             var img = go.AddComponent<Image>();
-            img.color = new Color(0.16f, 0.20f, 0.12f, 0.95f);
+            img.color = new Color(0.18f, 0.16f, 0.08f, 0.96f);
             img.raycastTarget = true;
+            if (buttonSprite != null)
+            {
+                img.sprite = buttonSprite;
+                img.type = Image.Type.Sliced;
+            }
 
             var btn = go.AddComponent<Button>();
             btn.targetGraphic = img;
@@ -6586,14 +6604,15 @@ namespace TitanOrbit.UI
             var labelRt = labelGo.AddComponent<RectTransform>();
             labelRt.anchorMin = Vector2.zero;
             labelRt.anchorMax = Vector2.one;
-            labelRt.offsetMin = Vector2.zero;
-            labelRt.offsetMax = Vector2.zero;
+            labelRt.offsetMin = new Vector2(6f, 2f);
+            labelRt.offsetMax = new Vector2(-6f, -2f);
             var tmp = labelGo.AddComponent<TextMeshProUGUI>();
             tmp.text = TitanOrbitAdsGate.ShouldShowAds ? "WATCH AD" : "UNLOCK";
             tmp.fontSize = 11f;
             tmp.fontStyle = FontStyles.Bold;
             tmp.alignment = TextAlignmentOptions.Center;
             tmp.color = new Color(0.92f, 0.88f, 0.62f, 1f);
+            tmp.overflowMode = TextOverflowModes.Ellipsis;
             tmp.raycastTarget = false;
             if (fontAsset != null)
                 tmp.font = fontAsset;

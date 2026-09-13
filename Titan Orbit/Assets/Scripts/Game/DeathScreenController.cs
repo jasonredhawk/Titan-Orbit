@@ -1,7 +1,9 @@
+using System.Collections.Generic;
 using TitanOrbit.ECS;
 using TitanOrbit.Services;
 using TMPro;
 using UnityEngine;
+using UnityEngine.EventSystems;
 using UnityEngine.UI;
 
 namespace TitanOrbit.Game
@@ -119,6 +121,18 @@ namespace TitanOrbit.Game
         /// <summary>WATCHING / AD FAILED line under the buttons.</summary>
         TextMeshProUGUI _choiceStatus;
 
+        /// <summary>Horizontal scroll content that holds one chip per equipped item / card.</summary>
+        RectTransform _gearStripContent;
+
+        /// <summary>
+        /// True after we painted chips for this death. Tick skips the rebuild so we do not
+        /// Instantiate tiles every frame while the choice card is up.
+        /// </summary>
+        bool _gearStripPainted;
+
+        /// <summary>Scratch list for <see cref="EcsGameBridge.CopyLocalLoadoutPreviewNames"/>.</summary>
+        readonly List<string> _gearStripNames = new List<string>(8);
+
         // --- Palette: same void glass as ShipStatTooltipChrome; amber rail = hull-critical warning ---
         static readonly Color FillColor = new Color(0.012f, 0.016f, 0.028f, 0.94f);
         static readonly Color CaptionPlateColor = new Color(0.018f, 0.028f, 0.045f, 1f);
@@ -129,6 +143,14 @@ namespace TitanOrbit.Game
         static readonly Color TrackColor = new Color(0.10f, 0.14f, 0.20f, 0.90f);
         static readonly Color BracketColor = new Color(0.55f, 0.38f, 0.28f, 0.70f);
         static readonly Color FrameTint = new Color(0.32f, 0.22f, 0.18f, 0.45f);
+        /// <summary>Keep / watch-ad plate. Brighter than the card so it reads as a control, not a hole.</summary>
+        static readonly Color KeepButtonFill = new Color(0.52f, 0.28f, 0.12f, 1f);
+        static readonly Color KeepButtonOutline = new Color(0.98f, 0.62f, 0.32f, 0.95f);
+        static readonly Color KeepButtonOutlineHover = new Color(1f, 0.82f, 0.48f, 1f);
+        /// <summary>Forfeit plate — cooler steel, still well above the void-glass card.</summary>
+        static readonly Color ForfeitButtonFill = new Color(0.16f, 0.26f, 0.40f, 1f);
+        static readonly Color ForfeitButtonOutline = new Color(0.55f, 0.74f, 0.95f, 0.88f);
+        static readonly Color ForfeitButtonOutlineHover = new Color(0.78f, 0.90f, 1f, 1f);
 
         /// <summary>
         /// [UNITY] Awake runs when the GameObject wakes (scene load or AddComponent).
@@ -183,6 +205,7 @@ namespace TitanOrbit.Game
             {
                 _clientDeathStartTime = Time.time;
                 ResetLoadoutChoice();
+                _gearStripPainted = false;
             }
 
             _wasDead = true;
@@ -289,6 +312,7 @@ namespace TitanOrbit.Game
             RemainingSeconds = ShipRespawnSystem.RespawnDelaySeconds;
             IsShowing = false;
             ResetLoadoutChoice();
+            _gearStripPainted = false;
             if (_choiceRoot != null)
                 _choiceRoot.SetActive(false);
         }
@@ -306,7 +330,9 @@ namespace TitanOrbit.Game
         /// </summary>
         void EnsureUi()
         {
-            if (overlayRoot != null && messageText != null && _timerText != null && _choiceRoot != null)
+            if (overlayRoot != null && messageText != null && _timerText != null
+                && _choiceRoot != null && _gearStripContent != null
+                && _keepButton != null && _keepButton.GetComponent<ChoiceButtonHover>() != null)
                 return;
 
             // --- Tear down a stale overlay (old centred text, or a hot-reload leftover) ---
@@ -326,6 +352,8 @@ namespace TitanOrbit.Game
             _forfeitButton = null;
             _keepLabel = null;
             _choiceStatus = null;
+            _gearStripContent = null;
+            _gearStripPainted = false;
 
             // [UNITY] Screen Space Overlay paints on top of the 3D view. No GraphicRaycaster —
             // this plaque must not steal clicks from the game or other HUD.
@@ -523,6 +551,8 @@ namespace TitanOrbit.Game
 
             _choiceRoot.SetActive(true);
             PaintKeepButtonLabel();
+            if (!_gearStripPainted)
+                PaintGearStrip();
             if (_choiceStatus != null && !TitanOrbitRewardedAds.IsShowing)
                 _choiceStatus.text = "CHOOSE HOW TO REBOOT";
         }
@@ -530,6 +560,8 @@ namespace TitanOrbit.Game
         /// <summary>Builds the keep/forfeit card once under the death canvas.</summary>
         void BuildLoadoutChoiceUi(Transform canvas)
         {
+            const float cardW = 720f;
+            const float cardH = 214f;
             var card = new GameObject("LoadoutChoice");
             card.transform.SetParent(canvas, false);
             var rt = card.AddComponent<RectTransform>();
@@ -537,7 +569,7 @@ namespace TitanOrbit.Game
             rt.anchorMax = new Vector2(0.5f, 1f);
             rt.pivot = new Vector2(0.5f, 1f);
             rt.anchoredPosition = new Vector2(0f, -118f);
-            rt.sizeDelta = new Vector2(440f, 132f);
+            rt.sizeDelta = new Vector2(cardW, cardH);
             _choiceRoot = card;
             card.SetActive(false);
 
@@ -563,14 +595,71 @@ namespace TitanOrbit.Game
                 card.transform, "Caption", "LOADOUT AT RISK", 11f, CaptionTextColor, TextAlignmentOptions.MidlineLeft);
             caption.fontStyle = FontStyles.Bold;
             caption.characterSpacing = 2.4f;
-            Stretch(caption.rectTransform, 14f, 104f, 14f, 8f);
+            Stretch(caption.rectTransform, 14f, cardH - 26f, 14f, 8f);
+
+            // --- Horizontal gear strip (one chip per equipped item / card) ---
+            var stripGo = new GameObject("GearStrip");
+            stripGo.transform.SetParent(card.transform, false);
+            var stripRt = stripGo.AddComponent<RectTransform>();
+            stripRt.anchorMin = new Vector2(0f, 1f);
+            stripRt.anchorMax = new Vector2(1f, 1f);
+            stripRt.pivot = new Vector2(0.5f, 1f);
+            stripRt.anchoredPosition = new Vector2(0f, -28f);
+            stripRt.sizeDelta = new Vector2(-28f, 56f);
+
+            var stripViewport = new GameObject("Viewport");
+            stripViewport.transform.SetParent(stripGo.transform, false);
+            var viewportRt = stripViewport.AddComponent<RectTransform>();
+            Stretch(viewportRt, 0f, 0f, 0f, 0f);
+            var viewportImg = stripViewport.AddComponent<Image>();
+            viewportImg.color = new Color(0.04f, 0.06f, 0.10f, 0.55f);
+            viewportImg.raycastTarget = true;
+            stripViewport.AddComponent<Mask>().showMaskGraphic = false;
+
+            var contentGo = new GameObject("Content");
+            contentGo.transform.SetParent(stripViewport.transform, false);
+            _gearStripContent = contentGo.AddComponent<RectTransform>();
+            _gearStripContent.anchorMin = new Vector2(0f, 0f);
+            _gearStripContent.anchorMax = new Vector2(0f, 1f);
+            _gearStripContent.pivot = new Vector2(0f, 0.5f);
+            _gearStripContent.anchoredPosition = Vector2.zero;
+            _gearStripContent.sizeDelta = new Vector2(8f, 0f);
+            var hlg = contentGo.AddComponent<HorizontalLayoutGroup>();
+            hlg.spacing = 6f;
+            hlg.padding = new RectOffset(6, 6, 6, 6);
+            hlg.childAlignment = TextAnchor.MiddleLeft;
+            hlg.childControlWidth = false;
+            hlg.childControlHeight = true;
+            hlg.childForceExpandWidth = false;
+            hlg.childForceExpandHeight = true;
+            var fitter = contentGo.AddComponent<ContentSizeFitter>();
+            fitter.horizontalFit = ContentSizeFitter.FitMode.PreferredSize;
+            fitter.verticalFit = ContentSizeFitter.FitMode.Unconstrained;
+
+            var scroll = stripGo.AddComponent<ScrollRect>();
+            scroll.horizontal = true;
+            scroll.vertical = false;
+            scroll.movementType = ScrollRect.MovementType.Clamped;
+            scroll.viewport = viewportRt;
+            scroll.content = _gearStripContent;
+            scroll.scrollSensitivity = 24f;
 
             _keepButton = CreateChoiceButton(
-                card.transform, "KeepButton", new Vector2(14f, -36f), new Vector2(412f, 36f), OnKeepLoadoutClicked);
+                card.transform,
+                "KeepButton",
+                new Vector2(14f, -92f),
+                new Vector2(cardW - 28f, 36f),
+                OnKeepLoadoutClicked,
+                primary: true);
             _keepLabel = _keepButton.GetComponentInChildren<TextMeshProUGUI>();
 
             _forfeitButton = CreateChoiceButton(
-                card.transform, "ForfeitButton", new Vector2(14f, -76f), new Vector2(412f, 28f), OnForfeitLoadoutClicked);
+                card.transform,
+                "ForfeitButton",
+                new Vector2(14f, -134f),
+                new Vector2(cardW - 28f, 28f),
+                OnForfeitLoadoutClicked,
+                primary: false);
             var forfeitLabel = _forfeitButton.GetComponentInChildren<TextMeshProUGUI>();
             if (forfeitLabel != null)
             {
@@ -580,11 +669,67 @@ namespace TitanOrbit.Game
 
             _choiceStatus = CreateLabel(
                 card.transform, "Status", "CHOOSE HOW TO REBOOT", 10f, CaptionTextColor, TextAlignmentOptions.Midline);
-            Stretch(_choiceStatus.rectTransform, 14f, 4f, 14f, 108f);
+            Stretch(_choiceStatus.rectTransform, 14f, 8f, 14f, cardH - 26f);
         }
 
-        /// <summary>Dark-space HUD button used by keep / forfeit.</summary>
-        Button CreateChoiceButton(Transform parent, string name, Vector2 anchoredPos, Vector2 size, UnityEngine.Events.UnityAction onClick)
+        /// <summary>
+        /// Rebuilds the horizontal chip row from the local ship's current loadout.
+        /// Called once per death when the choice card first opens (not per frame).
+        /// </summary>
+        void PaintGearStrip()
+        {
+            if (_gearStripContent == null)
+                return;
+
+            for (int i = _gearStripContent.childCount - 1; i >= 0; i--)
+                Destroy(_gearStripContent.GetChild(i).gameObject);
+
+            int count = EcsGameBridge.CopyLocalLoadoutPreviewNames(_gearStripNames);
+            for (int i = 0; i < count; i++)
+                CreateGearChip(_gearStripContent, _gearStripNames[i]);
+
+            _gearStripPainted = true;
+        }
+
+        /// <summary>One dark HUD chip: short loadout name, no stats dump.</summary>
+        void CreateGearChip(Transform parent, string title)
+        {
+            var go = new GameObject("GearChip");
+            go.transform.SetParent(parent, false);
+            var le = go.AddComponent<LayoutElement>();
+            float chipW = Mathf.Clamp(36f + title.Length * 7.4f, 92f, 176f);
+            le.preferredWidth = chipW;
+            le.minWidth = 88f;
+            le.preferredHeight = 44f;
+            le.minHeight = 40f;
+
+            var img = go.AddComponent<Image>();
+            img.color = new Color(0.08f, 0.11f, 0.17f, 0.96f);
+            img.raycastTarget = false;
+
+            var outline = go.AddComponent<Outline>();
+            outline.effectColor = new Color(0.55f, 0.38f, 0.28f, 0.45f);
+            outline.effectDistance = new Vector2(1f, -1f);
+
+            var label = CreateLabel(go.transform, "Name", title, 11f, BodyTextColor, TextAlignmentOptions.Midline);
+            label.fontStyle = FontStyles.Bold;
+            label.enableWordWrapping = true;
+            label.overflowMode = TextOverflowModes.Ellipsis;
+            Stretch(label.rectTransform, 6f, 4f, 6f, 4f);
+        }
+
+        /// <summary>
+        /// Keep / forfeit control. Image holds the idle plate; ColorBlock is a multiplier
+        /// (white at rest) so hover/press actually lighten the plate instead of multiplying
+        /// two dark colors into black.
+        /// </summary>
+        Button CreateChoiceButton(
+            Transform parent,
+            string name,
+            Vector2 anchoredPos,
+            Vector2 size,
+            UnityEngine.Events.UnityAction onClick,
+            bool primary)
         {
             var go = new GameObject(name);
             go.transform.SetParent(parent, false);
@@ -595,25 +740,73 @@ namespace TitanOrbit.Game
             rt.anchoredPosition = anchoredPos;
             rt.sizeDelta = size;
 
+            Color fill = primary ? KeepButtonFill : ForfeitButtonFill;
+            Color outlineIdle = primary ? KeepButtonOutline : ForfeitButtonOutline;
+            Color outlineHover = primary ? KeepButtonOutlineHover : ForfeitButtonOutlineHover;
+
             var img = go.AddComponent<Image>();
-            img.color = new Color(0.08f, 0.12f, 0.18f, 0.96f);
+            img.color = fill;
             img.raycastTarget = true;
+
+            var outline = go.AddComponent<Outline>();
+            outline.effectColor = outlineIdle;
+            outline.effectDistance = new Vector2(1.6f, -1.6f);
 
             var btn = go.AddComponent<Button>();
             btn.targetGraphic = img;
+            // ColorTint multiplies Image.color. Keep the block as a lift, not a second dark fill.
             var colors = btn.colors;
-            colors.normalColor = new Color(0.10f, 0.16f, 0.24f, 1f);
-            colors.highlightedColor = new Color(0.16f, 0.24f, 0.34f, 1f);
-            colors.pressedColor = new Color(0.06f, 0.10f, 0.16f, 1f);
-            colors.disabledColor = new Color(0.08f, 0.08f, 0.10f, 0.7f);
+            colors.normalColor = Color.white;
+            colors.highlightedColor = primary
+                ? new Color(1.28f, 1.18f, 1.08f, 1f)
+                : new Color(1.22f, 1.28f, 1.38f, 1f);
+            colors.pressedColor = new Color(0.78f, 0.78f, 0.80f, 1f);
+            colors.selectedColor = colors.highlightedColor;
+            colors.disabledColor = new Color(0.42f, 0.42f, 0.45f, 0.72f);
+            colors.fadeDuration = 0.08f;
             btn.colors = colors;
             btn.onClick.AddListener(onClick);
+
+            var hover = go.AddComponent<ChoiceButtonHover>();
+            hover.Bind(outline, outlineIdle, outlineHover);
 
             var label = CreateLabel(go.transform, "Label", "WATCH AD — KEEP LOADOUT", 14f, BodyTextColor, TextAlignmentOptions.Midline);
             label.fontStyle = FontStyles.Bold;
             label.raycastTarget = false;
             Stretch(label.rectTransform, 8f, 2f, 8f, 2f);
             return btn;
+        }
+
+        /// <summary>
+        /// Pointer rollover for death-choice buttons. ColorTint already lifts the plate;
+        /// this also brightens the edge and nudges scale so the hit target feels clickable.
+        /// </summary>
+        sealed class ChoiceButtonHover : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler
+        {
+            Outline _outline;
+            Color _idleOutline;
+            Color _hoverOutline;
+
+            public void Bind(Outline outline, Color idleOutline, Color hoverOutline)
+            {
+                _outline = outline;
+                _idleOutline = idleOutline;
+                _hoverOutline = hoverOutline;
+            }
+
+            public void OnPointerEnter(PointerEventData eventData)
+            {
+                if (_outline != null)
+                    _outline.effectColor = _hoverOutline;
+                transform.localScale = new Vector3(1.015f, 1.06f, 1f);
+            }
+
+            public void OnPointerExit(PointerEventData eventData)
+            {
+                if (_outline != null)
+                    _outline.effectColor = _idleOutline;
+                transform.localScale = Vector3.one;
+            }
         }
 
         /// <summary>Remove-ads owners see KEEP LOADOUT (no video). Others see WATCH AD.</summary>
@@ -637,7 +830,7 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Keep path: remove-ads / Editor simulate / AppLixir / LevelPlay.
+        /// Keep path: remove-ads / Editor simulate / Google IMA / LevelPlay.
         /// On fail we stay on the card — the player can retry or forfeit.
         /// </summary>
         void OnKeepLoadoutClicked()

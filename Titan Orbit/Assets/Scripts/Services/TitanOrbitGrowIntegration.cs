@@ -30,7 +30,7 @@ namespace TitanOrbit.Services
                 return;
             }
 
-            // Rewarded video lives on TitanOrbitRewardedAds (AppLixir WebGL / LevelPlay mobile).
+            // Rewarded video lives on TitanOrbitRewardedAds (Google IMA WebGL / LevelPlay mobile).
             // androidGameId / iOSGameId stay as Inspector placeholders for a future UA dashboard.
             var rewarded = GetComponent<TitanOrbitRewardedAds>();
             if (rewarded != null)

@@ -4,7 +4,7 @@ namespace TitanOrbit.Services
     /// Outcome of one opt-in rewarded-video attempt.
     /// UI grants a gameplay reward only on <see cref="Completed"/>.
     /// <para>
-    /// [TITAN-ORBIT] AppLixir WebGL and LevelPlay mobile both map into this enum so
+    /// [TITAN-ORBIT] Google IMA (WebGL) and LevelPlay (mobile) both map into this enum so
     /// death / extra-slot buttons never talk to an SDK directly.
     /// </para>
     /// </summary>
