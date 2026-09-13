@@ -22,9 +22,10 @@ namespace TitanOrbit.Game
     /// Attached by <see cref="EcsWorldVisualizer"/> when spawning ship hull proxies.
     /// Cosmetic smoothing of particle emission is intentional — never applied to ship transform position.
     /// <para>
-    /// Prefabs resolve per mount from <see cref="ThrusterVfxBank"/>: remapped parts use
-    /// <see cref="ShipPartVisualSource"/> family id; unmarked mounts use the host family;
-    /// otherwise <see cref="LoadDefaultSettings"/> / ModularJetFlame2.
+    /// Prefabs resolve from <see cref="ThrusterVfxBank"/>: T-key debug cycle first,
+    /// then the player's Customize Ship style, otherwise the shared default
+    /// (AstroEagle). Family id and remapped <see cref="ShipPartVisualSource"/> no
+    /// longer pick a unique flame. Fallback is <see cref="LoadDefaultSettings"/> / ModularJetFlame2.
     /// SampleScene often leaves the propulsion bank empty — Awake falls back to Resources.
     /// </para>
     /// <para>
@@ -133,6 +134,7 @@ namespace TitanOrbit.Game
             public float chassisMountScale;
             public Renderer[] mountRenderers;
             public ParticleSystem[] particles;
+            public Color[] originalStartColors;
             /// <summary>
             /// Rear nozzle in mount-local space (mesh AABB, not world AABB).
             /// World <c>Renderer.bounds</c> is axis-aligned, so ClosestPoint jumped every yaw.
@@ -260,6 +262,21 @@ namespace TitanOrbit.Game
             s_Live.Remove(this);
         }
 
+        /// <summary>Rebuilds this proxy's jets after a studio style change.</summary>
+        public void RebuildJets()
+        {
+            _appliedDebugCycleKey = CurrentDebugCycleKey();
+            RebuildVfx();
+        }
+
+        /// <summary>Re-tints live jets without Instantiating (HSV drag).</summary>
+        public void ApplyCurrentTint()
+        {
+            Color32 tint = ResolveTintColor();
+            for (int i = 0; i < _thrusterJets.Count; i++)
+                TintJetParticles(_thrusterJets[i], tint);
+        }
+
         /// <summary>Rebuilds jets on every live ship proxy (T-key debug cycle).</summary>
         public static void RebuildAllLive()
         {
@@ -275,6 +292,23 @@ namespace TitanOrbit.Game
                 applier._appliedDebugCycleKey = CurrentDebugCycleKey();
                 if (applier._shipEntity != Entity.Null)
                     applier.RebuildVfx();
+            }
+        }
+
+        /// <summary>Tints every live proxy from current prefs / ghost (picker drag).</summary>
+        public static void ApplyTintToAllLive()
+        {
+            for (int i = s_Live.Count - 1; i >= 0; i--)
+            {
+                ShipPropulsionVisualApplier applier = s_Live[i];
+                if (applier == null)
+                {
+                    s_Live.RemoveAt(i);
+                    continue;
+                }
+
+                if (applier._shipEntity != Entity.Null)
+                    applier.ApplyCurrentTint();
             }
         }
 
@@ -412,6 +446,7 @@ namespace TitanOrbit.Game
                 };
                 go.SetActive(true);
                 bind.hasMountLocalRear = TryComputeMountLocalRear(bind, ResolveShipAft(), out bind.mountLocalRear);
+                TintJetParticles(bind, ResolveTintColor());
                 _thrusterVfxInstances.Add(go);
                 _thrusterJets.Add(bind);
                 CollectParticleSystems(go, _thrusterParticleSystems);
@@ -940,8 +975,8 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Purchased remaps stamp <see cref="ShipPartVisualSource"/>; unmarked mounts
-        /// use the host family row on <see cref="ThrusterVfxBank"/>.
+        /// T-key debug cycle first, then the player's studio pick, otherwise the
+        /// shared default row. Family id no longer chooses a unique flame.
         /// </summary>
         ThrusterVfxBank.Entry ResolveEntryForMount(Transform thrusterTransform)
         {
@@ -951,26 +986,86 @@ namespace TitanOrbit.Game
 
             if (TitanOrbitDebugFlags.CycleAllThrusterVfx)
             {
-                ThrusterVfxBank.Entry cycled = bank.GetEntry(ThrusterVfxBank.DebugCycleIndex);
+                ThrusterVfxBank.Entry cycled = bank.GetStyleEntry(ThrusterVfxBank.DebugCycleIndex);
                 if (cycled != null)
                     return cycled;
             }
 
-            if (thrusterTransform != null)
+            LocalPlayerThrusterStyle.Style style = ResolveThrusterStyle();
+            return bank.GetStyleEntry(LocalPlayerThrusterStyle.ResolveStyleIndex(style));
+        }
+
+        /// <summary>Owner prefs immediately; remotes read ghosted <see cref="ShipAccentColors"/>.</summary>
+        LocalPlayerThrusterStyle.Style ResolveThrusterStyle()
+        {
+            if (_shipEntity == Entity.Null)
+                return LocalPlayerThrusterStyle.Get();
+
+            var world = EcsGameBridge.GetVisualizationWorld();
+            if (world == null || !world.IsCreated || !world.EntityManager.Exists(_shipEntity))
+                return LocalPlayerThrusterStyle.Get();
+
+            var em = world.EntityManager;
+            ShipAccentColors ghost = default;
+            if (em.HasComponent<ShipAccentColors>(_shipEntity))
+                ghost = em.GetComponentData<ShipAccentColors>(_shipEntity);
+
+            return LocalPlayerThrusterStyle.ResolveForPresentation(IsLocalOwnerProxy(em), ghost);
+        }
+
+        Color32 ResolveTintColor()
+        {
+            return LocalPlayerThrusterStyle.ResolveTint(ResolveThrusterStyle(), ResolveShipTeam());
+        }
+
+        static void TintJetParticles(JetBind jet, Color32 tint)
+        {
+            if (jet == null || jet.particles == null)
+                return;
+
+            if (jet.originalStartColors == null || jet.originalStartColors.Length != jet.particles.Length)
             {
-                var marker = thrusterTransform.GetComponent<ShipPartVisualSource>();
-                if (marker != null && !string.IsNullOrWhiteSpace(marker.sourceFamilyId))
+                jet.originalStartColors = new Color[jet.particles.Length];
+                for (int i = 0; i < jet.particles.Length; i++)
                 {
-                    ThrusterVfxBank.Entry fromMarker = bank.GetEntryByFamilyId(marker.sourceFamilyId);
-                    if (fromMarker != null)
-                        return fromMarker;
+                    ParticleSystem ps = jet.particles[i];
+                    jet.originalStartColors[i] = ps != null
+                        ? ps.main.startColor.color
+                        : Color.white;
                 }
             }
 
-            if (_family != null && !string.IsNullOrWhiteSpace(_family.familyId))
-                return bank.GetEntryByFamilyId(_family.familyId);
+            Color.RGBToHSV((Color)tint, out float th, out float ts, out float tv);
+            for (int i = 0; i < jet.particles.Length; i++)
+            {
+                ParticleSystem ps = jet.particles[i];
+                if (ps == null)
+                    continue;
 
-            return bank.GetEntryByFamilyId(_familyPrefix);
+                Color orig = jet.originalStartColors[i];
+                Color.RGBToHSV(orig, out _, out float s, out float v);
+                Color next = s < 0.15f
+                    ? Color.HSVToRGB(th, ts * 0.22f, Mathf.Max(v, 0.85f))
+                    : Color.HSVToRGB(th, Mathf.Clamp01(Mathf.Lerp(s, ts, 0.7f)), Mathf.Max(v, tv * 0.55f));
+                next.a = orig.a;
+                var main = ps.main;
+                main.startColor = next;
+            }
+        }
+
+        TeamId ResolveShipTeam()
+        {
+            if (_shipEntity == Entity.Null)
+                return TeamId.None;
+
+            var world = EcsGameBridge.GetVisualizationWorld();
+            if (world == null || !world.IsCreated || !world.EntityManager.Exists(_shipEntity))
+                return TeamId.None;
+
+            var em = world.EntityManager;
+            if (!em.HasComponent<ShipState>(_shipEntity))
+                return TeamId.None;
+            return em.GetComponentData<ShipState>(_shipEntity).Team;
         }
 
         /// <summary>
@@ -981,13 +1076,8 @@ namespace TitanOrbit.Game
             Transform thrusterTransform,
             ThrusterVfxBank.Entry familyEntry)
         {
-            if (familyEntry != null)
-            {
-                GameObject fromFamily = familyEntry.ResolvePrefab(
-                    thrusterTransform != null ? thrusterTransform.name : null);
-                if (fromFamily != null)
-                    return fromFamily;
-            }
+            if (familyEntry != null && familyEntry.prefab != null)
+                return familyEntry.prefab;
 
             if (_settings.thrusterJetFlameBank != null && _settings.thrusterJetFlameBank.Count > 0)
             {

@@ -21,6 +21,21 @@ namespace TitanOrbit.Data
         public const string ResourcesAssetPath = "Assets/Resources/ThrusterVfxBank.asset";
 
         /// <summary>
+        /// Shared starter flame (Modular / V2). Families no longer own a unique jet —
+        /// the player picks one of the four types in Customize Ship.
+        /// </summary>
+        public const string DefaultFamilyId = "AstroEagle";
+
+        /// <summary>Classic V1, Modular V2, Heavy V3, Soft. Index 1 is the default.</summary>
+        public const int StyleCount = 4;
+
+        /// <summary>Modular (V2 / AstroEagle signature).</summary>
+        public const int DefaultStyleIndex = 1;
+
+        static readonly string[] StyleDisplayNames = { "Classic", "Modular", "Heavy", "Soft" };
+        static readonly string[] StyleFamilyIds = { "SpaceExcalibur", "AstroEagle", "CosmicShark", "LightFox" };
+
+        /// <summary>
         /// Child name for Instantiated jet instances so stash/restore can strip them
         /// instead of baking a live flame into the original part.
         /// </summary>
@@ -69,7 +84,7 @@ namespace TitanOrbit.Data
             }
         }
 
-        [Tooltip("Every gameplay family. T-key walks this list when Cycle All Thruster VFX is on.")]
+        [Tooltip("Family rows hold the four JetFlame types (V1 / V2 / V3 / Soft) via signature prefabs.")]
         public List<Entry> entries = new List<Entry>();
 
         /// <summary>Client debug cycle index (T-key). Not serialized; not a ghost field.</summary>
@@ -111,32 +126,47 @@ namespace TitanOrbit.Data
             return null;
         }
 
-        public string GetDisplayName(int index)
+        /// <summary>Modular V2 row, or the first authored entry if that id is missing.</summary>
+        public Entry GetDefaultEntry()
         {
-            Entry e = GetEntry(index);
-            if (e == null)
-                return string.Empty;
-            if (!string.IsNullOrWhiteSpace(e.displayName))
-                return e.displayName.Trim();
-            return e.familyId ?? string.Empty;
+            return GetStyleEntry(DefaultStyleIndex) ?? GetEntry(0);
         }
+
+        /// <summary>Wraps 0..3 for the four JetFlame types.</summary>
+        public static int WrapStyleIndex(int index)
+        {
+            int i = index % StyleCount;
+            return i < 0 ? i + StyleCount : i;
+        }
+
+        /// <summary>Signature row for Classic / Modular / Heavy / Soft.</summary>
+        public Entry GetStyleEntry(int styleIndex)
+        {
+            int i = WrapStyleIndex(styleIndex);
+            Entry fromFamily = GetEntryByFamilyId(StyleFamilyIds[i]);
+            return fromFamily ?? GetEntryByFamilyId(DefaultFamilyId) ?? GetEntry(0);
+        }
+
+        public static string GetStyleDisplayName(int styleIndex)
+        {
+            return StyleDisplayNames[WrapStyleIndex(styleIndex)];
+        }
+
+        public string GetDisplayName(int index) => GetStyleDisplayName(index);
 
         /// <summary>Authored JetFlame prefab name for the T-key label (no Clone suffix).</summary>
         public string GetThrusterPrefabDisplayName(int index)
         {
-            Entry e = GetEntry(index);
+            Entry e = GetStyleEntry(index);
             if (e == null || e.prefab == null)
                 return string.Empty;
             return e.prefab.name.Replace("(Clone)", string.Empty).Trim();
         }
 
-        /// <summary>Advances <see cref="DebugCycleIndex"/> and returns the new index.</summary>
+        /// <summary>Advances <see cref="DebugCycleIndex"/> across the four types.</summary>
         public int CycleDebugIndex()
         {
-            int count = EntryCount;
-            if (count <= 0)
-                return 0;
-            DebugCycleIndex = (DebugCycleIndex + 1) % count;
+            DebugCycleIndex = WrapStyleIndex(DebugCycleIndex + 1);
             return DebugCycleIndex;
         }
 

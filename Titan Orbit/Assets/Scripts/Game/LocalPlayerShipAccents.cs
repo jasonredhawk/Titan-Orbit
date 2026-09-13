@@ -80,7 +80,14 @@ namespace TitanOrbit.Game
         /// </summary>
         public static ShipAccentColors ResolveForPresentation(bool isLocalOwner, in ShipAccentColors ghost)
         {
-            return isLocalOwner ? Get() : ghost;
+            if (!isLocalOwner)
+                return ghost;
+
+            // Owner paint + thruster come from local prefs so the hull and jets
+            // do not wait on a ghost/RPC that may still be Default after join.
+            ShipAccentColors paint = Get();
+            LocalPlayerThrusterStyle.CopyTo(ref paint, LocalPlayerThrusterStyle.Get());
+            return paint;
         }
 
         /// <summary>

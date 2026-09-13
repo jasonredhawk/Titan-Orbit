@@ -73,6 +73,7 @@ namespace TitanOrbit.Game
             }
 
             ShipAccentColors accents = LocalPlayerShipAccents.Get();
+            LocalPlayerThrusterStyle.CopyTo(ref accents, LocalPlayerThrusterStyle.Get());
             bool sent = TryWriteLocalHostShip(accents)
                         || TryEnqueueLocalHost(accents)
                         || TrySendDedicatedRpc(accents);
@@ -160,6 +161,10 @@ namespace TitanOrbit.Game
                 EmissionPacked = accents.EmissionPacked,
                 Emission2Packed = accents.Emission2Packed,
                 Emission3Packed = accents.Emission3Packed,
+                ThrusterCustom = accents.ThrusterCustom,
+                ThrusterStyle = accents.ThrusterStyle,
+                ThrusterColorPacked = accents.ThrusterColorPacked,
+                ThrusterFollowTeam = accents.ThrusterFollowTeam,
             };
         }
 

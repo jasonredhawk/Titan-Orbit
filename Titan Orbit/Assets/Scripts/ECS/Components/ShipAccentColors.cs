@@ -5,9 +5,10 @@ using UnityEngine;
 namespace TitanOrbit.ECS
 {
     /// <summary>
-    /// [NETCODE] Player-chosen Colorize accents on a ship ghost. Color1 stays on the
-    /// team material (Red / Blue / Green / Orange / Purple). These fields override
-    /// Color2, Color3, and the three emission slots so teammates stay readable.
+    /// [NETCODE] Player-chosen Colorize accents and thruster style on a ship ghost.
+    /// Color1 stays on the team material (Red / Blue / Green / Orange / Purple).
+    /// Paint fields override Color2, Color3, and the three emission slots.
+    /// Thruster fields pick one of four JetFlame types plus a packed locked tint.
     /// <para>
     /// Must be baked on <see cref="Authoring.StarshipGhostAuthoring"/>. A runtime-only
     /// <c>AddComponent</c> does not register GhostFields, so remotes would never see
@@ -36,6 +37,18 @@ namespace TitanOrbit.ECS
 
         /// <summary>Packed RGBA for shader <c>_Emission3</c>.</summary>
         [GhostField] public uint Emission3Packed;
+
+        /// <summary>1 when the owner picked a thruster style instead of the shared default jet.</summary>
+        [GhostField] public byte ThrusterCustom;
+
+        /// <summary>0 Classic, 1 Modular, 2 Heavy, 3 Soft.</summary>
+        [GhostField] public byte ThrusterStyle;
+
+        /// <summary>Packed RGBA for the locked flame tint. Ignored when following team.</summary>
+        [GhostField] public uint ThrusterColorPacked;
+
+        /// <summary>1 = flame follows match team Color1; 0 = locked to <see cref="ThrusterColorPacked"/>.</summary>
+        [GhostField] public byte ThrusterFollowTeam;
 
         /// <summary>True when the player has painted accents (or loaded a saved custom palette).</summary>
         public bool IsCustom => HasCustom != 0;
@@ -115,6 +128,10 @@ namespace TitanOrbit.ECS
                     hash = (hash * 397) ^ (int)EmissionPacked;
                     hash = (hash * 397) ^ (int)Emission2Packed;
                     hash = (hash * 397) ^ (int)Emission3Packed;
+                    hash = (hash * 397) ^ ThrusterCustom;
+                    hash = (hash * 397) ^ ThrusterStyle;
+                    hash = (hash * 397) ^ (int)ThrusterColorPacked;
+                    hash = (hash * 397) ^ ThrusterFollowTeam;
                     return hash;
                 }
             }

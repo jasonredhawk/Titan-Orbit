@@ -2401,6 +2401,9 @@ namespace TitanOrbit.Game
                     if (lastAccent != accentKey)
                     {
                         ShipColorizeAccentApplier.ApplyFromCapturedBase(go, accents, ship.Team);
+                        var propulsion = go.GetComponent<ShipPropulsionVisualApplier>();
+                        if (propulsion != null)
+                            propulsion.RebuildJets();
                         _proxyAccentKeys[entity] = accentKey;
                     }
 

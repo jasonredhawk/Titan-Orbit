@@ -51,6 +51,10 @@ namespace TitanOrbit.ECS
                     EmissionPacked = cmd.ValueRO.EmissionPacked,
                     Emission2Packed = cmd.ValueRO.Emission2Packed,
                     Emission3Packed = cmd.ValueRO.Emission3Packed,
+                    ThrusterCustom = cmd.ValueRO.ThrusterCustom,
+                    ThrusterStyle = cmd.ValueRO.ThrusterStyle,
+                    ThrusterColorPacked = cmd.ValueRO.ThrusterColorPacked,
+                    ThrusterFollowTeam = cmd.ValueRO.ThrusterFollowTeam,
                 };
 
                 if (em.HasComponent<ShipAccentColors>(ship))

@@ -140,9 +140,10 @@ namespace TitanOrbit.ECS
     }
 
     /// <summary>
-    /// [NETCODE] Client publishes Colorize Color2 / Color3 / Emission1–3 after GoInGame
-    /// or when the player paints a well. Server writes <see cref="ShipAccentColors"/>
-    /// on the owned ship ghost. Color1 is not in this payload — it stays the team material.
+    /// [NETCODE] Client publishes Colorize Color2 / Color3 / Emission1–3 and thruster
+    /// style after GoInGame or when the player paints / picks jets. Server writes
+    /// <see cref="ShipAccentColors"/> on the owned ship ghost. Color1 is not in this
+    /// payload — it stays the team material.
     /// Adding fields changes RPC layout: client and Linux headless must rebuild together.
     /// </summary>
     public struct SetShipAccentColorsCommand : IRpcCommand
@@ -164,6 +165,18 @@ namespace TitanOrbit.ECS
 
         /// <summary>Packed RGBA for Emission3.</summary>
         public uint Emission3Packed;
+
+        /// <summary>1 when the owner picked a thruster style / color.</summary>
+        public byte ThrusterCustom;
+
+        /// <summary>0 Classic, 1 Modular, 2 Heavy, 3 Soft.</summary>
+        public byte ThrusterStyle;
+
+        /// <summary>Packed RGBA for the locked flame tint.</summary>
+        public uint ThrusterColorPacked;
+
+        /// <summary>1 = flame follows match team Color1; 0 = locked picker color.</summary>
+        public byte ThrusterFollowTeam;
     }
 
     /// <summary>
