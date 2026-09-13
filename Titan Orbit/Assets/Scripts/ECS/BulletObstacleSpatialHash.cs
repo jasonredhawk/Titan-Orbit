@@ -129,11 +129,11 @@ namespace TitanOrbit.ECS
 
                 var xf = shipXf[i];
                 float3 center = MegaShipCombatAim.GetAimPoint(em, e, xf);
-                // Regular ships: cheap hull radius. MEGA AABB is once per mega, not every fighter.
+                // Same radius as ConsiderHashedShip / cosmetic tracers. Presentation hull
+                // alone is smaller than the baked PhysicsCollider on many chassis — Burst
+                // then skipped the ship while the client tracer still flashed a hit.
                 float radius = BodyCollisionMath.GetShipHullRadiusWorld(xf.Scale);
-                bool isMega = em.HasComponent<MegaShipState>(e) &&
-                              em.GetComponentData<MegaShipState>(e).IsMega;
-                if (isMega && em.HasComponent<PhysicsCollider>(e))
+                if (em.HasComponent<PhysicsCollider>(e))
                 {
                     var physicsCollider = em.GetComponentData<PhysicsCollider>(e);
                     radius = MegaShipCombatAim.GetHitRadiusWorld(em, e, physicsCollider, xf.Scale);

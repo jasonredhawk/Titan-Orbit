@@ -63,13 +63,15 @@ namespace TitanOrbit.ECS
             {
                 var b = Bullets[i];
                 float3 start = b.Position;
-                BulletFlight.GetStep(start, b.Velocity, Dt, out float3 end, out int substeps);
+                float remainingRange = math.max(0f, b.MaxDistance - b.Traveled);
+                BulletFlight.GetStep(start, b.Velocity, Dt, remainingRange, out float3 end, out int substeps);
                 float stepDistance = math.distance(start, end);
                 StepFrom[i] = start;
                 StepTo[i] = end;
 
                 bool lifetimeExpired = b.Lifetime > 0f && (b.Age + Dt) >= b.Lifetime;
-                bool rangeExpired = (b.Traveled + stepDistance) >= b.MaxDistance;
+                bool rangeExpired = remainingRange <= 1e-5f ||
+                                    (b.Traveled + stepDistance) >= b.MaxDistance - 1e-4f;
 
                 Hash.GatherAlongSegment(start, end, Nearby, Seen);
 

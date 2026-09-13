@@ -240,6 +240,8 @@ namespace TitanOrbit.ECS
                     // need a longer Euclidean MaxDistance or BulletSimulation culls the shot
                     // before the intercept (transports inbound rarely hit this). Lifetime = 0
                     // disables the age timer so slow bullets can use the full flight budget.
+                    // Last-step travel is clamped to remaining MaxDistance (BulletFlight) so a
+                    // long client frame cannot visually reach a hull the server already expired.
                     float burnRangeMul = BulletBankCombatLogic.GetBurnBulletRangeMultiplier(bankIndex);
                     float maxDistance = PlanetaryDefenseAimMath.ComputeBulletMaxDistance(
                         engageRange, interceptDistance) * burnRangeMul;

@@ -27,8 +27,11 @@ namespace TitanOrbit.Game
     /// Damage stays server-authoritative in <see cref="BulletSimulationSystem"/>. This cache only
     /// lets <see cref="BulletVfxDriver"/> destroy tracers and play impact VFX early so bullets do
     /// not visually tunnel through rocks / ships / planetary-defense turrets while waiting for
-    /// <see cref="BulletHitRpc"/>. Turrets are not ghosts — we derive the same pad spheres the
-    /// server uses in <see cref="PlanetaryDefenseHitScan"/> from the planet's slot buffer.
+    /// <see cref="BulletHitRpc"/>. Incoming fire skips the local predicted hull — that pose is
+    /// ahead of the server, so a graze was flashing a hit without applying health. HitRpc still
+    /// stops the tracer when the sim actually scored. Turrets are not ghosts — we derive the
+    /// same pad spheres the server uses in <see cref="PlanetaryDefenseHitScan"/> from the
+    /// planet's slot buffer.
     /// </para>
     /// </summary>
     public static class BulletCosmeticHitQuery
@@ -818,6 +821,7 @@ namespace TitanOrbit.Game
             float deltaLenSq = math.lengthsq(delta);
             var filter = (BulletDamageFilter)damageFilter;
             bool healFriendly = BulletBankCombatLogic.HasHealFriendly(bankIndex);
+            int localNetworkId = EcsGameBridge.GetLocalNetworkId();
 
             // --- Same-planet turret steal (mirrors server PreferDefenseOverPlanetBody) ---
             // Planet body often wins nearest-t by a hair because the pad sits on the hull.
@@ -834,7 +838,8 @@ namespace TitanOrbit.Game
             {
                 int i = s_TestIndices[n];
                 var o = Obstacles[i];
-                if (!PassesTeamFilter(in o, ownerTeam, ownerNetworkId, healFriendly, allowSelfHarm))
+                if (!PassesTeamFilter(
+                        in o, ownerTeam, ownerNetworkId, localNetworkId, healFriendly, allowSelfHarm))
                     continue;
                 if (!PassesDamageFilter(filter, o.Kind))
                     continue;
@@ -1113,15 +1118,25 @@ namespace TitanOrbit.Game
         /// Planets/asteroids always collide; moons always test (friendly uses body-only radius);
         /// ships and planetary-defense turrets skip friendlies / self unless
         /// <paramref name="allowSelfHarm"/> (debug homing rockets after the arm delay).
+        /// Incoming fire (turrets OwnerNetworkId=0, enemy guns) also skips the local
+        /// predicted hull — that pose is ahead of the server, so tracers were flashing
+        /// a hit the sim never scored and health never dropped.
         /// </summary>
         static bool PassesTeamFilter(
-            in Obstacle o, byte ownerTeam, int ownerNetworkId, bool healFriendly, bool allowSelfHarm)
+            in Obstacle o,
+            byte ownerTeam,
+            int ownerNetworkId,
+            int localNetworkId,
+            bool healFriendly,
+            bool allowSelfHarm)
         {
             if (o.Kind == ObstacleKind.Ship)
             {
                 if (allowSelfHarm)
                     return true;
                 if (ownerNetworkId > 0 && o.OwnerNetworkId == ownerNetworkId)
+                    return false;
+                if (IsIncomingLocalHull(o.OwnerNetworkId, ownerNetworkId, localNetworkId))
                     return false;
                 if (healFriendly)
                     return true;
@@ -1146,6 +1161,18 @@ namespace TitanOrbit.Game
 
             // Planet / moon / asteroid — always test. Moon shield vs body is radius-gated above.
             return true;
+        }
+
+        /// <summary>
+        /// True when this obstacle is the local player's hull and the tracer is incoming
+        /// (not our own shot). Predicted LocalTransform sits ahead of server authority;
+        /// HitRpc still stops the tracer and plays the impact when the sim actually scored.
+        /// </summary>
+        static bool IsIncomingLocalHull(int obstacleNetworkId, int bulletOwnerNetworkId, int localNetworkId)
+        {
+            return localNetworkId > 0 &&
+                   obstacleNetworkId == localNetworkId &&
+                   bulletOwnerNetworkId != localNetworkId;
         }
 
         /// <summary>

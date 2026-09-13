@@ -14,6 +14,7 @@ namespace TitanOrbit.ECS
         /// <summary>
         /// End of this step and how many equal segments to sweep.
         /// </summary>
+        [BurstCompile]
         public static void GetStep(
             float3 from,
             float3 velocity,
@@ -21,9 +22,37 @@ namespace TitanOrbit.ECS
             out float3 to,
             out int substeps)
         {
+            GetStep(from, velocity, dt, float.MaxValue, out to, out substeps);
+        }
+
+        /// <summary>
+        /// Same as <see cref="GetStep(float3, float3, float, out float3, out int)"/>, but the
+        /// Euclidean step cannot exceed <paramref name="maxTravel"/>. Planetary-defense bolts
+        /// use Lifetime 0 + MaxDistance; a client frame longer than the 60 Hz sim step was
+        /// reaching a hull the server had already expired.
+        /// </summary>
+        /// <param name="maxTravel">Remaining flight budget (MaxDistance − Traveled).</param>
+        [BurstCompile]
+        public static void GetStep(
+            float3 from,
+            float3 velocity,
+            float dt,
+            float maxTravel,
+            out float3 to,
+            out int substeps)
+        {
+            if (maxTravel <= 1e-5f)
+            {
+                to = from;
+                substeps = 1;
+                return;
+            }
+
             to = from + velocity * dt;
             float stepDistance = math.distance(from, to);
-            substeps = BulletCollision.ComputeAdvanceSubstepCount(stepDistance);
+            if (stepDistance > maxTravel && stepDistance > 1e-6f)
+                to = from + (to - from) * (maxTravel / stepDistance);
+            substeps = BulletCollision.ComputeAdvanceSubstepCount(math.min(stepDistance, maxTravel));
         }
 
         /// <summary>

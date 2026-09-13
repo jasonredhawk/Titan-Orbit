@@ -43,6 +43,11 @@ namespace TitanOrbit.ECS
         public float MaxDistance;
         public float ScaleMultiplier;
         public int OwnerNetworkId;
+        /// <summary>
+        /// Local player's GhostOwner id. Incoming tracers skip that hull so predicted
+        /// pose cannot flash a hit the server never applied.
+        /// </summary>
+        public int LocalNetworkId;
         public byte OwnerTeam;
         public byte DamageFilter;
         public byte HealFriendly;
@@ -135,7 +140,9 @@ namespace TitanOrbit.ECS
             {
                 var req = Requests[i];
                 float lifetime = req.RemainingLifetime - req.Dt;
-                BulletFlight.GetStep(req.Position, req.Velocity, req.Dt, out float3 end, out int substeps);
+                float remainingRange = math.max(0f, req.MaxDistance - req.Traveled);
+                BulletFlight.GetStep(
+                    req.Position, req.Velocity, req.Dt, remainingRange, out float3 end, out int substeps);
                 if (substeps > MaxSubsteps)
                     substeps = MaxSubsteps;
 
@@ -260,7 +267,8 @@ namespace TitanOrbit.ECS
                 return false;
 
             var body = Bodies[b];
-            if (!PassesTeam(in body, req.OwnerTeam, req.OwnerNetworkId, req.HealFriendly != 0))
+            if (!PassesTeam(
+                    in body, req.OwnerTeam, req.OwnerNetworkId, req.LocalNetworkId, req.HealFriendly != 0))
                 return false;
             if (!PassesFilter(filter, body.Kind))
                 return false;
@@ -384,11 +392,21 @@ namespace TitanOrbit.ECS
             return m < 0 ? m + count : m;
         }
 
-        static bool PassesTeam(in CosmeticSweepBody o, byte ownerTeam, int ownerNetworkId, bool healFriendly)
+        static bool PassesTeam(
+            in CosmeticSweepBody o,
+            byte ownerTeam,
+            int ownerNetworkId,
+            int localNetworkId,
+            bool healFriendly)
         {
             if (o.Kind == KindShip)
             {
                 if (ownerNetworkId > 0 && o.OwnerNetworkId == ownerNetworkId)
+                    return false;
+                // Incoming fire vs predicted local hull — wait for HitRpc.
+                if (localNetworkId > 0 &&
+                    o.OwnerNetworkId == localNetworkId &&
+                    ownerNetworkId != localNetworkId)
                     return false;
                 if (healFriendly)
                     return true;

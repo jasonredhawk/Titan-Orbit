@@ -356,7 +356,9 @@ namespace TitanOrbit.Game
                     // --- Gun / drone / PD: variable-dt dead reckon (already a straight line) ---
                     float3 prevPos = t.LogicalPos;
                     t.RemainingLifetime -= dt;
-                    BulletFlight.GetStep(prevPos, t.Velocity, dt, out float3 nextPos, out int substeps);
+                    float remainingRange = math.max(0f, t.MaxDistance - t.Traveled);
+                    BulletFlight.GetStep(
+                        prevPos, t.Velocity, dt, remainingRange, out float3 nextPos, out int substeps);
                     float step = math.distance(prevPos, nextPos);
                     t.Traveled += step;
 
@@ -1483,6 +1485,7 @@ namespace TitanOrbit.Game
             try
             {
                 int w = 0;
+                int localNetworkId = EcsGameBridge.GetLocalNetworkId();
                 for (int i = 0; i < _tracers.Count; i++)
                 {
                     var t = _tracers[i];
@@ -1499,6 +1502,7 @@ namespace TitanOrbit.Game
                         MaxDistance = t.MaxDistance,
                         ScaleMultiplier = t.ScaleMultiplier > 0f ? t.ScaleMultiplier : 1f,
                         OwnerNetworkId = t.OwnerNetworkId,
+                        LocalNetworkId = localNetworkId,
                         OwnerTeam = t.OwnerTeam,
                         DamageFilter = t.DamageFilter,
                         HealFriendly = BulletBankCombatLogic.HasHealFriendly(t.BankIndex) ? (byte)1 : (byte)0,

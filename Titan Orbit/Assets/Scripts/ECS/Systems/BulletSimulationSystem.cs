@@ -796,7 +796,8 @@ namespace TitanOrbit.ECS
 
             // --- Same-frame spawn collide (substepped — MEGA sniper + shipVel can skip a rock) ---
             EnsureObstacleHash(state.EntityManager, mapW, mapH);
-            BulletFlight.GetStep(plan.Origin, plan.Velocity, dt, out float3 firstEnd, out int spawnSteps);
+            BulletFlight.GetStep(
+                plan.Origin, plan.Velocity, dt, plan.MaxDistance, out float3 firstEnd, out int spawnSteps);
             float3 cursor = plan.Origin;
             bool spawnHit = false;
             float3 spawnHitPoint = firstEnd;
