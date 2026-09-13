@@ -332,6 +332,7 @@ namespace TitanOrbit.Game
         {
             if (overlayRoot != null && messageText != null && _timerText != null
                 && _choiceRoot != null && _gearStripContent != null
+                && _choiceStatus != null && _choiceStatus.alignment == TextAlignmentOptions.MidlineRight
                 && _keepButton != null && _keepButton.GetComponent<ChoiceButtonHover>() != null)
                 return;
 
@@ -595,7 +596,11 @@ namespace TitanOrbit.Game
                 card.transform, "Caption", "LOADOUT AT RISK", 11f, CaptionTextColor, TextAlignmentOptions.MidlineLeft);
             caption.fontStyle = FontStyles.Bold;
             caption.characterSpacing = 2.4f;
-            Stretch(caption.rectTransform, 14f, cardH - 26f, 14f, 8f);
+            Stretch(caption.rectTransform, 14f, cardH - 26f, 300f, 8f);
+
+            _choiceStatus = CreateLabel(
+                card.transform, "Status", "CHOOSE HOW TO REBOOT", 10f, CaptionTextColor, TextAlignmentOptions.MidlineRight);
+            Stretch(_choiceStatus.rectTransform, 220f, cardH - 26f, 14f, 8f);
 
             // --- Horizontal gear strip (one chip per equipped item / card) ---
             var stripGo = new GameObject("GearStrip");
@@ -666,10 +671,6 @@ namespace TitanOrbit.Game
                 forfeitLabel.text = "RESPAWN WITHOUT LOADOUT";
                 forfeitLabel.fontSize = 13f;
             }
-
-            _choiceStatus = CreateLabel(
-                card.transform, "Status", "CHOOSE HOW TO REBOOT", 10f, CaptionTextColor, TextAlignmentOptions.Midline);
-            Stretch(_choiceStatus.rectTransform, 14f, 8f, 14f, cardH - 26f);
         }
 
         /// <summary>
@@ -778,8 +779,8 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Pointer rollover for death-choice buttons. ColorTint already lifts the plate;
-        /// this also brightens the edge and nudges scale so the hit target feels clickable.
+        /// Pointer rollover for death-choice buttons. ColorTint lifts the plate;
+        /// this only brightens the edge. Size stays fixed — no scale punch.
         /// </summary>
         sealed class ChoiceButtonHover : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler
         {
@@ -798,14 +799,12 @@ namespace TitanOrbit.Game
             {
                 if (_outline != null)
                     _outline.effectColor = _hoverOutline;
-                transform.localScale = new Vector3(1.015f, 1.06f, 1f);
             }
 
             public void OnPointerExit(PointerEventData eventData)
             {
                 if (_outline != null)
                     _outline.effectColor = _idleOutline;
-                transform.localScale = Vector3.one;
             }
         }
 

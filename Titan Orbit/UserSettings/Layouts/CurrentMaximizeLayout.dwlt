@@ -23,7 +23,7 @@ MonoBehaviour:
   m_MinSize: {x: 300, y: 112}
   m_MaxSize: {x: 24288, y: 16192}
   vertical: 1
-  controlID: 48833
+  controlID: 49503
   draggingID: 0
 --- !u!114 &2
 MonoBehaviour:
@@ -154,7 +154,7 @@ MonoBehaviour:
   m_MinSize: {x: 300, y: 112}
   m_MaxSize: {x: 24288, y: 16192}
   vertical: 0
-  controlID: 48834
+  controlID: 49504
   draggingID: 0
 --- !u!114 &4
 MonoBehaviour:
@@ -180,7 +180,7 @@ MonoBehaviour:
   m_MinSize: {x: 200, y: 112}
   m_MaxSize: {x: 16192, y: 16192}
   vertical: 1
-  controlID: 48808
+  controlID: 49379
   draggingID: 0
 --- !u!114 &5
 MonoBehaviour:
@@ -206,7 +206,7 @@ MonoBehaviour:
   m_MinSize: {x: 200, y: 56}
   m_MaxSize: {x: 16192, y: 8096}
   vertical: 0
-  controlID: 48809
+  controlID: 49380
   draggingID: 0
 --- !u!114 &6
 MonoBehaviour:
@@ -1110,7 +1110,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 1
   m_Script: {fileID: 12006, guid: 0000000000000000e000000000000000, type: 0}
-  m_Name: ProjectBrowser
+  m_Name: ConsoleWindow
   m_EditorClassIdentifier: 
   m_Children: []
   m_Position:
@@ -1119,15 +1119,15 @@ MonoBehaviour:
     y: 960
     width: 1857
     height: 333
-  m_MinSize: {x: 231, y: 276}
-  m_MaxSize: {x: 10001, y: 10026}
-  m_ActualView: {fileID: 14}
+  m_MinSize: {x: 101, y: 126}
+  m_MaxSize: {x: 4001, y: 4026}
+  m_ActualView: {fileID: 15}
   m_Panes:
   - {fileID: 14}
   - {fileID: 15}
   - {fileID: 16}
-  m_Selected: 0
-  m_LastSelected: 1
+  m_Selected: 1
+  m_LastSelected: 0
 --- !u!114 &14
 MonoBehaviour:
   m_ObjectHideFlags: 52
@@ -1177,7 +1177,7 @@ MonoBehaviour:
     m_SkipHidden: 0
     m_SearchArea: 0
     m_Folders:
-    - Assets/Scripts/UI
+    - Assets/UltimateSpaceshipsCreator
     m_Globs: []
     m_ProductIds: 
     m_AnyWithAssetOrigin: 0
@@ -1187,18 +1187,18 @@ MonoBehaviour:
   m_ViewMode: 1
   m_StartGridSize: 16
   m_LastFolders:
-  - Assets/Scripts/UI
+  - Assets/UltimateSpaceshipsCreator
   m_LastFoldersGridSize: 16
   m_LastProjectPath: C:\Users\jason\Documents\repo\Titan-Orbit\Titan Orbit
   m_LockTracker:
     m_IsLocked: 0
   m_LastLocalAssetsSearchArea: 0
   m_FolderTreeState:
-    scrollPos: {x: 0, y: 1025}
+    scrollPos: {x: 0, y: 1397}
     m_SelectedIDs:
-    - m_Data: 308714
+    - m_Data: 308754
     m_LastClickedID:
-      m_Data: 308714
+      m_Data: 308754
     m_ExpandedIDs:
     - m_Data: 0
     - m_Data: 82158
@@ -1306,10 +1306,10 @@ MonoBehaviour:
       m_ResourceFile: 
   m_ListAreaState:
     m_SelectedInstanceIDs:
-    - m_Data: -28629480
+    - m_Data: 5431278
     m_LastClickedEntityId:
-      m_Data: -28629480
-    m_HadKeyboardFocusLastEvent: 0
+      m_Data: 5431278
+    m_HadKeyboardFocusLastEvent: 1
     m_ExpandedInstanceIDs:
     - m_Data: 54664
     - m_Data: 275120
@@ -1338,8 +1338,8 @@ MonoBehaviour:
     - m_Data: 331630
     m_RenameOverlay:
       m_UserAcceptedRename: 0
-      m_Name: 
-      m_OriginalName: 
+      m_Name: USC Documentation
+      m_OriginalName: USC Documentation
       m_EditFieldRect:
         serializedVersion: 2
         x: 0
@@ -1347,10 +1347,10 @@ MonoBehaviour:
         width: 0
         height: 0
       m_UserData:
-        m_Data: 0
+        m_Data: 5431278
       m_IsWaitingForDelay: 0
       m_IsRenaming: 0
-      m_OriginalEventType: 11
+      m_OriginalEventType: 0
       m_IsRenamingFilename: 1
       m_TrimLeadingAndTrailingWhitespace: 0
       m_ClientGUIView: {fileID: 13}
@@ -1362,7 +1362,7 @@ MonoBehaviour:
       m_Icon: {fileID: 0}
       m_ResourceFile: 
     m_NewAssetIndexInList: -1
-    m_ScrollPosition: {x: 0, y: 61}
+    m_ScrollPosition: {x: 0, y: 0}
     m_GridSize: 16
   m_SkipHiddenPackages: 0
   m_DirectoriesAreaWidth: 240
@@ -2486,7 +2486,7 @@ MonoBehaviour:
   m_MinSize: {x: 100, y: 112}
   m_MaxSize: {x: 8096, y: 16192}
   vertical: 1
-  controlID: 48835
+  controlID: 49505
   draggingID: 0
 --- !u!114 &18
 MonoBehaviour:
@@ -2563,7 +2563,7 @@ MonoBehaviour:
     m_ControlHash: -371814159
     m_PrefName: Preview_InspectorPreview
   m_LastInspectedObjectEntityId:
-    m_Data: -28629480
+    m_Data: 5431278
   m_LastVerticalScrollValue: 0
   m_GlobalObjectId: 
   m_InspectorMode: 0
