@@ -130,6 +130,7 @@ namespace TitanOrbit.ECS.Authoring
                 {
                     LatchedMult = 1f,
                     HoldUntilElapsed = -1.0,
+                    LastAppliedMaxSpeed = 0f,
                 });
                 AddComponent(entity, new ShipMoonDockState());
                 // [NETCODE] Turret possession mode — must bake so IsControlling / PlanetId replicate.

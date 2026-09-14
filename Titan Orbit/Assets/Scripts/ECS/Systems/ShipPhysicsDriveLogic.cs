@@ -26,8 +26,9 @@ namespace TitanOrbit.ECS
     /// <see cref="ShipTerritoryBoostLatch"/>, and OVERDRIVE via ghosted
     /// <see cref="ShipState.OverdriveLockout"/> (<see cref="ShipOverdriveTuning.StepLockout"/>):
     /// burst = Shift ∧ Thrust ∧ energy &gt; 0 ∧ ¬lockout; lockout sets at energy 0 and clears at
-    /// ≥25% MaxEnergy (or Shift release). Normal RMB thrust is free. When burst ends, planar
-    /// speed hard-caps to the new max so speedometer / bloom stay in sync.
+    /// ≥25% MaxEnergy (or Shift release). Normal RMB thrust is free. When the cruise cap drops
+    /// (OVERDRIVE ends or the territory latch expires), leftover boost speed snaps down by that
+    /// drop so the return to cruise is immediate — ram overspeed above the old cap still decays.
     /// Drain rate = <see cref="ShipMotorConfig.ThrustEnergyDrainPerSecond"/>
     /// (ExtraSpeedEnergyDrain summed across engines).
     /// MEGA hulls never engage overdrive. Shift instead locks yaw (heading stays put
@@ -332,6 +333,8 @@ namespace TitanOrbit.ECS
             // [TITAN-ORBIT] Instant PIT can flicker at edges; latch matches presentation sticky so
             // client prediction + server authority keep the same cruise boost. Must match on both
             // worlds or reconciliation fights the boost.
+            // Read last tick's cruise cap before the latch can clear it (sticky expiry).
+            float previousMaxSpeed = territoryLatch.LastAppliedMaxSpeed;
             float rawTerritoryMult = PlanetConnectionGraphLogic.FriendlyTerritoryMovementMultiplier(
                 transform.Position,
                 shipState.Team,
@@ -429,6 +432,7 @@ namespace TitanOrbit.ECS
                 vel = math.lerp(vel, moonApproachVel, t);
                 vel.y = 0f;
                 ApplyRecoilDecay(ref vel, maxSpeed, movementMass, motor.RecoilDecayPerSecond, dt);
+                SnapBoostCapDrop(ref vel, previousMaxSpeed, maxSpeed);
             }
             else
             {
@@ -445,19 +449,8 @@ namespace TitanOrbit.ECS
 
                 ApplyRecoilDecay(ref vel, maxSpeed, movementMass, motor.RecoilDecayPerSecond, dt);
 
-                // OVERDRIVE exit only — collision overspeed must not use this snap.
-                if (ShouldSnapOverdriveExit(
-                        overdriveActive,
-                        input.Overdrive,
-                        shipState.OverdriveLockout,
-                        in transform.Rotation,
-                        vel,
-                        maxSpeed))
-                {
-                    float mag = math.length(vel);
-                    if (mag > maxSpeed)
-                        vel = math.normalize(vel) * maxSpeed;
-                }
+                // Triangle / OVERDRIVE leftover — not collision overspeed (see SnapBoostCapDrop).
+                SnapBoostCapDrop(ref vel, previousMaxSpeed, maxSpeed);
             }
 
             // Moon shield is a kinematic PhysX sphere (PlanetGemMoonShieldColliderTag).
@@ -493,6 +486,9 @@ namespace TitanOrbit.ECS
                 OrbitLocked = orbitLocked,
                 IsTransferringPeople = transferring,
             };
+
+            // Remember this tick's cruise cap so the next drop can snap leftover boost.
+            territoryLatch.LastAppliedMaxSpeed = maxSpeed;
         }
 
         /// <summary>
@@ -528,15 +524,18 @@ namespace TitanOrbit.ECS
                 return latch.LatchedMult;
             }
 
-            ClearTerritoryBoostLatch(ref latch);
+            // Drop the boost only — keep LastAppliedMaxSpeed so this tick can still snap leftover.
+            latch.LatchedMult = 1f;
+            latch.HoldUntilElapsed = -1.0;
             return 1f;
         }
 
-        /// <summary>Resets sticky territory boost (death, team select, moon dock park).</summary>
+        /// <summary>Resets sticky territory boost and last cruise cap (death, team select, moon dock park).</summary>
         public static void ClearTerritoryBoostLatch(ref ShipTerritoryBoostLatch latch)
         {
             latch.LatchedMult = 1f;
             latch.HoldUntilElapsed = -1.0;
+            latch.LastAppliedMaxSpeed = 0f;
         }
 
         /// <summary>
@@ -648,37 +647,26 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// True when OVERDRIVE just ended and leftover burst speed is still mostly forward.
-        /// Collision kicks that are sideways / reverse must not use the cruise snap.
+        /// When the cruise cap dropped this tick (territory latch expired or OVERDRIVE ended),
+        /// remove that leftover immediately. Speed already above the previous cap is collision
+        /// overspeed and stays for <see cref="ApplyRecoilDecay"/>.
         /// </summary>
-        static bool ShouldSnapOverdriveExit(
-            bool overdriveActive,
-            bool overdriveHeld,
-            bool overdriveLockout,
-            in quaternion rotation,
-            float3 vel,
-            float maxSpeed)
+        static void SnapBoostCapDrop(ref float3 vel, float previousMaxSpeed, float maxSpeed)
         {
-            if (overdriveActive)
-                return false;
+            if (previousMaxSpeed <= 0.01f)
+                return;
+
+            float drop = previousMaxSpeed - maxSpeed;
+            if (drop <= 0.01f)
+                return;
 
             vel.y = 0f;
             float mag = math.length(vel);
-            if (mag <= maxSpeed * 1.3f)
-                return false;
+            if (mag <= maxSpeed)
+                return;
 
-            if (overdriveLockout)
-                return true;
-
-            if (overdriveHeld)
-                return false;
-
-            float3 fwd = math.mul(rotation, new float3(0f, 0f, 1f));
-            fwd.y = 0f;
-            if (math.lengthsq(fwd) < 0.01f)
-                return false;
-
-            return math.dot(vel / mag, math.normalize(fwd)) > 0.8f;
+            float target = math.max(maxSpeed, mag - drop);
+            vel = math.normalize(vel) * target;
         }
 
         /// <summary>

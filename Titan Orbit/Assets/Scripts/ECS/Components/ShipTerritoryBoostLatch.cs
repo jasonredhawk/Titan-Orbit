@@ -8,7 +8,9 @@ namespace TitanOrbit.ECS
     /// — this is <b>not</b> a ship MovementSpeed attribute upgrade. Point-in-triangle can flicker
     /// for a frame at edges or during brief runtime-cache gaps; the latch keeps the last boost
     /// for <see cref="TitanOrbit.Simulation.PlanetConnectionGraphLogic.TerritoryBoostStickySeconds"/>
-    /// so cruise feels stable. Updated each predicted motor tick on client + server (not ghosted —
+    /// so cruise feels stable. Also remembers last tick's applied MaxSpeed so leaving a triangle
+    /// or ending OVERDRIVE can snap leftover cruise without eating ram overspeed.
+    /// Updated each predicted motor tick on client + server (not ghosted —
     /// both sides recompute from the same triangles + moon clock).
     /// Paired with presentation <see cref="PlanetConnectionGraphCache.LocalOwnerTerritoryMult"/>.
     /// </summary>
@@ -25,5 +27,13 @@ namespace TitanOrbit.ECS
         /// leaving the fill. Negative when cleared.
         /// </summary>
         public double HoldUntilElapsed;
+
+        /// <summary>
+        /// Last tick's applied cruise cap (taxed MaxSpeed × territory × OVERDRIVE).
+        /// [TITAN-ORBIT] Not ghosted — predicted client + server both write it in
+        /// <c>ShipPhysicsDriveLogic.Step</c>. When the cap drops, leftover boost speed
+        /// snaps down by that drop; collision overspeed above the old cap is left for recoil decay.
+        /// </summary>
+        public float LastAppliedMaxSpeed;
     }
 }

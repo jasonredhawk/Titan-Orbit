@@ -114,6 +114,7 @@ namespace TitanOrbit.ECS
                 {
                     LatchedMult = 1f,
                     HoldUntilElapsed = -1.0,
+                    LastAppliedMaxSpeed = 0f,
                 });
             }
 
