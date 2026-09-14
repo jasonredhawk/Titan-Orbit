@@ -11,8 +11,9 @@ namespace TitanOrbit.Camera
     /// sit in front and hide stars where the cloud is thick. No ParticleSystem, no DinV texture.
     /// <para>
     /// Lives on the <c>StarfieldBackground</c> scene object (sibling of the legacy
-    /// <c>SpaceBackground</c> GO — do not parent them). The quad is a sky plane in front
-    /// of the lens so theatrical tilt still looks like space. Parallax scroll still uses
+    /// <c>SpaceBackground</c> GO — do not parent them). Gameplay (look-down) keeps the
+    /// original world-XZ floor so parallax stays smooth. Theatrical tilt switches to a
+    /// camera-facing sky plane so stars still fill the frame. Parallax scroll uses
     /// <see cref="ShipDisplayPose.LocalPosition"/> after the camera
     /// (<c>DefaultExecutionOrder 67110</c>). GameManager → Show Starfield Background is the
     /// production toggle; the old space quad stays off unless you flip Show Space Background.
@@ -34,12 +35,19 @@ namespace TitanOrbit.Camera
         /// </summary>
         const float WrapSnapFallbackThreshold = 80f;
 
+        /// <summary>
+        /// Same look-down pole CameraFollowEcs uses. Above this, the gameplay camera is
+        /// treated as top-down and we keep the world-XZ floor (smooth). Below it, the
+        /// camera has tilted and we switch to the theatrical sky plane.
+        /// </summary>
+        const float LookDownDotThreshold = 0.92f;
+
         [Header("References")]
         [Tooltip("Camera used to size the star quad (defaults to Main Camera).")]
         [SerializeField] UnityEngine.Camera targetCamera;
 
         [Header("Placement")]
-        [Tooltip("How far in front of the lens the sky plane sits (world units). Used as camera-forward distance so stars stay in view when the camera tilts. The shader draws in the Background queue (ZTest Always, ZWrite Off) so ships / planets still cover the quad.")]
+        [Tooltip("Gameplay: world-Y of the XZ floor (below the play plane). Theatrical: camera-forward distance of the sky plane. Shader is Background (ZTest Always, ZWrite Off) so ships / planets still cover the quad.")]
         [SerializeField] float depthOffset = 80f;
 
         [Tooltip("Extra margin beyond the visible area so zoom / wide aspects do not show a gap.")]
@@ -267,9 +275,9 @@ namespace TitanOrbit.Camera
         }
 
         /// <summary>
-        /// [UNITY] LateUpdate — after CameraFollowEcs (67001) and the nebula (67100). Pins the
-        /// sky plane in front of the lens, accumulates wrap-safe travel, and writes uniforms.
-        /// No allocations; no Find calls after the first resolve.
+        /// [UNITY] LateUpdate — after CameraFollowEcs (67001) and the nebula (67100). Places
+        /// the quad (XZ floor while look-down, sky plane when tilted), accumulates wrap-safe
+        /// travel, and writes uniforms. No allocations; no Find calls after the first resolve.
         /// </summary>
         void LateUpdate()
         {
@@ -290,11 +298,11 @@ namespace TitanOrbit.Camera
             else
                 followPos = targetCamera.transform.position;
 
-            PlaceSkyPlaneInFrontOfCamera();
-            float quadSize = ResizeQuadToCoverView();
+            bool skyPlane = PlaceBackground(followPos, out float viewDistance);
+            float quadSize = ResizeQuadToCoverView(viewDistance);
 
             AccumulateWrapSafeScroll(followPos);
-            WriteShaderUniforms(quadSize);
+            WriteShaderUniforms(quadSize, skyPlane);
         }
 
         /// <summary>
@@ -357,12 +365,14 @@ namespace TitanOrbit.Camera
         /// family per frame — no MaterialPropertyBlock (GLES / WebGL + SRP Batcher issue).
         /// </summary>
         /// <param name="quadSize">World-space quad edge length from <see cref="ResizeQuadToCoverView"/>.</param>
-        void WriteShaderUniforms(float quadSize)
+        void WriteShaderUniforms(float quadSize, bool mirrorFollowX)
         {
             starMaterial.SetColor(TintId, tint);
             starMaterial.SetFloat(BrightnessId, brightness);
             starMaterial.SetFloat(TwinkleId, twinkle);
-            starMaterial.SetVector(FollowXZId, new Vector4(scrollOffsetX, scrollOffsetZ, 0f, 0f));
+            // [TITAN-ORBIT] Sky-plane LookRotation(-forward) mirrors UV.x. Flip only then.
+            float followX = mirrorFollowX ? -scrollOffsetX : scrollOffsetX;
+            starMaterial.SetVector(FollowXZId, new Vector4(followX, scrollOffsetZ, 0f, 0f));
             starMaterial.SetVector(QuadScaleId, new Vector4(quadSize, quadSize, 0f, 0f));
             starMaterial.SetVector(OccupancyId, new Vector4(farOccupancy, midOccupancy, nearOccupancy, 0f));
             starMaterial.SetVector(LayerFarId, new Vector4(farDensity, farParallax, farSize, farBrightness));
@@ -423,7 +433,7 @@ namespace TitanOrbit.Camera
             quad.name = "StarfieldBackgroundQuad";
             quad.transform.SetParent(transform);
             starQuadTransform = quad.transform;
-            starQuadTransform.localRotation = Quaternion.identity;
+            starQuadTransform.localRotation = Quaternion.Euler(90f, 0f, 0f);
             ResizeQuadToCoverView();
 
             Object.Destroy(quad.GetComponent<Collider>());
@@ -437,31 +447,69 @@ namespace TitanOrbit.Camera
         }
 
         /// <summary>
-        /// Puts the star/gas quad on a sky plane in front of the lens. Top-down still
-        /// sees it as the floor; theatrical tilt keeps stars filling the frame instead of
-        /// sitting on the XZ plane below the playfield. One existing quad — no extra draws.
+        /// Gameplay look-down: world-XZ floor under the ship (the original smooth path).
+        /// Theatrical tilt: camera-facing sky plane so stars still fill the frame.
         /// </summary>
-        void PlaceSkyPlaneInFrontOfCamera()
+        /// <param name="followPos">Ship display position (or camera fallback).</param>
+        /// <param name="viewDistance">Camera-to-quad distance for frustum sizing.</param>
+        /// <returns>True when the sky-plane path is active (UV.x is mirrored).</returns>
+        bool PlaceBackground(Vector3 followPos, out float viewDistance)
+        {
+            Transform camT = targetCamera.transform;
+            bool lookingDown = Vector3.Dot(camT.forward, Vector3.down) > LookDownDotThreshold;
+            if (lookingDown)
+            {
+                // [TITAN-ORBIT] Same contract as pre-theatrical: follow ship XZ, lie on
+                // the floor. Camera look-ahead slides over this plane — no per-frame
+                // LookRotation, no billboard fighting the scroll.
+                float floorY = -Mathf.Abs(depthOffset);
+                transform.SetPositionAndRotation(
+                    new Vector3(followPos.x, floorY, followPos.z),
+                    Quaternion.identity);
+                if (starQuadTransform != null)
+                    starQuadTransform.localRotation = Quaternion.Euler(90f, 0f, 0f);
+                viewDistance = Mathf.Abs(camT.position.y - floorY);
+                if (viewDistance < 1f)
+                    viewDistance = Mathf.Abs(depthOffset);
+                return false;
+            }
+
+            viewDistance = PlaceSkyPlaneInFrontOfCamera();
+            return true;
+        }
+
+        /// <summary>
+        /// Pins the star/gas quad on a sky plane in front of the lens for theatrical tilt.
+        /// Faces the camera with <c>LookRotation(-forward)</c> (stable off the look-down
+        /// pole). UV.x is mirrored — <see cref="WriteShaderUniforms"/> flips FollowXZ.x.
+        /// </summary>
+        /// <returns>Exact camera-to-quad distance used for placement.</returns>
+        float PlaceSkyPlaneInFrontOfCamera()
         {
             Transform camT = targetCamera.transform;
             float dist = Mathf.Max(20f, Mathf.Abs(depthOffset));
             // Stay inside the frustum — ZTest Always does not skip far-plane clip.
             dist = Mathf.Min(dist, targetCamera.farClipPlane * 0.92f);
             dist = Mathf.Max(dist, targetCamera.nearClipPlane + 1f);
+
             transform.SetPositionAndRotation(
                 camT.position + camT.forward * dist,
                 Quaternion.LookRotation(-camT.forward, camT.up));
 
             if (starQuadTransform != null)
                 starQuadTransform.localRotation = Quaternion.identity;
+            return dist;
         }
 
         /// <summary>
-        /// Sizes the sky-plane quad so it covers the camera frustum at the current
-        /// camera-to-quad distance, plus <see cref="sizeMargin"/>.
+        /// Sizes the sky-plane quad so it covers the camera frustum at
+        /// <paramref name="cameraToBackground"/>, plus <see cref="sizeMargin"/>.
+        /// Uses the placement distance (not a re-measured Vector3.Distance) so
+        /// <c>_QuadScale</c> does not shimmer from float noise and swim the star grid.
         /// </summary>
+        /// <param name="cameraToBackground">World units from lens to sky plane. Negative = use depthOffset.</param>
         /// <returns>World-space edge length written to the quad (0 if we cannot size yet).</returns>
-        float ResizeQuadToCoverView()
+        float ResizeQuadToCoverView(float cameraToBackground = -1f)
         {
             if (targetCamera == null || starQuadTransform == null)
                 return 0f;
@@ -477,7 +525,6 @@ namespace TitanOrbit.Camera
             }
             else
             {
-                float cameraToBackground = Vector3.Distance(targetCamera.transform.position, transform.position);
                 if (cameraToBackground < 1f)
                     cameraToBackground = Mathf.Abs(depthOffset);
                 float halfFovRadians = targetCamera.fieldOfView * 0.5f * Mathf.Deg2Rad;
