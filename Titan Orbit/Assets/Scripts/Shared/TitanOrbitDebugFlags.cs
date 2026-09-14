@@ -108,8 +108,8 @@ namespace TitanOrbit
 
         /// <summary>
         /// When true, <c>ClientEgressMeterHUD</c> shows live NetCode payload KB/s for this player
-        /// and Local Host server-send per connection. Off by default — enable from GameManager
-        /// Inspector → HUD → Show Egress Meter. Samplers and GhostSend hooks skip work when false.
+        /// (client receive). Off by default — enable from GameManager Inspector → HUD → Show
+        /// Egress Meter. Managed samplers skip work when false.
         /// </summary>
         public static bool EgressMeterEnabled;
 

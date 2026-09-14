@@ -7,143 +7,86 @@ using Unity.Networking.Transport;
 namespace TitanOrbit.NetCode
 {
     /// <summary>
-    /// Syncs the Burst-readable egress hook and ensures every connection entity has counters.
+    /// Adds this tick's inbound snapshot + RPC payload into <see cref="TitanOrbitEgressMeter"/>
+    /// after UTP receive and before GhostReceive consumes the snapshot buffer.
     /// <para>
-    /// Unity.NetCode cannot reference <see cref="TitanOrbitDebugFlags"/>, so this system copies
-    /// the GameManager flag into <see cref="TitanOrbitEgressMeterHook.IsEnabled"/> before GhostSend
-    /// runs. Also adds <see cref="TitanOrbitConnectionEgressCounters"/> on any connection that
-    /// missed the Connect/Accept path (host-migration, fake host).
+    /// <see cref="SystemBase"/> (managed, never Burst) so it cannot crash Local Host the way a
+    /// GhostSend/Receive job hook can. Off = immediate return. No LINQ, no GetAllEntities.
     /// </para>
-    /// World: ClientSimulation and ServerSimulation. Group: InitializationSystemGroup (early).
+    /// World: ClientSimulation. Group: NetworkReceiveSystemGroup, after
+    /// <see cref="NetworkStreamReceiveSystem"/>.
     /// </summary>
-    [WorldSystemFilter(WorldSystemFilterFlags.ClientSimulation | WorldSystemFilterFlags.ServerSimulation)]
-    [UpdateInGroup(typeof(InitializationSystemGroup), OrderFirst = true)]
-    public partial struct TitanOrbitEgressMeterHookSyncSystem : ISystem
+    [WorldSystemFilter(WorldSystemFilterFlags.ClientSimulation)]
+    [UpdateInGroup(typeof(NetworkReceiveSystemGroup))]
+    [UpdateAfter(typeof(NetworkStreamReceiveSystem))]
+    public partial class TitanOrbitEgressMeterReceiveSampleSystem : SystemBase
     {
-        EntityQuery _missingCountersQuery;
-
         /// <summary>
-        /// Caches a query for connection entities that still lack egress counters.
+        /// Accumulates inbound snapshot/RPC bytes still sitting on the connection this tick.
+        /// GhostReceive (later, GhostSimulationSystemGroup) then consumes the snapshot buffer.
         /// </summary>
-        public void OnCreate(ref SystemState state)
+        protected override void OnUpdate()
         {
-            _missingCountersQuery = state.GetEntityQuery(
-                ComponentType.ReadOnly<NetworkStreamConnection>(),
-                ComponentType.Exclude<TitanOrbitConnectionEgressCounters>());
-        }
-
-        /// <summary>
-        /// Publishes the Inspector toggle into Burst SharedStatic, then backfills missing counters
-        /// only while the meter is on (structural change is rare).
-        /// </summary>
-        public void OnUpdate(ref SystemState state)
-        {
-            // --- Burst hook ---
-            // [TITAN-ORBIT] GhostSend / Rpc / CommandSend / Receive jobs read this SharedStatic.
-            TitanOrbitEgressMeterHook.IsEnabled = TitanOrbitDebugFlags.EgressMeterEnabled;
-
             if (!TitanOrbitDebugFlags.EgressMeterEnabled)
                 return;
 
-            // --- Backfill ---
-            // [ECS/DOTS] Connect and Accept already add the component. This covers leftover paths.
-            if (_missingCountersQuery.IsEmptyIgnoreFilter)
-                return;
+            foreach (var (snapshots, rpcs) in SystemAPI
+                         .Query<DynamicBuffer<IncomingSnapshotDataStreamBuffer>,
+                             DynamicBuffer<IncomingRpcDataStreamBuffer>>())
+            {
+                int snapLen = snapshots.Length;
+                int rpcLen = rpcs.Length;
+                if (snapLen > 0)
+                {
+                    TitanOrbitEgressMeter.ClientRecvSnapshotBytes += (ulong)snapLen;
+                    TitanOrbitEgressMeter.ClientRecvPacketCount++;
+                }
+                if (rpcLen > 0)
+                {
+                    TitanOrbitEgressMeter.ClientRecvRpcBytes += (ulong)rpcLen;
+                    TitanOrbitEgressMeter.ClientRecvPacketCount++;
+                }
+            }
 
-            var em = state.EntityManager;
-            using var entities = _missingCountersQuery.ToEntityArray(Allocator.Temp);
-            for (int i = 0; i < entities.Length; i++)
-                em.AddComponent<TitanOrbitConnectionEgressCounters>(entities[i]);
+            TitanOrbitEgressMeter.HasSample = true;
         }
     }
 
     /// <summary>
-    /// Copies this ClientWorld connection's receive/upload counters into
-    /// <see cref="TitanOrbitEgressMeter"/> for the overlay. Also samples Editor ghost-type stats
-    /// and Relay / UTP header hints.
-    /// World: ClientSimulation. Group: SimulationSystemGroup, last — after receive and send jobs.
+    /// Copies Relay / UTP header hints and Editor ghost-type stats for the overlay.
+    /// Receive byte totals are accumulated by
+    /// <see cref="TitanOrbitEgressMeterReceiveSampleSystem"/> (do not overwrite them here).
+    /// World: ClientSimulation. Group: SimulationSystemGroup, last.
     /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ClientSimulation)]
     [UpdateInGroup(typeof(SimulationSystemGroup), OrderLast = true)]
-    public partial struct TitanOrbitEgressMeterClientCopySystem : ISystem
+    public partial class TitanOrbitEgressMeterClientCopySystem : SystemBase
     {
         bool _metricsMonitorReady;
 
         /// <summary>
-        /// Last <see cref="TitanOrbitEgressMeter.ResetVersion"/> this ClientWorld applied.
-        /// Separate from ServerWorld so Local Host reset cannot skip one world's ECS counters.
+        /// Publishes Relay/header hints and ghost rows. No work when the meter is off.
         /// </summary>
-        int _appliedResetVersion;
-
-        /// <summary>
-        /// Publishes client receive + upload totals. No work when the meter is off.
-        /// </summary>
-        public void OnUpdate(ref SystemState state)
+        protected override void OnUpdate()
         {
             if (!TitanOrbitDebugFlags.EgressMeterEnabled)
                 return;
 
-            ApplyResetIfRequested(ref state);
-
-            // --- Sum this client's connection(s) ---
-            // [NETCODE] A dedicated client has one connection entity. Local Host IPC is the same.
-            ulong recvSnap = 0;
-            ulong recvRpc = 0;
-            ulong recvPkts = 0;
-            ulong sendCmd = 0;
-            ulong sendCmdPkts = 0;
-            ulong sendRpc = 0;
-            ulong sendRpcPkts = 0;
-
-            foreach (var counters in SystemAPI.Query<RefRO<TitanOrbitConnectionEgressCounters>>())
-            {
-                var c = counters.ValueRO;
-                recvSnap += c.RecvSnapshotBytes;
-                recvRpc += c.RecvRpcBytes;
-                recvPkts += c.RecvPacketCount;
-                sendCmd += c.SendCommandBytes;
-                sendCmdPkts += c.SendCommandPackets;
-                sendRpc += c.SendRpcBytes;
-                sendRpcPkts += c.SendRpcPackets;
-            }
-
-            TitanOrbitEgressMeter.ClientRecvSnapshotBytes = recvSnap;
-            TitanOrbitEgressMeter.ClientRecvRpcBytes = recvRpc;
-            TitanOrbitEgressMeter.ClientRecvPacketCount = recvPkts;
-            TitanOrbitEgressMeter.ClientSendCommandBytes = sendCmd;
-            TitanOrbitEgressMeter.ClientSendCommandPackets = sendCmdPkts;
-            TitanOrbitEgressMeter.ClientSendRpcBytes = sendRpc;
-            TitanOrbitEgressMeter.ClientSendRpcPackets = sendRpcPkts;
             TitanOrbitEgressMeter.RelayActive = TitanOrbitRelayState.HasClientRelay;
-            TitanOrbitEgressMeter.UtpHeaderBytes = ReadUtpHeaderBytes(ref state);
+            TitanOrbitEgressMeter.UtpHeaderBytes = ReadUtpHeaderBytes();
             TitanOrbitEgressMeter.HasSample = true;
 
 #if UNITY_EDITOR || NETCODE_DEBUG
-            EnsureGhostMetricsMonitor(ref state);
-            CopyGhostTypeBreakdown(ref state);
+            EnsureGhostMetricsMonitor();
+            CopyGhostTypeBreakdown();
 #endif
-        }
-
-        /// <summary>
-        /// Zeros ECS counters on this ClientWorld when the HUD requested a session reset.
-        /// Does not ClearSnapshot — that would wipe ServerWorld rows in the same process.
-        /// </summary>
-        void ApplyResetIfRequested(ref SystemState state)
-        {
-            if (_appliedResetVersion == TitanOrbitEgressMeter.ResetVersion)
-                return;
-
-            foreach (var counters in SystemAPI.Query<RefRW<TitanOrbitConnectionEgressCounters>>())
-                counters.ValueRW = default;
-
-            _appliedResetVersion = TitanOrbitEgressMeter.ResetVersion;
         }
 
         /// <summary>
         /// Reads UTP unreliable-pipeline header size so the HUD can estimate UDP+UTP wire bytes.
         /// Returns 20 if the driver is not ready (join).
         /// </summary>
-        int ReadUtpHeaderBytes(ref SystemState state)
+        int ReadUtpHeaderBytes()
         {
             if (!SystemAPI.TryGetSingleton<NetworkStreamDriver>(out var driver))
                 return 20;
@@ -165,7 +108,7 @@ namespace TitanOrbit.NetCode
         /// Creates a GhostMetricsMonitor singleton so GhostStatsCollectionSystem fills per-type sizes.
         /// Editor / NETCODE_DEBUG only — those types do not exist in player builds without the define.
         /// </summary>
-        void EnsureGhostMetricsMonitor(ref SystemState state)
+        void EnsureGhostMetricsMonitor()
         {
             if (_metricsMonitorReady || SystemAPI.HasSingleton<GhostMetricsMonitor>())
             {
@@ -173,12 +116,11 @@ namespace TitanOrbit.NetCode
                 return;
             }
 
-            var em = state.EntityManager;
-            var entity = em.CreateEntity();
-            em.AddComponent<GhostMetricsMonitor>(entity);
-            em.AddBuffer<GhostNames>(entity);
-            em.AddBuffer<GhostMetrics>(entity);
-            em.SetName(entity, "TitanOrbitEgressMetricsMonitor");
+            var entity = EntityManager.CreateEntity();
+            EntityManager.AddComponent<GhostMetricsMonitor>(entity);
+            EntityManager.AddBuffer<GhostNames>(entity);
+            EntityManager.AddBuffer<GhostMetrics>(entity);
+            EntityManager.SetName(entity, "TitanOrbitEgressMetricsMonitor");
             _metricsMonitorReady = true;
         }
 
@@ -186,7 +128,7 @@ namespace TitanOrbit.NetCode
         /// Buckets this client's last snapshot into ship / planet / gem / other using GhostMetrics
         /// (bits) plus GhostNames. No managed string alloc — FixedString IndexOf only.
         /// </summary>
-        void CopyGhostTypeBreakdown(ref SystemState state)
+        void CopyGhostTypeBreakdown()
         {
             TitanOrbitEgressMeter.GhostShipBits = 0;
             TitanOrbitEgressMeter.GhostShipCount = 0;
@@ -226,7 +168,6 @@ namespace TitanOrbit.NetCode
         /// </summary>
         static void ClassifyGhostType(FixedString64Bytes typeName, uint sizeInBits, uint instanceCount)
         {
-            // IndexOf takes a ref needle; copy the statics so the receiver is not `in`/readonly.
             FixedString32Bytes ship = NeedleShip;
             FixedString32Bytes shipLower = NeedleShipLower;
             FixedString32Bytes planet = NeedlePlanet;
@@ -256,62 +197,5 @@ namespace TitanOrbit.NetCode
             }
         }
 #endif
-    }
-
-    /// <summary>
-    /// Copies each ServerWorld connection's <c>EndSend</c> snapshot + RPC totals into
-    /// <see cref="TitanOrbitEgressMeter.ServerConnections"/> so Local Host can compare
-    /// server send vs client receive per <c>NetworkId</c>.
-    /// World: ServerSimulation. Group: SimulationSystemGroup, last.
-    /// </summary>
-    [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation)]
-    [UpdateInGroup(typeof(SimulationSystemGroup), OrderLast = true)]
-    public partial struct TitanOrbitEgressMeterServerCopySystem : ISystem
-    {
-        /// <summary>
-        /// Last <see cref="TitanOrbitEgressMeter.ResetVersion"/> this ServerWorld applied.
-        /// Independent of the client copy system (Local Host has both worlds in one process).
-        /// </summary>
-        int _appliedResetVersion;
-
-        /// <summary>
-        /// Fills up to <see cref="TitanOrbitEgressMeter.MaxServerConnections"/> rows.
-        /// </summary>
-        public void OnUpdate(ref SystemState state)
-        {
-            if (!TitanOrbitDebugFlags.EgressMeterEnabled)
-                return;
-
-            if (_appliedResetVersion != TitanOrbitEgressMeter.ResetVersion)
-            {
-                foreach (var counters in SystemAPI.Query<RefRW<TitanOrbitConnectionEgressCounters>>())
-                    counters.ValueRW = default;
-                _appliedResetVersion = TitanOrbitEgressMeter.ResetVersion;
-            }
-
-            int written = 0;
-            foreach (var (counters, networkId) in SystemAPI
-                         .Query<RefRO<TitanOrbitConnectionEgressCounters>, RefRO<NetworkId>>())
-            {
-                if (written >= TitanOrbitEgressMeter.MaxServerConnections)
-                    break;
-
-                var c = counters.ValueRO;
-                TitanOrbitEgressMeter.ServerConnections[written] = new TitanOrbitEgressMeter.ServerConnRow
-                {
-                    NetworkId = networkId.ValueRO.Value,
-                    SendSnapshotBytes = c.SendSnapshotBytes,
-                    SendRpcBytes = c.SendRpcBytes,
-                    SendPackets = c.SendSnapshotPackets + c.SendRpcPackets,
-                };
-                written++;
-            }
-
-            for (int i = written; i < TitanOrbitEgressMeter.MaxServerConnections; i++)
-                TitanOrbitEgressMeter.ServerConnections[i] = default;
-
-            TitanOrbitEgressMeter.ServerConnectionCount = written;
-            TitanOrbitEgressMeter.HasSample = true;
-        }
     }
 }

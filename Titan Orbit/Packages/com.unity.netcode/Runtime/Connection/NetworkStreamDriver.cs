@@ -313,8 +313,6 @@ namespace Unity.NetCode
                 });
             }
             entityManager.AddComponentData(ent, new NetworkSnapshotAck());
-            // [TITAN-ORBIT] Per-connection payload counters for the GameManager egress overlay.
-            entityManager.AddComponentData(ent, new TitanOrbitConnectionEgressCounters());
             entityManager.AddBuffer<OutgoingRpcDataStreamBuffer>(ent);
             entityManager.AddBuffer<OutgoingCommandDataStreamBuffer>(ent);
             entityManager.AddBuffer<IncomingSnapshotDataStreamBuffer>(ent);

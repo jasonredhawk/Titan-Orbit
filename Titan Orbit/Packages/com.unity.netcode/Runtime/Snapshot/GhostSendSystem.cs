@@ -524,7 +524,6 @@ namespace Unity.NetCode
         ComponentLookup<NetworkStreamSnapshotTargetSize> m_SnapshotTargetFromEntity;
         ComponentLookup<EnablePacketLogging> m_EnablePacketLoggingFromEntity;
         ComponentLookup<OverrideGhostData> m_GhostOverrideFromEntity;
-        ComponentLookup<TitanOrbitConnectionEgressCounters> m_EgressFromEntity;
 
         ComponentTypeHandle<GhostCleanup> m_GhostSystemStateType;
         ComponentTypeHandle<PreSerializedGhost> m_PreSerializedGhostType;
@@ -647,7 +646,6 @@ namespace Unity.NetCode
             m_SnapshotTargetFromEntity = state.GetComponentLookup<NetworkStreamSnapshotTargetSize>(true);
             m_EnablePacketLoggingFromEntity = state.GetComponentLookup<EnablePacketLogging>(false);
             m_GhostOverrideFromEntity = state.GetComponentLookup<OverrideGhostData>(true);
-            m_EgressFromEntity = state.GetComponentLookup<TitanOrbitConnectionEgressCounters>(false);
 
             m_GhostSystemStateType = state.GetComponentTypeHandle<GhostCleanup>(true);
             m_PreSerializedGhostType = state.GetComponentTypeHandle<PreSerializedGhost>(true);
@@ -887,8 +885,6 @@ namespace Unity.NetCode
 
             [ReadOnly] public NativeArray<ConnectionStateData> connectionState;
             [NativeDisableParallelForRestriction] public ComponentLookup<NetworkSnapshotAck> ackFromEntity;
-            [NativeDisableParallelForRestriction] public ComponentLookup<TitanOrbitConnectionEgressCounters> egressFromEntity;
-            public byte egressMeterEnabled;
             [ReadOnly] public ComponentLookup<NetworkStreamConnection> connectionFromEntity;
             [ReadOnly] public ComponentLookup<NetworkId> networkIdFromEntity;
 
@@ -1046,13 +1042,8 @@ namespace Unity.NetCode
                             serializeResult = sendEntities(ref dataStream, snapshotAck, ghostChunkComponentTypesPtr, ghostChunkComponentTypesLength, in ctx);
                             if (serializeResult == SerializeEnitiesResult.Ok)
                             {
-                                // [TITAN-ORBIT] Capture payload size before EndSend; the writer may be invalid after.
-                                int snapshotPayloadBytes = dataStream.Length;
                                 if ((result = driver.EndSend(dataStream)) >= (int) Networking.Transport.Error.StatusCode.Success)
                                 {
-                                    // [TITAN-ORBIT] Per-connection snapshot payload for the egress overlay.
-                                    if (egressMeterEnabled != 0)
-                                        TitanOrbitEgressMeterHook.TryAddSendSnapshot(ref egressFromEntity, connectionEntity, snapshotPayloadBytes);
 #if UNITY_EDITOR || NETCODE_DEBUG
                                     ref var netStatsSnapshots = ref NetStatsSnapshotPerThread.AsSpan()[ThreadIndex];
                                     netStatsSnapshots.SnapshotTotalSizeInBits += (uint)dataStream.LengthInBits;
@@ -1966,8 +1957,6 @@ namespace Unity.NetCode
                 ghostChunks = ghostChunks,
                 connectionState = m_ConnectionsToProcess.AsDeferredJobArray(),
                 ackFromEntity = m_SnapshotAckFromEntity,
-                egressFromEntity = m_EgressFromEntity,
-                egressMeterEnabled = TitanOrbitEgressMeterHook.EnabledByte(),
                 connectionFromEntity = m_ConnectionFromEntity,
                 networkIdFromEntity = m_NetworkIdFromEntity,
                 entityType = m_EntityType,
@@ -2147,8 +2136,6 @@ namespace Unity.NetCode
             m_NetworkIdFromEntity.Update(ref state);
             m_GhostTypeCollectionFromEntity.Update(ref state);
             m_GhostCollectionFromEntity.Update(ref state);
-            m_GhostOverrideFromEntity.Update(ref state);
-            m_EgressFromEntity.Update(ref state);
             m_SnapshotAckFromEntity.Update(ref state);
             m_ConnectionFromEntity.Update(ref state);
             m_GhostFromEntity.Update(ref state);

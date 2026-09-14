@@ -15,10 +15,9 @@ namespace TitanOrbit.Game
     /// <para>
     /// <b>EGRESS THIS PLAYER</b> is client receive (snapshots + inbound RPCs) — the bytes
     /// Unity Relay / GCE sent toward you. That is the number that drives player-side Relay bills.
-    /// <b>SERVER SEND</b> appears only when a ServerWorld exists (Editor Local Host / MPPM host)
-    /// and lists UTP <c>EndSend</c> per NetworkId (includes packets this client never received).
     /// Command packets are upload (client → server) and shown separately so they are not
-    /// mixed into egress.
+    /// mixed into egress. Server per-connection EndSend is not hooked (Burst Local Host
+    /// crashed on that path) — Local Host still shows this client's receive.
     /// </para>
     /// <para>
     /// UDP/IP, DTLS/WSS, and Relay encapsulation are not in the payload counters. The overlay
