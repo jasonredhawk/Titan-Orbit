@@ -72,11 +72,12 @@ namespace TitanOrbit.Data
         /// <summary>Player-authored RGB stops with the same alpha envelope as team presets.</summary>
         public static Gradient FromStops(Color stop0, Color stop1, Color stop2, Color stop3)
         {
-            WriteColorStopTimes(TeamId.None, out float tBright, out float tMid);
-            ColorKeys[0] = new GradientColorKey(Opaque(stop0), 0f);
-            ColorKeys[1] = new GradientColorKey(Opaque(stop1), tBright);
-            ColorKeys[2] = new GradientColorKey(Opaque(stop2), tMid);
-            ColorKeys[3] = new GradientColorKey(Opaque(stop3), 1f);
+            // Last color sits at the hold-alpha time (0.71). A key at t=1 is
+            // already faded out, so the 4th well could not be seen.
+            ColorKeys[0] = new GradientColorKey(Opaque(stop0), SampleTimes[0]);
+            ColorKeys[1] = new GradientColorKey(Opaque(stop1), SampleTimes[1]);
+            ColorKeys[2] = new GradientColorKey(Opaque(stop2), SampleTimes[2]);
+            ColorKeys[3] = new GradientColorKey(Opaque(stop3), 0.71f);
             WriteHoldThenFadeAlpha();
             Shared.mode = GradientMode.Blend;
             Shared.SetKeys(ColorKeys, AlphaKeys);

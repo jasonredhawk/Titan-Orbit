@@ -178,7 +178,12 @@ namespace TitanOrbit.ECS
                 AppliedBranchIndex = mega.MegaSlotIndex,
                 AppliedShipFamilyConfigIndex = (byte)familyIndex,
                 AppliedAttributeSum = 0,
-                AppliedEquipmentFingerprint = 0,
+                // Must match ShipStatApplySystem's local-owner poll. Writing 0 here made
+                // every client tick dirty (empty loadout hash is never 0) and re-apply
+                // parked MegaShipGunnerSlotElement — tracers flew hull-forward while
+                // the server kept auto-aiming planetary defense turrets.
+                AppliedEquipmentFingerprint = ShipStatApplyLogic.ComputeEquippedLoadoutFingerprint(
+                    em, shipEntity),
             };
             if (em.HasComponent<ShipChassisState>(shipEntity))
                 em.SetComponentData(shipEntity, chassisState);
@@ -351,7 +356,12 @@ namespace TitanOrbit.ECS
             if (em.HasBuffer<MegaShipGunnerSlotElement>(shipEntity))
             {
                 var gunners = em.GetBuffer<MegaShipGunnerSlotElement>(shipEntity);
-                MegaShipWeaponAim.WriteGhostedYaw(gunners, mountIndex, mount);
+                // Combat apply only refreshes barrel stats. Do not park a live auto-aim
+                // lock — the owner-predicted client has no MegaShipAutoFireSystem to
+                // write it back, so a wipe left tracers on hull forward.
+                if (mountIndex < 0 || mountIndex >= gunners.Length
+                    || !MegaShipWeaponAim.IsTrackingAim(gunners[mountIndex]))
+                    MegaShipWeaponAim.WriteGhostedYaw(gunners, mountIndex, mount);
             }
         }
 

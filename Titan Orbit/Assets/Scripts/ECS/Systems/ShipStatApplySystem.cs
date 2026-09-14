@@ -65,7 +65,8 @@ namespace TitanOrbit.ECS
                         || chassis.AppliedBranchIndex != branch
                         || chassis.AppliedShipFamilyConfigIndex != ship.ValueRO.ShipFamilyConfigIndex
                         || chassis.AppliedAttributeSum != attrSum;
-                    if (!needsApply && state.World.IsClient() && IsLocalOwnedShip(em, entity))
+                    if (!needsApply && state.World.IsClient() && IsLocalOwnedShip(em, entity)
+                        && !IsMegaShip(em, entity))
                     {
                         int fp = ShipStatApplyLogic.ComputeEquippedLoadoutFingerprint(em, entity);
                         needsApply = chassis.AppliedEquipmentFingerprint != fp;
@@ -110,6 +111,7 @@ namespace TitanOrbit.ECS
                     if (sameIdentity
                         && !(state.World.IsClient()
                              && IsLocalOwnedShip(em, entity)
+                             && !IsMegaShip(em, entity)
                              && chassis.AppliedEquipmentFingerprint
                                 != ShipStatApplyLogic.ComputeEquippedLoadoutFingerprint(em, entity)))
                         continue;
@@ -144,6 +146,16 @@ namespace TitanOrbit.ECS
 
             return em.HasComponent<GhostOwnerIsLocal>(entity)
                 && em.IsComponentEnabled<GhostOwnerIsLocal>(entity);
+        }
+
+        /// <summary>
+        /// MEGA chassis ignore store equipment. Polling the loadout fingerprint re-applied
+        /// frozen MEGA stats every tick and parked auto-aim on the owner client.
+        /// </summary>
+        static bool IsMegaShip(EntityManager em, Entity entity)
+        {
+            return em.HasComponent<MegaShipState>(entity)
+                && em.GetComponentData<MegaShipState>(entity).IsMega;
         }
     }
 }

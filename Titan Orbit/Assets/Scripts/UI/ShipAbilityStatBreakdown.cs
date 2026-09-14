@@ -1230,16 +1230,15 @@ namespace TitanOrbit.UI
 
             // [TITAN-ORBIT] Recompute grind / ram from rating × mass so B-key muls stay honest.
             float impactSpeed = live.CruiseMaxSpeed > 0.01f ? live.CruiseMaxSpeed : live.ChassisMaxSpeed;
-            float grindDps = ShipComponentRammingSuggestions.ComputeGrindDps(live.RamRating, live.TotalMass);
+            float grindDps = ShipComponentRammingSuggestions.ComputeGrindDps(
+                live.RamRating, live.TotalMass, live.ComponentSize);
             float ramAst = ShipComponentRammingSuggestions.ComputeImpactDamage(
-                live.RamRating, live.TotalMass, impactSpeed);
+                live.RamRating, live.TotalMass, impactSpeed, live.ComponentSize);
             float ramSelf = ShipComponentRammingSuggestions.ComputeImpactSelfDamage(
-                live.RamRating, live.TotalMass, impactSpeed);
+                live.RamRating, live.TotalMass, impactSpeed, live.ComponentSize);
             ShipStatTooltipChrome.AppendSectionBanner(sb, "GRIND / RAM", "FFCC66");
             sb.Append("Grind  ").Append(FResult(grindDps)).Append("/s");
-            sb.Append(" <color=#5B7A94>(RAM x mass / ")
-                .Append(FDetail(ShipComponentRammingSuggestions.MassReference))
-                .Append(")</color>").AppendLine();
+            sb.Append(" <color=#5B7A94>(RAM x mass / this hull)</color>").AppendLine();
             sb.Append("At full cruise  ").Append(FDetail(impactSpeed)).Append("/s -> ");
             sb.Append("ast ").Append(FResult(ramAst))
                 .Append("  hull ").Append(FResult(ramSelf)).AppendLine();

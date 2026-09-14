@@ -18,9 +18,10 @@ namespace TitanOrbit.Game
     /// <para>
     /// Ram / wall hits play on contact enter. Asteroid grind plays on the same 4 Hz
     /// metronome as server <c>ShipRammingCollisionDamageSystem</c> while the local hull
-    /// thrusts into the rock. Pitch uses the bullet fire-power piano
-    /// (<see cref="AudioManager.ResolveFirePowerPitch"/>) keyed off impact or grind-pulse
-    /// damage so a heavier RAM chip / slam sits lower, like a heavier bolt.
+    /// is in contact and thrusting or moving (nose alignment is not required).
+    /// Pitch uses the bullet fire-power piano compressed through
+    /// <see cref="ShipComponentRammingSuggestions.CollisionSfxPianoAmount"/> so L6 slams
+    /// stay audible instead of dropping to a sub-bass rumble.
     /// </para>
     /// Local predicted contacts own the local hull. Nearby remotes arrive via Sequence-0
     /// <see cref="NotifyRemoteRamPulse"/>. Presentation only — no RPC or ghost fields.
@@ -43,8 +44,8 @@ namespace TitanOrbit.Game
         /// <summary>Treat a HitRpc as local when the flash is this close (world XZ).</summary>
         const float LocalMergeRadius = 18f;
 
-        /// <summary>Grind chips sit under the ram slam.</summary>
-        const float GrindVolumeScale = 0.62f;
+        /// <summary>Grind vs ram at the same HP. Below 1 ducks the scrape under a slam.</summary>
+        const float GrindVolumeScale = 0.82f;
 
         struct ContactKey : System.IEquatable<ContactKey>
         {
@@ -311,8 +312,16 @@ namespace TitanOrbit.Game
             if (em.HasComponent<MegaShipState>(localShip) &&
                 em.GetComponentData<MegaShipState>(localShip).IsMega)
                 return;
-            if (!em.HasComponent<ShipInput>(localShip) ||
-                !em.GetComponentData<ShipInput>(localShip).Thrust)
+            bool thrust = em.HasComponent<ShipInput>(localShip) &&
+                          em.GetComponentData<ShipInput>(localShip).Thrust;
+            float speed = 0f;
+            if (em.HasComponent<ShipKinematics>(localShip))
+            {
+                float3 v = em.GetComponentData<ShipKinematics>(localShip).Velocity;
+                speed = math.length(new float2(v.x, v.z));
+            }
+
+            if (!ShipComponentRammingSuggestions.ShouldGrindFromMotion(thrust, speed))
                 return;
             if (audio == null)
                 return;
@@ -393,7 +402,7 @@ namespace TitanOrbit.Game
             _nextSfx[key] = now + math.max(0.05f, cooldown);
 
         /// <summary>
-        /// Same grind gate as the server: thrust held, not a MEGA plow, push into the rock.
+        /// Same grind gate as the server: in contact, not a MEGA plow, thrusting or moving.
         /// </summary>
         static bool TryIsLocalGrind(
             EntityManager em,
@@ -404,25 +413,17 @@ namespace TitanOrbit.Game
                 return false;
             if (em.HasComponent<MegaShipState>(ship) && em.GetComponentData<MegaShipState>(ship).IsMega)
                 return false;
-            if (!em.HasComponent<ShipInput>(ship) || !em.GetComponentData<ShipInput>(ship).Thrust)
-                return false;
-            if (!TryResolveRamPower(em, ship, out _, out _, out float taxedAccel))
-                return false;
-            if (!em.HasComponent<LocalTransform>(ship))
-                return false;
 
-            float3 forward = math.mul(
-                em.GetComponentData<LocalTransform>(ship).Rotation,
-                new float3(0f, 0f, 1f));
-            forward.y = 0f;
-            float3 driveForce = float3.zero;
-            if (math.lengthsq(forward) > 1e-6f)
-                driveForce = math.normalize(forward) * math.max(0f, taxedAccel);
+            bool thrust = em.HasComponent<ShipInput>(ship) &&
+                          em.GetComponentData<ShipInput>(ship).Thrust;
+            float speed = 0f;
+            if (em.HasComponent<ShipKinematics>(ship))
+            {
+                float3 v = em.GetComponentData<ShipKinematics>(ship).Velocity;
+                speed = math.length(new float2(v.x, v.z));
+            }
 
-            float pushN = ShipComponentRammingSuggestions.ComputeNormalPushNewtons(
-                new Vector3(pair.NormalShipFromOther.x, 0f, pair.NormalShipFromOther.z),
-                new Vector3(driveForce.x, 0f, driveForce.z));
-            return pushN >= ShipComponentRammingSuggestions.GrindMinPushNewtons;
+            return ShipComponentRammingSuggestions.ShouldGrindFromMotion(thrust, speed);
         }
 
         /// <summary>
@@ -437,7 +438,7 @@ namespace TitanOrbit.Game
             out float damage)
         {
             damage = 0f;
-            if (!TryResolveRamPower(em, ship, out float ramRating, out float totalMass, out _))
+            if (!TryResolveRamPower(em, ship, out float ramRating, out float totalMass, out _, out float hullMassRef))
                 return false;
             // MEGA skip-tax reports totalMass 0 — still need a piano key (use the reference hull).
             if (totalMass <= 0.01f)
@@ -446,12 +447,13 @@ namespace TitanOrbit.Game
             if (grindPulse)
             {
                 damage = ShipComponentRammingSuggestions.ComputeGrindDamagePerPulse(
-                    ramRating, totalMass, ShipComponentRammingSuggestions.GrindPulseIntervalSeconds);
+                    ramRating, totalMass, ShipComponentRammingSuggestions.GrindPulseIntervalSeconds,
+                    hullMassRef);
             }
             else
             {
                 damage = ShipComponentRammingSuggestions.ComputeImpactDamage(
-                    ramRating, totalMass, closingSpeed);
+                    ramRating, totalMass, closingSpeed, hullMassRef);
             }
 
             return damage > 0.0001f;
@@ -466,11 +468,13 @@ namespace TitanOrbit.Game
             Entity ship,
             out float ramRating,
             out float totalMass,
-            out float taxedAccel)
+            out float taxedAccel,
+            out float hullMassReference)
         {
             ramRating = 0f;
             totalMass = 0f;
             taxedAccel = 0f;
+            hullMassReference = 0f;
             if (!em.Exists(ship) ||
                 !em.HasComponent<ShipState>(ship) ||
                 !em.HasComponent<ShipMotorConfig>(ship))
@@ -483,6 +487,7 @@ namespace TitanOrbit.Game
             float componentSize = motor.HullMassReference > 0f
                 ? motor.HullMassReference
                 : math.max(ShipMassLogic.MinMass, baseMass * ShipMassLogic.HullMassScale);
+            hullMassReference = componentSize;
 
             ShipMobilityResolution.TaxedMotorStats taxed = ShipMobilityResolution.ResolveLiveMotorStats(
                 motor.MaxSpeed,
@@ -512,7 +517,8 @@ namespace TitanOrbit.Game
 
         static void PlayForKind(AudioManager audio, byte kind, float damage, bool grind)
         {
-            float pitch = audio.ResolveFirePowerPitch(damage);
+            float pitch = audio.ResolveFirePowerPitch(
+                ShipComponentRammingSuggestions.CollisionSfxPianoAmount(damage));
             float volume = VolumeForDamage(damage, grind);
 
             if (kind == ShipPhysicsContactKind.Ship)
@@ -530,11 +536,11 @@ namespace TitanOrbit.Game
             audio.PlayWorldCollisionSound(pitch, volume);
         }
 
-        /// <summary>Soft chips quieter; hard slams full. Grind is a bit under ram at the same HP.</summary>
+        /// <summary>Soft chips quieter than slams; grind sits under ram at the same HP.</summary>
         static float VolumeForDamage(float damage, bool grind)
         {
-            float t = math.saturate((damage - 0.5f) / 20f);
-            float volume = math.lerp(0.45f, 1f, t);
+            float t = math.saturate((damage - 0.35f) / 12f);
+            float volume = math.lerp(0.62f, 0.92f, t);
             if (grind)
                 volume *= GrindVolumeScale;
             return volume;

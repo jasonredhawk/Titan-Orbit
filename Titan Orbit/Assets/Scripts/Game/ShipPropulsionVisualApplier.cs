@@ -129,6 +129,7 @@ namespace TitanOrbit.Game
         int _appliedDebugCycleKey = int.MinValue;
         int _appliedStyleIndex = int.MinValue;
         string _appliedFlameColorName;
+        Gradient _appliedLifetime;
         float _prevYawDeg;
         bool _yawSampleInitialized;
         bool _hasLateralSpread;
@@ -145,6 +146,8 @@ namespace TitanOrbit.Game
             public Color[] originalStartColors;
             public Material[] tintMaterials;
             public TrailRenderer[] trails;
+            public bool[] authoredColEnabled;
+            public Gradient[] authoredColGradients;
             /// <summary>
             /// Rear nozzle in mount-local space (mesh AABB, not world AABB).
             /// World <c>Renderer.bounds</c> is axis-aligned, so ClosestPoint jumped every yaw.
@@ -332,9 +335,10 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Locked picker tint only. Team follow uses the authored colored JetFlame
-        /// prefab — writing Color-over-Lifetime after Customize Ship made the
-        /// 0.1s particles strobe (dark tail / fade-in) instead of a continuous stream.
+        /// Locked picker: keep the prefab Color-over-Lifetime (white + fade) so the
+        /// stream stays continuous, and paint each particle layer from the lifetime
+        /// wells via startColor. Default's mesh/glow have CoL off — age-based CoL
+        /// only hit the 0.1s blast and pulsed. Team follow leaves the prefab as-is.
         /// </summary>
         public void ApplyCurrentTint()
         {
@@ -345,12 +349,7 @@ namespace TitanOrbit.Game
                 return;
 
             _appliedFlameColorName = ResolveFlameColorName();
-
-            Color32 tint = LocalPlayerThrusterStyle.ResolveTint(style, ResolveShipTeam());
-            for (int i = 0; i < _thrusterJets.Count; i++)
-                TintJetParticles(_thrusterJets[i], tint);
-            for (int i = 0; i < _engineJets.Count; i++)
-                TintJetParticles(_engineJets[i], tint);
+            ApplyLockedJetAppearance();
         }
 
         /// <summary>Rebuilds jets on every live ship proxy (T-key debug cycle).</summary>
@@ -1198,7 +1197,7 @@ namespace TitanOrbit.Game
             go.SetActive(true);
             bind.hasMountLocalRear = TryComputeMountLocalRear(bind, ResolveShipAft(), out bind.mountLocalRear);
             if (!ResolveThrusterStyle().UseTeamColor)
-                TintJetParticles(bind, ResolveTintColor());
+                ApplyLockedJetAppearance(bind);
             instances.Add(go);
             binds.Add(bind);
             CollectParticleSystems(go, particles);
@@ -1281,17 +1280,51 @@ namespace TitanOrbit.Game
             return IsLocalOwnerProxy(em);
         }
 
-        Color32 ResolveTintColor()
-        {
-            return LocalPlayerThrusterStyle.ResolveTint(ResolveThrusterStyle(), ResolveShipTeam());
-        }
-
         static readonly int TintColorId = Shader.PropertyToID("_TintColor");
         static readonly int ColorId = Shader.PropertyToID("_Color");
         static readonly int BaseColorId = Shader.PropertyToID("_BaseColor");
         static readonly int EmissionColorId = Shader.PropertyToID("_EmissionColor");
 
-        static void TintJetParticles(JetBind jet, Color32 tint32)
+        void CaptureAppliedLifetime(Gradient source)
+        {
+            if (source == null)
+                return;
+            if (_appliedLifetime == null)
+                _appliedLifetime = new Gradient();
+            _appliedLifetime.mode = source.mode;
+            _appliedLifetime.SetKeys(source.colorKeys, source.alphaKeys);
+        }
+
+        void ApplyLockedJetAppearance()
+        {
+            ApplyLockedJetAppearance(null);
+        }
+
+        void ApplyLockedJetAppearance(JetBind only)
+        {
+            var style = ResolveThrusterStyle();
+            TeamId team = ResolveShipTeam();
+            Color32 tint = LocalPlayerThrusterStyle.ResolveTint(style, team);
+            CaptureAppliedLifetime(LocalPlayerThrusterStyle.ResolveLifetime(style, team));
+            if (only != null)
+            {
+                TintJetParticles(only, tint, _appliedLifetime);
+                return;
+            }
+
+            for (int i = 0; i < _thrusterJets.Count; i++)
+                TintJetParticles(_thrusterJets[i], tint, _appliedLifetime);
+            for (int i = 0; i < _engineJets.Count; i++)
+                TintJetParticles(_engineJets[i], tint, _appliedLifetime);
+        }
+
+        static readonly GradientAlphaKey[] OpaqueAlphaKeys =
+        {
+            new GradientAlphaKey(1f, 0f),
+            new GradientAlphaKey(1f, 1f),
+        };
+
+        void TintJetParticles(JetBind jet, Color32 tint32, Gradient lifetime)
         {
             if (jet == null || jet.instance == null)
                 return;
@@ -1314,27 +1347,67 @@ namespace TitanOrbit.Game
                 }
             }
 
+            CacheAuthoredColorOverLifetime(jet);
+
             if (jet.tintMaterials == null)
                 jet.tintMaterials = CollectInstanceMaterials(jet.instance);
             if (jet.trails == null)
                 jet.trails = jet.instance.GetComponentsInChildren<TrailRenderer>(true);
 
-            // Archanor flames bake most color in the texture. startColor-only hue
-            // shift left white cores and the trail graphic on the prefab color.
-            for (int i = 0; i < jet.particles.Length; i++)
+            int layerCount = jet.particles.Length;
+            for (int i = 0; i < layerCount; i++)
             {
                 ParticleSystem ps = jet.particles[i];
                 if (ps == null)
                     continue;
 
+                RestoreAuthoredColorOverLifetime(jet, i);
+
                 Color orig = jet.originalStartColors[i];
-                Color.RGBToHSV(orig, out _, out float s, out float v);
-                Color next = s < 0.2f && v > 0.65f
-                    ? Color.Lerp(Color.white, tint, 0.72f)
-                    : Color.Lerp(orig, tint, 0.92f);
+                Color next;
+                if (lifetime != null)
+                    next = SampleLayerColor(lifetime, i, layerCount);
+                else
+                {
+                    Color.RGBToHSV(orig, out _, out float s, out float v);
+                    next = s < 0.2f && v > 0.65f
+                        ? Color.Lerp(Color.white, tint, 0.72f)
+                        : Color.Lerp(orig, tint, 0.92f);
+                }
+
                 next.a = orig.a > 0.05f ? orig.a : 1f;
                 var main = ps.main;
                 main.startColor = new ParticleSystem.MinMaxGradient(next);
+
+                if (lifetime == null)
+                    continue;
+
+                var rend = ps.GetComponent<ParticleSystemRenderer>();
+                if (rend == null)
+                    continue;
+                Material[] mats = rend.materials;
+                for (int m = 0; m < mats.Length; m++)
+                {
+                    if (mats[m] != null)
+                        ApplyLayerMaterialTint(mats[m], next);
+                }
+            }
+
+            if (lifetime != null)
+            {
+                Color trailStart = SampleLayerColor(lifetime, 0, Mathf.Max(1, layerCount));
+                Color trailEnd = SampleLayerColor(lifetime, Mathf.Max(0, layerCount - 1), Mathf.Max(1, layerCount));
+                trailEnd.a = 0.12f;
+                for (int i = 0; i < jet.trails.Length; i++)
+                {
+                    TrailRenderer trail = jet.trails[i];
+                    if (trail == null)
+                        continue;
+                    trail.startColor = trailStart;
+                    trail.endColor = trailEnd;
+                }
+
+                return;
             }
 
             for (int i = 0; i < jet.tintMaterials.Length; i++)
@@ -1345,15 +1418,115 @@ namespace TitanOrbit.Game
                 ApplyMaterialTint(mat, tint);
             }
 
-            Color trailEnd = tint;
-            trailEnd.a = 0.12f;
+            Color fallbackEnd = tint;
+            fallbackEnd.a = 0.12f;
             for (int i = 0; i < jet.trails.Length; i++)
             {
                 TrailRenderer trail = jet.trails[i];
                 if (trail == null)
                     continue;
                 trail.startColor = tint;
-                trail.endColor = trailEnd;
+                trail.endColor = fallbackEnd;
+            }
+        }
+
+        static Color SampleLayerColor(Gradient lifetime, int layerIndex, int layerCount)
+        {
+            float t = layerCount <= 1
+                ? 0.35f
+                : (layerIndex + 0.5f) / layerCount;
+            Color c = lifetime.Evaluate(t);
+            Color.RGBToHSV(c, out float h, out float s, out float v);
+            if (v < 0.28f)
+                v = 0.28f;
+            c = Color.HSVToRGB(h, s, v);
+            c.a = 1f;
+            return c;
+        }
+
+        static void CacheAuthoredColorOverLifetime(JetBind jet)
+        {
+            if (jet.particles == null)
+                return;
+            if (jet.authoredColEnabled != null &&
+                jet.authoredColEnabled.Length == jet.particles.Length)
+                return;
+
+            int n = jet.particles.Length;
+            jet.authoredColEnabled = new bool[n];
+            jet.authoredColGradients = new Gradient[n];
+            for (int i = 0; i < n; i++)
+            {
+                ParticleSystem ps = jet.particles[i];
+                if (ps == null)
+                    continue;
+
+                var col = ps.colorOverLifetime;
+                jet.authoredColEnabled[i] = col.enabled;
+                if (col.enabled)
+                    jet.authoredColGradients[i] = CopyMinMaxGradient(col.color);
+            }
+        }
+
+        static void RestoreAuthoredColorOverLifetime(JetBind jet, int index)
+        {
+            if (jet.particles == null || index < 0 || index >= jet.particles.Length)
+                return;
+
+            ParticleSystem ps = jet.particles[index];
+            if (ps == null || jet.authoredColEnabled == null || index >= jet.authoredColEnabled.Length)
+                return;
+
+            var col = ps.colorOverLifetime;
+            col.enabled = jet.authoredColEnabled[index];
+            if (!col.enabled ||
+                jet.authoredColGradients == null ||
+                jet.authoredColGradients[index] == null)
+                return;
+
+            col.color = new ParticleSystem.MinMaxGradient(jet.authoredColGradients[index]);
+        }
+
+        static Gradient CopyMinMaxGradient(ParticleSystem.MinMaxGradient mm)
+        {
+            Gradient src = null;
+            switch (mm.mode)
+            {
+                case ParticleSystemGradientMode.TwoGradients:
+                    src = mm.gradientMax;
+                    break;
+                case ParticleSystemGradientMode.Gradient:
+                case ParticleSystemGradientMode.RandomColor:
+                    src = mm.gradient;
+                    break;
+            }
+
+            var copy = new Gradient();
+            if (src != null)
+            {
+                copy.mode = src.mode;
+                copy.SetKeys(src.colorKeys, src.alphaKeys);
+                return copy;
+            }
+
+            Color solid = mm.color;
+            copy.SetKeys(
+                new[] { new GradientColorKey(solid, 0f), new GradientColorKey(solid, 1f) },
+                OpaqueAlphaKeys);
+            return copy;
+        }
+
+        static void ApplyLayerMaterialTint(Material mat, Color layer)
+        {
+            if (mat.HasProperty(ColorId))
+                mat.SetColor(ColorId, layer);
+            if (mat.HasProperty(BaseColorId))
+                mat.SetColor(BaseColorId, layer);
+            if (mat.HasProperty(TintColorId))
+            {
+                Color particleTint = layer;
+                particleTint.a = 0.5f;
+                mat.SetColor(TintColorId, particleTint);
             }
         }
 

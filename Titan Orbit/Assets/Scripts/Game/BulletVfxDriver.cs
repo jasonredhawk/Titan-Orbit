@@ -1012,11 +1012,21 @@ namespace TitanOrbit.Game
                 return false;
 
             var adopted = _tracers[bestIndex];
-            // --- Bind authority metadata — keep presentation flight ---
-            // [TITAN-ORBIT] Do not overwrite Velocity with lagged server aim. Server mounts often
-            // bake LocalRotation ≈ identity (hull-forward) while the live weapon component faces
-            // a different way — adopting that mid-flight made sequential shots look mis-aimed.
-            // Position was already correct from the live muzzle; keep that aim too.
+            // --- Bind authority metadata — keep presentation flight for regular ships ---
+            // [TITAN-ORBIT] Do not overwrite Velocity with lagged server aim on regular hulls.
+            // Server mounts often bake LocalRotation ≈ identity (hull-forward) while the live
+            // weapon component faces a different way — adopting that mid-flight made sequential
+            // shots look mis-aimed. MEGA auto-aim is the opposite: anticipation is the one that
+            // parks hull-forward while the server ray already hit the defense turret.
+            if (ShouldPreferServerMegaAim(in req, adopted.Velocity))
+            {
+                adopted.Velocity = req.Velocity;
+                adopted.LogicalPos = req.SpawnPosition;
+                adopted.SpawnPos = req.SpawnPosition;
+                adopted.PrevLogicalPos = req.SpawnPosition;
+                adopted.PrevVelocity = req.Velocity;
+                adopted.Traveled = 0f;
+            }
             adopted.Sequence = req.Sequence;
             adopted.IsAnticipation = false;
             adopted.OwnerNetworkId = req.OwnerNetworkId > 0 ? req.OwnerNetworkId : adopted.OwnerNetworkId;
@@ -1027,13 +1037,43 @@ namespace TitanOrbit.Game
             // [TITAN-ORBIT] Lifetime <= 0 = distance-only (PD turrets); do not clamp to 0.05s.
             adopted.RemainingLifetime = ResolveTracerLifetime(req.Lifetime);
             adopted.MaxDistance = math.max(0.5f, req.MaxDistance);
-            // Do not reset Traveled / LogicalPos — stretch/trail continue from presentation muzzle.
+            // Regular ships keep Traveled / LogicalPos (presentation muzzle). MEGA retarget
+            // above already snapped onto the server ray.
 
             _tracers[bestIndex] = adopted;
             _indexBySequence[req.Sequence] = bestIndex;
             // Anticipation slot consumed — frees a Cap for ClientLocalBulletVfxBridge.
             BulletVfxBridge.NotifyAnticipationConsumed();
             return true;
+        }
+
+        /// <summary>
+        /// MEGA server ray disagrees with hull-forward anticipation — take the authority heading.
+        /// Regular ships keep presentation aim (live GO vs bake LocalRotation).
+        /// </summary>
+        static bool ShouldPreferServerMegaAim(in BulletVfxBridge.SpawnRequest req, float3 anticipationVel)
+        {
+            var world = EcsGameBridge.ClientWorld;
+            if (world == null || !world.IsCreated)
+                return false;
+            if (!BulletMuzzlePresentation.TryResolveShooterHull(
+                    world.EntityManager, req.OwnerNetworkId, req.MountIndex,
+                    out Entity hull, out _))
+                return false;
+            if (!world.EntityManager.HasComponent<MegaShipState>(hull)
+                || !world.EntityManager.GetComponentData<MegaShipState>(hull).IsMega)
+                return false;
+
+            float3 a = anticipationVel;
+            float3 b = req.Velocity;
+            a.y = 0f;
+            b.y = 0f;
+            float la = math.length(a);
+            float lb = math.length(b);
+            if (la < 0.1f || lb < 0.1f)
+                return lb > la;
+            // ~8° — parked hull-forward vs auto-aim at a pad is typically 20°+.
+            return math.dot(a / la, b / lb) < 0.99f;
         }
 
         /// <summary>
