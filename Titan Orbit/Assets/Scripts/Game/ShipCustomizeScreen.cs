@@ -633,11 +633,7 @@ namespace TitanOrbit.Game
             PaintTeamStrip();
             RefreshFromStore();
             RefreshThrusterSection();
-            var previewJets = _previewHull != null
-                ? _previewHull.GetComponent<ShipPropulsionVisualApplier>()
-                : null;
-            if (previewJets != null)
-                previewJets.SetPreviewTeam(_team);
+            RefreshPreviewThrusters(rebuild: false);
         }
 
         void PaintTeamStrip()

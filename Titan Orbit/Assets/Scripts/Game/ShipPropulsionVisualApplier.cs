@@ -247,11 +247,14 @@ namespace TitanOrbit.Game
             _previewTurn = Mathf.Clamp(turn, -1f, 1f);
         }
 
-        /// <summary>A–E preview strip: apply that team's Color-over-Lifetime preset.</summary>
+        /// <summary>
+        /// A–E preview strip. Follow-team swaps the authored colored JetFlame
+        /// prefab; locked color only retints the current instances.
+        /// </summary>
         public void SetPreviewTeam(TeamId team)
         {
             _previewTeam = team == TeamId.None ? TeamId.TeamA : team;
-            ApplyCurrentTint();
+            RefreshFromCurrentStyle();
         }
 
         /// <summary>
@@ -336,9 +339,12 @@ namespace TitanOrbit.Game
         public void ApplyCurrentTint()
         {
             var style = ResolveThrusterStyle();
-            _appliedFlameColorName = ResolveFlameColorName();
+            // Follow-team color lives on the prefab. Do not stamp the name here —
+            // that would hide a needed RebuildVfx after the A–E preview strip.
             if (style.UseTeamColor)
                 return;
+
+            _appliedFlameColorName = ResolveFlameColorName();
 
             Color32 tint = LocalPlayerThrusterStyle.ResolveTint(style, ResolveShipTeam());
             for (int i = 0; i < _thrusterJets.Count; i++)
