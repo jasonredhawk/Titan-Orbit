@@ -115,7 +115,7 @@ namespace TitanOrbit.NetCode
             TitanOrbitEgressMeter.ClientSendRpcBytes = sendRpc;
             TitanOrbitEgressMeter.ClientSendRpcPackets = sendRpcPkts;
             TitanOrbitEgressMeter.RelayActive = TitanOrbitRelayState.HasClientRelay;
-            TitanOrbitEgressMeter.UtpHeaderBytes = TryReadUtpHeaderBytes(ref state);
+            TitanOrbitEgressMeter.UtpHeaderBytes = ReadUtpHeaderBytes(ref state);
             TitanOrbitEgressMeter.HasSample = true;
 
 #if UNITY_EDITOR || NETCODE_DEBUG
@@ -143,7 +143,7 @@ namespace TitanOrbit.NetCode
         /// Reads UTP unreliable-pipeline header size so the HUD can estimate UDP+UTP wire bytes.
         /// Returns 20 if the driver is not ready (join).
         /// </summary>
-        static int TryReadUtpHeaderBytes(ref SystemState state)
+        int ReadUtpHeaderBytes(ref SystemState state)
         {
             if (!SystemAPI.TryGetSingleton<NetworkStreamDriver>(out var driver))
                 return 20;
@@ -186,7 +186,7 @@ namespace TitanOrbit.NetCode
         /// Buckets this client's last snapshot into ship / planet / gem / other using GhostMetrics
         /// (bits) plus GhostNames. No managed string alloc — FixedString IndexOf only.
         /// </summary>
-        static void CopyGhostTypeBreakdown(ref SystemState state)
+        void CopyGhostTypeBreakdown(ref SystemState state)
         {
             TitanOrbitEgressMeter.GhostShipBits = 0;
             TitanOrbitEgressMeter.GhostShipCount = 0;
@@ -209,7 +209,7 @@ namespace TitanOrbit.NetCode
                 if (haveNames && i < names.Length)
                     typeName = names[i].Name;
 
-                ClassifyGhostType(in typeName, metrics[i].SizeInBits, metrics[i].InstanceCount);
+                ClassifyGhostType(typeName, metrics[i].SizeInBits, metrics[i].InstanceCount);
             }
         }
 
@@ -224,19 +224,27 @@ namespace TitanOrbit.NetCode
         /// Maps a ghost prefab name onto ship / planet / gem / other buckets.
         /// Names come from bake (StarshipGhost, PlanetGhost, GemGhost).
         /// </summary>
-        static void ClassifyGhostType(in FixedString64Bytes typeName, uint sizeInBits, uint instanceCount)
+        static void ClassifyGhostType(FixedString64Bytes typeName, uint sizeInBits, uint instanceCount)
         {
-            if (typeName.IndexOf(NeedleShip) >= 0 || typeName.IndexOf(NeedleShipLower) >= 0)
+            // IndexOf takes a ref needle; copy the statics so the receiver is not `in`/readonly.
+            FixedString32Bytes ship = NeedleShip;
+            FixedString32Bytes shipLower = NeedleShipLower;
+            FixedString32Bytes planet = NeedlePlanet;
+            FixedString32Bytes planetLower = NeedlePlanetLower;
+            FixedString32Bytes gem = NeedleGem;
+            FixedString32Bytes gemLower = NeedleGemLower;
+
+            if (typeName.IndexOf(ship) >= 0 || typeName.IndexOf(shipLower) >= 0)
             {
                 TitanOrbitEgressMeter.GhostShipBits += sizeInBits;
                 TitanOrbitEgressMeter.GhostShipCount += instanceCount;
             }
-            else if (typeName.IndexOf(NeedlePlanet) >= 0 || typeName.IndexOf(NeedlePlanetLower) >= 0)
+            else if (typeName.IndexOf(planet) >= 0 || typeName.IndexOf(planetLower) >= 0)
             {
                 TitanOrbitEgressMeter.GhostPlanetBits += sizeInBits;
                 TitanOrbitEgressMeter.GhostPlanetCount += instanceCount;
             }
-            else if (typeName.IndexOf(NeedleGem) >= 0 || typeName.IndexOf(NeedleGemLower) >= 0)
+            else if (typeName.IndexOf(gem) >= 0 || typeName.IndexOf(gemLower) >= 0)
             {
                 TitanOrbitEgressMeter.GhostGemBits += sizeInBits;
                 TitanOrbitEgressMeter.GhostGemCount += instanceCount;
