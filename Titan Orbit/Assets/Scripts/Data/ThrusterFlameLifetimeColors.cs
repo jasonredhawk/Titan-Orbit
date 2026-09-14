@@ -5,8 +5,8 @@ namespace TitanOrbit.Data
 {
     /// <summary>
     /// Color-over-lifetime presets for thruster ParticleSystems.
-    /// Team follow uses a per-team envelope (hot core → team Color1 → fade).
-    /// Locked picks rebuild the same envelope from the picker color, including alpha.
+    /// Team follow uses a per-team hue ramp (hot core → team Color1 → dark tail).
+    /// Locked picks rebuild the same hues from the picker. Alpha is hold-then-fade.
     /// Presentation only — does not change sim or ghosts.
     /// </summary>
     public static class ThrusterFlameLifetimeColors
@@ -53,17 +53,16 @@ namespace TitanOrbit.Data
                 tail = Color.HSVToRGB(hue, Mathf.Min(1f, sat + 0.15f), val * 0.18f);
             }
 
-            WriteTeamEnvelope(teamHint, out float a0, out float a2, out float tBright, out float tMid);
+            WriteColorStopTimes(teamHint, out float tBright, out float tMid);
 
             ColorKeys[0] = new GradientColorKey(hot, 0f);
             ColorKeys[1] = new GradientColorKey(heat, tBright);
             ColorKeys[2] = new GradientColorKey(mid, tMid);
             ColorKeys[3] = new GradientColorKey(tail, 1f);
 
-            AlphaKeys[0] = new GradientAlphaKey(a0, 0f);
-            AlphaKeys[1] = new GradientAlphaKey(1f, tBright);
-            AlphaKeys[2] = new GradientAlphaKey(a2, Mathf.Clamp01(tMid + 0.16f));
-            AlphaKeys[3] = new GradientAlphaKey(0f, 1f);
+            // Archanor jets live ~0.1s. A fade-in/fade-out envelope strobes ~10 Hz.
+            // Hold alpha at 1, then drop only at the tail — same shape as the prefab.
+            WriteHoldThenFadeAlpha();
 
             Shared.mode = GradientMode.Blend;
             Shared.SetKeys(ColorKeys, AlphaKeys);
@@ -73,15 +72,12 @@ namespace TitanOrbit.Data
         /// <summary>Player-authored RGB stops with the same alpha envelope as team presets.</summary>
         public static Gradient FromStops(Color stop0, Color stop1, Color stop2, Color stop3)
         {
-            WriteTeamEnvelope(TeamId.None, out float a0, out float a2, out float tBright, out float tMid);
+            WriteColorStopTimes(TeamId.None, out float tBright, out float tMid);
             ColorKeys[0] = new GradientColorKey(Opaque(stop0), 0f);
             ColorKeys[1] = new GradientColorKey(Opaque(stop1), tBright);
             ColorKeys[2] = new GradientColorKey(Opaque(stop2), tMid);
             ColorKeys[3] = new GradientColorKey(Opaque(stop3), 1f);
-            AlphaKeys[0] = new GradientAlphaKey(a0, 0f);
-            AlphaKeys[1] = new GradientAlphaKey(1f, tBright);
-            AlphaKeys[2] = new GradientAlphaKey(a2, Mathf.Clamp01(tMid + 0.16f));
-            AlphaKeys[3] = new GradientAlphaKey(0f, 1f);
+            WriteHoldThenFadeAlpha();
             Shared.mode = GradientMode.Blend;
             Shared.SetKeys(ColorKeys, AlphaKeys);
             return Shared;
@@ -121,55 +117,50 @@ namespace TitanOrbit.Data
         }
 
         /// <summary>
-        /// Per-team fade shape. Red holds the body longer; blue / purple fade sooner
-        /// so cool flames do not read as a solid slab.
+        /// Color-stop times only. Cool teams shift the body earlier; alpha stays
+        /// a hold-then-fade so short-lived JetFlame particles do not strobe.
         /// </summary>
-        static void WriteTeamEnvelope(
-            TeamId team,
-            out float spawnAlpha,
-            out float bodyAlpha,
-            out float brightTime,
-            out float midTime)
+        static void WriteColorStopTimes(TeamId team, out float brightTime, out float midTime)
         {
             switch (team)
             {
                 case TeamId.TeamA:
-                    spawnAlpha = 0.28f;
-                    bodyAlpha = 0.78f;
                     brightTime = 0.16f;
                     midTime = 0.46f;
                     return;
                 case TeamId.TeamB:
-                    spawnAlpha = 0.16f;
-                    bodyAlpha = 0.62f;
                     brightTime = 0.14f;
                     midTime = 0.42f;
                     return;
                 case TeamId.TeamC:
-                    spawnAlpha = 0.20f;
-                    bodyAlpha = 0.70f;
                     brightTime = 0.15f;
                     midTime = 0.44f;
                     return;
                 case TeamId.TeamD:
-                    spawnAlpha = 0.24f;
-                    bodyAlpha = 0.74f;
                     brightTime = 0.17f;
                     midTime = 0.48f;
                     return;
                 case TeamId.TeamE:
-                    spawnAlpha = 0.18f;
-                    bodyAlpha = 0.64f;
                     brightTime = 0.14f;
                     midTime = 0.40f;
                     return;
                 default:
-                    spawnAlpha = 0.20f;
-                    bodyAlpha = 0.70f;
                     brightTime = 0.16f;
                     midTime = 0.45f;
                     return;
             }
+        }
+
+        /// <summary>
+        /// Authored ModularJetFlame2 holds alpha until ~0.71 then fades. Reuse that
+        /// so team / picker hues do not introduce a spawn-dim → vanish cycle.
+        /// </summary>
+        static void WriteHoldThenFadeAlpha()
+        {
+            AlphaKeys[0] = new GradientAlphaKey(1f, 0f);
+            AlphaKeys[1] = new GradientAlphaKey(1f, 0.22f);
+            AlphaKeys[2] = new GradientAlphaKey(1f, 0.71f);
+            AlphaKeys[3] = new GradientAlphaKey(0f, 1f);
         }
     }
 }

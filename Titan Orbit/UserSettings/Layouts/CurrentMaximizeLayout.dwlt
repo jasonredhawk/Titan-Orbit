@@ -23,7 +23,7 @@ MonoBehaviour:
   m_MinSize: {x: 300, y: 112}
   m_MaxSize: {x: 24288, y: 16192}
   vertical: 1
-  controlID: 65391
+  controlID: 74699
   draggingID: 0
 --- !u!114 &2
 MonoBehaviour:
@@ -154,7 +154,7 @@ MonoBehaviour:
   m_MinSize: {x: 300, y: 112}
   m_MaxSize: {x: 24288, y: 16192}
   vertical: 0
-  controlID: 65392
+  controlID: 74700
   draggingID: 0
 --- !u!114 &4
 MonoBehaviour:
@@ -180,7 +180,7 @@ MonoBehaviour:
   m_MinSize: {x: 200, y: 112}
   m_MaxSize: {x: 16192, y: 16192}
   vertical: 1
-  controlID: 65263
+  controlID: 74658
   draggingID: 0
 --- !u!114 &5
 MonoBehaviour:
@@ -206,7 +206,7 @@ MonoBehaviour:
   m_MinSize: {x: 200, y: 56}
   m_MaxSize: {x: 16192, y: 8096}
   vertical: 0
-  controlID: 65264
+  controlID: 74659
   draggingID: 0
 --- !u!114 &6
 MonoBehaviour:
@@ -227,8 +227,8 @@ MonoBehaviour:
     y: 0
     width: 408
     height: 960
-  m_MinSize: {x: 200, y: 200}
-  m_MaxSize: {x: 4000, y: 4000}
+  m_MinSize: {x: 201, y: 226}
+  m_MaxSize: {x: 4001, y: 4026}
   m_ActualView: {fileID: 7}
   m_Panes:
   - {fileID: 7}
@@ -1170,7 +1170,7 @@ MonoBehaviour:
     m_SkipHidden: 0
     m_SearchArea: 0
     m_Folders:
-    - Assets/Archanor/Sci-Fi Arsenal/Sci-Fi Effects/Prefabs/Interactive/JetFlame/V2
+    - Assets/Archanor/Sci-Fi Arsenal/Sci-Fi Effects/Prefabs/Interactive/JetFlame/V3
     m_Globs: []
     m_ProductIds: 
     m_AnyWithAssetOrigin: 0
@@ -1180,18 +1180,18 @@ MonoBehaviour:
   m_ViewMode: 1
   m_StartGridSize: 16
   m_LastFolders:
-  - Assets/Archanor/Sci-Fi Arsenal/Sci-Fi Effects/Prefabs/Interactive/JetFlame/V2
+  - Assets/Archanor/Sci-Fi Arsenal/Sci-Fi Effects/Prefabs/Interactive/JetFlame/V3
   m_LastFoldersGridSize: 16
   m_LastProjectPath: C:\Users\jason\Documents\repo\Titan-Orbit\Titan Orbit
   m_LockTracker:
     m_IsLocked: 0
   m_LastLocalAssetsSearchArea: 0
   m_FolderTreeState:
-    scrollPos: {x: 0, y: 471}
+    scrollPos: {x: 0, y: 575}
     m_SelectedIDs:
-    - m_Data: 325810
+    - m_Data: 325812
     m_LastClickedID:
-      m_Data: 325810
+      m_Data: 325812
     m_ExpandedIDs:
     - m_Data: 0
     - m_Data: 82342
@@ -1238,17 +1238,9 @@ MonoBehaviour:
     - m_Data: 100704
     - m_Data: 100706
     - m_Data: 325876
-    - m_Data: 325878
-    - m_Data: 325880
-    - m_Data: 325882
-    - m_Data: 325890
     - m_Data: 325980
     - m_Data: 326014
-    - m_Data: 326026
-    - m_Data: 400426
     - m_Data: 400428
-    - m_Data: 400478
-    - m_Data: 400526
     - m_Data: 12036046
     - m_Data: 1000000000
     m_RenameOverlay:
@@ -1328,16 +1320,9 @@ MonoBehaviour:
     - m_Data: 100704
     - m_Data: 100706
     - m_Data: 325876
-    - m_Data: 325878
-    - m_Data: 325880
-    - m_Data: 325882
-    - m_Data: 325890
     - m_Data: 325980
     - m_Data: 326014
-    - m_Data: 400426
     - m_Data: 400428
-    - m_Data: 400478
-    - m_Data: 400526
     - m_Data: 12036046
     - m_Data: 1000000000
     m_RenameOverlay:
@@ -1370,7 +1355,7 @@ MonoBehaviour:
     m_SelectedInstanceIDs: []
     m_LastClickedEntityId:
       m_Data: 0
-    m_HadKeyboardFocusLastEvent: 1
+    m_HadKeyboardFocusLastEvent: 0
     m_ExpandedInstanceIDs:
     - m_Data: 54664
     - m_Data: 275120
@@ -1407,8 +1392,8 @@ MonoBehaviour:
     - m_Data: 4101038
     m_RenameOverlay:
       m_UserAcceptedRename: 0
-      m_Name: PurpleJetFlame2
-      m_OriginalName: PurpleJetFlame2
+      m_Name: 
+      m_OriginalName: 
       m_EditFieldRect:
         serializedVersion: 2
         x: 0
@@ -1416,10 +1401,10 @@ MonoBehaviour:
         width: 0
         height: 0
       m_UserData:
-        m_Data: 205564
+        m_Data: 0
       m_IsWaitingForDelay: 0
       m_IsRenaming: 0
-      m_OriginalEventType: 0
+      m_OriginalEventType: 11
       m_IsRenamingFilename: 1
       m_TrimLeadingAndTrailingWhitespace: 0
       m_ClientGUIView: {fileID: 13}
@@ -2555,7 +2540,7 @@ MonoBehaviour:
   m_MinSize: {x: 100, y: 112}
   m_MaxSize: {x: 8096, y: 16192}
   vertical: 1
-  controlID: 65393
+  controlID: 74701
   draggingID: 0
 --- !u!114 &18
 MonoBehaviour:
@@ -2576,8 +2561,8 @@ MonoBehaviour:
     y: 0
     width: 890
     height: 977
-  m_MinSize: {x: 275, y: 50}
-  m_MaxSize: {x: 4000, y: 4000}
+  m_MinSize: {x: 276, y: 76}
+  m_MaxSize: {x: 4001, y: 4026}
   m_ActualView: {fileID: 19}
   m_Panes:
   - {fileID: 19}
@@ -2814,8 +2799,8 @@ MonoBehaviour:
     y: 977
     width: 890
     height: 316
-  m_MinSize: {x: 51, y: 76}
-  m_MaxSize: {x: 4001, y: 4026}
+  m_MinSize: {x: 50, y: 50}
+  m_MaxSize: {x: 4000, y: 4000}
   m_ActualView: {fileID: 25}
   m_Panes:
   - {fileID: 25}

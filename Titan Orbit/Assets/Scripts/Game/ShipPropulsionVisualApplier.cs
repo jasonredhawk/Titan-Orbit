@@ -72,15 +72,6 @@ namespace TitanOrbit.Game
         const float MinIdleBlend = 0.05f;
         /// <summary>Caps jet size so a bad hierarchy cannot balloon flames.</summary>
         const float MaxVfxSizeMul = 6f;
-        /// <summary>XY scale for Default / Heavy / Soft. Ribbon applies an extra mul on top.</summary>
-        const float JetThicknessMul = 0.55f;
-        /// <summary>Particle start size for Default / Heavy / Soft.</summary>
-        const float JetParticleSizeMul = 0.62f;
-        /// <summary>TrailRenderer / particle-ribbon width for Default / Heavy / Soft.</summary>
-        const float JetTrailWidthMul = 0.42f;
-        const float PreviewLenShort = 0.28f;
-        const float PreviewLenMedium = 0.58f;
-        const float PreviewLenLong = 1f;
         /// <summary>Studio jets sit a bit small vs the match follow-cam; +10% on the hull.</summary>
         const float PreviewJetScaleMul = 1.1f;
 
@@ -136,6 +127,7 @@ namespace TitanOrbit.Game
         bool _lastEngineMoving;
         bool _lastThrusterActive;
         int _appliedDebugCycleKey = int.MinValue;
+        int _appliedStyleIndex = int.MinValue;
         string _appliedFlameColorName;
         float _prevYawDeg;
         bool _yawSampleInitialized;
@@ -161,10 +153,9 @@ namespace TitanOrbit.Game
             public bool hasMountLocalRear;
             /// <summary>−1 port … 0 center … +1 starboard, from ship-local X.</summary>
             public float lateral;
-            /// <summary>Preview only: −1 port, 0 center, +1 starboard (tertiles).</summary>
-            public int previewSlot;
             public float blend;
             public float appliedBlend;
+            public float appliedSizeMul;
         }
 
         /// <summary>ServerWorld ship entity for Local Host remote-input lookup (same GhostOwner).</summary>
@@ -239,8 +230,8 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Studio hull with no ghost. LateUpdate pulses jets so Customize Ship
-        /// can show the live flame without an ECS ship.
+        /// Studio hull with no ghost. LateUpdate holds a steady flame so Customize
+        /// Ship can show the live jet without an ECS ship.
         /// </summary>
         public void BindPreview(Settings settings, ShipFamilyDefinition family, TeamId team)
         {
@@ -316,17 +307,44 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Writes Color over Lifetime (RGB + alpha) on live jets. No Instantiate —
-        /// HSV drag only updates the gradient.
+        /// Paint / lifetime stop change: retint. Type change: rebuild instances.
+        /// Visualizer used to RebuildJets on every accent CacheKey, which destroyed
+        /// the looping systems and looked like the flame was switching off.
+        /// </summary>
+        public void RefreshFromCurrentStyle()
+        {
+            int style = LocalPlayerThrusterStyle.ResolveStyleIndex(ResolveThrusterStyle());
+            string color = ResolveFlameColorName();
+            int debugKey = CurrentDebugCycleKey();
+            if (style != _appliedStyleIndex ||
+                !string.Equals(color, _appliedFlameColorName, StringComparison.Ordinal) ||
+                debugKey != _appliedDebugCycleKey)
+            {
+                _appliedDebugCycleKey = debugKey;
+                RebuildVfx();
+                return;
+            }
+
+            ApplyCurrentTint();
+        }
+
+        /// <summary>
+        /// Locked picker tint only. Team follow uses the authored colored JetFlame
+        /// prefab — writing Color-over-Lifetime after Customize Ship made the
+        /// 0.1s particles strobe (dark tail / fade-in) instead of a continuous stream.
         /// </summary>
         public void ApplyCurrentTint()
         {
-            Gradient gradient = ResolveLifetimeGradient();
+            var style = ResolveThrusterStyle();
             _appliedFlameColorName = ResolveFlameColorName();
+            if (style.UseTeamColor)
+                return;
+
+            Color32 tint = LocalPlayerThrusterStyle.ResolveTint(style, ResolveShipTeam());
             for (int i = 0; i < _thrusterJets.Count; i++)
-                ApplyLifetimeColor(_thrusterJets[i], gradient);
+                TintJetParticles(_thrusterJets[i], tint);
             for (int i = 0; i < _engineJets.Count; i++)
-                ApplyLifetimeColor(_engineJets[i], gradient);
+                TintJetParticles(_engineJets[i], tint);
         }
 
         /// <summary>Rebuilds jets on every live ship proxy (T-key debug cycle).</summary>
@@ -638,55 +656,18 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Customize Ship: constant full thrust. Every nozzle gets a port / center /
-        /// starboard length slot (short / medium / long) from the held turn sign.
+        /// Customize Ship: same thrust + turn length remap as the match
+        /// (<see cref="UpdateJetBlends"/>).
         /// </summary>
         void TickPreviewJets()
         {
-            ApplyPreviewLengthSlots(_previewTurn);
+            UpdateJetBlends(_previewForward, _previewTurn);
             UpdateJetPoses();
             _lastThrusterActive = true;
             _lastEngineMoving = true;
             _forceRestartPending = false;
-            if (!_previewJetsPrimed)
-            {
-                KeepPreviewJetsEmitting();
-                _previewJetsPrimed = true;
-            }
-        }
-
-        void ApplyPreviewLengthSlots(float turn)
-        {
-            float turnAbs = Mathf.Clamp01(Mathf.Abs(turn));
-            float sign = turn >= 0f ? 1f : -1f;
-            float speed = Mathf.Max(0.01f, _settings.thrusterVfxTransitionSpeed);
-            if (speed < 0.02f)
-                speed = 4f;
-            float step = speed * Time.unscaledDeltaTime;
-            ApplyPreviewLengthSlotsTo(_thrusterJets, sign, turnAbs, step);
-            ApplyPreviewLengthSlotsTo(_engineJets, sign, turnAbs, step);
-        }
-
-        static void ApplyPreviewLengthSlotsTo(List<JetBind> jets, float sign, float turnAbs, float step)
-        {
-            for (int i = 0; i < jets.Count; i++)
-            {
-                JetBind jet = jets[i];
-                if (jet == null)
-                    continue;
-
-                int slot = jet.previewSlot;
-                if (sign < 0f)
-                    slot = -slot;
-
-                float remapped = slot < 0
-                    ? PreviewLenLong
-                    : slot > 0
-                        ? PreviewLenShort
-                        : PreviewLenMedium;
-                float target = Mathf.Lerp(PreviewLenLong, remapped, turnAbs);
-                jet.blend = Mathf.MoveTowards(jet.blend, target, step);
-            }
+            KeepPreviewJetsEmitting();
+            _previewJetsPrimed = true;
         }
 
         /// <summary>Play any system that died. Does not Clear or deactivate instances.</summary>
@@ -775,6 +756,7 @@ namespace TitanOrbit.Game
         /// <summary>
         /// Signed turn in −1..1 (positive = yaw right). Prefers aim error so asteroid
         /// scrape yaw does not flicker the jets; falls back to smoothed heading rate.
+        /// Same helper the Customize Ship preview uses via <see cref="SetPreviewMotion"/>.
         /// </summary>
         float ResolveTurnAmount(EntityManager em)
         {
@@ -1048,8 +1030,8 @@ namespace TitanOrbit.Game
 
         /// <summary>
         /// Idle is always on. Thrust raises every jet toward full. Turn remaps
-        /// port→starboard to full / medium / idle (right turn: left full, center medium, right idle).
-        /// Engine_* rear nozzles are included so a two-engine hull still shows S/M/L.
+        /// port→starboard to full / medium / idle (right turn: left full, center
+        /// medium, right idle). Match and Customize Ship share this remap.
         /// </summary>
         bool UpdateJetBlends(float forward, float turn)
         {
@@ -1059,8 +1041,6 @@ namespace TitanOrbit.Game
             float speed = Mathf.Max(0.01f, _settings.thrusterVfxTransitionSpeed);
             float dt = _previewMode ? Time.unscaledDeltaTime : Time.deltaTime;
             float step = speed * dt;
-            if (_previewMode)
-                step *= 1.15f;
             bool moving = false;
             moving |= StepJetBlends(_thrusterJets, idle, baseLen, turn, turnAbs, step);
             moving |= StepJetBlends(_engineJets, idle, baseLen, turn, turnAbs, step);
@@ -1105,100 +1085,6 @@ namespace TitanOrbit.Game
             bool thrusterSpread = AssignJetSides(_thrusterJets);
             bool engineSpread = AssignJetSides(_engineJets);
             _hasLateralSpread = thrusterSpread || engineSpread;
-            AssignPreviewSlots();
-        }
-
-        /// <summary>
-        /// One shared left/center/right ranking across engines and thrusters so every
-        /// studio nozzle participates in short / medium / long.
-        /// </summary>
-        void AssignPreviewSlots()
-        {
-            int n = 0;
-            for (int i = 0; i < _thrusterJets.Count; i++)
-            {
-                if (_thrusterJets[i] != null)
-                    n++;
-            }
-
-            for (int i = 0; i < _engineJets.Count; i++)
-            {
-                if (_engineJets[i] != null)
-                    n++;
-            }
-
-            if (n == 0)
-                return;
-
-            var ordered = new JetBind[n];
-            var xs = new float[n];
-            int w = 0;
-            CollectPreviewSlotSources(_thrusterJets, ordered, xs, ref w);
-            CollectPreviewSlotSources(_engineJets, ordered, xs, ref w);
-
-            for (int i = 0; i < n - 1; i++)
-            {
-                int best = i;
-                for (int j = i + 1; j < n; j++)
-                {
-                    if (xs[j] < xs[best])
-                        best = j;
-                }
-
-                if (best == i)
-                    continue;
-                float tx = xs[i];
-                xs[i] = xs[best];
-                xs[best] = tx;
-                JetBind tb = ordered[i];
-                ordered[i] = ordered[best];
-                ordered[best] = tb;
-            }
-
-            if (n == 1)
-            {
-                ordered[0].previewSlot = 0;
-                return;
-            }
-
-            if (n == 2)
-            {
-                ordered[0].previewSlot = -1;
-                ordered[1].previewSlot = 1;
-                return;
-            }
-
-            int leftEnd = n / 3;
-            int rightStart = n - leftEnd;
-            if (leftEnd < 1)
-                leftEnd = 1;
-            if (rightStart <= leftEnd)
-                rightStart = leftEnd + 1;
-            for (int i = 0; i < n; i++)
-            {
-                if (i < leftEnd)
-                    ordered[i].previewSlot = -1;
-                else if (i >= rightStart)
-                    ordered[i].previewSlot = 1;
-                else
-                    ordered[i].previewSlot = 0;
-            }
-        }
-
-        void CollectPreviewSlotSources(List<JetBind> jets, JetBind[] ordered, float[] xs, ref int w)
-        {
-            for (int i = 0; i < jets.Count; i++)
-            {
-                JetBind jet = jets[i];
-                if (jet == null)
-                    continue;
-                Vector3 local = jet.mount != null
-                    ? transform.InverseTransformPoint(jet.mount.position)
-                    : Vector3.zero;
-                ordered[w] = jet;
-                xs[w] = local.x;
-                w++;
-            }
         }
 
         bool AssignJetSides(List<JetBind> jets)
@@ -1252,8 +1138,9 @@ namespace TitanOrbit.Game
             int index = LocalPlayerThrusterStyle.ResolveStyleIndex(ResolveThrusterStyle());
             if (!_previewMode && TitanOrbitDebugFlags.CycleAllThrusterVfx)
                 index = ThrusterVfxBank.WrapStyleIndex(ThrusterVfxBank.DebugCycleIndex);
+            _appliedStyleIndex = index;
             _appliedFlameColorName = ResolveFlameColorName();
-            return ThrusterVfxBank.LoadStylePrefab(index);
+            return ThrusterVfxBank.LoadStylePrefab(index, _appliedFlameColorName);
         }
 
         string ResolveFlameColorName()
@@ -1290,8 +1177,6 @@ namespace TitanOrbit.Game
             go.name = ThrusterVfxBank.JetInstanceName;
             VfxUrpCompat.PrepareVfxInstance(go, playParticles: false);
             ConfigureThrusterParticles(go, worldSpace: false, previewSteady: _previewMode);
-            if (!IsRibbonStyle())
-                TightenJets(go, 1f);
             CopyLayerRecursive(go, gameObject.layer);
 
             var bind = new JetBind
@@ -1306,7 +1191,8 @@ namespace TitanOrbit.Game
             };
             go.SetActive(true);
             bind.hasMountLocalRear = TryComputeMountLocalRear(bind, ResolveShipAft(), out bind.mountLocalRear);
-            ApplyLifetimeColor(bind, ResolveLifetimeGradient());
+            if (!ResolveThrusterStyle().UseTeamColor)
+                TintJetParticles(bind, ResolveTintColor());
             instances.Add(go);
             binds.Add(bind);
             CollectParticleSystems(go, particles);
@@ -1392,63 +1278,6 @@ namespace TitanOrbit.Game
         Color32 ResolveTintColor()
         {
             return LocalPlayerThrusterStyle.ResolveTint(ResolveThrusterStyle(), ResolveShipTeam());
-        }
-
-        Gradient ResolveLifetimeGradient()
-        {
-            var style = ResolveThrusterStyle();
-            TeamId team = ResolveShipTeam();
-            return LocalPlayerThrusterStyle.ResolveLifetime(style, team);
-        }
-
-        static void ApplyLifetimeColor(JetBind jet, Gradient gradient)
-        {
-            if (jet == null || jet.instance == null || gradient == null)
-                return;
-
-            if (jet.particles == null)
-                jet.particles = jet.instance.GetComponentsInChildren<ParticleSystem>(true);
-            if (jet.trails == null)
-                jet.trails = jet.instance.GetComponentsInChildren<TrailRenderer>(true);
-
-            for (int i = 0; i < jet.particles.Length; i++)
-            {
-                ParticleSystem ps = jet.particles[i];
-                if (ps == null)
-                    continue;
-
-                var main = ps.main;
-                main.startColor = new ParticleSystem.MinMaxGradient(Color.white);
-
-                var bySpeed = ps.colorBySpeed;
-                bySpeed.enabled = false;
-
-                var owned = new Gradient();
-                owned.mode = GradientMode.Blend;
-                owned.SetKeys(gradient.colorKeys, gradient.alphaKeys);
-
-                var col = ps.colorOverLifetime;
-                col.enabled = true;
-                var mm = new ParticleSystem.MinMaxGradient(owned);
-                mm.mode = ParticleSystemGradientMode.Gradient;
-                col.color = mm;
-            }
-
-            Color trailStart = gradient.Evaluate(0.2f);
-            Color trailEnd = gradient.Evaluate(1f);
-            trailStart.a = Mathf.Max(trailStart.a, 0.55f);
-            trailEnd.a = 0f;
-            var trailGradient = new Gradient();
-            trailGradient.SetKeys(gradient.colorKeys, gradient.alphaKeys);
-            for (int i = 0; i < jet.trails.Length; i++)
-            {
-                TrailRenderer trail = jet.trails[i];
-                if (trail == null)
-                    continue;
-                trail.colorGradient = trailGradient;
-                trail.startColor = trailStart;
-                trail.endColor = trailEnd;
-            }
         }
 
         static readonly int TintColorId = Shader.PropertyToID("_TintColor");
@@ -1560,43 +1389,6 @@ namespace TitanOrbit.Game
             return mats;
         }
 
-        bool IsRibbonStyle()
-        {
-            int style = LocalPlayerThrusterStyle.ResolveStyleIndex(ResolveThrusterStyle());
-            if (!_previewMode && TitanOrbitDebugFlags.CycleAllThrusterVfx)
-                style = ThrusterVfxBank.WrapStyleIndex(ThrusterVfxBank.DebugCycleIndex);
-            return style == 0;
-        }
-
-        /// <summary>Narrows Default / Heavy / Soft. Ribbon uses authored prefab size.</summary>
-        static void TightenJets(GameObject root, float extraWidthMul)
-        {
-            if (root == null)
-                return;
-
-            float extra = extraWidthMul > 0.01f ? extraWidthMul : 1f;
-            TrailRenderer[] trails = root.GetComponentsInChildren<TrailRenderer>(true);
-            for (int i = 0; i < trails.Length; i++)
-            {
-                if (trails[i] == null)
-                    continue;
-                trails[i].widthMultiplier *= JetTrailWidthMul * extra;
-            }
-
-            ParticleSystem[] systems = root.GetComponentsInChildren<ParticleSystem>(true);
-            for (int i = 0; i < systems.Length; i++)
-            {
-                ParticleSystem ps = systems[i];
-                if (ps == null)
-                    continue;
-                var main = ps.main;
-                main.startSizeMultiplier *= JetParticleSizeMul * extra;
-                var ribbon = ps.trails;
-                if (ribbon.enabled)
-                    ribbon.widthOverTrailMultiplier *= JetTrailWidthMul * extra;
-            }
-        }
-
         static void CopyLayerRecursive(GameObject go, int layer)
         {
             if (go == null)
@@ -1706,26 +1498,15 @@ namespace TitanOrbit.Game
                     continue;
 
                 var main = ps.main;
+                main.playOnAwake = false;
+                main.loop = true;
+                main.cullingMode = ParticleSystemCullingMode.AlwaysSimulate;
                 main.simulationSpace = worldSpace
                     ? ParticleSystemSimulationSpace.World
                     : ParticleSystemSimulationSpace.Local;
                 main.scalingMode = ParticleSystemScalingMode.Hierarchy;
-                if (previewSteady)
-                {
-                    main.loop = true;
-                    main.playOnAwake = true;
-                    var emission = ps.emission;
-                    emission.enabled = true;
-                    emission.rateOverDistance = 0f;
-                    if (emission.burstCount > 0)
-                        emission.SetBursts(System.Array.Empty<ParticleSystem.Burst>());
-                    // Keep authored rate. Forcing a constant made Default loop like a pulse.
-                }
-                else
-                {
-                    main.playOnAwake = false;
+                if (!previewSteady)
                     ps.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
-                }
 
                 if (worldSpace)
                 {
@@ -1793,21 +1574,30 @@ namespace TitanOrbit.Game
             float sizeMul = Mathf.Max(0.01f, jet.chassisMountScale) * _megaVfxScale * componentRel;
             if (sizeMul > MaxVfxSizeMul)
                 sizeMul = MaxVfxSizeMul;
+            // Ignore sub-percent hierarchy noise (bank / interpolation) so Z length
+            // is not rewritten every frame while the player is holding thrust.
+            if (jet.appliedSizeMul > 0.01f &&
+                Mathf.Abs(sizeMul - jet.appliedSizeMul) < jet.appliedSizeMul * 0.01f)
+                sizeMul = jet.appliedSizeMul;
+            else
+                jet.appliedSizeMul = sizeMul;
             Vector3 authored = jet.authoredLocalScale;
             if (authored.sqrMagnitude < 0.0001f)
                 authored = Vector3.one;
 
-            float thickness = IsRibbonStyle() ? 1f : JetThicknessMul;
-            if (_previewMode)
-                thickness *= PreviewJetScaleMul;
+            float thickness = _previewMode ? PreviewJetScaleMul : 1f;
             float lengthFactor = Mathf.Clamp(jet.blend, MinIdleBlend, 1f);
             if (_previewMode)
                 lengthFactor *= PreviewJetScaleMul;
             jet.appliedBlend = lengthFactor;
-            go.transform.localScale = new Vector3(
+            Vector3 nextScale = new Vector3(
                 authored.x * sizeMul * thickness,
                 authored.y * sizeMul * thickness,
                 authored.z * sizeMul * lengthFactor);
+            // Rewriting an identical scale still dirties the transform and can
+            // hitch Hierarchy-scaled ParticleSystems (reads as a blink).
+            if ((go.transform.localScale - nextScale).sqrMagnitude > 1e-8f)
+                go.transform.localScale = nextScale;
         }
 
         Vector3 ResolveShipAft()
