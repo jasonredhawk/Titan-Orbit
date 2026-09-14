@@ -301,6 +301,7 @@ namespace Unity.NetCode
         ComponentLookup<NetworkStreamRequestDisconnect> m_RequestDisconnectFromEntity;
         ComponentLookup<NetworkStreamInGame> m_InGameFromEntity;
         ComponentLookup<EnablePacketLogging> m_EnablePacketLoggingFromEntity;
+        ComponentLookup<TitanOrbitConnectionEgressCounters> m_EgressFromEntity;
         BufferLookup<OutgoingRpcDataStreamBuffer> m_OutgoingRpcBufferFromEntity;
         BufferLookup<IncomingRpcDataStreamBuffer> m_RpcBufferFromEntity;
         BufferLookup<IncomingCommandDataStreamBuffer> m_CmdBufferFromEntity;
@@ -339,6 +340,7 @@ namespace Unity.NetCode
             m_RequestDisconnectFromEntity = state.GetComponentLookup<NetworkStreamRequestDisconnect>();
             m_InGameFromEntity = state.GetComponentLookup<NetworkStreamInGame>();
             m_EnablePacketLoggingFromEntity = state.GetComponentLookup<EnablePacketLogging>();
+            m_EgressFromEntity = state.GetComponentLookup<TitanOrbitConnectionEgressCounters>();
 
             m_OutgoingRpcBufferFromEntity = state.GetBufferLookup<OutgoingRpcDataStreamBuffer>();
             m_RpcBufferFromEntity = state.GetBufferLookup<IncomingRpcDataStreamBuffer>();
@@ -416,6 +418,8 @@ namespace Unity.NetCode
 
                 var networkId = new NetworkId {Value = nid};
                 state.EntityManager.AddComponentData(ent, networkId);
+                // [TITAN-ORBIT] Per-connection payload counters for the GameManager egress overlay.
+                state.EntityManager.AddComponentData(ent, new TitanOrbitConnectionEgressCounters());
                 state.EntityManager.AddComponent<LocalConnection>(ent); // we're not doing this for binary world servers, since it doesn't really make sense. For a server world, a local client world shouldn't be different from other client worlds.
                 state.EntityManager.SetName(ent, new FixedString64Bytes(FixedString.Format("Host Fake NetworkConnection ({0})", nid)));
             }
@@ -579,6 +583,7 @@ namespace Unity.NetCode
             m_RequestDisconnectFromEntity.Update(ref state);
             m_InGameFromEntity.Update(ref state);
             m_EnablePacketLoggingFromEntity.Update(ref state);
+            m_EgressFromEntity.Update(ref state);
             m_OutgoingRpcBufferFromEntity.Update(ref state);
             m_RpcBufferFromEntity.Update(ref state);
             m_CmdBufferFromEntity.Update(ref state);
@@ -600,6 +605,7 @@ namespace Unity.NetCode
                 requestProtocolVersionHandshakeQueue = m_RequestProtocolVersionHandshakeRpcQueue,
                 inGameFromEntity = m_InGameFromEntity,
                 enablePacketLoggingFromEntity = m_EnablePacketLoggingFromEntity,
+                egressFromEntity = m_EgressFromEntity,
                 freeNetworkIds = m_FreeNetworkIds,
                 migrationIds = m_MigrationIds,
                 connectionEvents = m_ConnectionEvents,
@@ -687,6 +693,8 @@ namespace Unity.NetCode
                         {
                             ReceivedSnapshotByRemoteMask = new UnsafeBitArray((int)math.max(1024, tickRate.SnapshotAckMaskCapacity), Allocator.Persistent),
                         });
+                        // [TITAN-ORBIT] Per-connection payload counters for the GameManager egress overlay.
+                        commandBuffer.AddComponent(ent, new TitanOrbitConnectionEgressCounters());
                         commandBuffer.AddBuffer<PrespawnSectionAck>(ent);
                         var outgoingBuf = commandBuffer.AddBuffer<OutgoingRpcDataStreamBuffer>(ent);
                         commandBuffer.AddBuffer<IncomingCommandDataStreamBuffer>(ent);
@@ -729,6 +737,7 @@ namespace Unity.NetCode
             public ComponentLookup<NetworkStreamRequestDisconnect> requestDisconnectFromEntity;
             public ComponentLookup<NetworkStreamInGame> inGameFromEntity;
             public ComponentLookup<EnablePacketLogging> enablePacketLoggingFromEntity;
+            [NativeDisableParallelForRestriction] public ComponentLookup<TitanOrbitConnectionEgressCounters> egressFromEntity;
             public NativeQueue<int> freeNetworkIds;
             public NativeHashMap<uint, int> migrationIds;
             public NativeList<NetCodeConnectionEvent> connectionEvents;
@@ -840,7 +849,12 @@ namespace Unity.NetCode
                             connection.CurrentStateDirty = false;
                             goto doubleBreak;
                         case NetworkEvent.Type.Data:
+                            // [TITAN-ORBIT] Count inbound payload before we consume the protocol byte.
+                            // GhostReceive can clobber IncomingSnapshotDataStreamBuffer if two
+                            // snapshots arrive in one frame — counting here is the true receive total.
+                            int recvPayloadBytes = reader.Length;
                             var msgType = (NetworkStreamProtocol)reader.ReadByte();
+                            TitanOrbitEgressMeterHook.TryAddRecv(ref egressFromEntity, entity, (byte)msgType, recvPayloadBytes);
 
                             // Handle connection approval phase, without it we won't process game data further.
                             if (isServer && connection.IsHandshakeOrApproval)
