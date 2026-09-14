@@ -10,7 +10,7 @@ namespace TitanOrbit.NetCode
     /// Syncs the Burst-readable egress hook and ensures every connection entity has counters.
     /// <para>
     /// Unity.NetCode cannot reference <see cref="TitanOrbitDebugFlags"/>, so this system copies
-    /// the GameManager flag into <see cref="TitanOrbitEgressMeterHook.Enabled"/> before GhostSend
+    /// the GameManager flag into <see cref="TitanOrbitEgressMeterHook.IsEnabled"/> before GhostSend
     /// runs. Also adds <see cref="TitanOrbitConnectionEgressCounters"/> on any connection that
     /// missed the Connect/Accept path (host-migration, fake host).
     /// </para>
@@ -40,7 +40,7 @@ namespace TitanOrbit.NetCode
         {
             // --- Burst hook ---
             // [TITAN-ORBIT] GhostSend / Rpc / CommandSend / Receive jobs read this SharedStatic.
-            TitanOrbitEgressMeterHook.Enabled.Data = TitanOrbitDebugFlags.EgressMeterEnabled;
+            TitanOrbitEgressMeterHook.IsEnabled = TitanOrbitDebugFlags.EgressMeterEnabled;
 
             if (!TitanOrbitDebugFlags.EgressMeterEnabled)
                 return;

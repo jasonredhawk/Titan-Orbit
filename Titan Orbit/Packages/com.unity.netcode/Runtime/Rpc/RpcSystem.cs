@@ -314,6 +314,7 @@ namespace Unity.NetCode
             public BufferTypeHandle<IncomingRpcDataStreamBuffer> inBufferType;
             public BufferTypeHandle<OutgoingRpcDataStreamBuffer> outBufferType;
             [NativeDisableParallelForRestriction] public ComponentLookup<TitanOrbitConnectionEgressCounters> egressFromEntity;
+            public byte egressMeterEnabled;
             public Entity connectionUniqueIdEntity;
             public uint connectionUniqueId;
             [ReadOnly] public NativeList<RpcCollection.RpcData> execute;
@@ -552,7 +553,8 @@ namespace Unity.NetCode
                         }
 
                         // [TITAN-ORBIT] Per-connection RPC payload for the egress overlay (server send or client upload).
-                        TitanOrbitEgressMeterHook.TryAddSendRpc(ref egressFromEntity, connectionEntity, rpcPayloadBytes);
+                        if (egressMeterEnabled != 0)
+                            TitanOrbitEgressMeterHook.TryAddSendRpc(ref egressFromEntity, connectionEntity, rpcPayloadBytes);
 
                         var tmpDataLength = rpcPacketWriter.Length - headerLengthBytes;
                         if (tmpDataLength < sendBuffer.Length)
@@ -645,6 +647,7 @@ namespace Unity.NetCode
                 inBufferType = m_IncomingRpcDataStreamBufferComponentHandle,
                 outBufferType = m_OutgoingRpcDataStreamBufferComponentHandle,
                 egressFromEntity = m_EgressFromEntity,
+                egressMeterEnabled = TitanOrbitEgressMeterHook.EnabledByte(),
                 connectionUniqueIdEntity = connectionUniqueIdEntity,
                 connectionUniqueId = connectionUniqueId.Value,
                 execute = m_RpcData,

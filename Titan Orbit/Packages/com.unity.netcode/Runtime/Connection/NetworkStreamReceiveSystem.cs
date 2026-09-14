@@ -606,6 +606,7 @@ namespace Unity.NetCode
                 inGameFromEntity = m_InGameFromEntity,
                 enablePacketLoggingFromEntity = m_EnablePacketLoggingFromEntity,
                 egressFromEntity = m_EgressFromEntity,
+                egressMeterEnabled = TitanOrbitEgressMeterHook.EnabledByte(),
                 freeNetworkIds = m_FreeNetworkIds,
                 migrationIds = m_MigrationIds,
                 connectionEvents = m_ConnectionEvents,
@@ -738,6 +739,7 @@ namespace Unity.NetCode
             public ComponentLookup<NetworkStreamInGame> inGameFromEntity;
             public ComponentLookup<EnablePacketLogging> enablePacketLoggingFromEntity;
             [NativeDisableParallelForRestriction] public ComponentLookup<TitanOrbitConnectionEgressCounters> egressFromEntity;
+            public byte egressMeterEnabled;
             public NativeQueue<int> freeNetworkIds;
             public NativeHashMap<uint, int> migrationIds;
             public NativeList<NetCodeConnectionEvent> connectionEvents;
@@ -854,7 +856,8 @@ namespace Unity.NetCode
                             // snapshots arrive in one frame — counting here is the true receive total.
                             int recvPayloadBytes = reader.Length;
                             var msgType = (NetworkStreamProtocol)reader.ReadByte();
-                            TitanOrbitEgressMeterHook.TryAddRecv(ref egressFromEntity, entity, (byte)msgType, recvPayloadBytes);
+                            if (egressMeterEnabled != 0)
+                                TitanOrbitEgressMeterHook.TryAddRecv(ref egressFromEntity, entity, (byte)msgType, recvPayloadBytes);
 
                             // Handle connection approval phase, without it we won't process game data further.
                             if (isServer && connection.IsHandshakeOrApproval)

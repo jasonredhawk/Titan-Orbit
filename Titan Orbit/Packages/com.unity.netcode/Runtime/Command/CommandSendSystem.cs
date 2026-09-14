@@ -216,6 +216,7 @@ namespace Unity.NetCode
             public ConcurrentDriverStore concurrentDriverStore;
             public NetDebug netDebug;
             [NativeDisableParallelForRestriction] public ComponentLookup<TitanOrbitConnectionEgressCounters> egressLookup;
+            public byte egressMeterEnabled;
 #if UNITY_EDITOR || NETCODE_DEBUG
             public NativeArray<uint> netStats;
 #endif
@@ -270,7 +271,8 @@ namespace Unity.NetCode
                 if ((result = concurrentDriver.driver.EndSend(writer)) <= 0)
                     netDebug.LogError($"CommandSendPacket EndSend failed with errorCode: {result} on {connection.Value.ToFixedString()}!");
                 else
-                    TitanOrbitEgressMeterHook.TryAddSendCommand(ref egressLookup, entity, commandPayloadBytes);
+                    if (egressMeterEnabled != 0)
+                        TitanOrbitEgressMeterHook.TryAddSendCommand(ref egressLookup, entity, commandPayloadBytes);
             }
         }
 
@@ -297,6 +299,7 @@ namespace Unity.NetCode
                 concurrentDriverStore = networkStreamDriver.ConcurrentDriverStore,
                 netDebug = SystemAPI.GetSingleton<NetDebug>(),
                 egressLookup = m_EgressFromEntity,
+                egressMeterEnabled = TitanOrbitEgressMeterHook.EnabledByte(),
 #if UNITY_EDITOR || NETCODE_DEBUG
                 netStats = SystemAPI.GetSingletonRW<GhostStatsCollectionCommand>().ValueRO.Value,
 #endif

@@ -888,6 +888,7 @@ namespace Unity.NetCode
             [ReadOnly] public NativeArray<ConnectionStateData> connectionState;
             [NativeDisableParallelForRestriction] public ComponentLookup<NetworkSnapshotAck> ackFromEntity;
             [NativeDisableParallelForRestriction] public ComponentLookup<TitanOrbitConnectionEgressCounters> egressFromEntity;
+            public byte egressMeterEnabled;
             [ReadOnly] public ComponentLookup<NetworkStreamConnection> connectionFromEntity;
             [ReadOnly] public ComponentLookup<NetworkId> networkIdFromEntity;
 
@@ -1050,7 +1051,8 @@ namespace Unity.NetCode
                                 if ((result = driver.EndSend(dataStream)) >= (int) Networking.Transport.Error.StatusCode.Success)
                                 {
                                     // [TITAN-ORBIT] Per-connection snapshot payload for the egress overlay.
-                                    TitanOrbitEgressMeterHook.TryAddSendSnapshot(ref egressFromEntity, connectionEntity, snapshotPayloadBytes);
+                                    if (egressMeterEnabled != 0)
+                                        TitanOrbitEgressMeterHook.TryAddSendSnapshot(ref egressFromEntity, connectionEntity, snapshotPayloadBytes);
 #if UNITY_EDITOR || NETCODE_DEBUG
                                     ref var netStatsSnapshots = ref NetStatsSnapshotPerThread.AsSpan()[ThreadIndex];
                                     netStatsSnapshots.SnapshotTotalSizeInBits += (uint)dataStream.LengthInBits;
@@ -1965,6 +1967,7 @@ namespace Unity.NetCode
                 connectionState = m_ConnectionsToProcess.AsDeferredJobArray(),
                 ackFromEntity = m_SnapshotAckFromEntity,
                 egressFromEntity = m_EgressFromEntity,
+                egressMeterEnabled = TitanOrbitEgressMeterHook.EnabledByte(),
                 connectionFromEntity = m_ConnectionFromEntity,
                 networkIdFromEntity = m_NetworkIdFromEntity,
                 entityType = m_EntityType,

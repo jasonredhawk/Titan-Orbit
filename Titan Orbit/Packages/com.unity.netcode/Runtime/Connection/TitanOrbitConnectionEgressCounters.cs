@@ -13,7 +13,7 @@ namespace Unity.NetCode
     /// <para>
     /// Added on every connection entity (client Connect, server Accept). Burst jobs in
     /// GhostSendSystem / RpcSystem / CommandSendPacketSystem / NetworkStreamReceiveSystem
-    /// increment these only when <see cref="TitanOrbitEgressMeterHook.Enabled"/> is true
+    /// increment these only when <see cref="TitanOrbitEgressMeterHook.IsEnabled"/> is true
     /// so production play pays a single predicted-false branch.
     /// </para>
     /// Not a ghost and not replicated — local bookkeeping on the connection entity.
@@ -54,10 +54,12 @@ namespace Unity.NetCode
     /// <summary>
     /// [TITAN-ORBIT] Burst-safe on/off for <see cref="TitanOrbitConnectionEgressCounters"/> increments.
     /// <para>
-    /// <see cref="SharedStatic{T}"/> is a Burst-readable static. TitanOrbit copy systems set
-    /// <c>Enabled.Data</c> from <c>TitanOrbitDebugFlags.EgressMeterEnabled</c> each tick.
-    /// Unity.NetCode cannot reference TitanOrbit.Shared, so the flag lives here.
+    /// Burst does not run C# static constructors, so we never store a <see cref="SharedStatic{T}"/>
+    /// in a static field. <see cref="SharedStatic{T}.GetOrCreate{TContext,TSubContext}"/> is called
+    /// at each access — same native slot, no null wrapper.
     /// </para>
+    /// TitanOrbit copy systems set <see cref="IsEnabled"/> from the GameManager toggle.
+    /// Unity.NetCode cannot reference TitanOrbit.Shared, so the flag lives here.
     /// </summary>
     public static class TitanOrbitEgressMeterHook
     {
@@ -69,93 +71,98 @@ namespace Unity.NetCode
 
         /// <summary>
         /// When true, send/receive Burst jobs increment <see cref="TitanOrbitConnectionEgressCounters"/>.
-        /// Written from TitanOrbit systems on the main thread; read from Burst jobs.
+        /// Written from TitanOrbit systems on the main thread; read from Burst via GetOrCreate
+        /// (Burst does not run static constructors, so we never cache SharedStatic in a field).
         /// </summary>
-        public static readonly SharedStatic<bool> Enabled =
-            SharedStatic<bool>.GetOrCreate<EnabledContext, EnabledKey>();
+        public static bool IsEnabled
+        {
+            get => SharedStatic<bool>.GetOrCreate<EnabledContext, EnabledKey>().Data;
+            set => SharedStatic<bool>.GetOrCreate<EnabledContext, EnabledKey>().Data = value;
+        }
+
+        /// <summary>Burst-safe 0/1 for job fields (GetOrCreate, not a cached SharedStatic field).</summary>
+        public static byte EnabledByte()
+        {
+            return SharedStatic<bool>.GetOrCreate<EnabledContext, EnabledKey>().Data ? (byte)1 : (byte)0;
+        }
+
+        static bool MeterIsOn()
+        {
+            return SharedStatic<bool>.GetOrCreate<EnabledContext, EnabledKey>().Data;
+        }
 
         /// <summary>
         /// Adds a successful snapshot send. No-op when the meter is off or the connection has no counters.
         /// Called from GhostSendSystem after <c>EndSend</c> succeeds.
         /// </summary>
-        /// <param name="lookup">Read-write lookup of counters on connection entities.</param>
-        /// <param name="entity">The connection entity that was sent to.</param>
-        /// <param name="byteCount">UTP payload length of that snapshot packet.</param>
         public static void TryAddSendSnapshot(
             ref ComponentLookup<TitanOrbitConnectionEgressCounters> lookup,
             Entity entity,
             int byteCount)
         {
-            if (Hint.Likely(!Enabled.Data) || byteCount <= 0 || entity == Entity.Null)
+            if (Hint.Likely(!MeterIsOn()) || byteCount <= 0 || entity == Entity.Null)
                 return;
             if (!lookup.HasComponent(entity))
                 return;
-            ref var counters = ref lookup.GetRefRW(entity).ValueRW;
+            var counters = lookup[entity];
             counters.SendSnapshotBytes += (ulong)byteCount;
             counters.SendSnapshotPackets++;
+            lookup[entity] = counters;
         }
 
         /// <summary>
         /// Adds a successful RPC send. No-op when the meter is off or the connection has no counters.
-        /// Called from RpcSystem after <c>EndSend</c> succeeds (server egress or client upload).
+        /// Called from RpcSystem after <c>EndSend</c> succeeds (server send or client upload).
         /// </summary>
-        /// <param name="lookup">Read-write lookup of counters on connection entities.</param>
-        /// <param name="entity">The connection entity that was sent to / from.</param>
-        /// <param name="byteCount">UTP payload length of that RPC packet.</param>
         public static void TryAddSendRpc(
             ref ComponentLookup<TitanOrbitConnectionEgressCounters> lookup,
             Entity entity,
             int byteCount)
         {
-            if (Hint.Likely(!Enabled.Data) || byteCount <= 0 || entity == Entity.Null)
+            if (Hint.Likely(!MeterIsOn()) || byteCount <= 0 || entity == Entity.Null)
                 return;
             if (!lookup.HasComponent(entity))
                 return;
-            ref var counters = ref lookup.GetRefRW(entity).ValueRW;
+            var counters = lookup[entity];
             counters.SendRpcBytes += (ulong)byteCount;
             counters.SendRpcPackets++;
+            lookup[entity] = counters;
         }
 
         /// <summary>
         /// Adds a successful command send (client upload). No-op when the meter is off.
         /// Called from CommandSendPacketSystem after <c>EndSend</c> succeeds.
         /// </summary>
-        /// <param name="lookup">Read-write lookup of counters on connection entities.</param>
-        /// <param name="entity">This client's connection entity.</param>
-        /// <param name="byteCount">UTP payload length of that command packet.</param>
         public static void TryAddSendCommand(
             ref ComponentLookup<TitanOrbitConnectionEgressCounters> lookup,
             Entity entity,
             int byteCount)
         {
-            if (Hint.Likely(!Enabled.Data) || byteCount <= 0 || entity == Entity.Null)
+            if (Hint.Likely(!MeterIsOn()) || byteCount <= 0 || entity == Entity.Null)
                 return;
             if (!lookup.HasComponent(entity))
                 return;
-            ref var counters = ref lookup.GetRefRW(entity).ValueRW;
+            var counters = lookup[entity];
             counters.SendCommandBytes += (ulong)byteCount;
             counters.SendCommandPackets++;
+            lookup[entity] = counters;
         }
 
         /// <summary>
         /// Adds one inbound UTP Data event classified by <see cref="NetworkStreamProtocol"/>.
         /// Called from NetworkStreamReceiveSystem before GhostReceive can clobber the snapshot buffer.
         /// </summary>
-        /// <param name="lookup">Read-write lookup of counters on connection entities.</param>
-        /// <param name="entity">The connection that received the packet.</param>
-        /// <param name="msgType">NetCode protocol byte (Command / Snapshot / Rpc).</param>
-        /// <param name="payloadBytes">Unread UTP payload length at the Data event (includes the protocol byte).</param>
         public static void TryAddRecv(
             ref ComponentLookup<TitanOrbitConnectionEgressCounters> lookup,
             Entity entity,
             byte msgType,
             int payloadBytes)
         {
-            if (Hint.Likely(!Enabled.Data) || payloadBytes <= 0 || entity == Entity.Null)
+            if (Hint.Likely(!MeterIsOn()) || payloadBytes <= 0 || entity == Entity.Null)
                 return;
             if (!lookup.HasComponent(entity))
                 return;
-            ref var counters = ref lookup.GetRefRW(entity).ValueRW;
+            var counters = lookup[entity];
             counters.RecvPacketCount++;
             switch ((NetworkStreamProtocol)msgType)
             {
@@ -169,6 +176,7 @@ namespace Unity.NetCode
                     counters.RecvCommandBytes += (ulong)payloadBytes;
                     break;
             }
+            lookup[entity] = counters;
         }
     }
 }
