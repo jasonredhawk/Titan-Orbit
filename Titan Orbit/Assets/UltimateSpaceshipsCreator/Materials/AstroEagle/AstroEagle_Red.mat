@@ -40,6 +40,14 @@ Material:
         m_Texture: {fileID: 2800000, guid: a461620286737bd4eba01b809ea3f6a2, type: 3}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
+    - _Colors1:
+        m_Texture: {fileID: 2800000, guid: 934a0636c25372c42a6e1080a5c5a638, type: 3}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _Colors2:
+        m_Texture: {fileID: 2800000, guid: 89d3188b721109245a5387e74fb204e0, type: 3}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
     - _ColorsMask:
         m_Texture: {fileID: 2800000, guid: a461620286737bd4eba01b809ea3f6a2, type: 3}
         m_Scale: {x: 1, y: 1}
@@ -68,6 +76,10 @@ Material:
         m_Texture: {fileID: 2800000, guid: fed5abf3b179da442b2f6f20e20dfeb1, type: 3}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
+    - _LogosCockpit:
+        m_Texture: {fileID: 2800000, guid: 01d015a861870484588d7ae9ea8a4235, type: 3}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
     - _LogosMask:
         m_Texture: {fileID: 2800000, guid: ee86997546f1f8a4e927886db39335c9, type: 3}
         m_Scale: {x: 1, y: 1}
@@ -81,7 +93,7 @@ Material:
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     - _MetallicSmoothness:
-        m_Texture: {fileID: 2800000, guid: e9907897aa37f43409f9d9ce58b2bb32, type: 3}
+        m_Texture: {fileID: 2800000, guid: 213924e1e74135a4aa810a6a1ee6d7f5, type: 3}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     - _Normal:
@@ -102,6 +114,10 @@ Material:
         m_Offset: {x: 0, y: 0}
     - _SpecGlossMap:
         m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _Texture2DAsset_4cce6aaa8e9643bfab0e2240efb09c09_Out_0_Texture2D:
+        m_Texture: {fileID: 2800000, guid: c3269f7bf26348f49ac936a2733e5b0d, type: 3}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     - _Wearout:
@@ -126,13 +142,17 @@ Material:
     - _BUILTIN_QueueControl: 0
     - _BUILTIN_QueueOffset: 0
     - _Blend: 0
+    - _Brighten: 0.272
     - _BumpScale: 1
     - _ClearCoatMask: 0
     - _ClearCoatSmoothness: 0
+    - _CockpitMultiplier: 2
     - _Cull: 2
     - _Cutoff: 0.5
+    - _Darken: 2
     - _DetailAlbedoMapScale: 1
     - _DetailNormalMapScale: 1
+    - _Dirty: 1
     - _DstBlend: 0
     - _Emission: 1
     - _EmissionMultiplier: 1
@@ -142,9 +162,11 @@ Material:
     - _GlossyReflections: 0
     - _Glow: 1
     - _Highlight: 1
+    - _Logos: 1
     - _LogosDirty: 1
     - _LogosValue: 0.7
     - _Metallic: 0
+    - _MetallicScale: 0.25
     - _OcclusionStrength: 1
     - _Parallax: 0.005
     - _Peel: 1
@@ -152,6 +174,7 @@ Material:
     - _QueueOffset: 0
     - _ReceiveShadows: 1
     - _Smoothness: 0.5
+    - _SmoothnessScale: 0.35
     - _SmoothnessTextureChannel: 0
     - _SoofEffectOnSmoothness: 1
     - _Soot: 1
@@ -163,10 +186,15 @@ Material:
     - _ZWrite: 1
     m_Colors:
     - _BaseColor: {r: 1, g: 1, b: 1, a: 1}
+    - _Cockpit1: {r: 0, g: 0.06274508, b: 0.24705875, a: 0}
+    - _Cockpit2: {r: 0.12156857, g: 0.572549, b: 0.854902, a: 0}
+    - _Cockpit3: {r: 0.50980395, g: 0.9529411, b: 0.9529411, a: 0}
     - _Color: {r: 1, g: 1, b: 1, a: 1}
     - _Color1: {r: 0.39607838, g: 0.09803919, b: 0.09803919, a: 0}
     - _Color2: {r: 0.15294117, g: 0.15294117, b: 0.15294117, a: 0}
     - _Color3: {r: 0.454902, g: 0.454902, b: 0.454902, a: 0}
+    - _Color4: {r: 0.19999996, g: 0.19999996, b: 0.19999996, a: 0}
+    - _Color5: {r: 0.39607838, g: 0.09803919, b: 0.09803919, a: 0}
     - _Emission1: {r: 0.12156863, g: 0.57254905, b: 0.85490197, a: 0}
     - _Emission2: {r: 0.12156857, g: 0.572549, b: 0.854902, a: 0}
     - _Emission3: {r: 0.50980395, g: 0.9529411, b: 0.9529411, a: 0}
