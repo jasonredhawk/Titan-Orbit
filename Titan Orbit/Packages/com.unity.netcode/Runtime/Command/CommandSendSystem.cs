@@ -182,6 +182,7 @@ namespace Unity.NetCode
     {
         private StreamCompressionModel m_CompressionModel;
         private EntityQuery m_connectionQuery;
+        private ComponentLookup<TitanOrbitConnectionEgressCounters> m_EgressFromEntity;
         //The packet header is composed by //tatal 29 bytes
         private const int k_CommandHeadersBytes =
             1 + // the protocol id
@@ -202,6 +203,7 @@ namespace Unity.NetCode
                 .WithAllRW<OutgoingCommandDataStreamBuffer>();
             m_connectionQuery = state.GetEntityQuery(builder);
             m_CompressionModel = StreamCompressionModel.Default;
+            m_EgressFromEntity = state.GetComponentLookup<TitanOrbitConnectionEgressCounters>();
 
             state.RequireForUpdate<GhostCollection>();
             state.RequireForUpdate(m_connectionQuery);
@@ -213,6 +215,7 @@ namespace Unity.NetCode
         {
             public ConcurrentDriverStore concurrentDriverStore;
             public NetDebug netDebug;
+            [NativeDisableParallelForRestriction] public ComponentLookup<TitanOrbitConnectionEgressCounters> egressLookup;
 #if UNITY_EDITOR || NETCODE_DEBUG
             public NativeArray<uint> netStats;
 #endif
@@ -221,7 +224,7 @@ namespace Unity.NetCode
             public NetworkTick inputTargetTick;
             public float inputTargetTickFraction;
             public uint interpolationDelay;
-            public unsafe void Execute(DynamicBuffer<OutgoingCommandDataStreamBuffer> rpcData,
+            public unsafe void Execute(Entity entity, DynamicBuffer<OutgoingCommandDataStreamBuffer> rpcData,
                     in NetworkStreamConnection connection, in NetworkSnapshotAck ack)
             {
                 if (!connection.Value.IsCreated)
@@ -263,8 +266,11 @@ namespace Unity.NetCode
 
                 if(writer.HasFailedWrites)
                     netDebug.LogError($"CommandSendPacket job triggered Writer.HasFailedWrites on {connection.Value.ToFixedString()}, despite allocating the collection based on needed size!");
+                int commandPayloadBytes = writer.Length;
                 if ((result = concurrentDriver.driver.EndSend(writer)) <= 0)
                     netDebug.LogError($"CommandSendPacket EndSend failed with errorCode: {result} on {connection.Value.ToFixedString()}!");
+                else
+                    TitanOrbitEgressMeterHook.TryAddSendCommand(ref egressLookup, entity, commandPayloadBytes);
             }
         }
 
@@ -285,10 +291,12 @@ namespace Unity.NetCode
             interpolationDelay = math.max(interpolationDelay, 0);
 
             ref var networkStreamDriver = ref SystemAPI.GetSingletonRW<NetworkStreamDriver>().ValueRW;
+            m_EgressFromEntity.Update(ref state);
             var sendJob = new CommandSendPacket
             {
                 concurrentDriverStore = networkStreamDriver.ConcurrentDriverStore,
                 netDebug = SystemAPI.GetSingleton<NetDebug>(),
+                egressLookup = m_EgressFromEntity,
 #if UNITY_EDITOR || NETCODE_DEBUG
                 netStats = SystemAPI.GetSingletonRW<GhostStatsCollectionCommand>().ValueRO.Value,
 #endif

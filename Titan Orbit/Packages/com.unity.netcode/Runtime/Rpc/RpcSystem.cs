@@ -249,8 +249,9 @@ namespace Unity.NetCode
 
         private EntityTypeHandle m_EntityTypeHandle;
         private ComponentTypeHandle<NetworkStreamConnection> m_NetworkStreamConnectionHandle;
-        private BufferTypeHandle<IncomingRpcDataStreamBuffer> m_IncomingRpcDataStreamBufferComponentHandle;
-        private BufferTypeHandle<OutgoingRpcDataStreamBuffer> m_OutgoingRpcDataStreamBufferComponentHandle;
+            private BufferTypeHandle<IncomingRpcDataStreamBuffer> m_IncomingRpcDataStreamBufferComponentHandle;
+            private BufferTypeHandle<OutgoingRpcDataStreamBuffer> m_OutgoingRpcDataStreamBufferComponentHandle;
+            private ComponentLookup<TitanOrbitConnectionEgressCounters> m_EgressFromEntity;
 
         /// <inheritdoc/>
         public void OnCreate(ref SystemState state)
@@ -284,6 +285,7 @@ namespace Unity.NetCode
             m_NetworkStreamConnectionHandle = state.GetComponentTypeHandle<NetworkStreamConnection>();
             m_IncomingRpcDataStreamBufferComponentHandle = state.GetBufferTypeHandle<IncomingRpcDataStreamBuffer>();
             m_OutgoingRpcDataStreamBufferComponentHandle = state.GetBufferTypeHandle<OutgoingRpcDataStreamBuffer>();
+            m_EgressFromEntity = state.GetComponentLookup<TitanOrbitConnectionEgressCounters>();
 
             var rpcCollection = SystemAPI.GetSingleton<RpcCollection>();
             rpcCollection.RegisterRpc<RequestProtocolVersionHandshake>();
@@ -311,6 +313,7 @@ namespace Unity.NetCode
             public ComponentTypeHandle<NetworkStreamConnection> connectionType;
             public BufferTypeHandle<IncomingRpcDataStreamBuffer> inBufferType;
             public BufferTypeHandle<OutgoingRpcDataStreamBuffer> outBufferType;
+            [NativeDisableParallelForRestriction] public ComponentLookup<TitanOrbitConnectionEgressCounters> egressFromEntity;
             public Entity connectionUniqueIdEntity;
             public uint connectionUniqueId;
             [ReadOnly] public NativeList<RpcCollection.RpcData> execute;
@@ -539,6 +542,7 @@ namespace Unity.NetCode
                             rpcPacketWriter.WriteBytesUnsafe((byte*) sendBuffer.GetUnsafePtr(), sendBuffer.Length);
 
                         // If sending failed we stop and wait until next frame
+                        int rpcPayloadBytes = rpcPacketWriter.Length;
                         if ((result = driver.EndSend(rpcPacketWriter)) <= 0)
                         {
                             if (result == (int) StatusCode.NetworkSendQueueFull)
@@ -546,6 +550,9 @@ namespace Unity.NetCode
                             else netDebug.LogWarning($"[{worldName}] An error occured during RpcSystem EndSend with StatusCode: {result}, UTP Buffer Capacity: {rpcPacketWriter.Capacity}. Retrying next tick!");
                             break;
                         }
+
+                        // [TITAN-ORBIT] Per-connection RPC payload for the egress overlay (server send or client upload).
+                        TitanOrbitEgressMeterHook.TryAddSendRpc(ref egressFromEntity, connectionEntity, rpcPayloadBytes);
 
                         var tmpDataLength = rpcPacketWriter.Length - headerLengthBytes;
                         if (tmpDataLength < sendBuffer.Length)
@@ -629,6 +636,7 @@ namespace Unity.NetCode
             m_NetworkStreamConnectionHandle.Update(ref state);
             m_IncomingRpcDataStreamBufferComponentHandle.Update(ref state);
             m_OutgoingRpcDataStreamBufferComponentHandle.Update(ref state);
+            m_EgressFromEntity.Update(ref state);
             var execJob = new RpcExecJob
             {
                 commandBuffer = SystemAPI.GetSingleton<BeginSimulationEntityCommandBufferSystem.Singleton>().CreateCommandBuffer(state.WorldUnmanaged).AsParallelWriter(),
@@ -636,6 +644,7 @@ namespace Unity.NetCode
                 connectionType = m_NetworkStreamConnectionHandle,
                 inBufferType = m_IncomingRpcDataStreamBufferComponentHandle,
                 outBufferType = m_OutgoingRpcDataStreamBufferComponentHandle,
+                egressFromEntity = m_EgressFromEntity,
                 connectionUniqueIdEntity = connectionUniqueIdEntity,
                 connectionUniqueId = connectionUniqueId.Value,
                 execute = m_RpcData,
