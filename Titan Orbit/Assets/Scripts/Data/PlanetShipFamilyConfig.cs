@@ -410,10 +410,13 @@ namespace TitanOrbit.Data
             return null;
         }
 
-        /// <summary>Menu thumbnail for this chassis. Prefers team-specific <see cref="ShipFamilyChassisTierEntry.teamMenuPreviewSprites"/>, then falls back to <see cref="ShipFamilyChassisTierEntry.menuPreviewSprite"/>.</summary>
+        /// <summary>
+        /// Orbit Menu thumbnail for this chassis. Prefers the theatrical (3/4 hero) sprite
+        /// the family inspector generates, then the older top-down slot.
+        /// </summary>
         public Sprite GetMenuPreviewSpriteForChassisId(string chassisId, TeamManager.Team team = TeamManager.Team.None)
         {
-            // --- Compute value ---
+            // --- Resolve family + tier ---
             if (string.IsNullOrEmpty(chassisId) || families == null) return null;
             int underscoreIdx = chassisId.IndexOf('_');
             if (underscoreIdx <= 0) return null;
@@ -431,19 +434,11 @@ namespace TitanOrbit.Data
                     if (tier == null || tier.chassisId != chassisId)
                         continue;
 
-                    if (tier.teamMenuPreviewSprites != null && tier.teamMenuPreviewSprites.Count > 0)
-                    {
-                        for (int i = 0; i < tier.teamMenuPreviewSprites.Count; i++)
-                        {
-                            var v = tier.teamMenuPreviewSprites[i];
-                            if (v == null || v.sprite == null) continue;
-                            if (team != TeamManager.Team.None && v.team == team)
-                                return v.sprite;
-                        }
-                    }
-
-                    if (tier.menuPreviewSprite != null)
-                        return tier.menuPreviewSprite;
+                    // Theatrical generate writes theatrical* fields; top-down writes menuPreview*.
+                    Sprite theatrical = tier.GetTheatricalMenuPreviewSprite(team);
+                    if (theatrical != null)
+                        return theatrical;
+                    return tier.GetMenuPreviewSprite(team);
                 }
                 return null;
             }

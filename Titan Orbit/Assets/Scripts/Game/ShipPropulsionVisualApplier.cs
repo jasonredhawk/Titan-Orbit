@@ -419,7 +419,8 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Instantiates engine/thruster flame prefabs at <see cref="ChassisComponentStats"/> mount sites.
+        /// Instantiates one flame ring at <see cref="ChassisComponentStats"/> nozzle sites
+        /// (thruster VFX mounts, or Engine_* when the hull has none).
         /// Sets <c>_initialized</c> only when at least one particle instance was created — otherwise
         /// LateUpdate exits early and the ship stays without thrust VFX.
         /// </summary>
@@ -447,26 +448,40 @@ namespace TitanOrbit.Game
 
             SuppressAuthoredJetFlames();
 
-            // Engine_* stays out of enablePropulsionVfx (identity parenting faced
-            // the flame forward). Parent to the hull and PlaceAndScaleJet so the
-            // player's type is visible on the rear nozzles and aims aft.
+            // One flame ring only. Thruster VFX mounts are the nozzles (AstroEagle
+            // stacks Engine_2 just ahead of Thruster). Spawning on both stacked a
+            // second ring that bloom made obvious. Engine_* is fallback for
+            // engine-only hulls (no enablePropulsionVfx mounts).
             GameObject stylePrefab = ResolveStylePrefab();
-            foreach (Transform t in stats.engineTransforms)
+            bool hasThrusterJets = false;
+            for (int i = 0; i < stats.thrusterVfxTransforms.Count; i++)
             {
-                if (t == null || IsAlreadyThrusterVfxMount(t, stats))
-                    continue;
+                if (stats.thrusterVfxTransforms[i] != null)
+                {
+                    hasThrusterJets = true;
+                    break;
+                }
+            }
 
-                GameObject prefab = stylePrefab != null ? stylePrefab : _settings.engineVfxPrefab;
-                if (prefab == null)
-                    continue;
+            if (!hasThrusterJets)
+            {
+                foreach (Transform t in stats.engineTransforms)
+                {
+                    if (t == null || IsAlreadyThrusterVfxMount(t, stats))
+                        continue;
 
-                SpawnStyleJet(
-                    prefab,
-                    t,
-                    mountScale: 1f,
-                    _engineVfxInstances,
-                    _engineJets,
-                    _engineParticleSystems);
+                    GameObject prefab = stylePrefab != null ? stylePrefab : _settings.engineVfxPrefab;
+                    if (prefab == null)
+                        continue;
+
+                    SpawnStyleJet(
+                        prefab,
+                        t,
+                        mountScale: 1f,
+                        _engineVfxInstances,
+                        _engineJets,
+                        _engineParticleSystems);
+                }
             }
 
             for (int i = 0; i < stats.thrusterVfxTransforms.Count; i++)
@@ -475,7 +490,7 @@ namespace TitanOrbit.Game
                 if (t == null)
                     continue;
 
-                GameObject prefab = ResolveStylePrefab() ?? _settings.thrusterVfxPrefab;
+                GameObject prefab = stylePrefab != null ? stylePrefab : _settings.thrusterVfxPrefab;
                 if (prefab == null)
                     continue;
 

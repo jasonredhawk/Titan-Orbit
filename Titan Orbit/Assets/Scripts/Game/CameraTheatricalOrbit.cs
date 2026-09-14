@@ -156,9 +156,8 @@ namespace TitanOrbit.Game
                 localWaypoints.Add(anchorLocal);
             }
 
-            // Gameplay sit is almost +Y. Circling while still looking down spins the
-            // view around world Y. Tilt off that pole first, then a small yaw, then
-            // the surround — one orbit direction the whole loop.
+            // Caller (the world-X crane) already left the look-down pole. Walk one
+            // heading from here so the first orbit leg is a continuation, not a spin.
             float startRadius = Mathf.Max(0.01f, startLocal.magnitude);
             Vector3 startDir = startLocal / startRadius;
             float startElevRad = Mathf.Asin(Mathf.Clamp(startDir.y, -1f, 1f));
@@ -167,26 +166,15 @@ namespace TitanOrbit.Game
                 : 0f;
             float orbitSign = rng.NextDouble() < 0.5d ? -1f : 1f;
 
-            float tiltElevRad = Mathf.Lerp(startElevRad, 42f * Mathf.Deg2Rad, 0.88f);
-            tiltElevRad = Mathf.Clamp(tiltElevRad, -20f * Mathf.Deg2Rad, 55f * Mathf.Deg2Rad);
-            float tiltRadius = Mathf.Max(
-                startRadius * 1.2f,
-                characteristicRadiusCached * 3.4f);
-            localWaypoints.Add(SphericalLocal(startAzimuth, tiltElevRad, tiltRadius));
-
-            float introYaw = (22f + (float)rng.NextDouble() * 10f) * Mathf.Deg2Rad;
-            float afterIntroAzimuth = startAzimuth + orbitSign * introYaw;
-            localWaypoints.Add(SphericalLocal(afterIntroAzimuth, tiltElevRad, tiltRadius * 1.08f));
-
-            int surroundCount = Mathf.Max(3, waypointCount - 3);
+            int surroundCount = Mathf.Max(4, waypointCount - 1);
             for (int i = 0; i < surroundCount; i++)
             {
                 localWaypoints.Add(GenerateSurroundLocalOffset(
                     i,
                     surroundCount,
-                    afterIntroAzimuth,
-                    tiltElevRad,
-                    tiltRadius,
+                    startAzimuth,
+                    startElevRad,
+                    startRadius,
                     orbitSign));
             }
 
@@ -303,7 +291,8 @@ namespace TitanOrbit.Game
             // --- Monotonic surround from the live heading ---
             float slice = (Mathf.PI * 2f) / Mathf.Max(1, count);
             float jitter = (float)((rng.NextDouble() - 0.5d) * slice * 0.35d);
-            float azimuth = startAzimuth + orbitSign * ((index + 1) * slice + jitter);
+            float steps = index <= 0 ? 0.4f : (index == 1 ? 0.9f : index + 1);
+            float azimuth = startAzimuth + orbitSign * (steps * slice + jitter);
 
             float targetElevRad = Mathf.Lerp(minElevationDeg, maxElevationDeg, (float)rng.NextDouble())
                 * Mathf.Deg2Rad;
@@ -315,8 +304,8 @@ namespace TitanOrbit.Game
                 radiusMul = Mathf.Lerp(pathRadiusMinMultiplier, pathRadiusMaxMultiplier, (float)rng.NextDouble());
             float targetRadius = baseRadius * radiusMul;
 
-            // First surround point still eases off the intro tilt; later points are full random.
-            float poseEase = index <= 0 ? 0.45f : (index == 1 ? 0.75f : 1f);
+            // First surround point stays close to the crane pose; later points open up.
+            float poseEase = index <= 0 ? 0.35f : (index == 1 ? 0.7f : 1f);
             float elevRad = Mathf.Lerp(startElevRad, targetElevRad, poseEase);
             float radius = Mathf.Lerp(startRadius, targetRadius, poseEase);
             return SphericalLocal(azimuth, elevRad, radius);

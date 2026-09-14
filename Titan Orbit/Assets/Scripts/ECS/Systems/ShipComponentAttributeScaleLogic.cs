@@ -426,12 +426,12 @@ namespace TitanOrbit.ECS
         /// </summary>
         /// <param name="rates">Per-group <c>perLevel/base</c> fractions from <see cref="BuildRatesFromProfileSet"/>.</param>
         /// <param name="territoryMovementMult">
-        /// Friendly-triangle speed multiplier (usually 1). Scales Engine/Thruster meshes for territory feedback.
-        /// Presentation-only — pass 1 for physics collider bakes so server and client hulls match.
+        /// Friendly-triangle speed multiplier (usually 1). Grows Engine + Thruster meshes in place
+        /// (scale only — not localPosition). Presentation-only — pass 1 for collider bakes.
         /// </param>
         /// <param name="overdriveThrusterMult">
-        /// [TITAN-ORBIT] OVERDRIVE visual boost (usually 1). Scales <b>thruster</b> mounts only to match
-        /// the burst speed feel (<see cref="ShipOverdriveTuning.SpeedMultiplier"/>). Pass 1 for colliders.
+        /// [TITAN-ORBIT] OVERDRIVE visual boost (usually 1). Same in-place grow on Engine + Thruster
+        /// so the rear assembly stays one set. Pass 1 for colliders.
         /// </param>
         /// <param name="storeFactors">
         /// [TITAN-ORBIT] Moon-store extra-component grow from
@@ -474,24 +474,22 @@ namespace TitanOrbit.ECS
             tailScale *= store.Tail;
             partScale *= store.Part;
 
-            // --- Territory speed feedback (Engine + Thruster mounts) ---
-            // [TITAN-ORBIT] Faster in friendly triangles → bigger propulsion meshes.
-            // Collider bake must pass 1 — territory is local-owner presentation, not sim size.
-            float tMult = Mathf.Max(1f, territoryMovementMult);
-            engineScale *= tMult;
-            thrusterScale *= tMult;
+            // --- Territory / OVERDRIVE bloom (Engine + Thruster, scale only) ---
+            // [TITAN-ORBIT] Faster in a friendly triangle or Shift+RMB burst → bigger
+            // rear propulsion. Collider bake must pass 1 — bloom is presentation, not sim size.
+            // Apply bloom to scale only. Multiplying localPosition peeled AstroEagle
+            // Thruster (z≈-6.9) off Engine_2 (z≈-5.7) into a second rear cluster.
+            // Both groups get the same bloom so the stacked assembly stays one set.
+            float propulsionBloom = Mathf.Max(1f, territoryMovementMult)
+                * Mathf.Max(1f, overdriveThrusterMult);
 
-            // --- OVERDRIVE thruster bloom (thrusters only) ---
-            // [TITAN-ORBIT] Shift+RMB burst → jets grow with the same proportion as the speed mult.
-            thrusterScale *= Mathf.Max(1f, overdriveThrusterMult);
-
-            ApplyGroup(cockpit, cockpitScale);
-            ApplyGroup(wing, wingScale);
-            ApplyGroup(weapon, weaponScale);
-            ApplyGroup(engine, engineScale);
-            ApplyGroup(thruster, thrusterScale);
-            ApplyGroup(tail, tailScale);
-            ApplyGroup(part, partScale);
+            ApplyGroup(cockpit, cockpitScale, cockpitScale);
+            ApplyGroup(wing, wingScale, wingScale);
+            ApplyGroup(weapon, weaponScale, weaponScale);
+            ApplyGroup(engine, engineScale * propulsionBloom, engineScale);
+            ApplyGroup(thruster, thrusterScale * propulsionBloom, thrusterScale);
+            ApplyGroup(tail, tailScale, tailScale);
+            ApplyGroup(part, partScale, partScale);
         }
 
         /// <summary>
@@ -766,9 +764,12 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// Writes <paramref name="scaleFactor"/> × bind-time localScale/localPosition onto each mount.
+        /// Writes bind-time localScale × <paramref name="visualScale"/> and localPosition ×
+        /// <paramref name="positionScale"/> onto each mount. Territory / OVERDRIVE pass a
+        /// larger visual scale and leave position at the attribute/store factor so bloom
+        /// cannot peel a second propulsion cluster off the hull.
         /// </summary>
-        static void ApplyGroup(ScaleGroup group, float scaleFactor)
+        static void ApplyGroup(ScaleGroup group, float visualScale, float positionScale)
         {
             if (group.Transforms == null)
                 return;
@@ -779,9 +780,9 @@ namespace TitanOrbit.ECS
                 if (t == null || i >= group.BaseScales.Count)
                     continue;
 
-                t.localScale = group.BaseScales[i] * scaleFactor;
+                t.localScale = group.BaseScales[i] * visualScale;
                 if (i < group.BasePositions.Count)
-                    t.localPosition = group.BasePositions[i] * scaleFactor;
+                    t.localPosition = group.BasePositions[i] * positionScale;
             }
         }
     }

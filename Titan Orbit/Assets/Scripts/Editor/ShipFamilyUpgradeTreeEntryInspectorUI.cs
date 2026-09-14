@@ -90,11 +90,26 @@ namespace TitanOrbit.Editor
             y = DrawStandardProperty(new Rect(position.x, y, width, line), element.FindPropertyRelative("prefab"), gap);
             PrepopulateUpgradeTreeShipNameIfBlank(element);
 
-            float menuPreviewHeight = EditorGUI.GetPropertyHeight(element.FindPropertyRelative("menuPreviewSprite"), true);
-            y = DrawPropertyBlock(new Rect(position.x, y, width, menuPreviewHeight), element.FindPropertyRelative("menuPreviewSprite"), gap);
+            SerializedProperty menuPreviewSpriteProp = element.FindPropertyRelative("menuPreviewSprite");
+            SerializedProperty theatricalMenuPreviewSpriteProp = element.FindPropertyRelative("theatricalMenuPreviewSprite");
+            SerializedProperty teamMenuPreviewSpritesProp = element.FindPropertyRelative("teamMenuPreviewSprites");
+            SerializedProperty teamTheatricalMenuPreviewSpritesProp = element.FindPropertyRelative("teamTheatricalMenuPreviewSprites");
 
-            float teamPreviewHeight = EditorGUI.GetPropertyHeight(element.FindPropertyRelative("teamMenuPreviewSprites"), true);
-            y = DrawPropertyBlock(new Rect(position.x, y, width, teamPreviewHeight), element.FindPropertyRelative("teamMenuPreviewSprites"), gap);
+            float menuPreviewHeight = EditorGUI.GetPropertyHeight(menuPreviewSpriteProp, true);
+            y = DrawPropertyBlock(new Rect(position.x, y, width, menuPreviewHeight), menuPreviewSpriteProp, gap);
+            if (theatricalMenuPreviewSpriteProp != null)
+            {
+                float theatricalHeight = EditorGUI.GetPropertyHeight(theatricalMenuPreviewSpriteProp, true);
+                y = DrawPropertyBlock(new Rect(position.x, y, width, theatricalHeight), theatricalMenuPreviewSpriteProp, gap);
+            }
+
+            float teamPreviewHeight = EditorGUI.GetPropertyHeight(teamMenuPreviewSpritesProp, true);
+            y = DrawPropertyBlock(new Rect(position.x, y, width, teamPreviewHeight), teamMenuPreviewSpritesProp, gap);
+            if (teamTheatricalMenuPreviewSpritesProp != null)
+            {
+                float teamTheatricalHeight = EditorGUI.GetPropertyHeight(teamTheatricalMenuPreviewSpritesProp, true);
+                y = DrawPropertyBlock(new Rect(position.x, y, width, teamTheatricalHeight), teamTheatricalMenuPreviewSpritesProp, gap);
+            }
 
             y = DrawStandardProperty(new Rect(position.x, y, width, line), element.FindPropertyRelative("minHomePlanetLevel"), gap);
             y = DrawStandardProperty(new Rect(position.x, y, width, line), element.FindPropertyRelative("lockedInUpgradeTree"), gap);
@@ -109,7 +124,13 @@ namespace TitanOrbit.Editor
         {
             float height = (line + gap) * 3; // chassisId, upgradeTreeShipName, prefab
             height += EditorGUI.GetPropertyHeight(element.FindPropertyRelative("menuPreviewSprite"), true) + gap;
+            SerializedProperty theatricalPreviewProp = element.FindPropertyRelative("theatricalMenuPreviewSprite");
+            if (theatricalPreviewProp != null)
+                height += EditorGUI.GetPropertyHeight(theatricalPreviewProp, true) + gap;
             height += EditorGUI.GetPropertyHeight(element.FindPropertyRelative("teamMenuPreviewSprites"), true) + gap;
+            SerializedProperty teamTheatricalProp = element.FindPropertyRelative("teamTheatricalMenuPreviewSprites");
+            if (teamTheatricalProp != null)
+                height += EditorGUI.GetPropertyHeight(teamTheatricalProp, true) + gap;
             height += (line + gap) * 2; // minHomePlanetLevel, lockedInUpgradeTree
             height += gap; // before breakdown
             height += line + gap; // breakdown title

@@ -11,8 +11,8 @@ namespace TitanOrbit.Game
     /// <summary>
     /// Client-side component mesh scaling on ship proxies when bottom-bar attribute upgrades change,
     /// when moon-dock store extras of the same part type raise visual scale, when the ship is
-    /// inside a friendly territory triangle (Engine/Thruster mounts grow), and when OVERDRIVE is
-    /// active (Thruster mounts bloom with the baked overdrive speed mul).
+    /// inside a friendly territory triangle (Engine/Thruster mounts grow in place), and when
+    /// OVERDRIVE is active (same in-place bloom on the rear propulsion set).
     /// Attached by EcsWorldVisualizer.
     /// <para>
     /// Growth rates come from <c>ShipFamilyPartCalcProfileSet.asset</c> Part Profiles
@@ -21,10 +21,11 @@ namespace TitanOrbit.Game
     /// (territory / overdrive are presentation-only).
     /// </para>
     /// <para>
-    /// [TITAN-ORBIT] Territory boosts are <b>smoothed</b>; OVERDRIVE thruster bloom <b>snaps</b>
+    /// [TITAN-ORBIT] Territory boosts are <b>smoothed</b>; OVERDRIVE bloom <b>snaps</b>
     /// with <see cref="ShipOverdriveTuning.IsBurstActive"/> (same rule as the motor — pending
-    /// Shift/Thrust + ghosted energy/lockout). Thruster VFX is <b>not</b> ForceRefresh'd on boost
-    /// changes — that restart was the blink; <see cref="ShipPropulsionVisualApplier"/> self-heals.
+    /// Shift/Thrust + ghosted energy/lockout). Bloom is scale-only so Engine + Thruster stay
+    /// one set. Thruster VFX is <b>not</b> ForceRefresh'd on boost changes — that restart was
+    /// the blink; <see cref="ShipPropulsionVisualApplier"/> self-heals.
     /// </para>
     /// </summary>
     [DefaultExecutionOrder(95)]
@@ -71,7 +72,7 @@ namespace TitanOrbit.Game
 
         /// <summary>Smoothed territory mul actually applied to meshes this frame.</summary>
         float _displayTerritoryMult = 1f;
-        /// <summary>Smoothed overdrive mul actually applied to thruster meshes.</summary>
+        /// <summary>Snapped overdrive mul actually applied to Engine + Thruster meshes.</summary>
         float _displayOverdriveMult = 1f;
 
         /// <summary>Last display muls written to Transform — skip Apply when unchanged.</summary>
@@ -276,7 +277,8 @@ namespace TitanOrbit.Game
                 targetTerritory = Mathf.Max(1f, PlanetConnectionGraphCache.LocalOwnerTerritoryMult);
 
                 // OVERDRIVE bloom: same IsBurstActive rule as the motor (pending Shift/Thrust +
-                // ghosted energy / OverdriveLockout). Snapped below — not eased.
+                // ghosted energy / OverdriveLockout). Snapped below — not eased. Apply() grows
+                // Engine + Thruster in place (one rear set).
                 if (em.HasComponent<ShipState>(_shipEntity))
                 {
                     var ship = em.GetComponentData<ShipState>(_shipEntity);

@@ -334,6 +334,18 @@ namespace TitanOrbit.Game
         /// <summary>True after the first idle-yaw sample this session.</summary>
         bool _hasLastIdleShipYaw;
 
+        /// <summary>
+        /// True while the opening crane is pitching off top-down. The surround path
+        /// does not run yet — LookAt on the look-down pole was the opening spin.
+        /// </summary>
+        bool _theatricalIntroActive;
+
+        /// <summary>Distance from focus to the gameplay camera when the crane started.</summary>
+        float _theatricalIntroStartDistance = 8f;
+
+        /// <summary>Distance from focus at the end of the crane (already off the pole).</summary>
+        float _theatricalIntroEndDistance = 16f;
+
         /// <summary>Cached hull size for orbit radii. Refreshed on network-id / MEGA change, not every frame.</summary>
         float _cachedTheatricalRadius = 4f;
 
@@ -796,8 +808,9 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Snapshots the live gameplay camera, builds a pullback-first orbit path, and
-        /// starts the enter blend. Idempotent if already active.
+        /// Snapshots the live gameplay camera and starts a world-X pitch crane off
+        /// top-down. The surround path is built only after that crane finishes so
+        /// LookAt never runs on the look-down pole.
         /// </summary>
         /// <param name="shipPos">This-frame follow target after MEGA offset.</param>
         void BeginTheatricalMode(Vector3 shipPos)
@@ -819,16 +832,16 @@ namespace TitanOrbit.Game
                 theatricalRadiusMaxMultiplier);
             _theatricalPullbackPosition = focus + shipRot * pullbackLocal;
 
-            // Start the surround path at the live camera. Enter blend eases into the
-            // moving spline — do not park on a 12-minute pullback waypoint.
-            _theatricalOrbit.BeginPathFromCamera(
-                _theatricalBlendStartPosition,
-                focus,
-                shipRot,
-                pullBackFirstWaypoint: false);
+            _theatricalIntroStartDistance = Mathf.Max(
+                0.5f,
+                Vector3.Distance(_theatricalBlendStartPosition, focus));
+            _theatricalIntroEndDistance = Mathf.Max(
+                _theatricalIntroStartDistance * 1.2f,
+                radius * 3.8f);
 
             _theatricalModeActive = true;
             _theatricalReturning = false;
+            _theatricalIntroActive = true;
             _theatricalBlendElapsed = 0f;
             _theatricalIdleTimer = 0f;
             _hasTheatricalSmoothedLookTarget = false;
@@ -853,6 +866,7 @@ namespace TitanOrbit.Game
 
             _theatricalModeActive = false;
             _theatricalReturning = true;
+            _theatricalIntroActive = false;
             _theatricalBlendElapsed = 0f;
             _hasTheatricalSmoothedLookTarget = false;
             _hasTheatricalSmoothedRotation = false;
@@ -871,6 +885,7 @@ namespace TitanOrbit.Game
             _hasTheatricalSmoothedFov = false;
             _wasLocalShipDead = false;
             _hasLastIdleShipYaw = false;
+            _theatricalIntroActive = false;
         }
 
         /// <summary>
@@ -889,8 +904,7 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Samples the orbit (or exit lerp) and writes the camera pose that LateUpdate should apply.
-        /// Enter blend: first ~55% pulls back top-down, then rotates into the orbit without a hitch.
+        /// Samples the crane, orbit, or exit lerp and writes the camera pose LateUpdate applies.
         /// </summary>
         void ApplyTheatricalOrReturnCamera(
             Vector3 gameplayPosition,
@@ -911,19 +925,18 @@ namespace TitanOrbit.Game
 
             if (_theatricalModeActive && !_theatricalReturning)
             {
+                if (_theatricalIntroActive)
+                {
+                    ApplyTheatricalIntroCrane(focus, shipRot, dt, out finalPosition, out finalRotation, out finalFov);
+                    return;
+                }
+
                 // Scene objects may still hold the first-compile glacial knobs (3.5s enter,
                 // 1.8s look). Clamp those so the orbit actually travels around the ship.
                 float lookSmooth = theatricalLookSmoothTime > 1f ? 0.22f : theatricalLookSmoothTime;
                 float rotSmooth = theatricalRotationSmoothTime > 1f ? 0.28f : theatricalRotationSmoothTime;
                 float fovSmooth = theatricalFovSmoothTime > 1.2f ? 0.55f : theatricalFovSmoothTime;
-                float enterDur = theatricalEnterBlendDuration > 2.2f ? 1.25f : theatricalEnterBlendDuration;
 
-                float enterT = enterDur > 0.0001f
-                    ? Mathf.Clamp01(_theatricalBlendElapsed / enterDur)
-                    : 1f;
-                bool enterBlendActive = enterT < 1f - 0.0001f;
-
-                // Path always advances so the camera travels around the ship on all axes.
                 _theatricalOrbit.Advance(dt, focus, shipRot);
 
                 _theatricalOrbit.Sample(
@@ -962,8 +975,6 @@ namespace TitanOrbit.Game
                     orbitRotation,
                     1f - Mathf.Exp(-dt / Mathf.Max(0.05f, rotSmooth)));
 
-                // Scene objects may still hold the first-compile 48° far FOV — bump so
-                // far legs actually zoom out.
                 float fovMin = theatricalFovMin;
                 float fovMax = theatricalFovMax < 58f ? 64f : theatricalFovMax;
                 float targetFov = Mathf.Lerp(fovMax, fovMin, zoomT);
@@ -980,29 +991,6 @@ namespace TitanOrbit.Game
                     fovSmooth,
                     Mathf.Infinity,
                     dt);
-
-                if (enterBlendActive)
-                {
-                    // --- Ease from top-down into the path ---
-                    // Look from the blended pose (still mostly above), not from the
-                    // already-yawed orbit sample — that was the opening spin.
-                    _theatricalBlendElapsed += dt;
-                    float blendT = Mathf.SmoothStep(
-                        0f,
-                        1f,
-                        Mathf.Clamp01(_theatricalBlendElapsed / enterDur));
-                    finalPosition = Vector3.Lerp(
-                        _theatricalBlendStartPosition,
-                        orbitPosition,
-                        blendT);
-                    Quaternion lookFromHere = LookAtShip(finalPosition, _theatricalSmoothedLookTarget);
-                    finalRotation = Quaternion.Slerp(
-                        _theatricalBlendStartRotation,
-                        lookFromHere,
-                        blendT);
-                    finalFov = Mathf.Lerp(_theatricalBlendStartFov, _theatricalSmoothedFov, blendT);
-                    return;
-                }
 
                 finalPosition = orbitPosition;
                 finalRotation = _theatricalSmoothedRotation;
@@ -1034,10 +1022,66 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Look-at rotation that stays stable when the camera is almost straight above or
-        /// below the ship. Gameplay follow is Euler(90,0,0) (up = world −Z). A hard switch
-        /// to ship-forward then world-up rolled the lens one way and back on the first
-        /// near-vertical samples.
+        /// Opening crane: pitch only around world X (same frame as gameplay Euler(90,0,0)).
+        /// No yaw, no LookAt — that pair was the wild spin on the look-down pole.
+        /// When the crane finishes, the surround path starts from this already-tilted pose.
+        /// </summary>
+        void ApplyTheatricalIntroCrane(
+            Vector3 focus,
+            Quaternion shipRot,
+            float dt,
+            out Vector3 finalPosition,
+            out Quaternion finalRotation,
+            out float finalFov)
+        {
+            float enterDur = theatricalEnterBlendDuration > 2.2f ? 1.6f : theatricalEnterBlendDuration;
+            if (enterDur < 1.45f)
+                enterDur = 1.6f;
+
+            _theatricalBlendElapsed += dt;
+            float blendT = Mathf.SmoothStep(
+                0f,
+                1f,
+                Mathf.Clamp01(_theatricalBlendElapsed / enterDur));
+
+            const float IntroEndPitchDeg = 40f;
+            float pitch = Mathf.Lerp(90f, IntroEndPitchDeg, blendT);
+            float dist = Mathf.Lerp(_theatricalIntroStartDistance, _theatricalIntroEndDistance, blendT);
+            Quaternion pitched = Quaternion.Euler(pitch, 0f, 0f);
+            finalPosition = focus - pitched * Vector3.forward * dist;
+            // Stay on the pitch crane until we are off the look-down pole, then
+            // ease onto a level (world-up) look-at so the orbit inherits a horizon.
+            finalRotation = pitched;
+            if (pitch < 55f)
+            {
+                Quaternion levelLook = LookAtShip(finalPosition, focus);
+                float levelT = Mathf.InverseLerp(55f, IntroEndPitchDeg, pitch);
+                finalRotation = Quaternion.Slerp(pitched, levelLook, levelT);
+            }
+
+            float midFov = theatricalFovMax < 58f
+                ? 44f
+                : Mathf.Lerp(theatricalFovMin, theatricalFovMax, 0.45f);
+            finalFov = Mathf.Lerp(_theatricalBlendStartFov, midFov, blendT);
+
+            _theatricalSmoothedRotation = finalRotation;
+            _hasTheatricalSmoothedRotation = true;
+            _theatricalSmoothedLookTarget = focus;
+            _hasTheatricalSmoothedLookTarget = true;
+            _theatricalSmoothedFov = finalFov;
+            _hasTheatricalSmoothedFov = true;
+
+            if (blendT < 1f - 0.0001f)
+                return;
+
+            _theatricalIntroActive = false;
+            _theatricalOrbit.BeginPathFromCamera(finalPosition, focus, shipRot, pullBackFirstWaypoint: false);
+        }
+
+        /// <summary>
+        /// Level look-at: world up is the horizon. Previous-frame up was kept after the
+        /// crane and left the camera rolled while it flew. Only use gameplay −Z up when
+        /// looking almost straight up or down (LookRotation vs world-up is degenerate).
         /// </summary>
         static Quaternion LookAtShip(Vector3 cameraPosition, Vector3 lookTarget)
         {
@@ -1046,17 +1090,15 @@ namespace TitanOrbit.Game
                 return Quaternion.Euler(90f, 0f, 0f);
 
             toFocus.Normalize();
-            float align = Mathf.Abs(Vector3.Dot(toFocus, Vector3.up));
-            // Still on the look-down pole: keep gameplay Euler(90) so a tiny XZ
-            // wobble cannot spin the view around world Y.
-            if (align > 0.94f)
+            Vector3 up = Vector3.up;
+            if (Mathf.Abs(Vector3.Dot(toFocus, Vector3.up)) > 0.92f)
+                up = new Vector3(0f, 0f, -1f);
+
+            Vector3 projected = up - toFocus * Vector3.Dot(up, toFocus);
+            if (projected.sqrMagnitude < 1e-6f)
                 return Quaternion.Euler(90f, 0f, 0f);
 
-            Vector3 verticalUp = new Vector3(0f, 0f, -1f);
-            Vector3 up = align > 0.82f
-                ? Vector3.Slerp(Vector3.up, verticalUp, Mathf.InverseLerp(0.82f, 0.94f, align))
-                : Vector3.up;
-            return Quaternion.LookRotation(toFocus, up);
+            return Quaternion.LookRotation(toFocus, projected.normalized);
         }
 
         /// <summary>
