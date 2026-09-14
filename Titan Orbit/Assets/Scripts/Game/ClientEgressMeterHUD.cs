@@ -1,3 +1,7 @@
+using System;
+using System.Globalization;
+using System.IO;
+using System.Text;
 using TitanOrbit;
 using TitanOrbit.NetCode;
 using UnityEngine;
@@ -6,29 +10,21 @@ using UnityEngine.InputSystem;
 namespace TitanOrbit.Game
 {
     /// <summary>
-    /// On-screen telemetry for per-player NetCode egress while you play.
+    /// On-screen telemetry for how much NetCode payload this client is receiving.
     /// <para>
     /// Enable <b>HUD → Show Egress Meter</b> on <c>GameManager</c> (NceGameRoot).
-    /// When off (default), this MonoBehaviour does no ECS work and draws nothing —
-    /// same contract as <c>ShipSpeedometerHUD</c> (no LateUpdate / no OnGUI work).
+    /// When off (default), this MonoBehaviour does no ECS work and draws nothing.
     /// </para>
     /// <para>
-    /// <b>EGRESS THIS PLAYER</b> is client receive (snapshots + inbound RPCs) — the bytes
-    /// Unity Relay / GCE sent toward you. That is the number that drives player-side Relay bills.
-    /// Command packets are upload (client → server) and shown separately so they are not
-    /// mixed into egress. Server per-connection EndSend is not hooked (Burst Local Host
-    /// crashed on that path) — Local Host still shows this client's receive.
+    /// The big number is <b>download</b>: world snapshots + inbound RPCs the dedicated
+    /// server sent toward you over direct UDP (no Unity Relay). Upload is not sampled
+    /// after the Burst crash fix. Shift+F8 or Reset zeros the session. Instruction
+    /// Image Capture also uses Shift+F8 — leave that tool off while metering.
     /// </para>
     /// <para>
-    /// UDP/IP, DTLS/WSS, and Relay encapsulation are not in the payload counters. The overlay
-    /// adds an estimated header line from packet count × (UTP MaxHeaderSize + 28 + Relay guess).
-    /// UTP heartbeats are not in GhostSend/Rpc EndSend — treat ~1 KB/s as slack.
-    /// </para>
-    /// <para>
-    /// Shift+F8 or the RESET button zeros session totals so a quiet cruise vs a fight is easy
-    /// to isolate. Instruction Image Capture also uses Shift+F8 to cancel — leave that tool off
-    /// while metering. Client presentation only — dedicated servers skip install via
-    /// <see cref="TitanOrbitDedicatedServerAutoBoot.ShouldRunClientPresentation"/>.
+    /// While the overlay is on, 1 Hz samples are appended to
+    /// <c>Titan Orbit/Logs/egress-meter-*.csv</c> (gitignored) so a session can be read
+    /// after Play Mode. Nothing is stored if the meter was never enabled.
     /// </para>
     /// </summary>
     [DefaultExecutionOrder(70150)]
@@ -43,35 +39,39 @@ namespace TitanOrbit.Game
         /// <summary>Smoothing factor for the 10 s EMA at 1 Hz samples (≈ 1 − exp(−1/10)).</summary>
         const float EmaAlpha = 0.1f;
 
-        /// <summary>Last GameManager overlay value we applied (so turning on resets the session).</summary>
         bool _wasEnabled;
-
-        /// <summary>Realtime at session start / last reset.</summary>
         float _sessionStartRealtime;
-
-        /// <summary>Last 1 Hz sample time.</summary>
         float _lastSampleRealtime;
-
-        /// <summary>Previous 1 Hz client recv snapshot+rpc bytes (for instant KB/s).</summary>
         ulong _prevRecvBytes;
-
-        /// <summary>Previous 1 Hz client recv packet count (for header estimate).</summary>
+        ulong _prevSnapBytes;
+        ulong _prevRpcBytes;
         ulong _prevRecvPackets;
-
-        /// <summary>Instantaneous payload KB/s from the last 1 s window.</summary>
         float _instantKBps;
-
-        /// <summary>Exponential moving average of 1 s rates (~10 s time constant).</summary>
         float _emaKBps;
-
-        /// <summary>Peak 1 s KB/s this session.</summary>
         float _peakKBps;
-
-        /// <summary>Estimated UDP+UTP (+Relay) header KB/s from the last 1 s packet delta.</summary>
+        float _instantSnapKBps;
+        float _instantRpcKBps;
         float _headerKBps;
-
-        /// <summary>True after the first 1 s sample so we do not treat join as a spike from zero.</summary>
         bool _havePrevSample;
+
+        GUIStyle _titleStyle;
+        GUIStyle _sectionStyle;
+        GUIStyle _bodyStyle;
+        GUIStyle _mutedStyle;
+
+        string _lineNow = "Starting…";
+        string _lineAvgPeak = string.Empty;
+        string _lineSession = string.Empty;
+        string _lineSnap = string.Empty;
+        string _lineRpc = string.Empty;
+        string _lineGhosts = string.Empty;
+        string _lineNote = string.Empty;
+        string _lineLog = string.Empty;
+        string _status = "Starting…";
+
+        StreamWriter _log;
+        string _logFileName = string.Empty;
+        readonly StringBuilder _csv = new StringBuilder(256);
 
         /// <summary>
         /// [UNITY] Auto-install after scene load. Dedicated servers skip entirely.
@@ -100,7 +100,7 @@ namespace TitanOrbit.Game
 
         /// <summary>
         /// [UNITY] Update — sample rates at 1 Hz and accept Shift+F8 reset.
-        /// Returns immediately when the GameManager toggle is off (no ECS, no HUD math).
+        /// Returns immediately when the GameManager toggle is off.
         /// </summary>
         void Update()
         {
@@ -110,6 +110,8 @@ namespace TitanOrbit.Game
             bool enabled = TitanOrbitDebugFlags.EgressMeterEnabled;
             if (!enabled)
             {
+                if (_wasEnabled)
+                    CloseLog("meter off");
                 _wasEnabled = false;
                 return;
             }
@@ -135,10 +137,18 @@ namespace TitanOrbit.Game
             SampleOneSecond(now);
         }
 
+        void OnDisable()
+        {
+            CloseLog("disabled");
+        }
+
+        void OnDestroy()
+        {
+            CloseLog("destroyed");
+        }
+
         /// <summary>
-        /// Dark telemetry overlay (debug HUD, not a light settings card).
-        /// Drawn only while the toggle is on and this is a client process.
-        /// Rates are precomputed at 1 Hz so OnGUI does no ECS work.
+        /// Dark telemetry overlay. Draws cached 1 Hz strings only — no ECS work in OnGUI.
         /// </summary>
         void OnGUI()
         {
@@ -146,75 +156,44 @@ namespace TitanOrbit.Game
                 !TitanOrbitDedicatedServerAutoBoot.ShouldRunClientPresentation())
                 return;
 
+            EnsureStyles();
+
             Color prevBg = GUI.backgroundColor;
             Color prevContent = GUI.contentColor;
             GUI.backgroundColor = new Color(0.012f, 0.016f, 0.028f, 0.94f);
             GUI.contentColor = new Color(0.88f, 0.92f, 0.98f);
 
-            const float width = 440f;
-            float height = 28f + 18f * 16f;
-            if (TitanOrbitEgressMeter.ServerConnectionCount > 0)
-                height += 18f * (2 + TitanOrbitEgressMeter.ServerConnectionCount);
-
-            // Top-right so we do not cover the stutter isolator (top-left) or speedometer (top-center).
+            const float width = 420f;
+            const float height = 340f;
             float x = Mathf.Max(12f, Screen.width - width - 12f);
             GUILayout.BeginArea(new Rect(x, 12f, width, height), GUI.skin.box);
-            GUILayout.Label("EGRESS THIS PLAYER");
-            GUILayout.Label(
-                "recv  " + FormatKBps(_instantKBps) +
-                "   avg " + FormatKBps(_emaKBps) +
-                "   peak " + FormatKBps(_peakKBps));
 
-            ulong recvTotal = TitanOrbitEgressMeter.ClientRecvSnapshotBytes +
-                               TitanOrbitEgressMeter.ClientRecvRpcBytes;
-            float elapsed = Mathf.Max(0.01f, Time.realtimeSinceStartup - _sessionStartRealtime);
-            GUILayout.Label(
-                "session  " + FormatMb(recvTotal) +
-                "  in " + FormatElapsed(elapsed) +
-                (TitanOrbitEgressMeter.HasSample ? string.Empty : "  (waiting for connection)"));
+            GUILayout.Label("Download  (server → you)", _titleStyle);
+            GUILayout.Label(_status, _mutedStyle);
+            GUILayout.Space(4f);
 
-            float snapKBps = BytesPerSecToKBps(TitanOrbitEgressMeter.ClientRecvSnapshotBytes, elapsed);
-            float rpcKBps = BytesPerSecToKBps(TitanOrbitEgressMeter.ClientRecvRpcBytes, elapsed);
-            GUILayout.Label(
-                "snap " + FormatKBps(snapKBps) +
-                "   rpc " + FormatKBps(rpcKBps) +
-                "   pkts " + TitanOrbitEgressMeter.ClientRecvPacketCount);
+            GUILayout.Label(_lineNow, _bodyStyle);
+            GUILayout.Label(_lineAvgPeak, _bodyStyle);
+            GUILayout.Label(_lineSession, _bodyStyle);
 
-            DrawGhostRows();
+            GUILayout.Space(6f);
+            GUILayout.Label("What is arriving", _sectionStyle);
+            GUILayout.Label(_lineSnap, _bodyStyle);
+            GUILayout.Label(_lineRpc, _bodyStyle);
 
-            float uploadKBps = BytesPerSecToKBps(
-                TitanOrbitEgressMeter.ClientSendCommandBytes + TitanOrbitEgressMeter.ClientSendRpcBytes,
-                elapsed);
-            GUILayout.Label(
-                "upload (commands+client RPCs, not egress)  " + FormatKBps(uploadKBps));
-
-            ulong headerBytes = EstimateHeaderBytes(
-                TitanOrbitEgressMeter.ClientRecvPacketCount,
-                TitanOrbitEgressMeter.UtpHeaderBytes,
-                TitanOrbitEgressMeter.RelayActive);
-            GUILayout.Label(
-                "est. UDP+UTP headers  " + FormatKBps(_headerKBps) +
-                "  (" + FormatMb(headerBytes) + " session)" +
-                "   Relay: " + (TitanOrbitEgressMeter.RelayActive ? "yes" : "off"));
-            GUILayout.Label("UTP heartbeats ~1 KB/s slack, not in payload");
-
-            if (TitanOrbitEgressMeter.ServerConnectionCount > 0)
+            if (!string.IsNullOrEmpty(_lineGhosts))
             {
-                GUILayout.Label("SERVER SEND (this process)");
-                for (int i = 0; i < TitanOrbitEgressMeter.ServerConnectionCount; i++)
-                {
-                    var row = TitanOrbitEgressMeter.ServerConnections[i];
-                    ulong send = row.SendSnapshotBytes + row.SendRpcBytes;
-                    GUILayout.Label(
-                        "nid " + row.NetworkId +
-                        "  " + FormatKBps(BytesPerSecToKBps(send, elapsed)) +
-                        "  snap " + FormatMb(row.SendSnapshotBytes) +
-                        "  rpc " + FormatMb(row.SendRpcBytes) +
-                        "  pkts " + row.SendPackets);
-                }
+                GUILayout.Space(6f);
+                GUILayout.Label("Latest world snapshot", _sectionStyle);
+                GUILayout.Label(_lineGhosts, _mutedStyle);
             }
 
-            if (GUILayout.Button("RESET session (Shift+F8)"))
+            GUILayout.Space(6f);
+            GUILayout.Label(_lineNote, _mutedStyle);
+            GUILayout.Label(_lineLog, _mutedStyle);
+
+            GUILayout.Space(4f);
+            if (GUILayout.Button("Reset session  (Shift+F8)"))
                 ResetSession();
 
             GUILayout.EndArea();
@@ -223,14 +202,14 @@ namespace TitanOrbit.Game
             GUI.contentColor = prevContent;
         }
 
-        /// <summary>Starts a fresh session clock and zeros running totals.</summary>
+        /// <summary>Starts a fresh session clock, log file, and zeros running totals.</summary>
         void BeginSession()
         {
             ResetSession();
         }
 
         /// <summary>
-        /// Zeros Shared + ECS counters (copy systems apply ResetVersion) and HUD rate state.
+        /// Zeros Shared counters and HUD rate state. Keeps the same CSV and writes a RESET marker.
         /// </summary>
         void ResetSession()
         {
@@ -238,27 +217,44 @@ namespace TitanOrbit.Game
             _sessionStartRealtime = Time.realtimeSinceStartup;
             _lastSampleRealtime = _sessionStartRealtime;
             _prevRecvBytes = 0;
+            _prevSnapBytes = 0;
+            _prevRpcBytes = 0;
             _prevRecvPackets = 0;
             _instantKBps = 0f;
             _emaKBps = 0f;
             _peakKBps = 0f;
+            _instantSnapKBps = 0f;
+            _instantRpcKBps = 0f;
             _headerKBps = 0f;
             _havePrevSample = false;
+            _status = "Waiting for a connection…";
+            _lineNow = "Now          —";
+            _lineAvgPeak = "Avg / peak   —";
+            _lineSession = "This session —";
+            _lineSnap = "World updates (snapshots)  —";
+            _lineRpc = "Game events (RPCs)         —";
+            _lineGhosts = string.Empty;
+            _lineNote = "Game payload only — not a full internet capture.";
+            OpenLogIfNeeded();
+            WriteLogMarker("RESET");
+            RebuildLogLine();
         }
 
         /// <summary>Derives instant / EMA / peak KB/s from the last 1 s of client receive.</summary>
         void SampleOneSecond(float now)
         {
-            ulong recv = TitanOrbitEgressMeter.ClientRecvSnapshotBytes +
-                         TitanOrbitEgressMeter.ClientRecvRpcBytes;
+            ulong snap = TitanOrbitEgressMeter.ClientRecvSnapshotBytes;
+            ulong rpc = TitanOrbitEgressMeter.ClientRecvRpcBytes;
+            ulong recv = snap + rpc;
             ulong packets = TitanOrbitEgressMeter.ClientRecvPacketCount;
             float dt = Mathf.Max(0.001f, now - _lastSampleRealtime);
             _lastSampleRealtime = now;
 
             if (_havePrevSample)
             {
-                ulong delta = recv >= _prevRecvBytes ? recv - _prevRecvBytes : 0UL;
-                _instantKBps = (delta / 1024f) / dt;
+                _instantKBps = BytesDeltaToKBps(recv, _prevRecvBytes, dt);
+                _instantSnapKBps = BytesDeltaToKBps(snap, _prevSnapBytes, dt);
+                _instantRpcKBps = BytesDeltaToKBps(rpc, _prevRpcBytes, dt);
                 _emaKBps = _emaKBps <= 0.001f
                     ? _instantKBps
                     : Mathf.Lerp(_emaKBps, _instantKBps, EmaAlpha);
@@ -274,67 +270,233 @@ namespace TitanOrbit.Game
             }
 
             _prevRecvBytes = recv;
+            _prevSnapBytes = snap;
+            _prevRpcBytes = rpc;
             _prevRecvPackets = packets;
             _havePrevSample = true;
+
+            RebuildDisplay(recv, snap, rpc);
+            WriteLogSample(recv, snap, rpc, packets);
         }
 
-        /// <summary>
-        /// Editor ghost-type rows (ships / planets / gems). Hidden when stats are empty.
-        /// SizeInBits is the last received snapshot, shown as KB of that snapshot (not a 60 Hz guess).
-        /// </summary>
-        static void DrawGhostRows()
+        /// <summary>Refreshes the cached overlay strings from the latest 1 s sample.</summary>
+        void RebuildDisplay(ulong recv, ulong snap, ulong rpc)
+        {
+            if (!TitanOrbitEgressMeter.HasSample)
+            {
+                _status = "Waiting for a connection…";
+                return;
+            }
+
+            _status = TitanOrbitEgressMeter.RelayActive
+                ? "Unity Relay join is set — unexpected; this path should be direct UDP."
+                : "Direct UDP  (you ↔ dedicated server)";
+
+            _lineNow = "Now          " + FormatKBps(_instantKBps);
+            _lineAvgPeak = "Avg (~10s)   " + FormatKBps(_emaKBps) +
+                           "     Peak  " + FormatKBps(_peakKBps);
+
+            float elapsed = Mathf.Max(0.01f, Time.realtimeSinceStartup - _sessionStartRealtime);
+            _lineSession = "This session " + FormatMb(recv) + "  in  " + FormatElapsed(elapsed);
+
+            _lineSnap = "World updates (snapshots)  " + FormatKBps(_instantSnapKBps) +
+                        "     " + FormatMb(snap) + " total";
+            _lineRpc = "Game events (RPCs)         " + FormatKBps(_instantRpcKBps) +
+                       "     " + FormatMb(rpc) + " total";
+
+            _lineGhosts = FormatGhostBreakdown();
+            _lineNote = "Game payload only (not a NIC capture). UDP/UTP headers ~" +
+                        FormatKBps(_headerKBps) + ". Keep-alives ~1 KB/s extra.";
+            RebuildLogLine();
+        }
+
+        /// <summary>Editor ghost-type sizes from the last received snapshot (KB, not a rate).</summary>
+        static string FormatGhostBreakdown()
         {
             bool any = TitanOrbitEgressMeter.GhostShipCount +
                        TitanOrbitEgressMeter.GhostPlanetCount +
                        TitanOrbitEgressMeter.GhostGemCount +
                        TitanOrbitEgressMeter.GhostOtherCount > 0;
             if (!any)
+                return string.Empty;
+
+            var sb = new StringBuilder(160);
+            AppendGhostRow(sb, "ships", TitanOrbitEgressMeter.GhostShipCount, TitanOrbitEgressMeter.GhostShipBits);
+            AppendGhostRow(sb, "planets", TitanOrbitEgressMeter.GhostPlanetCount, TitanOrbitEgressMeter.GhostPlanetBits);
+            AppendGhostRow(sb, "gems", TitanOrbitEgressMeter.GhostGemCount, TitanOrbitEgressMeter.GhostGemBits);
+            AppendGhostRow(sb, "other", TitanOrbitEgressMeter.GhostOtherCount, TitanOrbitEgressMeter.GhostOtherBits);
+            return sb.ToString();
+        }
+
+        static void AppendGhostRow(StringBuilder sb, string name, uint count, ulong bits)
+        {
+            if (count == 0)
+                return;
+            if (sb.Length > 0)
+                sb.Append("   ");
+            sb.Append(count.ToString());
+            sb.Append(' ');
+            sb.Append(name);
+            sb.Append("  ");
+            sb.Append(FormatBitsKb(bits));
+        }
+
+        void RebuildLogLine()
+        {
+            _lineLog = string.IsNullOrEmpty(_logFileName)
+                ? "Not writing a log file."
+                : "Saving 1s samples to Logs/" + _logFileName;
+        }
+
+        void EnsureStyles()
+        {
+            if (_titleStyle != null)
                 return;
 
-            GUILayout.Label(
-                "last snap  ships " + FormatBitsKb(TitanOrbitEgressMeter.GhostShipBits) +
-                " x" + TitanOrbitEgressMeter.GhostShipCount +
-                "   planets " + FormatBitsKb(TitanOrbitEgressMeter.GhostPlanetBits) +
-                " x" + TitanOrbitEgressMeter.GhostPlanetCount +
-                "   gems " + FormatBitsKb(TitanOrbitEgressMeter.GhostGemBits) +
-                " x" + TitanOrbitEgressMeter.GhostGemCount);
-            if (TitanOrbitEgressMeter.GhostOtherCount > 0)
+            _titleStyle = new GUIStyle(GUI.skin.label)
             {
-                GUILayout.Label(
-                    "           other " + FormatBitsKb(TitanOrbitEgressMeter.GhostOtherBits) +
-                    " x" + TitanOrbitEgressMeter.GhostOtherCount);
+                fontStyle = FontStyle.Bold,
+                fontSize = 14,
+            };
+            _sectionStyle = new GUIStyle(GUI.skin.label)
+            {
+                fontStyle = FontStyle.Bold,
+                fontSize = 12,
+            };
+            _bodyStyle = new GUIStyle(GUI.skin.label)
+            {
+                fontSize = 12,
+            };
+            _mutedStyle = new GUIStyle(GUI.skin.label)
+            {
+                fontSize = 11,
+                wordWrap = true,
+            };
+            _mutedStyle.normal.textColor = new Color(0.62f, 0.68f, 0.76f);
+        }
+
+        void OpenLogIfNeeded()
+        {
+            if (_log != null)
+                return;
+
+            try
+            {
+                string dir = GetLogDirectory();
+                Directory.CreateDirectory(dir);
+                string stamp = DateTime.Now.ToString("yyyyMMdd-HHmmss", CultureInfo.InvariantCulture);
+                _logFileName = "egress-meter-" + stamp + ".csv";
+                string path = Path.Combine(dir, _logFileName);
+                _log = new StreamWriter(path, false, new UTF8Encoding(false))
+                {
+                    AutoFlush = true,
+                };
+                _log.WriteLine("# Titan Orbit egress meter — download payload this client received");
+                _log.WriteLine("# started " + DateTime.Now.ToString("o", CultureInfo.InvariantCulture));
+                _log.WriteLine(
+                    "elapsed_s,now_kbps,avg_kbps,peak_kbps,session_bytes,snap_bytes,rpc_bytes,packets,header_kbps,relay,ship_n,ship_kb,planet_n,planet_kb,gem_n,gem_kb,other_n,other_kb");
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning("[EgressMeter] Could not write Logs CSV: " + ex.Message);
+                _log = null;
+                _logFileName = string.Empty;
             }
         }
 
-        /// <summary>Session-average KB/s from a running byte total over elapsed seconds.</summary>
-        static float BytesPerSecToKBps(ulong bytes, float elapsedSeconds)
+        void WriteLogSample(ulong recv, ulong snap, ulong rpc, ulong packets)
         {
-            if (elapsedSeconds <= 0.01f)
-                return 0f;
-            return (bytes / 1024f) / elapsedSeconds;
+            if (_log == null)
+                return;
+
+            float elapsed = Mathf.Max(0f, Time.realtimeSinceStartup - _sessionStartRealtime);
+            _csv.Length = 0;
+            _csv.Append(elapsed.ToString("0.0", CultureInfo.InvariantCulture)).Append(',');
+            _csv.Append(_instantKBps.ToString("0.00", CultureInfo.InvariantCulture)).Append(',');
+            _csv.Append(_emaKBps.ToString("0.00", CultureInfo.InvariantCulture)).Append(',');
+            _csv.Append(_peakKBps.ToString("0.00", CultureInfo.InvariantCulture)).Append(',');
+            _csv.Append(recv).Append(',');
+            _csv.Append(snap).Append(',');
+            _csv.Append(rpc).Append(',');
+            _csv.Append(packets).Append(',');
+            _csv.Append(_headerKBps.ToString("0.00", CultureInfo.InvariantCulture)).Append(',');
+            _csv.Append(TitanOrbitEgressMeter.RelayActive ? '1' : '0').Append(',');
+            _csv.Append(TitanOrbitEgressMeter.GhostShipCount).Append(',');
+            _csv.Append(BitsToKb(TitanOrbitEgressMeter.GhostShipBits)).Append(',');
+            _csv.Append(TitanOrbitEgressMeter.GhostPlanetCount).Append(',');
+            _csv.Append(BitsToKb(TitanOrbitEgressMeter.GhostPlanetBits)).Append(',');
+            _csv.Append(TitanOrbitEgressMeter.GhostGemCount).Append(',');
+            _csv.Append(BitsToKb(TitanOrbitEgressMeter.GhostGemBits)).Append(',');
+            _csv.Append(TitanOrbitEgressMeter.GhostOtherCount).Append(',');
+            _csv.Append(BitsToKb(TitanOrbitEgressMeter.GhostOtherBits));
+            _log.WriteLine(_csv.ToString());
         }
 
-        /// <summary>GhostMetrics SizeInBits → last-snapshot KB (not a rate).</summary>
+        void WriteLogMarker(string tag)
+        {
+            if (_log == null)
+                return;
+            _log.WriteLine(
+                "# " + tag + " " + DateTime.Now.ToString("o", CultureInfo.InvariantCulture));
+        }
+
+        void CloseLog(string reason)
+        {
+            if (_log == null)
+                return;
+            try
+            {
+                _log.WriteLine(
+                    "# end " + reason +
+                    " peak_kbps=" + _peakKBps.ToString("0.00", CultureInfo.InvariantCulture) +
+                    " session_bytes=" + (_prevRecvBytes).ToString(CultureInfo.InvariantCulture));
+                _log.Flush();
+                _log.Dispose();
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning("[EgressMeter] Could not close Logs CSV: " + ex.Message);
+            }
+
+            _log = null;
+        }
+
+        /// <summary>Unity project Logs folder in Editor; persistentDataPath/Logs in a player build.</summary>
+        static string GetLogDirectory()
+        {
+#if UNITY_EDITOR
+            return Path.GetFullPath(Path.Combine(Application.dataPath, "..", "Logs"));
+#else
+            return Path.Combine(Application.persistentDataPath, "Logs");
+#endif
+        }
+
+        static float BytesDeltaToKBps(ulong current, ulong previous, float dt)
+        {
+            ulong delta = current >= previous ? current - previous : 0UL;
+            return (delta / 1024f) / dt;
+        }
+
+        static string BitsToKb(ulong bits)
+        {
+            return (bits / 8f / 1024f).ToString("0.000", CultureInfo.InvariantCulture);
+        }
+
         static string FormatBitsKb(ulong bits)
         {
-            float kb = bits / 8f / 1024f;
-            return kb.ToString("0.00") + " KB";
+            return (bits / 8f / 1024f).ToString("0.00") + " KB";
         }
 
-        /// <summary>Formats a KB/s value for the overlay.</summary>
         static string FormatKBps(float kbps)
         {
             return kbps.ToString("0.0") + " KB/s";
         }
 
-        /// <summary>Formats a byte count as MiB (1024-based) for session totals.</summary>
         static string FormatMb(ulong bytes)
         {
-            double mb = bytes / (1024.0 * 1024.0);
-            return mb.ToString("0.00") + " MB";
+            return (bytes / (1024.0 * 1024.0)).ToString("0.00") + " MB";
         }
 
-        /// <summary>Formats elapsed session time as m:ss.</summary>
         static string FormatElapsed(float seconds)
         {
             int total = Mathf.Max(0, Mathf.FloorToInt(seconds));
@@ -345,7 +507,6 @@ namespace TitanOrbit.Game
 
         /// <summary>
         /// Estimates transport headers for the counted Data packets (not a capture of the NIC).
-        /// UDP+IPv4 + UTP pipeline header + optional Relay guess.
         /// </summary>
         static ulong EstimateHeaderBytes(ulong packetCount, int utpHeaderBytes, bool relay)
         {

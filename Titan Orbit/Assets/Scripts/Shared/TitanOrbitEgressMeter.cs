@@ -71,7 +71,10 @@ namespace TitanOrbit
         /// <summary>Local Host / MPPM host: per-connection server send. Unused slots have NetworkId 0.</summary>
         public static readonly ServerConnRow[] ServerConnections = new ServerConnRow[MaxServerConnections];
 
-        /// <summary>True when this client stored a Unity Relay join allocation.</summary>
+        /// <summary>
+        /// True when this client stored a Unity Relay join allocation.
+        /// Production play is direct UDP to the dedicated server — this should stay false.
+        /// </summary>
         public static bool RelayActive;
 
         /// <summary>

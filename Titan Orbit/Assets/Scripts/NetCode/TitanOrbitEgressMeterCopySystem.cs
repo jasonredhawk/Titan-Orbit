@@ -53,7 +53,8 @@ namespace TitanOrbit.NetCode
     }
 
     /// <summary>
-    /// Copies Relay / UTP header hints and Editor ghost-type stats for the overlay.
+    /// Copies UTP header size, a Relay-join flag (should stay false — play is direct UDP),
+    /// and Editor ghost-type stats for the overlay.
     /// Receive byte totals are accumulated by
     /// <see cref="TitanOrbitEgressMeterReceiveSampleSystem"/> (do not overwrite them here).
     /// World: ClientSimulation. Group: SimulationSystemGroup, last.
@@ -65,7 +66,7 @@ namespace TitanOrbit.NetCode
         bool _metricsMonitorReady;
 
         /// <summary>
-        /// Publishes Relay/header hints and ghost rows. No work when the meter is off.
+        /// Publishes header hints and ghost rows. No work when the meter is off.
         /// </summary>
         protected override void OnUpdate()
         {

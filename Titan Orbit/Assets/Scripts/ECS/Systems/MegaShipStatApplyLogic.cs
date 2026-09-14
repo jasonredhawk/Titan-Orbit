@@ -402,6 +402,7 @@ namespace TitanOrbit.ECS
             mega.StorePlanetId = 0;
             mega.MegaSlotIndex = 0;
             em.SetComponentData(shipEntity, mega);
+            ClearLeftoverMegaMotor(em, shipEntity);
         }
 
         /// <summary>
@@ -427,7 +428,9 @@ namespace TitanOrbit.ECS
             mega.IsMega = false;
             mega.CatalogIndex = 0;
             mega.StorePlanetId = 0;
+            mega.MegaSlotIndex = 0;
             em.SetComponentData(shipEntity, mega);
+            ClearLeftoverMegaMotor(em, shipEntity);
 
             var ship = em.GetComponentData<ShipState>(shipEntity);
             ship.ShipLevel = prevLevel;
@@ -436,6 +439,22 @@ namespace TitanOrbit.ECS
             em.SetComponentData(shipEntity, ship);
 
             ShipStatApplyLogic.ApplyToShip(em, shipEntity, ship.Team, prevLevel, prevBranch);
+        }
+
+        /// <summary>
+        /// Drops Titan ram / collision-mass leftovers so a failed family re-apply cannot
+        /// keep MEGA <see cref="ShipMotorConfig.RammingPower"/> on the restored hull.
+        /// </summary>
+        static void ClearLeftoverMegaMotor(EntityManager em, Entity shipEntity)
+        {
+            if (!em.HasComponent<ShipMotorConfig>(shipEntity))
+                return;
+
+            var motor = em.GetComponentData<ShipMotorConfig>(shipEntity);
+            motor.RammingPower = 0f;
+            motor.Mass = ShipMassLogic.DefaultBaseMass;
+            motor.SkipMassTax = 0;
+            em.SetComponentData(shipEntity, motor);
         }
 
         /// <summary>Keeps ghosted MEGA aim slots 1:1 with weapon mounts.</summary>
