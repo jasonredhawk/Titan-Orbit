@@ -55,6 +55,11 @@ namespace TitanOrbit.ECS
                     ThrusterStyle = cmd.ValueRO.ThrusterStyle,
                     ThrusterColorPacked = cmd.ValueRO.ThrusterColorPacked,
                     ThrusterFollowTeam = cmd.ValueRO.ThrusterFollowTeam,
+                    ThrusterLifeCustom = cmd.ValueRO.ThrusterLifeCustom,
+                    ThrusterLife0Packed = cmd.ValueRO.ThrusterLife0Packed,
+                    ThrusterLife1Packed = cmd.ValueRO.ThrusterLife1Packed,
+                    ThrusterLife2Packed = cmd.ValueRO.ThrusterLife2Packed,
+                    ThrusterLife3Packed = cmd.ValueRO.ThrusterLife3Packed,
                 };
 
                 if (em.HasComponent<ShipAccentColors>(ship))

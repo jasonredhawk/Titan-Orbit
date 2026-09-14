@@ -169,7 +169,7 @@ namespace TitanOrbit.ECS
         /// <summary>1 when the owner picked a thruster style / color.</summary>
         public byte ThrusterCustom;
 
-        /// <summary>0 Classic, 1 Modular, 2 Heavy, 3 Soft.</summary>
+        /// <summary>0 Ribbon, 1 Modular, 2 Heavy, 3 Soft.</summary>
         public byte ThrusterStyle;
 
         /// <summary>Packed RGBA for the locked flame tint.</summary>
@@ -177,6 +177,21 @@ namespace TitanOrbit.ECS
 
         /// <summary>1 = flame follows match team Color1; 0 = locked picker color.</summary>
         public byte ThrusterFollowTeam;
+
+        /// <summary>1 when lifetime stops were edited after the Color-well seed.</summary>
+        public byte ThrusterLifeCustom;
+
+        /// <summary>Packed RGBA for Color-over-Lifetime stop 0.</summary>
+        public uint ThrusterLife0Packed;
+
+        /// <summary>Packed RGBA for Color-over-Lifetime stop 1.</summary>
+        public uint ThrusterLife1Packed;
+
+        /// <summary>Packed RGBA for Color-over-Lifetime stop 2.</summary>
+        public uint ThrusterLife2Packed;
+
+        /// <summary>Packed RGBA for Color-over-Lifetime stop 3.</summary>
+        public uint ThrusterLife3Packed;
     }
 
     /// <summary>

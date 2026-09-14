@@ -321,6 +321,12 @@ namespace TitanOrbit.Game
                 return;
 
             int index = _thrusterBank.CycleDebugIndex();
+            var style = LocalPlayerThrusterStyle.Get();
+            style.HasCustom = 1;
+            if (style.FollowTeam == 0 && style.ColorPacked == 0)
+                style.FollowTeam = 1;
+            style.StyleIndex = (byte)index;
+            LocalPlayerThrusterStyle.Set(style);
             ShipPropulsionVisualApplier.RebuildAllLive();
             string familyName = _thrusterBank.GetDisplayName(index);
             string thrusterName = _thrusterBank.GetThrusterPrefabDisplayName(index);

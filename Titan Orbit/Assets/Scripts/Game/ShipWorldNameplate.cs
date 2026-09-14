@@ -54,6 +54,7 @@ namespace TitanOrbit.Game
         /// Visual size ≈ fontSize × this.
         /// </summary>
         const float LabelWorldScale = 0.22f;
+        const float StudioLabelWorldScale = 0.24f;
 
         /// <summary>Shared content width in label-local units (world width ≈ this × LabelWorldScale ≈ 3.1).</summary>
         const float ContentWidth = 14f;
@@ -72,6 +73,8 @@ namespace TitanOrbit.Game
 
         /// <summary>Gap past the hull edge — keep readable space under regular ships.</summary>
         const float PaddingPastHull = 0.35f;
+        const float StudioPaddingPastHull = 0.55f;
+        const float StudioMaxClearanceWorld = 2.2f;
 
         /// <summary>Gap above the hull top so MEGA plates sit over mid-center, not inside the mesh.</summary>
         const float PaddingAboveHull = 0.45f;
@@ -195,6 +198,7 @@ namespace TitanOrbit.Game
         bool _cachedTransporter;
         bool _cachedVisible = true;
         bool _isMega;
+        bool _studioPreview;
 
         /// <summary>
         /// Half of the ship's widest horizontal dimension in <b>world</b> units, cached until growth.
@@ -241,6 +245,60 @@ namespace TitanOrbit.Game
         {
             _networkId = networkId;
             EnsureHierarchy();
+        }
+
+        /// <summary>
+        /// Customize Ship studio: same plate as the match, with the player's name / badge
+        /// and all three bars full. Parent the unparented label under the preview root so
+        /// hiding the studio camera also hides the plate.
+        /// </summary>
+        public void ApplyStudioPreview(Transform previewRoot, int layer, string displayName, int badgeId, TeamId team)
+        {
+            _studioPreview = true;
+            Bind(0);
+            ApplyPresentation(
+                0,
+                displayName,
+                badgeId,
+                team == TeamId.None ? TeamId.TeamA : team,
+                isDead: false,
+                awaitingTeamSelection: false,
+                isLandedOnMoon: false,
+                isStowedInTurret: false,
+                shipLevel: 1,
+                matchScore: 0,
+                teamRank: 1,
+                health: 1f,
+                maxHealth: 1f,
+                currentGems: 1f,
+                gemCapacity: 1f,
+                currentPeople: 1,
+                peopleCapacity: 1,
+                isTopKiller: false,
+                isTopMiner: false,
+                isTopTransporter: false,
+                isMega: false);
+
+            if (_labelRoot == null)
+                return;
+
+            if (previewRoot != null)
+                _labelRoot.SetParent(previewRoot, true);
+            _labelRoot.gameObject.hideFlags = HideFlags.HideAndDontSave;
+            SetLayerRecursive(_labelRoot.gameObject, layer);
+            _cachedHalfWidestWorld = -1f;
+            _cachedGrowthSignature = float.NaN;
+            RefreshAnchorPose();
+        }
+
+        static void SetLayerRecursive(GameObject go, int layer)
+        {
+            if (go == null)
+                return;
+            go.layer = layer;
+            Transform t = go.transform;
+            for (int i = 0; i < t.childCount; i++)
+                SetLayerRecursive(t.GetChild(i).gameObject, layer);
         }
 
         /// <summary>
@@ -461,10 +519,12 @@ namespace TitanOrbit.Game
             }
             else
             {
+                float pad = _studioPreview ? StudioPaddingPastHull : PaddingPastHull;
+                float maxClear = _studioPreview ? StudioMaxClearanceWorld : MaxClearanceWorld;
                 float clearance = Mathf.Clamp(
-                    Mathf.Max(0.1f, _cachedHalfWidestWorld) * ClearanceScale + PaddingPastHull,
+                    Mathf.Max(0.1f, _cachedHalfWidestWorld) * ClearanceScale + pad,
                     0.1f,
-                    MaxClearanceWorld);
+                    maxClear);
 
                 // Anchor from XZ hull center (not raw pivot) so yaw keeps the plate under the ship.
                 Vector3 localCenter = _cachedLocalCenter;
@@ -476,7 +536,8 @@ namespace TitanOrbit.Game
 
             // [TITAN-ORBIT] World rotation — plate stays upright while the hull turns.
             _labelRoot.SetPositionAndRotation(worldPos, Quaternion.Euler(-90f, 0f, 0f));
-            _labelRoot.localScale = new Vector3(LabelWorldScale, -LabelWorldScale, LabelWorldScale);
+            float scale = _studioPreview ? StudioLabelWorldScale : LabelWorldScale;
+            _labelRoot.localScale = new Vector3(scale, -scale, scale);
         }
 
         /// <summary>

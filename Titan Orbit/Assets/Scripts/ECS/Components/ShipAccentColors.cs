@@ -41,7 +41,7 @@ namespace TitanOrbit.ECS
         /// <summary>1 when the owner picked a thruster style instead of the shared default jet.</summary>
         [GhostField] public byte ThrusterCustom;
 
-        /// <summary>0 Classic, 1 Modular, 2 Heavy, 3 Soft.</summary>
+        /// <summary>0 Ribbon, 1 Modular, 2 Heavy, 3 Soft.</summary>
         [GhostField] public byte ThrusterStyle;
 
         /// <summary>Packed RGBA for the locked flame tint. Ignored when following team.</summary>
@@ -49,6 +49,21 @@ namespace TitanOrbit.ECS
 
         /// <summary>1 = flame follows match team Color1; 0 = locked to <see cref="ThrusterColorPacked"/>.</summary>
         [GhostField] public byte ThrusterFollowTeam;
+
+        /// <summary>1 when the owner edited a lifetime stop instead of the Color-well ramp.</summary>
+        [GhostField] public byte ThrusterLifeCustom;
+
+        /// <summary>Packed RGBA for Color-over-Lifetime stop 0 (hot core).</summary>
+        [GhostField] public uint ThrusterLife0Packed;
+
+        /// <summary>Packed RGBA for Color-over-Lifetime stop 1 (heat accent).</summary>
+        [GhostField] public uint ThrusterLife1Packed;
+
+        /// <summary>Packed RGBA for Color-over-Lifetime stop 2 (body).</summary>
+        [GhostField] public uint ThrusterLife2Packed;
+
+        /// <summary>Packed RGBA for Color-over-Lifetime stop 3 (tail).</summary>
+        [GhostField] public uint ThrusterLife3Packed;
 
         /// <summary>True when the player has painted accents (or loaded a saved custom palette).</summary>
         public bool IsCustom => HasCustom != 0;
@@ -132,6 +147,11 @@ namespace TitanOrbit.ECS
                     hash = (hash * 397) ^ ThrusterStyle;
                     hash = (hash * 397) ^ (int)ThrusterColorPacked;
                     hash = (hash * 397) ^ ThrusterFollowTeam;
+                    hash = (hash * 397) ^ ThrusterLifeCustom;
+                    hash = (hash * 397) ^ (int)ThrusterLife0Packed;
+                    hash = (hash * 397) ^ (int)ThrusterLife1Packed;
+                    hash = (hash * 397) ^ (int)ThrusterLife2Packed;
+                    hash = (hash * 397) ^ (int)ThrusterLife3Packed;
                     return hash;
                 }
             }

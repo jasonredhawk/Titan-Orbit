@@ -184,7 +184,57 @@ namespace TitanOrbit.Editor
                 bank.entries.Add(entry);
             }
 
+            bank.stylePrefabs = new GameObject[ThrusterVfxBank.StyleCount];
+            bank.stylePrefabs[0] = AssetDatabase.LoadAssetAtPath<GameObject>(
+                ThrusterVfxBank.JetFlameFolder + "/V1/ModularJetFlame.prefab");
+            bank.stylePrefabs[1] = AssetDatabase.LoadAssetAtPath<GameObject>(
+                ThrusterVfxBank.JetFlameFolder + "/V2/ModularJetFlame2.prefab");
+            bank.stylePrefabs[2] = AssetDatabase.LoadAssetAtPath<GameObject>(
+                ThrusterVfxBank.JetFlameFolder + "/V3/ModularJetFlame3.prefab");
+            bank.stylePrefabs[3] = AssetDatabase.LoadAssetAtPath<GameObject>(
+                ThrusterVfxBank.JetFlameFolder + "/Soft/JetFlameSoftRed.prefab");
+
+            CopyStylePrefabToResources(
+                ThrusterVfxBank.JetFlameFolder + "/V1/ModularJetFlame.prefab",
+                "Assets/Resources/ModularJetFlame.prefab");
+            CopyStylePrefabToResources(
+                ThrusterVfxBank.JetFlameFolder + "/V2/ModularJetFlame2.prefab",
+                "Assets/Resources/ModularJetFlame2.prefab");
+            CopyStylePrefabToResources(
+                ThrusterVfxBank.JetFlameFolder + "/V3/ModularJetFlame3.prefab",
+                "Assets/Resources/ModularJetFlame3.prefab");
+            CopyStylePrefabToResources(
+                ThrusterVfxBank.JetFlameFolder + "/Soft/JetFlameSoftRed.prefab",
+                "Assets/Resources/JetFlameSoftRed.prefab");
+
+            CopyColoredStylePrefabsToResources();
+
             EditorUtility.SetDirty(bank);
+        }
+
+        static void CopyStylePrefabToResources(string sourcePath, string destPath)
+        {
+            if (AssetDatabase.LoadAssetAtPath<GameObject>(sourcePath) == null)
+                return;
+            if (AssetDatabase.LoadAssetAtPath<GameObject>(destPath) != null)
+                return;
+            AssetDatabase.CopyAsset(sourcePath, destPath);
+        }
+
+        static void CopyColoredStylePrefabsToResources()
+        {
+            string[] folders = { "V1", "V2", "V3", "Soft" };
+            string[] formats = { "{0}JetFlame", "{0}JetFlame2", "{0}JetFlame3", "JetFlameSoft{0}" };
+            for (int s = 0; s < folders.Length; s++)
+            {
+                for (int c = 0; c < ColorOrder.Length; c++)
+                {
+                    string fileName = string.Format(formats[s], ColorOrder[c]);
+                    CopyStylePrefabToResources(
+                        JetFlameRoot + "/" + folders[s] + "/" + fileName + ".prefab",
+                        "Assets/Resources/" + fileName + ".prefab");
+                }
+            }
         }
 
         static void DeleteLegacySettingsAssets()

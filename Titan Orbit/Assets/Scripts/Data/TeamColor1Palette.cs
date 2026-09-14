@@ -1,15 +1,16 @@
+using System.Collections.Generic;
 using TitanOrbit.Core;
 using UnityEngine;
 
 namespace TitanOrbit.Data
 {
     /// <summary>
-    /// Designer-owned Colorize <c>_Color1</c> for each playable team.
-    /// Players never write these values — hull paint only changes Color2 / Color3 / Glow.
-    /// One Colorize material is shared; this asset supplies the team swatch at apply time.
+    /// Designer-owned Colorize <c>_Color1</c> for each playable team, plus
+    /// authored accent presets (Color2 / Color3 / Glow). Players pick a preset;
+    /// they never freely recolor those slots, so a red team cannot look blue.
     /// <para>
     /// Edit <c>Assets/Resources/TeamColor1Palette.asset</c> in the Inspector.
-    /// Create via <b>Titan Orbit → Team Color 1 Palette</b>.
+    /// Use <b>Create Accent Preset</b> to add more Color2/3/glow assets.
     /// </para>
     /// </summary>
     [CreateAssetMenu(
@@ -37,6 +38,10 @@ namespace TitanOrbit.Data
         [Tooltip("Team E Color1 — usually purple.")]
         public Color teamE = new Color(0.65f, 0.25f, 0.85f, 1f);
 
+        [Header("Accent presets (Color2 / Color3 / Glow)")]
+        [Tooltip("Index 0 on Customize Ship is Default (baked Colorize). These are 1…N.")]
+        public List<ShipAccentPreset> accentPresets = new List<ShipAccentPreset>();
+
         static TeamColor1Palette s_Cached;
 
         /// <summary>[UNITY] Domain reload: drop the Resources cache.</summary>
@@ -63,6 +68,77 @@ namespace TitanOrbit.Data
             if (palette != null)
                 return palette.GetColor1Instance(team);
             return team.ToColor();
+        }
+
+        /// <summary>Default plus every non-null authored preset.</summary>
+        public int CycleCount
+        {
+            get
+            {
+                int n = 1;
+                if (accentPresets == null)
+                    return n;
+                for (int i = 0; i < accentPresets.Count; i++)
+                {
+                    if (accentPresets[i] != null)
+                        n++;
+                }
+
+                return n;
+            }
+        }
+
+        /// <summary>Wraps 0 = Default, then authored presets in list order.</summary>
+        public static int WrapPresetIndex(int index)
+        {
+            TeamColor1Palette palette = LoadDefault();
+            int n = palette != null ? palette.CycleCount : 1;
+            if (n < 1)
+                n = 1;
+            int i = index % n;
+            return i < 0 ? i + n : i;
+        }
+
+        public static string GetPresetDisplayName(int index)
+        {
+            int wrapped = WrapPresetIndex(index);
+            if (wrapped <= 0)
+                return "Default";
+            if (TryGetAccentPreset(wrapped, out ShipAccentPreset preset) && preset != null)
+                return string.IsNullOrWhiteSpace(preset.displayName) ? preset.name : preset.displayName;
+            return "Default";
+        }
+
+        /// <summary>
+        /// Authored preset for cycle index <paramref name="index"/>.
+        /// Index 0 is Default (baked Colorize) and returns false.
+        /// </summary>
+        public static bool TryGetAccentPreset(int index, out ShipAccentPreset preset)
+        {
+            preset = null;
+            int wrapped = WrapPresetIndex(index);
+            if (wrapped <= 0)
+                return false;
+
+            TeamColor1Palette palette = LoadDefault();
+            if (palette == null || palette.accentPresets == null)
+                return false;
+
+            int remaining = wrapped;
+            for (int i = 0; i < palette.accentPresets.Count; i++)
+            {
+                ShipAccentPreset row = palette.accentPresets[i];
+                if (row == null)
+                    continue;
+                remaining--;
+                if (remaining == 0)
+                {
+                    preset = row;
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         /// <summary>Instance lookup used by the Inspector-authored fields.</summary>

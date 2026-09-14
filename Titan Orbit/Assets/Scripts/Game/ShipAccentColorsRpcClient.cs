@@ -165,6 +165,11 @@ namespace TitanOrbit.Game
                 ThrusterStyle = accents.ThrusterStyle,
                 ThrusterColorPacked = accents.ThrusterColorPacked,
                 ThrusterFollowTeam = accents.ThrusterFollowTeam,
+                ThrusterLifeCustom = accents.ThrusterLifeCustom,
+                ThrusterLife0Packed = accents.ThrusterLife0Packed,
+                ThrusterLife1Packed = accents.ThrusterLife1Packed,
+                ThrusterLife2Packed = accents.ThrusterLife2Packed,
+                ThrusterLife3Packed = accents.ThrusterLife3Packed,
             };
         }
 
