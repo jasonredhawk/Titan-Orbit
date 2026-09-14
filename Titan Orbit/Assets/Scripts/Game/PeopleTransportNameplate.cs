@@ -141,7 +141,11 @@ namespace TitanOrbit.Game
             float clearance = (diameter * 0.5f + PadPastHull) * 2f;
             Vector3 pos = transform.position + ScreenBelowWorld * clearance;
             pos.y = transform.position.y;
-            _labelRoot.SetPositionAndRotation(pos, Quaternion.Euler(-90f, 0f, 0f));
+            bool theatrical = TitanOrbit.UI.TheatricalWorldSpaceLabelRotation.IsTheatricalEngaged();
+            Quaternion rot = theatrical
+                ? TitanOrbit.UI.TheatricalWorldSpaceLabelRotation.BillboardRotationFacingCamera()
+                : Quaternion.Euler(-90f, 0f, 0f);
+            _labelRoot.SetPositionAndRotation(pos, rot);
             _labelRoot.localScale = new Vector3(scale, -scale, scale);
         }
 

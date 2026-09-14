@@ -23,6 +23,8 @@ namespace TitanOrbit.Game
     /// V-key hold sets <see cref="ShipInput.WantExpelGems"/> so the server dumps cargo
     /// forward of the hull. T-key (when GameManager Cycle All Thruster VFX is on) walks
     /// <see cref="ThrusterVfxBank"/> on live ship proxies only — no ghost / RPC.
+    /// During idle theatrical orbit, aim is held (zero <c>AimPlanarDir</c>) so the
+    /// mouse does not yaw the hull. Gameplay follow always unprojects the cursor.
     /// </para>
     /// </summary>
     [DefaultExecutionOrder(-10000)]
@@ -156,7 +158,14 @@ namespace TitanOrbit.Game
             // [TITAN-ORBIT] Turret control aims from the pad pose (hull is stowed/hidden).
             bool turretControl = PlanetaryDefenseTurretClientState.IsControlling;
 
-            if (cam != null && _input.TryGetMouseWorldPosition(cam, out Vector3 aimWorld))
+            // [TITAN-ORBIT] Theatrical: do not unproject. A still-or-moving cursor plus
+            // the orbiting camera would slide the world aim point and yaw the hull.
+            // Zero AimPlanarDir → motor keeps current facing. Gameplay always aims.
+            bool freezeAimForTheatrical = CameraFollowEcs.Instance != null
+                && CameraFollowEcs.Instance.IsTheatricalEngaged;
+            if (!freezeAimForTheatrical &&
+                cam != null &&
+                _input.TryGetMouseWorldPosition(cam, out Vector3 aimWorld))
             {
                 Vector3 shipPos = Vector3.zero;
                 if (turretControl && PlanetaryDefenseTurretClientState.HasPadWorldPosition)

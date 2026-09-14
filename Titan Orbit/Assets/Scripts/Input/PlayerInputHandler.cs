@@ -16,6 +16,10 @@ namespace TitanOrbit.Input
     /// raycastable HUD control (e.g. the bottom ship ability upgrade bar), we clear ShootPressed so
     /// buying an upgrade does not also shoot. Paired with ShipInputBridge / ClientLocalBulletVfxBridge,
     /// which both read ShootPressed.
+    /// <para>
+    /// Gameplay always unprojects the cursor so a still mouse still turns the hull.
+    /// Theatrical orbit freezes aim in <see cref="TitanOrbit.Game.ShipInputBridge"/>.
+    /// </para>
     /// </summary>
     [DefaultExecutionOrder(-10050)]
     public class PlayerInputHandler : MonoBehaviour

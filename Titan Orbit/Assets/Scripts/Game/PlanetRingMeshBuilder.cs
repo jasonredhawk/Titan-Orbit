@@ -108,6 +108,37 @@ namespace TitanOrbit.Game
         static Color ScaleRgb(Color c, float scale) =>
             new Color(Mathf.Clamp01(c.r * scale), Mathf.Clamp01(c.g * scale), Mathf.Clamp01(c.b * scale), c.a);
 
+        /// <summary>
+        /// Gameplay keeps the 90-unit XZ cull. Theatrical looks sideways across the map,
+        /// so rings draw on planets in front of the lens (not behind it) until the
+        /// exit blend finishes. No allocations — no frustum-plane array.
+        /// </summary>
+        /// <param name="cam">Camera performing the Shapes pass (may be null in editor).</param>
+        /// <param name="planetWorldPos">Planet or moon world position.</param>
+        /// <param name="gameplayMaxDist">XZ cull used during top-down follow.</param>
+        /// <returns>True when this body should pay a Shapes ring pass.</returns>
+        internal static bool ShouldDrawPlanetRings(Camera cam, Vector3 planetWorldPos, float gameplayMaxDist)
+        {
+            if (cam == null)
+                return true;
+
+            Vector3 toPlanet = planetWorldPos - cam.transform.position;
+            var follow = CameraFollowEcs.Instance;
+            if (follow != null && follow.IsTheatricalPresentationActive)
+            {
+                float far = cam.farClipPlane;
+                if (toPlanet.sqrMagnitude > far * far)
+                    return false;
+                // Behind the lens — skip. 40 world units of slop covers large orbit rings.
+                if (Vector3.Dot(toPlanet, cam.transform.forward) < -40f)
+                    return false;
+                return true;
+            }
+
+            float maxSq = gameplayMaxDist * gameplayMaxDist;
+            return (toPlanet.x * toPlanet.x + toPlanet.z * toPlanet.z) <= maxSq;
+        }
+
         internal static void DrawShapesOrbitRing(Camera cam, Matrix4x4 matrix, float inner, float outer, Color tint, float peakAlpha)
         {
             // --- DrawShapesOrbitRing ---

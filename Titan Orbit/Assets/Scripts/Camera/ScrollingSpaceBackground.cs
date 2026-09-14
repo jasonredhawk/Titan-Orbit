@@ -45,7 +45,7 @@ namespace TitanOrbit.Camera
         [SerializeField] private float textureTiling = 2f;
 
         [Header("Placement")]
-        [Tooltip("Distance below the gameplay plane in world Y (further down = safer behind planets/ships)")]
+        [Tooltip("How far in front of the lens the sky plane sits (world units). Same camera-forward placement as the shader starfield.")]
         [SerializeField] private float depthOffset = 400f;
         [Tooltip("Extra margin beyond visible area to prevent edge gaps on wide screens")]
         [SerializeField] private float sizeMargin = 1.35f;
@@ -215,7 +215,7 @@ namespace TitanOrbit.Camera
             quad.transform.SetParent(transform);
             backgroundQuadTransform = quad.transform;
 
-            backgroundQuadTransform.localRotation = Quaternion.Euler(90f, 0f, 0f);
+            backgroundQuadTransform.localRotation = Quaternion.identity;
             ResizeQuadToCoverView();
 
             Object.Destroy(quad.GetComponent<Collider>());
@@ -246,7 +246,7 @@ namespace TitanOrbit.Camera
             else
                 return;
 
-            transform.position = new Vector3(followPos.x, -Mathf.Abs(depthOffset), followPos.z);
+            PlaceSkyPlaneInFrontOfCamera();
             ResizeQuadToCoverView();
 
             if (!hasLastScrollPos)
@@ -266,6 +266,24 @@ namespace TitanOrbit.Camera
             bgMaterial.SetVector(UVScroll, new Vector4(textureTiling, textureTiling, scrollOffsetX, scrollOffsetZ));
         }
 
+        /// <summary>
+        /// Pins the nebula quad as a sky plane in front of the lens (same contract as
+        /// <see cref="ParallaxStarfieldBackground"/>). One existing quad — no extra draws.
+        /// </summary>
+        private void PlaceSkyPlaneInFrontOfCamera()
+        {
+            Transform camT = targetCamera.transform;
+            float dist = Mathf.Max(20f, Mathf.Abs(depthOffset));
+            dist = Mathf.Min(dist, targetCamera.farClipPlane * 0.92f);
+            dist = Mathf.Max(dist, targetCamera.nearClipPlane + 1f);
+            transform.SetPositionAndRotation(
+                camT.position + camT.forward * dist,
+                Quaternion.LookRotation(-camT.forward, camT.up));
+
+            if (backgroundQuadTransform != null)
+                backgroundQuadTransform.localRotation = Quaternion.identity;
+        }
+
         private void ResizeQuadToCoverView()
         {
             // --- ResizeQuadToCoverView ---
@@ -283,8 +301,9 @@ namespace TitanOrbit.Camera
             }
             else
             {
-                float backgroundY = -Mathf.Abs(depthOffset);
-                float cameraToBackground = Mathf.Abs(targetCamera.transform.position.y - backgroundY);
+                float cameraToBackground = Vector3.Distance(targetCamera.transform.position, transform.position);
+                if (cameraToBackground < 1f)
+                    cameraToBackground = Mathf.Abs(depthOffset);
                 float halfFovRadians = targetCamera.fieldOfView * 0.5f * Mathf.Deg2Rad;
                 visibleHeight = 2f * cameraToBackground * Mathf.Tan(halfFovRadians);
             }

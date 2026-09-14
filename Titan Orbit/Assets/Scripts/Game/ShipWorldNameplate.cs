@@ -535,7 +535,13 @@ namespace TitanOrbit.Game
             }
 
             // [TITAN-ORBIT] World rotation — plate stays upright while the hull turns.
-            _labelRoot.SetPositionAndRotation(worldPos, Quaternion.Euler(-90f, 0f, 0f));
+            // Theatrical: face the orbiting camera; gameplay: flat −90. Always rewritten
+            // here so leaving theatrical cannot leave a leftover billboard rotation.
+            bool theatrical = TitanOrbit.UI.TheatricalWorldSpaceLabelRotation.IsTheatricalEngaged();
+            Quaternion rot = theatrical
+                ? TitanOrbit.UI.TheatricalWorldSpaceLabelRotation.BillboardRotationFacingCamera()
+                : Quaternion.Euler(-90f, 0f, 0f);
+            _labelRoot.SetPositionAndRotation(worldPos, rot);
             float scale = _studioPreview ? StudioLabelWorldScale : LabelWorldScale;
             _labelRoot.localScale = new Vector3(scale, -scale, scale);
         }

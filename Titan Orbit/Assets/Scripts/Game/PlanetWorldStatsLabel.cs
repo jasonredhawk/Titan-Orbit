@@ -2,6 +2,7 @@ using TitanOrbit.Core;
 using TitanOrbit.Data;
 using TitanOrbit.ECS;
 using TitanOrbit.Simulation;
+using TitanOrbit.UI;
 using TMPro;
 using UnityEngine;
 using UnityEngine.Rendering;
@@ -18,6 +19,8 @@ namespace TitanOrbit.Game
     /// Client / hybrid presentation only — reads replicated <see cref="PlanetState"/> and the
     /// published connection graph; never drives sim. Paired with <see cref="WorldBodyVisualApplier"/>
     /// (adds this component) and <see cref="PlanetPopulationMath"/> for cap formulas.
+    /// During idle theatrical camera, <see cref="TitanOrbit.UI.TheatricalWorldSpaceLabelRotation"/>
+    /// billboards this stack toward the lens so it stays readable off the top-down plane.
     /// </summary>
     public class PlanetWorldStatsLabel : MonoBehaviour
     {
@@ -41,6 +44,12 @@ namespace TitanOrbit.Game
         /// </summary>
         bool _labelReady;
         float _cachedLayoutPlanetSize = float.NaN;
+        /// <summary>Snug local Y from last ApplyLayout — reused while theatrical so we skip mesh walks.</summary>
+        float _cachedGameplayLabelLocalY;
+        /// <summary>Planet radius in world units from last layout (half of ECS / presentation size).</summary>
+        float _cachedBodyRadiusWorld;
+        /// <summary>True last frame while theatrical owned label pose — forces ApplyLayout on exit.</summary>
+        bool _wasTheatricalEngaged;
         /// <summary>[UNITY] Sorting order so planet text draws above world meshes.</summary>
         const int TextSortingOrder = 5001;
 
@@ -431,9 +440,13 @@ namespace TitanOrbit.Game
             if (EcsGameBridge.TryGetPlanetPoseByPlanetId(planetId, out _, out float ecsScale, out _))
                 planetSize = ecsScale;
             float s = WorldBodyLabelLayout.GetReadablePlanetLabelWorldScale(planetSize);
-            _labelRoot.localScale = new Vector3(s, -s, s);
-
             WorldBodyLabelLayout.ApplySnugPlanetLabel(_labelRoot, transform);
+            _cachedGameplayLabelLocalY = _labelRoot.localPosition.y;
+            _cachedBodyRadiusWorld = Mathf.Max(0.5f, planetSize * 0.5f);
+            TheatricalWorldSpaceLabelRotation.RestoreGameplayPose(
+                _labelRoot,
+                _cachedGameplayLabelLocalY,
+                s);
         }
 
         /// <summary>Stacks current above capacity inside the population row (local Y).</summary>
@@ -717,6 +730,43 @@ namespace TitanOrbit.Game
                 ApplyLayout();
                 _cachedLayoutPlanetSize = planetSize;
             }
+
+            ApplyTheatricalLabelPose();
+        }
+
+        /// <summary>
+        /// While idle theatrical orbit is on, billboard the label at the camera and lift it
+        /// off the mesh. When theatrical ends, snap back to the snug top-down layout.
+        /// </summary>
+        void ApplyTheatricalLabelPose()
+        {
+            if (_labelRoot == null)
+                return;
+
+            bool theatrical = TheatricalWorldSpaceLabelRotation.IsTheatricalEngaged();
+            if (!theatrical)
+            {
+                if (_wasTheatricalEngaged)
+                {
+                    ApplyLayout();
+                    _wasTheatricalEngaged = false;
+                }
+
+                return;
+            }
+
+            _wasTheatricalEngaged = true;
+            if (_cachedBodyRadiusWorld < 0.01f)
+                ApplyLayout();
+
+            float s = WorldBodyLabelLayout.GetReadablePlanetLabelWorldScale(
+                float.IsNaN(_cachedLayoutPlanetSize) ? 10f : _cachedLayoutPlanetSize);
+            TheatricalWorldSpaceLabelRotation.ApplyTheatricalBillboard(
+                _labelRoot,
+                transform,
+                _cachedBodyRadiusWorld,
+                s,
+                WorldBodyLabelLayout.PlanetPaddingAboveSurfaceLocal);
         }
 
         /// <summary>
