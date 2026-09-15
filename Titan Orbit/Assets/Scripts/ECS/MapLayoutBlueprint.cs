@@ -125,20 +125,14 @@ namespace TitanOrbit.ECS
             var claimWork = new NativeList<MapGenerationLogic.StartingNeutralClaim>(
                 math.max(8, config.StartingOwnedNeutralPlanetsPerTeam * rolled.TeamCount),
                 Allocator.Temp);
-            var homePositions = new NativeArray<float3>(rolled.TeamCount, Allocator.Temp);
-            for (int i = 0; i < homeLayouts.Length && i < homePositions.Length; i++)
-                homePositions[i] = homeLayouts[i].Position;
 
             MapGenerationLogic.BuildStartingNeutralClaimOrder(
                 config.StartingOwnedNeutralPlanetsPerTeam,
                 rolled.TeamCount,
-                homePositions,
+                config.HomePlanetLevel,
                 neutralLayouts,
-                rolled.MapWidth,
-                rolled.MapHeight,
                 ref rng,
                 ref claimWork);
-            homePositions.Dispose();
 
             for (int i = 0; i < claimWork.Length; i++)
             {

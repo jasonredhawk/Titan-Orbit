@@ -14,6 +14,9 @@ namespace TitanOrbit.Game
     /// as <see cref="PlayerNameRpcClient"/>. Under join load, SendRpc can vanish and the
     /// callout would never leave this machine.
     /// </para>
+    /// <c>TeamOnly</c> is a channel request (All vs teammates). The server looks up the
+    /// speaker's <c>ShipState.Team</c> and targets those connections — the client cannot
+    /// pick another team's inbox.
     /// The panel also paints an optimistic local bubble so the speaker does not wait on RTT.
     /// Server validation / rate-limit still decide whether everyone else sees it.
     /// </summary>
@@ -27,23 +30,27 @@ namespace TitanOrbit.Game
         /// <param name="k0">First catalog index.</param>
         /// <param name="k1">Second catalog index (ignored when count is 1).</param>
         /// <param name="k2">Third catalog index (ignored when count is under 3).</param>
-        public static bool TrySend(byte count, byte k0, byte k1, byte k2)
+        /// <param name="teamOnly">1 = teammates only; 0 = every client.</param>
+        public static bool TrySend(byte count, byte k0, byte k1, byte k2, byte teamOnly)
         {
             if (count < 1 || count > 3)
                 return false;
 
+            // [TITAN-ORBIT] Clamp to 0/1 so a stale caller cannot put junk on the wire.
+            byte channel = teamOnly != 0 ? (byte)1 : (byte)0;
+
             int localId = EcsGameBridge.GetLocalNetworkId();
-            if (TryEnqueueLocalHost(count, k0, k1, k2, localId))
+            if (TryEnqueueLocalHost(count, k0, k1, k2, channel, localId))
                 return true;
 
-            return TrySendDedicatedRpc(count, k0, k1, k2);
+            return TrySendDedicatedRpc(count, k0, k1, k2, channel);
         }
 
         /// <summary>
         /// [TITAN-ORBIT] Local Host: create the RPC entity on ServerWorld so
         /// <see cref="ShipCommsServerSystem"/> sees it next tick without IPC.
         /// </summary>
-        static bool TryEnqueueLocalHost(byte count, byte k0, byte k1, byte k2, int networkId)
+        static bool TryEnqueueLocalHost(byte count, byte k0, byte k1, byte k2, byte teamOnly, int networkId)
         {
             if (!EcsGameBridge.IsLocalHost())
                 return false;
@@ -66,6 +73,7 @@ namespace TitanOrbit.Game
                 K0 = k0,
                 K1 = k1,
                 K2 = k2,
+                TeamOnly = teamOnly,
             });
             em.AddComponentData(rpcEntity, new ReceiveRpcCommandRequest { SourceConnection = connection });
             return true;
@@ -75,7 +83,7 @@ namespace TitanOrbit.Game
         /// [NETCODE] Dedicated / Relay: SendRpc from ClientWorld. TargetConnection Null = "the
         /// server that owns this client connection."
         /// </summary>
-        static bool TrySendDedicatedRpc(byte count, byte k0, byte k1, byte k2)
+        static bool TrySendDedicatedRpc(byte count, byte k0, byte k1, byte k2, byte teamOnly)
         {
             var world = EcsGameBridge.ClientWorld;
             if (world == null || !world.IsCreated)
@@ -89,6 +97,7 @@ namespace TitanOrbit.Game
                 K0 = k0,
                 K1 = k1,
                 K2 = k2,
+                TeamOnly = teamOnly,
             });
             em.AddComponentData(entity, new SendRpcCommandRequest { TargetConnection = Entity.Null });
             return true;

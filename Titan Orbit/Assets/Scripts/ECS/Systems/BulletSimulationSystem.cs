@@ -1509,9 +1509,11 @@ namespace TitanOrbit.ECS
 
                 case BulletHitKind.Drone:
                 {
-                    // Equipment RemainingCharges is the ghosted drone HP (store GetDroneMaxHp).
+                    // RemainingCharges is ghosted drone HP (store GetDroneMaxHp). 0 HP
+                    // RemoveAt the equipment row so the LOADOUT / gear slot is free.
+                    // s_DroneHitTargets is patched so later bullets this tick keep valid indices.
                     DroneSwarmHitScan.ApplyDamageToDroneSlot(
-                        state.EntityManager, bestEntity, s_BestDroneSlot, hitDamage);
+                        state.EntityManager, bestEntity, s_BestDroneSlot, hitDamage, s_DroneHitTargets);
                     TrySpawnWell(ref state, hitPoint, profile, serverElapsed, mapW, mapH, in b, ecb, gemPrefab, hitDamage, bestEntity);
                     return true;
                 }
@@ -1804,7 +1806,7 @@ namespace TitanOrbit.ECS
         /// Whether this bullet's <see cref="BulletDamageFilter"/> may collide with / damage
         /// the given hit kind. Planets and gem moons always block (solid world). Mining drones
         /// skip ships; fighters skip asteroids — Starblast-style pass-through. Planetary defense
-        /// hits ships, transports, and asteroids (rocks must not be pass-through).
+        /// hits ships, transports, asteroids, and drones in the beam (turrets do not aim at drones).
         /// </summary>
         /// <param name="filter">Per-bullet mask from spawn (ship / drone / PD).</param>
         /// <param name="kind">Candidate obstacle class from the swept test.</param>
@@ -1824,8 +1826,9 @@ namespace TitanOrbit.ECS
                     return true;
 
                 case BulletDamageFilter.AsteroidsOnly:
-                    // Mining: rocks only. Pass through ships, drones, transports.
-                    return kind == BulletHitKind.Asteroid;
+                    // Mining: rocks + drones in the beam. Pass through ships / transports.
+                    return kind == BulletHitKind.Asteroid ||
+                           kind == BulletHitKind.Drone;
 
                 case BulletDamageFilter.ShipsOnly:
                     // Fighter: enemy ships + their drones + enemy planetary turrets.
@@ -1835,12 +1838,12 @@ namespace TitanOrbit.ECS
                            kind == BulletHitKind.PlanetaryDefense;
 
                 case BulletDamageFilter.ShipsAndTransports:
-                    // Planetary defense: enemy ships + people transports + asteroids.
-                    // [TITAN-ORBIT] Asteroids use the same toroidal swept path + Health write as
-                    // Everything — previously PD skipped rocks and bolts tunneled through belts.
+                    // Planetary defense: aims at ships / transports; rocks and drones in the
+                    // beam still stop the bolt (cross-fire). Turrets do not acquire drones.
                     return kind == BulletHitKind.Ship ||
                            kind == BulletHitKind.Transport ||
-                           kind == BulletHitKind.Asteroid;
+                           kind == BulletHitKind.Asteroid ||
+                           kind == BulletHitKind.Drone;
 
                 default:
                     return true;

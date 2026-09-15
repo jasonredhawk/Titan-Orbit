@@ -21,7 +21,10 @@ namespace TitanOrbit.ECS
         /// <summary>Owning ship entity (equipment buffer lives here).</summary>
         public Entity ShipEntity;
 
-        /// <summary>Equipment slot index for RemainingCharges HP.</summary>
+        /// <summary>
+        /// Equipment slot index for RemainingCharges HP.
+        /// <c>-1</c> after this tick destroyed that drone (<c>RemoveAt</c> freed the gear row).
+        /// </summary>
         public int SlotIndex;
 
         /// <summary>Planar world center on FixedY (EvaluateSlotPose).</summary>
@@ -45,6 +48,8 @@ namespace TitanOrbit.ECS
     /// <see cref="BulletSimulationSystem"/> nearest-hit scans.
     /// Shield (and fighter/mining) bodies use <see cref="DroneSwarmPositioning.EvaluateSlotPose"/>
     /// so intercept matches the buzzing formation without networking drone transforms.
+    /// Killing a drone <c>RemoveAt</c>s its <see cref="EquippedEquipmentElement"/> so the
+    /// ship's LOADOUT / gear slot is empty again.
     /// </summary>
     public static class DroneSwarmHitScan
     {
@@ -86,6 +91,11 @@ namespace TitanOrbit.ECS
                 if (!em.HasComponent<GhostOwner>(ship) || !em.HasBuffer<EquippedEquipmentElement>(ship))
                     continue;
 
+                // [TITAN-ORBIT] 0-HP drones from before this kill path still occupy the
+                // equipment buffer (a filled LOADOUT row). Strip them here so a leftover
+                // wreck cannot block a store buy while we rebuild this tick's spheres.
+                CompactDestroyedDroneSlots(em, ship);
+
                 var shipState = em.GetComponentData<ShipState>(ship);
                 if (shipState.IsDead || shipState.AwaitingTeamSelection)
                     continue;
@@ -96,20 +106,21 @@ namespace TitanOrbit.ECS
                 var buf = em.GetBuffer<EquippedEquipmentElement>(ship);
                 rearSlotsScratch.Clear();
                 shieldSlotsScratch.Clear();
-                bool anyShield = false;
+                bool anyDrone = false;
                 for (int i = 0; i < buf.Length; i++)
                 {
                     var e = buf[i];
                     var type = (StoreItemType)e.ItemType;
-                    // [TITAN-ORBIT] Only shield drones intercept bullets (store "blocks fire").
-                    // Skipping fighter/mining spheres saves EvaluateSlotPose × N every tick.
-                    if (type != StoreItemType.ShieldDrone || e.RemainingCharges <= 0)
+                    if (!StoreItemData.IsDrone(type) || e.RemainingCharges <= 0)
                         continue;
-                    anyShield = true;
-                    shieldSlotsScratch.Add(i);
+                    anyDrone = true;
+                    if (type == StoreItemType.FighterDrone || type == StoreItemType.MiningDrone)
+                        rearSlotsScratch.Add(i);
+                    else if (type == StoreItemType.ShieldDrone)
+                        shieldSlotsScratch.Add(i);
                 }
 
-                if (!anyShield)
+                if (!anyDrone)
                     continue;
 
                 var transform = em.GetComponentData<LocalTransform>(ship);
@@ -118,7 +129,8 @@ namespace TitanOrbit.ECS
                 Quaternion shipRot = (Quaternion)transform.Rotation;
                 DroneSwarmPositioning.GetShipBasis(shipPos, shipRot, out shipPos, out Vector3 forward, out Vector3 right);
                 float hullRadius = BodyCollisionMath.GetShipHullRadiusWorld(transform.Scale);
-                float orbitRadius = DroneSwarmPositioning.GetDroneOrbitRadiusFromHull(hullRadius);
+                float escortRadius = DroneSwarmPositioning.GetDroneOrbitRadiusFromHull(hullRadius);
+                float orbitRadius = DroneSwarmPositioning.GetShieldOrbitRadiusFromHull(hullRadius);
                 float coverEx = 0f, coverEz = 0f, coverCx = 0f, coverCz = 0f;
                 if (em.HasComponent<ShipHullColliderState>(ship))
                 {
@@ -130,102 +142,51 @@ namespace TitanOrbit.ECS
                 }
                 int ownerNetId = ghost.NetworkId;
                 byte team = (byte)shipState.Team;
-
-                // Gather a bit past ship-center range so a rim drone can still lock its own closest.
-                float gatherPad = DroneSwarmLogic.DefensePadEngageRange + orbitRadius;
-                float gatherHull = DroneSwarmLogic.ShieldEngageRange + orbitRadius;
-                enemyNetIdsScratch.Clear();
-                enemyPosByNetId.Clear();
-                shieldAssignments.Clear();
-                CollectEnemiesInRange(
-                    em, allShipsForEnemies, defenseTargets, shipPos, (TeamId)team, ownerNetId,
-                    gatherHull, gatherPad, mapW, mapH, enemyNetIdsScratch, enemyPosByNetId);
-
+                int rearCount = math.max(1, rearSlotsScratch.Count);
                 int shieldCount = math.max(1, shieldSlotsScratch.Count);
-                s_ShieldIdlePos.Clear();
-                for (int sIdx = 0; sIdx < shieldSlotsScratch.Count; sIdx++)
-                {
-                    int idleSlot = shieldSlotsScratch[sIdx];
-                    var idleCtx = new DroneSwarmPositioning.SlotEvaluationContext
-                    {
-                        ShipPos = shipPos,
-                        Forward = forward,
-                        Right = right,
-                        OrbitRadius = orbitRadius,
-                        TimeSeconds = timeSeconds,
-                        ShipNetworkId = ownerNetId,
-                        MapW = mapW,
-                        MapH = mapH,
-                        ShieldOrdinal = sIdx,
-                        ShieldCount = shieldCount,
-                        HasShieldTarget = false,
-                    };
-                    DroneSwarmPositioning.ApplyCoveringHullShape(
-                        ref idleCtx, transform.Scale, coverEx, coverEz, coverCx, coverCz);
-                    s_ShieldIdlePos.Add(
-                        DroneSwarmPositioning.EvaluateSlotPose(
-                            StoreItemType.ShieldDrone, idleSlot, in idleCtx).WorldPosition);
-                }
 
-                s_EnemyPosVec.Clear();
-                for (int e = 0; e < enemyNetIdsScratch.Count; e++)
+                for (int i = 0; i < buf.Length; i++)
                 {
-                    int id = enemyNetIdsScratch[e];
-                    if (!enemyPosByNetId.TryGetValue(id, out float3 ep))
+                    var e = buf[i];
+                    var type = (StoreItemType)e.ItemType;
+                    if (!StoreItemData.IsDrone(type) || e.RemainingCharges <= 0)
                         continue;
-                    s_EnemyPosVec[id] = new Vector3(ep.x, 0f, ep.z);
-                }
 
-                DroneSwarmPositioning.BuildShieldAssignments(
-                    shieldSlotsScratch, s_ShieldIdlePos, enemyNetIdsScratch, s_EnemyPosVec,
-                    mapW, mapH, shieldAssignments);
-
-                for (int sIdx = 0; sIdx < shieldSlotsScratch.Count; sIdx++)
-                {
-                    int slot = shieldSlotsScratch[sIdx];
-                    bool hasShieldTarget = false;
-                    Vector3 enemyPos = default;
-                    int indexOnEnemy = 0;
-                    int countOnEnemy = 1;
-                    if (shieldAssignments.TryGetValue(slot, out var assign) &&
-                        assign.EnemyNetworkId > 0 &&
-                        enemyPosByNetId.TryGetValue(assign.EnemyNetworkId, out float3 ep))
-                    {
-                        hasShieldTarget = true;
-                        enemyPos = new Vector3(ep.x, 0f, ep.z);
-                        indexOnEnemy = assign.IndexOnEnemy;
-                        countOnEnemy = math.max(1, assign.CountOnEnemy);
-                    }
-
+                    int rearOrd = IndexOf(rearSlotsScratch, i);
+                    int shieldOrd = IndexOf(shieldSlotsScratch, i);
+                    bool isShield = type == StoreItemType.ShieldDrone;
                     var ctx = new DroneSwarmPositioning.SlotEvaluationContext
                     {
                         ShipPos = shipPos,
                         Forward = forward,
                         Right = right,
-                        OrbitRadius = orbitRadius,
+                        OrbitRadius = isShield ? orbitRadius : escortRadius,
                         TimeSeconds = timeSeconds,
                         ShipNetworkId = ownerNetId,
                         MapW = mapW,
                         MapH = mapH,
-                        ShieldOrdinal = sIdx,
+                        RearOrdinal = rearOrd,
+                        RearCount = rearCount,
+                        ShieldOrdinal = shieldOrd,
                         ShieldCount = shieldCount,
-                        HasShieldTarget = hasShieldTarget,
-                        EnemyPos = enemyPos,
-                        IndexOnEnemy = indexOnEnemy,
-                        CountOnEnemy = countOnEnemy,
+                        HasShieldTarget = false,
                     };
                     DroneSwarmPositioning.ApplyCoveringHullShape(
                         ref ctx, transform.Scale, coverEx, coverEz, coverCx, coverCz);
-                    var pose = DroneSwarmPositioning.EvaluateSlotPose(
-                        StoreItemType.ShieldDrone, slot, in ctx);
-                    int droneLevel = math.max(1, buf[slot].ItemLevel > 0
-                        ? buf[slot].ItemLevel
+                    Vector3 idle = DroneSwarmPositioning.EvaluateSlotPose(type, i, in ctx).WorldPosition;
+                    idle.y = DroneSwarmLogic.FixedY;
+                    Vector3 offset = DroneSwarmFormationRuntime.Get(
+                        DroneSwarmLogic.FormationAnchorKey(ownerNetId, i)).Offset;
+                    Vector3 world = idle + offset;
+                    world.y = DroneSwarmLogic.FixedY;
+                    int droneLevel = math.max(1, e.ItemLevel > 0
+                        ? e.ItemLevel
                         : StoreItemData.DroneReferenceMaxLevel);
                     targetsOut.Add(new DroneHitTarget
                     {
                         ShipEntity = ship,
-                        SlotIndex = slot,
-                        Position = new float3(pose.WorldPosition.x, DroneSwarmLogic.FixedY, pose.WorldPosition.z),
+                        SlotIndex = i,
+                        Position = new float3(world.x, DroneSwarmLogic.FixedY, world.z),
                         Team = team,
                         OwnerNetworkId = ownerNetId,
                         HitRadiusScale = StoreItemData.GetDroneVisualScale(droneLevel),
@@ -259,6 +220,8 @@ namespace TitanOrbit.ECS
             {
                 DroneHitTarget t = targets[i];
                 // Ally / own drones do not absorb (shields block enemy fire only).
+                if (t.SlotIndex < 0)
+                    continue;
                 if (t.Team == b.OwnerTeam)
                     continue;
                 if (b.OwnerNetworkId > 0 && t.OwnerNetworkId == b.OwnerNetworkId)
@@ -292,10 +255,28 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// Applies bullet damage to a drone slot's RemainingCharges (ghosted HP).
-        /// Removes the slot equipment when HP hits 0.
+        /// Applies bullet (or splash) damage to one drone's ghosted HP
+        /// (<see cref="EquippedEquipmentElement.RemainingCharges"/>).
+        /// Called from <see cref="BulletSimulationSystem"/> after a swept sphere hit, and from
+        /// <see cref="BulletBankHitEffects"/> for blast falloff.
+        /// When HP reaches 0 the equipment row is removed so the ship's LOADOUT / gear slot
+        /// is free for a new store buy — same <c>RemoveAt</c> as a player discard.
         /// </summary>
-        public static void ApplyDamageToDroneSlot(EntityManager em, Entity ship, int slotIndex, float damage)
+        /// <param name="em">Server EntityManager (authoritative equipment buffer).</param>
+        /// <param name="ship">Owning ship entity — the buffer lives here, not on a drone ghost.</param>
+        /// <param name="slotIndex">Equipment index captured when hit spheres were built this tick.</param>
+        /// <param name="damage">Raw incoming damage before shield-absorb cards.</param>
+        /// <param name="liveTargets">
+        /// This tick's derived hit spheres. Required when the slot is destroyed: later bullets
+        /// and splash still hold the old index, and <c>RemoveAt</c> shifts later rows down.
+        /// Pass <c>null</c> only when no cached target list exists.
+        /// </param>
+        public static void ApplyDamageToDroneSlot(
+            EntityManager em,
+            Entity ship,
+            int slotIndex,
+            float damage,
+            List<DroneHitTarget> liveTargets = null)
         {
             if (!em.HasBuffer<EquippedEquipmentElement>(ship))
                 return;
@@ -307,6 +288,8 @@ namespace TitanOrbit.ECS
             if (!StoreItemData.IsDrone((StoreItemType)e.ItemType) || e.RemainingCharges <= 0)
                 return;
 
+            // --- Shield absorb cards ---
+            // [TITAN-ORBIT] Shield drones can be tougher via ShieldDroneAbsorbMul (divide incoming).
             if ((StoreItemType)e.ItemType == StoreItemType.ShieldDrone)
             {
                 float absorb = CardEffectQuery.GetMul(em, ship, CardEffectKind.ShieldDroneAbsorbMul);
@@ -314,10 +297,83 @@ namespace TitanOrbit.ECS
                     damage /= absorb;
             }
 
+            // --- Apply HP ---
+            // Charges are ints on the ghost; ceil so a fractional splash still chips 1 HP.
             int dmg = math.max(1, (int)math.ceil(damage));
             e.RemainingCharges = math.max(0, e.RemainingCharges - dmg);
-            // Keep ItemType — visuals / combat skip slots with RemainingCharges <= 0.
-            buf[slotIndex] = e;
+
+            if (e.RemainingCharges > 0)
+            {
+                buf[slotIndex] = e;
+                return;
+            }
+
+            // --- Destroyed: free the gear slot ---
+            // [TITAN-ORBIT] Leaving ItemType with 0 HP used to skip combat/visuals but still
+            // counted as a filled LOADOUT row (HasEmptyLoadoutSlot uses buffer.Length).
+            // RemoveAt matches MoonOrbitStoreSystem discard so the player can rebuy.
+            buf.RemoveAt(slotIndex);
+            InvalidateAndShiftLiveTargets(liveTargets, ship, slotIndex);
+        }
+
+        /// <summary>
+        /// Strips leftover 0-HP drone rows from one ship's equipment buffer.
+        /// Walks high-to-low so each <c>RemoveAt</c> does not skip a neighbor.
+        /// Safe to call every tick — the buffer is only a handful of loadout rows.
+        /// </summary>
+        /// <returns>How many drone rows were removed.</returns>
+        public static int CompactDestroyedDroneSlots(EntityManager em, Entity ship)
+        {
+            if (!em.HasBuffer<EquippedEquipmentElement>(ship))
+                return 0;
+
+            var buf = em.GetBuffer<EquippedEquipmentElement>(ship);
+            int removed = 0;
+            for (int i = buf.Length - 1; i >= 0; i--)
+            {
+                var e = buf[i];
+                if (!StoreItemData.IsDrone((StoreItemType)e.ItemType) || e.RemainingCharges > 0)
+                    continue;
+                buf.RemoveAt(i);
+                removed++;
+            }
+
+            return removed;
+        }
+
+        /// <summary>
+        /// After <c>RemoveAt(removedSlot)</c>, this tick's cached spheres still point at the
+        /// old indices. Invalidate the wreck and shift later slots on the same ship down by one
+        /// so a second bullet or splash cannot damage the rocket/mine that slid into that row.
+        /// </summary>
+        static void InvalidateAndShiftLiveTargets(
+            List<DroneHitTarget> liveTargets,
+            Entity ship,
+            int removedSlot)
+        {
+            if (liveTargets == null || liveTargets.Count == 0)
+                return;
+
+            for (int i = 0; i < liveTargets.Count; i++)
+            {
+                DroneHitTarget t = liveTargets[i];
+                if (t.ShipEntity != ship)
+                    continue;
+
+                if (t.SlotIndex == removedSlot)
+                {
+                    // SlotIndex < 0 → TryKeepNearestDroneHit and splash skip this sphere.
+                    t.SlotIndex = -1;
+                    liveTargets[i] = t;
+                    continue;
+                }
+
+                if (t.SlotIndex > removedSlot)
+                {
+                    t.SlotIndex--;
+                    liveTargets[i] = t;
+                }
+            }
         }
 
         static void CollectEnemiesInRange(

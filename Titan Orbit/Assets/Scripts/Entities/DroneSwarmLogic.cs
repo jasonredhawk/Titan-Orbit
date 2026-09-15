@@ -50,6 +50,13 @@ namespace TitanOrbit.Entities
         /// </summary>
         public const float RearMaxClearance = 0.35f;
 
+        /// <summary>
+        /// Gap beyond a combat target's collider (asteroid / hull / pad) before the drone
+        /// formation origin. Larger than <see cref="RearMinClearance"/> so swarms sit off
+        /// the surface instead of clipping the mesh. Idle escort around the owner is unchanged.
+        /// </summary>
+        public const float TargetApproachClearance = 3f;
+
         /// <summary>Lateral spacing between shields on the same block wall.</summary>
         public const float ShieldFormationSpacing = 0.75f;
 
@@ -59,8 +66,61 @@ namespace TitanOrbit.Entities
         /// <summary>Buzz wobble frequency.</summary>
         public const float BuzzSpeed = 3.2f;
 
-        /// <summary>How fast drones drift around the ring (degrees per second) when combat orbit resumes.</summary>
+        /// <summary>Legacy ring-drift constant (unused — combat drones translate a formation offset).</summary>
         public const float DefaultOrbitSpeedDeg = 55f;
+
+        /// <summary>
+        /// Top speed of the fighter / mining formation origin in ship-relative offset space
+        /// (world units / sec). Reached only after accelerating — not applied instantly.
+        /// </summary>
+        public const float FormationAnchorSpeed = 4.2f;
+
+        /// <summary>
+        /// How quickly the formation origin speeds up or brakes (world units / sec²).
+        /// Arrive uses this so the cloud coasts in and does not slam to a stop.
+        /// </summary>
+        public const float FormationAnchorAccel = 2.8f;
+
+        /// <summary>
+        /// Per-drone formation chase state (one idle slot). Not ghosted — both sides integrate
+        /// from ServerTick dt. Offset is planar from that drone's idle pose toward its own target.
+        /// </summary>
+        public struct FormationAnchorState
+        {
+            /// <summary>Offset from this drone's idle pose toward its current desired point.</summary>
+            public Vector3 Offset;
+
+            /// <summary>Offset-space velocity (planar).</summary>
+            public Vector3 Velocity;
+
+            /// <summary>Last idle world pose used to cancel ship-yaw idle motion.</summary>
+            public Vector3 PreviousIdle;
+
+            /// <summary>False until the first <see cref="StepFormationOffset"/> for this slot.</summary>
+            public bool HasPreviousIdle;
+        }
+
+        /// <summary>Stable dictionary key for one ship's equipment slot (not ghosted).</summary>
+        public static long FormationAnchorKey(int shipNetworkId, int slotIndex)
+        {
+            int id = shipNetworkId != 0 ? shipNetworkId : slotIndex + 1;
+            return ((long)id << 32) | (uint)(slotIndex & 0xFFFF);
+        }
+
+        /// <summary>
+        /// Extra escort radius for shield drones vs fighter / mining hull scatter.
+        /// Applied to the block-wall distance and idle rear standoff.
+        /// </summary>
+        public const float ShieldOrbitRadiusMultiplier = 1.6f;
+
+        /// <summary>Extra meters added to idle shield rear-scatter radius.</summary>
+        public const float ShieldRearClearanceExtra = 0.75f;
+
+        /// <summary>
+        /// How far a shield slides from its idle slot toward its target (0.5 = midpoint).
+        /// Clamped so the drone never enters the target collider.
+        /// </summary>
+        public const float ShieldApproachFraction = 0.5f;
 
         /// <summary>
         /// Authoritative flight / combat height — Titan Orbit is XZ gameplay.
@@ -84,14 +144,16 @@ namespace TitanOrbit.Entities
         /// <summary>Fighter bullet speed (world units / sec).</summary>
         public const float FighterBulletSpeed = 18f;
 
-        /// <summary>Max toroidal distance from owner ship to an enemy hull before fighter may fire.</summary>
-        public const float FighterEngageRange = 6f;
+        /// <summary>
+        /// Max toroidal surface distance from a fighter idle slot to an enemy hull or pad.
+        /// Same reach as <see cref="MiningEngageRange"/> — fighters do not chase across a planet.
+        /// </summary>
+        public const float FighterEngageRange = 11f;
 
         /// <summary>
-        /// Max toroidal distance from owner ship to an enemy planetary-defense pad.
-        /// Pads sit on the planet ring and turrets shoot from ~20 (Lv1) to ~40 (Lv6) —
-        /// <see cref="FighterEngageRange"/> never reaches them during a normal planet fight.
-        /// Fighter acquire also uses the drone bolt travel budget when that is larger.
+        /// Shield acquire to an enemy planetary-defense pad. Pads sit on the planet ring
+        /// and turrets shoot from ~20 (Lv1) to ~40 (Lv6). Fighters use
+        /// <see cref="FighterEngageRange"/> instead so they stay close.
         /// </summary>
         public const float DefensePadEngageRange = 24f;
 
@@ -123,6 +185,12 @@ namespace TitanOrbit.Entities
 
         /// <summary>Shield block engage range from owner ship.</summary>
         public const float ShieldEngageRange = 16f;
+
+        /// <summary>
+        /// Formation standoff for a defense pad when the exact turret hit-sphere is not shared
+        /// (client visual path). Matches a typical pad-sized gun, not the planet.
+        /// </summary>
+        public const float DefensePadColliderRadius = 1.1f;
 
         /// <summary>
         /// Sentinel mount index for drone / world-space spawns.
@@ -218,6 +286,181 @@ namespace TitanOrbit.Entities
             return Mathf.Sqrt(dx * dx + dz * dz);
         }
 
+        /// <summary>
+        /// Fighter leash: same <see cref="FighterEngageRange"/> for hulls and pads.
+        /// </summary>
+        public static float ResolveFighterLeash(bool isDefensePad) =>
+            FighterEngageRange;
+
+        /// <summary>
+        /// Desired offset from a drone idle pose: as close to the target <b>collider surface</b>
+        /// as the leash allows (center minus <paramref name="targetStandoff"/>). Never past the
+        /// surface or the leash. Zero when that drone has no in-range target.
+        /// </summary>
+        public static Vector3 ComputeDesiredFormationOffset(
+            Vector3 home,
+            Vector3 target,
+            bool hasTarget,
+            float maxAdvance,
+            float targetStandoff,
+            float mapW,
+            float mapH)
+        {
+            if (!hasTarget || maxAdvance <= 0.01f)
+                return Vector3.zero;
+            Vector3 off = ToroidalOffsetXZ(home, target, mapW, mapH);
+            float dist = off.magnitude;
+            if (dist <= 0.0001f)
+                return Vector3.zero;
+            float toSurface = dist - Mathf.Max(0f, targetStandoff);
+            if (toSurface <= 0.0001f)
+                return Vector3.zero;
+            float advance = Mathf.Min(maxAdvance, toSurface);
+            return off * (advance / dist);
+        }
+
+        /// <summary>
+        /// Shield offset: halfway from the <b>ship center</b> (hull origin) to the
+        /// target, never past the collider surface. Added to each drone's idle slot
+        /// so the escort cloud translates onto the ship→target line. Zero with no target.
+        /// </summary>
+        public static Vector3 ComputeShieldDesiredFormationOffset(
+            Vector3 shipCenter,
+            Vector3 target,
+            bool hasTarget,
+            float targetStandoff,
+            float mapW,
+            float mapH)
+        {
+            if (!hasTarget)
+                return Vector3.zero;
+            Vector3 off = ToroidalOffsetXZ(shipCenter, target, mapW, mapH);
+            float dist = off.magnitude;
+            if (dist <= 0.0001f)
+                return Vector3.zero;
+            float toSurface = dist - Mathf.Max(0f, targetStandoff);
+            if (toSurface <= 0.0001f)
+                return Vector3.zero;
+            float advance = Mathf.Min(dist * ShieldApproachFraction, toSurface);
+            return off * (advance / dist);
+        }
+
+        /// <summary>
+        /// Surface distance from <paramref name="from"/> to a collider of radius
+        /// <paramref name="hullRadius"/> at <paramref name="target"/>. Used so acquire
+        /// and nearest-pick see a large hull as closer than its center.
+        /// </summary>
+        public static float SurfaceDistanceXZ(
+            Vector3 from,
+            Vector3 target,
+            float hullRadius,
+            float mapW,
+            float mapH)
+        {
+            float dist = ToroidalDistanceXZ(from.x, from.z, target.x, target.z, mapW, mapH);
+            return Mathf.Max(0f, dist - Mathf.Max(0f, hullRadius));
+        }
+
+        /// <summary>
+        /// Accelerate / coast / brake in offset space toward <paramref name="desiredOffset"/>.
+        /// While a target is held, cancel idle motion from ship yaw so <c>idle + offset</c>
+        /// stays put in the world. With no target, leave the offset ship-relative so the
+        /// escort rotates with the hull instead of hanging in world space.
+        /// Both sides must pass ServerTick <paramref name="dt"/>.
+        /// </summary>
+        public static FormationAnchorState StepFormationOffset(
+            FormationAnchorState state,
+            Vector3 desiredOffset,
+            Vector3 currentIdle,
+            float dt,
+            float mapW,
+            float mapH,
+            bool holdWorldOnIdleShift)
+        {
+            currentIdle.y = 0f;
+            Vector3 offset = state.Offset;
+            Vector3 velocity = state.Velocity;
+            offset.y = 0f;
+            velocity.y = 0f;
+            desiredOffset.y = 0f;
+
+            if (holdWorldOnIdleShift && state.HasPreviousIdle)
+            {
+                Vector3 idleShift = ToroidalOffsetXZ(currentIdle, state.PreviousIdle, mapW, mapH);
+                // Ignore teleports / first pose after a long cull — yaw shifts stay small.
+                if (idleShift.sqrMagnitude <= 64f)
+                    offset += idleShift;
+            }
+
+            state.PreviousIdle = currentIdle;
+            state.HasPreviousIdle = true;
+
+            if (dt <= 0f)
+            {
+                state.Offset = offset;
+                state.Velocity = velocity;
+                return state;
+            }
+
+            float maxSpeed = Mathf.Max(0.05f, FormationAnchorSpeed);
+            float accel = Mathf.Max(0.05f, FormationAnchorAccel);
+            Vector3 toDesired = desiredOffset - offset;
+            float dist = toDesired.magnitude;
+            const float arriveEps = 0.02f;
+            if (dist <= arriveEps && velocity.sqrMagnitude < 0.01f)
+            {
+                state.Offset = desiredOffset;
+                state.Velocity = Vector3.zero;
+                return state;
+            }
+
+            Vector3 targetVel = Vector3.zero;
+            if (dist > arriveEps)
+            {
+                // v² = 2 a s — fastest speed that can still stop in the remaining distance.
+                float brakeSpeed = Mathf.Sqrt(2f * accel * dist);
+                float targetSpeed = Mathf.Min(maxSpeed, brakeSpeed);
+                targetVel = toDesired * (targetSpeed / dist);
+            }
+
+            velocity = Vector3.MoveTowards(velocity, targetVel, accel * dt);
+            offset += velocity * dt;
+            offset.y = 0f;
+            velocity.y = 0f;
+
+            state.Offset = offset;
+            state.Velocity = velocity;
+            return state;
+        }
+
+        /// <summary>
+        /// Wrap planar XZ into the centered rectangle matching <c>ToroidalMapEcs.Wrap</c>.
+        /// No-op when size is unset (never invent 1000×1000).
+        /// </summary>
+        public static Vector3 WrapPlanarXZ(Vector3 position, float mapW, float mapH)
+        {
+            if (mapW > 1f)
+            {
+                float halfW = mapW * 0.5f;
+                float x = position.x + halfW;
+                x %= mapW;
+                if (x < 0f)
+                    x += mapW;
+                position.x = x - halfW;
+            }
+            if (mapH > 1f)
+            {
+                float halfH = mapH * 0.5f;
+                float z = position.z + halfH;
+                z %= mapH;
+                if (z < 0f)
+                    z += mapH;
+                position.z = z - halfH;
+            }
+            position.y = FixedY;
+            return position;
+        }
+
         /// <summary>Toroidal shortest offset from A to B on XZ (Y ignored).</summary>
         public static Vector3 ToroidalOffsetXZ(Vector3 from, Vector3 to, float mapW, float mapH)
         {
@@ -234,6 +477,28 @@ namespace TitanOrbit.Entities
                 while (dz < -mapH * 0.5f) dz += mapH;
             }
             return new Vector3(dx, 0f, dz);
+        }
+    }
+
+    /// <summary>
+    /// Server-side per-drone formation offsets. Combat writes each tick; hit-scan
+    /// reads so derived spheres sit on the same idle+offset pose as fire origins.
+    /// Not ghosted. Client visuals keep a separate dictionary (listen-server must
+    /// not share this or both sides would double-step).
+    /// </summary>
+    public static class DroneSwarmFormationRuntime
+    {
+        static readonly Dictionary<long, DroneSwarmLogic.FormationAnchorState> s_states =
+            new Dictionary<long, DroneSwarmLogic.FormationAnchorState>(64);
+
+        public static DroneSwarmLogic.FormationAnchorState Get(long key)
+        {
+            return s_states.TryGetValue(key, out var state) ? state : default;
+        }
+
+        public static void Set(long key, DroneSwarmLogic.FormationAnchorState state)
+        {
+            s_states[key] = state;
         }
     }
 
@@ -279,8 +544,10 @@ namespace TitanOrbit.Entities
 
     /// <summary>
     /// Ship-relative drone formation math shared by client visuals and server combat.
-    /// Fighter / mining / idle shields scatter in the rear half-plane just outside the
-    /// covering hull; active shields still form block walls toward enemies.
+    /// Fighter / mining (and idle shields) scatter in the rear half-plane just outside the
+    /// covering hull. Each combat drone then translates its own idle slot with a speed-limited
+    /// offset toward the closest in-range target from that idle pose. Active shields form
+    /// block walls farther from the hull toward enemies (they do not leave the ship).
     /// Uses seam-correct toroidal XZ offsets (inline wrap) matching <c>ToroidalMapEcs</c>.
     /// <para>
     /// [TITAN-ORBIT] Merged into the same file as <see cref="DroneSwarmLogic"/> (both in the
@@ -447,11 +714,78 @@ namespace TitanOrbit.Entities
 
             ctx.HullExtentRight = extR;
             ctx.HullExtentForward = extF;
-            Vector3 local = new Vector3(coveringCenterX * scale, 0f, coveringCenterZ * scale);
-            Vector3 origin = ctx.ShipPos + ctx.Right * local.x + ctx.Forward * local.z;
-            origin.y = DroneSwarmLogic.FixedY;
-            ctx.HullOrigin = origin;
+            ctx.HullOrigin = ResolveCoveringOrigin(
+                ctx.ShipPos, ctx.Forward, ctx.Right, coveringCenterX, coveringCenterZ, transformScale);
         }
+
+        /// <summary>
+        /// Covering-box center on FixedY (presentation extents × transformScale). Same origin
+        /// the owner-ship idle slots use — pass this as the target pose so standoff is from
+        /// the collider, not the transform pivot.
+        /// </summary>
+        public static Vector3 ResolveCoveringOrigin(
+            Vector3 shipPos,
+            Vector3 forward,
+            Vector3 right,
+            float coveringCenterX,
+            float coveringCenterZ,
+            float transformScale)
+        {
+            float scale = Mathf.Max(0.25f, transformScale);
+            Vector3 local = new Vector3(coveringCenterX * scale, 0f, coveringCenterZ * scale);
+            Vector3 origin = shipPos + right * local.x + forward * local.z;
+            origin.y = DroneSwarmLogic.FixedY;
+            return origin;
+        }
+
+        /// <summary>
+        /// World-space collider radius of a target along the approach from
+        /// <paramref name="fromPos"/> — covering box when present (same scale rule as
+        /// <see cref="ApplyCoveringHullShape"/>), else <paramref name="fallbackRadius"/>.
+        /// Adds <see cref="DroneSwarmLogic.TargetApproachClearance"/> so drones sit off the surface.
+        /// </summary>
+        public static float ResolveApproachStandoff(
+            Vector3 fromPos,
+            Vector3 targetPos,
+            Vector3 targetForward,
+            Vector3 targetRight,
+            float coveringExtentX,
+            float coveringExtentZ,
+            float transformScale,
+            float fallbackRadius,
+            float mapW,
+            float mapH)
+        {
+            float scale = Mathf.Max(0.25f, transformScale);
+            float extR = coveringExtentX * scale;
+            float extF = coveringExtentZ * scale;
+            float hull;
+            if (extR >= 0.05f && extF >= 0.05f)
+            {
+                Vector3 fromTarget = DroneSwarmLogic.ToroidalOffsetXZ(
+                    targetPos, fromPos, mapW, mapH);
+                float localAngle = Mathf.Atan2(
+                    Vector3.Dot(fromTarget, targetRight),
+                    Vector3.Dot(fromTarget, targetForward)) * Mathf.Rad2Deg;
+                hull = GetHullRadiusAlongLocalAngle(extR, extF, localAngle);
+            }
+            else
+            {
+                hull = Mathf.Max(0.05f, fallbackRadius);
+            }
+
+            return hull + DroneSwarmLogic.TargetApproachClearance;
+        }
+
+        /// <summary>Sphere / pad standoff (no covering box).</summary>
+        public static float ResolveSphereStandoff(float bodyRadius) =>
+            Mathf.Max(0.05f, bodyRadius) + DroneSwarmLogic.TargetApproachClearance;
+
+        /// <summary>
+        /// Collider radius used for acquire (standoff minus the approach gap).
+        /// </summary>
+        public static float HullRadiusFromApproachStandoff(float standoff) =>
+            Mathf.Max(0f, standoff - DroneSwarmLogic.TargetApproachClearance);
 
         /// <summary>
         /// Fighter / mining / idle-shield escort: random rear-hemisphere angle and
@@ -579,7 +913,8 @@ namespace TitanOrbit.Entities
             perp.Normalize();
 
             float lateral = (indexOnEnemy - (countOnEnemy - 1) * 0.5f) * formationSpacing;
-            float along = Mathf.Min(blockDistanceFromShip, dist * 0.42f);
+            // Sit at the authored shield radius around the ship, but never past the threat.
+            float along = Mathf.Min(blockDistanceFromShip, Mathf.Max(0.35f, dist - 0.55f));
             Vector3 baseOffset = lineDir * along + perp * lateral;
 
             // Convert ship-relative offset into ship-local polar for lag catch-up.
@@ -790,6 +1125,16 @@ namespace TitanOrbit.Entities
             /// drones sit outside the real hull, not a sphere at the transform origin.
             /// </summary>
             public Vector3 HullOrigin;
+
+            /// <summary>
+            /// True when fighter / mining should use <see cref="FormationOrigin"/> as the
+            /// polar cluster center (home hull + speed-limited offset toward a target).
+            /// Shields ignore this and stay on the ship covering box.
+            /// </summary>
+            public bool HasFormationOrigin;
+
+            /// <summary>Combat-drone cluster center on FixedY (<c>home + formation offset</c>).</summary>
+            public Vector3 FormationOrigin;
         }
 
         /// <summary>
@@ -817,7 +1162,7 @@ namespace TitanOrbit.Entities
         /// </summary>
         /// <param name="droneType">Equipment type (fighter / mining / shield).</param>
         /// <param name="slotIndex">Equipment buffer index (buzz seed).</param>
-        /// <param name="ctx">Ship basis + cluster ordinals + optional shield target.</param>
+        /// <param name="ctx">Ship basis + cluster ordinals + optional shield / swarm target.</param>
         /// <returns>Planar world pose on FixedY.</returns>
         public static EvaluatedSlotPose EvaluateSlotPose(
             StoreItemType droneType,
@@ -858,6 +1203,7 @@ namespace TitanOrbit.Entities
                             ctx.HullExtentRight, ctx.HullExtentForward,
                             DroneSwarmLogic.BuzzAmplitude, DroneSwarmLogic.BuzzSpeed,
                             ctx.TimeSeconds, buzzPhase);
+                        slot.Radius += DroneSwarmLogic.ShieldRearClearanceExtra;
                     }
                     break;
 
@@ -871,7 +1217,11 @@ namespace TitanOrbit.Entities
                     break;
             }
 
+            bool isCombatDrone = droneType == StoreItemType.FighterDrone
+                || droneType == StoreItemType.MiningDrone;
             Vector3 polarOrigin = ctx.HullExtentRight > 0.01f ? ctx.HullOrigin : ctx.ShipPos;
+            if (isCombatDrone && ctx.HasFormationOrigin)
+                polarOrigin = ctx.FormationOrigin;
             polarOrigin.y = DroneSwarmLogic.FixedY;
             float worldAngle = ShipLocalSlotToWorldAngleDeg(
                 ctx.Forward, ctx.Right, slot.AngleDeg, slot.Radius);
@@ -895,6 +1245,21 @@ namespace TitanOrbit.Entities
             return Mathf.Max(
                 DroneSwarmLogic.DefaultOrbitRadius,
                 (hullRadiusWorld + DroneSwarmLogic.MarginBeyondHull) * mul);
+        }
+
+        /// <summary>Shield block / idle radius — farther from the hull than fighter escort.</summary>
+        public static float GetShieldOrbitRadiusFromHull(float hullRadiusWorld)
+        {
+            return GetDroneOrbitRadiusFromHull(hullRadiusWorld)
+                * Mathf.Max(1f, DroneSwarmLogic.ShieldOrbitRadiusMultiplier);
+        }
+
+        /// <summary>Covering-box origin when present, else ship center. Home of the formation offset.</summary>
+        public static Vector3 ResolveFormationHome(in SlotEvaluationContext ctx)
+        {
+            Vector3 home = ctx.HullExtentRight > 0.01f ? ctx.HullOrigin : ctx.ShipPos;
+            home.y = DroneSwarmLogic.FixedY;
+            return home;
         }
     }
 }

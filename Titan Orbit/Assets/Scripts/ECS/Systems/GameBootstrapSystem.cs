@@ -295,29 +295,23 @@ namespace TitanOrbit.ECS
             MapGenerationLogic.BuildNeutralPlanets(_config, _rolled, ref _rng, planetPlacements, neutralLayouts);
 
             // --- Round-robin starting claims (applied after spawn, one per tick) ---
-            // [TITAN-ORBIT] Neutrals spawn as TeamId.None; each team then “captures” the closest
-            // available neutral to its home, one team at a time, so sticky connections form like
-            // live play instead of wiring every pre-owned planet in a single graph rebuild.
+            // [TITAN-ORBIT] Neutrals spawn as TeamId.None; each team then “captures” the
+            // lowest-level (then smallest) available neutral, one team at a time, so sticky
+            // connections form like live play instead of wiring every pre-owned planet in a
+            // single graph rebuild.
             if (_claimQueue.IsCreated)
                 _claimQueue.Dispose();
             _claimQueue = new NativeList<MapGenerationLogic.StartingNeutralClaim>(
                 math.max(8, _config.StartingOwnedNeutralPlanetsPerTeam * _rolled.TeamCount),
                 Allocator.Persistent);
 
-            var homePositions = new NativeArray<float3>(_rolled.TeamCount, Allocator.Temp);
-            for (int i = 0; i < homeLayouts.Length && i < homePositions.Length; i++)
-                homePositions[i] = homeLayouts[i].Position;
-
             MapGenerationLogic.BuildStartingNeutralClaimOrder(
                 _config.StartingOwnedNeutralPlanetsPerTeam,
                 _rolled.TeamCount,
-                homePositions,
+                _config.HomePlanetLevel,
                 neutralLayouts,
-                _rolled.MapWidth,
-                _rolled.MapHeight,
                 ref _rng,
                 ref _claimQueue);
-            homePositions.Dispose();
             _claimIndex = 0;
 
             if (_neutralPlanetIdsByLayoutIndex.IsCreated)

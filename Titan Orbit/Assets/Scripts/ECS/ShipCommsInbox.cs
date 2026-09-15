@@ -34,6 +34,9 @@ namespace TitanOrbit.ECS
 
             /// <summary>Third keyword index. Ignored when <see cref="Count"/> is under 3.</summary>
             public byte K2;
+
+            /// <summary>1 when the server scoped this callout to the speaker's team.</summary>
+            public byte TeamOnly;
         }
 
         /// <summary>Pending callouts. Capacity is not reserved — comms are rare.</summary>
@@ -55,9 +58,11 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// Enqueues one broadcast callout. Ignores NetworkId ≤ 0 or an empty count.
+        /// Enqueues one callout. Ignores NetworkId ≤ 0 or an empty count.
+        /// <paramref name="teamOnly"/> is presentation-only here — the server already
+        /// filtered who receives the RPC.
         /// </summary>
-        public static void Enqueue(int networkId, byte count, byte k0, byte k1, byte k2)
+        public static void Enqueue(int networkId, byte count, byte k0, byte k1, byte k2, byte teamOnly)
         {
             if (networkId <= 0 || count < 1)
                 return;
@@ -69,6 +74,7 @@ namespace TitanOrbit.ECS
                 K0 = k0,
                 K1 = k1,
                 K2 = k2,
+                TeamOnly = teamOnly,
             });
         }
 

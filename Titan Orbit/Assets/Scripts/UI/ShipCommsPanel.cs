@@ -15,11 +15,12 @@ namespace TitanOrbit.UI
     /// <summary>
     /// Hold-S comms matrix: a centered dark-glass HUD card with keyword tiles. The player
     /// holds S, clicks 1–3 words in order, then releases S to send that sentence above
-    /// their ship.
+    /// their ship. An All / Team toggle (remembered in PlayerPrefs) picks who sees it.
     /// <para>
     /// Client presentation only. Sending goes through <see cref="ShipCommsRpcClient"/>
-    /// (RPC — Remote Procedure Call: the client asks the server to broadcast). This panel
-    /// never writes ship ghosts. Desktop only for v1 — phones have no S key mapping yet.
+    /// (RPC — Remote Procedure Call: the client asks the server to broadcast or target
+    /// teammates). This panel never writes ship ghosts. Desktop only for v1 — phones have
+    /// no S key mapping yet.
     /// </para>
     /// Layout is explicit RectTransforms (no nested ContentSizeFitters). Spawn style
     /// matches <see cref="SpaceBrakesHUD"/>: <c>RuntimeInitializeOnLoadMethod</c> plus
@@ -41,6 +42,8 @@ namespace TitanOrbit.UI
         const float RecentColWidth = 156f;
         const float RootGap = 10f;
         const float HeaderHeight = 26f;
+        const float AudienceToggleWidth = 52f;
+        const float AudienceToggleGap = 4f;
         const float BannerHeight = 14f;
         const float SectionGap = 6f;
         const float PanelPad = 12f;
@@ -58,6 +61,7 @@ namespace TitanOrbit.UI
         static readonly Color PreviewEmpty = new Color(0.02f, 0.04f, 0.07f, 0.92f);
         static readonly Color LabelOutline = new Color(0.02f, 0.04f, 0.08f, 0.85f);
         static readonly Color SeparatorColor = new Color(0.12f, 0.18f, 0.28f, 0.85f);
+        static readonly Color TeamChannelColor = new Color(0.95f, 0.62f, 0.22f, 0.95f);
 
         /// <summary>Keyword bytes chosen this hold, in click order (max 3).</summary>
         readonly List<byte> _sequence = new List<byte>(ShipCommsKeywordCatalog.MaxSequenceLength);
@@ -70,6 +74,13 @@ namespace TitanOrbit.UI
         CanvasGroup _group;
         RectTransform _panel;
         PlayerInputHandler _input;
+        TextMeshProUGUI _headerSub;
+        Image _allFill;
+        Image _teamFill;
+        Outline _allOutline;
+        Outline _teamOutline;
+        TextMeshProUGUI _allLabel;
+        TextMeshProUGUI _teamLabel;
         bool _wasHeld;
         bool _built;
 
@@ -82,6 +93,10 @@ namespace TitanOrbit.UI
             public TextMeshProUGUI Label;
             public TextMeshProUGUI OrderBadge;
             public Image Caret;
+            /// <summary>Cyan for ordinary words; faction RGB for Red / Blue / Green / Orange / Purple.</summary>
+            public Color Accent;
+            /// <summary>True when this tile is one of the five team color keywords.</summary>
+            public bool IsTeamColor;
         }
 
         /// <summary>One of the three sequence chips at the top of the card.</summary>
@@ -124,6 +139,10 @@ namespace TitanOrbit.UI
         /// <summary>Builds the overlay once, then starts hidden.</summary>
         void Awake()
         {
+            // [TITAN-ORBIT] MPPM clones share one PlayerPrefs store — suffix the key so
+            // Player 2's All/Team choice does not overwrite Player 1.
+            ShipCommsClientState.BindPrefsKey(
+                TitanOrbitPlayModeUtility.GetInstancePlayerPrefsKey(ShipCommsClientState.TeamOnlyPrefsKey));
             BuildUi();
             SetOpen(false, clearSequence: true);
         }
@@ -259,7 +278,10 @@ namespace TitanOrbit.UI
                 _panel.gameObject.SetActive(open);
 
             if (open)
+            {
                 PaintRecent();
+                PaintAudience();
+            }
 
             ShipCommsClientState.SetOpen(open);
         }
@@ -277,7 +299,12 @@ namespace TitanOrbit.UI
             byte k1 = count >= 2 ? _sequence[1] : (byte)0;
             byte k2 = count >= 3 ? _sequence[2] : (byte)0;
 
-            ShipCommsRpcClient.TrySend((byte)count, k0, k1, k2);
+            // --- Channel ---
+            // [TITAN-ORBIT] PlayerPrefs-backed All / Team toggle. The server re-checks
+            // the speaker's team — this byte is a request, not a faction the client picks.
+            byte teamOnly = ShipCommsClientState.TeamOnly ? (byte)1 : (byte)0;
+
+            ShipCommsRpcClient.TrySend((byte)count, k0, k1, k2, teamOnly);
             ShipCommsHistory.Record((byte)count, k0, k1, k2);
 
             // --- Optimistic local chips ---
@@ -285,7 +312,7 @@ namespace TitanOrbit.UI
             // so the speaker does not wait on round-trip. The echo replaces the same bubble.
             int localId = EcsGameBridge.GetLocalNetworkId();
             if (localId > 0)
-                ShipCommsInbox.Enqueue(localId, (byte)count, k0, k1, k2);
+                ShipCommsInbox.Enqueue(localId, (byte)count, k0, k1, k2, teamOnly);
         }
 
         /// <summary>
@@ -375,17 +402,32 @@ namespace TitanOrbit.UI
                 KeywordTile tile = _tiles[t];
                 int order = IndexOfSequence(tile.Index);
                 bool selected = order >= 0;
+                bool isTeamColor = tile.IsTeamColor;
                 if (tile.Fill != null)
-                    tile.Fill.color = selected ? TileSelected : TileIdle;
+                {
+                    // Color words keep a faction wash so "Purple" reads as the purple team.
+                    Color idle = isTeamColor ? Color.Lerp(TileIdle, tile.Accent, 0.28f) : TileIdle;
+                    Color picked = isTeamColor ? Color.Lerp(TileSelected, tile.Accent, 0.4f) : TileSelected;
+                    tile.Fill.color = selected ? picked : idle;
+                }
                 if (tile.Outline != null)
+                {
+                    tile.Outline.effectColor = tile.Accent;
                     tile.Outline.enabled = selected;
+                }
                 if (tile.Caret != null)
+                {
+                    tile.Caret.color = tile.Accent;
                     tile.Caret.enabled = selected;
+                }
                 if (tile.OrderBadge != null)
                 {
                     tile.OrderBadge.text = selected ? (order + 1).ToString() : string.Empty;
+                    tile.OrderBadge.color = tile.Accent;
                     tile.OrderBadge.enabled = selected;
                 }
+                if (tile.Label != null && isTeamColor)
+                    tile.Label.color = Color.Lerp(BodyTextColor, tile.Accent, 0.55f);
             }
         }
 
@@ -526,7 +568,10 @@ namespace TitanOrbit.UI
             AddCornerBracket(parent, "BR", new Vector2(1f, 0f), new Vector2(-6f, 6f), false, false);
         }
 
-        /// <summary>Two-line header: COMMS MATRIX + HOLD S · 3 WORDS in one strip.</summary>
+        /// <summary>
+        /// Two-line header: COMMS MATRIX + HOLD S · 3 WORDS, with an All / Team
+        /// channel switch on the right. The switch is remembered in PlayerPrefs.
+        /// </summary>
         void BuildHeader(Transform parent, ref float y, float width)
         {
             RectTransform plate = CreateTopLeft(parent, "Header", 0f, y, width, HeaderHeight);
@@ -534,24 +579,100 @@ namespace TitanOrbit.UI
             bg.color = CaptionPlateColor;
             bg.raycastTarget = false;
 
+            // Leave room on the right for the All / Team pills (two 52px tiles + gap + inset).
+            float toggleReserve = AudienceToggleWidth * 2f + AudienceToggleGap + 10f;
+
             var title = CreateLabel(plate, "Title", "COMMS MATRIX", 11f, AccentColor, TextAlignmentOptions.Left);
             var titleRt = title.rectTransform;
             titleRt.anchorMin = new Vector2(0f, 0.42f);
             titleRt.anchorMax = new Vector2(1f, 1f);
             titleRt.offsetMin = new Vector2(8f, 0f);
-            titleRt.offsetMax = new Vector2(-8f, -1f);
+            titleRt.offsetMax = new Vector2(-toggleReserve, -1f);
             title.characterSpacing = 1.8f;
             title.fontStyle = FontStyles.Bold;
 
-            var sub = CreateLabel(plate, "Sub", "HOLD S  ·  3 WORDS", 8f, CaptionTextColor, TextAlignmentOptions.Left);
-            var subRt = sub.rectTransform;
+            _headerSub = CreateLabel(plate, "Sub", "HOLD S  ·  3 WORDS  ·  ALL", 8f, CaptionTextColor, TextAlignmentOptions.Left);
+            var subRt = _headerSub.rectTransform;
             subRt.anchorMin = new Vector2(0f, 0f);
             subRt.anchorMax = new Vector2(1f, 0.48f);
             subRt.offsetMin = new Vector2(8f, 1f);
-            subRt.offsetMax = new Vector2(-8f, 0f);
-            sub.characterSpacing = 0.8f;
+            subRt.offsetMax = new Vector2(-toggleReserve, 0f);
+            _headerSub.characterSpacing = 0.8f;
+
+            BuildAudienceToggle(plate, width);
+            PaintAudience();
 
             y += HeaderHeight;
+        }
+
+        /// <summary>
+        /// Two compact pills on the header's right: ALL (everyone) and TEAM (teammates).
+        /// Clicking one writes <see cref="ShipCommsClientState.SetTeamOnly"/>.
+        /// </summary>
+        void BuildAudienceToggle(RectTransform header, float headerWidth)
+        {
+            float teamX = headerWidth - AudienceToggleWidth - 6f;
+            float allX = teamX - AudienceToggleGap - AudienceToggleWidth;
+            float y = (HeaderHeight - TileHeight + 8f) * 0.5f;
+            float h = HeaderHeight - 6f;
+
+            _allFill = CreateTile(header, "AllChannel", allX, y, AudienceToggleWidth, h, TileIdle);
+            _allLabel = CreateLabel(_allFill.transform, "Label", "ALL", 9f, BodyTextColor, TextAlignmentOptions.Center);
+            Stretch(_allLabel.rectTransform, 2f);
+            _allOutline = _allFill.gameObject.AddComponent<Outline>();
+            _allOutline.effectColor = AccentColor;
+            _allOutline.effectDistance = new Vector2(1f, -1f);
+            _allOutline.useGraphicAlpha = false;
+            _allFill.gameObject.GetComponent<Button>().onClick.AddListener(() => OnAudienceClicked(false));
+
+            _teamFill = CreateTile(header, "TeamChannel", teamX, y, AudienceToggleWidth, h, TileIdle);
+            _teamLabel = CreateLabel(_teamFill.transform, "Label", "TEAM", 9f, BodyTextColor, TextAlignmentOptions.Center);
+            Stretch(_teamLabel.rectTransform, 2f);
+            _teamOutline = _teamFill.gameObject.AddComponent<Outline>();
+            _teamOutline.effectColor = TeamChannelColor;
+            _teamOutline.effectDistance = new Vector2(1f, -1f);
+            _teamOutline.useGraphicAlpha = false;
+            _teamFill.gameObject.GetComponent<Button>().onClick.AddListener(() => OnAudienceClicked(true));
+        }
+
+        /// <summary>
+        /// Header pill click: remember All vs Team and repaint the switch.
+        /// Safe to tap while composing — it does not clear the 1/2/3 rail.
+        /// </summary>
+        /// <param name="teamOnly">True = teammates; false = every client.</param>
+        void OnAudienceClicked(bool teamOnly)
+        {
+            if (!ShipCommsClientState.IsOpen)
+                return;
+
+            ShipCommsClientState.SetTeamOnly(teamOnly);
+            PaintAudience();
+        }
+
+        /// <summary>
+        /// Highlights the active All / Team pill and updates the HOLD S subtitle
+        /// so the channel is readable without staring at the switch.
+        /// </summary>
+        void PaintAudience()
+        {
+            bool teamOnly = ShipCommsClientState.TeamOnly;
+
+            if (_allFill != null)
+                _allFill.color = teamOnly ? TileIdle : TileSelected;
+            if (_teamFill != null)
+                _teamFill.color = teamOnly ? Color.Lerp(TileSelected, TeamChannelColor, 0.35f) : TileIdle;
+            if (_allOutline != null)
+                _allOutline.enabled = !teamOnly;
+            if (_teamOutline != null)
+                _teamOutline.enabled = teamOnly;
+            if (_allLabel != null)
+                _allLabel.color = teamOnly ? CaptionTextColor : BodyTextColor;
+            if (_teamLabel != null)
+                _teamLabel.color = teamOnly ? TeamChannelColor : CaptionTextColor;
+            if (_headerSub != null)
+                _headerSub.text = teamOnly
+                    ? "HOLD S  ·  3 WORDS  ·  TEAM"
+                    : "HOLD S  ·  3 WORDS  ·  ALL";
         }
 
         /// <summary>Three clickable sequence chips. Empty slots show 1 / 2 / 3.</summary>
@@ -681,7 +802,19 @@ namespace TitanOrbit.UI
         /// <summary>One clickable keyword chip with an optional 1/2/3 order badge.</summary>
         KeywordTile CreateKeywordTile(Transform parent, byte index, string label, float x, float y)
         {
-            Image fill = CreateTile(parent, "Kw" + index, x, y, TileWidth, TileHeight, TileIdle);
+            // --- Faction tint ---
+            // [TITAN-ORBIT] Red / Blue / Green / Orange / Purple use the same RGB as hulls
+            // so "Attack Purple Base" is scannable in the SUBJECT grid.
+            Color accent = AccentColor;
+            bool isTeamColor = false;
+            if (TeamIdExtensions.TryParseColorName(label, out TeamId team))
+            {
+                accent = team.ToColor();
+                isTeamColor = true;
+            }
+
+            Color idleFill = isTeamColor ? Color.Lerp(TileIdle, accent, 0.28f) : TileIdle;
+            Image fill = CreateTile(parent, "Kw" + index, x, y, TileWidth, TileHeight, idleFill);
 
             var caretGo = new GameObject("Caret", typeof(RectTransform), typeof(Image));
             caretGo.transform.SetParent(fill.transform, false);
@@ -692,16 +825,17 @@ namespace TitanOrbit.UI
             caretRt.sizeDelta = new Vector2(2f, 0f);
             caretRt.anchoredPosition = Vector2.zero;
             var caret = caretGo.GetComponent<Image>();
-            caret.color = AccentColor;
+            caret.color = accent;
             caret.raycastTarget = false;
             caret.enabled = false;
 
-            var text = CreateLabel(fill.transform, "Label", label.ToUpperInvariant(), 10f, BodyTextColor, TextAlignmentOptions.Center);
+            Color labelColor = isTeamColor ? Color.Lerp(BodyTextColor, accent, 0.55f) : BodyTextColor;
+            var text = CreateLabel(fill.transform, "Label", label.ToUpperInvariant(), 10f, labelColor, TextAlignmentOptions.Center);
             Stretch(text.rectTransform, 4f);
             text.enableWordWrapping = false;
             text.overflowMode = TextOverflowModes.Ellipsis;
 
-            var badge = CreateLabel(fill.transform, "Order", string.Empty, 8f, AccentColor, TextAlignmentOptions.TopRight);
+            var badge = CreateLabel(fill.transform, "Order", string.Empty, 8f, accent, TextAlignmentOptions.TopRight);
             var badgeRt = badge.rectTransform;
             badgeRt.anchorMin = new Vector2(1f, 1f);
             badgeRt.anchorMax = new Vector2(1f, 1f);
@@ -711,7 +845,7 @@ namespace TitanOrbit.UI
             badge.enabled = false;
 
             var outline = fill.gameObject.AddComponent<Outline>();
-            outline.effectColor = AccentColor;
+            outline.effectColor = accent;
             outline.effectDistance = new Vector2(1.1f, -1.1f);
             outline.useGraphicAlpha = false;
             outline.enabled = false;
@@ -726,6 +860,8 @@ namespace TitanOrbit.UI
                 Label = text,
                 OrderBadge = badge,
                 Caret = caret,
+                Accent = accent,
+                IsTeamColor = isTeamColor,
             };
         }
 

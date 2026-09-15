@@ -784,8 +784,9 @@ namespace TitanOrbit.ECS
     /// [NETCODE] Client → server: hold-S comms sentence. Payload is keyword <b>indices</b>
     /// into <c>ShipCommsKeywordCatalog</c> — never strings. The server reads the owner from
     /// <see cref="ReceiveRpcCommandRequest.SourceConnection"/> (this struct has no NetworkId
-    /// so a client cannot spoof another ship). Adding fields changes RPC layout: client and
-    /// Linux headless must rebuild together.
+    /// so a client cannot spoof another ship). <see cref="TeamOnly"/> is a channel request;
+    /// the server looks up the speaker's team and targets those connections. Adding fields
+    /// changes RPC layout: client and Linux headless must rebuild together.
     /// </summary>
     public struct ShipCommsCommand : IRpcCommand
     {
@@ -800,12 +801,19 @@ namespace TitanOrbit.ECS
 
         /// <summary>Third keyword index. Ignored when <see cref="Count"/> is under 3.</summary>
         public byte K2;
+
+        /// <summary>
+        /// 1 = teammates only, 0 = every client. The server re-reads the speaker's
+        /// <c>ShipState.Team</c> — this flag is a request, not a team id the client can spoof.
+        /// </summary>
+        public byte TeamOnly;
     }
 
     /// <summary>
-    /// [NETCODE] Server → all clients: one player's 1–3 keyword callout. Presentation-only
+    /// [NETCODE] Server → clients: one player's 1–3 keyword callout. Presentation-only
     /// on the client (<c>ShipCommsInbox</c> → chips above the hull). Not a ghost field —
     /// the sentence is ephemeral and must not pay snapshot bandwidth every tick.
+    /// Team-only rows are targeted per connection; All rows use TargetConnection Null.
     /// </summary>
     public struct ShipCommsRpc : IRpcCommand
     {
@@ -823,6 +831,12 @@ namespace TitanOrbit.ECS
 
         /// <summary>Third keyword index. See <see cref="ShipCommsCommand.K2"/>.</summary>
         public byte K2;
+
+        /// <summary>
+        /// 1 when the server scoped this callout to the speaker's team. Clients use it
+        /// for chip chrome (TEAM vs ALL), not for filtering — enemies never receive the RPC.
+        /// </summary>
+        public byte TeamOnly;
     }
 
     /// <summary>

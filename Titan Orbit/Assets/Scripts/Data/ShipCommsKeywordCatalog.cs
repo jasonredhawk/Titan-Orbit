@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using TitanOrbit.Core;
 using UnityEngine;
 
 namespace TitanOrbit.Data
@@ -81,8 +82,9 @@ namespace TitanOrbit.Data
         static ShipCommsKeywordCatalog s_Cached;
 
         /// <summary>
-        /// Append-only starter set. Indices 0–13 shipped first; 14+ were added later.
-        /// Never reorder these rows — those bytes are on the wire.
+        /// Append-only starter set. Indices 0–13 shipped first; 14–41 later verbs;
+        /// 42–46 are the five team color names. Never reorder these rows — those bytes
+        /// are on the wire.
         /// </summary>
         public static readonly ShipCommsKeyword[] BuiltInKeywords =
         {
@@ -128,6 +130,14 @@ namespace TitanOrbit.Data
             new ShipCommsKeyword { label = "Bad", category = ShipCommsKeywordCategory.Social },
             new ShipCommsKeyword { label = "Oops", category = ShipCommsKeywordCategory.Social },
             new ShipCommsKeyword { label = "Good Luck", category = ShipCommsKeywordCategory.Social },
+            // --- Team colors (append-only; indices 42–46) ---
+            // [TITAN-ORBIT] Spoken faction names so "Attack Purple Base" names a team.
+            // Spellings must match TeamIdExtensions.ToColorName (Red / Blue / Green / Orange / Purple).
+            new ShipCommsKeyword { label = "Red", category = ShipCommsKeywordCategory.Subject },
+            new ShipCommsKeyword { label = "Blue", category = ShipCommsKeywordCategory.Subject },
+            new ShipCommsKeyword { label = "Green", category = ShipCommsKeywordCategory.Subject },
+            new ShipCommsKeyword { label = "Orange", category = ShipCommsKeywordCategory.Subject },
+            new ShipCommsKeyword { label = "Purple", category = ShipCommsKeywordCategory.Subject },
         };
 
         /// <summary>
@@ -207,6 +217,26 @@ namespace TitanOrbit.Data
                 return false;
             }
 
+            return true;
+        }
+
+        /// <summary>
+        /// Resolves a color-keyword index to the faction tint (Red → TeamA red, …).
+        /// False for ordinary words so the compose panel keeps the cyan chrome.
+        /// </summary>
+        /// <param name="index">Keyword byte from the RPC or a clicked tile.</param>
+        /// <param name="color">Canonical team RGB when true.</param>
+        public bool TryGetTeamColor(byte index, out UnityEngine.Color color)
+        {
+            color = default;
+            if (!TryGetLabel(index, out string label))
+                return false;
+
+            // [TITAN-ORBIT] Color chips share spellings with TeamIdExtensions.ToColorName.
+            if (!TeamIdExtensions.TryParseColorName(label, out TeamId team))
+                return false;
+
+            color = team.ToColor();
             return true;
         }
 

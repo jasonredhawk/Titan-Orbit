@@ -679,7 +679,11 @@ namespace TitanOrbit.ECS
             }
         }
 
-        /// <summary>Damages enemy drones in the blast using this tick's derived hit spheres.</summary>
+        /// <summary>
+        /// Damages enemy drones in the blast using this tick's derived hit spheres.
+        /// Re-reads each sphere after earlier kills because a dead drone <c>RemoveAt</c>
+        /// shifts later equipment indices on the same ship.
+        /// </summary>
         static void ApplyBlastToDrones(
             EntityManager em,
             float3 center,
@@ -697,6 +701,9 @@ namespace TitanOrbit.ECS
             for (int i = 0; i < droneTargets.Count; i++)
             {
                 var drone = droneTargets[i];
+                // SlotIndex -1 = wreck already stripped this tick (see DroneSwarmHitScan).
+                if (drone.SlotIndex < 0)
+                    continue;
                 if (ownerNet > 0 && drone.OwnerNetworkId == ownerNet)
                     continue;
                 if (ownerTeam != 0 && drone.Team == ownerTeam)
@@ -711,7 +718,8 @@ namespace TitanOrbit.ECS
                 if (splash <= 0.01f)
                     continue;
 
-                DroneSwarmHitScan.ApplyDamageToDroneSlot(em, drone.ShipEntity, drone.SlotIndex, splash);
+                DroneSwarmHitScan.ApplyDamageToDroneSlot(
+                    em, drone.ShipEntity, drone.SlotIndex, splash, droneTargets);
             }
         }
 

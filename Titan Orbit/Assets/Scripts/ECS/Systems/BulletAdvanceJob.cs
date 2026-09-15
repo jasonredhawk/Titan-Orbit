@@ -259,8 +259,8 @@ namespace TitanOrbit.ECS
 
         static bool AllowsDrone(BulletDamageFilter filter)
         {
-            return filter == BulletDamageFilter.Everything ||
-                   filter == BulletDamageFilter.ShipsOnly;
+            // Cross-fire: every bolt can clip a drone. Aim / acquire stays elsewhere.
+            return true;
         }
     }
 

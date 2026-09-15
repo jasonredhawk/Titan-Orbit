@@ -1,3 +1,4 @@
+using TitanOrbit.Core;
 using TitanOrbit.Data;
 using Unity.Collections;
 using Unity.Entities;
@@ -7,7 +8,8 @@ namespace TitanOrbit.ECS
 {
     /// <summary>
     /// Server: accepts <see cref="ShipCommsCommand"/>, checks the speaker has a living ship,
-    /// rate-limits the connection, then broadcasts <see cref="ShipCommsRpc"/> to every client.
+    /// rate-limits the connection, then sends <see cref="ShipCommsRpc"/> to All clients or
+    /// only teammates.
     /// <para>
     /// World: ServerSimulation. Group: SimulationSystemGroup. Not Burst-compiled — we load the
     /// managed <see cref="ShipCommsKeywordCatalog"/> to validate indices.
@@ -15,7 +17,9 @@ namespace TitanOrbit.ECS
     /// <para>
     /// [NETCODE] Owner comes from <see cref="ReceiveRpcCommandRequest.SourceConnection"/> →
     /// <see cref="NetworkId"/>. The command has no client-supplied id, so a player cannot put
-    /// chips above someone else's hull. Local Host injects the command with
+    /// chips above someone else's hull. <c>TeamOnly</c> is a channel request; this system
+    /// reads the speaker's <see cref="ShipState.Team"/> and targets those connections so a
+    /// client cannot leak team chat to enemies. Local Host injects the command with
     /// <c>ReceiveRpcCommandRequest</c> already set (see <c>ShipCommsRpcClient</c>) because
     /// client→server SendRpc can drop under Instantiates load.
     /// </para>
@@ -72,7 +76,7 @@ namespace TitanOrbit.ECS
                 // Ghost — NetCode replica. IsDead means hull+cargo emptied; AwaitingTeamSelection
                 // is the join-team plaque before the player has a flying hull.
                 // Use EntityManager (not a nested SystemAPI.Query) — we are already iterating RPCs.
-                if (!SpeakerHasLivingShip(em, networkId))
+                if (!TryGetLivingSpeakerTeam(em, networkId, out TeamId speakerTeam))
                     continue;
 
                 // --- Rate limit ---
@@ -92,7 +96,7 @@ namespace TitanOrbit.ECS
                     ecb.AddComponent(connection, new ShipCommsCooldown { LastSendElapsed = now });
                 }
 
-                Broadcast(ecb, networkId, sentence);
+                Deliver(ecb, em, networkId, speakerTeam, sentence);
             }
 
             ecb.Playback(em);
@@ -101,10 +105,12 @@ namespace TitanOrbit.ECS
 
         /// <summary>
         /// True when a ship ghost owned by <paramref name="networkId"/> is alive and in play.
+        /// Writes that hull's team so team-only delivery can target teammates.
         /// Ships are few — a linear query on an RPC (not every tick) is cheap.
         /// </summary>
-        static bool SpeakerHasLivingShip(EntityManager em, int networkId)
+        static bool TryGetLivingSpeakerTeam(EntityManager em, int networkId, out TeamId team)
         {
+            team = TeamId.None;
             using var query = em.CreateEntityQuery(typeof(ShipTag), typeof(GhostOwner), typeof(ShipState));
             using var owners = query.ToComponentDataArray<GhostOwner>(Allocator.Temp);
             using var states = query.ToComponentDataArray<ShipState>(Allocator.Temp);
@@ -113,10 +119,55 @@ namespace TitanOrbit.ECS
                 if (owners[i].NetworkId != networkId)
                     continue;
 
-                return !states[i].IsDead && !states[i].AwaitingTeamSelection;
+                if (states[i].IsDead || states[i].AwaitingTeamSelection)
+                    return false;
+
+                team = states[i].Team;
+                return true;
             }
 
             return false;
+        }
+
+        /// <summary>
+        /// All → every connected client. Team → each in-game connection whose living or
+        /// dead hull shares the speaker's <see cref="TeamId"/>. No team on the speaker
+        /// falls back to the speaker only so "TEAM" never leaks to the whole match.
+        /// </summary>
+        static void Deliver(
+            EntityCommandBuffer ecb,
+            EntityManager em,
+            int networkId,
+            TeamId speakerTeam,
+            in ShipCommsCommand sentence)
+        {
+            byte teamOnly = sentence.TeamOnly != 0 ? (byte)1 : (byte)0;
+            var rpc = new ShipCommsRpc
+            {
+                NetworkId = networkId,
+                Count = sentence.Count,
+                K0 = sentence.K0,
+                K1 = sentence.K1,
+                K2 = sentence.K2,
+                TeamOnly = teamOnly,
+            };
+
+            if (teamOnly == 0)
+            {
+                BroadcastAll(ecb, rpc);
+                return;
+            }
+
+            // --- Team channel ---
+            // [TITAN-ORBIT] TeamId.None is the join-team plaque. A living speaker should
+            // already have a faction; if they do not, only they see the chips.
+            if (speakerTeam == TeamId.None)
+            {
+                SendToNetworkId(ecb, em, networkId, rpc);
+                return;
+            }
+
+            SendToTeam(ecb, em, speakerTeam, rpc);
         }
 
         /// <summary>
@@ -124,18 +175,83 @@ namespace TitanOrbit.ECS
         /// Dedicated clients apply this in <see cref="ShipCommsRpcClientSystem"/>. The sender
         /// also paints an optimistic local bubble so they do not wait on RTT.
         /// </summary>
-        static void Broadcast(EntityCommandBuffer ecb, int networkId, in ShipCommsCommand sentence)
+        static void BroadcastAll(EntityCommandBuffer ecb, in ShipCommsRpc rpc)
         {
             Entity announce = ecb.CreateEntity();
-            ecb.AddComponent(announce, new ShipCommsRpc
-            {
-                NetworkId = networkId,
-                Count = sentence.Count,
-                K0 = sentence.K0,
-                K1 = sentence.K1,
-                K2 = sentence.K2,
-            });
+            ecb.AddComponent(announce, rpc);
             ecb.AddComponent(announce, new SendRpcCommandRequest { TargetConnection = Entity.Null });
+        }
+
+        /// <summary>
+        /// Sends one targeted RPC to the connection whose <see cref="NetworkId"/> matches.
+        /// Used when team-only has no faction to scope to.
+        /// </summary>
+        static void SendToNetworkId(EntityCommandBuffer ecb, EntityManager em, int networkId, in ShipCommsRpc rpc)
+        {
+            using var query = em.CreateEntityQuery(typeof(NetworkId), typeof(NetworkStreamInGame));
+            using var connections = query.ToEntityArray(Allocator.Temp);
+            using var ids = query.ToComponentDataArray<NetworkId>(Allocator.Temp);
+            for (int i = 0; i < connections.Length; i++)
+            {
+                if (ids[i].Value != networkId)
+                    continue;
+
+                Entity announce = ecb.CreateEntity();
+                ecb.AddComponent(announce, rpc);
+                ecb.AddComponent(announce, new SendRpcCommandRequest { TargetConnection = connections[i] });
+                return;
+            }
+        }
+
+        /// <summary>
+        /// Sends one targeted RPC per in-game connection whose ship is on
+        /// <paramref name="team"/>. Includes dead hulls so a teammate on the death
+        /// screen still sees the callout. Skips AwaitingTeamSelection (no faction yet).
+        /// </summary>
+        static void SendToTeam(EntityCommandBuffer ecb, EntityManager em, TeamId team, in ShipCommsRpc rpc)
+        {
+            // --- Teammate NetworkIds ---
+            // [ECS/DOTS] Ships are few; two Temp arrays on a rate-limited RPC is cheap.
+            using var shipQuery = em.CreateEntityQuery(typeof(ShipTag), typeof(GhostOwner), typeof(ShipState));
+            using var owners = shipQuery.ToComponentDataArray<GhostOwner>(Allocator.Temp);
+            using var states = shipQuery.ToComponentDataArray<ShipState>(Allocator.Temp);
+
+            using var connQuery = em.CreateEntityQuery(typeof(NetworkId), typeof(NetworkStreamInGame));
+            using var connections = connQuery.ToEntityArray(Allocator.Temp);
+            using var ids = connQuery.ToComponentDataArray<NetworkId>(Allocator.Temp);
+
+            for (int c = 0; c < connections.Length; c++)
+            {
+                int connId = ids[c].Value;
+                if (!ConnectionIsOnTeam(owners, states, connId, team))
+                    continue;
+
+                Entity announce = ecb.CreateEntity();
+                ecb.AddComponent(announce, rpc);
+                ecb.AddComponent(announce, new SendRpcCommandRequest { TargetConnection = connections[c] });
+            }
+        }
+
+        /// <summary>
+        /// True when <paramref name="networkId"/> owns a ship on <paramref name="team"/>
+        /// that has already picked a faction.
+        /// </summary>
+        static bool ConnectionIsOnTeam(
+            NativeArray<GhostOwner> owners,
+            NativeArray<ShipState> states,
+            int networkId,
+            TeamId team)
+        {
+            for (int i = 0; i < owners.Length; i++)
+            {
+                if (owners[i].NetworkId != networkId)
+                    continue;
+                if (states[i].AwaitingTeamSelection)
+                    return false;
+                return states[i].Team == team;
+            }
+
+            return false;
         }
     }
 }

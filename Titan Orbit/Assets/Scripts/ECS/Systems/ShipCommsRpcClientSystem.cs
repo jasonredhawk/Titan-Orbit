@@ -10,7 +10,8 @@ namespace TitanOrbit.ECS
     /// speaker's hull — this system never Instantiates UI.
     /// <para>
     /// World: ClientSimulation. Group: SimulationSystemGroup. Paired with
-    /// <see cref="ShipCommsServerSystem"/>.
+    /// <see cref="ShipCommsServerSystem"/>. Team-only rows only arrive when this
+    /// connection is on the speaker's team (the server already filtered).
     /// </para>
     /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ClientSimulation)]
@@ -24,7 +25,7 @@ namespace TitanOrbit.ECS
         {
             var ecb = new EntityCommandBuffer(Allocator.Temp);
 
-            // --- Drain broadcast RPCs ---
+            // --- Drain inbound RPCs ---
             // [NETCODE] ReceiveRpcCommandRequest marks inbound RPC entities from the network.
             foreach (var (rpc, entity) in SystemAPI
                          .Query<RefRO<ShipCommsRpc>>()
@@ -32,7 +33,13 @@ namespace TitanOrbit.ECS
                          .WithEntityAccess())
             {
                 ShipCommsRpc row = rpc.ValueRO;
-                ShipCommsInbox.Enqueue(row.NetworkId, row.Count, row.K0, row.K1, row.K2);
+                ShipCommsInbox.Enqueue(
+                    row.NetworkId,
+                    row.Count,
+                    row.K0,
+                    row.K1,
+                    row.K2,
+                    row.TeamOnly);
                 ecb.DestroyEntity(entity);
             }
 

@@ -13,9 +13,10 @@ namespace TitanOrbit.Game
     /// <c>GhostOwner.NetworkId</c> — a new callout replaces the old one.
     /// <para>
     /// Client presentation only. Driven by <see cref="ShipCommsInbox"/> (RPC echo) and by
-    /// <see cref="Show"/> for the speaker's optimistic local preview. Anchors through
-    /// <see cref="ShipWeaponProxyRegistry"/> so we follow the wrapped hull transform
-    /// (display = sim; no extra wrap tiles).
+    /// <see cref="Show"/> for the speaker's optimistic local preview. Team-only callouts
+    /// use amber frames; color keywords (Purple, Red, …) tint to that faction. Anchors
+    /// through <see cref="ShipWeaponProxyRegistry"/> so we follow the wrapped hull
+    /// transform (display = sim; no extra wrap tiles).
     /// </para>
     /// Regular nameplates sit world −Z (screen-below). These chips sit world +Z (screen-above)
     /// on the same play-plane rotation (<c>Euler(-90,0,0)</c>, facing +Y) so they do not tilt
@@ -62,6 +63,7 @@ namespace TitanOrbit.Game
         static readonly Color ChipText = new Color(0.88f, 0.92f, 0.98f, 1f);
         static readonly Color ChipOutline = new Color(0.02f, 0.04f, 0.08f, 0.85f);
         static readonly Color ChipCaret = new Color(0.35f, 0.72f, 0.95f, 0.95f);
+        static readonly Color TeamChannelFrame = new Color(0.95f, 0.62f, 0.22f, 0.95f);
 
         static ShipCommsBubblePresenter s_Instance;
         static Sprite s_PlateSprite;
@@ -82,8 +84,12 @@ namespace TitanOrbit.Game
             public readonly GameObject[] Chips = new GameObject[ShipCommsKeywordCatalog.MaxSequenceLength];
             public readonly LayoutElement[] ChipLayouts = new LayoutElement[ShipCommsKeywordCatalog.MaxSequenceLength];
             public readonly RectTransform[] ChipRects = new RectTransform[ShipCommsKeywordCatalog.MaxSequenceLength];
+            public readonly Image[] Frames = new Image[ShipCommsKeywordCatalog.MaxSequenceLength];
+            public readonly Image[] Carets = new Image[ShipCommsKeywordCatalog.MaxSequenceLength];
+            public readonly Image[] Fills = new Image[ShipCommsKeywordCatalog.MaxSequenceLength];
             public float Age;
             public byte Count;
+            public byte TeamOnly;
             public bool HasLocalCenter;
             public Vector3 LocalXzCenter;
         }
@@ -131,14 +137,14 @@ namespace TitanOrbit.Game
         /// Paints chips above <paramref name="networkId"/>'s hull. Replaces any bubble
         /// already showing for that player and restarts the 4s timer.
         /// </summary>
-        public static void Show(int networkId, byte count, byte k0, byte k1, byte k2)
+        public static void Show(int networkId, byte count, byte k0, byte k1, byte k2, byte teamOnly)
         {
             if (s_Instance == null)
                 EnsureExists();
             if (s_Instance == null)
                 return;
 
-            s_Instance.ApplyCallout(networkId, count, k0, k1, k2);
+            s_Instance.ApplyCallout(networkId, count, k0, k1, k2, teamOnly);
         }
 
         /// <summary>
@@ -149,7 +155,7 @@ namespace TitanOrbit.Game
             // --- Inbox ---
             // [HYBRID] Client simulation enqueued rows; we Instantiates UI on the main thread.
             while (ShipCommsInbox.TryDequeue(out ShipCommsInbox.Callout callout))
-                ApplyCallout(callout.NetworkId, callout.Count, callout.K0, callout.K1, callout.K2);
+                ApplyCallout(callout.NetworkId, callout.Count, callout.K0, callout.K1, callout.K2, callout.TeamOnly);
 
             if (_live.Count <= 0)
                 return;
@@ -191,7 +197,7 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>Creates or recycles a bubble and writes the keyword labels.</summary>
-        void ApplyCallout(int networkId, byte count, byte k0, byte k1, byte k2)
+        void ApplyCallout(int networkId, byte count, byte k0, byte k1, byte k2, byte teamOnly)
         {
             if (networkId <= 0 || count < 1)
                 return;
@@ -204,14 +210,15 @@ namespace TitanOrbit.Game
 
             bubble.Age = 0f;
             bubble.Count = count;
+            bubble.TeamOnly = teamOnly;
             if (bubble.Group != null)
                 bubble.Group.alpha = 1f;
 
             var catalog = ShipCommsKeywordCatalog.LoadDefault();
             float width = 0f;
-            width += ApplyChip(bubble, 0, count >= 1, k0, catalog);
-            width += ApplyChip(bubble, 1, count >= 2, k1, catalog);
-            width += ApplyChip(bubble, 2, count >= 3, k2, catalog);
+            width += ApplyChip(bubble, 0, count >= 1, k0, catalog, teamOnly);
+            width += ApplyChip(bubble, 1, count >= 2, k1, catalog, teamOnly);
+            width += ApplyChip(bubble, 2, count >= 3, k2, catalog, teamOnly);
             width += Mathf.Max(0, count - 1) * ChipGap;
             if (bubble.CanvasRect != null)
                 bubble.CanvasRect.sizeDelta = new Vector2(width, ChipHeight + 8f);
@@ -223,7 +230,7 @@ namespace TitanOrbit.Game
         /// Shows or hides one chip, writes its label, and sizes it like a panel button.
         /// Returns the chip width used for the row (0 when hidden).
         /// </summary>
-        static float ApplyChip(Bubble bubble, int slot, bool visible, byte index, ShipCommsKeywordCatalog catalog)
+        static float ApplyChip(Bubble bubble, int slot, bool visible, byte index, ShipCommsKeywordCatalog catalog, byte teamOnly)
         {
             GameObject chip = bubble.Chips[slot];
             if (chip != null)
@@ -235,6 +242,29 @@ namespace TitanOrbit.Game
             string text = catalog.TryGetLabel(index, out string label) ? label : "?";
             TextMeshProUGUI tmp = bubble.Labels[slot];
             tmp.text = text.ToUpperInvariant();
+
+            // --- Channel + faction chrome ---
+            // Team-only rows use amber frames so teammates can tell the callout was not All.
+            // Color words (Purple, Red, …) tint caret / fill / label to that team's RGB.
+            Color frame = teamOnly != 0 ? TeamChannelFrame : ChipFrame;
+            Color caret = frame;
+            Color fill = ChipFill;
+            Color body = ChipText;
+            if (catalog.TryGetTeamColor(index, out Color teamColor))
+            {
+                caret = teamColor;
+                frame = teamColor;
+                fill = Color.Lerp(ChipFill, teamColor, 0.28f);
+                body = Color.Lerp(ChipText, teamColor, 0.5f);
+            }
+
+            if (bubble.Frames[slot] != null)
+                bubble.Frames[slot].color = frame;
+            if (bubble.Carets[slot] != null)
+                bubble.Carets[slot].color = caret;
+            if (bubble.Fills[slot] != null)
+                bubble.Fills[slot].color = fill;
+            tmp.color = body;
             tmp.ForceMeshUpdate();
 
             float width = Mathf.Max(ChipWidth, tmp.preferredWidth + ChipPadX * 2f);
@@ -362,12 +392,14 @@ namespace TitanOrbit.Game
                 var frameGo = new GameObject("Frame", typeof(RectTransform), typeof(Image));
                 frameGo.transform.SetParent(chipGo.transform, false);
                 Stretch(frameGo.GetComponent<RectTransform>(), 0f);
-                StylePlate(frameGo.GetComponent<Image>(), ChipFrame);
+                var frameImage = frameGo.GetComponent<Image>();
+                StylePlate(frameImage, ChipFrame);
 
                 var fillGo = new GameObject("Fill", typeof(RectTransform), typeof(Image));
                 fillGo.transform.SetParent(chipGo.transform, false);
                 Stretch(fillGo.GetComponent<RectTransform>(), FrameInset);
-                StylePlate(fillGo.GetComponent<Image>(), ChipFill);
+                var fillImage = fillGo.GetComponent<Image>();
+                StylePlate(fillImage, ChipFill);
 
                 var caretGo = new GameObject("Caret", typeof(RectTransform), typeof(Image));
                 caretGo.transform.SetParent(chipGo.transform, false);
@@ -377,13 +409,17 @@ namespace TitanOrbit.Game
                 caretRt.pivot = new Vector2(0f, 0.5f);
                 caretRt.sizeDelta = new Vector2(2f, -FrameInset * 2f);
                 caretRt.anchoredPosition = new Vector2(FrameInset, 0f);
-                StylePlate(caretGo.GetComponent<Image>(), ChipCaret);
+                var caretImage = caretGo.GetComponent<Image>();
+                StylePlate(caretImage, ChipCaret);
 
                 var label = CreateWorldLabel(chipGo.transform, "Label");
                 bubble.Chips[i] = chipGo;
                 bubble.ChipLayouts[i] = le;
                 bubble.ChipRects[i] = chipRt;
                 bubble.Labels[i] = label;
+                bubble.Frames[i] = frameImage;
+                bubble.Fills[i] = fillImage;
+                bubble.Carets[i] = caretImage;
             }
 
             return bubble;

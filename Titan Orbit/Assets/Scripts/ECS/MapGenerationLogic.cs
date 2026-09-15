@@ -960,9 +960,11 @@ namespace TitanOrbit.ECS
         /// Builds a round-robin starting-capture order so each team gets one neutral at a time
         /// before the next round (TeamA, TeamB, … then TeamA again).
         /// <para>
-        /// [TITAN-ORBIT] On each team's turn they “choose” the closest still-available neutral to
-        /// their home (toroidal distance). Totals stay even across teams when neutrals are scarce
-        /// (same floor/remainder as the old instant assign). Leftover neutrals stay unowned.
+        /// [TITAN-ORBIT] On each team's turn they “choose” the lowest-level still-available
+        /// neutral at or below home-planet level; same-level ties go to the smallest planet
+        /// (<see cref="NeutralPlanetLayout.Scale"/>). Remaining ties use the lowest layout index.
+        /// Neutrals above home level stay unowned. Totals stay even across teams when eligible
+        /// neutrals are scarce. Leftover neutrals stay unowned.
         /// </para>
         /// Callers spawn neutrals as <see cref="TeamId.None"/> first, then apply each claim over
         /// successive sim ticks so <c>PlanetConnectionGraphSystem</c> can rebuild sticky edges
@@ -970,19 +972,15 @@ namespace TitanOrbit.ECS
         /// </summary>
         /// <param name="desiredPerTeam">Designer setting (0 disables pre-ownership).</param>
         /// <param name="teamCount">Active teams this match (2–5).</param>
-        /// <param name="homePositions">Home world XZ per team index 0..teamCount-1 (TeamA = 0).</param>
-        /// <param name="neutrals">Placed neutral layouts (positions used for closest-pick).</param>
-        /// <param name="mapW">Toroidal map width.</param>
-        /// <param name="mapH">Toroidal map height.</param>
+        /// <param name="homePlanetLevel">Home worlds' starting level — claims cannot exceed this.</param>
+        /// <param name="neutrals">Placed neutral layouts (level + size used for the pick).</param>
         /// <param name="rng">Match RNG — used only for remainder team picks when counts are uneven.</param>
         /// <param name="outClaims">Cleared then filled in deal order (round-robin).</param>
         public static void BuildStartingNeutralClaimOrder(
             int desiredPerTeam,
             int teamCount,
-            in NativeArray<float3> homePositions,
+            int homePlanetLevel,
             in NativeList<NeutralPlanetLayout> neutrals,
-            float mapW,
-            float mapH,
             ref Random rng,
             ref NativeList<StartingNeutralClaim> outClaims)
         {
@@ -991,19 +989,30 @@ namespace TitanOrbit.ECS
             if (desiredPerTeam <= 0 ||
                 teamCount < MinSupportedTeams ||
                 !neutrals.IsCreated ||
-                neutrals.Length <= 0 ||
-                !homePositions.IsCreated ||
-                homePositions.Length < teamCount)
+                neutrals.Length <= 0)
                 return;
 
             teamCount = math.clamp(teamCount, MinSupportedTeams, MaxSupportedTeams);
+            int maxClaimLevel = math.max(1, homePlanetLevel);
             int neutralCount = neutrals.Length;
+
+            // --- Eligible neutrals only (level ≤ home) — higher-level worlds stay unowned ---
+            var available = new NativeList<int>(neutralCount, Allocator.Temp);
+            for (int i = 0; i < neutralCount; i++)
+            {
+                if (neutrals[i].Level > maxClaimLevel)
+                    continue;
+                available.Add(i);
+            }
 
             // --- How many each team should receive (even floor + random remainder) ---
             int totalDesired = desiredPerTeam * teamCount;
-            int totalAssign = math.min(totalDesired, neutralCount);
+            int totalAssign = math.min(totalDesired, available.Length);
             if (totalAssign <= 0)
+            {
+                available.Dispose();
                 return;
+            }
 
             int baseEach = totalAssign / teamCount;
             int remainder = totalAssign % teamCount;
@@ -1029,13 +1038,9 @@ namespace TitanOrbit.ECS
                 teamOrder.Dispose();
             }
 
-            // --- Available neutral indices (true until claimed in this deal) ---
-            var available = new NativeList<int>(neutralCount, Allocator.Temp);
-            for (int i = 0; i < neutralCount; i++)
-                available.Add(i);
-
             // --- Round-robin deal: one planet per team per pass ---
-            // [TITAN-ORBIT] Closest-to-home pick mimics expanding from the homeworld first.
+            // [TITAN-ORBIT] Lowest level first, then smallest size, so every team starts on
+            // the easy worlds instead of clustering around their home.
             bool anyLeft = true;
             while (anyLeft && available.Length > 0)
             {
@@ -1046,19 +1051,21 @@ namespace TitanOrbit.ECS
                         continue;
 
                     anyLeft = true;
-                    float3 homePos = homePositions[t];
                     int bestAvailSlot = 0;
-                    float bestDist = float.MaxValue;
+                    int bestLevel = int.MaxValue;
+                    float bestScale = float.MaxValue;
+                    int bestLayoutIndex = int.MaxValue;
                     for (int a = 0; a < available.Length; a++)
                     {
                         int nIdx = available[a];
-                        float d = ToroidalMapEcs.ToroidalDistance(
-                            homePos, neutrals[nIdx].Position, mapW, mapH);
-                        if (d < bestDist)
-                        {
-                            bestDist = d;
-                            bestAvailSlot = a;
-                        }
+                        NeutralPlanetLayout n = neutrals[nIdx];
+                        if (!IsBetterStartingClaimPick(n, nIdx, bestLevel, bestScale, bestLayoutIndex))
+                            continue;
+
+                        bestLevel = n.Level;
+                        bestScale = n.Scale;
+                        bestLayoutIndex = nIdx;
+                        bestAvailSlot = a;
                     }
 
                     int chosen = available[bestAvailSlot];
@@ -1075,6 +1082,24 @@ namespace TitanOrbit.ECS
 
             remaining.Dispose();
             available.Dispose();
+        }
+
+        /// <summary>
+        /// True when <paramref name="candidate"/> should replace the current starting-claim pick.
+        /// Order: lowest level, then smallest scale, then lowest layout index.
+        /// </summary>
+        static bool IsBetterStartingClaimPick(
+            in NeutralPlanetLayout candidate,
+            int candidateIndex,
+            int bestLevel,
+            float bestScale,
+            int bestIndex)
+        {
+            if (candidate.Level != bestLevel)
+                return candidate.Level < bestLevel;
+            if (candidate.Scale != bestScale)
+                return candidate.Scale < bestScale;
+            return candidateIndex < bestIndex;
         }
     }
 }

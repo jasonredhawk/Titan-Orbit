@@ -19,7 +19,7 @@ namespace TitanOrbit.ECS
     /// or people transport within absolute engage range (world units from the pad; Level 1→6
     /// from <see cref="PlanetaryDefenseConfig"/>, default 20 at Lv1 then +4/level) and append
     /// <see cref="BulletElement"/> shots with <see cref="BulletDamageFilter.ShipsAndTransports"/>
-    /// (enemy ships, people transports, and asteroids — rocks block + take damage like ship guns).
+    /// (aim: ships and transports; collision also stops on asteroids and drones in the beam).
     /// <para>
     /// [TITAN-ORBIT] No turret ghosts — muzzle pose is derived from planet transform + slot index
     /// (same formula as client visuals / hit spheres). OwnerNetworkId is 0; OwnerTeam is planet
@@ -257,7 +257,7 @@ namespace TitanOrbit.ECS
                         Sequence = sequence,
                         BankIndex = math.max(0, bankIndex),
                         ScaleMultiplier = math.max(0.1f, visualScale),
-                        // Ships + transports + asteroids (rocks block/damage like ship guns).
+                        // Aim stays ships/transports; drones in the beam still take a hit.
                         DamageFilter = BulletDamageFilter.ShipsAndTransports,
                     };
 

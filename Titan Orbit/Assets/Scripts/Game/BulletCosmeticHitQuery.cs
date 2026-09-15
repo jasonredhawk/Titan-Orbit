@@ -1202,18 +1202,20 @@ namespace TitanOrbit.Game
                 case BulletDamageFilter.Everything:
                     return true;
                 case BulletDamageFilter.AsteroidsOnly:
-                    // Mining: rocks only. Pass through ships, drones, and enemy turrets.
-                    return kind == ObstacleKind.Asteroid;
+                    // Mining: rocks + drones in the beam. Pass through ships and enemy turrets.
+                    return kind == ObstacleKind.Asteroid
+                           || kind == ObstacleKind.Drone;
                 case BulletDamageFilter.ShipsOnly:
                     // Fighter: enemy ships + their drones + enemy planetary turrets.
                     return kind == ObstacleKind.Ship
                            || kind == ObstacleKind.Drone
                            || kind == ObstacleKind.PlanetaryDefense;
                 case BulletDamageFilter.ShipsAndTransports:
-                    // PD: ships + people transports + asteroids (same as server AllowsHitKind).
+                    // PD: ships + transports + asteroids + drones in the beam (no drone acquire).
                     return kind == ObstacleKind.Ship
                            || kind == ObstacleKind.Transport
-                           || kind == ObstacleKind.Asteroid;
+                           || kind == ObstacleKind.Asteroid
+                           || kind == ObstacleKind.Drone;
                 default:
                     return true;
             }
