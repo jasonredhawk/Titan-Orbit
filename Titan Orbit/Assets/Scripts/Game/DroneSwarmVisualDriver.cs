@@ -106,8 +106,8 @@ namespace TitanOrbit.Game
         /// <summary>Scratch for hybrid planet proxy keys (quarantine-safe turret aim).</summary>
         readonly List<Entity> _planetProxyScratch = new List<Entity>(64);
 
-        /// <summary>Nearby asteroid planar poses for local mining aim (throttled).</summary>
-        readonly List<Vector3> _cachedAsteroidAims = new List<Vector3>(256);
+        /// <summary>Nearby asteroid entities + planar poses for local mining aim (throttled).</summary>
+        readonly List<(Entity entity, Vector3 pos)> _cachedAsteroidAims = new List<(Entity, Vector3)>(256);
         int _asteroidCacheFrame = -999;
 
         World _cachedQueryWorld;
@@ -978,21 +978,16 @@ namespace TitanOrbit.Game
                 for (int i = 0; i < _asteroidProxyScratch.Count; i++)
                 {
                     Entity e = _asteroidProxyScratch[i];
-                    if (!viz.TryGetProxy(e, out GameObject proxy) || proxy == null)
+                    if (!viz.TryGetProxy(e, out GameObject proxy) || proxy == null || !proxy.activeInHierarchy)
                         continue;
-                    // Skip destroyed rocks when ECS state is readable without a full gather.
-                    if (em.Exists(e) && em.HasComponent<AsteroidState>(e))
-                    {
-                        var st = em.GetComponentData<AsteroidState>(e);
-                        if (st.IsDestroyed || st.Health <= 0f)
-                            continue;
-                    }
+                    if (!IsLiveMiningAsteroid(em, e))
+                        continue;
 
                     Vector3 wp = proxy.transform.position;
                     float d = DroneSwarmLogic.ToroidalDistanceXZ(owner.x, owner.z, wp.x, wp.z, _mapW, _mapH);
                     if (d * d >= gatherSq)
                         continue;
-                    _cachedAsteroidAims.Add(new Vector3(wp.x, 0f, wp.z));
+                    _cachedAsteroidAims.Add((e, new Vector3(wp.x, 0f, wp.z)));
                 }
             }
             else if (!ClientJoinSettleCache.ShouldSkipMapBodyQueries && _queriesCreated)
@@ -1001,15 +996,14 @@ namespace TitanOrbit.Game
                 using var entities = _asteroidQuery.ToEntityArray(Allocator.Temp);
                 for (int i = 0; i < entities.Length; i++)
                 {
-                    var a = em.GetComponentData<AsteroidState>(entities[i]);
-                    if (a.IsDestroyed || a.Health <= 0f)
+                    if (!IsLiveMiningAsteroid(em, entities[i]))
                         continue;
                     float3 p = em.GetComponentData<LocalTransform>(entities[i]).Position;
                     p.y = 0f;
                     float d = DroneSwarmLogic.ToroidalDistanceXZ(owner.x, owner.z, p.x, p.z, _mapW, _mapH);
                     if (d * d >= gatherSq)
                         continue;
-                    _cachedAsteroidAims.Add(new Vector3(p.x, 0f, p.z));
+                    _cachedAsteroidAims.Add((entities[i], new Vector3(p.x, 0f, p.z)));
                 }
             }
         }
@@ -1081,21 +1075,45 @@ namespace TitanOrbit.Game
             }
         }
 
+        static bool IsLiveMiningAsteroid(EntityManager em, Entity e)
+        {
+            if (e == Entity.Null || !em.Exists(e) || !em.HasComponent<AsteroidState>(e))
+                return false;
+            if (em.HasComponent<AsteroidClientCulledTag>(e))
+                return false;
+            var st = em.GetComponentData<AsteroidState>(e);
+            if (!st.IsAliveForCombat)
+                return false;
+            if (em.HasComponent<LocalTransform>(e) &&
+                em.GetComponentData<LocalTransform>(e).Scale <= AsteroidDeathPhysics.CulledTransformScale * 2f)
+                return false;
+            return true;
+        }
+
         bool TryGetNearestAsteroidPos(Vector3 from, out Vector3 pos)
         {
             pos = default;
             float bestSq = DroneSwarmLogic.MiningEngageRange * DroneSwarmLogic.MiningEngageRange;
             bool found = false;
+            World world = ResolveShipWorld();
+            var em = world != null && world.IsCreated ? world.EntityManager : default;
+            bool hasEm = world != null && world.IsCreated;
+            var viz = EcsWorldVisualizer.Active;
             for (int i = 0; i < _cachedAsteroidAims.Count; i++)
             {
-                Vector3 rock = _cachedAsteroidAims[i];
+                var rock = _cachedAsteroidAims[i];
+                if (hasEm && !IsLiveMiningAsteroid(em, rock.entity))
+                    continue;
+                if (viz != null && viz.TryGetProxy(rock.entity, out GameObject proxy) &&
+                    (proxy == null || !proxy.activeInHierarchy))
+                    continue;
                 float d = DroneSwarmLogic.ToroidalDistanceXZ(
-                    from.x, from.z, rock.x, rock.z, _mapW, _mapH);
+                    from.x, from.z, rock.pos.x, rock.pos.z, _mapW, _mapH);
                 float sq = d * d;
                 if (sq >= bestSq)
                     continue;
                 bestSq = sq;
-                pos = rock;
+                pos = rock.pos;
                 found = true;
             }
 

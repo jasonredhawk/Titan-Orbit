@@ -98,6 +98,13 @@ namespace TitanOrbit.ECS
         /// Not ghosted — clients do not need it for presentation.
         /// </summary>
         public TeamId LastInteractTeam;
+
+        /// <summary>
+        /// Live rock for combat / aim. Matches destroy + HitRpc (<c>Health ≤ 0.01</c>),
+        /// not a raw zero compare — leftover 0.00x HP corpses stay hidden on the client
+        /// while miners would otherwise keep shooting empty space.
+        /// </summary>
+        public bool IsAliveForCombat => !IsDestroyed && Health > 0.01f;
     }
 
     /// <summary>

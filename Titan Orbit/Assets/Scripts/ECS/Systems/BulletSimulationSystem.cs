@@ -1700,7 +1700,7 @@ namespace TitanOrbit.ECS
                 return;
 
             var asteroidState = em.GetComponentData<AsteroidState>(asteroidEntity);
-            if (asteroidState.IsDestroyed || asteroidState.Health <= 0f)
+            if (!asteroidState.IsAliveForCombat)
                 return;
 
             var asteroidTransform = em.GetComponentData<LocalTransform>(asteroidEntity);

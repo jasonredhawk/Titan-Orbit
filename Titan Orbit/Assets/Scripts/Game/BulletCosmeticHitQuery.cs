@@ -293,15 +293,18 @@ namespace TitanOrbit.Game
                 if (em.HasComponent<AsteroidTag>(entity) && em.HasComponent<AsteroidState>(entity))
                 {
                     var asteroid = em.GetComponentData<AsteroidState>(entity);
-                    // Mirror server — Health<=0 is already a kill even if IsDestroyed lags.
-                    if (asteroid.IsDestroyed || asteroid.Health <= 0f)
+                    if (!asteroid.IsAliveForCombat)
                         continue;
-                    // HitRpc may have culled while ghost Health still looks alive.
+                    if (lt.Scale <= AsteroidDeathPhysics.CulledTransformScale * 2f)
+                        continue;
+                    // HitRpc may have culled / hidden the mesh while a leftover snapshot looks alive.
                     if (em.HasComponent<AsteroidClientCulledTag>(entity))
                         continue;
+                    if (visualizer.TryGetProxy(entity, out GameObject asteroidGo) &&
+                        (asteroidGo == null || !asteroidGo.activeInHierarchy))
+                        continue;
 
-                    float asteroidRadius = visualizer.TryGetProxy(entity, out GameObject asteroidGo) &&
-                                           asteroidGo != null
+                    float asteroidRadius = asteroidGo != null
                         ? BulletImpactAttach.GetAsteroidVisualRadiusWorld(asteroidGo.transform)
                         : BodyCollisionMath.GetAsteroidBodyRadiusWorld(lt.Scale)
                           + BodyCollisionMath.AsteroidVisualDisplacementLocal * math.max(0.1f, lt.Scale);

@@ -504,10 +504,15 @@ namespace TitanOrbit.ECS
             {
                 Entity e = entities[i];
                 var asteroid = EntityManager.GetComponentData<AsteroidState>(e);
-                if (asteroid.IsDestroyed || asteroid.Health <= 0f)
+                if (!asteroid.IsAliveForCombat)
                     continue;
 
-                float3 pos = EntityManager.GetComponentData<LocalTransform>(e).Position;
+                var xf = EntityManager.GetComponentData<LocalTransform>(e);
+                // Kill-frame squash (0.01) — corpse is already hidden on clients.
+                if (xf.Scale <= AsteroidDeathPhysics.CulledTransformScale * 2f)
+                    continue;
+
+                float3 pos = xf.Position;
                 pos.y = 0f;
                 float dist = DroneSwarmLogic.ToroidalDistanceXZ(owner.x, owner.z, pos.x, pos.z, mapW, mapH);
                 float sq = dist * dist;
