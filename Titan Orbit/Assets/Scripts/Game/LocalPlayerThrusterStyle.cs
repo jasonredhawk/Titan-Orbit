@@ -178,12 +178,16 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Authored flame name (Blue / Green / Purple / Red / Yellow).
-        /// Follow-team uses Color1 hue; locked uses the picker. Dark picks snap
-        /// to a named color so jets never go invisible.
+        /// Authored flame name (Blue / Green / Purple / Red / Yellow / White).
+        /// Follow-team uses Color1 hue. Locked Soft always starts on
+        /// JetFlameSoftWhite so the lifetime palette can reach white.
         /// </summary>
         public static string ResolveFlameColorName(in Style style, TeamId team)
         {
+            if (!style.UseTeamColor &&
+                ResolveStyleIndex(style) == ThrusterVfxBank.SoftStyleIndex)
+                return ThrusterVfxBank.NeutralFlameColorName;
+
             return ThrusterVfxBank.NearestFlameColorName(ResolveRawTint(style, team));
         }
 

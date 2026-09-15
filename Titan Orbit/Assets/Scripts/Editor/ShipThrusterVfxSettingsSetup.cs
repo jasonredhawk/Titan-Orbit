@@ -18,7 +18,7 @@ namespace TitanOrbit.Editor
             "Assets/Archanor/Sci-Fi Arsenal/Sci-Fi Effects/Prefabs/Interactive/JetFlame";
         const string LegacyDefaultAssetPath = "Assets/Resources/ShipThrusterVfxSettings.asset";
 
-        static readonly string[] ColorOrder = { "Blue", "Green", "Purple", "Red", "Yellow" };
+        static readonly string[] ColorOrder = { "Blue", "Green", "Purple", "Red", "White", "Yellow" };
 
         struct FamilyFlameAssign
         {
@@ -192,7 +192,7 @@ namespace TitanOrbit.Editor
             bank.stylePrefabs[2] = AssetDatabase.LoadAssetAtPath<GameObject>(
                 ThrusterVfxBank.JetFlameFolder + "/V3/ModularJetFlame3.prefab");
             bank.stylePrefabs[3] = AssetDatabase.LoadAssetAtPath<GameObject>(
-                ThrusterVfxBank.JetFlameFolder + "/Soft/JetFlameSoftRed.prefab");
+                ThrusterVfxBank.JetFlameFolder + "/Soft/JetFlameSoftWhite.prefab");
 
             CopyStylePrefabToResources(
                 ThrusterVfxBank.JetFlameFolder + "/V1/ModularJetFlame.prefab",
@@ -204,8 +204,8 @@ namespace TitanOrbit.Editor
                 ThrusterVfxBank.JetFlameFolder + "/V3/ModularJetFlame3.prefab",
                 "Assets/Resources/ModularJetFlame3.prefab");
             CopyStylePrefabToResources(
-                ThrusterVfxBank.JetFlameFolder + "/Soft/JetFlameSoftRed.prefab",
-                "Assets/Resources/JetFlameSoftRed.prefab");
+                ThrusterVfxBank.JetFlameFolder + "/Soft/JetFlameSoftWhite.prefab",
+                "Assets/Resources/JetFlameSoftWhite.prefab");
 
             CopyColoredStylePrefabsToResources();
 

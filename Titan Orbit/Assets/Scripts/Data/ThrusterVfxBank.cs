@@ -32,6 +32,12 @@ namespace TitanOrbit.Data
         /// <summary>Default (V2 / AstroEagle signature).</summary>
         public const int DefaultStyleIndex = 1;
 
+        /// <summary>Soft folder (JetFlameSoftWhite + color variants).</summary>
+        public const int SoftStyleIndex = 3;
+
+        /// <summary>Locked Soft starts on the authored white prefab, then the lifetime wells tint it.</summary>
+        public const string NeutralFlameColorName = "White";
+
         static readonly string[] StyleDisplayNames = { "Ribbon", "Default", "Heavy", "Soft" };
 
         /// <summary>UI cycle: Default first, then Ribbon / Heavy / Soft. Stored indices stay 0–3.</summary>
@@ -46,7 +52,7 @@ namespace TitanOrbit.Data
             JetFlameFolder + "/V1/ModularJetFlame.prefab",
             JetFlameFolder + "/V2/ModularJetFlame2.prefab",
             JetFlameFolder + "/V3/ModularJetFlame3.prefab",
-            JetFlameFolder + "/Soft/JetFlameSoftRed.prefab",
+            JetFlameFolder + "/Soft/JetFlameSoftWhite.prefab",
         };
 
         static readonly string[] StyleResourceNames =
@@ -54,7 +60,7 @@ namespace TitanOrbit.Data
             "ModularJetFlame",
             "ModularJetFlame2",
             "ModularJetFlame3",
-            "JetFlameSoftRed",
+            "JetFlameSoftWhite",
         };
 
         /// <summary>Ribbon / Modular / Heavy / Soft color-variant paths in the JetFlame folders.</summary>
@@ -147,7 +153,7 @@ namespace TitanOrbit.Data
         public static int DebugCycleIndex;
 
         static ThrusterVfxBank s_Cached;
-        static readonly string[] ColorNames = { "Blue", "Green", "Orange", "Purple", "Red", "Yellow" };
+        static readonly string[] ColorNames = { "Blue", "Green", "Orange", "Purple", "Red", "White", "Yellow" };
 
         public int EntryCount => entries != null ? entries.Count : 0;
 
@@ -306,6 +312,9 @@ namespace TitanOrbit.Data
         {
             if (string.IsNullOrEmpty(colorName))
                 return null;
+
+            if (string.Equals(colorName, "White", StringComparison.OrdinalIgnoreCase))
+                return "White";
 
             for (int i = 0; i < FlameColorNames.Length; i++)
             {

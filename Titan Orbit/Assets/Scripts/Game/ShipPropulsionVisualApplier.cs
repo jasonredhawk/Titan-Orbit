@@ -1284,6 +1284,7 @@ namespace TitanOrbit.Game
         static readonly int ColorId = Shader.PropertyToID("_Color");
         static readonly int BaseColorId = Shader.PropertyToID("_BaseColor");
         static readonly int EmissionColorId = Shader.PropertyToID("_EmissionColor");
+        static readonly int ColorModeId = Shader.PropertyToID("_ColorMode");
 
         void CaptureAppliedLifetime(Gradient source)
         {
@@ -1306,16 +1307,20 @@ namespace TitanOrbit.Game
             TeamId team = ResolveShipTeam();
             Color32 tint = LocalPlayerThrusterStyle.ResolveTint(style, team);
             CaptureAppliedLifetime(LocalPlayerThrusterStyle.ResolveLifetime(style, team));
+            // Soft bakes hue into laserballyellow (and the other color textures).
+            // Multiply never reaches white — Color mode takes hue/sat from the wells.
+            bool replaceTextureHue =
+                LocalPlayerThrusterStyle.ResolveStyleIndex(style) == ThrusterVfxBank.SoftStyleIndex;
             if (only != null)
             {
-                TintJetParticles(only, tint, _appliedLifetime);
+                TintJetParticles(only, tint, _appliedLifetime, replaceTextureHue);
                 return;
             }
 
             for (int i = 0; i < _thrusterJets.Count; i++)
-                TintJetParticles(_thrusterJets[i], tint, _appliedLifetime);
+                TintJetParticles(_thrusterJets[i], tint, _appliedLifetime, replaceTextureHue);
             for (int i = 0; i < _engineJets.Count; i++)
-                TintJetParticles(_engineJets[i], tint, _appliedLifetime);
+                TintJetParticles(_engineJets[i], tint, _appliedLifetime, replaceTextureHue);
         }
 
         static readonly GradientAlphaKey[] OpaqueAlphaKeys =
@@ -1324,7 +1329,7 @@ namespace TitanOrbit.Game
             new GradientAlphaKey(1f, 1f),
         };
 
-        void TintJetParticles(JetBind jet, Color32 tint32, Gradient lifetime)
+        void TintJetParticles(JetBind jet, Color32 tint32, Gradient lifetime, bool replaceTextureHue = false)
         {
             if (jet == null || jet.instance == null)
                 return;
@@ -1389,7 +1394,7 @@ namespace TitanOrbit.Game
                 for (int m = 0; m < mats.Length; m++)
                 {
                     if (mats[m] != null)
-                        ApplyLayerMaterialTint(mats[m], next);
+                        ApplyLayerMaterialTint(mats[m], next, replaceTextureHue);
                 }
             }
 
@@ -1516,8 +1521,17 @@ namespace TitanOrbit.Game
             return copy;
         }
 
-        static void ApplyLayerMaterialTint(Material mat, Color layer)
+        static void ApplyLayerMaterialTint(Material mat, Color layer, bool replaceTextureHue)
         {
+            if (replaceTextureHue && mat.HasProperty(ColorModeId))
+            {
+                // Particles/Standard Unlit Color: hue/sat from vertex+_Color, value from texture.
+                mat.SetFloat(ColorModeId, 4f);
+                mat.EnableKeyword("_COLORCOLOR_ON");
+                mat.DisableKeyword("_COLOROVERLAY_ON");
+                mat.DisableKeyword("_COLORADDSUBDIFF_ON");
+            }
+
             if (mat.HasProperty(ColorId))
                 mat.SetColor(ColorId, layer);
             if (mat.HasProperty(BaseColorId))
