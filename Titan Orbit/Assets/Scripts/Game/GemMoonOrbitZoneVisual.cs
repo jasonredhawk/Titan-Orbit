@@ -78,16 +78,8 @@ namespace TitanOrbit.Game
             if (!drawOrbitZoneFill || _moon == null)
                 return;
 
-            // --- Distance cull (planar XZ only) ---
-            // [TITAN-ORBIT] Avoid map-wide soft discs; nearby moons keep the capture-zone cue.
-            // XZ-only so gameplay camera height (turret zoom / ship level) does not hide the zone.
-            if (cam != null)
-            {
-                float maxDistSq = MaxDrawDistance * MaxDrawDistance;
-                Vector3 delta = transform.position - cam.transform.position;
-                if ((delta.x * delta.x + delta.z * delta.z) > maxDistSq)
-                    return;
-            }
+            if (!PlanetRingMeshBuilder.ShouldDrawPlanetRings(cam, transform.position, MaxDrawDistance))
+                return;
 
             // --- Radii from moon proxy (local space) ---
             float outerLocal = _moon.MoonVisualShellOuterRadiusLocal;

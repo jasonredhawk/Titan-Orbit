@@ -393,7 +393,7 @@ namespace TitanOrbit.UI
                     else
                         node.ClearMegaShipCardStyle();
                     node.SetPrice(family != null ? "—" : "Preview");
-                    node.SetPreview(tier != null ? tier.menuPreviewSprite : null);
+                    node.SetPreview(tier != null ? tier.GetTheatricalMenuPreviewSprite() : null);
                     if (tier != null)
                     {
                         ShipFamilyPowerScoreBreakdown breakdown = ShipFamilyPowerBarNorm.GetBreakdownAtShipLevel(

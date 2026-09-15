@@ -38,7 +38,6 @@ RenderSettings:
   m_ReflectionIntensity: 1
   m_CustomReflection: {fileID: 0}
   m_Sun: {fileID: 0}
-  m_IndirectSpecularColor: {r: 0.44657898, g: 0.4964133, b: 0.5748178, a: 1}
   m_UseRadianceAmbientProbe: 0
 --- !u!157 &3
 LightmapSettings:
@@ -105,7 +104,7 @@ NavMeshSettings:
   serializedVersion: 2
   m_ObjectHideFlags: 0
   m_BuildSettings:
-    serializedVersion: 2
+    serializedVersion: 3
     agentTypeID: 0
     agentRadius: 0.5
     agentHeight: 2
@@ -118,7 +117,7 @@ NavMeshSettings:
     cellSize: 0.16666667
     manualTileSize: 0
     tileSize: 256
-    accuratePlacement: 0
+    buildHeightMesh: 0
     maxJobWorkers: 0
     preserveTilesOutsideBounds: 0
     debug:
@@ -129,11 +128,12 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 2074875530}
     m_Modifications:
-    - target: {fileID: 4582044343518362, guid: cab10e98156dc7146b6c71de91ed7e29, type: 3}
-      propertyPath: m_RootOrder
-      value: 10
+    - target: {fileID: 1989786707681420, guid: cab10e98156dc7146b6c71de91ed7e29, type: 3}
+      propertyPath: m_Name
+      value: SpaceExcalibur11
       objectReference: {fileID: 0}
     - target: {fileID: 4582044343518362, guid: cab10e98156dc7146b6c71de91ed7e29, type: 3}
       propertyPath: m_LocalPosition.x
@@ -163,7 +163,22 @@ PrefabInstance:
       propertyPath: m_LocalRotation.z
       value: -0
       objectReference: {fileID: 0}
+    - target: {fileID: 4582044343518362, guid: cab10e98156dc7146b6c71de91ed7e29, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 4582044343518362, guid: cab10e98156dc7146b6c71de91ed7e29, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 4582044343518362, guid: cab10e98156dc7146b6c71de91ed7e29, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.z
+      value: 0
+      objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: cab10e98156dc7146b6c71de91ed7e29, type: 3}
 --- !u!4 &11185309 stripped
 Transform:
@@ -176,15 +191,12 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 1938555616}
     m_Modifications:
     - target: {fileID: 1219926580650706, guid: d81693dd330c3f14f9cc7444a2efa071, type: 3}
       propertyPath: m_Name
       value: SpaceExcalibur_Body_03
-      objectReference: {fileID: 0}
-    - target: {fileID: 4117426134205652, guid: d81693dd330c3f14f9cc7444a2efa071, type: 3}
-      propertyPath: m_RootOrder
-      value: 7
       objectReference: {fileID: 0}
     - target: {fileID: 4117426134205652, guid: d81693dd330c3f14f9cc7444a2efa071, type: 3}
       propertyPath: m_LocalPosition.x
@@ -227,6 +239,9 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: d81693dd330c3f14f9cc7444a2efa071, type: 3}
 --- !u!4 &12947902 stripped
 Transform:
@@ -239,15 +254,12 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 1938555616}
     m_Modifications:
     - target: {fileID: 1699587555992998, guid: 7e267ba2470c51945bfd175dbf5bd39f, type: 3}
       propertyPath: m_Name
       value: SpaceExcalibur_Body_02
-      objectReference: {fileID: 0}
-    - target: {fileID: 4900668583586384, guid: 7e267ba2470c51945bfd175dbf5bd39f, type: 3}
-      propertyPath: m_RootOrder
-      value: 6
       objectReference: {fileID: 0}
     - target: {fileID: 4900668583586384, guid: 7e267ba2470c51945bfd175dbf5bd39f, type: 3}
       propertyPath: m_LocalPosition.x
@@ -290,6 +302,9 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 7e267ba2470c51945bfd175dbf5bd39f, type: 3}
 --- !u!4 &35528828 stripped
 Transform:
@@ -302,15 +317,12 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 145110402}
     m_Modifications:
     - target: {fileID: 1694565023216368, guid: 55a1f29b7f09a3546857062fdc2fcbbb, type: 3}
       propertyPath: m_Name
       value: SpaceExcalibur2
-      objectReference: {fileID: 0}
-    - target: {fileID: 4617951166171584, guid: 55a1f29b7f09a3546857062fdc2fcbbb, type: 3}
-      propertyPath: m_RootOrder
-      value: 1
       objectReference: {fileID: 0}
     - target: {fileID: 4617951166171584, guid: 55a1f29b7f09a3546857062fdc2fcbbb, type: 3}
       propertyPath: m_LocalPosition.x
@@ -353,6 +365,9 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 55a1f29b7f09a3546857062fdc2fcbbb, type: 3}
 --- !u!4 &99915906 stripped
 Transform:
@@ -365,15 +380,12 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 145110402}
     m_Modifications:
     - target: {fileID: 1216695967445182, guid: fb4b71d6e774a35449c1cfb5ebb2e972, type: 3}
       propertyPath: m_Name
       value: SpaceExcalibur17
-      objectReference: {fileID: 0}
-    - target: {fileID: 4077612895166860, guid: fb4b71d6e774a35449c1cfb5ebb2e972, type: 3}
-      propertyPath: m_RootOrder
-      value: 16
       objectReference: {fileID: 0}
     - target: {fileID: 4077612895166860, guid: fb4b71d6e774a35449c1cfb5ebb2e972, type: 3}
       propertyPath: m_LocalPosition.x
@@ -416,6 +428,9 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: fb4b71d6e774a35449c1cfb5ebb2e972, type: 3}
 --- !u!4 &106853198 stripped
 Transform:
@@ -428,11 +443,12 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 2074875530}
     m_Modifications:
-    - target: {fileID: 4184889744150520, guid: cc071367bf823984e8afc6e0c762a84c, type: 3}
-      propertyPath: m_RootOrder
-      value: 13
+    - target: {fileID: 1073909383232394, guid: cc071367bf823984e8afc6e0c762a84c, type: 3}
+      propertyPath: m_Name
+      value: SpaceExcalibur14
       objectReference: {fileID: 0}
     - target: {fileID: 4184889744150520, guid: cc071367bf823984e8afc6e0c762a84c, type: 3}
       propertyPath: m_LocalPosition.x
@@ -462,7 +478,22 @@ PrefabInstance:
       propertyPath: m_LocalRotation.z
       value: -0
       objectReference: {fileID: 0}
+    - target: {fileID: 4184889744150520, guid: cc071367bf823984e8afc6e0c762a84c, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 4184889744150520, guid: cc071367bf823984e8afc6e0c762a84c, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 4184889744150520, guid: cc071367bf823984e8afc6e0c762a84c, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.z
+      value: 0
+      objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: cc071367bf823984e8afc6e0c762a84c, type: 3}
 --- !u!4 &115916022 stripped
 Transform:
@@ -493,9 +524,11 @@ Transform:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 145110401}
+  serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
   m_LocalPosition: {x: 90.2, y: 0, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
   m_Children:
   - {fileID: 975365420}
   - {fileID: 99915906}
@@ -518,22 +551,18 @@ Transform:
   - {fileID: 1303068714}
   - {fileID: 1131826055}
   m_Father: {fileID: 0}
-  m_RootOrder: 4
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1001 &269589399
 PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 145110402}
     m_Modifications:
     - target: {fileID: 1815803172459736, guid: ea84531ccba980444b941756d74be7ce, type: 3}
       propertyPath: m_Name
       value: SpaceExcalibur8
-      objectReference: {fileID: 0}
-    - target: {fileID: 4757579558326984, guid: ea84531ccba980444b941756d74be7ce, type: 3}
-      propertyPath: m_RootOrder
-      value: 7
       objectReference: {fileID: 0}
     - target: {fileID: 4757579558326984, guid: ea84531ccba980444b941756d74be7ce, type: 3}
       propertyPath: m_LocalPosition.x
@@ -576,6 +605,9 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: ea84531ccba980444b941756d74be7ce, type: 3}
 --- !u!4 &269589400 stripped
 Transform:
@@ -588,11 +620,12 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 2074875530}
     m_Modifications:
-    - target: {fileID: 4332539174157872, guid: 60f6a2e8a80681c478d4597332bd3593, type: 3}
-      propertyPath: m_RootOrder
-      value: 5
+    - target: {fileID: 1804943218186170, guid: 60f6a2e8a80681c478d4597332bd3593, type: 3}
+      propertyPath: m_Name
+      value: SpaceExcalibur6
       objectReference: {fileID: 0}
     - target: {fileID: 4332539174157872, guid: 60f6a2e8a80681c478d4597332bd3593, type: 3}
       propertyPath: m_LocalPosition.x
@@ -622,7 +655,22 @@ PrefabInstance:
       propertyPath: m_LocalRotation.z
       value: -0
       objectReference: {fileID: 0}
+    - target: {fileID: 4332539174157872, guid: 60f6a2e8a80681c478d4597332bd3593, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 4332539174157872, guid: 60f6a2e8a80681c478d4597332bd3593, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 4332539174157872, guid: 60f6a2e8a80681c478d4597332bd3593, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.z
+      value: 0
+      objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 60f6a2e8a80681c478d4597332bd3593, type: 3}
 --- !u!4 &297910822 stripped
 Transform:
@@ -635,15 +683,12 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 145110402}
     m_Modifications:
     - target: {fileID: 1701395260378812, guid: 7a1b1a32245682e42956e9f246ff3426, type: 3}
       propertyPath: m_Name
       value: SpaceExcalibur13
-      objectReference: {fileID: 0}
-    - target: {fileID: 4015111272462898, guid: 7a1b1a32245682e42956e9f246ff3426, type: 3}
-      propertyPath: m_RootOrder
-      value: 12
       objectReference: {fileID: 0}
     - target: {fileID: 4015111272462898, guid: 7a1b1a32245682e42956e9f246ff3426, type: 3}
       propertyPath: m_LocalPosition.x
@@ -686,6 +731,9 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 7a1b1a32245682e42956e9f246ff3426, type: 3}
 --- !u!4 &300182255 stripped
 Transform:
@@ -698,11 +746,12 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 2074875530}
     m_Modifications:
-    - target: {fileID: 4994605053728182, guid: ac64df4e11867fa4092db308509803bd, type: 3}
-      propertyPath: m_RootOrder
-      value: 3
+    - target: {fileID: 1274413321868916, guid: ac64df4e11867fa4092db308509803bd, type: 3}
+      propertyPath: m_Name
+      value: SpaceExcalibur4
       objectReference: {fileID: 0}
     - target: {fileID: 4994605053728182, guid: ac64df4e11867fa4092db308509803bd, type: 3}
       propertyPath: m_LocalPosition.x
@@ -732,7 +781,22 @@ PrefabInstance:
       propertyPath: m_LocalRotation.z
       value: -0
       objectReference: {fileID: 0}
+    - target: {fileID: 4994605053728182, guid: ac64df4e11867fa4092db308509803bd, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 4994605053728182, guid: ac64df4e11867fa4092db308509803bd, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 4994605053728182, guid: ac64df4e11867fa4092db308509803bd, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.z
+      value: 0
+      objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: ac64df4e11867fa4092db308509803bd, type: 3}
 --- !u!4 &455959284 stripped
 Transform:
@@ -750,6 +814,7 @@ GameObject:
   m_Component:
   - component: {fileID: 497615741}
   - component: {fileID: 497615740}
+  - component: {fileID: 497615742}
   m_Layer: 0
   m_Name: Directional Light
   m_TagString: Untagged
@@ -826,27 +891,48 @@ Transform:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 497615739}
+  serializedVersion: 2
   m_LocalRotation: {x: 0.40821788, y: -0.23456968, z: 0.10938163, w: 0.8754261}
   m_LocalPosition: {x: 144.4, y: 3, z: -177.8}
   m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 0}
-  m_RootOrder: 1
   m_LocalEulerAnglesHint: {x: 50, y: -30, z: 0}
+--- !u!114 &497615742
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 497615739}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 474bcb49853aa07438625e644c072ee6, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  m_Version: 3
+  m_UsePipelineSettings: 1
+  m_AdditionalLightsShadowResolutionTier: 2
+  m_LightLayerMask: 1
+  m_RenderingLayers: 1
+  m_CustomShadowLayers: 0
+  m_ShadowLayerMask: 1
+  m_ShadowRenderingLayers: 1
+  m_LightCookieSize: {x: 1, y: 1}
+  m_LightCookieOffset: {x: 0, y: 0}
+  m_SoftShadowQuality: 0
 --- !u!1001 &579872305
 PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 145110402}
     m_Modifications:
     - target: {fileID: 1590124732823476, guid: 46a373b8279b3af4f9a5dfd6c1a41550, type: 3}
       propertyPath: m_Name
       value: SpaceExcalibur9
-      objectReference: {fileID: 0}
-    - target: {fileID: 4558170697594774, guid: 46a373b8279b3af4f9a5dfd6c1a41550, type: 3}
-      propertyPath: m_RootOrder
-      value: 8
       objectReference: {fileID: 0}
     - target: {fileID: 4558170697594774, guid: 46a373b8279b3af4f9a5dfd6c1a41550, type: 3}
       propertyPath: m_LocalPosition.x
@@ -889,6 +975,9 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 46a373b8279b3af4f9a5dfd6c1a41550, type: 3}
 --- !u!4 &579872306 stripped
 Transform:
@@ -901,11 +990,12 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 2074875530}
     m_Modifications:
-    - target: {fileID: 4429004107578702, guid: da24df6e765fc4942bc749e00b0ac12e, type: 3}
-      propertyPath: m_RootOrder
-      value: 9
+    - target: {fileID: 1461636682060926, guid: da24df6e765fc4942bc749e00b0ac12e, type: 3}
+      propertyPath: m_Name
+      value: SpaceExcalibur10
       objectReference: {fileID: 0}
     - target: {fileID: 4429004107578702, guid: da24df6e765fc4942bc749e00b0ac12e, type: 3}
       propertyPath: m_LocalPosition.x
@@ -935,7 +1025,22 @@ PrefabInstance:
       propertyPath: m_LocalRotation.z
       value: -0
       objectReference: {fileID: 0}
+    - target: {fileID: 4429004107578702, guid: da24df6e765fc4942bc749e00b0ac12e, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 4429004107578702, guid: da24df6e765fc4942bc749e00b0ac12e, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 4429004107578702, guid: da24df6e765fc4942bc749e00b0ac12e, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.z
+      value: 0
+      objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: da24df6e765fc4942bc749e00b0ac12e, type: 3}
 --- !u!4 &594188718 stripped
 Transform:
@@ -948,15 +1053,12 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 2074875530}
     m_Modifications:
     - target: {fileID: 1245337896395948, guid: ae6b7342f42d22442bc76a8de884add2, type: 3}
       propertyPath: m_Name
       value: SpaceExcalibur2
-      objectReference: {fileID: 0}
-    - target: {fileID: 4737256862418744, guid: ae6b7342f42d22442bc76a8de884add2, type: 3}
-      propertyPath: m_RootOrder
-      value: 1
       objectReference: {fileID: 0}
     - target: {fileID: 4737256862418744, guid: ae6b7342f42d22442bc76a8de884add2, type: 3}
       propertyPath: m_LocalPosition.x
@@ -999,6 +1101,9 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: ae6b7342f42d22442bc76a8de884add2, type: 3}
 --- !u!4 &607551547 stripped
 Transform:
@@ -1011,15 +1116,12 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 1938555616}
     m_Modifications:
     - target: {fileID: 1103879747302312, guid: 3bbb3f95fa7a6384e8ffd3b934396854, type: 3}
       propertyPath: m_Name
       value: SpaceExcalibur_Armor_02
-      objectReference: {fileID: 0}
-    - target: {fileID: 4183859186123650, guid: 3bbb3f95fa7a6384e8ffd3b934396854, type: 3}
-      propertyPath: m_RootOrder
-      value: 3
       objectReference: {fileID: 0}
     - target: {fileID: 4183859186123650, guid: 3bbb3f95fa7a6384e8ffd3b934396854, type: 3}
       propertyPath: m_LocalPosition.x
@@ -1062,6 +1164,9 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 3bbb3f95fa7a6384e8ffd3b934396854, type: 3}
 --- !u!4 &636569139 stripped
 Transform:
@@ -1074,15 +1179,12 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 1938555616}
     m_Modifications:
     - target: {fileID: 1032878335739420, guid: a7282d9cfea79614898f547adee50858, type: 3}
       propertyPath: m_Name
       value: SpaceExcalibur_Hatch
-      objectReference: {fileID: 0}
-    - target: {fileID: 4720912042320588, guid: a7282d9cfea79614898f547adee50858, type: 3}
-      propertyPath: m_RootOrder
-      value: 9
       objectReference: {fileID: 0}
     - target: {fileID: 4720912042320588, guid: a7282d9cfea79614898f547adee50858, type: 3}
       propertyPath: m_LocalPosition.x
@@ -1125,6 +1227,9 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: a7282d9cfea79614898f547adee50858, type: 3}
 --- !u!4 &669467867 stripped
 Transform:
@@ -1137,11 +1242,12 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 2074875530}
     m_Modifications:
-    - target: {fileID: 4586581680904238, guid: 8334eaf24919471438da01de71361c8d, type: 3}
-      propertyPath: m_RootOrder
-      value: 17
+    - target: {fileID: 1599590108392396, guid: 8334eaf24919471438da01de71361c8d, type: 3}
+      propertyPath: m_Name
+      value: SpaceExcalibur18
       objectReference: {fileID: 0}
     - target: {fileID: 4586581680904238, guid: 8334eaf24919471438da01de71361c8d, type: 3}
       propertyPath: m_LocalPosition.x
@@ -1171,7 +1277,22 @@ PrefabInstance:
       propertyPath: m_LocalRotation.z
       value: -0
       objectReference: {fileID: 0}
+    - target: {fileID: 4586581680904238, guid: 8334eaf24919471438da01de71361c8d, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 4586581680904238, guid: 8334eaf24919471438da01de71361c8d, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 4586581680904238, guid: 8334eaf24919471438da01de71361c8d, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.z
+      value: 0
+      objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 8334eaf24919471438da01de71361c8d, type: 3}
 --- !u!4 &675043617 stripped
 Transform:
@@ -1184,15 +1305,12 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 1938555616}
     m_Modifications:
     - target: {fileID: 1505346374825298, guid: 3c9eaf8587035b042932d34480dd640c, type: 3}
       propertyPath: m_Name
       value: SpaceExcalibur_Armor_01
-      objectReference: {fileID: 0}
-    - target: {fileID: 4933615891101856, guid: 3c9eaf8587035b042932d34480dd640c, type: 3}
-      propertyPath: m_RootOrder
-      value: 1
       objectReference: {fileID: 0}
     - target: {fileID: 4933615891101856, guid: 3c9eaf8587035b042932d34480dd640c, type: 3}
       propertyPath: m_LocalPosition.x
@@ -1235,6 +1353,9 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 3c9eaf8587035b042932d34480dd640c, type: 3}
 --- !u!4 &684133062 stripped
 Transform:
@@ -1247,15 +1368,12 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 1938555616}
     m_Modifications:
     - target: {fileID: 1743010696532578, guid: b2f5632770559d54e9b770fac3020a4f, type: 3}
       propertyPath: m_Name
       value: SpaceExcalibur_Ammunition
-      objectReference: {fileID: 0}
-    - target: {fileID: 4688774942273138, guid: b2f5632770559d54e9b770fac3020a4f, type: 3}
-      propertyPath: m_RootOrder
-      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 4688774942273138, guid: b2f5632770559d54e9b770fac3020a4f, type: 3}
       propertyPath: m_LocalPosition.x
@@ -1298,6 +1416,9 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: b2f5632770559d54e9b770fac3020a4f, type: 3}
 --- !u!4 &752313494 stripped
 Transform:
@@ -1310,15 +1431,12 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 1938555616}
     m_Modifications:
     - target: {fileID: 1087517126614656, guid: c22c73a050529944eaa06c0f0b5e5964, type: 3}
       propertyPath: m_Name
       value: SpaceExcalibur_Wing_03
-      objectReference: {fileID: 0}
-    - target: {fileID: 4543666689172654, guid: c22c73a050529944eaa06c0f0b5e5964, type: 3}
-      propertyPath: m_RootOrder
-      value: 25
       objectReference: {fileID: 0}
     - target: {fileID: 4543666689172654, guid: c22c73a050529944eaa06c0f0b5e5964, type: 3}
       propertyPath: m_LocalPosition.x
@@ -1361,6 +1479,9 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: c22c73a050529944eaa06c0f0b5e5964, type: 3}
 --- !u!4 &781071162 stripped
 Transform:
@@ -1373,15 +1494,12 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 1938555616}
     m_Modifications:
     - target: {fileID: 1022954935587294, guid: 1543f19f3eb9f30449acc3573679ae47, type: 3}
       propertyPath: m_Name
       value: SpaceExcalibur_Wing_02
-      objectReference: {fileID: 0}
-    - target: {fileID: 4621188100408300, guid: 1543f19f3eb9f30449acc3573679ae47, type: 3}
-      propertyPath: m_RootOrder
-      value: 23
       objectReference: {fileID: 0}
     - target: {fileID: 4621188100408300, guid: 1543f19f3eb9f30449acc3573679ae47, type: 3}
       propertyPath: m_LocalPosition.x
@@ -1424,6 +1542,9 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 1543f19f3eb9f30449acc3573679ae47, type: 3}
 --- !u!4 &788895419 stripped
 Transform:
@@ -1436,15 +1557,12 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 1938555616}
     m_Modifications:
     - target: {fileID: 1486087368137594, guid: f76addd9501027f4d99a39f49bac6691, type: 3}
       propertyPath: m_Name
       value: SpaceExcalibur_Thrusters
-      objectReference: {fileID: 0}
-    - target: {fileID: 4278257697716472, guid: f76addd9501027f4d99a39f49bac6691, type: 3}
-      propertyPath: m_RootOrder
-      value: 16
       objectReference: {fileID: 0}
     - target: {fileID: 4278257697716472, guid: f76addd9501027f4d99a39f49bac6691, type: 3}
       propertyPath: m_LocalPosition.x
@@ -1487,6 +1605,9 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: f76addd9501027f4d99a39f49bac6691, type: 3}
 --- !u!4 &802548628 stripped
 Transform:
@@ -1499,11 +1620,12 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 2074875530}
     m_Modifications:
-    - target: {fileID: 4824042940900696, guid: b91e53c9a6d821a4cb741d6bf4f02ae4, type: 3}
-      propertyPath: m_RootOrder
-      value: 14
+    - target: {fileID: 1484765232302376, guid: b91e53c9a6d821a4cb741d6bf4f02ae4, type: 3}
+      propertyPath: m_Name
+      value: SpaceExcalibur15
       objectReference: {fileID: 0}
     - target: {fileID: 4824042940900696, guid: b91e53c9a6d821a4cb741d6bf4f02ae4, type: 3}
       propertyPath: m_LocalPosition.x
@@ -1533,7 +1655,22 @@ PrefabInstance:
       propertyPath: m_LocalRotation.z
       value: -0
       objectReference: {fileID: 0}
+    - target: {fileID: 4824042940900696, guid: b91e53c9a6d821a4cb741d6bf4f02ae4, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 4824042940900696, guid: b91e53c9a6d821a4cb741d6bf4f02ae4, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 4824042940900696, guid: b91e53c9a6d821a4cb741d6bf4f02ae4, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.z
+      value: 0
+      objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: b91e53c9a6d821a4cb741d6bf4f02ae4, type: 3}
 --- !u!4 &822208461 stripped
 Transform:
@@ -1546,11 +1683,12 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 2074875530}
     m_Modifications:
-    - target: {fileID: 4636560674927770, guid: bd1ade4eaaf3f0147ae2daccdbe39be1, type: 3}
-      propertyPath: m_RootOrder
-      value: 11
+    - target: {fileID: 1078639209821914, guid: bd1ade4eaaf3f0147ae2daccdbe39be1, type: 3}
+      propertyPath: m_Name
+      value: SpaceExcalibur12
       objectReference: {fileID: 0}
     - target: {fileID: 4636560674927770, guid: bd1ade4eaaf3f0147ae2daccdbe39be1, type: 3}
       propertyPath: m_LocalPosition.x
@@ -1580,7 +1718,22 @@ PrefabInstance:
       propertyPath: m_LocalRotation.z
       value: -0
       objectReference: {fileID: 0}
+    - target: {fileID: 4636560674927770, guid: bd1ade4eaaf3f0147ae2daccdbe39be1, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 4636560674927770, guid: bd1ade4eaaf3f0147ae2daccdbe39be1, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 4636560674927770, guid: bd1ade4eaaf3f0147ae2daccdbe39be1, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.z
+      value: 0
+      objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: bd1ade4eaaf3f0147ae2daccdbe39be1, type: 3}
 --- !u!4 &864097264 stripped
 Transform:
@@ -1593,11 +1746,12 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 2074875530}
     m_Modifications:
-    - target: {fileID: 4630653689905944, guid: 347d2682dd619864f9ba09e9d9219580, type: 3}
-      propertyPath: m_RootOrder
-      value: 19
+    - target: {fileID: 1210802384589220, guid: 347d2682dd619864f9ba09e9d9219580, type: 3}
+      propertyPath: m_Name
+      value: SpaceExcalibur20
       objectReference: {fileID: 0}
     - target: {fileID: 4630653689905944, guid: 347d2682dd619864f9ba09e9d9219580, type: 3}
       propertyPath: m_LocalPosition.x
@@ -1627,7 +1781,22 @@ PrefabInstance:
       propertyPath: m_LocalRotation.z
       value: -0
       objectReference: {fileID: 0}
+    - target: {fileID: 4630653689905944, guid: 347d2682dd619864f9ba09e9d9219580, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 4630653689905944, guid: 347d2682dd619864f9ba09e9d9219580, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 4630653689905944, guid: 347d2682dd619864f9ba09e9d9219580, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.z
+      value: 0
+      objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 347d2682dd619864f9ba09e9d9219580, type: 3}
 --- !u!4 &930968370 stripped
 Transform:
@@ -1640,15 +1809,12 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 1938555616}
     m_Modifications:
     - target: {fileID: 1387337688748894, guid: 284877808513fa048ada72498e69bc28, type: 3}
       propertyPath: m_Name
       value: SpaceExcalibur_Small_Wing
-      objectReference: {fileID: 0}
-    - target: {fileID: 4537530255328644, guid: 284877808513fa048ada72498e69bc28, type: 3}
-      propertyPath: m_RootOrder
-      value: 19
       objectReference: {fileID: 0}
     - target: {fileID: 4537530255328644, guid: 284877808513fa048ada72498e69bc28, type: 3}
       propertyPath: m_LocalPosition.x
@@ -1691,6 +1857,9 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 284877808513fa048ada72498e69bc28, type: 3}
 --- !u!4 &937219965 stripped
 Transform:
@@ -1703,15 +1872,12 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 145110402}
     m_Modifications:
     - target: {fileID: 1446822382620038, guid: 47951742e45f08a4682e3212045bd761, type: 3}
       propertyPath: m_Name
       value: SpaceExcalibur1
-      objectReference: {fileID: 0}
-    - target: {fileID: 4046922551033138, guid: 47951742e45f08a4682e3212045bd761, type: 3}
-      propertyPath: m_RootOrder
-      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 4046922551033138, guid: 47951742e45f08a4682e3212045bd761, type: 3}
       propertyPath: m_LocalPosition.x
@@ -1754,6 +1920,9 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 47951742e45f08a4682e3212045bd761, type: 3}
 --- !u!4 &975365420 stripped
 Transform:
@@ -1766,15 +1935,12 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 145110402}
     m_Modifications:
     - target: {fileID: 1356334909851362, guid: 5c1ca0adcb917f941a10e48700fbcacf, type: 3}
       propertyPath: m_Name
       value: SpaceExcalibur7
-      objectReference: {fileID: 0}
-    - target: {fileID: 4693799460078592, guid: 5c1ca0adcb917f941a10e48700fbcacf, type: 3}
-      propertyPath: m_RootOrder
-      value: 6
       objectReference: {fileID: 0}
     - target: {fileID: 4693799460078592, guid: 5c1ca0adcb917f941a10e48700fbcacf, type: 3}
       propertyPath: m_LocalPosition.x
@@ -1817,6 +1983,9 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 5c1ca0adcb917f941a10e48700fbcacf, type: 3}
 --- !u!4 &1060150107 stripped
 Transform:
@@ -1829,11 +1998,12 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 2074875530}
     m_Modifications:
-    - target: {fileID: 4292046206155406, guid: 61d6b7a5d5c80184eb4834434b03b385, type: 3}
-      propertyPath: m_RootOrder
-      value: 2
+    - target: {fileID: 1287367741633752, guid: 61d6b7a5d5c80184eb4834434b03b385, type: 3}
+      propertyPath: m_Name
+      value: SpaceExcalibur3
       objectReference: {fileID: 0}
     - target: {fileID: 4292046206155406, guid: 61d6b7a5d5c80184eb4834434b03b385, type: 3}
       propertyPath: m_LocalPosition.x
@@ -1863,7 +2033,22 @@ PrefabInstance:
       propertyPath: m_LocalRotation.z
       value: -0
       objectReference: {fileID: 0}
+    - target: {fileID: 4292046206155406, guid: 61d6b7a5d5c80184eb4834434b03b385, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 4292046206155406, guid: 61d6b7a5d5c80184eb4834434b03b385, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 4292046206155406, guid: 61d6b7a5d5c80184eb4834434b03b385, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.z
+      value: 0
+      objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 61d6b7a5d5c80184eb4834434b03b385, type: 3}
 --- !u!4 &1112358158 stripped
 Transform:
@@ -1876,15 +2061,12 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 145110402}
     m_Modifications:
     - target: {fileID: 1315777889597058, guid: df3f2c7cefdbe1147822d758cae1ed32, type: 3}
       propertyPath: m_Name
       value: SpaceExcalibur4
-      objectReference: {fileID: 0}
-    - target: {fileID: 4663112961851926, guid: df3f2c7cefdbe1147822d758cae1ed32, type: 3}
-      propertyPath: m_RootOrder
-      value: 3
       objectReference: {fileID: 0}
     - target: {fileID: 4663112961851926, guid: df3f2c7cefdbe1147822d758cae1ed32, type: 3}
       propertyPath: m_LocalPosition.x
@@ -1927,6 +2109,9 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: df3f2c7cefdbe1147822d758cae1ed32, type: 3}
 --- !u!4 &1125368876 stripped
 Transform:
@@ -1939,15 +2124,12 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 145110402}
     m_Modifications:
     - target: {fileID: 1822126502717646, guid: 4b4c554ac59c437498b4ec14ec619e0d, type: 3}
       propertyPath: m_Name
       value: SpaceExcalibur20
-      objectReference: {fileID: 0}
-    - target: {fileID: 4071697073273968, guid: 4b4c554ac59c437498b4ec14ec619e0d, type: 3}
-      propertyPath: m_RootOrder
-      value: 19
       objectReference: {fileID: 0}
     - target: {fileID: 4071697073273968, guid: 4b4c554ac59c437498b4ec14ec619e0d, type: 3}
       propertyPath: m_LocalPosition.x
@@ -1990,6 +2172,9 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 4b4c554ac59c437498b4ec14ec619e0d, type: 3}
 --- !u!4 &1131826055 stripped
 Transform:
@@ -2002,15 +2187,12 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 1938555616}
     m_Modifications:
     - target: {fileID: 1623636683419948, guid: 933c2352cd9a1934b829f2876030fe02, type: 3}
       propertyPath: m_Name
       value: SpaceExcalibur_Machinegun
-      objectReference: {fileID: 0}
-    - target: {fileID: 4910222492736828, guid: 933c2352cd9a1934b829f2876030fe02, type: 3}
-      propertyPath: m_RootOrder
-      value: 10
       objectReference: {fileID: 0}
     - target: {fileID: 4910222492736828, guid: 933c2352cd9a1934b829f2876030fe02, type: 3}
       propertyPath: m_LocalPosition.x
@@ -2053,6 +2235,9 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 933c2352cd9a1934b829f2876030fe02, type: 3}
 --- !u!4 &1143222196 stripped
 Transform:
@@ -2065,11 +2250,12 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 2074875530}
     m_Modifications:
-    - target: {fileID: 4811929579781010, guid: e5e224b7f813f9a4c8cd2208b8159a90, type: 3}
-      propertyPath: m_RootOrder
-      value: 4
+    - target: {fileID: 1907245742583342, guid: e5e224b7f813f9a4c8cd2208b8159a90, type: 3}
+      propertyPath: m_Name
+      value: SpaceExcalibur5
       objectReference: {fileID: 0}
     - target: {fileID: 4811929579781010, guid: e5e224b7f813f9a4c8cd2208b8159a90, type: 3}
       propertyPath: m_LocalPosition.x
@@ -2099,7 +2285,22 @@ PrefabInstance:
       propertyPath: m_LocalRotation.z
       value: -0
       objectReference: {fileID: 0}
+    - target: {fileID: 4811929579781010, guid: e5e224b7f813f9a4c8cd2208b8159a90, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 4811929579781010, guid: e5e224b7f813f9a4c8cd2208b8159a90, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 4811929579781010, guid: e5e224b7f813f9a4c8cd2208b8159a90, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.z
+      value: 0
+      objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: e5e224b7f813f9a4c8cd2208b8159a90, type: 3}
 --- !u!4 &1156021527 stripped
 Transform:
@@ -2112,15 +2313,12 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 1938555616}
     m_Modifications:
     - target: {fileID: 1548669689951394, guid: a01619a6a30e860418f0ce753c4c27cd, type: 3}
       propertyPath: m_Name
       value: SpaceExcalibur_Missile
-      objectReference: {fileID: 0}
-    - target: {fileID: 4136411216699216, guid: a01619a6a30e860418f0ce753c4c27cd, type: 3}
-      propertyPath: m_RootOrder
-      value: 11
       objectReference: {fileID: 0}
     - target: {fileID: 4136411216699216, guid: a01619a6a30e860418f0ce753c4c27cd, type: 3}
       propertyPath: m_LocalPosition.x
@@ -2163,6 +2361,9 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: a01619a6a30e860418f0ce753c4c27cd, type: 3}
 --- !u!4 &1164258129 stripped
 Transform:
@@ -2175,15 +2376,12 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 2074875530}
     m_Modifications:
     - target: {fileID: 1430591442999010, guid: 460e6530a9a536642be24cbed07e788c, type: 3}
       propertyPath: m_Name
       value: SpaceExcalibur16
-      objectReference: {fileID: 0}
-    - target: {fileID: 4332119282377532, guid: 460e6530a9a536642be24cbed07e788c, type: 3}
-      propertyPath: m_RootOrder
-      value: 15
       objectReference: {fileID: 0}
     - target: {fileID: 4332119282377532, guid: 460e6530a9a536642be24cbed07e788c, type: 3}
       propertyPath: m_LocalPosition.x
@@ -2226,6 +2424,9 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 460e6530a9a536642be24cbed07e788c, type: 3}
 --- !u!4 &1222572444 stripped
 Transform:
@@ -2238,11 +2439,12 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 2074875530}
     m_Modifications:
-    - target: {fileID: 4837877913227318, guid: 5c0b4f101a2183c448800356f2c8d170, type: 3}
-      propertyPath: m_RootOrder
-      value: 18
+    - target: {fileID: 1497309590149072, guid: 5c0b4f101a2183c448800356f2c8d170, type: 3}
+      propertyPath: m_Name
+      value: SpaceExcalibur19
       objectReference: {fileID: 0}
     - target: {fileID: 4837877913227318, guid: 5c0b4f101a2183c448800356f2c8d170, type: 3}
       propertyPath: m_LocalPosition.x
@@ -2272,7 +2474,22 @@ PrefabInstance:
       propertyPath: m_LocalRotation.z
       value: -0
       objectReference: {fileID: 0}
+    - target: {fileID: 4837877913227318, guid: 5c0b4f101a2183c448800356f2c8d170, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 4837877913227318, guid: 5c0b4f101a2183c448800356f2c8d170, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 4837877913227318, guid: 5c0b4f101a2183c448800356f2c8d170, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.z
+      value: 0
+      objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 5c0b4f101a2183c448800356f2c8d170, type: 3}
 --- !u!4 &1226441188 stripped
 Transform:
@@ -2285,15 +2502,12 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 145110402}
     m_Modifications:
     - target: {fileID: 1404176485137782, guid: abbf3ae350e382a4ea6922681a69a1fc, type: 3}
       propertyPath: m_Name
       value: SpaceExcalibur19
-      objectReference: {fileID: 0}
-    - target: {fileID: 4484301536727392, guid: abbf3ae350e382a4ea6922681a69a1fc, type: 3}
-      propertyPath: m_RootOrder
-      value: 18
       objectReference: {fileID: 0}
     - target: {fileID: 4484301536727392, guid: abbf3ae350e382a4ea6922681a69a1fc, type: 3}
       propertyPath: m_LocalPosition.x
@@ -2336,6 +2550,9 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: abbf3ae350e382a4ea6922681a69a1fc, type: 3}
 --- !u!4 &1303068714 stripped
 Transform:
@@ -2348,15 +2565,12 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 145110402}
     m_Modifications:
     - target: {fileID: 1712939152195964, guid: 0bf4a4125384b714391e1a93453536b2, type: 3}
       propertyPath: m_Name
       value: SpaceExcalibur12
-      objectReference: {fileID: 0}
-    - target: {fileID: 4801318776265788, guid: 0bf4a4125384b714391e1a93453536b2, type: 3}
-      propertyPath: m_RootOrder
-      value: 11
       objectReference: {fileID: 0}
     - target: {fileID: 4801318776265788, guid: 0bf4a4125384b714391e1a93453536b2, type: 3}
       propertyPath: m_LocalPosition.x
@@ -2399,6 +2613,9 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 0bf4a4125384b714391e1a93453536b2, type: 3}
 --- !u!4 &1336673364 stripped
 Transform:
@@ -2411,15 +2628,12 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 1938555616}
     m_Modifications:
     - target: {fileID: 1490225231764520, guid: adcff680561c58942b4f65a38b972b67, type: 3}
       propertyPath: m_Name
       value: SpaceExcalibur_Something
-      objectReference: {fileID: 0}
-    - target: {fileID: 4839672933945810, guid: adcff680561c58942b4f65a38b972b67, type: 3}
-      propertyPath: m_RootOrder
-      value: 13
       objectReference: {fileID: 0}
     - target: {fileID: 4839672933945810, guid: adcff680561c58942b4f65a38b972b67, type: 3}
       propertyPath: m_LocalPosition.x
@@ -2462,6 +2676,9 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: adcff680561c58942b4f65a38b972b67, type: 3}
 --- !u!4 &1354373449 stripped
 Transform:
@@ -2474,11 +2691,12 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 2074875530}
     m_Modifications:
-    - target: {fileID: 4655498803968954, guid: a9c2ff49e48adca40814ffae5f7f7406, type: 3}
-      propertyPath: m_RootOrder
-      value: 16
+    - target: {fileID: 1530594147019256, guid: a9c2ff49e48adca40814ffae5f7f7406, type: 3}
+      propertyPath: m_Name
+      value: SpaceExcalibur17
       objectReference: {fileID: 0}
     - target: {fileID: 4655498803968954, guid: a9c2ff49e48adca40814ffae5f7f7406, type: 3}
       propertyPath: m_LocalPosition.x
@@ -2508,7 +2726,22 @@ PrefabInstance:
       propertyPath: m_LocalRotation.z
       value: -0
       objectReference: {fileID: 0}
+    - target: {fileID: 4655498803968954, guid: a9c2ff49e48adca40814ffae5f7f7406, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 4655498803968954, guid: a9c2ff49e48adca40814ffae5f7f7406, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 4655498803968954, guid: a9c2ff49e48adca40814ffae5f7f7406, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.z
+      value: 0
+      objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: a9c2ff49e48adca40814ffae5f7f7406, type: 3}
 --- !u!4 &1416626259 stripped
 Transform:
@@ -2521,15 +2754,12 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 1938555616}
     m_Modifications:
     - target: {fileID: 1800832622262546, guid: 243f6404c85ec1645ad931273f4a1e7a, type: 3}
       propertyPath: m_Name
       value: SpaceExcalibur_Wing_01
-      objectReference: {fileID: 0}
-    - target: {fileID: 4468776965357874, guid: 243f6404c85ec1645ad931273f4a1e7a, type: 3}
-      propertyPath: m_RootOrder
-      value: 21
       objectReference: {fileID: 0}
     - target: {fileID: 4468776965357874, guid: 243f6404c85ec1645ad931273f4a1e7a, type: 3}
       propertyPath: m_LocalPosition.x
@@ -2572,6 +2802,9 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 243f6404c85ec1645ad931273f4a1e7a, type: 3}
 --- !u!4 &1495572452 stripped
 Transform:
@@ -2584,15 +2817,12 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 145110402}
     m_Modifications:
     - target: {fileID: 1775108140777582, guid: 6bee541952cafd640abff179e5243e77, type: 3}
       propertyPath: m_Name
       value: SpaceExcalibur18
-      objectReference: {fileID: 0}
-    - target: {fileID: 4079263184336090, guid: 6bee541952cafd640abff179e5243e77, type: 3}
-      propertyPath: m_RootOrder
-      value: 17
       objectReference: {fileID: 0}
     - target: {fileID: 4079263184336090, guid: 6bee541952cafd640abff179e5243e77, type: 3}
       propertyPath: m_LocalPosition.x
@@ -2635,6 +2865,9 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 6bee541952cafd640abff179e5243e77, type: 3}
 --- !u!4 &1505471054 stripped
 Transform:
@@ -2647,11 +2880,12 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 2074875530}
     m_Modifications:
-    - target: {fileID: 4430438323444382, guid: db25785deeb761b4888974cc45f0b8d7, type: 3}
-      propertyPath: m_RootOrder
-      value: 0
+    - target: {fileID: 1742835346186908, guid: db25785deeb761b4888974cc45f0b8d7, type: 3}
+      propertyPath: m_Name
+      value: SpaceExcalibur1
       objectReference: {fileID: 0}
     - target: {fileID: 4430438323444382, guid: db25785deeb761b4888974cc45f0b8d7, type: 3}
       propertyPath: m_LocalPosition.x
@@ -2681,7 +2915,22 @@ PrefabInstance:
       propertyPath: m_LocalRotation.z
       value: -0
       objectReference: {fileID: 0}
+    - target: {fileID: 4430438323444382, guid: db25785deeb761b4888974cc45f0b8d7, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 4430438323444382, guid: db25785deeb761b4888974cc45f0b8d7, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 4430438323444382, guid: db25785deeb761b4888974cc45f0b8d7, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.z
+      value: 0
+      objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: db25785deeb761b4888974cc45f0b8d7, type: 3}
 --- !u!4 &1570038823 stripped
 Transform:
@@ -2694,15 +2943,12 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 145110402}
     m_Modifications:
     - target: {fileID: 1294212753731024, guid: d60f245fa85700745b92f87c63f6c18c, type: 3}
       propertyPath: m_Name
       value: SpaceExcalibur5
-      objectReference: {fileID: 0}
-    - target: {fileID: 4610725461954720, guid: d60f245fa85700745b92f87c63f6c18c, type: 3}
-      propertyPath: m_RootOrder
-      value: 4
       objectReference: {fileID: 0}
     - target: {fileID: 4610725461954720, guid: d60f245fa85700745b92f87c63f6c18c, type: 3}
       propertyPath: m_LocalPosition.x
@@ -2745,6 +2991,9 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: d60f245fa85700745b92f87c63f6c18c, type: 3}
 --- !u!4 &1606562152 stripped
 Transform:
@@ -2757,15 +3006,12 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 145110402}
     m_Modifications:
     - target: {fileID: 1767213741069158, guid: 7541e50b5765da64cb7c7c1f74d8fd4b, type: 3}
       propertyPath: m_Name
       value: SpaceExcalibur15
-      objectReference: {fileID: 0}
-    - target: {fileID: 4669878735554906, guid: 7541e50b5765da64cb7c7c1f74d8fd4b, type: 3}
-      propertyPath: m_RootOrder
-      value: 14
       objectReference: {fileID: 0}
     - target: {fileID: 4669878735554906, guid: 7541e50b5765da64cb7c7c1f74d8fd4b, type: 3}
       propertyPath: m_LocalPosition.x
@@ -2808,6 +3054,9 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 7541e50b5765da64cb7c7c1f74d8fd4b, type: 3}
 --- !u!4 &1614323371 stripped
 Transform:
@@ -2820,15 +3069,12 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 1938555616}
     m_Modifications:
     - target: {fileID: 1306105287155554, guid: ccdd9d019a7f1d54ab0447c42004ad0c, type: 3}
       propertyPath: m_Name
       value: SpaceExcalibur_Thrusters_Big
-      objectReference: {fileID: 0}
-    - target: {fileID: 4723796497858254, guid: ccdd9d019a7f1d54ab0447c42004ad0c, type: 3}
-      propertyPath: m_RootOrder
-      value: 17
       objectReference: {fileID: 0}
     - target: {fileID: 4723796497858254, guid: ccdd9d019a7f1d54ab0447c42004ad0c, type: 3}
       propertyPath: m_LocalPosition.x
@@ -2871,6 +3117,9 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: ccdd9d019a7f1d54ab0447c42004ad0c, type: 3}
 --- !u!4 &1625183316 stripped
 Transform:
@@ -2883,15 +3132,12 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 1938555616}
     m_Modifications:
     - target: {fileID: 1776701205252668, guid: c85a58a981a5f1a4c9f7598da7777511, type: 3}
       propertyPath: m_Name
       value: SpaceExcalibur_Tiny_Wing
-      objectReference: {fileID: 0}
-    - target: {fileID: 4328720509710040, guid: c85a58a981a5f1a4c9f7598da7777511, type: 3}
-      propertyPath: m_RootOrder
-      value: 20
       objectReference: {fileID: 0}
     - target: {fileID: 4328720509710040, guid: c85a58a981a5f1a4c9f7598da7777511, type: 3}
       propertyPath: m_LocalPosition.x
@@ -2934,6 +3180,9 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: c85a58a981a5f1a4c9f7598da7777511, type: 3}
 --- !u!4 &1687237484 stripped
 Transform:
@@ -2946,11 +3195,12 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 2074875530}
     m_Modifications:
-    - target: {fileID: 4753102348907948, guid: b19cca1bc5ef11c498ba04841aa0b4a3, type: 3}
-      propertyPath: m_RootOrder
-      value: 6
+    - target: {fileID: 1030345588951978, guid: b19cca1bc5ef11c498ba04841aa0b4a3, type: 3}
+      propertyPath: m_Name
+      value: SpaceExcalibur7
       objectReference: {fileID: 0}
     - target: {fileID: 4753102348907948, guid: b19cca1bc5ef11c498ba04841aa0b4a3, type: 3}
       propertyPath: m_LocalPosition.x
@@ -2980,7 +3230,22 @@ PrefabInstance:
       propertyPath: m_LocalRotation.z
       value: -0
       objectReference: {fileID: 0}
+    - target: {fileID: 4753102348907948, guid: b19cca1bc5ef11c498ba04841aa0b4a3, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 4753102348907948, guid: b19cca1bc5ef11c498ba04841aa0b4a3, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 4753102348907948, guid: b19cca1bc5ef11c498ba04841aa0b4a3, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.z
+      value: 0
+      objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: b19cca1bc5ef11c498ba04841aa0b4a3, type: 3}
 --- !u!4 &1691102276 stripped
 Transform:
@@ -2993,15 +3258,12 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 145110402}
     m_Modifications:
     - target: {fileID: 1763758333209254, guid: 642d1422989499f44a660ce2bebe12d5, type: 3}
       propertyPath: m_Name
       value: SpaceExcalibur14
-      objectReference: {fileID: 0}
-    - target: {fileID: 4101689256771520, guid: 642d1422989499f44a660ce2bebe12d5, type: 3}
-      propertyPath: m_RootOrder
-      value: 13
       objectReference: {fileID: 0}
     - target: {fileID: 4101689256771520, guid: 642d1422989499f44a660ce2bebe12d5, type: 3}
       propertyPath: m_LocalPosition.x
@@ -3044,6 +3306,9 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 642d1422989499f44a660ce2bebe12d5, type: 3}
 --- !u!4 &1691724067 stripped
 Transform:
@@ -3056,11 +3321,12 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 2074875530}
     m_Modifications:
-    - target: {fileID: 4988660031620016, guid: 6a94773a90dc8fd44a904672f9da55a9, type: 3}
-      propertyPath: m_RootOrder
-      value: 12
+    - target: {fileID: 1456150948882614, guid: 6a94773a90dc8fd44a904672f9da55a9, type: 3}
+      propertyPath: m_Name
+      value: SpaceExcalibur13
       objectReference: {fileID: 0}
     - target: {fileID: 4988660031620016, guid: 6a94773a90dc8fd44a904672f9da55a9, type: 3}
       propertyPath: m_LocalPosition.x
@@ -3090,7 +3356,22 @@ PrefabInstance:
       propertyPath: m_LocalRotation.z
       value: -0
       objectReference: {fileID: 0}
+    - target: {fileID: 4988660031620016, guid: 6a94773a90dc8fd44a904672f9da55a9, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 4988660031620016, guid: 6a94773a90dc8fd44a904672f9da55a9, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 4988660031620016, guid: 6a94773a90dc8fd44a904672f9da55a9, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.z
+      value: 0
+      objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 6a94773a90dc8fd44a904672f9da55a9, type: 3}
 --- !u!4 &1700707580 stripped
 Transform:
@@ -3103,15 +3384,12 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 145110402}
     m_Modifications:
     - target: {fileID: 1169973038583602, guid: 0c0468b1a7d478b4daa3398461a102c0, type: 3}
       propertyPath: m_Name
       value: SpaceExcalibur10
-      objectReference: {fileID: 0}
-    - target: {fileID: 4162607833567134, guid: 0c0468b1a7d478b4daa3398461a102c0, type: 3}
-      propertyPath: m_RootOrder
-      value: 9
       objectReference: {fileID: 0}
     - target: {fileID: 4162607833567134, guid: 0c0468b1a7d478b4daa3398461a102c0, type: 3}
       propertyPath: m_LocalPosition.x
@@ -3154,6 +3432,9 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 0c0468b1a7d478b4daa3398461a102c0, type: 3}
 --- !u!4 &1799691971 stripped
 Transform:
@@ -3173,6 +3454,7 @@ GameObject:
   - component: {fileID: 1828872413}
   - component: {fileID: 1828872411}
   - component: {fileID: 1828872410}
+  - component: {fileID: 1828872415}
   m_Layer: 0
   m_Name: Main Camera
   m_TagString: MainCamera
@@ -3210,9 +3492,17 @@ Camera:
   m_projectionMatrixMode: 1
   m_GateFitMode: 2
   m_FOVAxisMode: 0
+  m_Iso: 200
+  m_ShutterSpeed: 0.005
+  m_Aperture: 16
+  m_FocusDistance: 10
+  m_FocalLength: 50
+  m_BladeCount: 5
+  m_Curvature: {x: 2, y: 11}
+  m_BarrelClipping: 0.25
+  m_Anamorphism: 0
   m_SensorSize: {x: 36, y: 24}
   m_LensShift: {x: 0, y: 0}
-  m_FocalLength: 50
   m_NormalizedViewPortRect:
     serializedVersion: 2
     x: 0
@@ -3246,27 +3536,69 @@ Transform:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1828872409}
+  serializedVersion: 2
   m_LocalRotation: {x: 0.090667695, y: -0.9063055, z: 0.25040862, w: 0.32815436}
   m_LocalPosition: {x: 128.7, y: 50, z: 35.3}
   m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 0}
-  m_RootOrder: 0
   m_LocalEulerAnglesHint: {x: 30.891, y: -140.19101, z: 0}
+--- !u!114 &1828872415
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1828872409}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a79441f348de89743a2939f4d699eac1, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  m_RenderShadows: 1
+  m_RequiresDepthTextureOption: 2
+  m_RequiresOpaqueTextureOption: 2
+  m_CameraType: 0
+  m_Cameras: []
+  m_RendererIndex: -1
+  m_VolumeLayerMask:
+    serializedVersion: 2
+    m_Bits: 1
+  m_VolumeTrigger: {fileID: 0}
+  m_VolumeFrameworkUpdateModeOption: 2
+  m_RenderPostProcessing: 0
+  m_Antialiasing: 0
+  m_AntialiasingQuality: 2
+  m_StopNaN: 0
+  m_Dithering: 0
+  m_ClearDepth: 1
+  m_AllowXRRendering: 1
+  m_AllowHDROutput: 1
+  m_UseScreenCoordOverride: 0
+  m_ScreenSizeOverride: {x: 0, y: 0, z: 0, w: 0}
+  m_ScreenCoordScaleBias: {x: 0, y: 0, z: 0, w: 0}
+  m_RequiresDepthTexture: 0
+  m_RequiresColorTexture: 0
+  m_Version: 2
+  m_TaaSettings:
+    m_Quality: 3
+    m_FrameInfluence: 0.1
+    m_JitterScale: 1
+    m_MipBias: 0
+    m_VarianceClampScale: 0.9
+    m_ContrastAdaptiveSharpening: 0
 --- !u!1001 &1835067790
 PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 2074875530}
     m_Modifications:
     - target: {fileID: 1152214231295606, guid: 116aa2e36a75889428d1ecb356f8cb1c, type: 3}
       propertyPath: m_Name
       value: SpaceExcalibur8
-      objectReference: {fileID: 0}
-    - target: {fileID: 4646453634681202, guid: 116aa2e36a75889428d1ecb356f8cb1c, type: 3}
-      propertyPath: m_RootOrder
-      value: 7
       objectReference: {fileID: 0}
     - target: {fileID: 4646453634681202, guid: 116aa2e36a75889428d1ecb356f8cb1c, type: 3}
       propertyPath: m_LocalPosition.x
@@ -3309,6 +3641,9 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 116aa2e36a75889428d1ecb356f8cb1c, type: 3}
 --- !u!4 &1835067791 stripped
 Transform:
@@ -3321,15 +3656,12 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 1938555616}
     m_Modifications:
     - target: {fileID: 1107612130472604, guid: c1f758c87afa76f4593faf25633a8a4c, type: 3}
       propertyPath: m_Name
       value: SpaceExcalibur_Cockpit
-      objectReference: {fileID: 0}
-    - target: {fileID: 4138140520186864, guid: c1f758c87afa76f4593faf25633a8a4c, type: 3}
-      propertyPath: m_RootOrder
-      value: 8
       objectReference: {fileID: 0}
     - target: {fileID: 4138140520186864, guid: c1f758c87afa76f4593faf25633a8a4c, type: 3}
       propertyPath: m_LocalPosition.x
@@ -3372,6 +3704,9 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: c1f758c87afa76f4593faf25633a8a4c, type: 3}
 --- !u!4 &1879721704 stripped
 Transform:
@@ -3402,9 +3737,11 @@ Transform:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1938555615}
+  serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
   m_LocalPosition: {x: 0, y: 0, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
   m_Children:
   - {fileID: 752313494}
   - {fileID: 684133062}
@@ -3435,22 +3772,18 @@ Transform:
   - {fileID: 2942694961960684010}
   - {fileID: 4020488340322277}
   m_Father: {fileID: 0}
-  m_RootOrder: 2
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1001 &2005213819
 PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 145110402}
     m_Modifications:
     - target: {fileID: 1670626458005774, guid: 011e6a758a676da4baac98abd864249e, type: 3}
       propertyPath: m_Name
       value: SpaceExcalibur16
-      objectReference: {fileID: 0}
-    - target: {fileID: 4642463224487994, guid: 011e6a758a676da4baac98abd864249e, type: 3}
-      propertyPath: m_RootOrder
-      value: 15
       objectReference: {fileID: 0}
     - target: {fileID: 4642463224487994, guid: 011e6a758a676da4baac98abd864249e, type: 3}
       propertyPath: m_LocalPosition.x
@@ -3493,6 +3826,9 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 011e6a758a676da4baac98abd864249e, type: 3}
 --- !u!4 &2005213820 stripped
 Transform:
@@ -3505,15 +3841,12 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 1938555616}
     m_Modifications:
     - target: {fileID: 1602658515463940, guid: 5379e2443b0c7cc419d1b7f6c5c226e0, type: 3}
       propertyPath: m_Name
       value: SpaceExcalibur_Missile_Launcher
-      objectReference: {fileID: 0}
-    - target: {fileID: 4020487323894124, guid: 5379e2443b0c7cc419d1b7f6c5c226e0, type: 3}
-      propertyPath: m_RootOrder
-      value: 12
       objectReference: {fileID: 0}
     - target: {fileID: 4020487323894124, guid: 5379e2443b0c7cc419d1b7f6c5c226e0, type: 3}
       propertyPath: m_LocalPosition.x
@@ -3556,6 +3889,9 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 5379e2443b0c7cc419d1b7f6c5c226e0, type: 3}
 --- !u!4 &2015199293 stripped
 Transform:
@@ -3568,15 +3904,12 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 145110402}
     m_Modifications:
     - target: {fileID: 1694601495798050, guid: c4b34f3ee7c418f479a580b26b08b52f, type: 3}
       propertyPath: m_Name
       value: SpaceExcalibur3
-      objectReference: {fileID: 0}
-    - target: {fileID: 4455798422008556, guid: c4b34f3ee7c418f479a580b26b08b52f, type: 3}
-      propertyPath: m_RootOrder
-      value: 2
       objectReference: {fileID: 0}
     - target: {fileID: 4455798422008556, guid: c4b34f3ee7c418f479a580b26b08b52f, type: 3}
       propertyPath: m_LocalPosition.x
@@ -3619,6 +3952,9 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: c4b34f3ee7c418f479a580b26b08b52f, type: 3}
 --- !u!4 &2017623385 stripped
 Transform:
@@ -3631,15 +3967,12 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 1938555616}
     m_Modifications:
     - target: {fileID: 1698602192674968, guid: 29f9ccfc95056a04bb8bb79b0dc65102, type: 3}
       propertyPath: m_Name
       value: SpaceExcalibur_Thruster_Place
-      objectReference: {fileID: 0}
-    - target: {fileID: 4935743837920830, guid: 29f9ccfc95056a04bb8bb79b0dc65102, type: 3}
-      propertyPath: m_RootOrder
-      value: 14
       objectReference: {fileID: 0}
     - target: {fileID: 4935743837920830, guid: 29f9ccfc95056a04bb8bb79b0dc65102, type: 3}
       propertyPath: m_LocalPosition.x
@@ -3682,6 +4015,9 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 29f9ccfc95056a04bb8bb79b0dc65102, type: 3}
 --- !u!4 &2044807528 stripped
 Transform:
@@ -3712,9 +4048,11 @@ Transform:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 2074875529}
+  serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
   m_LocalPosition: {x: 30, y: 0, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
   m_Children:
   - {fileID: 1570038823}
   - {fileID: 607551547}
@@ -3737,22 +4075,18 @@ Transform:
   - {fileID: 1226441188}
   - {fileID: 930968370}
   m_Father: {fileID: 0}
-  m_RootOrder: 3
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1001 &2082538450
 PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 1938555616}
     m_Modifications:
     - target: {fileID: 1166991143337052, guid: e00386371f9d39542be5aed9278ccd90, type: 3}
       propertyPath: m_Name
       value: SpaceExcalibur_Tiny_Thrusters
-      objectReference: {fileID: 0}
-    - target: {fileID: 4426848167050718, guid: e00386371f9d39542be5aed9278ccd90, type: 3}
-      propertyPath: m_RootOrder
-      value: 18
       objectReference: {fileID: 0}
     - target: {fileID: 4426848167050718, guid: e00386371f9d39542be5aed9278ccd90, type: 3}
       propertyPath: m_LocalPosition.x
@@ -3795,6 +4129,9 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: e00386371f9d39542be5aed9278ccd90, type: 3}
 --- !u!4 &2082538451 stripped
 Transform:
@@ -3807,15 +4144,12 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 145110402}
     m_Modifications:
     - target: {fileID: 1599210349766966, guid: 795fe2f2757b31344b9c03e7acdfe3a9, type: 3}
       propertyPath: m_Name
       value: SpaceExcalibur6
-      objectReference: {fileID: 0}
-    - target: {fileID: 4902648857483902, guid: 795fe2f2757b31344b9c03e7acdfe3a9, type: 3}
-      propertyPath: m_RootOrder
-      value: 5
       objectReference: {fileID: 0}
     - target: {fileID: 4902648857483902, guid: 795fe2f2757b31344b9c03e7acdfe3a9, type: 3}
       propertyPath: m_LocalPosition.x
@@ -3858,6 +4192,9 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 795fe2f2757b31344b9c03e7acdfe3a9, type: 3}
 --- !u!4 &2084577649 stripped
 Transform:
@@ -3870,15 +4207,12 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 1938555616}
     m_Modifications:
     - target: {fileID: 1338024981720066, guid: 3b6748b16cdeb40488366bf03a53c78a, type: 3}
       propertyPath: m_Name
       value: SpaceExcalibur_Body_01
-      objectReference: {fileID: 0}
-    - target: {fileID: 4454671436893012, guid: 3b6748b16cdeb40488366bf03a53c78a, type: 3}
-      propertyPath: m_RootOrder
-      value: 5
       objectReference: {fileID: 0}
     - target: {fileID: 4454671436893012, guid: 3b6748b16cdeb40488366bf03a53c78a, type: 3}
       propertyPath: m_LocalPosition.x
@@ -3921,6 +4255,9 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 3b6748b16cdeb40488366bf03a53c78a, type: 3}
 --- !u!4 &2097868743 stripped
 Transform:
@@ -3933,11 +4270,12 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 2074875530}
     m_Modifications:
-    - target: {fileID: 4209883380710164, guid: 845dfae5862d1d44f86c8f30f1cd8421, type: 3}
-      propertyPath: m_RootOrder
-      value: 8
+    - target: {fileID: 1865648301431312, guid: 845dfae5862d1d44f86c8f30f1cd8421, type: 3}
+      propertyPath: m_Name
+      value: SpaceExcalibur9
       objectReference: {fileID: 0}
     - target: {fileID: 4209883380710164, guid: 845dfae5862d1d44f86c8f30f1cd8421, type: 3}
       propertyPath: m_LocalPosition.x
@@ -3967,7 +4305,22 @@ PrefabInstance:
       propertyPath: m_LocalRotation.z
       value: -0
       objectReference: {fileID: 0}
+    - target: {fileID: 4209883380710164, guid: 845dfae5862d1d44f86c8f30f1cd8421, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 4209883380710164, guid: 845dfae5862d1d44f86c8f30f1cd8421, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 4209883380710164, guid: 845dfae5862d1d44f86c8f30f1cd8421, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.z
+      value: 0
+      objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 845dfae5862d1d44f86c8f30f1cd8421, type: 3}
 --- !u!4 &2103569128 stripped
 Transform:
@@ -3980,15 +4333,12 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 145110402}
     m_Modifications:
     - target: {fileID: 1579231939939032, guid: 66ecb9c28abc08d4ebd6541a5c985e11, type: 3}
       propertyPath: m_Name
       value: SpaceExcalibur11
-      objectReference: {fileID: 0}
-    - target: {fileID: 4961373220874020, guid: 66ecb9c28abc08d4ebd6541a5c985e11, type: 3}
-      propertyPath: m_RootOrder
-      value: 10
       objectReference: {fileID: 0}
     - target: {fileID: 4961373220874020, guid: 66ecb9c28abc08d4ebd6541a5c985e11, type: 3}
       propertyPath: m_LocalPosition.x
@@ -4031,6 +4381,9 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 66ecb9c28abc08d4ebd6541a5c985e11, type: 3}
 --- !u!4 &2112543602 stripped
 Transform:
@@ -4055,13 +4408,9 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 1938555616}
     m_Modifications:
-    - target: {fileID: 1657884876939263148, guid: 514993eeb1d04d848b9dbcce807dffe9,
-        type: 3}
-      propertyPath: m_RootOrder
-      value: 24
-      objectReference: {fileID: 0}
     - target: {fileID: 1657884876939263148, guid: 514993eeb1d04d848b9dbcce807dffe9,
         type: 3}
       propertyPath: m_LocalPosition.x
@@ -4118,6 +4467,9 @@ PrefabInstance:
       value: SpaceExcalibur_Wing_02_Mirrored
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 514993eeb1d04d848b9dbcce807dffe9, type: 3}
 --- !u!4 &2942694961960684010 stripped
 Transform:
@@ -4130,17 +4482,13 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 1938555616}
     m_Modifications:
     - target: {fileID: 2235648209230781817, guid: 39b795578aa2eeb4e93411351bd5f1ab,
         type: 3}
       propertyPath: m_Name
       value: SpaceExcalibur_Armor_01_Mirrored
-      objectReference: {fileID: 0}
-    - target: {fileID: 2238922547120476299, guid: 39b795578aa2eeb4e93411351bd5f1ab,
-        type: 3}
-      propertyPath: m_RootOrder
-      value: 2
       objectReference: {fileID: 0}
     - target: {fileID: 2238922547120476299, guid: 39b795578aa2eeb4e93411351bd5f1ab,
         type: 3}
@@ -4193,23 +4541,22 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 39b795578aa2eeb4e93411351bd5f1ab, type: 3}
 --- !u!1001 &3387536921699322631
 PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 1938555616}
     m_Modifications:
     - target: {fileID: 2198287162580019080, guid: 0a7a5b603c0cdf14dbebf6d45b8b697d,
         type: 3}
       propertyPath: m_Name
       value: SpaceExcalibur_Wing_01_Mirrored
-      objectReference: {fileID: 0}
-    - target: {fileID: 2200121718348193704, guid: 0a7a5b603c0cdf14dbebf6d45b8b697d,
-        type: 3}
-      propertyPath: m_RootOrder
-      value: 22
       objectReference: {fileID: 0}
     - target: {fileID: 2200121718348193704, guid: 0a7a5b603c0cdf14dbebf6d45b8b697d,
         type: 3}
@@ -4262,6 +4609,9 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 0a7a5b603c0cdf14dbebf6d45b8b697d, type: 3}
 --- !u!4 &3569830487665710255 stripped
 Transform:
@@ -4286,17 +4636,13 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 1938555616}
     m_Modifications:
     - target: {fileID: 7030451916332282241, guid: 18562d5bb08178c43b417c0c5ce43355,
         type: 3}
       propertyPath: m_Name
       value: SpaceExcalibur_Armor_02_Mirrored
-      objectReference: {fileID: 0}
-    - target: {fileID: 7033523172692525483, guid: 18562d5bb08178c43b417c0c5ce43355,
-        type: 3}
-      propertyPath: m_RootOrder
-      value: 4
       objectReference: {fileID: 0}
     - target: {fileID: 7033523172692525483, guid: 18562d5bb08178c43b417c0c5ce43355,
         type: 3}
@@ -4349,23 +4695,22 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 18562d5bb08178c43b417c0c5ce43355, type: 3}
 --- !u!1001 &8949435131645150680
 PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 1938555616}
     m_Modifications:
     - target: {fileID: 8950752845897145429, guid: a6d8dd48e288c274a98c199bab31400b,
         type: 3}
       propertyPath: m_Name
       value: SpaceExcalibur_Missile_Launcher_Loaded
-      objectReference: {fileID: 0}
-    - target: {fileID: 8952187711209697853, guid: a6d8dd48e288c274a98c199bab31400b,
-        type: 3}
-      propertyPath: m_RootOrder
-      value: 27
       objectReference: {fileID: 0}
     - target: {fileID: 8952187711209697853, guid: a6d8dd48e288c274a98c199bab31400b,
         type: 3}
@@ -4418,19 +4763,18 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: a6d8dd48e288c274a98c199bab31400b, type: 3}
 --- !u!1001 &8996786020436791667
 PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 1938555616}
     m_Modifications:
-    - target: {fileID: 6056651340076701849, guid: 50a2d3c954e88f44cb7f6024189eb064,
-        type: 3}
-      propertyPath: m_RootOrder
-      value: 26
-      objectReference: {fileID: 0}
     - target: {fileID: 6056651340076701849, guid: 50a2d3c954e88f44cb7f6024189eb064,
         type: 3}
       propertyPath: m_LocalPosition.x
@@ -4487,6 +4831,9 @@ PrefabInstance:
       value: SpaceExcalibur_Wing_03_Mirrored
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 50a2d3c954e88f44cb7f6024189eb064, type: 3}
 --- !u!4 &9039966154920397987 stripped
 Transform:
@@ -4499,17 +4846,13 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 1938555616}
     m_Modifications:
     - target: {fileID: 174376642613158157, guid: 2f2c3038801208f408c0bced9edce36f,
         type: 3}
       propertyPath: m_Name
       value: SpaceExcalibur_Thruster_Place_Mirrored
-      objectReference: {fileID: 0}
-    - target: {fileID: 179021895871717291, guid: 2f2c3038801208f408c0bced9edce36f,
-        type: 3}
-      propertyPath: m_RootOrder
-      value: 15
       objectReference: {fileID: 0}
     - target: {fileID: 179021895871717291, guid: 2f2c3038801208f408c0bced9edce36f,
         type: 3}
@@ -4562,4 +4905,16 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 2f2c3038801208f408c0bced9edce36f, type: 3}
+--- !u!1660057539 &9223372036854775807
+SceneRoots:
+  m_ObjectHideFlags: 0
+  m_Roots:
+  - {fileID: 1828872414}
+  - {fileID: 497615741}
+  - {fileID: 1938555616}
+  - {fileID: 2074875530}
+  - {fileID: 145110402}

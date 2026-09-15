@@ -95,18 +95,32 @@ namespace TitanOrbit.Game
             instance = Object.Instantiate(prefab);
             instance.name = prefab.name + "Proxy";
             StripPhysicsAndNetworking(instance, keepColliders: false);
-            ApplyTeamMaterials(family, instance, team);
+            ApplyTeamMaterials(family, instance, team, chassisId);
             return true;
         }
 
-        /// <summary>Swaps renderer sharedMaterials with team palette from ShipFamilyDefinition.</summary>
+        /// <summary>Swaps renderer sharedMaterials with the team Colorize palette.</summary>
         public static void ApplyTeamMaterials(ShipFamilyDefinition family, GameObject root, TeamId team)
         {
+            ApplyTeamMaterials(family, root, team, chassisId: null);
+        }
+
+        /// <summary>
+        /// Swaps renderer sharedMaterials with the team Colorize palette.
+        /// MEGA chassis ids use the Titan visual-line mats (CraizanStar / Leopard / Okamoto),
+        /// not the gameplay family's AstroEagle (etc.) textures.
+        /// </summary>
+        public static void ApplyTeamMaterials(
+            ShipFamilyDefinition family,
+            GameObject root,
+            TeamId team,
+            string chassisId)
+        {
             // --- Apply changes ---
-            if (family == null || root == null || team == TeamId.None)
+            if (root == null || team == TeamId.None)
                 return;
 
-            List<Material> teamMats = family.GetMaterialsForTeam(team);
+            List<Material> teamMats = ResolveColorizeBaseMaterials(family, chassisId);
             if (teamMats == null || teamMats.Count == 0)
                 return;
 
@@ -130,6 +144,38 @@ namespace TitanOrbit.Game
 
                 renderer.sharedMaterials = replaced;
             }
+        }
+
+        /// <summary>
+        /// One Colorize material set. Team Color1 is written later from
+        /// <see cref="TeamColor1Palette"/> — we do not swap a Red/Blue/Green .mat per team.
+        /// MEGA chassis ids use the Titan visual-line mats (CraizanStar / Leopard / Okamoto).
+        /// </summary>
+        public static List<Material> ResolveColorizeBaseMaterials(
+            ShipFamilyDefinition family,
+            string chassisId)
+        {
+            if (MegaShipCatalog.IsMegaChassisId(chassisId))
+            {
+                var mega = MegaShipCatalog.Load();
+                if (mega != null && mega.TryGetVisualFamily(chassisId, out MegaShipVisualFamily visualFamily))
+                {
+                    List<Material> megaMats = mega.GetColorizeBaseMaterials(visualFamily);
+                    if (megaMats != null && megaMats.Count > 0)
+                        return megaMats;
+                }
+            }
+
+            return family != null ? family.GetColorizeBaseMaterials() : null;
+        }
+
+        /// <summary>Legacy name — same as <see cref="ResolveColorizeBaseMaterials"/>.</summary>
+        public static List<Material> ResolveTeamMaterials(
+            ShipFamilyDefinition family,
+            TeamId team,
+            string chassisId)
+        {
+            return ResolveColorizeBaseMaterials(family, chassisId);
         }
 
         /// <summary>

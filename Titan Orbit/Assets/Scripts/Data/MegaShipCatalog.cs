@@ -74,6 +74,17 @@ namespace TitanOrbit.Data
     }
 
     /// <summary>
+    /// Colorize team palette for one Titan visual line (CraizanStar, GalacticLeopard, GalacticOkamoto).
+    /// GalacticLeopard stores Main then Parts so renderer slot 0 / 1 map correctly.
+    /// </summary>
+    [Serializable]
+    public class MegaShipVisualFamilyTeamMaterials
+    {
+        public MegaShipVisualFamily visualFamily;
+        public List<ShipFamilyTeamMaterialSet> teamMaterials = new List<ShipFamilyTeamMaterialSet>();
+    }
+
+    /// <summary>
     /// Shared MEGA component-stat table plus the 90-hull pool.
     /// Regular families (AstroEagle, …) do not own these numbers — MEGAs are static
     /// (<see cref="MegaShipPartStats"/> has no Extra Level fields) and are not bottom-bar upgradable.
@@ -287,8 +298,12 @@ namespace TitanOrbit.Data
         [Range(0f, 1f)]
         public float extraEngineSpeedPercent = DefaultExtraEngineSpeedPercent;
 
-        [Tooltip("Optional 5-team material sets for theatrical menu previews. Empty = reuse regular family teamMaterials (same in-game MEGA tint).")]
+        [Tooltip("Legacy single 5-team list. Prefer visualFamilyTeamMaterials so CraizanStar / Leopard / Okamoto keep their own Colorize masks.")]
         public List<ShipFamilyTeamMaterialSet> teamMaterials = new List<ShipFamilyTeamMaterialSet>();
+
+        [Tooltip("Per Titan visual line: Colorize team materials (CraizanStar_Red, GalacticLeopard Main+Parts, …).")]
+        public List<MegaShipVisualFamilyTeamMaterials> visualFamilyTeamMaterials =
+            new List<MegaShipVisualFamilyTeamMaterials>();
 
         [Tooltip("Jet VFX local scale multiplier on MEGA hulls. Compensates for a small family scale (0.2 → use ~5).")]
         [Min(0.25f)]
@@ -449,6 +464,91 @@ namespace TitanOrbit.Data
         public GameObject GetPrefabByChassisId(string chassisId)
         {
             return TryGetEntryByChassisId(chassisId, out MegaShipCatalogEntry entry) ? entry.prefab : null;
+        }
+
+        /// <summary>Visual line for a <c>MEGA_###</c> chassis, or false when the id is unknown.</summary>
+        public bool TryGetVisualFamily(string chassisId, out MegaShipVisualFamily family)
+        {
+            family = default;
+            if (!TryGetEntryByChassisId(chassisId, out MegaShipCatalogEntry entry) || entry == null)
+                return false;
+            family = entry.visualFamily;
+            return true;
+        }
+
+        /// <summary>
+        /// Colorize team mats for one Titan visual line. Prefers
+        /// <see cref="visualFamilyTeamMaterials"/>, then the legacy shared
+        /// <see cref="teamMaterials"/> list.
+        /// </summary>
+        public List<Material> GetMaterialsForTeam(MegaShipVisualFamily family, TeamId team)
+        {
+            List<Material> fromFamily = FindMaterialsInSets(FindVisualFamilySets(family), team);
+            if (fromFamily != null)
+                return fromFamily;
+            return FindMaterialsInSets(teamMaterials, team);
+        }
+
+        /// <summary>
+        /// One Colorize set for a Titan visual line. Color1 comes from
+        /// <see cref="TeamColor1Palette"/> at apply time, not from a per-team .mat.
+        /// </summary>
+        public List<Material> GetColorizeBaseMaterials(MegaShipVisualFamily family)
+        {
+            List<Material> fromFamily = FindColorizeBaseInSets(FindVisualFamilySets(family));
+            if (fromFamily != null)
+                return fromFamily;
+            return FindColorizeBaseInSets(teamMaterials);
+        }
+
+        List<ShipFamilyTeamMaterialSet> FindVisualFamilySets(MegaShipVisualFamily family)
+        {
+            if (visualFamilyTeamMaterials == null)
+                return null;
+            for (int i = 0; i < visualFamilyTeamMaterials.Count; i++)
+            {
+                MegaShipVisualFamilyTeamMaterials row = visualFamilyTeamMaterials[i];
+                if (row != null && row.visualFamily == family)
+                    return row.teamMaterials;
+            }
+
+            return null;
+        }
+
+        static List<Material> FindMaterialsInSets(List<ShipFamilyTeamMaterialSet> sets, TeamId team)
+        {
+            if (sets == null || sets.Count == 0)
+                return null;
+            for (int i = 0; i < sets.Count; i++)
+            {
+                ShipFamilyTeamMaterialSet set = sets[i];
+                if (set == null || set.materials == null || set.materials.Count == 0)
+                    continue;
+                if (set.team == team)
+                    return set.materials;
+            }
+
+            return null;
+        }
+
+        static List<Material> FindColorizeBaseInSets(List<ShipFamilyTeamMaterialSet> sets)
+        {
+            if (sets == null || sets.Count == 0)
+                return null;
+
+            List<Material> fallback = null;
+            for (int i = 0; i < sets.Count; i++)
+            {
+                ShipFamilyTeamMaterialSet set = sets[i];
+                if (set == null || set.materials == null || set.materials.Count == 0)
+                    continue;
+                if (set.team == TeamId.TeamA)
+                    return set.materials;
+                if (fallback == null)
+                    fallback = set.materials;
+            }
+
+            return fallback;
         }
 
         /// <summary>Display name for tree UI (authored name, else prefab name, else chassis id).</summary>

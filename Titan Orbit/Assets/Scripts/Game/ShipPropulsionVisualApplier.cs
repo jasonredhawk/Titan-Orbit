@@ -22,9 +22,10 @@ namespace TitanOrbit.Game
     /// Attached by <see cref="EcsWorldVisualizer"/> when spawning ship hull proxies.
     /// Cosmetic smoothing of particle emission is intentional — never applied to ship transform position.
     /// <para>
-    /// Prefabs resolve per mount from <see cref="ThrusterVfxBank"/>: remapped parts use
-    /// <see cref="ShipPartVisualSource"/> family id; unmarked mounts use the host family;
-    /// otherwise <see cref="LoadDefaultSettings"/> / ModularJetFlame2.
+    /// Prefabs resolve from <see cref="ThrusterVfxBank"/>: T-key debug cycle first,
+    /// then the player's Customize Ship style, otherwise the shared default
+    /// (AstroEagle). Family id and remapped <see cref="ShipPartVisualSource"/> no
+    /// longer pick a unique flame. Fallback is <see cref="LoadDefaultSettings"/> / ModularJetFlame2.
     /// SampleScene often leaves the propulsion bank empty — Awake falls back to Resources.
     /// </para>
     /// <para>
@@ -71,8 +72,8 @@ namespace TitanOrbit.Game
         const float MinIdleBlend = 0.05f;
         /// <summary>Caps jet size so a bad hierarchy cannot balloon flames.</summary>
         const float MaxVfxSizeMul = 6f;
-
-        static readonly string[] VfxColorNames = { "Blue", "Green", "Orange", "Purple", "Red", "Yellow" };
+        /// <summary>Studio jets sit a bit small vs the match follow-cam; +10% on the hull.</summary>
+        const float PreviewJetScaleMul = 1.1f;
 
         [Serializable]
         public class ThrusterVfxColorPrefab
@@ -103,6 +104,11 @@ namespace TitanOrbit.Game
         }
 
         Entity _shipEntity;
+        bool _previewMode;
+        float _previewForward = 1f;
+        float _previewTurn;
+        bool _previewJetsPrimed;
+        TeamId _previewTeam = TeamId.TeamA;
         string _familyPrefix = "AstroEagle";
         ShipFamilyDefinition _family;
         Settings _settings;
@@ -113,6 +119,7 @@ namespace TitanOrbit.Game
         readonly List<GameObject> _engineVfxInstances = new List<GameObject>();
         readonly List<GameObject> _thrusterVfxInstances = new List<GameObject>();
         readonly List<JetBind> _thrusterJets = new List<JetBind>();
+        readonly List<JetBind> _engineJets = new List<JetBind>();
         readonly List<ParticleSystem> _engineParticleSystems = new List<ParticleSystem>();
         readonly List<ParticleSystem> _thrusterParticleSystems = new List<ParticleSystem>();
         static readonly List<ShipPropulsionVisualApplier> s_Live = new List<ShipPropulsionVisualApplier>(8);
@@ -120,6 +127,9 @@ namespace TitanOrbit.Game
         bool _lastEngineMoving;
         bool _lastThrusterActive;
         int _appliedDebugCycleKey = int.MinValue;
+        int _appliedStyleIndex = int.MinValue;
+        string _appliedFlameColorName;
+        Gradient _appliedLifetime;
         float _prevYawDeg;
         bool _yawSampleInitialized;
         bool _hasLateralSpread;
@@ -133,6 +143,11 @@ namespace TitanOrbit.Game
             public float chassisMountScale;
             public Renderer[] mountRenderers;
             public ParticleSystem[] particles;
+            public Color[] originalStartColors;
+            public Material[] tintMaterials;
+            public TrailRenderer[] trails;
+            public bool[] authoredColEnabled;
+            public Gradient[] authoredColGradients;
             /// <summary>
             /// Rear nozzle in mount-local space (mesh AABB, not world AABB).
             /// World <c>Renderer.bounds</c> is axis-aligned, so ClosestPoint jumped every yaw.
@@ -142,6 +157,8 @@ namespace TitanOrbit.Game
             /// <summary>−1 port … 0 center … +1 starboard, from ship-local X.</summary>
             public float lateral;
             public float blend;
+            public float appliedBlend;
+            public float appliedSizeMul;
         }
 
         /// <summary>ServerWorld ship entity for Local Host remote-input lookup (same GhostOwner).</summary>
@@ -216,19 +233,47 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
+        /// Studio hull with no ghost. LateUpdate holds a steady flame so Customize
+        /// Ship can show the live jet without an ECS ship.
+        /// </summary>
+        public void BindPreview(Settings settings, ShipFamilyDefinition family, TeamId team)
+        {
+            _previewMode = true;
+            _previewTeam = team == TeamId.None ? TeamId.TeamA : team;
+            Bind(Entity.Null, family != null ? family.familyId : "AstroEagle", settings, family);
+        }
+
+        /// <summary>0..1 thrust and −1..1 turn for studio jet length (same remap as the match).</summary>
+        public void SetPreviewMotion(float forward01, float turn)
+        {
+            _previewForward = Mathf.Clamp01(forward01);
+            _previewTurn = Mathf.Clamp(turn, -1f, 1f);
+        }
+
+        /// <summary>
+        /// A–E preview strip. Follow-team swaps the authored colored JetFlame
+        /// prefab; locked color only retints the current instances.
+        /// </summary>
+        public void SetPreviewTeam(TeamId team)
+        {
+            _previewTeam = team == TeamId.None ? TeamId.TeamA : team;
+            RefreshFromCurrentStyle();
+        }
+
+        /// <summary>
         /// Links this applier to a ship ghost entity and rebuilds particle instances from chassis mounts.
         /// Called by <see cref="EcsWorldVisualizer"/> after the hybrid hull proxy is Instantiated.
         /// </summary>
-        /// <param name="shipEntity">ECS ship ghost this proxy follows.</param>
-        /// <param name="familyPrefix">Chassis family name for mount parsing (e.g. AstroEagle).</param>
-        /// <param name="settings">Flame prefabs and blend knobs from the visualizer.</param>
-        /// <param name="family">Optional family for baked per-mount VFX flags/scales.</param>
         public void Bind(
             Entity shipEntity,
             string familyPrefix,
             Settings settings,
             ShipFamilyDefinition family = null)
         {
+            // Visualizer Bind is never preview — BindPreview sets the flag first.
+            if (shipEntity != Entity.Null)
+                _previewMode = false;
+
             // --- Cache binding ---
             _shipEntity = shipEntity;
             _cachedServerShip = Entity.Null;
@@ -260,6 +305,53 @@ namespace TitanOrbit.Game
             s_Live.Remove(this);
         }
 
+        /// <summary>Rebuilds this proxy's jets after a studio style change.</summary>
+        public void RebuildJets()
+        {
+            _appliedDebugCycleKey = CurrentDebugCycleKey();
+            RebuildVfx();
+        }
+
+        /// <summary>
+        /// Paint / lifetime stop change: retint. Type change: rebuild instances.
+        /// Visualizer used to RebuildJets on every accent CacheKey, which destroyed
+        /// the looping systems and looked like the flame was switching off.
+        /// </summary>
+        public void RefreshFromCurrentStyle()
+        {
+            int style = LocalPlayerThrusterStyle.ResolveStyleIndex(ResolveThrusterStyle());
+            string color = ResolveFlameColorName();
+            int debugKey = CurrentDebugCycleKey();
+            if (style != _appliedStyleIndex ||
+                !string.Equals(color, _appliedFlameColorName, StringComparison.Ordinal) ||
+                debugKey != _appliedDebugCycleKey)
+            {
+                _appliedDebugCycleKey = debugKey;
+                RebuildVfx();
+                return;
+            }
+
+            ApplyCurrentTint();
+        }
+
+        /// <summary>
+        /// Locked picker: keep the prefab Color-over-Lifetime (white + fade) so the
+        /// stream stays continuous, and paint each particle layer from the lifetime
+        /// wells via startColor. Default's mesh/glow have CoL off — age-based CoL
+        /// only hit the 0.1s blast and pulsed. Team follow leaves the prefab as-is.
+        /// </summary>
+        public void ApplyCurrentTint()
+        {
+            var style = ResolveThrusterStyle();
+            // Follow-team color lives on the prefab. Do not stamp the name here —
+            // that would hide a needed RebuildVfx after the A–E preview strip.
+            if (style.UseTeamColor)
+                return;
+
+            _appliedFlameColorName = ResolveFlameColorName();
+            ApplyLockedJetAppearance();
+        }
+
         /// <summary>Rebuilds jets on every live ship proxy (T-key debug cycle).</summary>
         public static void RebuildAllLive()
         {
@@ -273,8 +365,25 @@ namespace TitanOrbit.Game
                 }
 
                 applier._appliedDebugCycleKey = CurrentDebugCycleKey();
-                if (applier._shipEntity != Entity.Null)
+                if (applier._shipEntity != Entity.Null || applier._previewMode)
                     applier.RebuildVfx();
+            }
+        }
+
+        /// <summary>Tints every live proxy from current prefs / ghost (picker drag).</summary>
+        public static void ApplyTintToAllLive()
+        {
+            for (int i = s_Live.Count - 1; i >= 0; i--)
+            {
+                ShipPropulsionVisualApplier applier = s_Live[i];
+                if (applier == null)
+                {
+                    s_Live.RemoveAt(i);
+                    continue;
+                }
+
+                if (applier._shipEntity != Entity.Null || applier._previewMode)
+                    applier.ApplyCurrentTint();
             }
         }
 
@@ -333,7 +442,8 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Instantiates engine/thruster flame prefabs at <see cref="ChassisComponentStats"/> mount sites.
+        /// Instantiates one flame ring at <see cref="ChassisComponentStats"/> nozzle sites
+        /// (thruster VFX mounts, or Engine_* when the hull has none).
         /// Sets <c>_initialized</c> only when at least one particle instance was created — otherwise
         /// LateUpdate exits early and the ship stays without thrust VFX.
         /// </summary>
@@ -342,10 +452,12 @@ namespace TitanOrbit.Game
             ClearVfxInstances(immediate: true);
             DestroyOrphanJetInstances(transform, immediate: true);
             _thrusterJets.Clear();
+            _engineJets.Clear();
             _lastEngineMoving = false;
             _lastThrusterActive = false;
             _forceRestartPending = false;
             _yawSampleInitialized = false;
+            _previewJetsPrimed = false;
 
             // --- Find Engine_* / VFX-enabled thruster mounts on the hybrid hull ---
             // [TITAN-ORBIT] thrusterVfxTransforms = enablePropulsionVfx only
@@ -357,22 +469,41 @@ namespace TitanOrbit.Game
                 mega ? string.Empty : _familyPrefix,
                 mega ? null : _family);
 
-            // --- Engine mounts (main rear jets on AstroEagle-style hulls) ---
-            if (_settings.engineVfxPrefab != null)
+            SuppressAuthoredJetFlames();
+
+            // One flame ring only. Thruster VFX mounts are the nozzles (AstroEagle
+            // stacks Engine_2 just ahead of Thruster). Spawning on both stacked a
+            // second ring that bloom made obvious. Engine_* is fallback for
+            // engine-only hulls (no enablePropulsionVfx mounts).
+            GameObject stylePrefab = ResolveStylePrefab();
+            bool hasThrusterJets = false;
+            for (int i = 0; i < stats.thrusterVfxTransforms.Count; i++)
+            {
+                if (stats.thrusterVfxTransforms[i] != null)
+                {
+                    hasThrusterJets = true;
+                    break;
+                }
+            }
+
+            if (!hasThrusterJets)
             {
                 foreach (Transform t in stats.engineTransforms)
                 {
-                    if (t == null)
+                    if (t == null || IsAlreadyThrusterVfxMount(t, stats))
                         continue;
 
-                    GameObject go = Instantiate(_settings.engineVfxPrefab, t);
-                    go.transform.localPosition = Vector3.zero;
-                    go.transform.localRotation = Quaternion.identity;
-                    go.transform.localScale = Vector3.one * _megaVfxScale;
-                    // [HYBRID] URP material fixups so Sci-Fi Arsenal particles render in player builds.
-                    VfxUrpCompat.PrepareVfxInstance(go);
-                    _engineVfxInstances.Add(go);
-                    CollectParticleSystems(go, _engineParticleSystems);
+                    GameObject prefab = stylePrefab != null ? stylePrefab : _settings.engineVfxPrefab;
+                    if (prefab == null)
+                        continue;
+
+                    SpawnStyleJet(
+                        prefab,
+                        t,
+                        mountScale: 1f,
+                        _engineVfxInstances,
+                        _engineJets,
+                        _engineParticleSystems);
                 }
             }
 
@@ -382,8 +513,7 @@ namespace TitanOrbit.Game
                 if (t == null)
                     continue;
 
-                ThrusterVfxBank.Entry familyEntry = ResolveEntryForMount(t);
-                GameObject prefab = ResolveThrusterVfxPrefabForTransform(t, familyEntry);
+                GameObject prefab = stylePrefab != null ? stylePrefab : _settings.thrusterVfxPrefab;
                 if (prefab == null)
                     continue;
 
@@ -391,30 +521,13 @@ namespace TitanOrbit.Game
                 if (stats.thrusterVfxScales != null && i < stats.thrusterVfxScales.Count)
                     mountScale = Mathf.Max(0.01f, stats.thrusterVfxScales[i]);
 
-                // Parent to the ship root so world-aft rotation is not sheared by a
-                // sideways mount. Keep the prefab's authored localScale; only live
-                // component / ship size may multiply it (never a bind-time ratio).
-                Vector3 authoredScale = prefab.transform.localScale;
-                GameObject go = Instantiate(prefab, transform);
-                go.name = ThrusterVfxBank.JetInstanceName;
-                VfxUrpCompat.PrepareVfxInstance(go, playParticles: false);
-                ConfigureThrusterParticles(go);
-
-                var bind = new JetBind
-                {
-                    instance = go,
-                    mount = t,
-                    authoredLocalScale = authoredScale,
-                    chassisMountScale = mountScale,
-                    mountRenderers = CollectMountRenderers(t),
-                    particles = go.GetComponentsInChildren<ParticleSystem>(true),
-                    blend = ResolveIdleBlend()
-                };
-                go.SetActive(true);
-                bind.hasMountLocalRear = TryComputeMountLocalRear(bind, ResolveShipAft(), out bind.mountLocalRear);
-                _thrusterVfxInstances.Add(go);
-                _thrusterJets.Add(bind);
-                CollectParticleSystems(go, _thrusterParticleSystems);
+                SpawnStyleJet(
+                    prefab,
+                    t,
+                    mountScale,
+                    _thrusterVfxInstances,
+                    _thrusterJets,
+                    _thrusterParticleSystems);
             }
 
             AssignThrusterSides();
@@ -447,8 +560,17 @@ namespace TitanOrbit.Game
         /// </summary>
         void LateUpdate()
         {
-            // --- Guard: no prefab instances or unbound entity ---
-            if (!_initialized || _shipEntity == Entity.Null)
+            if (!_initialized)
+                return;
+
+            if (_previewMode)
+            {
+                TickPreviewJets();
+                return;
+            }
+
+            // --- Guard: unbound entity ---
+            if (_shipEntity == Entity.Null)
                 return;
 
             int debugKey = CurrentDebugCycleKey();
@@ -539,6 +661,54 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
+        /// Customize Ship: same thrust + turn length remap as the match
+        /// (<see cref="UpdateJetBlends"/>).
+        /// </summary>
+        void TickPreviewJets()
+        {
+            UpdateJetBlends(_previewForward, _previewTurn);
+            UpdateJetPoses();
+            _lastThrusterActive = true;
+            _lastEngineMoving = true;
+            _forceRestartPending = false;
+            KeepPreviewJetsEmitting();
+            _previewJetsPrimed = true;
+        }
+
+        /// <summary>Play any system that died. Does not Clear or deactivate instances.</summary>
+        void KeepPreviewJetsEmitting()
+        {
+            PlayIfStopped(_engineParticleSystems);
+            for (int i = 0; i < _thrusterJets.Count; i++)
+            {
+                JetBind jet = _thrusterJets[i];
+                if (jet == null || jet.instance == null)
+                    continue;
+                if (!jet.instance.activeSelf)
+                    jet.instance.SetActive(true);
+                ParticleSystem[] systems = jet.particles;
+                if (systems == null)
+                    continue;
+                for (int p = 0; p < systems.Length; p++)
+                {
+                    ParticleSystem ps = systems[p];
+                    if (ps != null && !ps.isPlaying)
+                        ps.Play();
+                }
+            }
+        }
+
+        static void PlayIfStopped(List<ParticleSystem> systems)
+        {
+            for (int i = 0; i < systems.Count; i++)
+            {
+                ParticleSystem ps = systems[i];
+                if (ps != null && !ps.isPlaying)
+                    ps.Play();
+            }
+        }
+
+        /// <summary>
         /// True when any listed particle system should be emitting but <c>isPlaying</c> is false.
         /// Used to recover from parent-scale kills without a thrust button edge.
         /// </summary>
@@ -591,6 +761,7 @@ namespace TitanOrbit.Game
         /// <summary>
         /// Signed turn in −1..1 (positive = yaw right). Prefers aim error so asteroid
         /// scrape yaw does not flicker the jets; falls back to smoothed heading rate.
+        /// Same helper the Customize Ship preview uses via <see cref="SetPreviewMotion"/>.
         /// </summary>
         float ResolveTurnAmount(EntityManager em)
         {
@@ -864,7 +1035,8 @@ namespace TitanOrbit.Game
 
         /// <summary>
         /// Idle is always on. Thrust raises every jet toward full. Turn remaps
-        /// port→starboard to full / medium / idle (right turn: left full, center medium, right idle).
+        /// port→starboard to full / medium / idle (right turn: left full, center
+        /// medium, right idle). Match and Customize Ship share this remap.
         /// </summary>
         bool UpdateJetBlends(float forward, float turn)
         {
@@ -872,11 +1044,26 @@ namespace TitanOrbit.Game
             float baseLen = Mathf.Lerp(idle, 1f, Mathf.Clamp01(forward));
             float turnAbs = Mathf.Clamp01(Mathf.Abs(turn));
             float speed = Mathf.Max(0.01f, _settings.thrusterVfxTransitionSpeed);
-            float step = speed * Time.deltaTime;
+            float dt = _previewMode ? Time.unscaledDeltaTime : Time.deltaTime;
+            float step = speed * dt;
             bool moving = false;
-            for (int i = 0; i < _thrusterJets.Count; i++)
+            moving |= StepJetBlends(_thrusterJets, idle, baseLen, turn, turnAbs, step);
+            moving |= StepJetBlends(_engineJets, idle, baseLen, turn, turnAbs, step);
+            return moving;
+        }
+
+        bool StepJetBlends(
+            List<JetBind> jets,
+            float idle,
+            float baseLen,
+            float turn,
+            float turnAbs,
+            float step)
+        {
+            bool moving = false;
+            for (int i = 0; i < jets.Count; i++)
             {
-                JetBind jet = _thrusterJets[i];
+                JetBind jet = jets[i];
                 if (jet == null)
                     continue;
 
@@ -900,10 +1087,17 @@ namespace TitanOrbit.Game
 
         void AssignThrusterSides()
         {
+            bool thrusterSpread = AssignJetSides(_thrusterJets);
+            bool engineSpread = AssignJetSides(_engineJets);
+            _hasLateralSpread = thrusterSpread || engineSpread;
+        }
+
+        bool AssignJetSides(List<JetBind> jets)
+        {
             float maxAbsX = 0f;
-            for (int i = 0; i < _thrusterJets.Count; i++)
+            for (int i = 0; i < jets.Count; i++)
             {
-                JetBind jet = _thrusterJets[i];
+                JetBind jet = jets[i];
                 if (jet == null || jet.mount == null)
                     continue;
                 float x = Mathf.Abs(transform.InverseTransformPoint(jet.mount.position).x);
@@ -911,10 +1105,10 @@ namespace TitanOrbit.Game
                     maxAbsX = x;
             }
 
-            _hasLateralSpread = maxAbsX > 0.08f;
-            for (int i = 0; i < _thrusterJets.Count; i++)
+            bool spread = maxAbsX > 0.08f;
+            for (int i = 0; i < jets.Count; i++)
             {
-                JetBind jet = _thrusterJets[i];
+                JetBind jet = jets[i];
                 if (jet == null || jet.mount == null)
                 {
                     if (jet != null)
@@ -923,8 +1117,10 @@ namespace TitanOrbit.Game
                 }
 
                 float x = transform.InverseTransformPoint(jet.mount.position).x;
-                jet.lateral = _hasLateralSpread ? Mathf.Clamp(x / maxAbsX, -1f, 1f) : 0f;
+                jet.lateral = spread ? Mathf.Clamp(x / maxAbsX, -1f, 1f) : 0f;
             }
+
+            return spread;
         }
 
         /// <summary>
@@ -939,95 +1135,479 @@ namespace TitanOrbit.Game
             ps.Play();
         }
 
-        /// <summary>
-        /// Purchased remaps stamp <see cref="ShipPartVisualSource"/>; unmarked mounts
-        /// use the host family row on <see cref="ThrusterVfxBank"/>.
-        /// </summary>
-        ThrusterVfxBank.Entry ResolveEntryForMount(Transform thrusterTransform)
+        GameObject ResolveStylePrefab()
         {
-            ThrusterVfxBank bank = ThrusterVfxBank.LoadDefault();
-            if (bank == null)
-                return null;
+            // T-key only overrides in-match. The studio preview always uses the
+            // TYPE pick — CycleAllThrusterVfx used to pin DebugCycleIndex and
+            // ignore Customize Ship entirely.
+            int index = LocalPlayerThrusterStyle.ResolveStyleIndex(ResolveThrusterStyle());
+            if (!_previewMode && TitanOrbitDebugFlags.CycleAllThrusterVfx)
+                index = ThrusterVfxBank.WrapStyleIndex(ThrusterVfxBank.DebugCycleIndex);
+            _appliedStyleIndex = index;
+            _appliedFlameColorName = ResolveFlameColorName();
+            return ThrusterVfxBank.LoadStylePrefab(index, _appliedFlameColorName);
+        }
 
-            if (TitanOrbitDebugFlags.CycleAllThrusterVfx)
+        string ResolveFlameColorName()
+        {
+            return LocalPlayerThrusterStyle.ResolveFlameColorName(ResolveThrusterStyle(), ResolveShipTeam());
+        }
+
+        static bool IsAlreadyThrusterVfxMount(Transform mount, ChassisComponentStats stats)
+        {
+            if (mount == null || stats == null || stats.thrusterVfxTransforms == null)
+                return false;
+            for (int i = 0; i < stats.thrusterVfxTransforms.Count; i++)
             {
-                ThrusterVfxBank.Entry cycled = bank.GetEntry(ThrusterVfxBank.DebugCycleIndex);
-                if (cycled != null)
-                    return cycled;
+                if (stats.thrusterVfxTransforms[i] == mount)
+                    return true;
             }
 
-            if (thrusterTransform != null)
+            return false;
+        }
+
+        void SpawnStyleJet(
+            GameObject prefab,
+            Transform mount,
+            float mountScale,
+            List<GameObject> instances,
+            List<JetBind> binds,
+            List<ParticleSystem> particles)
+        {
+            if (prefab == null)
+                return;
+
+            Vector3 authoredScale = prefab.transform.localScale;
+            GameObject go = Instantiate(prefab, transform);
+            go.name = ThrusterVfxBank.JetInstanceName;
+            VfxUrpCompat.PrepareVfxInstance(go, playParticles: false);
+            ConfigureThrusterParticles(go, worldSpace: false, previewSteady: _previewMode);
+            CopyLayerRecursive(go, gameObject.layer);
+
+            var bind = new JetBind
             {
-                var marker = thrusterTransform.GetComponent<ShipPartVisualSource>();
-                if (marker != null && !string.IsNullOrWhiteSpace(marker.sourceFamilyId))
-                {
-                    ThrusterVfxBank.Entry fromMarker = bank.GetEntryByFamilyId(marker.sourceFamilyId);
-                    if (fromMarker != null)
-                        return fromMarker;
-                }
-            }
-
-            if (_family != null && !string.IsNullOrWhiteSpace(_family.familyId))
-                return bank.GetEntryByFamilyId(_family.familyId);
-
-            return bank.GetEntryByFamilyId(_familyPrefix);
+                instance = go,
+                mount = mount,
+                authoredLocalScale = authoredScale,
+                chassisMountScale = Mathf.Max(0.01f, mountScale),
+                mountRenderers = CollectMountRenderers(mount),
+                particles = go.GetComponentsInChildren<ParticleSystem>(true),
+                blend = ResolveIdleBlend()
+            };
+            go.SetActive(true);
+            bind.hasMountLocalRear = TryComputeMountLocalRear(bind, ResolveShipAft(), out bind.mountLocalRear);
+            if (!ResolveThrusterStyle().UseTeamColor)
+                ApplyLockedJetAppearance(bind);
+            instances.Add(go);
+            binds.Add(bind);
+            CollectParticleSystems(go, particles);
         }
 
         /// <summary>
-        /// Family signature / color bank first; then scene bank by mount color name;
-        /// then ModularJetFlame2 fallback.
+        /// Hull prefabs can ship baked ModularJetFlame children. Those stay Modular
+        /// across type changes and hide the player style — switch them off.
         /// </summary>
-        GameObject ResolveThrusterVfxPrefabForTransform(
-            Transform thrusterTransform,
-            ThrusterVfxBank.Entry familyEntry)
+        void SuppressAuthoredJetFlames()
         {
-            if (familyEntry != null)
+            ParticleSystem[] systems = GetComponentsInChildren<ParticleSystem>(true);
+            for (int i = 0; i < systems.Length; i++)
             {
-                GameObject fromFamily = familyEntry.ResolvePrefab(
-                    thrusterTransform != null ? thrusterTransform.name : null);
-                if (fromFamily != null)
-                    return fromFamily;
+                ParticleSystem ps = systems[i];
+                if (ps == null)
+                    continue;
+
+                Transform flameRoot = FindAuthoredFlameRoot(ps.transform);
+                if (flameRoot == null)
+                    continue;
+
+                flameRoot.gameObject.SetActive(false);
             }
-
-            if (_settings.thrusterJetFlameBank != null && _settings.thrusterJetFlameBank.Count > 0)
-            {
-                string color = ExtractColorNameFromText(thrusterTransform != null ? thrusterTransform.name : null);
-                if (!string.IsNullOrEmpty(color))
-                {
-                    for (int i = 0; i < _settings.thrusterJetFlameBank.Count; i++)
-                    {
-                        ThrusterVfxColorPrefab entry = _settings.thrusterJetFlameBank[i];
-                        if (entry == null || entry.prefab == null || string.IsNullOrEmpty(entry.colorName))
-                            continue;
-                        if (string.Equals(entry.colorName, color, StringComparison.OrdinalIgnoreCase))
-                            return entry.prefab;
-                    }
-                }
-
-                for (int i = 0; i < _settings.thrusterJetFlameBank.Count; i++)
-                {
-                    ThrusterVfxColorPrefab entry = _settings.thrusterJetFlameBank[i];
-                    if (entry != null && entry.prefab != null)
-                        return entry.prefab;
-                }
-            }
-
-            return _settings.thrusterVfxPrefab;
         }
 
-        static string ExtractColorNameFromText(string value)
+        Transform FindAuthoredFlameRoot(Transform start)
         {
-            if (string.IsNullOrEmpty(value))
-                return null;
-
-            for (int i = 0; i < VfxColorNames.Length; i++)
+            Transform walk = start;
+            while (walk != null && walk != transform)
             {
-                string color = VfxColorNames[i];
-                if (value.IndexOf(color, StringComparison.OrdinalIgnoreCase) >= 0)
-                    return color;
+                if (walk.name == ThrusterVfxBank.JetInstanceName)
+                    return null;
+                if (LooksLikeAuthoredFlameName(walk.name))
+                    return walk;
+                walk = walk.parent;
             }
 
             return null;
+        }
+
+        static bool LooksLikeAuthoredFlameName(string name)
+        {
+            if (string.IsNullOrEmpty(name))
+                return false;
+            return name.IndexOf("JetFlame", StringComparison.OrdinalIgnoreCase) >= 0
+                || name.IndexOf("ModularJet", StringComparison.OrdinalIgnoreCase) >= 0
+                || name.IndexOf("ExhaustDust", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        /// <summary>Owner prefs immediately; remotes read ghosted <see cref="ShipAccentColors"/>.</summary>
+        LocalPlayerThrusterStyle.Style ResolveThrusterStyle()
+        {
+            if (_previewMode || _shipEntity == Entity.Null)
+                return LocalPlayerThrusterStyle.Get();
+
+            var world = EcsGameBridge.GetVisualizationWorld();
+            if (world == null || !world.IsCreated || !world.EntityManager.Exists(_shipEntity))
+                return LocalPlayerThrusterStyle.Get();
+
+            var em = world.EntityManager;
+            ShipAccentColors ghost = default;
+            if (em.HasComponent<ShipAccentColors>(_shipEntity))
+                ghost = em.GetComponentData<ShipAccentColors>(_shipEntity);
+
+            // Same owner test as the visualizer (NetworkId), not LocalPlayerShipTag —
+            // that tag can lag and left locked color reading a Default ghost.
+            return LocalPlayerThrusterStyle.ResolveForPresentation(IsStyleOwner(em), ghost);
+        }
+
+        bool IsStyleOwner(EntityManager em)
+        {
+            int localId = EcsGameBridge.GetLocalNetworkId();
+            if (localId > 0 && em.HasComponent<GhostOwner>(_shipEntity))
+            {
+                if (em.GetComponentData<GhostOwner>(_shipEntity).NetworkId == localId)
+                    return true;
+            }
+
+            return IsLocalOwnerProxy(em);
+        }
+
+        static readonly int TintColorId = Shader.PropertyToID("_TintColor");
+        static readonly int ColorId = Shader.PropertyToID("_Color");
+        static readonly int BaseColorId = Shader.PropertyToID("_BaseColor");
+        static readonly int EmissionColorId = Shader.PropertyToID("_EmissionColor");
+        static readonly int ColorModeId = Shader.PropertyToID("_ColorMode");
+
+        void CaptureAppliedLifetime(Gradient source)
+        {
+            if (source == null)
+                return;
+            if (_appliedLifetime == null)
+                _appliedLifetime = new Gradient();
+            _appliedLifetime.mode = source.mode;
+            _appliedLifetime.SetKeys(source.colorKeys, source.alphaKeys);
+        }
+
+        void ApplyLockedJetAppearance()
+        {
+            ApplyLockedJetAppearance(null);
+        }
+
+        void ApplyLockedJetAppearance(JetBind only)
+        {
+            var style = ResolveThrusterStyle();
+            TeamId team = ResolveShipTeam();
+            Color32 tint = LocalPlayerThrusterStyle.ResolveTint(style, team);
+            CaptureAppliedLifetime(LocalPlayerThrusterStyle.ResolveLifetime(style, team));
+            // Soft bakes hue into laserballyellow (and the other color textures).
+            // Multiply never reaches white — Color mode takes hue/sat from the wells.
+            bool replaceTextureHue =
+                LocalPlayerThrusterStyle.ResolveStyleIndex(style) == ThrusterVfxBank.SoftStyleIndex;
+            if (only != null)
+            {
+                TintJetParticles(only, tint, _appliedLifetime, replaceTextureHue);
+                return;
+            }
+
+            for (int i = 0; i < _thrusterJets.Count; i++)
+                TintJetParticles(_thrusterJets[i], tint, _appliedLifetime, replaceTextureHue);
+            for (int i = 0; i < _engineJets.Count; i++)
+                TintJetParticles(_engineJets[i], tint, _appliedLifetime, replaceTextureHue);
+        }
+
+        static readonly GradientAlphaKey[] OpaqueAlphaKeys =
+        {
+            new GradientAlphaKey(1f, 0f),
+            new GradientAlphaKey(1f, 1f),
+        };
+
+        void TintJetParticles(JetBind jet, Color32 tint32, Gradient lifetime, bool replaceTextureHue = false)
+        {
+            if (jet == null || jet.instance == null)
+                return;
+
+            Color tint = tint32;
+            tint.a = 1f;
+
+            if (jet.particles == null)
+                jet.particles = jet.instance.GetComponentsInChildren<ParticleSystem>(true);
+
+            if (jet.originalStartColors == null || jet.originalStartColors.Length != jet.particles.Length)
+            {
+                jet.originalStartColors = new Color[jet.particles.Length];
+                for (int i = 0; i < jet.particles.Length; i++)
+                {
+                    ParticleSystem ps = jet.particles[i];
+                    jet.originalStartColors[i] = ps != null
+                        ? ps.main.startColor.color
+                        : Color.white;
+                }
+            }
+
+            CacheAuthoredColorOverLifetime(jet);
+
+            if (jet.tintMaterials == null)
+                jet.tintMaterials = CollectInstanceMaterials(jet.instance);
+            if (jet.trails == null)
+                jet.trails = jet.instance.GetComponentsInChildren<TrailRenderer>(true);
+
+            int layerCount = jet.particles.Length;
+            for (int i = 0; i < layerCount; i++)
+            {
+                ParticleSystem ps = jet.particles[i];
+                if (ps == null)
+                    continue;
+
+                RestoreAuthoredColorOverLifetime(jet, i);
+
+                Color orig = jet.originalStartColors[i];
+                Color next;
+                if (lifetime != null)
+                    next = SampleLayerColor(lifetime, i, layerCount);
+                else
+                {
+                    Color.RGBToHSV(orig, out _, out float s, out float v);
+                    next = s < 0.2f && v > 0.65f
+                        ? Color.Lerp(Color.white, tint, 0.72f)
+                        : Color.Lerp(orig, tint, 0.92f);
+                }
+
+                next.a = orig.a > 0.05f ? orig.a : 1f;
+                var main = ps.main;
+                main.startColor = new ParticleSystem.MinMaxGradient(next);
+
+                if (lifetime == null)
+                    continue;
+
+                var rend = ps.GetComponent<ParticleSystemRenderer>();
+                if (rend == null)
+                    continue;
+                Material[] mats = rend.materials;
+                for (int m = 0; m < mats.Length; m++)
+                {
+                    if (mats[m] != null)
+                        ApplyLayerMaterialTint(mats[m], next, replaceTextureHue);
+                }
+            }
+
+            if (lifetime != null)
+            {
+                Color trailStart = SampleLayerColor(lifetime, 0, Mathf.Max(1, layerCount));
+                Color trailEnd = SampleLayerColor(lifetime, Mathf.Max(0, layerCount - 1), Mathf.Max(1, layerCount));
+                trailEnd.a = 0.12f;
+                for (int i = 0; i < jet.trails.Length; i++)
+                {
+                    TrailRenderer trail = jet.trails[i];
+                    if (trail == null)
+                        continue;
+                    trail.startColor = trailStart;
+                    trail.endColor = trailEnd;
+                }
+
+                return;
+            }
+
+            for (int i = 0; i < jet.tintMaterials.Length; i++)
+            {
+                Material mat = jet.tintMaterials[i];
+                if (mat == null)
+                    continue;
+                ApplyMaterialTint(mat, tint);
+            }
+
+            Color fallbackEnd = tint;
+            fallbackEnd.a = 0.12f;
+            for (int i = 0; i < jet.trails.Length; i++)
+            {
+                TrailRenderer trail = jet.trails[i];
+                if (trail == null)
+                    continue;
+                trail.startColor = tint;
+                trail.endColor = fallbackEnd;
+            }
+        }
+
+        static Color SampleLayerColor(Gradient lifetime, int layerIndex, int layerCount)
+        {
+            float t = layerCount <= 1
+                ? 0.35f
+                : (layerIndex + 0.5f) / layerCount;
+            Color c = lifetime.Evaluate(t);
+            Color.RGBToHSV(c, out float h, out float s, out float v);
+            if (v < 0.28f)
+                v = 0.28f;
+            c = Color.HSVToRGB(h, s, v);
+            c.a = 1f;
+            return c;
+        }
+
+        static void CacheAuthoredColorOverLifetime(JetBind jet)
+        {
+            if (jet.particles == null)
+                return;
+            if (jet.authoredColEnabled != null &&
+                jet.authoredColEnabled.Length == jet.particles.Length)
+                return;
+
+            int n = jet.particles.Length;
+            jet.authoredColEnabled = new bool[n];
+            jet.authoredColGradients = new Gradient[n];
+            for (int i = 0; i < n; i++)
+            {
+                ParticleSystem ps = jet.particles[i];
+                if (ps == null)
+                    continue;
+
+                var col = ps.colorOverLifetime;
+                jet.authoredColEnabled[i] = col.enabled;
+                if (col.enabled)
+                    jet.authoredColGradients[i] = CopyMinMaxGradient(col.color);
+            }
+        }
+
+        static void RestoreAuthoredColorOverLifetime(JetBind jet, int index)
+        {
+            if (jet.particles == null || index < 0 || index >= jet.particles.Length)
+                return;
+
+            ParticleSystem ps = jet.particles[index];
+            if (ps == null || jet.authoredColEnabled == null || index >= jet.authoredColEnabled.Length)
+                return;
+
+            var col = ps.colorOverLifetime;
+            col.enabled = jet.authoredColEnabled[index];
+            if (!col.enabled ||
+                jet.authoredColGradients == null ||
+                jet.authoredColGradients[index] == null)
+                return;
+
+            col.color = new ParticleSystem.MinMaxGradient(jet.authoredColGradients[index]);
+        }
+
+        static Gradient CopyMinMaxGradient(ParticleSystem.MinMaxGradient mm)
+        {
+            Gradient src = null;
+            switch (mm.mode)
+            {
+                case ParticleSystemGradientMode.TwoGradients:
+                    src = mm.gradientMax;
+                    break;
+                case ParticleSystemGradientMode.Gradient:
+                case ParticleSystemGradientMode.RandomColor:
+                    src = mm.gradient;
+                    break;
+            }
+
+            var copy = new Gradient();
+            if (src != null)
+            {
+                copy.mode = src.mode;
+                copy.SetKeys(src.colorKeys, src.alphaKeys);
+                return copy;
+            }
+
+            Color solid = mm.color;
+            copy.SetKeys(
+                new[] { new GradientColorKey(solid, 0f), new GradientColorKey(solid, 1f) },
+                OpaqueAlphaKeys);
+            return copy;
+        }
+
+        static void ApplyLayerMaterialTint(Material mat, Color layer, bool replaceTextureHue)
+        {
+            if (replaceTextureHue && mat.HasProperty(ColorModeId))
+            {
+                // Particles/Standard Unlit Color: hue/sat from vertex+_Color, value from texture.
+                mat.SetFloat(ColorModeId, 4f);
+                mat.EnableKeyword("_COLORCOLOR_ON");
+                mat.DisableKeyword("_COLOROVERLAY_ON");
+                mat.DisableKeyword("_COLORADDSUBDIFF_ON");
+            }
+
+            if (mat.HasProperty(ColorId))
+                mat.SetColor(ColorId, layer);
+            if (mat.HasProperty(BaseColorId))
+                mat.SetColor(BaseColorId, layer);
+            if (mat.HasProperty(TintColorId))
+            {
+                Color particleTint = layer;
+                particleTint.a = 0.5f;
+                mat.SetColor(TintColorId, particleTint);
+            }
+        }
+
+        static void ApplyMaterialTint(Material mat, Color tint)
+        {
+            if (mat.HasProperty(TintColorId))
+                mat.SetColor(TintColorId, tint);
+            if (mat.HasProperty(ColorId))
+                mat.SetColor(ColorId, tint);
+            if (mat.HasProperty(BaseColorId))
+                mat.SetColor(BaseColorId, tint);
+            if (mat.HasProperty(EmissionColorId))
+                mat.SetColor(EmissionColorId, tint * 1.6f);
+            mat.color = tint;
+        }
+
+        static Material[] CollectInstanceMaterials(GameObject root)
+        {
+            Renderer[] renderers = root.GetComponentsInChildren<Renderer>(true);
+            int count = 0;
+            for (int i = 0; i < renderers.Length; i++)
+            {
+                if (renderers[i] != null)
+                    count += renderers[i].sharedMaterials.Length;
+            }
+
+            var mats = new Material[count];
+            int n = 0;
+            for (int i = 0; i < renderers.Length; i++)
+            {
+                Renderer rend = renderers[i];
+                if (rend == null)
+                    continue;
+                Material[] instanced = rend.materials;
+                for (int m = 0; m < instanced.Length; m++)
+                    mats[n++] = instanced[m];
+            }
+
+            return mats;
+        }
+
+        static void CopyLayerRecursive(GameObject go, int layer)
+        {
+            if (go == null)
+                return;
+            go.layer = layer;
+            Transform t = go.transform;
+            for (int i = 0; i < t.childCount; i++)
+                CopyLayerRecursive(t.GetChild(i).gameObject, layer);
+        }
+
+        TeamId ResolveShipTeam()
+        {
+            if (_previewMode)
+                return _previewTeam;
+
+            if (_shipEntity == Entity.Null)
+                return TeamId.None;
+
+            var world = EcsGameBridge.GetVisualizationWorld();
+            if (world == null || !world.IsCreated || !world.EntityManager.Exists(_shipEntity))
+                return TeamId.None;
+
+            var em = world.EntityManager;
+            if (!em.HasComponent<ShipState>(_shipEntity))
+                return TeamId.None;
+            return em.GetComponentData<ShipState>(_shipEntity).Team;
         }
 
         /// <summary>Stash-restore can leave untracked jet children; drop them before a rebuild.</summary>
@@ -1088,6 +1668,7 @@ namespace TitanOrbit.Game
             _engineVfxInstances.Clear();
             _thrusterVfxInstances.Clear();
             _thrusterJets.Clear();
+            _engineJets.Clear();
             _engineParticleSystems.Clear();
             _thrusterParticleSystems.Clear();
             _initialized = false;
@@ -1097,7 +1678,7 @@ namespace TitanOrbit.Game
         /// Local simulation so the cone stays on the nozzle. Authored trails / ribbons stay on
         /// (V1 JetFlame ribbon). Start size / speed / lifetime stay untouched.
         /// </summary>
-        static void ConfigureThrusterParticles(GameObject root)
+        static void ConfigureThrusterParticles(GameObject root, bool worldSpace, bool previewSteady)
         {
             if (root == null)
                 return;
@@ -1111,9 +1692,33 @@ namespace TitanOrbit.Game
 
                 var main = ps.main;
                 main.playOnAwake = false;
-                main.simulationSpace = ParticleSystemSimulationSpace.Local;
+                main.loop = true;
+                main.cullingMode = ParticleSystemCullingMode.AlwaysSimulate;
+                main.simulationSpace = worldSpace
+                    ? ParticleSystemSimulationSpace.World
+                    : ParticleSystemSimulationSpace.Local;
                 main.scalingMode = ParticleSystemScalingMode.Hierarchy;
-                ps.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
+                if (!previewSteady)
+                    ps.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
+
+                if (worldSpace)
+                {
+                    var ribbon = ps.trails;
+                    if (ribbon.enabled)
+                        ribbon.lifetimeMultiplier = Mathf.Max(ribbon.lifetimeMultiplier, 1.2f);
+                }
+            }
+
+            if (!worldSpace)
+                return;
+
+            TrailRenderer[] trails = root.GetComponentsInChildren<TrailRenderer>(true);
+            for (int i = 0; i < trails.Length; i++)
+            {
+                if (trails[i] == null)
+                    continue;
+                trails[i].time = Mathf.Max(trails[i].time, 0.85f);
+                trails[i].minVertexDistance = Mathf.Min(trails[i].minVertexDistance, 0.08f);
             }
         }
 
@@ -1123,6 +1728,15 @@ namespace TitanOrbit.Game
             for (int i = 0; i < _thrusterJets.Count; i++)
             {
                 JetBind jet = _thrusterJets[i];
+                if (jet == null || jet.instance == null)
+                    continue;
+
+                PlaceAndScaleJet(jet, aft);
+            }
+
+            for (int i = 0; i < _engineJets.Count; i++)
+            {
+                JetBind jet = _engineJets[i];
                 if (jet == null || jet.instance == null)
                     continue;
 
@@ -1153,17 +1767,30 @@ namespace TitanOrbit.Game
             float sizeMul = Mathf.Max(0.01f, jet.chassisMountScale) * _megaVfxScale * componentRel;
             if (sizeMul > MaxVfxSizeMul)
                 sizeMul = MaxVfxSizeMul;
+            // Ignore sub-percent hierarchy noise (bank / interpolation) so Z length
+            // is not rewritten every frame while the player is holding thrust.
+            if (jet.appliedSizeMul > 0.01f &&
+                Mathf.Abs(sizeMul - jet.appliedSizeMul) < jet.appliedSizeMul * 0.01f)
+                sizeMul = jet.appliedSizeMul;
+            else
+                jet.appliedSizeMul = sizeMul;
             Vector3 authored = jet.authoredLocalScale;
             if (authored.sqrMagnitude < 0.0001f)
                 authored = Vector3.one;
 
-            // Length-only fade (local Z = ship-aft after LookRotation). XY stays at authored thickness.
-            // blend is already idle…1 — do not lerp from 0 or the idle puff disappears.
+            float thickness = _previewMode ? PreviewJetScaleMul : 1f;
             float lengthFactor = Mathf.Clamp(jet.blend, MinIdleBlend, 1f);
-            go.transform.localScale = new Vector3(
-                authored.x * sizeMul,
-                authored.y * sizeMul,
+            if (_previewMode)
+                lengthFactor *= PreviewJetScaleMul;
+            jet.appliedBlend = lengthFactor;
+            Vector3 nextScale = new Vector3(
+                authored.x * sizeMul * thickness,
+                authored.y * sizeMul * thickness,
                 authored.z * sizeMul * lengthFactor);
+            // Rewriting an identical scale still dirties the transform and can
+            // hitch Hierarchy-scaled ParticleSystems (reads as a blink).
+            if ((go.transform.localScale - nextScale).sqrMagnitude > 1e-8f)
+                go.transform.localScale = nextScale;
         }
 
         Vector3 ResolveShipAft()

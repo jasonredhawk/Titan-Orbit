@@ -7,8 +7,8 @@ namespace TitanOrbit.Game
 {
     /// <summary>
     /// Client glue that asks the server to respawn the local ship at a friendly planet.
-    /// Called from the expanded minimap after the 10s death beat when the player clicks
-    /// a world their team still owns.
+    /// Called from the expanded minimap after the 10s death beat and the keep/forfeit
+    /// loadout choice when the player clicks a world their team still owns.
     /// <para>
     /// [NETCODE] Dedicated / Relay clients send <see cref="RequestRespawnPlanetCommand"/> from
     /// ClientWorld. Local Host injects the same command onto ServerWorld with
@@ -26,23 +26,27 @@ namespace TitanOrbit.Game
         /// (not when the server has accepted it).
         /// </summary>
         /// <param name="planetId">Stable <see cref="PlanetState.PlanetId"/> from the clicked blip.</param>
-        public static bool TryRequestRespawnAtPlanet(int planetId)
+        /// <param name="keepLoadout">
+        /// True after a completed keep-loadout ad (or remove-ads). False strips cards + gear.
+        /// </param>
+        public static bool TryRequestRespawnAtPlanet(int planetId, bool keepLoadout = false)
         {
             if (planetId <= 0)
                 return false;
 
+            byte keep = keepLoadout ? (byte)1 : (byte)0;
             int localId = EcsGameBridge.GetLocalNetworkId();
-            if (TryEnqueueLocalHost(planetId, localId))
+            if (TryEnqueueLocalHost(planetId, keep, localId))
                 return true;
 
-            return TrySendDedicatedRpc(planetId);
+            return TrySendDedicatedRpc(planetId, keep);
         }
 
         /// <summary>
         /// [TITAN-ORBIT] Local Host: create the RPC entity on ServerWorld so
         /// <see cref="ShipRespawnSystem"/> sees it next tick without IPC.
         /// </summary>
-        static bool TryEnqueueLocalHost(int planetId, int networkId)
+        static bool TryEnqueueLocalHost(int planetId, byte keepLoadout, int networkId)
         {
             if (!EcsGameBridge.IsLocalHost())
                 return false;
@@ -59,7 +63,11 @@ namespace TitanOrbit.Game
                 return false;
 
             var rpcEntity = em.CreateEntity();
-            em.AddComponentData(rpcEntity, new RequestRespawnPlanetCommand { PlanetId = planetId });
+            em.AddComponentData(rpcEntity, new RequestRespawnPlanetCommand
+            {
+                PlanetId = planetId,
+                KeepLoadout = keepLoadout,
+            });
             em.AddComponentData(rpcEntity, new ReceiveRpcCommandRequest { SourceConnection = connection });
             return true;
         }
@@ -68,7 +76,7 @@ namespace TitanOrbit.Game
         /// [NETCODE] Dedicated / Relay: SendRpc from ClientWorld. TargetConnection Null = "the
         /// server that owns this client connection."
         /// </summary>
-        static bool TrySendDedicatedRpc(int planetId)
+        static bool TrySendDedicatedRpc(int planetId, byte keepLoadout)
         {
             var world = EcsGameBridge.ClientWorld;
             if (world == null || !world.IsCreated)
@@ -76,7 +84,11 @@ namespace TitanOrbit.Game
 
             var em = world.EntityManager;
             var entity = em.CreateEntity();
-            em.AddComponentData(entity, new RequestRespawnPlanetCommand { PlanetId = planetId });
+            em.AddComponentData(entity, new RequestRespawnPlanetCommand
+            {
+                PlanetId = planetId,
+                KeepLoadout = keepLoadout,
+            });
             em.AddComponentData(entity, new SendRpcCommandRequest { TargetConnection = Entity.Null });
             return true;
         }

@@ -561,10 +561,16 @@ namespace TitanOrbit.ECS
                 motor.EngineThrust = accel;
                 motor.RotationSpeed = turnVal;
                 motor.BrakeDeceleration = ShipMassLogic.DefaultBrakeDeceleration;
+                // Regular hulls stay at bake mass (1). MEGA apply writes 220; leaving that
+                // after RestorePreviousHull made PhysicsMass / bounce still feel like a Titan.
+                motor.Mass = ShipMassLogic.DefaultBaseMass;
                 motor.HullMassReference = liveHullSize;
                 motor.ChassisReferenceHealth = referenceHealth;
-                // [TITAN-ORBIT] Ram/grind damage rating — Extra Level family sum
-                // (ship level + Fire Power purchases). HUD reads the same motor field.
+                // [TITAN-ORBIT] Ram/grind rating — Extra Level family sum (ship level +
+                // Fire Power purchases). Must overwrite MEGA leftovers: Titan apply stamps
+                // summed-part ram here, and a missing write left that rating on the L6 hull
+                // so one asteroid scrape deleted the ship.
+                motor.RammingPower = Mathf.Max(0f, effective.rammingPower);
 
                 // [TITAN-ORBIT] OVERDRIVE: ExtraSpeedPercent (speed mul) from engines; absolute OD drain
                 // from effective.extraSpeedEnergyDrain (ship-tier + Move Speed ability steps).
@@ -676,6 +682,10 @@ namespace TitanOrbit.ECS
                     for (int i = 0; i < cards.Length; i++)
                         hash = hash * 31 + cards[i].CardId.GetHashCode();
                 }
+
+                // Bonus slot is not an item, but orbit UI must rebuild when it flips 0→1.
+                if (em.HasComponent<ShipLoadoutState>(shipEntity))
+                    hash = hash * 31 + em.GetComponentData<ShipLoadoutState>(shipEntity).LoadoutBonusSlots;
 
                 return hash;
             }

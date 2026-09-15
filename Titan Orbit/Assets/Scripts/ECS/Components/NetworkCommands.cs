@@ -11,7 +11,8 @@ namespace TitanOrbit.ECS
     /// replication. Each struct implements <c>IRpcCommand</c>; clients send requests, server systems
     /// validate and reply. Handlers: <see cref="TeamManagementSystem"/>,
     /// <see cref="RejoinShipManagementSystem"/>, <see cref="ShipRespawnSystem"/>,
-    /// <see cref="PlayerNameServerSystem"/>, moon orbit store systems, attribute upgrade systems.
+    /// <see cref="PlayerNameServerSystem"/>, <see cref="ShipAccentColorsServerSystem"/>,
+    /// moon orbit store systems, attribute upgrade systems.
     /// Ghost replication handles continuous state; RPCs handle discrete player actions.
     /// </summary>
 
@@ -136,6 +137,61 @@ namespace TitanOrbit.ECS
     {
         /// <summary>True = fire the shared EnergySpheres heal bank.</summary>
         public bool HealingActive;
+    }
+
+    /// <summary>
+    /// [NETCODE] Client publishes Colorize Color2 / Color3 / Emission1–3 and thruster
+    /// style after GoInGame or when the player paints / picks jets. Server writes
+    /// <see cref="ShipAccentColors"/> on the owned ship ghost. Color1 is not in this
+    /// payload — it stays the team material.
+    /// Adding fields changes RPC layout: client and Linux headless must rebuild together.
+    /// </summary>
+    public struct SetShipAccentColorsCommand : IRpcCommand
+    {
+        /// <summary>0 = use baked Colorize accents; 1 = apply the packed colors.</summary>
+        public byte HasCustom;
+
+        /// <summary>Packed RGBA for Color2.</summary>
+        public uint Color2Packed;
+
+        /// <summary>Packed RGBA for Color3.</summary>
+        public uint Color3Packed;
+
+        /// <summary>Packed RGBA for Emission1.</summary>
+        public uint EmissionPacked;
+
+        /// <summary>Packed RGBA for Emission2.</summary>
+        public uint Emission2Packed;
+
+        /// <summary>Packed RGBA for Emission3.</summary>
+        public uint Emission3Packed;
+
+        /// <summary>1 when the owner picked a thruster style / color.</summary>
+        public byte ThrusterCustom;
+
+        /// <summary>0 Ribbon, 1 Modular, 2 Heavy, 3 Soft.</summary>
+        public byte ThrusterStyle;
+
+        /// <summary>Packed RGBA for the locked flame tint.</summary>
+        public uint ThrusterColorPacked;
+
+        /// <summary>1 = flame follows match team Color1; 0 = locked picker color.</summary>
+        public byte ThrusterFollowTeam;
+
+        /// <summary>1 when lifetime stops were edited after the Color-well seed.</summary>
+        public byte ThrusterLifeCustom;
+
+        /// <summary>Packed RGBA for Color-over-Lifetime stop 0.</summary>
+        public uint ThrusterLife0Packed;
+
+        /// <summary>Packed RGBA for Color-over-Lifetime stop 1.</summary>
+        public uint ThrusterLife1Packed;
+
+        /// <summary>Packed RGBA for Color-over-Lifetime stop 2.</summary>
+        public uint ThrusterLife2Packed;
+
+        /// <summary>Packed RGBA for Color-over-Lifetime stop 3.</summary>
+        public uint ThrusterLife3Packed;
     }
 
     /// <summary>
@@ -293,7 +349,21 @@ namespace TitanOrbit.ECS
     {
         /// <summary>[TITAN-ORBIT] Stable <see cref="PlanetState.PlanetId"/> the player clicked.</summary>
         public int PlanetId;
+
+        /// <summary>
+        /// 1 = keep cards + equipment through this respawn (player watched a rewarded ad
+        /// or owns remove-ads). 0 = server clears the whole loadout. Adding this field
+        /// changes RPC layout — client and Linux headless must rebuild together.
+        /// </summary>
+        public byte KeepLoadout;
     }
+
+    /// <summary>
+    /// [NETCODE] Client claims the match-only +1 loadout slot after a rewarded ad
+    /// (or remove-ads instant grant). Server sets <see cref="ShipLoadoutState.LoadoutBonusSlots"/>
+    /// to 1 once. Empty payload — the watch already happened on the client.
+    /// </summary>
+    public struct ClaimRewardedBonusSlotCommand : IRpcCommand { }
 
     /// <summary>
     /// [NETCODE] Server response to resume/abandon rejoin choice. Handled by

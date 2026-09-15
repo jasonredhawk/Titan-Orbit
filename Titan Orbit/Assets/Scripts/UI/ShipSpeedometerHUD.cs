@@ -1413,7 +1413,7 @@ namespace TitanOrbit.UI
         /// <summary>
         /// Estimates asteroid impact at <paramref name="inboundSpeed"/> using the shared
         /// grind-DPS × ram-speed helpers (<see cref="ShipRammingCollisionDamageSystem"/>).
-        /// Mass stays in the product: grindDps = rating × (totalMass / MassReference).
+        /// Mass stays in the product: grindDps = rating × (totalMass / this hull's ComponentSize).
         /// </summary>
         static void GetRamDamageEstimate(
             in ShipState ship,
@@ -1449,9 +1449,9 @@ namespace TitanOrbit.UI
             totalMass = taxed.TotalMass;
 
             asteroidDamage = ShipComponentRammingSuggestions.ComputeImpactDamage(
-                ramRating, totalMass, inboundSpeed);
+                ramRating, totalMass, inboundSpeed, componentSize);
             selfDamage = ShipComponentRammingSuggestions.ComputeImpactSelfDamage(
-                ramRating, totalMass, inboundSpeed);
+                ramRating, totalMass, inboundSpeed, componentSize);
         }
 
         /// <summary>

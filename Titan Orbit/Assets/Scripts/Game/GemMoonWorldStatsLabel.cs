@@ -2,6 +2,7 @@ using TitanOrbit.Core;
 using TitanOrbit.Data;
 using TitanOrbit.ECS;
 using TitanOrbit.Simulation;
+using TitanOrbit.UI;
 using TMPro;
 using UnityEngine;
 using UnityEngine.Rendering;
@@ -12,7 +13,9 @@ namespace TitanOrbit.Game
     /// World-space label above the orbiting gem moon: ship family name, that family's default
     /// bullet type, then gem bank and matrix shield counts. Family / gun strings match
     /// <see cref="PlanetWorldStatsLabel"/> (same planet <see cref="PlanetState"/> + config).
-    /// Client presentation only.
+    /// Client presentation only. During idle theatrical camera,
+    /// <see cref="TitanOrbit.UI.TheatricalWorldSpaceLabelRotation"/> billboards this stack
+    /// toward the lens so gem/shield counts stay readable.
     /// </summary>
     public class GemMoonWorldStatsLabel : MonoBehaviour
     {
@@ -61,6 +64,12 @@ namespace TitanOrbit.Game
         bool _hasCachedPaint;
         string _cachedTitle;
         string _cachedBulletType;
+        /// <summary>Snug local Y from last ApplyLayout — reused while theatrical so we skip mesh walks.</summary>
+        float _cachedGameplayLabelLocalY;
+        /// <summary>Moon radius in world units from last layout.</summary>
+        float _cachedBodyRadiusWorld = 0.25f;
+        /// <summary>True last frame while theatrical owned label pose — forces ApplyLayout on exit.</summary>
+        bool _wasTheatricalEngaged;
 
         static PlanetShipFamilyConfig _shipFamilyConfig;
 
@@ -260,9 +269,14 @@ namespace TitanOrbit.Game
             if (EcsGameBridge.TryGetPlanetPoseByPlanetId(planetId, out _, out float ecsScale, out _))
                 planetSize = ecsScale;
             float s = WorldBodyLabelLayout.GetReadableMoonLabelWorldScale(planetSize);
-            _labelRoot.localScale = new Vector3(s, -s, s);
-
             WorldBodyLabelLayout.ApplySnugMoonLabel(_labelRoot, transform, _moonLocalRadius);
+            _cachedGameplayLabelLocalY = _labelRoot.localPosition.y;
+            float moonWorld = Mathf.Max(0.05f, _moonLocalRadius * transform.lossyScale.x);
+            _cachedBodyRadiusWorld = moonWorld;
+            TheatricalWorldSpaceLabelRotation.RestoreGameplayPose(
+                _labelRoot,
+                _cachedGameplayLabelLocalY,
+                s);
         }
 
         static void ApplyIconScale(SpriteRenderer iconRenderer, Sprite iconSprite, float fontSize)
@@ -489,6 +503,45 @@ namespace TitanOrbit.Game
             // Dirty Refresh skips ApplyLayout when gem/shield/family text is unchanged.
             if (Refresh())
                 ApplyLayout();
+
+            ApplyTheatricalLabelPose();
+        }
+
+        /// <summary>
+        /// While idle theatrical orbit is on, billboard the moon label at the camera.
+        /// When theatrical ends, snap back to the snug top-down layout.
+        /// </summary>
+        void ApplyTheatricalLabelPose()
+        {
+            if (_labelRoot == null)
+                return;
+
+            bool theatrical = TheatricalWorldSpaceLabelRotation.IsTheatricalEngaged();
+            if (!theatrical)
+            {
+                if (_wasTheatricalEngaged)
+                {
+                    ApplyLayout();
+                    _wasTheatricalEngaged = false;
+                }
+
+                return;
+            }
+
+            _wasTheatricalEngaged = true;
+            if (_cachedGameplayLabelLocalY <= 0.0001f)
+                ApplyLayout();
+
+            float planetSize = 10f;
+            if (EcsGameBridge.TryGetPlanetPoseByPlanetId(planetId, out _, out float ecsScale, out _))
+                planetSize = ecsScale;
+            float s = WorldBodyLabelLayout.GetReadableMoonLabelWorldScale(planetSize);
+            TheatricalWorldSpaceLabelRotation.ApplyTheatricalBillboard(
+                _labelRoot,
+                transform,
+                _cachedBodyRadiusWorld,
+                s,
+                WorldBodyLabelLayout.MoonPaddingAboveSurfaceLocal);
         }
 
         /// <summary>

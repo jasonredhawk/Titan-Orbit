@@ -107,6 +107,13 @@ namespace TitanOrbit
         public static bool StutterIsolatorEnabled;
 
         /// <summary>
+        /// When true, <c>ClientEgressMeterHUD</c> shows live NetCode payload KB/s for this player
+        /// (client receive). Off by default — enable from GameManager Inspector → HUD → Show
+        /// Egress Meter. Managed samplers skip work when false.
+        /// </summary>
+        public static bool EgressMeterEnabled;
+
+        /// <summary>
         /// When true, <c>InstructionReferenceCaptureSession</c> shows its status banner and accepts
         /// F8/F9 (and Esc / Shift+F8 cancel) to gather InstructionScreens reference plates.
         /// Off by default — enable from GameManager Inspector only when rebuilding instruction art.

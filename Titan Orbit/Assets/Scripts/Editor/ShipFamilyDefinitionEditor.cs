@@ -348,22 +348,56 @@ namespace TitanOrbit.Editor
 
                 if (GUILayout.Button("Generate Menu Preview Images (Top-Down)"))
                 {
-                    ShipFamilyMenuPreviewGenerator.GenerateForFamily(def);
+                    // delayCall: mutating nested lists mid-OnInspectorGUI lets the
+                    // open SerializedObject write empty Menu Preview Sprite slots back.
+                    serializedObject.ApplyModifiedProperties();
+                    ShipFamilyDefinition defCapture = def;
+                    EditorApplication.delayCall += () =>
+                    {
+                        if (defCapture == null)
+                            return;
+                        ShipFamilyMenuPreviewGenerator.GenerateForFamily(defCapture);
+                    };
+                    GUIUtility.ExitGUI();
                 }
 
                 if (GUILayout.Button("Generate Menu Preview Images (Theatrical)"))
                 {
-                    ShipFamilyMenuPreviewGenerator.GenerateTheatricalForFamily(def);
+                    serializedObject.ApplyModifiedProperties();
+                    ShipFamilyDefinition defCapture = def;
+                    EditorApplication.delayCall += () =>
+                    {
+                        if (defCapture == null)
+                            return;
+                        ShipFamilyMenuPreviewGenerator.GenerateTheatricalForFamily(defCapture);
+                    };
+                    GUIUtility.ExitGUI();
                 }
 
                 if (GUILayout.Button("Generate Component Menu Preview Images (Top-Down)"))
                 {
-                    ShipFamilyMenuPreviewGenerator.GenerateComponentPreviewsForFamily(def);
+                    serializedObject.ApplyModifiedProperties();
+                    ShipFamilyDefinition defCapture = def;
+                    EditorApplication.delayCall += () =>
+                    {
+                        if (defCapture == null)
+                            return;
+                        ShipFamilyMenuPreviewGenerator.GenerateComponentPreviewsForFamily(defCapture);
+                    };
+                    GUIUtility.ExitGUI();
                 }
 
                 if (GUILayout.Button("Generate Component Menu Preview Images (Theatrical)"))
                 {
-                    ShipFamilyMenuPreviewGenerator.GenerateTheatricalComponentPreviewsForFamily(def);
+                    serializedObject.ApplyModifiedProperties();
+                    ShipFamilyDefinition defCapture = def;
+                    EditorApplication.delayCall += () =>
+                    {
+                        if (defCapture == null)
+                            return;
+                        ShipFamilyMenuPreviewGenerator.GenerateTheatricalComponentPreviewsForFamily(defCapture);
+                    };
+                    GUIUtility.ExitGUI();
                 }
 
                 if (GUILayout.Button("Auto-Detect Team Materials From Upgrade Tree (5 Teams)"))
@@ -387,13 +421,13 @@ namespace TitanOrbit.Editor
                 "Menu Preview Images: writes PNGs to MenuPreviews/<variant>/ next to this asset, imports them as Sprites, and assigns each tier's teamMenuPreviewSprites (plus legacy menuPreviewSprite). Variants come from ShipFamilyDefinition Team Materials. Re-run anytime after prefab/material changes.",
                 MessageType.None);
             EditorGUILayout.HelpBox(
-                "Theatrical Menu Preview Images: same assignment as top-down but uses a 3/4 hero camera and an opaque black clear (same as MEGA hull thumbs). Overwrites PNGs in MenuPreviews/<variant>/ and replaces menuPreviewSprite / teamMenuPreviewSprites on each tier.",
+                "Theatrical Menu Preview Images: 3/4 hero camera and an opaque black clear (same as MEGA hull thumbs). Overwrites PNGs in MenuPreviews/<variant>/ and assigns theatricalMenuPreviewSprite / teamTheatricalMenuPreviewSprites plus menuPreviewSprite / teamMenuPreviewSprites on each upgrade-tree tier so the Inspector and live tree both show the new thumbs.",
                 MessageType.None);
             EditorGUILayout.HelpBox(
                 "Component Menu Preview Images: renders each component entry from the strongest upgrade-tree prefab into ComponentMenuPreviews/<variant>/ and assigns menuPreviewSprite on each ShipFamilyComponentEntry (used by the moon dock equipment store).",
                 MessageType.None);
             EditorGUILayout.HelpBox(
-                "Theatrical Component Menu Preview Images: same assignment as top-down but uses the 3/4 hero camera. Overwrites PNGs in ComponentMenuPreviews/<variant>/ and replaces menuPreviewSprite / teamMenuPreviewSprites on each component entry.",
+                "Theatrical Component Menu Preview Images: 3/4 hero camera. Overwrites PNGs in ComponentMenuPreviews/<variant>/ and assigns theatrical plus menuPreviewSprite / team lists on each component entry.",
                 MessageType.None);
 
             EditorGUILayout.Space(10);

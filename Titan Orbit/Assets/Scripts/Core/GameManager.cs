@@ -26,10 +26,11 @@ namespace TitanOrbit.Core
     /// <see cref="DebugFreeShipUpgradeTree"/>, <see cref="DebugFreeGear"/>, and
     /// <see cref="DebugFreeCards"/> so you can click any upgrade-tree node, buy GEAR, or spin
     /// CARDS for free during testing. Also gates optional tools such as Instruction Image Capture
-    /// (F8/F9 reference plates) and the stutter isolator. Background checkboxes independently
-    /// enable the shader starfield (production) and the optional legacy nebula quad. Publishes debug
-    /// values to <see cref="TitanOrbitDebugFlags"/> so other assemblies can honor toggles without
-    /// referencing this Core assembly. Dedicated server builds normally leave debug flags false.
+    /// (F8/F9 reference plates), the stutter isolator, and the per-player egress meter overlay.
+    /// Background checkboxes independently enable the shader starfield (production) and the
+    /// optional legacy nebula quad. Publishes debug values to <see cref="TitanOrbitDebugFlags"/> so
+    /// other assemblies can honor toggles without referencing this Core assembly. Dedicated server
+    /// builds normally leave debug flags false.
     /// </summary>
     public class GameManager : MonoBehaviour
     {
@@ -41,6 +42,12 @@ namespace TitanOrbit.Core
         /// <c>ShipSpeedometerHUD</c> can disable its own component (no LateUpdate) when off.
         /// </summary>
         public static event Action<bool> ShowSpeedometerChanged;
+
+        /// <summary>
+        /// Play Mode only: fired when <see cref="ShowEgressMeter"/> is published so
+        /// <c>ClientEgressMeterHUD</c> can hide and skip work when off.
+        /// </summary>
+        public static event Action<bool> ShowEgressMeterChanged;
 
         /// <summary>
         /// Play Mode only: fired when <see cref="ShowSpaceBackground"/> is published so
@@ -68,11 +75,20 @@ namespace TitanOrbit.Core
         [Tooltip("Local-player speedometer (speed / accel / mass / ram / bullets). Off = not drawn and the HUD component disables itself (no per-frame update). Useful to disable for Production polish while keeping it for Test.")]
         [SerializeField] bool showSpeedometer = true;
 
+        [Tooltip("Debug overlay: live NetCode payload to this player (KB/s) plus Local Host server-send per connection. Off = no overlay and samplers skip work. Leave OFF for Production polish.")]
+        [SerializeField] bool showEgressMeter;
+
         /// <summary>Last value pushed to <see cref="ShowSpeedometerChanged"/> (avoids spam while editing).</summary>
         bool _hasPublishedShowSpeedometer;
 
         /// <summary>Mirror of the last published showSpeedometer for change detection.</summary>
         bool _lastPublishedShowSpeedometer;
+
+        /// <summary>Last value pushed to <see cref="ShowEgressMeterChanged"/> (avoids spam while editing).</summary>
+        bool _hasPublishedShowEgressMeter;
+
+        /// <summary>Mirror of the last published showEgressMeter for change detection.</summary>
+        bool _lastPublishedShowEgressMeter;
 
         // [UNITY] / [TITAN-ORBIT] Production uses the shader starfield (stars + procedural gas).
         // The old DinV nebula quad stays available as an optional overlay.
@@ -167,6 +183,12 @@ namespace TitanOrbit.Core
         /// <summary>True when the local-player speedometer HUD should run (Inspector on NceGameRoot).</summary>
         public bool ShowSpeedometer => showSpeedometer;
 
+        /// <summary>
+        /// True when the per-player egress overlay should run (Inspector on NceGameRoot).
+        /// Default off — this is a debug meter, not production HUD.
+        /// </summary>
+        public bool ShowEgressMeter => showEgressMeter;
+
         /// <summary>True when the scrolling nebula space background should draw (Inspector on NceGameRoot).</summary>
         public bool ShowSpaceBackground => showSpaceBackground;
 
@@ -209,6 +231,13 @@ namespace TitanOrbit.Core
         /// </summary>
         public static bool IsShowSpeedometerActive =>
             Instance == null || Instance.showSpeedometer;
+
+        /// <summary>
+        /// Safe static check for the egress overlay. Defaults <b>off</b> when no
+        /// GameManager exists — this is a debug meter, not production HUD.
+        /// </summary>
+        public static bool IsShowEgressMeterActive =>
+            Instance != null && Instance.showEgressMeter;
 
         /// <summary>
         /// Safe static check for the legacy nebula quad. Defaults <b>off</b> when no
@@ -324,8 +353,10 @@ namespace TitanOrbit.Core
                 TitanOrbitDebugFlags.LogAsteroidDestroyPerf = false;
                 TitanOrbitDebugFlags.InstructionImageCaptureEnabled = false;
                 TitanOrbitDebugFlags.StutterIsolatorEnabled = false;
+                TitanOrbitDebugFlags.EgressMeterEnabled = false;
                 ClearIsolationFlags();
                 _hasPublishedShowSpeedometer = false;
+                _hasPublishedShowEgressMeter = false;
                 _hasPublishedShowSpaceBackground = false;
                 _hasPublishedShowStarfieldBackground = false;
             }
@@ -372,6 +403,7 @@ namespace TitanOrbit.Core
             // otherwise F8/F9 and the bottom status banner stay inactive during normal play.
             TitanOrbitDebugFlags.InstructionImageCaptureEnabled = debugEnableInstructionImageCapture;
             TitanOrbitDebugFlags.StutterIsolatorEnabled = debugEnableStutterIsolator;
+            TitanOrbitDebugFlags.EgressMeterEnabled = showEgressMeter;
 
             // Seed isolation bits from Inspector when enabling; when master switch is OFF, clear them
             // so leftover Shift+F toggles from a previous Play session cannot stick.
@@ -391,6 +423,7 @@ namespace TitanOrbit.Core
 
             // --- HUD + backgrounds: presentation on/off ---
             NotifyShowSpeedometerChangedIfNeeded();
+            NotifyShowEgressMeterChangedIfNeeded();
             NotifyShowSpaceBackgroundChangedIfNeeded();
             NotifyShowStarfieldBackgroundChangedIfNeeded();
         }
@@ -406,6 +439,19 @@ namespace TitanOrbit.Core
                 ref _lastPublishedShowSpeedometer,
                 showSpeedometer,
                 ShowSpeedometerChanged);
+        }
+
+        /// <summary>
+        /// Invokes <see cref="ShowEgressMeterChanged"/> in Play Mode when the value changes
+        /// (or on the first publish after Awake).
+        /// </summary>
+        void NotifyShowEgressMeterChangedIfNeeded()
+        {
+            NotifyBoolChangedIfNeeded(
+                ref _hasPublishedShowEgressMeter,
+                ref _lastPublishedShowEgressMeter,
+                showEgressMeter,
+                ShowEgressMeterChanged);
         }
 
         /// <summary>

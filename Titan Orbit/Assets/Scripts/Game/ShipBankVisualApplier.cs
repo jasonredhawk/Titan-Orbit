@@ -39,6 +39,9 @@ namespace TitanOrbit.Game
         [SerializeField] float bankSmoothingOverride = -1f;
 
         Entity _shipEntity;
+        bool _previewMode;
+        float _previewPlanarSpeed;
+        float _previewReferenceTurnDeg;
         ShipBankVisualSettings _settings;
         Transform _bankPivot;
         float _currentBankAngle;
@@ -80,6 +83,22 @@ namespace TitanOrbit.Game
                 bankSmoothingOverride = bankSmooth;
             EnsureBankPivotHierarchy();
             ResetBankingState();
+        }
+
+        /// <summary>Customize Ship hull — same BankPivot roll, no ghost entity.</summary>
+        public void BindPreview(ShipBankVisualSettings settings = null)
+        {
+            _previewMode = true;
+            Bind(Entity.Null, settings);
+            _previewMode = true;
+            // Studio turns are slower than fleet max; map a hard studio turn to peak roll.
+            _previewReferenceTurnDeg = 48f;
+        }
+
+        /// <summary>Planar speed for preview pitch (accel / coast).</summary>
+        public void SetPreviewPlanarSpeed(float planarSpeed)
+        {
+            _previewPlanarSpeed = Mathf.Max(0f, planarSpeed);
         }
 
         /// <summary>
@@ -148,8 +167,17 @@ namespace TitanOrbit.Game
         /// </summary>
         void LateUpdate()
         {
+            if (_bankPivot == null)
+                return;
+
+            if (_previewMode)
+            {
+                TickPreviewBank();
+                return;
+            }
+
             // --- Per-frame refresh ---
-            if (_shipEntity == Entity.Null || _bankPivot == null)
+            if (_shipEntity == Entity.Null)
                 return;
 
             var world = EcsGameBridge.GetVisualizationWorld();
@@ -196,6 +224,15 @@ namespace TitanOrbit.Game
             ApplyVisualPitch(em, dt);
         }
 
+        void TickPreviewBank()
+        {
+            float dt = Time.unscaledDeltaTime;
+            float smoothing = ResolveSmoothing();
+            SampleBankAngularVelocity(dt, smoothing);
+            ApplyVisualBanking(dt, smoothing);
+            // Speed-based pitch pulses the nozzles when studio speed retargets. Bank only.
+        }
+
         /// <summary>Peak roll from per-proxy override, else the bound asset / cache.</summary>
         float ResolveMaxBankAngle()
         {
@@ -226,10 +263,14 @@ namespace TitanOrbit.Game
         /// Yaw rate (°/s) treated as full turn. MEGA assets author a low reference so
         /// slow hulls still reach peak roll.
         /// </summary>
-        float ResolveReferenceTurn() =>
-            _settings != null
+        float ResolveReferenceTurn()
+        {
+            if (_previewMode && _previewReferenceTurnDeg > 1f)
+                return _previewReferenceTurnDeg;
+            return _settings != null
                 ? _settings.ResolveReferenceTurnDegreesPerSecond()
                 : ShipBankVisualSettingsCache.ReferenceTurnDegreesPerSecond;
+        }
 
         float ResolveMaxPitchDown() =>
             _settings != null
@@ -318,6 +359,8 @@ namespace TitanOrbit.Game
                 ResolveMaxBankAngle(),
                 ResolveReferenceTurn(),
                 ResolveSensitivity());
+            if (_previewMode)
+                targetBankAngle *= 0.6f;
 
             float bankT = 1f - Mathf.Exp(-smoothing * dt);
             _currentBankAngle = Mathf.Lerp(_currentBankAngle, targetBankAngle, bankT);
@@ -343,6 +386,30 @@ namespace TitanOrbit.Game
 
             _currentPitchAngle = ShipPropulsionAggregation.StepVisualPitch(
                 planarSpeed,
+                dt,
+                ResolveMaxPitchDown(),
+                ResolveMaxPitchUp(),
+                ResolveReferenceAccel(),
+                ResolvePitchSensitivity(),
+                ResolvePitchSmoothing(),
+                ResolveImpactDeltaSpeed(),
+                ResolveImpactDegreesPerSpeed(),
+                ResolveImpactDecay(),
+                ref _prevForwardSpeed,
+                ref _pitchSpeedInitialized,
+                ref _smoothedForwardAccel,
+                ref _accelPitchAngle,
+                ref _impactPitchAngle);
+            WritePivotRotation();
+        }
+
+        void ApplyPreviewPitch(float dt)
+        {
+            if (!_bankingInitialized)
+                return;
+
+            _currentPitchAngle = ShipPropulsionAggregation.StepVisualPitch(
+                _previewPlanarSpeed,
                 dt,
                 ResolveMaxPitchDown(),
                 ResolveMaxPitchUp(),

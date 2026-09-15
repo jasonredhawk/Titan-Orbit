@@ -14,7 +14,8 @@ namespace TitanOrbit.ECS
 {
     /// <summary>
     /// Server RPC handlers for moon orbit store: contributed gem balance queries, deposit intent,
-    /// ship level upgrades, drones/support items, extra components, card spin/take, and loadout remove.
+    /// ship level upgrades, drones/support items, extra components, card spin/take, loadout remove,
+    /// and the match-only rewarded +1 loadout slot.
     /// Validates team, planet id, and contributed gem balances before mutating ship/planet state.
     /// [TITAN-ORBIT] Drones, extra components, and card spins sell at
     /// <c>min(ship level, docked planet level)</c> — a high-level ship on a low-level moon
@@ -207,6 +208,17 @@ namespace TitanOrbit.ECS
                 bool ok = TryRemoveEquippedEquipmentForNetworkId(
                     state.EntityManager, networkId, cmd.ValueRO.SlotIndex, out var message);
                 SendStoreResult(ref ecb, req.ValueRO.SourceConnection, ok, message);
+                ecb.DestroyEntity(entity);
+            }
+
+            // --- Rewarded +1 loadout slot (one per ship / match) ---
+            foreach (var (req, entity) in SystemAPI
+                         .Query<RefRO<ReceiveRpcCommandRequest>>()
+                         .WithAll<ClaimRewardedBonusSlotCommand>()
+                         .WithEntityAccess())
+            {
+                int networkId = GetSenderNetworkId(state.EntityManager, req.ValueRO.SourceConnection);
+                TryClaimRewardedBonusSlotForNetworkId(state.EntityManager, networkId, out _);
                 ecb.DestroyEntity(entity);
             }
 
@@ -1126,17 +1138,57 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// Cards and gear share one LOADOUT pool: used = card buffer + equipment buffer, cap = ship level.
+        /// Cards and gear share one LOADOUT pool: used = card buffer + equipment buffer,
+        /// cap = ship level + optional rewarded bonus (<see cref="ShipLoadoutCapacity"/>).
         /// </summary>
         static bool HasEmptyLoadoutSlot(EntityManager em, Entity shipEntity, int shipLevel)
         {
-            int cap = math.max(1, shipLevel);
+            int bonus = 0;
+            if (em.HasComponent<ShipLoadoutState>(shipEntity))
+                bonus = em.GetComponentData<ShipLoadoutState>(shipEntity).LoadoutBonusSlots;
+            int cap = ShipLoadoutCapacity.GetCap(shipLevel, bonus);
             int used = 0;
             if (em.HasBuffer<EquippedCardElement>(shipEntity))
                 used += em.GetBuffer<EquippedCardElement>(shipEntity).Length;
             if (em.HasBuffer<EquippedEquipmentElement>(shipEntity))
                 used += em.GetBuffer<EquippedEquipmentElement>(shipEntity).Length;
             return used < cap;
+        }
+
+        /// <summary>
+        /// Grants the match-only extra loadout slot after the client reports a completed
+        /// rewarded ad (or remove-ads skip). Idempotent — a second claim is a no-op.
+        /// [NETCODE] Trusts the client watch in v1; rate-limit is "already 1".
+        /// </summary>
+        public static bool TryClaimRewardedBonusSlotForNetworkId(
+            EntityManager em,
+            int networkId,
+            out FixedString128Bytes message)
+        {
+            message = default;
+            if (!TryGetOwnedShip(em, networkId, out var shipEntity))
+            {
+                message = "Ship not found.";
+                return false;
+            }
+
+            if (!em.HasComponent<ShipLoadoutState>(shipEntity))
+            {
+                message = "No loadout.";
+                return false;
+            }
+
+            var loadout = em.GetComponentData<ShipLoadoutState>(shipEntity);
+            if (loadout.LoadoutBonusSlots >= ShipLoadoutCapacity.MaxBonusSlots)
+            {
+                message = "Bonus slot already unlocked.";
+                return false;
+            }
+
+            loadout.LoadoutBonusSlots = ShipLoadoutCapacity.MaxBonusSlots;
+            em.SetComponentData(shipEntity, loadout);
+            message = "Bonus slot unlocked.";
+            return true;
         }
 
         /// <summary>

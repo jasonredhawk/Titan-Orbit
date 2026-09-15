@@ -7,23 +7,26 @@ using UnityEngine.UI;
 namespace TitanOrbit.Game
 {
     /// <summary>
-    /// Main Menu profile-badge chip plus a cancelable full-grid overlay.
-    /// Built at runtime by <see cref="MainMenuPresenter"/> — client presentation only.
+    /// Profile-badge chip plus a cancelable full-grid overlay.
+    /// Hosted on <see cref="ShipCustomizeScreen"/> — client presentation only.
+    /// Overlay sorting sits above the customize studio (540) so the grid is clickable.
     /// </summary>
     public sealed class MainMenuBadgePicker : MonoBehaviour
     {
         public const string RootObjectName = "PlayerBadgePicker";
         public const string OverlayObjectName = "PlayerBadgeOverlay";
 
-        const int OverlaySortingOrder = 520;
-        const int GridColumns = 7;
-        const float TileSize = 72f;
+        const int OverlaySortingOrder = 560;
+        const int GridColumns = 8;
+        const float TileSize = 88f;
         const float TileSpacing = 8f;
 
-        static readonly Color RingSelected = new Color(1f, 0.82f, 0.35f, 0.95f);
-        static readonly Color EmptySlot = new Color(0.18f, 0.24f, 0.32f, 0.85f);
-        static readonly Color CaptionColor = new Color(0.72f, 0.84f, 0.96f, 0.92f);
-        static readonly Color PanelFill = new Color(0.04f, 0.07f, 0.12f, 0.94f);
+        static readonly Color RingSelected = new Color(0.95f, 0.78f, 0.22f, 0.95f);
+        static readonly Color EmptySlot = new Color(0.08f, 0.12f, 0.20f, 0.92f);
+        static readonly Color CaptionColor = new Color(0.62f, 0.78f, 0.95f, 0.92f);
+        static readonly Color PanelFill = new Color(0.012f, 0.016f, 0.028f, 0.96f);
+        static readonly Color AccentCyan = new Color(0.42f, 0.78f, 0.98f, 0.95f);
+        static readonly Color FrameTint = new Color(0.22f, 0.36f, 0.52f, 0.55f);
 
         Image _chipImage;
         Image _chipRing;
@@ -68,7 +71,7 @@ namespace TitanOrbit.Game
                 _chipRing.color = Color.clear;
 
             if (_caption != null)
-                _caption.text = hasSprite ? "Change badge" : "No badge";
+                _caption.text = string.Empty;
         }
 
         /// <summary>Saves no emblem and closes the overlay if it is open.</summary>
@@ -104,6 +107,13 @@ namespace TitanOrbit.Game
 
         void EnsureOverlay()
         {
+            if (_overlayRoot != null && _overlayRoot.Find("Panel/BadgeLayout_v2") == null)
+            {
+                Destroy(_overlayRoot.gameObject);
+                _overlayRoot = null;
+                _gridBuilt = false;
+            }
+
             if (_overlayRoot != null)
                 return;
 
@@ -137,43 +147,59 @@ namespace TitanOrbit.Game
             var backdropGo = CreateUi("Backdrop", _overlayRoot, typeof(Image), typeof(Button));
             StretchFull(backdropGo.GetComponent<RectTransform>());
             var backdropImage = backdropGo.GetComponent<Image>();
-            backdropImage.color = new Color(0.02f, 0.04f, 0.08f, 0.72f);
+            backdropImage.color = new Color(0.02f, 0.04f, 0.08f, 0.58f);
             backdropImage.raycastTarget = true;
             var backdropBtn = backdropGo.GetComponent<Button>();
             backdropBtn.transition = Selectable.Transition.None;
             backdropBtn.onClick.AddListener(CancelOverlay);
 
             // --- Centered glass panel ---
-            var panelGo = CreateUi("Panel", _overlayRoot, typeof(Image));
+            var panelGo = CreateUi("Panel", _overlayRoot, typeof(Image), typeof(Outline));
             var panelRt = panelGo.GetComponent<RectTransform>();
             panelRt.anchorMin = new Vector2(0.5f, 0.5f);
             panelRt.anchorMax = new Vector2(0.5f, 0.5f);
             panelRt.pivot = new Vector2(0.5f, 0.5f);
-            panelRt.sizeDelta = new Vector2(740f, 640f);
+            panelRt.sizeDelta = new Vector2(920f, 680f);
             panelRt.anchoredPosition = Vector2.zero;
             var panelImage = panelGo.GetComponent<Image>();
             panelImage.color = PanelFill;
             panelImage.raycastTarget = true;
+            var outline = panelGo.GetComponent<Outline>();
+            outline.effectColor = FrameTint;
+            outline.effectDistance = new Vector2(1.5f, -1.5f);
 
-            var title = CreateTmp(panelGo.transform, "Title", "Choose a badge", 26f, FontStyles.Bold);
+            var railGo = CreateUi("TopRail", panelGo.transform, typeof(Image));
+            var railRt = railGo.GetComponent<RectTransform>();
+            railRt.anchorMin = new Vector2(0f, 1f);
+            railRt.anchorMax = new Vector2(1f, 1f);
+            railRt.pivot = new Vector2(0.5f, 1f);
+            railRt.sizeDelta = new Vector2(0f, 3f);
+            railRt.anchoredPosition = Vector2.zero;
+            railGo.GetComponent<Image>().color = AccentCyan;
+            railGo.GetComponent<Image>().raycastTarget = false;
+
+            CreateUi("BadgeLayout_v2", panelGo.transform);
+
+            var title = CreateTmp(panelGo.transform, "Title", "CHOOSE BADGE", 22f, FontStyles.Bold);
             var titleRt = title.rectTransform;
             titleRt.anchorMin = new Vector2(0f, 1f);
             titleRt.anchorMax = new Vector2(1f, 1f);
             titleRt.pivot = new Vector2(0.5f, 1f);
-            titleRt.sizeDelta = new Vector2(-32f, 44f);
-            titleRt.anchoredPosition = new Vector2(0f, -16f);
+            titleRt.sizeDelta = new Vector2(-32f, 40f);
+            titleRt.anchoredPosition = new Vector2(0f, -14f);
             title.alignment = TextAlignmentOptions.Center;
-            title.color = CaptionColor;
+            title.color = AccentCyan;
+            title.characterSpacing = 1.8f;
 
             // --- Scrollable grid ---
             var scrollGo = CreateUi("Scroll", panelGo.transform, typeof(Image), typeof(ScrollRect), typeof(RectMask2D));
             var scrollRt = scrollGo.GetComponent<RectTransform>();
             scrollRt.anchorMin = new Vector2(0f, 0f);
             scrollRt.anchorMax = new Vector2(1f, 1f);
-            scrollRt.offsetMin = new Vector2(20f, 72f);
-            scrollRt.offsetMax = new Vector2(-20f, -68f);
+            scrollRt.offsetMin = new Vector2(16f, 68f);
+            scrollRt.offsetMax = new Vector2(-16f, -58f);
             var scrollBg = scrollGo.GetComponent<Image>();
-            scrollBg.color = new Color(0f, 0f, 0f, 0.28f);
+            scrollBg.color = new Color(0.02f, 0.04f, 0.08f, 0.55f);
             scrollBg.raycastTarget = true;
 
             var viewportGo = CreateUi("Viewport", scrollGo.transform, typeof(RectMask2D));
@@ -357,6 +383,10 @@ namespace TitanOrbit.Game
             go.GetComponent<Button>().onClick.AddListener(() => SelectBadge(capturedId));
         }
 
+        /// <summary>
+        /// Applies the tile. Owners persist it. Free players only preview while
+        /// Customize Ship is open — <see cref="LocalPlayerBadge.Set"/> skips prefs.
+        /// </summary>
         void SelectBadge(int badgeId)
         {
             LocalPlayerBadge.Set(badgeId);

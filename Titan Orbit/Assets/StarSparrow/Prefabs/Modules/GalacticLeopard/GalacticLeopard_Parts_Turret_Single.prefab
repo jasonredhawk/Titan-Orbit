@@ -11,7 +11,7 @@ GameObject:
   - component: {fileID: 2352006120413541057}
   m_Layer: 0
   m_Name: GalacticLeopard_Parts_Turret_Single
-  m_TagString: Gun
+  m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
@@ -168,6 +168,10 @@ PrefabInstance:
       propertyPath: m_ConstrainProportionsScale
       value: 0
       objectReference: {fileID: 0}
+    - target: {fileID: 3346196893000781717, guid: 562c2b1c9e5d53244970ef0de59b64f4, type: 3}
+      propertyPath: m_Materials.Array.data[0]
+      value: 
+      objectReference: {fileID: 2100000, guid: 1a1fa6471f5fd794387206de323475d1, type: 2}
     - target: {fileID: 7558609140708258907, guid: 562c2b1c9e5d53244970ef0de59b64f4, type: 3}
       propertyPath: m_Name
       value: GalacticLeopard_Parts_Cylinder
@@ -250,6 +254,10 @@ PrefabInstance:
       propertyPath: m_ConstrainProportionsScale
       value: 1
       objectReference: {fileID: 0}
+    - target: {fileID: 3346196893000781717, guid: 562c2b1c9e5d53244970ef0de59b64f4, type: 3}
+      propertyPath: m_Materials.Array.data[0]
+      value: 
+      objectReference: {fileID: 2100000, guid: 1a1fa6471f5fd794387206de323475d1, type: 2}
     - target: {fileID: 7558609140708258907, guid: 562c2b1c9e5d53244970ef0de59b64f4, type: 3}
       propertyPath: m_Name
       value: GalacticLeopard_Parts_Cylinder_Right
@@ -332,6 +340,10 @@ PrefabInstance:
       propertyPath: m_ConstrainProportionsScale
       value: 0
       objectReference: {fileID: 0}
+    - target: {fileID: 3346196893000781717, guid: 562c2b1c9e5d53244970ef0de59b64f4, type: 3}
+      propertyPath: m_Materials.Array.data[0]
+      value: 
+      objectReference: {fileID: 2100000, guid: 1a1fa6471f5fd794387206de323475d1, type: 2}
     - target: {fileID: 7558609140708258907, guid: 562c2b1c9e5d53244970ef0de59b64f4, type: 3}
       propertyPath: m_Name
       value: GalacticLeopard_Parts_Cylinder_Left
@@ -418,6 +430,10 @@ PrefabInstance:
       propertyPath: m_Name
       value: GalacticLeopard_Parts_Turret
       objectReference: {fileID: 0}
+    - target: {fileID: 6651495040775715331, guid: bc6177e3ac49cac4ca9171bac7fed2a7, type: 3}
+      propertyPath: m_Materials.Array.data[0]
+      value: 
+      objectReference: {fileID: 2100000, guid: 1a1fa6471f5fd794387206de323475d1, type: 2}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
     m_AddedGameObjects: []
@@ -500,6 +516,10 @@ PrefabInstance:
       propertyPath: m_Name
       value: GalacticLeopard_Parts_Gun
       objectReference: {fileID: 0}
+    - target: {fileID: 6503740396480252911, guid: 3a931d7ea0d891a498daf202a7d6a8c2, type: 3}
+      propertyPath: m_Materials.Array.data[0]
+      value: 
+      objectReference: {fileID: 2100000, guid: 1a1fa6471f5fd794387206de323475d1, type: 2}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
     m_AddedGameObjects: []

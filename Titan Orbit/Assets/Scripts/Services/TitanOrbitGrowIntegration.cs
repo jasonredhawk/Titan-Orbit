@@ -26,9 +26,15 @@ namespace TitanOrbit.Services
             IsAdvertisementInitialized = false;
             if (!TitanOrbitAdsGate.ShouldShowAds)
             {
-                Debug.Log("[TitanOrbitGrowIntegration] Skipping Ads init (remove-ads entitlement active).");
+                Debug.Log("[TitanOrbitGrowIntegration] Skipping Ads init (Orbit Unlocked entitlement active).");
                 return;
             }
+
+            // Rewarded video lives on TitanOrbitRewardedAds (Google IMA WebGL / LevelPlay mobile).
+            // androidGameId / iOSGameId stay as Inspector placeholders for a future UA dashboard.
+            var rewarded = GetComponent<TitanOrbitRewardedAds>();
+            if (rewarded != null)
+                rewarded.TryInitializeBackends();
 
 #if UNITY_ANDROID
             string gameId = androidGameId;
@@ -39,11 +45,12 @@ namespace TitanOrbit.Services
 #endif
             if (string.IsNullOrWhiteSpace(gameId))
             {
-                Debug.Log("[TitanOrbitGrowIntegration] Skipping Ads init (no Game ID for this platform).");
+                Debug.Log("[TitanOrbitGrowIntegration] No legacy Game ID for this platform (rewarded facade still inits).");
                 return;
             }
 
-            Debug.Log("[TitanOrbitGrowIntegration] Ads SDK not integrated (Unity Ads package removed); Game ID ignored until package is restored.");
+            IsAdvertisementInitialized = true;
+            Debug.Log("[TitanOrbitGrowIntegration] Rewarded ads facade initialized; legacy Unity Ads Game ID is unused.");
         }
 
         public static void LogUaFunnelEvent(string eventName, string parameterJson = null)

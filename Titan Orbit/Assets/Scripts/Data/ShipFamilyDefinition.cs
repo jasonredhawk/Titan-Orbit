@@ -298,6 +298,32 @@ namespace TitanOrbit.Data
             }
         }
 
+        /// <summary>
+        /// One Colorize material set for this family. Color1 is not taken from the
+        /// .mat — <see cref="TeamColor1Palette"/> writes it at apply time so every
+        /// team shares the same Colorize asset.
+        /// Prefers the Team A slot, then the first non-empty set.
+        /// </summary>
+        public List<Material> GetColorizeBaseMaterials()
+        {
+            if (teamMaterials == null || teamMaterials.Count == 0)
+                return null;
+
+            List<Material> fallback = null;
+            for (int i = 0; i < teamMaterials.Count; i++)
+            {
+                var set = teamMaterials[i];
+                if (set == null || set.materials == null || set.materials.Count == 0)
+                    continue;
+                if (set.team == TeamId.TeamA)
+                    return set.materials;
+                if (fallback == null)
+                    fallback = set.materials;
+            }
+
+            return fallback;
+        }
+
         /// <summary>Team-tinted hull materials for visual proxies, or null when none are configured.</summary>
         public List<Material> GetMaterialsForTeam(TeamId team)
         {
@@ -416,12 +442,13 @@ namespace TitanOrbit.Data
             return false;
         }
 
-        /// <summary>Menu thumbnail for a purchasable component; team variant when available.</summary>
+        /// <summary>Menu thumbnail for a purchasable component; theatrical first, then top-down.</summary>
         public Sprite GetMenuPreviewSpriteForComponent(string componentId, TeamManager.Team team = TeamManager.Team.None)
         {
-            return TryGetComponentEntry(componentId, out ShipFamilyComponentEntry entry) && entry != null
-                ? entry.GetMenuPreviewSprite(team)
-                : null;
+            if (!TryGetComponentEntry(componentId, out ShipFamilyComponentEntry entry) || entry == null)
+                return null;
+            Sprite theatrical = entry.GetTheatricalMenuPreviewSprite(team);
+            return theatrical != null ? theatrical : entry.GetMenuPreviewSprite(team);
         }
 
         /// <summary>
@@ -798,36 +825,53 @@ namespace TitanOrbit.Data
             return true;
         }
 
-        /// <summary>Top-down menu sprite, preferring a team tint when available.</summary>
+        /// <summary>
+        /// Menu thumbnail for this hull. Prefers a team-tinted top-down sprite, then the
+        /// shared top-down slot. Theatrical generate only writes <see cref="theatricalMenuPreviewSprite"/>
+        /// / <see cref="teamTheatricalMenuPreviewSprites"/>, so those are the fallback —
+        /// otherwise the upgrade tree stays blank after a theatrical rebuild.
+        /// </summary>
         public Sprite GetMenuPreviewSprite(TeamManager.Team team = TeamManager.Team.None)
         {
-            if (team != TeamManager.Team.None && teamMenuPreviewSprites != null)
-            {
-                for (int i = 0; i < teamMenuPreviewSprites.Count; i++)
-                {
-                    var entry = teamMenuPreviewSprites[i];
-                    if (entry != null && entry.team == team && entry.sprite != null)
-                        return entry.sprite;
-                }
-            }
+            Sprite teamSprite = FindTeamMenuPreview(teamMenuPreviewSprites, team);
+            if (teamSprite != null)
+                return teamSprite;
+            if (menuPreviewSprite != null)
+                return menuPreviewSprite;
 
-            return menuPreviewSprite;
+            teamSprite = FindTeamMenuPreview(teamTheatricalMenuPreviewSprites, team);
+            if (teamSprite != null)
+                return teamSprite;
+            return theatricalMenuPreviewSprite;
         }
 
-        /// <summary>Theatrical menu sprite, preferring a team tint when available.</summary>
+        /// <summary>
+        /// 3/4 hero thumbnail. Team theatrical first, then the shared theatrical slot,
+        /// then <see cref="GetMenuPreviewSprite"/> so a family that only ran top-down
+        /// generate still has a thumb.
+        /// </summary>
         public Sprite GetTheatricalMenuPreviewSprite(TeamManager.Team team = TeamManager.Team.None)
         {
-            if (team != TeamManager.Team.None && teamTheatricalMenuPreviewSprites != null)
+            Sprite teamSprite = FindTeamMenuPreview(teamTheatricalMenuPreviewSprites, team);
+            if (teamSprite != null)
+                return teamSprite;
+            if (theatricalMenuPreviewSprite != null)
+                return theatricalMenuPreviewSprite;
+            return GetMenuPreviewSprite(team);
+        }
+
+        static Sprite FindTeamMenuPreview(List<ShipFamilyTeamMenuPreview> list, TeamManager.Team team)
+        {
+            if (team == TeamManager.Team.None || list == null)
+                return null;
+            for (int i = 0; i < list.Count; i++)
             {
-                for (int i = 0; i < teamTheatricalMenuPreviewSprites.Count; i++)
-                {
-                    var entry = teamTheatricalMenuPreviewSprites[i];
-                    if (entry != null && entry.team == team && entry.sprite != null)
-                        return entry.sprite;
-                }
+                ShipFamilyTeamMenuPreview entry = list[i];
+                if (entry != null && entry.team == team && entry.sprite != null)
+                    return entry.sprite;
             }
 
-            return theatricalMenuPreviewSprite != null ? theatricalMenuPreviewSprite : GetMenuPreviewSprite(team);
+            return null;
         }
     }
 

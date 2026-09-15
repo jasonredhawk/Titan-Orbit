@@ -23,6 +23,7 @@ Transform:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 8455558745181638477}
+  serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
   m_LocalPosition: {x: 0, y: 0, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
@@ -31,13 +32,13 @@ Transform:
   - {fileID: 8695266132140984382}
   - {fileID: 486569707279713306}
   m_Father: {fileID: 0}
-  m_RootOrder: 0
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1001 &6927576380465498558
 PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 8595837349404826432}
     m_Modifications:
     - target: {fileID: 1767795318750429568, guid: f9047d0ddaffc4043bf4a02aac8a5778, type: 3}
@@ -104,7 +105,14 @@ PrefabInstance:
       propertyPath: m_Name
       value: GalacticOkamoto_Cannon
       objectReference: {fileID: 0}
+    - target: {fileID: 4628187643786464469, guid: f9047d0ddaffc4043bf4a02aac8a5778, type: 3}
+      propertyPath: m_Materials.Array.data[0]
+      value: 
+      objectReference: {fileID: 2100000, guid: 2135d2ecccef090409d66c30e819151f, type: 2}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: f9047d0ddaffc4043bf4a02aac8a5778, type: 3}
 --- !u!4 &8695266132140984382 stripped
 Transform:
@@ -116,8 +124,13 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 8595837349404826432}
     m_Modifications:
+    - target: {fileID: 3218383870517834651, guid: 43d8119995ba5f44c8b15836004c3021, type: 3}
+      propertyPath: m_Materials.Array.data[0]
+      value: 
+      objectReference: {fileID: 2100000, guid: 2135d2ecccef090409d66c30e819151f, type: 2}
     - target: {fileID: 7111236803608818000, guid: 43d8119995ba5f44c8b15836004c3021, type: 3}
       propertyPath: m_RootOrder
       value: 1
@@ -183,6 +196,9 @@ PrefabInstance:
       value: GalacticOkamoto_Cylinder
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 43d8119995ba5f44c8b15836004c3021, type: 3}
 --- !u!4 &486569707279713306 stripped
 Transform:

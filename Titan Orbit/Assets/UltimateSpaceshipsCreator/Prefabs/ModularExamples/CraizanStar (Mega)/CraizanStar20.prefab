@@ -23,6 +23,7 @@ Transform:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1111805434254120}
+  serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
   m_LocalPosition: {x: 0, y: 0, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
@@ -72,18 +73,18 @@ Transform:
   - {fileID: 5946966932759543093}
   - {fileID: 6873285631327202003}
   m_Father: {fileID: 0}
-  m_RootOrder: 0
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1001 &323631133244519318
 PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 4686739784175758}
     m_Modifications:
     - target: {fileID: 1185174424723782, guid: adc16851098e8894d9f37347f8426284, type: 3}
       propertyPath: m_Name
-      value: Armor2
+      value: CraizanStar_Armor2
       objectReference: {fileID: 0}
     - target: {fileID: 4153253780729582, guid: adc16851098e8894d9f37347f8426284, type: 3}
       propertyPath: m_RootOrder
@@ -144,8 +145,11 @@ PrefabInstance:
     - target: {fileID: 23414658811662378, guid: adc16851098e8894d9f37347f8426284, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: ddb74acf01f685b4b8e1b6e2349f8220, type: 2}
+      objectReference: {fileID: 2100000, guid: 0c52168353c6a544abd363a517253aee, type: 2}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: adc16851098e8894d9f37347f8426284, type: 3}
 --- !u!4 &320606122275298680 stripped
 Transform:
@@ -157,11 +161,12 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 4686739784175758}
     m_Modifications:
     - target: {fileID: 1699785298376444, guid: 120acd9bf011e2a45955917c3099c33c, type: 3}
       propertyPath: m_Name
-      value: Sensor
+      value: CraizanStar_Sensor
       objectReference: {fileID: 0}
     - target: {fileID: 4573051773231406, guid: 120acd9bf011e2a45955917c3099c33c, type: 3}
       propertyPath: m_RootOrder
@@ -222,8 +227,11 @@ PrefabInstance:
     - target: {fileID: 23828785073911076, guid: 120acd9bf011e2a45955917c3099c33c, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: ddb74acf01f685b4b8e1b6e2349f8220, type: 2}
+      objectReference: {fileID: 2100000, guid: 0c52168353c6a544abd363a517253aee, type: 2}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 120acd9bf011e2a45955917c3099c33c, type: 3}
 --- !u!4 &710135170507361124 stripped
 Transform:
@@ -235,11 +243,12 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 4686739784175758}
     m_Modifications:
     - target: {fileID: 1465370761673820, guid: 326d4e9164c0ce64dbf3cb942f074c3f, type: 3}
       propertyPath: m_Name
-      value: TurretBarrel
+      value: CraizanStar_TurretBarrel
       objectReference: {fileID: 0}
     - target: {fileID: 4950487878895496, guid: 326d4e9164c0ce64dbf3cb942f074c3f, type: 3}
       propertyPath: m_RootOrder
@@ -300,8 +309,11 @@ PrefabInstance:
     - target: {fileID: 23527343254484034, guid: 326d4e9164c0ce64dbf3cb942f074c3f, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: ddb74acf01f685b4b8e1b6e2349f8220, type: 2}
+      objectReference: {fileID: 2100000, guid: 0c52168353c6a544abd363a517253aee, type: 2}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 326d4e9164c0ce64dbf3cb942f074c3f, type: 3}
 --- !u!4 &1103522337217612387 stripped
 Transform:
@@ -313,11 +325,12 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 4686739784175758}
     m_Modifications:
     - target: {fileID: 1185174424723782, guid: adc16851098e8894d9f37347f8426284, type: 3}
       propertyPath: m_Name
-      value: Armor2
+      value: CraizanStar_Armor2
       objectReference: {fileID: 0}
     - target: {fileID: 4153253780729582, guid: adc16851098e8894d9f37347f8426284, type: 3}
       propertyPath: m_RootOrder
@@ -378,8 +391,11 @@ PrefabInstance:
     - target: {fileID: 23414658811662378, guid: adc16851098e8894d9f37347f8426284, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: ddb74acf01f685b4b8e1b6e2349f8220, type: 2}
+      objectReference: {fileID: 2100000, guid: 0c52168353c6a544abd363a517253aee, type: 2}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: adc16851098e8894d9f37347f8426284, type: 3}
 --- !u!4 &1377675376044083796 stripped
 Transform:
@@ -391,11 +407,12 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 4686739784175758}
     m_Modifications:
     - target: {fileID: 1185174424723782, guid: adc16851098e8894d9f37347f8426284, type: 3}
       propertyPath: m_Name
-      value: Armor2
+      value: CraizanStar_Armor2
       objectReference: {fileID: 0}
     - target: {fileID: 4153253780729582, guid: adc16851098e8894d9f37347f8426284, type: 3}
       propertyPath: m_RootOrder
@@ -456,8 +473,11 @@ PrefabInstance:
     - target: {fileID: 23414658811662378, guid: adc16851098e8894d9f37347f8426284, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: ddb74acf01f685b4b8e1b6e2349f8220, type: 2}
+      objectReference: {fileID: 2100000, guid: 0c52168353c6a544abd363a517253aee, type: 2}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: adc16851098e8894d9f37347f8426284, type: 3}
 --- !u!4 &1511326872589514289 stripped
 Transform:
@@ -469,11 +489,12 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 4686739784175758}
     m_Modifications:
     - target: {fileID: 1258842376771910, guid: 73190387ad6a8464781588a55cba0c31, type: 3}
       propertyPath: m_Name
-      value: Wing2
+      value: CraizanStar_Wing2
       objectReference: {fileID: 0}
     - target: {fileID: 4612737358984860, guid: 73190387ad6a8464781588a55cba0c31, type: 3}
       propertyPath: m_RootOrder
@@ -534,8 +555,11 @@ PrefabInstance:
     - target: {fileID: 23745258395567244, guid: 73190387ad6a8464781588a55cba0c31, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: ddb74acf01f685b4b8e1b6e2349f8220, type: 2}
+      objectReference: {fileID: 2100000, guid: 0c52168353c6a544abd363a517253aee, type: 2}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 73190387ad6a8464781588a55cba0c31, type: 3}
 --- !u!4 &1708087157059276868 stripped
 Transform:
@@ -547,11 +571,12 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 4686739784175758}
     m_Modifications:
     - target: {fileID: 1185174424723782, guid: adc16851098e8894d9f37347f8426284, type: 3}
       propertyPath: m_Name
-      value: Armor2
+      value: CraizanStar_Armor2
       objectReference: {fileID: 0}
     - target: {fileID: 4153253780729582, guid: adc16851098e8894d9f37347f8426284, type: 3}
       propertyPath: m_RootOrder
@@ -612,8 +637,11 @@ PrefabInstance:
     - target: {fileID: 23414658811662378, guid: adc16851098e8894d9f37347f8426284, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: ddb74acf01f685b4b8e1b6e2349f8220, type: 2}
+      objectReference: {fileID: 2100000, guid: 0c52168353c6a544abd363a517253aee, type: 2}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: adc16851098e8894d9f37347f8426284, type: 3}
 --- !u!4 &1746942083572521155 stripped
 Transform:
@@ -625,11 +653,12 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 4686739784175758}
     m_Modifications:
     - target: {fileID: 1185174424723782, guid: adc16851098e8894d9f37347f8426284, type: 3}
       propertyPath: m_Name
-      value: Armor2
+      value: CraizanStar_Armor2
       objectReference: {fileID: 0}
     - target: {fileID: 4153253780729582, guid: adc16851098e8894d9f37347f8426284, type: 3}
       propertyPath: m_RootOrder
@@ -690,8 +719,11 @@ PrefabInstance:
     - target: {fileID: 23414658811662378, guid: adc16851098e8894d9f37347f8426284, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: ddb74acf01f685b4b8e1b6e2349f8220, type: 2}
+      objectReference: {fileID: 2100000, guid: 0c52168353c6a544abd363a517253aee, type: 2}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: adc16851098e8894d9f37347f8426284, type: 3}
 --- !u!4 &1776832155144678420 stripped
 Transform:
@@ -703,11 +735,12 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 4686739784175758}
     m_Modifications:
     - target: {fileID: 1185174424723782, guid: adc16851098e8894d9f37347f8426284, type: 3}
       propertyPath: m_Name
-      value: Armor2
+      value: CraizanStar_Armor2
       objectReference: {fileID: 0}
     - target: {fileID: 4153253780729582, guid: adc16851098e8894d9f37347f8426284, type: 3}
       propertyPath: m_RootOrder
@@ -768,8 +801,11 @@ PrefabInstance:
     - target: {fileID: 23414658811662378, guid: adc16851098e8894d9f37347f8426284, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: ddb74acf01f685b4b8e1b6e2349f8220, type: 2}
+      objectReference: {fileID: 2100000, guid: 0c52168353c6a544abd363a517253aee, type: 2}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: adc16851098e8894d9f37347f8426284, type: 3}
 --- !u!4 &2152837231128921248 stripped
 Transform:
@@ -781,11 +817,12 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 4686739784175758}
     m_Modifications:
     - target: {fileID: 1258842376771910, guid: 73190387ad6a8464781588a55cba0c31, type: 3}
       propertyPath: m_Name
-      value: Wing2
+      value: CraizanStar_Wing2
       objectReference: {fileID: 0}
     - target: {fileID: 4612737358984860, guid: 73190387ad6a8464781588a55cba0c31, type: 3}
       propertyPath: m_RootOrder
@@ -846,8 +883,11 @@ PrefabInstance:
     - target: {fileID: 23745258395567244, guid: 73190387ad6a8464781588a55cba0c31, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: ddb74acf01f685b4b8e1b6e2349f8220, type: 2}
+      objectReference: {fileID: 2100000, guid: 0c52168353c6a544abd363a517253aee, type: 2}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 73190387ad6a8464781588a55cba0c31, type: 3}
 --- !u!4 &2426103914806682837 stripped
 Transform:
@@ -859,11 +899,12 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 4686739784175758}
     m_Modifications:
     - target: {fileID: 1185174424723782, guid: adc16851098e8894d9f37347f8426284, type: 3}
       propertyPath: m_Name
-      value: Armor2
+      value: CraizanStar_Armor2
       objectReference: {fileID: 0}
     - target: {fileID: 4153253780729582, guid: adc16851098e8894d9f37347f8426284, type: 3}
       propertyPath: m_RootOrder
@@ -924,8 +965,11 @@ PrefabInstance:
     - target: {fileID: 23414658811662378, guid: adc16851098e8894d9f37347f8426284, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: ddb74acf01f685b4b8e1b6e2349f8220, type: 2}
+      objectReference: {fileID: 2100000, guid: 0c52168353c6a544abd363a517253aee, type: 2}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: adc16851098e8894d9f37347f8426284, type: 3}
 --- !u!4 &3153789092594126891 stripped
 Transform:
@@ -937,11 +981,12 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 4686739784175758}
     m_Modifications:
     - target: {fileID: 1700123076580534, guid: b0616e3b00e8f8146b812d8cece89cb3, type: 3}
       propertyPath: m_Name
-      value: TurretBase
+      value: CraizanStar_TurretBase
       objectReference: {fileID: 0}
     - target: {fileID: 4488950482002084, guid: b0616e3b00e8f8146b812d8cece89cb3, type: 3}
       propertyPath: m_RootOrder
@@ -1002,8 +1047,11 @@ PrefabInstance:
     - target: {fileID: 23075987322769564, guid: b0616e3b00e8f8146b812d8cece89cb3, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: ddb74acf01f685b4b8e1b6e2349f8220, type: 2}
+      objectReference: {fileID: 2100000, guid: 0c52168353c6a544abd363a517253aee, type: 2}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: b0616e3b00e8f8146b812d8cece89cb3, type: 3}
 --- !u!4 &3331548890887592208 stripped
 Transform:
@@ -1015,11 +1063,12 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 4686739784175758}
     m_Modifications:
     - target: {fileID: 1258842376771910, guid: 73190387ad6a8464781588a55cba0c31, type: 3}
       propertyPath: m_Name
-      value: Wing2
+      value: CraizanStar_Wing2
       objectReference: {fileID: 0}
     - target: {fileID: 4612737358984860, guid: 73190387ad6a8464781588a55cba0c31, type: 3}
       propertyPath: m_RootOrder
@@ -1080,8 +1129,11 @@ PrefabInstance:
     - target: {fileID: 23745258395567244, guid: 73190387ad6a8464781588a55cba0c31, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: ddb74acf01f685b4b8e1b6e2349f8220, type: 2}
+      objectReference: {fileID: 2100000, guid: 0c52168353c6a544abd363a517253aee, type: 2}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 73190387ad6a8464781588a55cba0c31, type: 3}
 --- !u!4 &3365846545502670105 stripped
 Transform:
@@ -1093,11 +1145,12 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 4686739784175758}
     m_Modifications:
     - target: {fileID: 1185174424723782, guid: adc16851098e8894d9f37347f8426284, type: 3}
       propertyPath: m_Name
-      value: Armor2
+      value: CraizanStar_Armor2
       objectReference: {fileID: 0}
     - target: {fileID: 4153253780729582, guid: adc16851098e8894d9f37347f8426284, type: 3}
       propertyPath: m_RootOrder
@@ -1158,8 +1211,11 @@ PrefabInstance:
     - target: {fileID: 23414658811662378, guid: adc16851098e8894d9f37347f8426284, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: ddb74acf01f685b4b8e1b6e2349f8220, type: 2}
+      objectReference: {fileID: 2100000, guid: 0c52168353c6a544abd363a517253aee, type: 2}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: adc16851098e8894d9f37347f8426284, type: 3}
 --- !u!4 &3587684808435857630 stripped
 Transform:
@@ -1171,11 +1227,12 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 4686739784175758}
     m_Modifications:
     - target: {fileID: 1308047364023698, guid: 3a5b01afb130c134890047606764c94a, type: 3}
       propertyPath: m_Name
-      value: MissileLauncher
+      value: CraizanStar_MissileLauncher
       objectReference: {fileID: 0}
     - target: {fileID: 4217056097432120, guid: 3a5b01afb130c134890047606764c94a, type: 3}
       propertyPath: m_RootOrder
@@ -1236,8 +1293,11 @@ PrefabInstance:
     - target: {fileID: 23014094176438610, guid: 3a5b01afb130c134890047606764c94a, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: ddb74acf01f685b4b8e1b6e2349f8220, type: 2}
+      objectReference: {fileID: 2100000, guid: 0c52168353c6a544abd363a517253aee, type: 2}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 3a5b01afb130c134890047606764c94a, type: 3}
 --- !u!4 &3804825825812876397 stripped
 Transform:
@@ -1249,11 +1309,12 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 4686739784175758}
     m_Modifications:
     - target: {fileID: 1685437231852996, guid: aa5dd5e111eeb954395fb58800590938, type: 3}
       propertyPath: m_Name
-      value: Thruster
+      value: CraizanStar_Thruster
       objectReference: {fileID: 0}
     - target: {fileID: 4697777960249628, guid: aa5dd5e111eeb954395fb58800590938, type: 3}
       propertyPath: m_RootOrder
@@ -1314,8 +1375,11 @@ PrefabInstance:
     - target: {fileID: 23116630890531826, guid: aa5dd5e111eeb954395fb58800590938, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: ddb74acf01f685b4b8e1b6e2349f8220, type: 2}
+      objectReference: {fileID: 2100000, guid: 0c52168353c6a544abd363a517253aee, type: 2}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: aa5dd5e111eeb954395fb58800590938, type: 3}
 --- !u!4 &3817181219579875033 stripped
 Transform:
@@ -1327,11 +1391,12 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 4686739784175758}
     m_Modifications:
     - target: {fileID: 1308047364023698, guid: 3a5b01afb130c134890047606764c94a, type: 3}
       propertyPath: m_Name
-      value: MissileLauncher
+      value: CraizanStar_MissileLauncher
       objectReference: {fileID: 0}
     - target: {fileID: 4217056097432120, guid: 3a5b01afb130c134890047606764c94a, type: 3}
       propertyPath: m_RootOrder
@@ -1392,8 +1457,11 @@ PrefabInstance:
     - target: {fileID: 23014094176438610, guid: 3a5b01afb130c134890047606764c94a, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: ddb74acf01f685b4b8e1b6e2349f8220, type: 2}
+      objectReference: {fileID: 2100000, guid: 0c52168353c6a544abd363a517253aee, type: 2}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 3a5b01afb130c134890047606764c94a, type: 3}
 --- !u!4 &3811119334545296274 stripped
 Transform:
@@ -1405,11 +1473,12 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 4686739784175758}
     m_Modifications:
     - target: {fileID: 1185174424723782, guid: adc16851098e8894d9f37347f8426284, type: 3}
       propertyPath: m_Name
-      value: Armor2
+      value: CraizanStar_Armor2
       objectReference: {fileID: 0}
     - target: {fileID: 4153253780729582, guid: adc16851098e8894d9f37347f8426284, type: 3}
       propertyPath: m_RootOrder
@@ -1470,8 +1539,11 @@ PrefabInstance:
     - target: {fileID: 23414658811662378, guid: adc16851098e8894d9f37347f8426284, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: ddb74acf01f685b4b8e1b6e2349f8220, type: 2}
+      objectReference: {fileID: 2100000, guid: 0c52168353c6a544abd363a517253aee, type: 2}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: adc16851098e8894d9f37347f8426284, type: 3}
 --- !u!4 &3875662820545798240 stripped
 Transform:
@@ -1483,11 +1555,12 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 4686739784175758}
     m_Modifications:
     - target: {fileID: 1185174424723782, guid: adc16851098e8894d9f37347f8426284, type: 3}
       propertyPath: m_Name
-      value: Armor2
+      value: CraizanStar_Armor2
       objectReference: {fileID: 0}
     - target: {fileID: 4153253780729582, guid: adc16851098e8894d9f37347f8426284, type: 3}
       propertyPath: m_RootOrder
@@ -1548,8 +1621,11 @@ PrefabInstance:
     - target: {fileID: 23414658811662378, guid: adc16851098e8894d9f37347f8426284, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: ddb74acf01f685b4b8e1b6e2349f8220, type: 2}
+      objectReference: {fileID: 2100000, guid: 0c52168353c6a544abd363a517253aee, type: 2}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: adc16851098e8894d9f37347f8426284, type: 3}
 --- !u!4 &3891672667260678951 stripped
 Transform:
@@ -1561,11 +1637,12 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 4686739784175758}
     m_Modifications:
     - target: {fileID: 1685437231852996, guid: aa5dd5e111eeb954395fb58800590938, type: 3}
       propertyPath: m_Name
-      value: Thruster
+      value: CraizanStar_Thruster
       objectReference: {fileID: 0}
     - target: {fileID: 4697777960249628, guid: aa5dd5e111eeb954395fb58800590938, type: 3}
       propertyPath: m_RootOrder
@@ -1626,8 +1703,11 @@ PrefabInstance:
     - target: {fileID: 23116630890531826, guid: aa5dd5e111eeb954395fb58800590938, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: ddb74acf01f685b4b8e1b6e2349f8220, type: 2}
+      objectReference: {fileID: 2100000, guid: 0c52168353c6a544abd363a517253aee, type: 2}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: aa5dd5e111eeb954395fb58800590938, type: 3}
 --- !u!4 &4136871151287290173 stripped
 Transform:
@@ -1639,11 +1719,12 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 4686739784175758}
     m_Modifications:
     - target: {fileID: 1308047364023698, guid: 3a5b01afb130c134890047606764c94a, type: 3}
       propertyPath: m_Name
-      value: MissileLauncher
+      value: CraizanStar_MissileLauncher
       objectReference: {fileID: 0}
     - target: {fileID: 4217056097432120, guid: 3a5b01afb130c134890047606764c94a, type: 3}
       propertyPath: m_RootOrder
@@ -1704,8 +1785,11 @@ PrefabInstance:
     - target: {fileID: 23014094176438610, guid: 3a5b01afb130c134890047606764c94a, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: ddb74acf01f685b4b8e1b6e2349f8220, type: 2}
+      objectReference: {fileID: 2100000, guid: 0c52168353c6a544abd363a517253aee, type: 2}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 3a5b01afb130c134890047606764c94a, type: 3}
 --- !u!4 &4173298947014853241 stripped
 Transform:
@@ -1717,11 +1801,12 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 4686739784175758}
     m_Modifications:
     - target: {fileID: 1465370761673820, guid: 326d4e9164c0ce64dbf3cb942f074c3f, type: 3}
       propertyPath: m_Name
-      value: TurretBarrel
+      value: CraizanStar_TurretBarrel
       objectReference: {fileID: 0}
     - target: {fileID: 4950487878895496, guid: 326d4e9164c0ce64dbf3cb942f074c3f, type: 3}
       propertyPath: m_RootOrder
@@ -1782,8 +1867,11 @@ PrefabInstance:
     - target: {fileID: 23527343254484034, guid: 326d4e9164c0ce64dbf3cb942f074c3f, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: ddb74acf01f685b4b8e1b6e2349f8220, type: 2}
+      objectReference: {fileID: 2100000, guid: 0c52168353c6a544abd363a517253aee, type: 2}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 326d4e9164c0ce64dbf3cb942f074c3f, type: 3}
 --- !u!4 &4325639442869381845 stripped
 Transform:
@@ -1795,11 +1883,12 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 4686739784175758}
     m_Modifications:
     - target: {fileID: 1185174424723782, guid: adc16851098e8894d9f37347f8426284, type: 3}
       propertyPath: m_Name
-      value: Armor2
+      value: CraizanStar_Armor2
       objectReference: {fileID: 0}
     - target: {fileID: 4153253780729582, guid: adc16851098e8894d9f37347f8426284, type: 3}
       propertyPath: m_RootOrder
@@ -1860,8 +1949,11 @@ PrefabInstance:
     - target: {fileID: 23414658811662378, guid: adc16851098e8894d9f37347f8426284, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: ddb74acf01f685b4b8e1b6e2349f8220, type: 2}
+      objectReference: {fileID: 2100000, guid: 0c52168353c6a544abd363a517253aee, type: 2}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: adc16851098e8894d9f37347f8426284, type: 3}
 --- !u!4 &4349625280535680802 stripped
 Transform:
@@ -1873,11 +1965,12 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 4686739784175758}
     m_Modifications:
     - target: {fileID: 1699785298376444, guid: 120acd9bf011e2a45955917c3099c33c, type: 3}
       propertyPath: m_Name
-      value: Sensor
+      value: CraizanStar_Sensor
       objectReference: {fileID: 0}
     - target: {fileID: 4573051773231406, guid: 120acd9bf011e2a45955917c3099c33c, type: 3}
       propertyPath: m_RootOrder
@@ -1938,8 +2031,11 @@ PrefabInstance:
     - target: {fileID: 23828785073911076, guid: 120acd9bf011e2a45955917c3099c33c, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: ddb74acf01f685b4b8e1b6e2349f8220, type: 2}
+      objectReference: {fileID: 2100000, guid: 0c52168353c6a544abd363a517253aee, type: 2}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 120acd9bf011e2a45955917c3099c33c, type: 3}
 --- !u!4 &4420663224806110672 stripped
 Transform:
@@ -1951,11 +2047,12 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 4686739784175758}
     m_Modifications:
     - target: {fileID: 1308047364023698, guid: 3a5b01afb130c134890047606764c94a, type: 3}
       propertyPath: m_Name
-      value: MissileLauncher
+      value: CraizanStar_MissileLauncher
       objectReference: {fileID: 0}
     - target: {fileID: 4217056097432120, guid: 3a5b01afb130c134890047606764c94a, type: 3}
       propertyPath: m_RootOrder
@@ -2016,8 +2113,11 @@ PrefabInstance:
     - target: {fileID: 23014094176438610, guid: 3a5b01afb130c134890047606764c94a, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: ddb74acf01f685b4b8e1b6e2349f8220, type: 2}
+      objectReference: {fileID: 2100000, guid: 0c52168353c6a544abd363a517253aee, type: 2}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 3a5b01afb130c134890047606764c94a, type: 3}
 --- !u!4 &4499728738831266911 stripped
 Transform:
@@ -2029,11 +2129,12 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 4686739784175758}
     m_Modifications:
     - target: {fileID: 1779740710037424, guid: c2c2f483590316e45aaa890782bcc6b5, type: 3}
       propertyPath: m_Name
-      value: Base1
+      value: CraizanStar_Base1
       objectReference: {fileID: 0}
     - target: {fileID: 4633547598394384, guid: c2c2f483590316e45aaa890782bcc6b5, type: 3}
       propertyPath: m_RootOrder
@@ -2094,8 +2195,11 @@ PrefabInstance:
     - target: {fileID: 23991914442096672, guid: c2c2f483590316e45aaa890782bcc6b5, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: ddb74acf01f685b4b8e1b6e2349f8220, type: 2}
+      objectReference: {fileID: 2100000, guid: 0c52168353c6a544abd363a517253aee, type: 2}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: c2c2f483590316e45aaa890782bcc6b5, type: 3}
 --- !u!4 &4512506759125013928 stripped
 Transform:
@@ -2107,11 +2211,12 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 4686739784175758}
     m_Modifications:
     - target: {fileID: 1700123076580534, guid: b0616e3b00e8f8146b812d8cece89cb3, type: 3}
       propertyPath: m_Name
-      value: TurretBase
+      value: CraizanStar_TurretBase
       objectReference: {fileID: 0}
     - target: {fileID: 4488950482002084, guid: b0616e3b00e8f8146b812d8cece89cb3, type: 3}
       propertyPath: m_RootOrder
@@ -2172,8 +2277,11 @@ PrefabInstance:
     - target: {fileID: 23075987322769564, guid: b0616e3b00e8f8146b812d8cece89cb3, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: ddb74acf01f685b4b8e1b6e2349f8220, type: 2}
+      objectReference: {fileID: 2100000, guid: 0c52168353c6a544abd363a517253aee, type: 2}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: b0616e3b00e8f8146b812d8cece89cb3, type: 3}
 --- !u!4 &4788976893011363809 stripped
 Transform:
@@ -2185,11 +2293,12 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 4686739784175758}
     m_Modifications:
     - target: {fileID: 1185174424723782, guid: adc16851098e8894d9f37347f8426284, type: 3}
       propertyPath: m_Name
-      value: Armor2
+      value: CraizanStar_Armor2
       objectReference: {fileID: 0}
     - target: {fileID: 4153253780729582, guid: adc16851098e8894d9f37347f8426284, type: 3}
       propertyPath: m_RootOrder
@@ -2250,8 +2359,11 @@ PrefabInstance:
     - target: {fileID: 23414658811662378, guid: adc16851098e8894d9f37347f8426284, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: ddb74acf01f685b4b8e1b6e2349f8220, type: 2}
+      objectReference: {fileID: 2100000, guid: 0c52168353c6a544abd363a517253aee, type: 2}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: adc16851098e8894d9f37347f8426284, type: 3}
 --- !u!4 &5015631158356729061 stripped
 Transform:
@@ -2263,11 +2375,12 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 4686739784175758}
     m_Modifications:
     - target: {fileID: 1380947865387786, guid: f783e0abf9ea0d449989d5610ede01e2, type: 3}
       propertyPath: m_Name
-      value: Bridge
+      value: CraizanStar_Bridge
       objectReference: {fileID: 0}
     - target: {fileID: 4550209801069848, guid: f783e0abf9ea0d449989d5610ede01e2, type: 3}
       propertyPath: m_RootOrder
@@ -2328,8 +2441,11 @@ PrefabInstance:
     - target: {fileID: 23924652291354756, guid: f783e0abf9ea0d449989d5610ede01e2, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: ddb74acf01f685b4b8e1b6e2349f8220, type: 2}
+      objectReference: {fileID: 2100000, guid: 0c52168353c6a544abd363a517253aee, type: 2}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: f783e0abf9ea0d449989d5610ede01e2, type: 3}
 --- !u!4 &5420282846611101515 stripped
 Transform:
@@ -2341,11 +2457,12 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 4686739784175758}
     m_Modifications:
     - target: {fileID: 1258842376771910, guid: 73190387ad6a8464781588a55cba0c31, type: 3}
       propertyPath: m_Name
-      value: Wing2
+      value: CraizanStar_Wing2
       objectReference: {fileID: 0}
     - target: {fileID: 4612737358984860, guid: 73190387ad6a8464781588a55cba0c31, type: 3}
       propertyPath: m_RootOrder
@@ -2406,8 +2523,11 @@ PrefabInstance:
     - target: {fileID: 23745258395567244, guid: 73190387ad6a8464781588a55cba0c31, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: ddb74acf01f685b4b8e1b6e2349f8220, type: 2}
+      objectReference: {fileID: 2100000, guid: 0c52168353c6a544abd363a517253aee, type: 2}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 73190387ad6a8464781588a55cba0c31, type: 3}
 --- !u!4 &5501881487957967335 stripped
 Transform:
@@ -2419,11 +2539,12 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 4686739784175758}
     m_Modifications:
     - target: {fileID: 1699785298376444, guid: 120acd9bf011e2a45955917c3099c33c, type: 3}
       propertyPath: m_Name
-      value: Sensor
+      value: CraizanStar_Sensor
       objectReference: {fileID: 0}
     - target: {fileID: 4573051773231406, guid: 120acd9bf011e2a45955917c3099c33c, type: 3}
       propertyPath: m_RootOrder
@@ -2484,8 +2605,11 @@ PrefabInstance:
     - target: {fileID: 23828785073911076, guid: 120acd9bf011e2a45955917c3099c33c, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: ddb74acf01f685b4b8e1b6e2349f8220, type: 2}
+      objectReference: {fileID: 2100000, guid: 0c52168353c6a544abd363a517253aee, type: 2}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 120acd9bf011e2a45955917c3099c33c, type: 3}
 --- !u!4 &5540108298633542790 stripped
 Transform:
@@ -2497,11 +2621,12 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 4686739784175758}
     m_Modifications:
     - target: {fileID: 1704142545828316, guid: 72abd7fa8baaecb46b7d66c37d6a7099, type: 3}
       propertyPath: m_Name
-      value: Wing3
+      value: CraizanStar_Wing3
       objectReference: {fileID: 0}
     - target: {fileID: 4146128811822780, guid: 72abd7fa8baaecb46b7d66c37d6a7099, type: 3}
       propertyPath: m_RootOrder
@@ -2562,8 +2687,11 @@ PrefabInstance:
     - target: {fileID: 23168213596911258, guid: 72abd7fa8baaecb46b7d66c37d6a7099, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: ddb74acf01f685b4b8e1b6e2349f8220, type: 2}
+      objectReference: {fileID: 2100000, guid: 0c52168353c6a544abd363a517253aee, type: 2}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 72abd7fa8baaecb46b7d66c37d6a7099, type: 3}
 --- !u!4 &5946966932759543093 stripped
 Transform:
@@ -2575,11 +2703,12 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 4686739784175758}
     m_Modifications:
     - target: {fileID: 1465370761673820, guid: 326d4e9164c0ce64dbf3cb942f074c3f, type: 3}
       propertyPath: m_Name
-      value: TurretBarrel
+      value: CraizanStar_TurretBarrel
       objectReference: {fileID: 0}
     - target: {fileID: 4950487878895496, guid: 326d4e9164c0ce64dbf3cb942f074c3f, type: 3}
       propertyPath: m_RootOrder
@@ -2640,8 +2769,11 @@ PrefabInstance:
     - target: {fileID: 23527343254484034, guid: 326d4e9164c0ce64dbf3cb942f074c3f, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: ddb74acf01f685b4b8e1b6e2349f8220, type: 2}
+      objectReference: {fileID: 2100000, guid: 0c52168353c6a544abd363a517253aee, type: 2}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 326d4e9164c0ce64dbf3cb942f074c3f, type: 3}
 --- !u!4 &6041236843187860927 stripped
 Transform:
@@ -2653,11 +2785,12 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 4686739784175758}
     m_Modifications:
     - target: {fileID: 1185174424723782, guid: adc16851098e8894d9f37347f8426284, type: 3}
       propertyPath: m_Name
-      value: Armor2
+      value: CraizanStar_Armor2
       objectReference: {fileID: 0}
     - target: {fileID: 4153253780729582, guid: adc16851098e8894d9f37347f8426284, type: 3}
       propertyPath: m_RootOrder
@@ -2718,8 +2851,11 @@ PrefabInstance:
     - target: {fileID: 23414658811662378, guid: adc16851098e8894d9f37347f8426284, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: ddb74acf01f685b4b8e1b6e2349f8220, type: 2}
+      objectReference: {fileID: 2100000, guid: 0c52168353c6a544abd363a517253aee, type: 2}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: adc16851098e8894d9f37347f8426284, type: 3}
 --- !u!4 &6295054672400368468 stripped
 Transform:
@@ -2731,11 +2867,12 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 4686739784175758}
     m_Modifications:
     - target: {fileID: 1185174424723782, guid: adc16851098e8894d9f37347f8426284, type: 3}
       propertyPath: m_Name
-      value: Armor2
+      value: CraizanStar_Armor2
       objectReference: {fileID: 0}
     - target: {fileID: 4153253780729582, guid: adc16851098e8894d9f37347f8426284, type: 3}
       propertyPath: m_RootOrder
@@ -2796,8 +2933,11 @@ PrefabInstance:
     - target: {fileID: 23414658811662378, guid: adc16851098e8894d9f37347f8426284, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: ddb74acf01f685b4b8e1b6e2349f8220, type: 2}
+      objectReference: {fileID: 2100000, guid: 0c52168353c6a544abd363a517253aee, type: 2}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: adc16851098e8894d9f37347f8426284, type: 3}
 --- !u!4 &6434856667992209826 stripped
 Transform:
@@ -2809,11 +2949,12 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 4686739784175758}
     m_Modifications:
     - target: {fileID: 1699785298376444, guid: 120acd9bf011e2a45955917c3099c33c, type: 3}
       propertyPath: m_Name
-      value: Sensor
+      value: CraizanStar_Sensor
       objectReference: {fileID: 0}
     - target: {fileID: 4573051773231406, guid: 120acd9bf011e2a45955917c3099c33c, type: 3}
       propertyPath: m_RootOrder
@@ -2874,8 +3015,11 @@ PrefabInstance:
     - target: {fileID: 23828785073911076, guid: 120acd9bf011e2a45955917c3099c33c, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: ddb74acf01f685b4b8e1b6e2349f8220, type: 2}
+      objectReference: {fileID: 2100000, guid: 0c52168353c6a544abd363a517253aee, type: 2}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 120acd9bf011e2a45955917c3099c33c, type: 3}
 --- !u!4 &6789257619413312919 stripped
 Transform:
@@ -2887,11 +3031,12 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 4686739784175758}
     m_Modifications:
     - target: {fileID: 1704142545828316, guid: 72abd7fa8baaecb46b7d66c37d6a7099, type: 3}
       propertyPath: m_Name
-      value: Wing3
+      value: CraizanStar_Wing3
       objectReference: {fileID: 0}
     - target: {fileID: 4146128811822780, guid: 72abd7fa8baaecb46b7d66c37d6a7099, type: 3}
       propertyPath: m_RootOrder
@@ -2952,8 +3097,11 @@ PrefabInstance:
     - target: {fileID: 23168213596911258, guid: 72abd7fa8baaecb46b7d66c37d6a7099, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: ddb74acf01f685b4b8e1b6e2349f8220, type: 2}
+      objectReference: {fileID: 2100000, guid: 0c52168353c6a544abd363a517253aee, type: 2}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 72abd7fa8baaecb46b7d66c37d6a7099, type: 3}
 --- !u!4 &6873285631327202003 stripped
 Transform:
@@ -2965,11 +3113,12 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 4686739784175758}
     m_Modifications:
     - target: {fileID: 1185174424723782, guid: adc16851098e8894d9f37347f8426284, type: 3}
       propertyPath: m_Name
-      value: Armor2
+      value: CraizanStar_Armor2
       objectReference: {fileID: 0}
     - target: {fileID: 4153253780729582, guid: adc16851098e8894d9f37347f8426284, type: 3}
       propertyPath: m_RootOrder
@@ -3030,8 +3179,11 @@ PrefabInstance:
     - target: {fileID: 23414658811662378, guid: adc16851098e8894d9f37347f8426284, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: ddb74acf01f685b4b8e1b6e2349f8220, type: 2}
+      objectReference: {fileID: 2100000, guid: 0c52168353c6a544abd363a517253aee, type: 2}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: adc16851098e8894d9f37347f8426284, type: 3}
 --- !u!4 &7401975513945562895 stripped
 Transform:
@@ -3043,11 +3195,12 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 4686739784175758}
     m_Modifications:
     - target: {fileID: 1185174424723782, guid: adc16851098e8894d9f37347f8426284, type: 3}
       propertyPath: m_Name
-      value: Armor2
+      value: CraizanStar_Armor2
       objectReference: {fileID: 0}
     - target: {fileID: 4153253780729582, guid: adc16851098e8894d9f37347f8426284, type: 3}
       propertyPath: m_RootOrder
@@ -3108,8 +3261,11 @@ PrefabInstance:
     - target: {fileID: 23414658811662378, guid: adc16851098e8894d9f37347f8426284, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: ddb74acf01f685b4b8e1b6e2349f8220, type: 2}
+      objectReference: {fileID: 2100000, guid: 0c52168353c6a544abd363a517253aee, type: 2}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: adc16851098e8894d9f37347f8426284, type: 3}
 --- !u!4 &7998300011007849049 stripped
 Transform:
@@ -3121,11 +3277,12 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 4686739784175758}
     m_Modifications:
     - target: {fileID: 1308047364023698, guid: 3a5b01afb130c134890047606764c94a, type: 3}
       propertyPath: m_Name
-      value: MissileLauncher
+      value: CraizanStar_MissileLauncher
       objectReference: {fileID: 0}
     - target: {fileID: 4217056097432120, guid: 3a5b01afb130c134890047606764c94a, type: 3}
       propertyPath: m_RootOrder
@@ -3186,8 +3343,11 @@ PrefabInstance:
     - target: {fileID: 23014094176438610, guid: 3a5b01afb130c134890047606764c94a, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: ddb74acf01f685b4b8e1b6e2349f8220, type: 2}
+      objectReference: {fileID: 2100000, guid: 0c52168353c6a544abd363a517253aee, type: 2}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 3a5b01afb130c134890047606764c94a, type: 3}
 --- !u!4 &8136531968458484585 stripped
 Transform:
@@ -3199,11 +3359,12 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 4686739784175758}
     m_Modifications:
     - target: {fileID: 1700123076580534, guid: b0616e3b00e8f8146b812d8cece89cb3, type: 3}
       propertyPath: m_Name
-      value: TurretBase
+      value: CraizanStar_TurretBase
       objectReference: {fileID: 0}
     - target: {fileID: 4488950482002084, guid: b0616e3b00e8f8146b812d8cece89cb3, type: 3}
       propertyPath: m_RootOrder
@@ -3264,8 +3425,11 @@ PrefabInstance:
     - target: {fileID: 23075987322769564, guid: b0616e3b00e8f8146b812d8cece89cb3, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: ddb74acf01f685b4b8e1b6e2349f8220, type: 2}
+      objectReference: {fileID: 2100000, guid: 0c52168353c6a544abd363a517253aee, type: 2}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: b0616e3b00e8f8146b812d8cece89cb3, type: 3}
 --- !u!4 &8215213414118342823 stripped
 Transform:
@@ -3277,11 +3441,12 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 4686739784175758}
     m_Modifications:
     - target: {fileID: 1465370761673820, guid: 326d4e9164c0ce64dbf3cb942f074c3f, type: 3}
       propertyPath: m_Name
-      value: TurretBarrel
+      value: CraizanStar_TurretBarrel
       objectReference: {fileID: 0}
     - target: {fileID: 4950487878895496, guid: 326d4e9164c0ce64dbf3cb942f074c3f, type: 3}
       propertyPath: m_RootOrder
@@ -3342,8 +3507,11 @@ PrefabInstance:
     - target: {fileID: 23527343254484034, guid: 326d4e9164c0ce64dbf3cb942f074c3f, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: ddb74acf01f685b4b8e1b6e2349f8220, type: 2}
+      objectReference: {fileID: 2100000, guid: 0c52168353c6a544abd363a517253aee, type: 2}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 326d4e9164c0ce64dbf3cb942f074c3f, type: 3}
 --- !u!4 &8486835583975526914 stripped
 Transform:
@@ -3355,11 +3523,12 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 4686739784175758}
     m_Modifications:
     - target: {fileID: 1700123076580534, guid: b0616e3b00e8f8146b812d8cece89cb3, type: 3}
       propertyPath: m_Name
-      value: TurretBase
+      value: CraizanStar_TurretBase
       objectReference: {fileID: 0}
     - target: {fileID: 4488950482002084, guid: b0616e3b00e8f8146b812d8cece89cb3, type: 3}
       propertyPath: m_RootOrder
@@ -3420,8 +3589,11 @@ PrefabInstance:
     - target: {fileID: 23075987322769564, guid: b0616e3b00e8f8146b812d8cece89cb3, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: ddb74acf01f685b4b8e1b6e2349f8220, type: 2}
+      objectReference: {fileID: 2100000, guid: 0c52168353c6a544abd363a517253aee, type: 2}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: b0616e3b00e8f8146b812d8cece89cb3, type: 3}
 --- !u!4 &9052426080294626143 stripped
 Transform:

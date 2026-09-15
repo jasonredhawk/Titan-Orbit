@@ -1926,14 +1926,15 @@ namespace TitanOrbit.UI
 
             // --- Death: hide the radar for the 10s beat, then expand as the planet picker ---
             // [TITAN-ORBIT] The explosion and death plaque stay unobstructed until
-            // DeathScreenController.IsRespawnReady. After that, lock expanded so they can click
-            // a friendly world. Eliminated players never get the picker.
+            // DeathScreenController.CanPickRespawnPlanet (timer + keep/forfeit choice).
+            // After that, lock expanded so they can click a friendly world.
+            // Eliminated players never get the picker.
             bool localDead = HUDController.LocalPlayerDeathHidesHud || playerAnchor.IsDead;
             bool eliminated = EcsGameBridge.TryGetLocalShipState(out var localShip)
                 && PlayerEliminatedScreenController.IsLocalPlayerEliminated(localShip);
             bool canPickWorld = localDead
                 && !eliminated
-                && DeathScreenController.IsRespawnReady
+                && DeathScreenController.CanPickRespawnPlanet
                 && playerAnchor.Team != TeamId.None
                 && EcsGameBridge.TeamOwnsAnyPlanet(playerAnchor.Team);
 
@@ -2178,7 +2179,7 @@ namespace TitanOrbit.UI
         /// <param name="clickPos">Screen-space mouse / touch position.</param>
         void TryHandleRespawnPlanetClick(Vector2 clickPos)
         {
-            if (!DeathScreenController.IsRespawnReady)
+            if (!DeathScreenController.CanPickRespawnPlanet)
                 return;
             if (playerAnchor == null || playerAnchor.Team == TeamId.None)
                 return;
@@ -2187,7 +2188,8 @@ namespace TitanOrbit.UI
             if (!TryFindFriendlyPlanetBlipAtScreen(clickPos, playerAnchor.Team, out int planetId))
                 return;
 
-            if (ShipRespawnRpcClient.TryRequestRespawnAtPlanet(planetId))
+            if (ShipRespawnRpcClient.TryRequestRespawnAtPlanet(
+                    planetId, DeathScreenController.KeepLoadoutOnRespawn))
                 _lastRespawnRequestTime = Time.unscaledTime;
         }
 

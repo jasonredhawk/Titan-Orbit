@@ -1,5 +1,7 @@
+using TitanOrbit.Core;
 using TitanOrbit.Data;
 using TitanOrbit.NetCode;
+using TitanOrbit.Services;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
@@ -14,7 +16,7 @@ namespace TitanOrbit.Game
     ///
     /// Layout contract:
     ///   Sign in (top-right) · Logo (centered, below top edge) · Player name label+input (tight) ·
-    ///   Play / Join / Local client (lower) · Status
+    ///   Play / Join / Customize ship / Unlock Orbit / Local client (lower) · Status
     /// Local host is omitted because Play already starts local host when local options are enabled.
     /// </summary>
     public static class MainMenuPresenter
@@ -39,6 +41,9 @@ namespace TitanOrbit.Game
 
         /// <summary>Child name for the collapsed profile-badge chip.</summary>
         public const string PlayerBadgePickerObjectName = MainMenuBadgePicker.RootObjectName;
+
+        /// <summary>Legacy child name from when hull paint lived on this panel. Destroyed on refresh.</summary>
+        public const string PlayerAccentPickerObjectName = "PlayerAccentPicker";
 
         /// <summary>Soft status text color.</summary>
         static readonly Color StatusColor = new Color(0.72f, 0.84f, 0.96f, 0.92f);
@@ -107,8 +112,12 @@ namespace TitanOrbit.Game
             // --- Player display name (persisted via LocalPlayerDisplayName) ---
             EnsurePlayerNameField(panel.transform);
 
-            // --- Profile badge chip under the name field (pixel gap, not a second screen-fraction) ---
-            EnsurePlayerBadgePicker(panel.transform);
+            // Badge lives on Customize Ship now — drop any leftover Main Menu chip.
+            DestroyChildIfPresent(panel.transform, PlayerBadgePickerObjectName);
+            DestroyChildIfPresent(panel.transform, MainMenuBadgePicker.OverlayObjectName);
+
+            // Hull paint is a dedicated overlay — do not keep the old inline picker here.
+            DestroyChildIfPresent(panel.transform, PlayerAccentPickerObjectName);
 
             // --- Button column ---
             var stack = EnsureButtonStack(panel.transform);
@@ -128,6 +137,35 @@ namespace TitanOrbit.Game
                 onJoinGame,
                 playButton != null ? 1 : 0);
 
+            int customizeIndex = playButton != null ? 2 : 1;
+            CreateOrWireStackButton(
+                stack,
+                "CustomizeShipButton",
+                "Customize ship",
+                buttonStyle,
+                () => OpenCustomizeShip(panel.transform),
+                customizeIndex);
+
+            // Orbit Unlocked IAP — one SKU for ads-off + hangar + auto +1 slot.
+            string unlockLabel = TitanOrbitEntitlements.IsOrbitUnlockedOwned
+                ? "Orbit Unlocked"
+                : "Unlock Orbit";
+            CreateOrWireStackButton(
+                stack,
+                "UnlockOrbitButton",
+                unlockLabel,
+                buttonStyle,
+                null,
+                customizeIndex + 1);
+            var unlockGo = stack.Find("UnlockOrbitButton");
+            if (unlockGo != null)
+            {
+                var binder = unlockGo.GetComponent<OrbitUnlockedMenuButton>();
+                if (binder == null)
+                    binder = unlockGo.gameObject.AddComponent<OrbitUnlockedMenuButton>();
+                binder.Bind();
+            }
+
             if (TitanOrbitMultiplayerConfig.ShowLocalPlayOptions)
             {
                 // Local client is for MPPM / LAN second window — keep it; Local host is redundant with Play.
@@ -145,7 +183,7 @@ namespace TitanOrbit.Game
                 DestroyChildIfPresent(stack, "LocalClientButton");
             }
 
-            LayoutStack(stack, ComputeStackYBelowBadge(panel.transform));
+            LayoutStack(stack, ComputeStackYBelowName(panel.transform));
 
             // --- Status line under the stack (must run after LayoutStack so height is known) ---
             statusText = EnsureStatusTextBelowStack(panel.transform, stack);
@@ -437,103 +475,12 @@ namespace TitanOrbit.Game
             inputGo.SetActive(true);
         }
 
-        /// <summary>
-        /// Collapsed badge chip under the name field. Click opens the full-grid overlay.
-        /// Restores the saved pick from <see cref="LocalPlayerBadge"/>.
-        /// </summary>
-        static void EnsurePlayerBadgePicker(Transform panel)
+        /// <summary>Opens the dedicated hull-paint studio over this menu's canvas.</summary>
+        static void OpenCustomizeShip(Transform panel)
         {
-            Transform existing = panel.Find(PlayerBadgePickerObjectName);
-            GameObject rootGo = existing != null
-                ? existing.gameObject
-                : new GameObject(PlayerBadgePickerObjectName, typeof(RectTransform));
-            if (existing == null)
-                rootGo.transform.SetParent(panel, false);
-
-            var rootRt = rootGo.GetComponent<RectTransform>();
-            // Same screen-fraction as the name box; hang below it by a fixed pixel gap
-            // so the two never overlap when the window height changes.
-            var inputRt = panel.Find(PlayerNameInputObjectName) as RectTransform;
-            const float gapBelowName = 22f;
-            float inputHalfH = inputRt != null ? inputRt.rect.height * 0.5f : 56f;
-            Vector2 nameAnchor = inputRt != null ? inputRt.anchorMin : new Vector2(0.5f, 0.42f);
-            rootRt.anchorMin = nameAnchor;
-            rootRt.anchorMax = nameAnchor;
-            rootRt.pivot = new Vector2(0.5f, 1f);
-            rootRt.sizeDelta = new Vector2(280f, 118f);
-            rootRt.anchoredPosition = new Vector2(0f, -inputHalfH - gapBelowName);
-
-            Transform chipTf = rootGo.transform.Find("Chip");
-            GameObject chipGo = chipTf != null
-                ? chipTf.gameObject
-                : new GameObject("Chip", typeof(RectTransform), typeof(Image), typeof(Button));
-            if (chipTf == null)
-                chipGo.transform.SetParent(rootGo.transform, false);
-
-            var chipRt = chipGo.GetComponent<RectTransform>();
-            chipRt.anchorMin = new Vector2(0.5f, 1f);
-            chipRt.anchorMax = new Vector2(0.5f, 1f);
-            chipRt.pivot = new Vector2(0.5f, 1f);
-            chipRt.sizeDelta = new Vector2(88f, 88f);
-            chipRt.anchoredPosition = Vector2.zero;
-
-            var chipFill = chipGo.GetComponent<Image>();
-            chipFill.color = Color.clear;
-            chipFill.raycastTarget = true;
-
-            DestroyChildIfPresent(chipGo.transform, "Ring");
-
-            var badgeGo = EnsureChild(chipGo.transform, "Badge", typeof(Image));
-            var badgeRt = badgeGo.GetComponent<RectTransform>();
-            badgeRt.anchorMin = Vector2.zero;
-            badgeRt.anchorMax = Vector2.one;
-            badgeRt.offsetMin = new Vector2(6f, 6f);
-            badgeRt.offsetMax = new Vector2(-6f, -6f);
-            var badgeImage = badgeGo.GetComponent<Image>();
-            badgeImage.preserveAspect = true;
-            badgeImage.raycastTarget = false;
-            badgeImage.color = Color.white;
-
-            var emptyGo = EnsureChild(chipGo.transform, "EmptyMark", typeof(TextMeshProUGUI));
-            var emptyRt = emptyGo.GetComponent<RectTransform>();
-            emptyRt.anchorMin = Vector2.zero;
-            emptyRt.anchorMax = Vector2.one;
-            emptyRt.offsetMin = Vector2.zero;
-            emptyRt.offsetMax = Vector2.zero;
-            var emptyTmp = emptyGo.GetComponent<TextMeshProUGUI>();
-            emptyTmp.text = "+";
-            emptyTmp.fontSize = 42f;
-            emptyTmp.alignment = TextAlignmentOptions.Center;
-            emptyTmp.color = StatusColor;
-            emptyTmp.raycastTarget = false;
-
-            var captionGo = EnsureChild(rootGo.transform, "Caption", typeof(TextMeshProUGUI));
-            var captionRt = captionGo.GetComponent<RectTransform>();
-            captionRt.anchorMin = new Vector2(0f, 0f);
-            captionRt.anchorMax = new Vector2(1f, 0f);
-            captionRt.pivot = new Vector2(0.5f, 0f);
-            captionRt.sizeDelta = new Vector2(0f, 26f);
-            captionRt.anchoredPosition = Vector2.zero;
-            var captionTmp = captionGo.GetComponent<TextMeshProUGUI>();
-            captionTmp.fontSize = 18f;
-            captionTmp.alignment = TextAlignmentOptions.Center;
-            captionTmp.color = StatusColor;
-            captionTmp.raycastTarget = false;
-
-            DestroyChildIfPresent(rootGo.transform, "Clear");
-
-            var picker = rootGo.GetComponent<MainMenuBadgePicker>();
-            if (picker == null)
-                picker = rootGo.AddComponent<MainMenuBadgePicker>();
-            picker.Configure(badgeImage, chipFill, emptyTmp, captionTmp);
-
-            var chipBtn = chipGo.GetComponent<Button>();
-            chipBtn.transition = Selectable.Transition.ColorTint;
-            chipBtn.targetGraphic = chipFill;
-            chipBtn.onClick.RemoveAllListeners();
-            chipBtn.onClick.AddListener(picker.OpenOverlay);
-
-            rootGo.SetActive(true);
+            var canvas = panel != null ? panel.GetComponentInParent<Canvas>() : null;
+            Transform root = canvas != null ? canvas.transform : panel;
+            ShipCustomizeScreen.Open(root, TeamId.TeamA);
         }
 
         /// <summary>Finds or creates a named child with the given extra components.</summary>
@@ -565,9 +512,9 @@ namespace TitanOrbit.Game
                 go.transform.SetParent(panel, false);
 
             var rt = go.GetComponent<RectTransform>();
-            // Same anchor as the name/badge column — Y is set in LayoutStack from the chip.
-            var badgeRt = panel.Find(PlayerBadgePickerObjectName) as RectTransform;
-            Vector2 columnAnchor = badgeRt != null ? badgeRt.anchorMin : new Vector2(0.5f, 0.42f);
+            // Same anchor as the name field — Y is set in LayoutStack just under that box.
+            var nameRt = panel.Find(PlayerNameInputObjectName) as RectTransform;
+            Vector2 columnAnchor = nameRt != null ? nameRt.anchorMin : new Vector2(0.5f, 0.42f);
             rt.anchorMin = columnAnchor;
             rt.anchorMax = columnAnchor;
             rt.pivot = new Vector2(0.5f, 1f);
@@ -721,17 +668,16 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Pixel Y for the button stack: just under the badge chip, same name-column anchor.
+        /// Pixel Y for the button stack: just under the player-name field.
+        /// The name box is pivot-centered on the shared column anchor.
         /// </summary>
-        static float ComputeStackYBelowBadge(Transform panel)
+        static float ComputeStackYBelowName(Transform panel)
         {
-            const float gapBelowBadge = 20f;
-            var badgeRt = panel.Find(PlayerBadgePickerObjectName) as RectTransform;
-            if (badgeRt == null)
-                return -208f;
-
-            // Badge pivot is top, so its bottom is anchoredPosition.y - height.
-            return badgeRt.anchoredPosition.y - badgeRt.sizeDelta.y - gapBelowBadge;
+            const float gap = 16f;
+            var nameRt = panel.Find(PlayerNameInputObjectName) as RectTransform;
+            if (nameRt == null)
+                return -80f;
+            return -(nameRt.sizeDelta.y * 0.5f) - gap;
         }
 
         /// <summary>Forces layout rebuild after children change.</summary>

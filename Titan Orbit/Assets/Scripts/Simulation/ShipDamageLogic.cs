@@ -73,6 +73,11 @@ namespace TitanOrbit.Simulation
         /// <see cref="ExcessDamageGemExpulsionPerHullDamage"/> (1:1). Clamped only by remaining cargo.
         /// </param>
         /// <param name="isImmune">True when fully moon-docked — no damage or spill.</param>
+        /// <param name="spillLeftoverDamageOnly">
+        /// True for asteroid ram/grind self-chips: skip cargo on the hull-breaking tick
+        /// so grinding to 0 HP does not also empty the hold and mark death that pulse.
+        /// False (default) keeps bullet/mine/rocket 1:1 full-hit gems.
+        /// </param>
         /// <returns>Expulsion amount and death/hull flags for the caller.</returns>
         public static Result ApplyHullAndGemDamage(
             ref float health,
@@ -82,7 +87,8 @@ namespace TitanOrbit.Simulation
             TeamId shipTeam,
             TeamId attackerTeam,
             float gemExpulsionPerHullDamage,
-            bool isImmune)
+            bool isImmune,
+            bool spillLeftoverDamageOnly = false)
         {
             var result = default(Result);
 
@@ -113,12 +119,15 @@ namespace TitanOrbit.Simulation
             }
 
             // --- Gem spill once hull is gone ---
-            // [TITAN-ORBIT] 10 ram damage → gem 10. 50-damage bullet → gem 50.
-            // Value is the full incoming hit, not leftover-after-hull, so the crystal
-            // matches the blow that landed. Only remaining cargo can shrink it.
-            // Death still needs hull and gems both empty.
+            // [TITAN-ORBIT] Bullets / mines keep full-hit gems (10 ram → gem 10).
+            // Asteroid self-chips: skip cargo on the hull-breaking tick so grinding to 0 HP
+            // does not also empty the hold and mark death on that same pulse.
             float gemsToExpel = 0f;
-            if (currentGems > 0.0001f && damage > 0.0001f && health <= DeathThreshold)
+            bool skipCargoThisHit = spillLeftoverDamageOnly && wasAlive;
+            if (!skipCargoThisHit
+                && currentGems > 0.0001f
+                && damage > 0.0001f
+                && health <= DeathThreshold)
             {
                 gemsToExpel = damage * expulsionRate;
                 if (gemsToExpel > currentGems)

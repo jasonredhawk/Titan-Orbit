@@ -508,5 +508,39 @@ namespace TitanOrbit.UI
             em.AddComponentData(entity, new RemoveEquippedEquipmentCommand { SlotIndex = slotIndex });
             em.AddComponentData(entity, new SendRpcCommandRequest { TargetConnection = Entity.Null });
         }
+
+        /// <summary>
+        /// Asks the server to set <see cref="ShipLoadoutState.LoadoutBonusSlots"/> to 1
+        /// after a completed rewarded ad (or remove-ads instant grant).
+        /// Local Host writes ServerWorld immediately; dedicated clients send an RPC.
+        /// </summary>
+        public static void ClaimRewardedBonusSlot()
+        {
+            if (EcsGameBridge.IsLocalHost())
+            {
+                var server = EcsGameBridge.ServerWorld;
+                if (server == null || !server.IsCreated)
+                    return;
+
+                int networkId = EcsGameBridge.GetLocalNetworkId();
+                if (networkId <= 0)
+                    return;
+
+                bool ok = MoonOrbitStoreSystem.TryClaimRewardedBonusSlotForNetworkId(
+                    server.EntityManager, networkId, out var message);
+                if (!ok)
+                    Debug.LogWarning("[MoonOrbit] Bonus slot claim failed: " + message);
+                return;
+            }
+
+            var world = EcsGameBridge.ClientWorld;
+            if (world == null || !world.IsCreated)
+                return;
+
+            var em = world.EntityManager;
+            var entity = em.CreateEntity();
+            em.AddComponentData(entity, new ClaimRewardedBonusSlotCommand());
+            em.AddComponentData(entity, new SendRpcCommandRequest { TargetConnection = Entity.Null });
+        }
     }
 }

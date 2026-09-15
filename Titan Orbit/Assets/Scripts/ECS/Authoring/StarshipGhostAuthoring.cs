@@ -70,6 +70,7 @@ namespace TitanOrbit.ECS.Authoring
                     RuntimeBulletIndex = 0,
                     BranchIndex = 0,
                     ChassisIndex = 0,
+                    LoadoutBonusSlots = 0,
                 });
                 // [NETCODE] Loadout buffers must be baked so GhostFields replicate. Runtime-only
                 // AddBuffer from ShipEnsureComponentsSystem does not register them on the ghost.
@@ -129,12 +130,15 @@ namespace TitanOrbit.ECS.Authoring
                 {
                     LatchedMult = 1f,
                     HoldUntilElapsed = -1.0,
+                    LastAppliedMaxSpeed = 0f,
                 });
                 AddComponent(entity, new ShipMoonDockState());
                 // [NETCODE] Turret possession mode — must bake so IsControlling / PlanetId replicate.
                 AddComponent(entity, new ShipTurretControlState());
                 // [NETCODE] MEGA identity + per-mount aim slots — must bake so GhostFields replicate.
                 AddComponent(entity, new MegaShipState());
+                // [NETCODE] Colorize accents + player thruster style — must bake so remotes see both.
+                AddComponent(entity, new ShipAccentColors());
                 AddBuffer<MegaShipGunnerSlotElement>(entity);
                 AddComponent(entity, new ShipDepositIntent());
                 // [NETCODE] Server bumps BeatSequence each deposit chunk; clients play SFX/UI from it.

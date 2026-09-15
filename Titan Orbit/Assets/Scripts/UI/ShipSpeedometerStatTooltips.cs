@@ -517,7 +517,7 @@ namespace TitanOrbit.UI
         {
             AppendHeader(sb, "RAM — grind / impact");
             ShipStatTooltipChrome.AppendSectionBanner(sb, "PARTS", "FFAA66");
-            sb.AppendLine("<color=#5B7A94>Grind = rating x (totalMass / MassRef) HP/s while thrusting into rock.</color>");
+            sb.AppendLine("<color=#5B7A94>Grind = rating x (totalMass / this hull's ComponentSize) HP/s. Empty hulls sit at 1x the RAM chip; cargo raises it.</color>");
             sb.AppendLine("<color=#5B7A94>Ram = grind DPS x (1 + closing / ram-double speed) on first contact.</color>");
 
             int written = 0;
@@ -560,15 +560,18 @@ namespace TitanOrbit.UI
             sb.Append("Motor Ramming  ").Append(F1(familyRam)).AppendLine();
             sb.Append("Rating  ").Append(F1(live.RamRating)).AppendLine();
             sb.Append("totalMass  ").Append(F1(live.TotalMass));
-            sb.Append(" / ref ").Append(F1(ShipComponentRammingSuggestions.MassReference)).AppendLine();
+            sb.Append(" / hull ").Append(F1(live.ComponentSize > 0.01f
+                ? live.ComponentSize
+                : ShipComponentRammingSuggestions.MassReference)).AppendLine();
 
             // --- Live products (same helpers as the server) ---
             // [TITAN-ORBIT] Recompute from RamRating after B-key muls so the tip matches authority.
-            float grindDps = ShipComponentRammingSuggestions.ComputeGrindDps(live.RamRating, live.TotalMass);
+            float grindDps = ShipComponentRammingSuggestions.ComputeGrindDps(
+                live.RamRating, live.TotalMass, live.ComponentSize);
             float ramAst = ShipComponentRammingSuggestions.ComputeImpactDamage(
-                live.RamRating, live.TotalMass, fullCruise);
+                live.RamRating, live.TotalMass, fullCruise, live.ComponentSize);
             float ramSelf = ShipComponentRammingSuggestions.ComputeImpactSelfDamage(
-                live.RamRating, live.TotalMass, fullCruise);
+                live.RamRating, live.TotalMass, fullCruise, live.ComponentSize);
             sb.Append("Grind  ").Append(F1(grindDps)).Append("/s");
             sb.Append(" <color=#5B7A94>(mass-scaled RAM chip)</color>").AppendLine();
             sb.Append("At full cruise  ").Append(F1(fullCruise)).Append("/s -> ");

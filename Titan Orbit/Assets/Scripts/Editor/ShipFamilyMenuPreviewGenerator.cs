@@ -10,9 +10,11 @@ using TitanOrbit.Core;
 namespace TitanOrbit.Editor
 {
     /// <summary>
-    /// Renders each upgrade-tree prefab from above with an isolated camera, saves PNGs under
+    /// Renders each upgrade-tree prefab with an isolated camera, saves PNGs under
     /// <c>.../MenuPreviews/</c> next to the <see cref="ShipFamilyDefinition"/> asset, imports as Sprites,
-    /// and assigns <see cref="ShipFamilyChassisTierEntry.menuPreviewSprite"/>.
+    /// and assigns <see cref="ShipFamilyChassisTierEntry.menuPreviewSprite"/> (top-down) or both
+    /// theatrical and menu-preview fields (theatrical). The Inspector upgrade-tree row reads
+    /// <c>menuPreviewSprite</c>; theatrical-only writes used to leave that slot empty.
     /// </summary>
     public static class ShipFamilyMenuPreviewGenerator
     {
@@ -367,20 +369,7 @@ namespace TitanOrbit.Editor
                 string chassis = string.IsNullOrEmpty(tier.chassisId) ? $"tier_{i}" : tier.chassisId;
                 string fileBase = SanitizeFileName(chassis);
                 bool theatrical = style == PreviewCameraStyle.Theatrical;
-                if (theatrical)
-                {
-                    if (tier.teamTheatricalMenuPreviewSprites == null)
-                        tier.teamTheatricalMenuPreviewSprites = new List<ShipFamilyTeamMenuPreview>();
-                    else
-                        tier.teamTheatricalMenuPreviewSprites.Clear();
-                }
-                else
-                {
-                    if (tier.teamMenuPreviewSprites == null)
-                        tier.teamMenuPreviewSprites = new List<ShipFamilyTeamMenuPreview>();
-                    else
-                        tier.teamMenuPreviewSprites.Clear();
-                }
+                PrepareTeamPreviewLists(tier, theatrical);
 
                 List<ShipFamilyTeamMenuPreview> teamSprites = theatrical
                     ? tier.teamTheatricalMenuPreviewSprites
@@ -400,41 +389,18 @@ namespace TitanOrbit.Editor
                         continue;
                     }
 
-                    AssetDatabase.ImportAsset(pngPath, ImportAssetOptions.ForceUpdate);
-                    ConfigureSpriteImporter(pngPath);
-
-                    var sprite = AssetDatabase.LoadAssetAtPath<Sprite>(pngPath);
-                    if (sprite == null)
-                    {
-                        var objs = AssetDatabase.LoadAllAssetsAtPath(pngPath);
-                        foreach (var a in objs)
-                        {
-                            if (a is Sprite s)
-                            {
-                                sprite = s;
-                                break;
-                            }
-                        }
-                    }
-
+                    Sprite sprite = ImportAndLoadSprite(pngPath);
                     if (sprite != null)
                     {
-                        teamSprites.Add(new ShipFamilyTeamMenuPreview
-                        {
-                            variantName = variant.name,
-                            team = variant.team,
-                            sprite = sprite
-                        });
-                        if (theatrical)
-                        {
-                            if (v == 0 || tier.theatricalMenuPreviewSprite == null)
-                                tier.theatricalMenuPreviewSprite = sprite;
-                        }
-                        else if (v == 0 || tier.menuPreviewSprite == null)
-                        {
-                            tier.menuPreviewSprite = sprite;
-                        }
-
+                        AssignGeneratedPreviewSprite(
+                            teamSprites,
+                            variant,
+                            sprite,
+                            theatrical,
+                            ref tier.menuPreviewSprite,
+                            ref tier.theatricalMenuPreviewSprite,
+                            v,
+                            theatrical ? tier.teamMenuPreviewSprites : null);
                         done++;
                     }
                     else
@@ -442,6 +408,7 @@ namespace TitanOrbit.Editor
                 }
             }
 
+            PersistFamilyPreviewAssignments(def);
             EditorUtility.SetDirty(def);
             if (saveAssets)
                 AssetDatabase.SaveAssets();
@@ -594,20 +561,7 @@ namespace TitanOrbit.Editor
 
                 string fileBase = SanitizeFileName(componentId);
                 bool theatrical = style == PreviewCameraStyle.Theatrical;
-                if (theatrical)
-                {
-                    if (entry.teamTheatricalMenuPreviewSprites == null)
-                        entry.teamTheatricalMenuPreviewSprites = new List<ShipFamilyTeamMenuPreview>();
-                    else
-                        entry.teamTheatricalMenuPreviewSprites.Clear();
-                }
-                else
-                {
-                    if (entry.teamMenuPreviewSprites == null)
-                        entry.teamMenuPreviewSprites = new List<ShipFamilyTeamMenuPreview>();
-                    else
-                        entry.teamMenuPreviewSprites.Clear();
-                }
+                PrepareComponentTeamPreviewLists(entry, theatrical);
 
                 List<ShipFamilyTeamMenuPreview> teamSprites = theatrical
                     ? entry.teamTheatricalMenuPreviewSprites
@@ -627,41 +581,18 @@ namespace TitanOrbit.Editor
                         continue;
                     }
 
-                    AssetDatabase.ImportAsset(pngPath, ImportAssetOptions.ForceUpdate);
-                    ConfigureSpriteImporter(pngPath);
-
-                    Sprite sprite = AssetDatabase.LoadAssetAtPath<Sprite>(pngPath);
-                    if (sprite == null)
-                    {
-                        var objs = AssetDatabase.LoadAllAssetsAtPath(pngPath);
-                        foreach (var a in objs)
-                        {
-                            if (a is Sprite s)
-                            {
-                                sprite = s;
-                                break;
-                            }
-                        }
-                    }
-
+                    Sprite sprite = ImportAndLoadSprite(pngPath);
                     if (sprite != null)
                     {
-                        teamSprites.Add(new ShipFamilyTeamMenuPreview
-                        {
-                            variantName = variant.name,
-                            team = variant.team,
-                            sprite = sprite
-                        });
-                        if (theatrical)
-                        {
-                            if (v == 0 || entry.theatricalMenuPreviewSprite == null)
-                                entry.theatricalMenuPreviewSprite = sprite;
-                        }
-                        else if (v == 0 || entry.menuPreviewSprite == null)
-                        {
-                            entry.menuPreviewSprite = sprite;
-                        }
-
+                        AssignGeneratedPreviewSprite(
+                            teamSprites,
+                            variant,
+                            sprite,
+                            theatrical,
+                            ref entry.menuPreviewSprite,
+                            ref entry.theatricalMenuPreviewSprite,
+                            v,
+                            theatrical ? entry.teamMenuPreviewSprites : null);
                         done++;
                     }
                     else
@@ -671,6 +602,7 @@ namespace TitanOrbit.Editor
                 }
             }
 
+            PersistFamilyPreviewAssignments(def);
             EditorUtility.SetDirty(def);
             if (saveAssets)
                 AssetDatabase.SaveAssets();
@@ -928,6 +860,91 @@ namespace TitanOrbit.Editor
             return bounds ?? new Bounds(root.transform.position, Vector3.zero);
         }
 
+        /// <summary>
+        /// Clears the team list this pass writes. Theatrical also clears the top-down
+        /// team list so the Inspector "Menu Preview Sprite" row and the live upgrade
+        /// tree receive the same PNGs (they share MenuPreviews/&lt;variant&gt;/).
+        /// </summary>
+        private static void PrepareTeamPreviewLists(ShipFamilyChassisTierEntry tier, bool theatrical)
+        {
+            if (tier == null)
+                return;
+
+            if (theatrical)
+            {
+                ClearOrCreateTeamList(ref tier.teamTheatricalMenuPreviewSprites);
+                ClearOrCreateTeamList(ref tier.teamMenuPreviewSprites);
+                return;
+            }
+
+            ClearOrCreateTeamList(ref tier.teamMenuPreviewSprites);
+        }
+
+        private static void PrepareComponentTeamPreviewLists(ShipFamilyComponentEntry entry, bool theatrical)
+        {
+            if (entry == null)
+                return;
+
+            if (theatrical)
+            {
+                ClearOrCreateTeamList(ref entry.teamTheatricalMenuPreviewSprites);
+                ClearOrCreateTeamList(ref entry.teamMenuPreviewSprites);
+                return;
+            }
+
+            ClearOrCreateTeamList(ref entry.teamMenuPreviewSprites);
+        }
+
+        private static void ClearOrCreateTeamList(ref List<ShipFamilyTeamMenuPreview> list)
+        {
+            if (list == null)
+                list = new List<ShipFamilyTeamMenuPreview>();
+            else
+                list.Clear();
+        }
+
+        /// <summary>
+        /// Wires one rendered sprite onto the team list and the shared fallback slot.
+        /// Theatrical also copies into menuPreviewSprite / teamMenuPreviewSprites so the
+        /// Upgrade Tree Inspector field the designer looks at is not left empty.
+        /// </summary>
+        private static void AssignGeneratedPreviewSprite(
+            List<ShipFamilyTeamMenuPreview> teamSprites,
+            PreviewVariant variant,
+            Sprite sprite,
+            bool theatrical,
+            ref Sprite menuPreviewSprite,
+            ref Sprite theatricalMenuPreviewSprite,
+            int variantIndex,
+            List<ShipFamilyTeamMenuPreview> mirrorTeamSprites)
+        {
+            var preview = new ShipFamilyTeamMenuPreview
+            {
+                variantName = variant.name,
+                team = variant.team,
+                sprite = sprite
+            };
+            teamSprites.Add(preview);
+
+            if (theatrical)
+            {
+                if (variantIndex == 0 || theatricalMenuPreviewSprite == null)
+                    theatricalMenuPreviewSprite = sprite;
+                if (variantIndex == 0 || menuPreviewSprite == null)
+                    menuPreviewSprite = sprite;
+                mirrorTeamSprites?.Add(new ShipFamilyTeamMenuPreview
+                {
+                    variantName = variant.name,
+                    team = variant.team,
+                    sprite = sprite
+                });
+                return;
+            }
+
+            if (variantIndex == 0 || menuPreviewSprite == null)
+                menuPreviewSprite = sprite;
+        }
+
         private static PreviewVariant[] BuildPreviewVariants(ShipFamilyDefinition def)
         {
             var list = new System.Collections.Generic.List<PreviewVariant>();
@@ -984,6 +1001,116 @@ namespace TitanOrbit.Editor
                     replaced[s] = chosen != null ? chosen : current[s];
                 }
                 r.sharedMaterials = replaced;
+            }
+        }
+
+        /// <summary>
+        /// Import as a Sprite and load it. ConfigureSpriteImporter reimports, so we load
+        /// after that pass — ImportAsset alone can leave textureType Default and
+        /// LoadAssetAtPath&lt;Sprite&gt; returns null (empty Inspector slots).
+        /// </summary>
+        private static Sprite ImportAndLoadSprite(string pngPath)
+        {
+            if (string.IsNullOrEmpty(pngPath))
+                return null;
+
+            AssetDatabase.ImportAsset(pngPath, ImportAssetOptions.ForceUpdate);
+            ConfigureSpriteImporter(pngPath);
+
+            Sprite sprite = AssetDatabase.LoadAssetAtPath<Sprite>(pngPath);
+            if (sprite != null)
+                return sprite;
+
+            UnityEngine.Object[] objs = AssetDatabase.LoadAllAssetsAtPath(pngPath);
+            if (objs == null)
+                return null;
+            for (int i = 0; i < objs.Length; i++)
+            {
+                if (objs[i] is Sprite s)
+                    return s;
+            }
+
+            return null;
+        }
+
+        /// <summary>
+        /// Writes C# sprite assignments through SerializedObject so the open family
+        /// Inspector cannot replace them with stale empty Menu Preview Sprite fields.
+        /// </summary>
+        private static void PersistFamilyPreviewAssignments(ShipFamilyDefinition def)
+        {
+            if (def == null)
+                return;
+
+            var so = new SerializedObject(def);
+            so.Update();
+
+            SerializedProperty tree = so.FindProperty("upgradeTree");
+            if (tree != null && def.upgradeTree != null)
+            {
+                int count = Mathf.Min(tree.arraySize, def.upgradeTree.Count);
+                for (int i = 0; i < count; i++)
+                    WriteTierPreviewProperties(tree.GetArrayElementAtIndex(i), def.upgradeTree[i]);
+            }
+
+            SerializedProperty components = so.FindProperty("components");
+            if (components != null && def.components != null)
+            {
+                int count = Mathf.Min(components.arraySize, def.components.Count);
+                for (int i = 0; i < count; i++)
+                    WriteComponentPreviewProperties(components.GetArrayElementAtIndex(i), def.components[i]);
+            }
+
+            so.ApplyModifiedPropertiesWithoutUndo();
+        }
+
+        private static void WriteTierPreviewProperties(SerializedProperty element, ShipFamilyChassisTierEntry tier)
+        {
+            if (element == null || tier == null)
+                return;
+            WriteSpriteProperty(element, "menuPreviewSprite", tier.menuPreviewSprite);
+            WriteSpriteProperty(element, "theatricalMenuPreviewSprite", tier.theatricalMenuPreviewSprite);
+            WriteTeamPreviewList(element.FindPropertyRelative("teamMenuPreviewSprites"), tier.teamMenuPreviewSprites);
+            WriteTeamPreviewList(element.FindPropertyRelative("teamTheatricalMenuPreviewSprites"), tier.teamTheatricalMenuPreviewSprites);
+        }
+
+        private static void WriteComponentPreviewProperties(SerializedProperty element, ShipFamilyComponentEntry entry)
+        {
+            if (element == null || entry == null)
+                return;
+            WriteSpriteProperty(element, "menuPreviewSprite", entry.menuPreviewSprite);
+            WriteSpriteProperty(element, "theatricalMenuPreviewSprite", entry.theatricalMenuPreviewSprite);
+            WriteTeamPreviewList(element.FindPropertyRelative("teamMenuPreviewSprites"), entry.teamMenuPreviewSprites);
+            WriteTeamPreviewList(element.FindPropertyRelative("teamTheatricalMenuPreviewSprites"), entry.teamTheatricalMenuPreviewSprites);
+        }
+
+        private static void WriteSpriteProperty(SerializedProperty element, string fieldName, Sprite sprite)
+        {
+            SerializedProperty prop = element.FindPropertyRelative(fieldName);
+            if (prop != null)
+                prop.objectReferenceValue = sprite;
+        }
+
+        private static void WriteTeamPreviewList(SerializedProperty listProp, List<ShipFamilyTeamMenuPreview> source)
+        {
+            if (listProp == null || !listProp.isArray)
+                return;
+
+            int count = source != null ? source.Count : 0;
+            listProp.arraySize = count;
+            for (int i = 0; i < count; i++)
+            {
+                ShipFamilyTeamMenuPreview entry = source[i];
+                SerializedProperty element = listProp.GetArrayElementAtIndex(i);
+                SerializedProperty nameProp = element.FindPropertyRelative("variantName");
+                SerializedProperty teamProp = element.FindPropertyRelative("team");
+                SerializedProperty spriteProp = element.FindPropertyRelative("sprite");
+                if (nameProp != null)
+                    nameProp.stringValue = entry != null ? entry.variantName : string.Empty;
+                if (teamProp != null)
+                    teamProp.intValue = entry != null ? (int)entry.team : 0;
+                if (spriteProp != null)
+                    spriteProp.objectReferenceValue = entry != null ? entry.sprite : null;
             }
         }
 

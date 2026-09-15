@@ -11,6 +11,7 @@ namespace TitanOrbit.ECS
     /// <summary>
     /// Server-only death aftermath: eliminate ships whose team owns no planets, and respawn
     /// a dead hull only after a valid <see cref="RequestRespawnPlanetCommand"/>.
+    /// When <c>KeepLoadout</c> is 0, cards and equipment are cleared (rewarded-ad death penalty).
     /// <para>
     /// [TITAN-ORBIT] The 10s <see cref="RespawnDelaySeconds"/> is a minimum wait — the ship
     /// does <b>not</b> auto-teleport when the timer elapses. The player must click a friendly
@@ -60,6 +61,7 @@ namespace TitanOrbit.ECS
                     em,
                     req.ValueRO.SourceConnection,
                     cmd.ValueRO.PlanetId,
+                    cmd.ValueRO.KeepLoadout != 0,
                     now,
                     orbitElapsed);
                 ecb.DestroyEntity(rpcEntity);
@@ -98,11 +100,16 @@ namespace TitanOrbit.ECS
         /// Validates the sender, timer, and planet ownership, then respawns the hull.
         /// Invalid requests are ignored so the client can click another friendly world.
         /// </summary>
+        /// <param name="keepLoadout">
+        /// True when the client watched a rewarded ad (or owns remove-ads).
+        /// False clears cards + equipment before the hull comes back.
+        /// </param>
         void TryRespawnFromRpc(
             ref SystemState state,
             EntityManager em,
             Entity connection,
             int planetId,
+            bool keepLoadout,
             float now,
             double orbitElapsed)
         {
@@ -133,6 +140,12 @@ namespace TitanOrbit.ECS
 
             if (!ShipHomeSpawnLogic.TryFindPlanetSpawnPosition(em, planetId, orbitElapsed, out float3 spawnPos))
                 return;
+
+            // --- Death penalty: strip the whole loadout unless the player kept it ---
+            // [TITAN-ORBIT] Cards + equipment share one pool. Watching a rewarded ad
+            // (KeepLoadout) is the only way to keep them. Bonus slot capacity stays.
+            if (!keepLoadout)
+                StripLoadoutForDeathPenalty(em, ship);
 
             // --- MEGA: restore L6 while still IsDead so clients do not flash the MEGA at spawn ---
             if (em.HasComponent<MegaShipState>(ship)
@@ -208,6 +221,37 @@ namespace TitanOrbit.ECS
             }
 
             return false;
+        }
+
+        /// <summary>
+        /// Clears upgrade cards and store equipment, zeros rocket/mine counters, then
+        /// reapplies hull stats so discarded ship-component meshes/stats drop.
+        /// Does not touch <see cref="ShipLoadoutState.LoadoutBonusSlots"/>.
+        /// </summary>
+        static void StripLoadoutForDeathPenalty(EntityManager em, Entity ship)
+        {
+            // --- Empty both loadout buffers ---
+            if (em.HasBuffer<EquippedCardElement>(ship))
+                em.GetBuffer<EquippedCardElement>(ship).Clear();
+            if (em.HasBuffer<EquippedEquipmentElement>(ship))
+                em.GetBuffer<EquippedEquipmentElement>(ship).Clear();
+
+            // --- Consumable counters live on the ghosted loadout struct ---
+            if (em.HasComponent<ShipLoadoutState>(ship))
+            {
+                var loadout = em.GetComponentData<ShipLoadoutState>(ship);
+                loadout.RocketCount = 0;
+                loadout.MineCount = 0;
+                em.SetComponentData(ship, loadout);
+            }
+
+            // --- Rebuild derived stats (same path as orbit-store discard) ---
+            if (em.HasComponent<ShipState>(ship))
+            {
+                var shipState = em.GetComponentData<ShipState>(ship);
+                ShipStatApplyLogic.ApplyToShip(
+                    em, ship, shipState.Team, shipState.ShipLevel, shipState.BranchIndex);
+            }
         }
 
         /// <summary>Restores ship to full vitals at spawn position with zero velocity.</summary>

@@ -283,6 +283,14 @@ namespace TitanOrbit.Game
             {
                 var planned = s_ShotScratch[shot];
                 int mountIdx = planned.MountIndex;
+                // MEGA auto-aim is server-only. Hull-forward anticipation steals the
+                // SpawnRpc (adopt keeps that wrong velocity) so the turret takes
+                // damage while tracers fly straight. Wait for a ghosted / Shift heading.
+                if (isMega
+                    && !BulletMuzzlePresentation.MegaMountHasClientFireHeading(
+                        world.EntityManager, shipEntity, mountIdx))
+                    continue;
+
                 if (!BulletMuzzlePresentation.TryResolveMuzzle(
                         world.EntityManager, shipEntity, mountIdx,
                         out float3 fireOrigin, out float3 fireForward, out _,

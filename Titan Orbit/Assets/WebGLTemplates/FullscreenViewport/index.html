@@ -13,8 +13,109 @@
 #if DEVELOPMENT_PLAYER
   <script src="<<<TemplateData/profiler.js>>>"></script>
 #endif
+    <!-- Google IMA — rewarded VAST on self-hosted Cloudflare WebGL (no 100k-user floor). -->
+    <script type="text/javascript" src="https://imasdk.googleapis.com/js/sdkloader/ima3.js"></script>
+    <style>
+      #titan-orbit-ima-overlay {
+        display: none;
+        position: fixed;
+        inset: 0;
+        z-index: 9999;
+        background: rgba(2, 4, 10, 0.92);
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+      }
+      #titan-orbit-ima-ad-container, #titan-orbit-ima-video {
+        width: min(960px, 96vw);
+        height: min(540px, 70vh);
+        background: #000;
+      }
+      #titan-orbit-ima-video { position: absolute; opacity: 0; pointer-events: none; width: 1px; height: 1px; }
+      #titan-orbit-ima-cancel {
+        margin-top: 16px;
+        padding: 8px 18px;
+        background: #1a2433;
+        color: #dce8f5;
+        border: 1px solid #3a4a60;
+        font: 13px/1 sans-serif;
+        letter-spacing: 0.08em;
+        cursor: pointer;
+      }
+    </style>
   </head>
   <body>
+    <div id="titan-orbit-ima-overlay">
+      <div id="titan-orbit-ima-ad-container"></div>
+      <video id="titan-orbit-ima-video" playsinline></video>
+      <button id="titan-orbit-ima-cancel" type="button">CANCEL — NO REWARD</button>
+    </div>
+    <script>
+      // Google IMA player used by TitanOrbitImaBridge.jslib.
+      // Status strings: complete | skipped | error | sdk-not-loaded
+      window.TitanOrbitImaPlay = function (adTagUrl, onStatus) {
+        var overlay = document.getElementById("titan-orbit-ima-overlay");
+        var adContainer = document.getElementById("titan-orbit-ima-ad-container");
+        var video = document.getElementById("titan-orbit-ima-video");
+        var cancel = document.getElementById("titan-orbit-ima-cancel");
+        var finished = false;
+        var adsManager = null;
+
+        function finish(status) {
+          if (finished) return;
+          finished = true;
+          try { if (adsManager) adsManager.destroy(); } catch (e) {}
+          adsManager = null;
+          if (overlay) overlay.style.display = "none";
+          if (video) {
+            try { video.pause(); } catch (e2) {}
+            video.removeAttribute("src");
+            try { video.load(); } catch (e3) {}
+          }
+          if (typeof onStatus === "function") onStatus(status);
+        }
+
+        if (typeof google === "undefined" || !google.ima) {
+          finish("sdk-not-loaded");
+          return;
+        }
+
+        overlay.style.display = "flex";
+        cancel.onclick = function () { finish("skipped"); };
+
+        var adDisplayContainer = new google.ima.AdDisplayContainer(adContainer, video);
+        try { adDisplayContainer.initialize(); } catch (e) {}
+
+        var adsLoader = new google.ima.AdsLoader(adDisplayContainer);
+        adsLoader.addEventListener(
+          google.ima.AdsManagerLoadedEvent.Type.ADS_MANAGER_LOADED,
+          function (event) {
+            adsManager = event.getAdsManager(video);
+            adsManager.addEventListener(google.ima.AdEvent.Type.COMPLETE, function () { finish("complete"); });
+            adsManager.addEventListener(google.ima.AdEvent.Type.SKIPPED, function () { finish("skipped"); });
+            adsManager.addEventListener(google.ima.AdEvent.Type.ALL_ADS_COMPLETED, function () {
+              if (!finished) finish("complete");
+            });
+            adsManager.addEventListener(google.ima.AdErrorEvent.Type.AD_ERROR, function () { finish("error"); });
+            try {
+              var w = adContainer.clientWidth || window.innerWidth;
+              var h = adContainer.clientHeight || Math.floor(window.innerHeight * 0.7);
+              adsManager.init(w, h, google.ima.ViewMode.NORMAL);
+              adsManager.start();
+            } catch (err) {
+              finish("error");
+            }
+          }
+        );
+        adsLoader.addEventListener(google.ima.AdErrorEvent.Type.AD_ERROR, function () { finish("error"); });
+
+        var request = new google.ima.AdsRequest();
+        request.adTagUrl = adTagUrl;
+        request.linearAdSlotWidth = adContainer.clientWidth || window.innerWidth;
+        request.linearAdSlotHeight = adContainer.clientHeight || Math.floor(window.innerHeight * 0.7);
+        adsLoader.requestAds(request);
+      };
+    </script>
     <div id="unity-container" class="unity-desktop">
       <canvas id="unity-canvas" width={{{ WIDTH }}} height={{{ HEIGHT }}} tabindex="-1"></canvas>
       <div id="unity-loading-bar">

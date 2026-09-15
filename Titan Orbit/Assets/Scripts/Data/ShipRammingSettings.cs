@@ -12,7 +12,7 @@ namespace TitanOrbit.Data
     /// <para>
     /// [TITAN-ORBIT] Formulas live in <see cref="ShipComponentRammingSuggestions"/> so the HUD
     /// and server <c>ShipRammingCollisionDamageSystem</c> cannot drift:
-    /// grind DPS = rating × (totalMass / MassReference);
+    /// grind DPS = rating × (totalMass / this hull's ComponentSize);
     /// ram burst = grind DPS × (1 + closingSpeed / RamClosingSpeedForDouble).
     /// </para>
     /// </summary>
@@ -35,14 +35,15 @@ namespace TitanOrbit.Data
         public float GlobalDamageMultiplier = 1f;
 
         /// <summary>
-        /// Mobility totalMass at which grind DPS equals the RAM chip × GlobalDamageMultiplier.
-        /// Heavier hulls and cargo scale above that; lighter hulls scale below.
+        /// Fallback mass reference when a ship has no ComponentSize yet.
+        /// Live grind/ram uses that hull's <c>HullMassReference</c> as the 1× point so
+        /// larger high-level ships do not take 3–7× self-chip while empty.
+        /// Cargo above hull size still raises the factor.
         /// </summary>
         [Tooltip(
-            "Mobility totalMass (gems + people + ComponentSize) at which grind DPS equals " +
-            "the RAM chip. Default 10 matches a typical empty hull after HullMassScale. " +
-            "A ship at mass 20 then grinds at 2× the chip; mass 5 grinds at half. " +
-            "Must stay above 0.")]
+            "Fallback only — used when HullMassReference is unset. Live damage uses this " +
+            "ship's ComponentSize as the 1× RAM chip (empty L6 is not 4× a starter). " +
+            "Cargo still scales above that. Must stay above 0.")]
         [Min(0.01f)]
         public float MassReference = 10f;
 

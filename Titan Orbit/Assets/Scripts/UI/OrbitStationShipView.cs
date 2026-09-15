@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using TitanOrbit;
 using TitanOrbit.Core;
 using TitanOrbit.Data;
 using TitanOrbit.ECS;
@@ -29,7 +30,13 @@ namespace TitanOrbit.Entities
         public ulong NetworkObjectId => FakeNetworkObjectId;
         public ShipData CurrentShipData { get; set; }
 
-        public int SlotCount => Mathf.Max(1, ShipLevel);
+        /// <summary>
+        /// Ghosted rewarded extra slots for this match (0 or 1).
+        /// SlotCount includes this so store buy gates match the server.
+        /// </summary>
+        public int LoadoutBonusSlots { get; set; }
+
+        public int SlotCount => ShipLoadoutCapacity.GetCap(ShipLevel, LoadoutBonusSlots);
         public int EquipmentSlotCount => SlotCount;
         /// <summary>Cards + gear share one LOADOUT pool capped at ship level.</summary>
         public int LoadoutUsedCount =>
@@ -166,6 +173,15 @@ namespace TitanOrbit.Entities
                 return;
 
             var em = world.EntityManager;
+
+            // Bonus slot is capacity, not an equipped item — refresh it every sync so the
+            // locked +1 row disappears as soon as the ghost arrives (even if fingerprint
+            // early-out used to skip this method before bonus was part of the hash).
+            if (em.HasComponent<ShipLoadoutState>(shipEntity))
+                LoadoutBonusSlots = em.GetComponentData<ShipLoadoutState>(shipEntity).LoadoutBonusSlots;
+            else
+                LoadoutBonusSlots = 0;
+
             int fingerprint = ShipStatApplyLogic.ComputeEquippedLoadoutFingerprint(em, shipEntity);
             if (fingerprint == _lastLoadoutFingerprint)
                 return;

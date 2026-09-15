@@ -311,36 +311,51 @@ namespace TitanOrbit.Data
                 statCategories = new List<ShipComponentStatCategory>();
         }
 
-        /// <summary>Menu thumbnail for moon-dock component cards (team variant when present).</summary>
+        /// <summary>
+        /// Moon-dock component card art. Team top-down first, then the shared top-down
+        /// slot. Theatrical generate only writes the theatrical fields, so those are
+        /// the fallback and a rebuild does not leave the card blank.
+        /// </summary>
         public Sprite GetMenuPreviewSprite(TeamManager.Team team = TeamManager.Team.None)
         {
-            if (team != TeamManager.Team.None && teamMenuPreviewSprites != null)
-            {
-                for (int i = 0; i < teamMenuPreviewSprites.Count; i++)
-                {
-                    var entry = teamMenuPreviewSprites[i];
-                    if (entry != null && entry.team == team && entry.sprite != null)
-                        return entry.sprite;
-                }
-            }
+            Sprite teamSprite = FindTeamMenuPreview(teamMenuPreviewSprites, team);
+            if (teamSprite != null)
+                return teamSprite;
+            if (menuPreviewSprite != null)
+                return menuPreviewSprite;
 
-            return menuPreviewSprite;
+            teamSprite = FindTeamMenuPreview(teamTheatricalMenuPreviewSprites, team);
+            if (teamSprite != null)
+                return teamSprite;
+            return theatricalMenuPreviewSprite;
         }
 
-        /// <summary>Theatrical menu thumbnail (team variant when present).</summary>
+        /// <summary>
+        /// 3/4 hero component thumb. Team theatrical first, then the shared theatrical
+        /// slot, then <see cref="GetMenuPreviewSprite"/> if only top-down art exists.
+        /// </summary>
         public Sprite GetTheatricalMenuPreviewSprite(TeamManager.Team team = TeamManager.Team.None)
         {
-            if (team != TeamManager.Team.None && teamTheatricalMenuPreviewSprites != null)
+            Sprite teamSprite = FindTeamMenuPreview(teamTheatricalMenuPreviewSprites, team);
+            if (teamSprite != null)
+                return teamSprite;
+            if (theatricalMenuPreviewSprite != null)
+                return theatricalMenuPreviewSprite;
+            return GetMenuPreviewSprite(team);
+        }
+
+        static Sprite FindTeamMenuPreview(List<ShipFamilyTeamMenuPreview> list, TeamManager.Team team)
+        {
+            if (team == TeamManager.Team.None || list == null)
+                return null;
+            for (int i = 0; i < list.Count; i++)
             {
-                for (int i = 0; i < teamTheatricalMenuPreviewSprites.Count; i++)
-                {
-                    var entry = teamTheatricalMenuPreviewSprites[i];
-                    if (entry != null && entry.team == team && entry.sprite != null)
-                        return entry.sprite;
-                }
+                ShipFamilyTeamMenuPreview entry = list[i];
+                if (entry != null && entry.team == team && entry.sprite != null)
+                    return entry.sprite;
             }
 
-            return theatricalMenuPreviewSprite != null ? theatricalMenuPreviewSprite : GetMenuPreviewSprite(team);
+            return null;
         }
     }
 }

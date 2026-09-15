@@ -19,6 +19,16 @@ namespace TitanOrbit.Data
             if (Settings != null)
                 return Settings;
 
+            // Dedicated / headless may never run the NceGameRoot MonoBehaviour loader.
+            // Resources.Load keeps server ram ratio / sliders on the same asset as the client.
+            ShipRammingSettings loaded = Resources.Load<ShipRammingSettings>("ShipRammingSettings");
+            if (loaded != null)
+            {
+                loaded.ClampValues();
+                Settings = loaded;
+                return Settings;
+            }
+
             // --- Code defaults (same as ScriptableObject field defaults) ---
             var fallback = ScriptableObject.CreateInstance<ShipRammingSettings>();
             fallback.hideFlags = HideFlags.HideAndDontSave;

@@ -52,6 +52,16 @@ namespace TitanOrbit.Game
         /// <summary>Scratch list for live weapon discovery (main thread only).</summary>
         static readonly List<LiveWeaponMount> s_LiveMountScratch = new List<LiveWeaponMount>(8);
 
+        /// <summary>
+        /// Last ghosted / AimWorld / Shift world yaw per MEGA mount. Owner-predicted
+        /// <c>TargetDistance</c> flickers to 0 between snapshots — hold the fire heading
+        /// so anticipation does not fall back to hull forward.
+        /// </summary>
+        const int MaxHeldMegaMounts = 32;
+        const float MegaAimHoldSeconds = 0.4f;
+        static readonly float[] s_HeldMegaWorldYawDeg = new float[MaxHeldMegaMounts];
+        static readonly float[] s_HeldMegaWorldYawTime = new float[MaxHeldMegaMounts];
+
         /// <summary>One offensive barrel on the drawn hull (authoring + live Transform).</summary>
         struct LiveWeaponMount
         {
@@ -208,6 +218,13 @@ namespace TitanOrbit.Game
             var weaponCfg = em.GetComponentData<ShipWeaponConfig>(hullEntity);
             req.SpawnPosition = origin;
             req.IsDisplaySpace = false;
+
+            // MEGA auto-aim lives on the server. When the owner-predicted gunner slot is
+            // parked (hull-forward), keep the SpawnRpc velocity — that is the ray that
+            // already hit the planetary defense turret.
+            if (IsMegaHull(em, hullEntity)
+                && !MegaMountHasClientFireHeading(em, hullEntity, mountIndex))
+                return true;
 
             // Keep bank-modified speed from the server / anticipation plan. Only rebuild
             // direction from the drawn barrel + current ship vel.
@@ -382,9 +399,29 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Overlay live Shift mouse-point aim (per muzzle) or the ghosted world fire heading.
+        /// True when this MEGA mount has Shift mouse-aim, a ghosted lock, AimWorld
+        /// (planets / defense pads — <c>TargetGhostId</c> is 0), or a short Fire-held
+        /// yaw hold. False means bake/park heading (usually hull forward).
         /// </summary>
-        static void OverlayMegaMountAim(
+        public static bool MegaMountHasClientFireHeading(
+            EntityManager em,
+            Entity shipEntity,
+            int mountIndex)
+        {
+            if (!IsMegaHull(em, shipEntity))
+                return false;
+            if (!TryGetLocalHullTransform(em, shipEntity, out LocalTransform shipTransform, out _))
+                return false;
+            if (!TryGetMountElementFromBuffer(em, shipEntity, mountIndex, out ShipWeaponMountElement mount))
+                return false;
+            return OverlayMegaMountAim(em, shipEntity, mountIndex, in shipTransform, ref mount);
+        }
+
+        /// <summary>
+        /// Overlay live Shift mouse-point aim (per muzzle) or the ghosted world fire heading.
+        /// Returns true when the mount is pointing at a real fire target (not hull-park).
+        /// </summary>
+        static bool OverlayMegaMountAim(
             EntityManager em,
             Entity shipEntity,
             int mountIndex,
@@ -403,6 +440,10 @@ namespace TitanOrbit.Game
                 }
             }
 
+            bool ownerFiring = em.HasComponent<LocalPlayerShipTag>(shipEntity)
+                && em.HasComponent<ShipInput>(shipEntity)
+                && em.GetComponentData<ShipInput>(shipEntity).Fire.IsSet;
+
             if (em.HasComponent<LocalPlayerShipTag>(shipEntity)
                 && em.HasComponent<ShipInput>(shipEntity))
             {
@@ -414,23 +455,101 @@ namespace TitanOrbit.Game
                 {
                     MegaShipWeaponAim.RotateMountTowardWorldDir(
                         in shipTransform, ref mount, toCursor, 0f);
-                    return;
+                    RememberMegaWorldYaw(mountIndex, MegaShipWeaponAim.GetWorldYawDeg(toCursor));
+                    return true;
                 }
             }
 
-            if (!haveSlot)
-                return;
+            if (haveSlot && MegaShipWeaponAim.IsTrackingAim(in slot))
+            {
+                float3 trackDir = MegaShipWeaponAim.WorldDirFromYawDeg(slot.CurrentYawDeg);
+                MegaShipWeaponAim.RotateMountTowardWorldDir(
+                    in shipTransform, ref mount, trackDir, 0f);
+                RememberMegaWorldYaw(mountIndex, slot.CurrentYawDeg);
+                return true;
+            }
 
-            if (MegaShipWeaponAim.IsTrackingAim(in slot))
+            // Planetary defense pads / moons sit on stripped map bodies (ghostId 0).
+            // AimWorldX/Z is the lock's current point — same fallback hybrid LookAt uses.
+            if (haveSlot
+                && TryGetMegaAimWorldDir(
+                    in shipTransform, in mount, in slot, out float3 aimWorldDir))
+            {
+                MegaShipWeaponAim.RotateMountTowardWorldDir(
+                    in shipTransform, ref mount, aimWorldDir, 0f);
+                RememberMegaWorldYaw(mountIndex, MegaShipWeaponAim.GetWorldYawDeg(aimWorldDir));
+                return true;
+            }
+
+            if (TryGetHeldMegaWorldYaw(mountIndex, ownerFiring, out float heldYaw))
             {
                 MegaShipWeaponAim.RotateMountTowardWorldDir(
                     in shipTransform, ref mount,
-                    MegaShipWeaponAim.WorldDirFromYawDeg(slot.CurrentYawDeg), 0f);
-                return;
+                    MegaShipWeaponAim.WorldDirFromYawDeg(heldYaw), 0f);
+                return true;
             }
 
-            mount.LocalRotation = quaternion.AxisAngle(
-                math.up(), math.radians(slot.CurrentYawDeg));
+            if (haveSlot)
+            {
+                mount.LocalRotation = quaternion.AxisAngle(
+                    math.up(), math.radians(slot.CurrentYawDeg));
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// Toroidal muzzle → <see cref="MegaShipGunnerSlotElement.AimWorldX"/> when the
+        /// slot stored a current lock point (defense turret / moon) even if TargetDistance
+        /// flickered to 0 on the predicted ghost.
+        /// </summary>
+        static bool TryGetMegaAimWorldDir(
+            in LocalTransform shipTransform,
+            in ShipWeaponMountElement mount,
+            in MegaShipGunnerSlotElement slot,
+            out float3 worldDir)
+        {
+            worldDir = default;
+            if (math.abs(slot.AimWorldX) + math.abs(slot.AimWorldZ) < 0.05f)
+                return false;
+            if (!ToroidalMapEcs.TryGetMapSize(out float mapW, out float mapH))
+                return false;
+            if (!ShipWeaponPose.TryResolve(shipTransform, mount, out float3 muzzle, out _))
+                muzzle = shipTransform.Position;
+            float3 aim = new float3(slot.AimWorldX, muzzle.y, slot.AimWorldZ);
+            float3 offset = ToroidalMapEcs.ShortestOffsetXZ(muzzle, aim, mapW, mapH);
+            offset.y = 0f;
+            float len = math.length(offset);
+            if (len < 0.05f)
+                return false;
+            worldDir = offset / len;
+            return true;
+        }
+
+        static void RememberMegaWorldYaw(int mountIndex, float worldYawDeg)
+        {
+            if (mountIndex < 0 || mountIndex >= MaxHeldMegaMounts)
+                return;
+            s_HeldMegaWorldYawDeg[mountIndex] = worldYawDeg;
+            s_HeldMegaWorldYawTime[mountIndex] = Time.unscaledTime;
+        }
+
+        static bool TryGetHeldMegaWorldYaw(int mountIndex, bool ownerFiring, out float worldYawDeg)
+        {
+            worldYawDeg = 0f;
+            if (mountIndex < 0 || mountIndex >= MaxHeldMegaMounts)
+                return false;
+            if (s_HeldMegaWorldYawTime[mountIndex] <= 0f)
+                return false;
+            if (!ownerFiring)
+            {
+                s_HeldMegaWorldYawTime[mountIndex] = 0f;
+                return false;
+            }
+            if (Time.unscaledTime - s_HeldMegaWorldYawTime[mountIndex] > MegaAimHoldSeconds)
+                return false;
+            worldYawDeg = s_HeldMegaWorldYawDeg[mountIndex];
+            return true;
         }
 
         /// <summary>

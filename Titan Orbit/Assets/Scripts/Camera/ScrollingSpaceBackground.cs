@@ -29,6 +29,9 @@ namespace TitanOrbit.Camera
 
         private const string ScrollShaderName = "TitanOrbit/SpaceBackgroundUnlit";
 
+        /// <summary>Same look-down pole as the shader starfield / CameraFollowEcs.</summary>
+        private const float LookDownDotThreshold = 0.92f;
+
         [Header("References")]
         [Tooltip("Camera to follow (defaults to Main Camera)")]
         [SerializeField] private UnityEngine.Camera targetCamera;
@@ -45,7 +48,7 @@ namespace TitanOrbit.Camera
         [SerializeField] private float textureTiling = 2f;
 
         [Header("Placement")]
-        [Tooltip("Distance below the gameplay plane in world Y (further down = safer behind planets/ships)")]
+        [Tooltip("How far in front of the lens the sky plane sits (world units). Same camera-forward placement as the shader starfield.")]
         [SerializeField] private float depthOffset = 400f;
         [Tooltip("Extra margin beyond visible area to prevent edge gaps on wide screens")]
         [SerializeField] private float sizeMargin = 1.35f;
@@ -246,8 +249,8 @@ namespace TitanOrbit.Camera
             else
                 return;
 
-            transform.position = new Vector3(followPos.x, -Mathf.Abs(depthOffset), followPos.z);
-            ResizeQuadToCoverView();
+            bool skyPlane = PlaceBackground(followPos, out float viewDistance);
+            ResizeQuadToCoverView(viewDistance);
 
             if (!hasLastScrollPos)
             {
@@ -263,10 +266,62 @@ namespace TitanOrbit.Camera
                 lastScrollPos = followPos;
             }
 
-            bgMaterial.SetVector(UVScroll, new Vector4(textureTiling, textureTiling, scrollOffsetX, scrollOffsetZ));
+            float uvX = skyPlane ? -scrollOffsetX : scrollOffsetX;
+            bgMaterial.SetVector(UVScroll, new Vector4(textureTiling, textureTiling, uvX, scrollOffsetZ));
         }
 
-        private void ResizeQuadToCoverView()
+        /// <summary>
+        /// Gameplay look-down uses the world-XZ floor (smooth). Theatrical tilt uses a
+        /// camera-facing sky plane — same split as <see cref="ParallaxStarfieldBackground"/>.
+        /// </summary>
+        /// <returns>True when the sky-plane path is active (UV.x is mirrored).</returns>
+        private bool PlaceBackground(Vector3 followPos, out float viewDistance)
+        {
+            Transform camT = targetCamera.transform;
+            bool lookingDown = Vector3.Dot(camT.forward, Vector3.down) > LookDownDotThreshold;
+            if (lookingDown)
+            {
+                float floorY = -Mathf.Abs(depthOffset);
+                transform.SetPositionAndRotation(
+                    new Vector3(followPos.x, floorY, followPos.z),
+                    Quaternion.identity);
+                if (backgroundQuadTransform != null)
+                    backgroundQuadTransform.localRotation = Quaternion.Euler(90f, 0f, 0f);
+                viewDistance = Mathf.Abs(camT.position.y - floorY);
+                if (viewDistance < 1f)
+                    viewDistance = Mathf.Abs(depthOffset);
+                return false;
+            }
+
+            viewDistance = PlaceSkyPlaneInFrontOfCamera();
+            return true;
+        }
+
+        /// <summary>
+        /// Pins the nebula quad as a sky plane in front of the lens for theatrical tilt.
+        /// </summary>
+        /// <returns>Exact camera-to-quad distance used for placement.</returns>
+        private float PlaceSkyPlaneInFrontOfCamera()
+        {
+            Transform camT = targetCamera.transform;
+            float dist = Mathf.Max(20f, Mathf.Abs(depthOffset));
+            dist = Mathf.Min(dist, targetCamera.farClipPlane * 0.92f);
+            dist = Mathf.Max(dist, targetCamera.nearClipPlane + 1f);
+            transform.SetPositionAndRotation(
+                camT.position + camT.forward * dist,
+                Quaternion.LookRotation(-camT.forward, camT.up));
+
+            if (backgroundQuadTransform != null)
+                backgroundQuadTransform.localRotation = Quaternion.identity;
+            return dist;
+        }
+
+        /// <summary>
+        /// Sizes the sky-plane quad to the frustum at <paramref name="cameraToBackground"/>.
+        /// Uses the placement distance so scale does not shimmer from a re-measured Distance.
+        /// </summary>
+        /// <param name="cameraToBackground">World units from lens to sky plane. Negative = use depthOffset.</param>
+        private void ResizeQuadToCoverView(float cameraToBackground = -1f)
         {
             // --- ResizeQuadToCoverView ---
             if (targetCamera == null || backgroundQuadTransform == null)
@@ -283,8 +338,8 @@ namespace TitanOrbit.Camera
             }
             else
             {
-                float backgroundY = -Mathf.Abs(depthOffset);
-                float cameraToBackground = Mathf.Abs(targetCamera.transform.position.y - backgroundY);
+                if (cameraToBackground < 1f)
+                    cameraToBackground = Mathf.Abs(depthOffset);
                 float halfFovRadians = targetCamera.fieldOfView * 0.5f * Mathf.Deg2Rad;
                 visibleHeight = 2f * cameraToBackground * Mathf.Tan(halfFovRadians);
             }
