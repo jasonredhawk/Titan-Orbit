@@ -45,6 +45,7 @@ namespace TitanOrbit.Game
             s_NotInGameFrames = 0;
             ClientJoinSettleCache.Clear();
             GemClientEntityRegistry.Clear();
+            ClientLocalGemSpawn.Clear();
             PlanetClientEntityRegistry.Clear();
             AsteroidClientEntityRegistry.Clear();
             ClientLocalAsteroidCombatSync.ClearPendingQueues();
@@ -2029,6 +2030,7 @@ namespace TitanOrbit.Game
             // Tear down hybrid GOs only on true leave-session — not a soft count reset.
             EcsWorldVisualizer.TearDownHybridProxiesForSessionEnd();
             GemClientEntityRegistry.Clear();
+            ClientLocalGemSpawn.Clear();
             PlanetClientEntityRegistry.Clear();
             AsteroidClientEntityRegistry.Clear();
             ClientLocalAsteroidCombatSync.ClearPendingQueues();

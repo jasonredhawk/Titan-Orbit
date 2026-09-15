@@ -25,7 +25,7 @@ namespace TitanOrbit.Game
     ///    ineligible on the server), yet the client still drew a latch.
     /// </para>
     /// Gems come from <see cref="GemClientEntityRegistry"/> / hybrid proxies — never a full gem
-    /// <c>ToEntityArray</c> (join-crash invariant). Pair keys use <see cref="GhostInstance.ghostId"/>
+    /// <c>ToEntityArray</c> (join-crash invariant). Pair keys use <see cref="GemState.SpawnId"/>
     /// so Entity.Index reuse cannot keep a beam after the old gem despawns.
     /// </summary>
     public static class GemTractorBeamClientLogic
@@ -40,8 +40,8 @@ namespace TitanOrbit.Game
             public Entity Entity;
 
             /// <summary>
-            /// [NETCODE] <see cref="GhostInstance.ghostId"/> — session-unique, same id the server
-            /// assigned. 0 means the snapshot is not a live replicated gem (skip it).
+            /// Recipe <see cref="GemState.SpawnId"/> — stable across server/client hydrate.
+            /// 0 means the snapshot is not a live gem (skip it).
             /// </summary>
             public int GhostId;
 
@@ -248,13 +248,11 @@ namespace TitanOrbit.Game
                     continue;
                 if (!em.HasComponent<GemTag>(entity) ||
                     !em.HasComponent<GemState>(entity) ||
-                    !em.HasComponent<LocalTransform>(entity) ||
-                    !em.HasComponent<GhostInstance>(entity))
+                    !em.HasComponent<LocalTransform>(entity))
                     continue;
 
-                // [NETCODE] ghostId 0 is a prefab leftover or an unregistered spawn — not scoopable.
-                int ghostId = em.GetComponentData<GhostInstance>(entity).ghostId;
-                if (ghostId == 0 || seen.Contains(ghostId))
+                // Event-hydrated gems have no GhostInstance — SpawnId is the session key.
+                if (!TryGetGemStableId(em, entity, out int stableId) || seen.Contains(stableId))
                     continue;
 
                 var state = em.GetComponentData<GemState>(entity);
@@ -267,7 +265,7 @@ namespace TitanOrbit.Game
                 if (!HasVisibleGemCrystal(entity))
                     continue;
 
-                seen.Add(ghostId);
+                seen.Add(stableId);
 
                 var kinematics = em.HasComponent<GemKinematics>(entity)
                     ? em.GetComponentData<GemKinematics>(entity)
@@ -286,7 +284,7 @@ namespace TitanOrbit.Game
                 dst.Add(new GemProxySnapshot
                 {
                     Entity = entity,
-                    GhostId = ghostId,
+                    GhostId = stableId,
                     State = state,
                     Transform = transform,
                     Kinematics = kinematics,
@@ -320,7 +318,7 @@ namespace TitanOrbit.Game
             float mapW,
             float mapH)
         {
-            if (!TryGetGemGhostId(em, gemEntity, out int gemGhostId))
+            if (!TryGetGemStableId(em, gemEntity, out int gemGhostId))
                 return false;
             if (!CanShipMagneticallyPull(shipEntity.Index, gemGhostId))
                 return false;
@@ -503,17 +501,20 @@ namespace TitanOrbit.Game
             !gem.IsConsumed && gem.Value > 0.001f && gem.DepositTeam == TeamId.None;
 
         /// <summary>
-        /// [NETCODE] Session-unique gem id from <see cref="GhostInstance"/>. False when the
-        /// entity is missing, not a ghost, or still has the prefab's ghostId 0.
+        /// Session-unique gem id from <see cref="GemState.SpawnId"/>. False when missing or 0.
         /// </summary>
-        public static bool TryGetGemGhostId(EntityManager em, Entity gemEntity, out int ghostId)
+        public static bool TryGetGemStableId(EntityManager em, Entity gemEntity, out int spawnId)
         {
-            ghostId = 0;
-            if (!em.Exists(gemEntity) || !em.HasComponent<GhostInstance>(gemEntity))
+            spawnId = 0;
+            if (!em.Exists(gemEntity) || !em.HasComponent<GemState>(gemEntity))
                 return false;
-            ghostId = em.GetComponentData<GhostInstance>(gemEntity).ghostId;
-            return ghostId != 0;
+            spawnId = em.GetComponentData<GemState>(gemEntity).SpawnId;
+            return spawnId != 0;
         }
+
+        /// <summary>Legacy name — same as <see cref="TryGetGemStableId"/>.</summary>
+        public static bool TryGetGemGhostId(EntityManager em, Entity gemEntity, out int ghostId) =>
+            TryGetGemStableId(em, gemEntity, out ghostId);
 
         /// <summary>Clears lock caches (leave session / domain reload).</summary>
         public static void Clear()

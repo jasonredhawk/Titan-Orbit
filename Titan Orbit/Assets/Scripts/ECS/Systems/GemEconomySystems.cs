@@ -9,7 +9,6 @@ using Unity.Mathematics;
 using Unity.NetCode;
 using Unity.Physics;
 using Unity.Transforms;
-using Random = Unity.Mathematics.Random;
 
 namespace TitanOrbit.ECS
 {
@@ -351,44 +350,40 @@ namespace TitanOrbit.ECS
                     }
                 }
 
-                // --- Linear velocity ---
-                // [TITAN-ORBIT] Live tractor owns constant pull speed — damping would fight the beam.
-                float3 vel = underTractor
-                    ? kin.Velocity
-                    : GemExplosionMath.IntegrateLinearVelocity(
-                        kin.Velocity, linearDamping, stopSpeed, dt);
-                float3 ang = GemExplosionMath.IntegrateAngularVelocity(
-                    kin.AngularVelocity, angularDamping, dt);
-
-                // --- Integrate then wrap onto the canonical chart ---
                 var lt = transform.ValueRO;
-                lt.Position += vel * dt;
-                if (ToroidalMapEcs.HasValidMapSize)
-                    lt.Position = ToroidalMapEcs.Wrap(lt.Position);
-                if (math.lengthsq(ang) > 0.0001f)
-                {
-                    // AngularVelocity is rad/s — quaternion integrate in world space.
-                    float angle = math.length(ang) * dt;
-                    float3 axis = math.normalizesafe(ang, new float3(0f, 1f, 0f));
-                    lt.Rotation = math.mul(quaternion.AxisAngle(axis, angle), lt.Rotation);
-                }
+                float3 pos = lt.Position;
+                quaternion rot = lt.Rotation;
+                float3 vel = kin.Velocity;
+                float3 ang = kin.AngularVelocity;
+                byte phase = hasMotion ? motionRo.Phase : GemMotionState.PhaseCoast;
+                bool haveMap = ToroidalMapEcs.TryGetMapSize(out float mapW, out float mapH);
 
+                GemMotionLogic.IntegrateStep(
+                    ref pos,
+                    ref rot,
+                    ref vel,
+                    ref ang,
+                    ref phase,
+                    underTractor,
+                    dt,
+                    linearDamping,
+                    angularDamping,
+                    stopSpeed,
+                    mapW,
+                    mapH,
+                    haveMap);
+
+                lt.Position = pos;
+                lt.Rotation = rot;
                 transform.ValueRW = lt;
                 kinematics.ValueRW = new GemKinematics { Velocity = vel, AngularVelocity = ang };
 
-                // --- Phase: Coast → Idle when stopped (never steal Tractor phase here) ---
                 if (!hasMotion || underTractor)
                     continue;
 
-                if (math.lengthsq(vel) < stopSpeed * stopSpeed)
+                if (motionRo.Phase != phase)
                 {
-                    motionRo.Phase = GemMotionState.PhaseIdle;
-                    SystemAPI.SetComponent(entity, motionRo);
-                }
-                else if (motionRo.Phase == GemMotionState.PhaseIdle)
-                {
-                    // Nudged / re-launched somehow — treat as coast again.
-                    motionRo.Phase = GemMotionState.PhaseCoast;
+                    motionRo.Phase = phase;
                     SystemAPI.SetComponent(entity, motionRo);
                 }
             }
@@ -443,6 +438,7 @@ namespace TitanOrbit.ECS
                 if (elapsed < lifetime)
                     continue;
 
+                GemNetNotify.SendConsumed(ref ecb, gemState.ValueRO.SpawnId);
                 ecb.DestroyEntity(gemEntity);
             }
 
@@ -672,15 +668,15 @@ namespace TitanOrbit.ECS
                         gemTransforms[gi] = leftoverXf;
                         ecb.SetComponent(gemEntity, gemState);
                         ecb.SetComponent(gemEntity, leftoverXf);
+                        GemNetNotify.SendValueChanged(ref ecb, gemState.SpawnId, remainder);
                     }
                     else
                     {
                         gemConsumed[gi] = true;
                         gemState.IsConsumed = true;
                         gemStates[gi] = gemState;
-                        ecb.SetComponent(gemEntity, gemState);
-                        if (!state.EntityManager.HasComponent<GemConsumedPendingDestroy>(gemEntity))
-                            ecb.AddComponent(gemEntity, new GemConsumedPendingDestroy { SendsLeft = 2 });
+                        GemNetNotify.SendConsumed(ref ecb, gemState.SpawnId);
+                        ecb.DestroyEntity(gemEntity);
                     }
 
                     if (capacityLeft <= 0.001f)
@@ -775,31 +771,22 @@ namespace TitanOrbit.ECS
     }
 
     /// <summary>
-    /// Server: after GhostSend has had a chance to replicate <see cref="GemState.IsConsumed"/>,
-    /// destroy scooped gem entities so NetCode can send the despawn. Pickup used to
-    /// DestroyEntity the same tick as cargo add, which left clients interpolating the last
-    /// alive snapshot until the 20s lifetime shrink.
+    /// [LEGACY] Consume used to hold the ghost two GhostSend ticks so <c>IsConsumed</c> replicated.
+    /// Event-hydrate gems destroy immediately and notify with <see cref="GemConsumedRpc"/>.
     /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation)]
     [UpdateInGroup(typeof(SimulationSystemGroup), OrderLast = true)]
-    [UpdateAfter(typeof(GhostSendSystem))]
     public partial struct GemConsumedDestroySystem : ISystem
     {
-        /// <summary>Destroys scooped gems once their consume flag has been sent.</summary>
+        /// <summary>No-op — leftover <see cref="GemConsumedPendingDestroy"/> entities are destroyed.</summary>
         public void OnUpdate(ref SystemState state)
         {
             var ecb = new EntityCommandBuffer(Allocator.Temp);
-            foreach (var (pending, gemEntity) in SystemAPI
-                         .Query<RefRW<GemConsumedPendingDestroy>>()
+            foreach (var (_, gemEntity) in SystemAPI
+                         .Query<RefRO<GemConsumedPendingDestroy>>()
                          .WithAll<GemTag>()
                          .WithEntityAccess())
             {
-                if (pending.ValueRO.SendsLeft > 0)
-                {
-                    pending.ValueRW.SendsLeft--;
-                    continue;
-                }
-
                 ecb.DestroyEntity(gemEntity);
             }
 
@@ -1031,8 +1018,7 @@ namespace TitanOrbit.ECS
     /// <see cref="GemExplosionSettings"/>) that sum to leftover <see cref="AsteroidState.RemainingGems"/>,
     /// with original NGO explosion speed, damping, and tumble. Schedules a timed respawn
     /// (<see cref="AsteroidSpawning.ScheduleRespawn"/>) then destroys the entity.
-    /// Clients present gems only after gem ghosts Instantiates, driven by ghosted
-    /// <see cref="GemKinematics"/> / LocalTransform (no client-invented burst VFX).
+    /// Clients hydrate the burst from <see cref="GemBurstRpc"/> (same seed / chord split).
     /// <para>
     /// [TITAN-ORBIT] Despawn triggers on <see cref="AsteroidState.IsDestroyed"/> <b>or</b>
     /// <c>Health &lt;= 0</c> (belt-and-suspenders for bullet kills). Missing Gem prefab must not
@@ -1244,49 +1230,26 @@ namespace TitanOrbit.ECS
             float spawnServerTime,
             bool isBonusGem)
         {
-            var rng = Random.CreateFromIndex(seed);
-            // [TITAN-ORBIT] Unit cap keeps each pickup on the 88-key chromatic SFX ladder.
-            int count = GemExplosionMath.ResolveGemCountForUnitCap(
-                remaining,
-                settings.MinGemCount,
-                settings.MaxGemCount,
-                settings.MaxGemUnitValue,
-                ref rng);
-
-            // --- Chord-tone values (C / C+G / C+E+G / …) summing to remaining ---
-            // [TITAN-ORBIT] Equal split made every gem the same note; chord fill makes consume SFX harmonic.
-            var chordValues = new float[count];
-            GemChordValues.Fill(remaining, count, settings.MaxGemUnitValue, chordValues);
-
+            var recipes = new GemSpawnRecipe[GemExplosionMath.AbsoluteMaxGemCount];
+            int count = GemBurstExpansion.FillRecipes(
+                pos, remaining, seed, spawnServerTime, isBonusGem, settings, recipes);
             for (int i = 0; i < count; i++)
             {
-                float value = chordValues[i];
-                if (value < GemEconomyConstants.MinGemSpawnValue)
-                    continue;
-                GemSpawning.Spawn(
-                    ecb,
-                    gemPrefab,
-                    pos,
-                    value,
-                    seed + (uint)(i + 1) * 97u,
-                    burst: true,
-                    spawnServerTime,
-                    settings,
-                    burstIndex: (byte)i,
-                    isBonusGem: isBonusGem);
+                GemSpawning.SpawnFromRecipe(
+                    ecb, gemPrefab, recipes[i], settings, emitNetwork: false);
             }
+
+            if (count > 0)
+                GemNetNotify.SendBurst(ref ecb, pos, remaining, seed, spawnServerTime, isBonusGem);
         }
     }
 
     /// <summary>Shared gem entity spawn helper for mining and asteroid destruction bursts.</summary>
     public static class GemSpawning
     {
-        static int _nextSpawnId;
-
-        /// <summary>Monotonic session id for gem debug trails (never reuse, unlike ghostId).</summary>
-        public static int NextSpawnId() => System.Threading.Interlocked.Increment(ref _nextSpawnId);
         /// <summary>
-        /// Instantiates a gem prefab with value, optional burst velocity/tumble, offset, and lifetime stamp.
+        /// Instantiates a server-local gem (not a NetCode ghost) and optionally broadcasts
+        /// <see cref="GemSpawnRpc"/> so clients hydrate the same recipe.
         /// </summary>
         /// <param name="spawnServerTime">ServerTick seconds — drives lifetime despawn and client shrink.</param>
         /// <param name="burstIndex">
@@ -1330,85 +1293,75 @@ namespace TitanOrbit.ECS
             float excludePickupUntilServerTime = 0f,
             float3 launchDir = default,
             float3 addVelocity = default,
-            float launchSpeedMul = 1f)
+            float launchSpeedMul = 1f,
+            bool emitNetwork = true)
         {
             if (value <= 0f)
                 return;
 
+            var recipe = GemSpawnMath.Create(
+                position,
+                value,
+                salt,
+                burst,
+                spawnServerTime,
+                burstIndex,
+                isBonusGem,
+                burstIntensity,
+                excludePickupNetworkId,
+                excludePickupUntilServerTime,
+                launchDir,
+                addVelocity,
+                launchSpeedMul);
+            SpawnFromRecipe(ecb, gemPrefab, recipe, settings, emitNetwork);
+        }
+
+        /// <summary>
+        /// Instantiates from a resolved recipe. <paramref name="emitNetwork"/> is false for
+        /// asteroid bursts (one <see cref="GemBurstRpc"/> covers the set).
+        /// </summary>
+        public static void SpawnFromRecipe(
+            EntityCommandBuffer ecb,
+            Entity gemPrefab,
+            in GemSpawnRecipe recipe,
+            GemExplosionSettings settings = null,
+            bool emitNetwork = true)
+        {
             settings ??= GemExplosionSettingsCache.ResolveOrDefault();
-            var rng = Random.CreateFromIndex(math.hash(position) + salt + 17u);
-
-            // --- Heading ---
-            // [TITAN-ORBIT] Voluntary dump locks to ship forward. Damage / mine bursts stay random XZ.
-            float3 planarLaunch = new float3(launchDir.x, 0f, launchDir.z);
-            bool useForward = math.lengthsq(planarLaunch) > 0.01f;
-            float3 spawnDir = useForward
-                ? math.normalize(planarLaunch)
-                : GemExplosionMath.RandomUnitXZ(ref rng);
-            if (math.lengthsq(spawnDir) < 0.01f)
-                spawnDir = new float3(0f, 0f, 1f);
-
-            float radius = burst ? settings.AsteroidExplosionRadius : 0.8f;
-            // Voluntary dump already sits on the hull nose — do not add asteroid-burst radius.
-            float along = useForward ? 0f : radius * rng.NextFloat(0.3f, 1f);
-            float3 offset = spawnDir * along;
-            float scale = math.clamp(math.sqrt(value) * 0.2f, 0.2f, 0.5f);
+            if (!GemSpawnMath.TryResolve(recipe, settings, out var resolved))
+                return;
 
             Entity gem = ecb.Instantiate(gemPrefab);
-            ecb.SetComponent(gem, LocalTransform.FromPositionRotationScale(position + offset, quaternion.identity, scale));
+            ecb.SetComponent(gem, LocalTransform.FromPositionRotationScale(
+                resolved.Position, quaternion.identity, resolved.Scale));
             ecb.SetComponent(gem, new GemState
             {
-                SpawnId = NextSpawnId(),
-                Value = value,
-                Size = scale,
+                SpawnId = resolved.SpawnId,
+                Value = resolved.Value,
+                Size = resolved.Scale,
                 DepositTeam = TeamId.None,
-                SpawnServerTime = spawnServerTime,
-                // Tint only — tractor / pickup never read this flag.
-                IsBonusGem = isBonusGem,
-                // [TITAN-ORBIT] Damage-spill self-pickup penalty (ghosted — client hides beams too).
-                // Mining / asteroid bursts leave these 0.
-                ExcludePickupNetworkId = excludePickupNetworkId,
-                ExcludePickupUntilServerTime = excludePickupUntilServerTime,
+                SpawnServerTime = resolved.SpawnServerTime,
+                IsBonusGem = resolved.IsBonusGem,
+                ExcludePickupNetworkId = resolved.ExcludePickupNetworkId,
+                ExcludePickupUntilServerTime = resolved.ExcludePickupUntilServerTime,
             });
-
-            // --- Motion phase + burst slot (ghosted for client handoff / tractor lock) ---
             ecb.SetComponent(gem, new GemMotionState
             {
                 Phase = GemMotionState.PhaseCoast,
-                BurstIndex = burstIndex,
+                BurstIndex = resolved.BurstIndex,
                 TractorShipId = 0,
                 TractorWingIndex = 0,
                 TractorLockTick = 0,
                 TractorExtendDuration = 0f,
             });
-
-            float speedMul = math.max(0.01f, launchSpeedMul);
-
-            if (burst)
+            ecb.SetComponent(gem, new GemKinematics
             {
-                // --- Original NGO GemSpawner launch + tumble (intensity scales ship-damage spills) ---
-                float3 vel = GemExplosionMath.BurstVelocity(
-                    spawnDir,
-                    settings.AsteroidExplosionSpeed,
-                    settings.SpeedRandomMin,
-                    settings.SpeedRandomMax,
-                    burstIntensity,
-                    ref rng);
-                vel *= speedMul;
-                vel += addVelocity;
-                vel.y = 0f;
-                float3 ang = GemExplosionMath.BurstAngularVelocity(settings.AngularSpeedMax, ref rng);
-                ecb.SetComponent(gem, new GemKinematics { Velocity = vel, AngularVelocity = ang });
-            }
-            else
-            {
-                // Small outward nudge so mined gems are not stuck inside the asteroid mesh.
-                float speed = rng.NextFloat(settings.MiningNudgeSpeedMin, settings.MiningNudgeSpeedMax);
-                float3 ang = GemExplosionMath.BurstAngularVelocity(settings.AngularSpeedMax * 0.35f, ref rng);
-                float3 vel = spawnDir * (speed * speedMul) + addVelocity;
-                vel.y = 0f;
-                ecb.SetComponent(gem, new GemKinematics { Velocity = vel, AngularVelocity = ang });
-            }
+                Velocity = resolved.Velocity,
+                AngularVelocity = resolved.AngularVelocity,
+            });
+
+            if (emitNetwork)
+                GemNetNotify.SendSpawn(ref ecb, recipe);
         }
     }
 

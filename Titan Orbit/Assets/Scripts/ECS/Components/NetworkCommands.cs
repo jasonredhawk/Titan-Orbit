@@ -834,4 +834,179 @@ namespace TitanOrbit.ECS
         /// <summary>[ECS/DOTS] <c>SystemAPI.Time.ElapsedTime</c> of the last accepted send.</summary>
         public double LastSendElapsed;
     }
+
+    /// <summary>
+    /// [NETCODE] Server → all clients: one loose gem (mining, combat/ram spill, V-dump, moon drain).
+    /// Clients hydrate a local entity from this recipe — gems are not ghost-replicated.
+    /// Adding fields changes RPC layout: client and Linux headless must rebuild together.
+    /// </summary>
+    public struct GemSpawnRpc : IRpcCommand
+    {
+        /// <summary>Stable id from <c>GemSpawnMath.ComputeSpawnId</c>.</summary>
+        public int SpawnId;
+
+        /// <summary>Spawn origin (Y forced to 0 on apply).</summary>
+        public float3 Position;
+
+        /// <summary>Gem value (size / pickup / pitch).</summary>
+        public float Value;
+
+        /// <summary>RNG salt (heading, offset, tumble).</summary>
+        public uint Salt;
+
+        /// <summary>ServerTick-timeline seconds when the gem spawned.</summary>
+        public float SpawnServerTime;
+
+        /// <summary>Bit 0 = burst, bit 1 = bonus tint. See <c>GemSpawnRecipe</c>.</summary>
+        public byte Flags;
+
+        /// <summary>Asteroid-burst slot (0 for mining / combat nuggets).</summary>
+        public byte BurstIndex;
+
+        /// <summary>0..1 launch hardness for damage expulsion.</summary>
+        public float BurstIntensity;
+
+        /// <summary>Spilling ship NetworkId, or 0.</summary>
+        public int ExcludePickupNetworkId;
+
+        /// <summary>When that ship may collect again (0 = none).</summary>
+        public float ExcludePickupUntilServerTime;
+
+        /// <summary>Voluntary dump heading; zero = random XZ.</summary>
+        public float3 LaunchDir;
+
+        /// <summary>Extra world velocity (usually ship velocity on V-dump).</summary>
+        public float3 AddVelocity;
+
+        /// <summary>Burst / nudge speed multiplier (V-dump uses 2).</summary>
+        public float LaunchSpeedMul;
+    }
+
+    /// <summary>
+    /// [NETCODE] Server → all clients: asteroid destroy leftover as a seed (1–10 gems).
+    /// One RPC replaces N ghost Instantiates. Bonus yield is a second burst (different seed).
+    /// </summary>
+    public struct GemBurstRpc : IRpcCommand
+    {
+        /// <summary>Asteroid center (Y forced to 0 on apply).</summary>
+        public float3 Origin;
+
+        /// <summary>Total leftover (or bonus) value to chord-split.</summary>
+        public float RemainingValue;
+
+        /// <summary>Deterministic burst seed (<c>hash(entityIndex, pos)</c> on the server).</summary>
+        public uint Seed;
+
+        /// <summary>ServerTick-timeline seconds for the whole burst.</summary>
+        public float SpawnServerTime;
+
+        /// <summary>1 = yellow territory bonus burst.</summary>
+        public byte IsBonus;
+    }
+
+    /// <summary>
+    /// [NETCODE] Server → all clients: this SpawnId was scooped into cargo. Hide and destroy locally.
+    /// </summary>
+    public struct GemConsumedRpc : IRpcCommand
+    {
+        /// <summary>Recipe SpawnId of the scooped crystal.</summary>
+        public int SpawnId;
+    }
+
+    /// <summary>
+    /// [NETCODE] Server → all clients: partial scoop — leftover value / size on the same SpawnId.
+    /// </summary>
+    public struct GemValueChangedRpc : IRpcCommand
+    {
+        /// <summary>Recipe SpawnId.</summary>
+        public int SpawnId;
+
+        /// <summary>Value remaining after the partial take.</summary>
+        public float RemainingValue;
+    }
+
+    /// <summary>
+    /// [NETCODE] Server → all clients: tractor lock or unlock. Not a per-tick pose stream.
+    /// TractorShipId 0 = unlocked (return to coast).
+    /// </summary>
+    public struct GemTractorLockRpc : IRpcCommand
+    {
+        /// <summary>Recipe SpawnId.</summary>
+        public int SpawnId;
+
+        /// <summary>Locking ship NetworkId, or 0 to unlock.</summary>
+        public int TractorShipId;
+
+        /// <summary>Primary wing index (ignored when unlocked).</summary>
+        public byte TractorWingIndex;
+
+        /// <summary>ServerTick index when deploy started (0 = unlocked).</summary>
+        public uint TractorLockTick;
+
+        /// <summary>Beam extend duration in seconds at lock time.</summary>
+        public float TractorExtendDuration;
+
+        /// <summary>
+        /// <c>GemMotionState</c> phase at send (Coast while extending, Tractor after pull starts).
+        /// </summary>
+        public byte Phase;
+    }
+
+    /// <summary>
+    /// [NETCODE] Server → one joining connection: current snapshot of one live gem
+    /// (pose already integrated; value may be a leftover after a partial scoop).
+    /// </summary>
+    public struct GemCatchUpRpc : IRpcCommand
+    {
+        /// <summary>Recipe SpawnId.</summary>
+        public int SpawnId;
+
+        /// <summary>Current wrapped logical pose.</summary>
+        public float3 Position;
+
+        /// <summary>Current velocity.</summary>
+        public float3 Velocity;
+
+        /// <summary>Current tumble.</summary>
+        public float3 AngularVelocity;
+
+        /// <summary>Current remaining value.</summary>
+        public float Value;
+
+        /// <summary>Current visual scale.</summary>
+        public float Size;
+
+        /// <summary>Original spawn time (lifetime / shrink).</summary>
+        public float SpawnServerTime;
+
+        /// <summary>Coast / Tractor / Idle.</summary>
+        public byte Phase;
+
+        /// <summary>Burst slot (presentation only).</summary>
+        public byte BurstIndex;
+
+        /// <summary>1 = yellow bonus tint.</summary>
+        public byte IsBonusGem;
+
+        /// <summary>Spilling ship NetworkId, or 0.</summary>
+        public int ExcludePickupNetworkId;
+
+        /// <summary>Self-pickup block end time, or 0.</summary>
+        public float ExcludePickupUntilServerTime;
+
+        /// <summary>Active tractor ship, or 0.</summary>
+        public int TractorShipId;
+
+        /// <summary>Primary wing when tractored.</summary>
+        public byte TractorWingIndex;
+
+        /// <summary>Deploy lock tick.</summary>
+        public uint TractorLockTick;
+
+        /// <summary>Deploy extend duration.</summary>
+        public float TractorExtendDuration;
+    }
+
+    /// <summary>Server connection tag: live-gem catch-up RPCs dumped once.</summary>
+    public struct GemCatchUpSent : IComponentData { }
 }

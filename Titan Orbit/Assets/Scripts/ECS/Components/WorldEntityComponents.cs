@@ -106,69 +106,65 @@ namespace TitanOrbit.ECS
     /// </summary>
     public struct AsteroidClientCulledTag : IComponentData { }
 
-    /// <summary>[NETCODE] Loose gem pickup spawned by mining or moon drain.</summary>
+    /// <summary>
+    /// Loose gem pickup. Not ghost-replicated — clients hydrate from spawn / burst RPCs
+    /// and key consume / tractor events by <see cref="SpawnId"/>.
+    /// </summary>
     public struct GemState : IComponentData
     {
         /// <summary>
-        /// Session-unique id stamped at spawn. <see cref="GhostInstance.ghostId"/> is reused
-        /// after despawn, so leftovers cannot be traced by ghostId alone.
+        /// Stable recipe id from <c>GemSpawnMath.ComputeSpawnId</c> (same on server and client).
         /// </summary>
-        [GhostField] public int SpawnId;
+        public int SpawnId;
 
         /// <summary>[TITAN-ORBIT] Gem value when deposited or collected.</summary>
-        [GhostField] public float Value;
+        public float Value;
 
         /// <summary>[TITAN-ORBIT] Visual scale multiplier for gem mesh.</summary>
-        [GhostField] public float Size;
+        public float Size;
 
         /// <summary>[TITAN-ORBIT] Team that receives credit when deposited (from miner's team).</summary>
-        [GhostField] public TeamId DepositTeam;
+        public TeamId DepositTeam;
 
         /// <summary>
-        /// [NETCODE] ServerTick-timeline seconds when this gem was spawned (same clock as
-        /// <c>PlanetGemMoonOrbitClock</c> — not World.Time.ElapsedTime, which diverges on late-join).
-        /// Ghosted so clients can shrink in the last seconds of life; server destroys after lifetime.
+        /// ServerTick-timeline seconds when this gem was spawned (same clock as
+        /// <c>PlanetGemMoonOrbitClock</c> — not World.Time.ElapsedTime).
         /// </summary>
-        [GhostField] public float SpawnServerTime;
+        public float SpawnServerTime;
 
         /// <summary>
         /// [TITAN-ORBIT] Yellow tint only (NGO <c>isBonusGem</c>). Marks extra yield from a
         /// friendly triangle so players can see the bonus. Tractor, pickup, and cargo treat
         /// this like any other gem — colour does not gate who may collect.
         /// </summary>
-        [GhostField] public bool IsBonusGem;
+        public bool IsBonusGem;
 
         /// <summary>
-        /// [TITAN-ORBIT] <see cref="GhostOwner.NetworkId"/> of the ship that spilled this gem from
-        /// damage, or 0 if free for everyone (mining / asteroid burst). Ghosted so client tractor
-        /// VFX can hide beams during the self-pickup penalty (server already skips pull/pickup).
+        /// <see cref="GhostOwner.NetworkId"/> of the ship that spilled this gem from
+        /// damage, or 0 if free for everyone (mining / asteroid burst).
         /// Paired with <see cref="ExcludePickupUntilServerTime"/>.
         /// </summary>
-        [GhostField] public int ExcludePickupNetworkId;
+        public int ExcludePickupNetworkId;
 
         /// <summary>
-        /// [TITAN-ORBIT] SpawnServerTime-timeline seconds when the expelling ship may collect /
-        /// show tractor beams again. 0 = no exclusion. Ghosted with <see cref="ExcludePickupNetworkId"/>.
+        /// SpawnServerTime-timeline seconds when the expelling ship may collect /
+        /// show tractor beams again. 0 = no exclusion.
         /// </summary>
-        [GhostField] public float ExcludePickupUntilServerTime;
+        public float ExcludePickupUntilServerTime;
 
         /// <summary>
-        /// [NETCODE] True after the server scoops this crystal into cargo. Ghosted so clients
-        /// hide the mesh immediately — interpolated despawn can lag or drop, which left a
-        /// shrinking leftover on the map while cargo had already increased.
-        /// Server destroys the entity after a couple of GhostSend ticks
-        /// (<see cref="GemConsumedPendingDestroy"/>).
+        /// True after the server scoops this crystal into cargo. Clients hide via
+        /// <see cref="GemConsumedRpc"/>; leftover flag covers same-tick teardown.
         /// </summary>
-        [GhostField] public bool IsConsumed;
+        public bool IsConsumed;
     }
 
     /// <summary>
-    /// Server-only: keep a scooped gem alive for a few GhostSend ticks so
-    /// <see cref="GemState.IsConsumed"/> can replicate, then DestroyEntity.
+    /// [LEGACY] Former ghost-hold after scoop. Event-hydrate gems destroy immediately.
     /// </summary>
     public struct GemConsumedPendingDestroy : IComponentData
     {
-        /// <summary>GhostSend passes remaining before DestroyEntity (decremented after each send).</summary>
+        /// <summary>Unused — leftover entities are destroyed the same tick.</summary>
         public byte SendsLeft;
     }
 

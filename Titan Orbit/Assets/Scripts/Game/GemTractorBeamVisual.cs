@@ -270,7 +270,7 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Finds a gem snapshot by <see cref="GhostInstance.ghostId"/> from the current gather.
+        /// Finds a gem snapshot by recipe <c>SpawnId</c> from the current gather.
         /// </summary>
         static bool TryFindGemSnapshot(int gemGhostId, out GemTractorBeamClientLogic.GemProxySnapshot gem)
         {
@@ -613,7 +613,7 @@ namespace TitanOrbit.Game
             // Floor so tiny gems still read as a cone, not a hairline.
             raw = Mathf.Max(0.12f, raw);
 
-            // [NETCODE] Prefer ghostId so a recycled Entity.Index cannot inherit the old gem's width.
+            // Prefer SpawnId so a recycled Entity.Index cannot inherit the old gem's width.
             int key = gemEntity.Index;
             var world = EcsGameBridge.GetVisualizationWorld();
             if (world != null && world.IsCreated &&

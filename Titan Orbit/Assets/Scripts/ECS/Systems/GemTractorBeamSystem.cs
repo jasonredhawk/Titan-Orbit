@@ -14,8 +14,9 @@ namespace TitanOrbit.ECS
     /// <summary>
     /// Server-only gem tractor beam: assigns gems in wing search radii to ship wings, then
     /// sets gem velocity toward wing pull targets on the same tick the lock starts.
-    /// Writes ghosted <see cref="GemMotionState"/> lock fields so clients present the same pull
-    /// without inventing wing assignment. Runs <b>before</b> <see cref="GemMotionSystem"/> so
+    /// Writes <see cref="GemMotionState"/> lock fields and broadcasts <see cref="GemTractorLockRpc"/>
+    /// on change so clients present the same pull without inventing wing assignment.
+    /// Runs <b>before</b> <see cref="GemMotionSystem"/> so
     /// velocity and pose integrate in the same tick.
     /// Matching uses <see cref="GemTractorBeamAssignment"/> + <see cref="TractorBeamSettings"/>:
     /// sticky primary locks (assists re-target when PrimaryStickyOnly), primary fill so many gems
@@ -120,6 +121,8 @@ namespace TitanOrbit.ECS
                 serverTick = networkTime.ServerTick.TickIndexForValidTick;
             }
 
+            var rpcEcb = new EntityCommandBuffer(Allocator.Temp);
+
             _activePairsScratch.Clear();
             var activePairs = _activePairsScratch;
             _gemsLockedThisFrame.Clear();
@@ -191,6 +194,7 @@ namespace TitanOrbit.ECS
                     activePairs);
 
                 ApplyLockAndPull(
+                    ref rpcEcb,
                     shipEntity,
                     shipNetworkId,
                     nowServerTime,
@@ -204,8 +208,8 @@ namespace TitanOrbit.ECS
                     simHz);
             }
 
-            // --- Clear ghost lock on gems no longer assigned to any ship ---
-            ClearStaleTractorLocks();
+            // --- Clear lock on gems no longer assigned to any ship ---
+            ClearStaleTractorLocks(ref rpcEcb);
 
             if (nearby.IsCreated)
                 nearby.Dispose();
@@ -231,6 +235,9 @@ namespace TitanOrbit.ECS
                 for (int i = 0; i < stale.Count; i++)
                     _deployByPair.Remove(stale[i]);
             }
+
+            rpcEcb.Playback(EntityManager);
+            rpcEcb.Dispose();
         }
 
         /// <summary>
@@ -248,6 +255,7 @@ namespace TitanOrbit.ECS
         /// </para>
         /// </summary>
         void ApplyLockAndPull(
+            ref EntityCommandBuffer rpcEcb,
             Entity shipEntity,
             int shipNetworkId,
             float nowServerTime,
@@ -320,11 +328,20 @@ namespace TitanOrbit.ECS
                 if (EntityManager.HasComponent<GemMotionState>(gemEntity))
                 {
                     var motion = EntityManager.GetComponentData<GemMotionState>(gemEntity);
+                    int prevShip = motion.TractorShipId;
+                    byte prevWing = motion.TractorWingIndex;
+                    uint prevTick = motion.TractorLockTick;
                     motion.TractorShipId = shipNetworkId;
                     motion.TractorWingIndex = (byte)math.clamp(primaryWing, 0, 255);
                     motion.TractorLockTick = deploy.LockTick != 0 ? deploy.LockTick : serverTick;
                     motion.TractorExtendDuration = deploy.ExtendDuration;
                     EntityManager.SetComponentData(gemEntity, motion);
+                    if (prevShip != motion.TractorShipId ||
+                        prevWing != motion.TractorWingIndex ||
+                        prevTick != motion.TractorLockTick)
+                    {
+                        NotifyTractorLock(ref rpcEcb, gemEntity, motion);
+                    }
                 }
 
                 // --- Wait for extend + widen before pull ---
@@ -405,7 +422,7 @@ namespace TitanOrbit.ECS
         /// (ineligible ship, out of range, consumed). Restores Coast so damping applies.
         /// Does not scan every gem on the map — only the previous lock set.
         /// </summary>
-        void ClearStaleTractorLocks()
+        void ClearStaleTractorLocks(ref EntityCommandBuffer rpcEcb)
         {
             foreach (Entity entity in _lockedEntitiesCarry)
             {
@@ -413,8 +430,6 @@ namespace TitanOrbit.ECS
                     continue;
                 if (!EntityManager.Exists(entity) || !EntityManager.HasComponent<GemMotionState>(entity))
                     continue;
-                // Keep the lock on a scooped crystal until DestroyEntity so relevancy pin
-                // still includes it while IsConsumed replicates.
                 if (EntityManager.HasComponent<GemState>(entity) &&
                     EntityManager.GetComponentData<GemState>(entity).IsConsumed)
                     continue;
@@ -431,11 +446,33 @@ namespace TitanOrbit.ECS
                 if (m.Phase == GemMotionState.PhaseTractor)
                     m.Phase = GemMotionState.PhaseCoast;
                 EntityManager.SetComponentData(entity, m);
+                NotifyTractorLock(ref rpcEcb, entity, m);
             }
 
             _lockedEntitiesCarry.Clear();
             foreach (Entity entity in _lockedEntitiesThisFrame)
                 _lockedEntitiesCarry.Add(entity);
+        }
+
+        /// <summary>Broadcasts a lock/unlock so clients present the same beam without gem ghosts.</summary>
+        void NotifyTractorLock(ref EntityCommandBuffer rpcEcb, Entity gemEntity, in GemMotionState motion)
+        {
+            if (!EntityManager.HasComponent<GemState>(gemEntity))
+                return;
+
+            int spawnId = EntityManager.GetComponentData<GemState>(gemEntity).SpawnId;
+            if (spawnId == 0)
+                return;
+
+            GemNetNotify.SendTractorLock(ref rpcEcb, new GemTractorLockRpc
+            {
+                SpawnId = spawnId,
+                TractorShipId = motion.TractorShipId,
+                TractorWingIndex = motion.TractorWingIndex,
+                TractorLockTick = motion.TractorLockTick,
+                TractorExtendDuration = motion.TractorExtendDuration,
+                Phase = motion.Phase,
+            });
         }
 
         /// <summary>

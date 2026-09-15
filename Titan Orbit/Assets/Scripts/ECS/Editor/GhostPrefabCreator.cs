@@ -185,36 +185,17 @@ namespace TitanOrbit.ECS.Editor
         }
 
         /// <summary>
-        /// Creates GemGhost (interpolated Dynamic pickup — not Static map optimize).
-        /// Gems move every tick during burst/tractor; Static + MaxSendRate 2 starved pose updates.
+        /// Creates GemGhost as a local pickup prefab (not a NetCode ghost).
+        /// Clients hydrate from spawn / burst RPCs.
         /// </summary>
         static void CreateGemPrefab()
         {
             var go = new GameObject("GemGhost");
-            AddGemGhostRootComponents(go);
+            if (go.GetComponent<LinkedEntityGroupAuthoring>() == null)
+                go.AddComponent<LinkedEntityGroupAuthoring>();
             go.AddComponent<TitanOrbit.ECS.Authoring.GemGhostAuthoring>();
             PrefabUtility.SaveAsPrefabAsset(go, "Assets/Prefabs/ECS/GemGhost.prefab");
             Object.DestroyImmediate(go);
-        }
-
-        /// <summary>
-        /// LinkedEntityGroup + GhostAuthoring for gem pickups: Interpolated, Dynamic, Importance 50,
-        /// MaxSendRate 30 — matches live Assets/Prefabs/ECS/GemGhost.prefab.
-        /// </summary>
-        static void AddGemGhostRootComponents(GameObject go)
-        {
-            if (go.GetComponent<LinkedEntityGroupAuthoring>() == null)
-                go.AddComponent<LinkedEntityGroupAuthoring>();
-
-            var ghost = go.AddComponent<GhostAuthoringComponent>();
-            ghost.HasOwner = false;
-            ghost.SupportAutoCommandTarget = false;
-            ghost.DefaultGhostMode = GhostMode.Interpolated;
-            ghost.SupportedGhostModes = GhostModeMask.Interpolated;
-            ghost.OptimizationMode = GhostOptimizationMode.Dynamic;
-            ghost.RollbackPredictionOnStructuralChanges = false;
-            ghost.Importance = 50;
-            ghost.MaxSendRate = 30;
         }
 
         /// <summary>Creates GamePrefabsRegistry that points at all ghost prefabs + map settings.</summary>

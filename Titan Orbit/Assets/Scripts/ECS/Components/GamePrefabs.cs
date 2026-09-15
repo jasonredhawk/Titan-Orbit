@@ -20,7 +20,7 @@ namespace TitanOrbit.ECS
         /// <summary>[NETCODE] Asteroid ghost prefab — mineable gem source with static collider.</summary>
         public Entity Asteroid;
 
-        /// <summary>[NETCODE] Gem ghost prefab — collectible currency pickup (scripted motion, no hull collision).</summary>
+        /// <summary>Gem pickup prefab — server Instantiates locally; clients hydrate from RPCs.</summary>
         public Entity Gem;
 
         /// <summary>[NETCODE] People transport ghost prefab — population transfer projectile.</summary>

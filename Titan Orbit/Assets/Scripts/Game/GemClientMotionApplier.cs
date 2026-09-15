@@ -2,31 +2,14 @@ using TitanOrbit.ECS;
 using TitanOrbit.Generation;
 using Unity.Entities;
 using Unity.Mathematics;
-using Unity.NetCode;
 using Unity.Transforms;
 using UnityEngine;
 
 namespace TitanOrbit.Game
 {
     /// <summary>
-    /// [HYBRID] Client gem GameObject presenter. Puts the crystal at <b>estimated server-now</b>
-    /// so the mesh you fly over is the gem <c>GemPickupSystem</c> will scoop.
-    /// <para>
-                /// NetCode interpolated <c>LocalTransform</c> is the recent <em>past</em> (interpolation
-                /// delay). For remote ships that is correct (pillar 2). For idle / coasting pickups
-                /// it is wrong: the player overlaps yesterday's pose and the server gem has already
-                /// moved. We start from that interpolated sample, then advance it by ghosted
-                /// <see cref="GemKinematics.Velocity"/> × the interpolation delay — the same velocity
-                /// the server already applied. Cap the delay so a starved snapshot cannot throw the
-                /// crystal across the map.
-                /// </para>
-                /// Tractor-locked gems skip that lead. Interpolated LT already includes server pull;
-                /// adding burst leftovers × delay put the last crystal inside the scoop on the client
-                /// while the server gem was still outside (beam connected, mesh shaking, never consumed).
-    /// </para>
-    /// When the gem is idle (velocity ≈ 0) we copy interpolated pose as-is.
-    /// Tractor pull is server-authored; once snapshots include the pull, velocity points at
-    /// the wing and this extrapolation shows the gem coming in.
+    /// Client gem GameObject presenter. Event-hydrated gems already integrate on the client
+    /// sim tick — this copies <see cref="LocalTransform"/> and applies toroidal display.
     /// </summary>
     public sealed class GemClientMotionApplier : MonoBehaviour
     {
@@ -41,26 +24,14 @@ namespace TitanOrbit.Game
         /// </summary>
         public int BindSerial => _bindSerial;
 
-        /// <summary>Ghost entity this shell is currently posing; <see cref="Entity.Null"/> when unbound.</summary>
+        /// <summary>Local gem entity this shell is currently posing; <see cref="Entity.Null"/> when unbound.</summary>
         public Entity BoundEntity => _entity;
 
-        /// <summary>Frame stamp for the shared interpolation-delay cache.</summary>
-        static int s_delayFrame = -1;
-
-        /// <summary>Seconds from InterpolationTick to ServerTick this frame (clamped).</summary>
-        static float s_cachedDelaySeconds;
-
         /// <summary>
-        /// Hard cap on how far we may lead the interpolated sample. 250 ms is well above a
-        /// healthy interpolation buffer and well below a stale-snapshot runaway.
+        /// Binds this GO to a hydrated gem entity that has already Instantiated.
         /// </summary>
-        const float MaxExtrapolationSeconds = 0.25f;
-
-        /// <summary>
-        /// Binds this GO to a gem ghost that has already Instantiated.
-        /// </summary>
-        /// <param name="entity">Instantiated gem ghost entity.</param>
-        /// <param name="logicalPosition">Ghost <see cref="LocalTransform.Position"/> at bind time.</param>
+        /// <param name="entity">Client gem entity.</param>
+        /// <param name="logicalPosition"><see cref="LocalTransform.Position"/> at bind time.</param>
         public void Bind(Entity entity, float3 logicalPosition)
         {
             _bindSerial++;
@@ -100,10 +71,7 @@ namespace TitanOrbit.Game
             _ = angularVelocity;
         }
 
-        /// <summary>
-        /// [UNITY] LateUpdate: interpolated ghost pose, plus a short velocity lead to server-now,
-        /// then toroidal display retile.
-        /// </summary>
+        /// <summary>LateUpdate: copy the local sim pose, then toroidal display retile.</summary>
         void LateUpdate()
         {
             if (!_bound || _entity == Entity.Null)
@@ -117,35 +85,9 @@ namespace TitanOrbit.Game
             if (!em.Exists(_entity) || !em.HasComponent<LocalTransform>(_entity))
                 return;
 
-            // --- Interpolated sample (NetCode past) ---
-            var serverLt = em.GetComponentData<LocalTransform>(_entity);
-            float3 present = serverLt.Position;
+            var lt = em.GetComponentData<LocalTransform>(_entity);
+            _logicalPos = lt.Position;
 
-            // --- Lead to estimated server-now (coast / burst only) ---
-            // [NETCODE] InterpolationTick is what LocalTransform currently shows.
-            // ServerTick is "now" on the server timeline. Velocity is ghosted from GemMotionSystem.
-            // Tractor-locked gems must NOT take this lead: interpolated LT already includes
-            // server pull, and leftover asteroid-burst speed × delay throws the last crystal
-            // into the scoop zone on the client only (visible, shaking, unconsumable).
-            bool underTractor = false;
-            if (em.HasComponent<GemMotionState>(_entity))
-            {
-                var motion = em.GetComponentData<GemMotionState>(_entity);
-                underTractor = motion.Phase == GemMotionState.PhaseTractor && motion.TractorShipId != 0;
-            }
-
-            if (!underTractor && em.HasComponent<GemKinematics>(_entity))
-            {
-                float3 vel = em.GetComponentData<GemKinematics>(_entity).Velocity;
-                vel.y = 0f;
-                float delay = GetInterpolationDelaySeconds(em);
-                if (math.lengthsq(vel) > 0.0001f && delay > 0.0001f)
-                    present += vel * delay;
-            }
-
-            _logicalPos = present;
-
-            // --- Toroidal display ---
             if (!ToroidalDisplay.ResolveMapSize(default, out _, out _))
                 return;
             if (!ToroidalDisplay.TryGetReferencePosition(out var reference))
@@ -153,38 +95,7 @@ namespace TitanOrbit.Game
 
             Vector3 displayPos = ToroidalDisplay.ToDisplayPositionWithHysteresis(
                 _entity, _logicalPos, reference);
-            transform.SetPositionAndRotation(displayPos, serverLt.Rotation);
-        }
-
-        /// <summary>
-        /// Seconds between the interpolated tick and the server tick, computed once per frame.
-        /// </summary>
-        static float GetInterpolationDelaySeconds(EntityManager em)
-        {
-            if (Time.frameCount == s_delayFrame)
-                return s_cachedDelaySeconds;
-
-            s_delayFrame = Time.frameCount;
-            s_cachedDelaySeconds = 0f;
-
-            using var timeQuery = em.CreateEntityQuery(ComponentType.ReadOnly<NetworkTime>());
-            if (timeQuery.IsEmptyIgnoreFilter)
-                return 0f;
-
-            var networkTime = timeQuery.GetSingleton<NetworkTime>();
-            if (!networkTime.ServerTick.IsValid || !networkTime.InterpolationTick.IsValid)
-                return 0f;
-
-            int hz = PlanetGemMoonOrbitClock.FallbackSimulationHz;
-            using var rateQuery = em.CreateEntityQuery(ComponentType.ReadOnly<ClientServerTickRate>());
-            if (!rateQuery.IsEmptyIgnoreFilter)
-                hz = math.max(1, rateQuery.GetSingleton<ClientServerTickRate>().SimulationTickRate);
-
-            int ticks = networkTime.ServerTick.TicksSince(networkTime.InterpolationTick);
-            float frac = networkTime.ServerTickFraction - networkTime.InterpolationTickFraction;
-            float seconds = (ticks + frac) / hz;
-            s_cachedDelaySeconds = math.clamp(seconds, 0f, MaxExtrapolationSeconds);
-            return s_cachedDelaySeconds;
+            transform.SetPositionAndRotation(displayPos, lt.Rotation);
         }
     }
 }
