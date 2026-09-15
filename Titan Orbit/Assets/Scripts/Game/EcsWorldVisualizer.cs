@@ -779,6 +779,111 @@ namespace TitanOrbit.Game
             return false;
         }
 
+        /// <summary>
+        /// Closest planet proxy to <paramref name="aim"/> on the torus.
+        /// Walks hybrid dictionaries only — no ECS gather. Used by comms "Orange Planet".
+        /// Map size from <see cref="ToroidalMap"/> (bootstrap / session meta).
+        /// </summary>
+        public bool TryFindClosestPlanet(
+            Vector3 aim,
+            TeamId teamFilter,
+            bool homeOnly,
+            out int planetId,
+            out Vector3 worldPos)
+        {
+            planetId = 0;
+            worldPos = default;
+            float best = float.MaxValue;
+            bool found = false;
+
+            foreach (var kv in _proxyPlanetVisuals)
+            {
+                if (homeOnly && !kv.Value.IsHome)
+                    continue;
+                if (teamFilter != TeamId.None && kv.Value.Team != teamFilter)
+                    continue;
+                if (kv.Value.PlanetId == 0)
+                    continue;
+                if (!_proxies.TryGetValue(kv.Key, out GameObject go) || go == null)
+                    continue;
+
+                float d = ToroidalMap.ToroidalDistance(aim, go.transform.position);
+                if (d >= best)
+                    continue;
+
+                best = d;
+                planetId = kv.Value.PlanetId;
+                worldPos = go.transform.position;
+                found = true;
+            }
+
+            return found;
+        }
+
+        /// <summary>
+        /// World pose of a planet proxy by <see cref="PlanetState.PlanetId"/>.
+        /// Dictionary walk only — comms viewers resolve the sender's locked planet.
+        /// </summary>
+        public bool TryGetPlanetWorldPosition(int planetId, out Vector3 worldPos)
+        {
+            worldPos = default;
+            if (planetId == 0)
+                return false;
+
+            foreach (var kv in _proxyPlanetVisuals)
+            {
+                if (kv.Value.PlanetId != planetId)
+                    continue;
+                if (!_proxies.TryGetValue(kv.Key, out GameObject go) || go == null)
+                    continue;
+                worldPos = go.transform.position;
+                return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// Closest live asteroid proxy to <paramref name="aim"/> on the torus.
+        /// Optional territory filter (Orange Asteroid); falls back to any rock if none match.
+        /// Map size from <see cref="ToroidalMap"/>.
+        /// </summary>
+        public bool TryFindClosestAsteroid(Vector3 aim, TeamId territoryFilter, out Vector3 worldPos)
+        {
+            if (TryFindClosestAsteroidFiltered(aim, territoryFilter, out worldPos))
+                return true;
+            if (territoryFilter != TeamId.None)
+                return TryFindClosestAsteroidFiltered(aim, TeamId.None, out worldPos);
+            return false;
+        }
+
+        bool TryFindClosestAsteroidFiltered(Vector3 aim, TeamId territoryFilter, out Vector3 worldPos)
+        {
+            worldPos = default;
+            float best = float.MaxValue;
+            bool found = false;
+
+            foreach (Entity entity in _asteroidProxyEntities)
+            {
+                if (!_proxies.TryGetValue(entity, out GameObject go) || go == null)
+                    continue;
+                if (territoryFilter != TeamId.None
+                    && _proxyAsteroidTerritory.TryGetValue(entity, out TeamId territory)
+                    && territory != territoryFilter)
+                    continue;
+
+                float d = ToroidalMap.ToroidalDistance(aim, go.transform.position);
+                if (d >= best)
+                    continue;
+
+                best = d;
+                worldPos = go.transform.position;
+                found = true;
+            }
+
+            return found;
+        }
+
         /// <summary>Per-entity planet read — safe under TransformQuarantine.</summary>
         static bool TryReadPlanetPose(
             EntityManager em,

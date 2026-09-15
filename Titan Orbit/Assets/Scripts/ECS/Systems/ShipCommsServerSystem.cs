@@ -69,7 +69,13 @@ namespace TitanOrbit.ECS
                     continue;
 
                 ShipCommsCommand sentence = cmd.ValueRO;
-                if (!catalog.IsValidSequence(sentence.Count, sentence.K0, sentence.K1, sentence.K2))
+                if (!catalog.IsValidSequence(
+                        sentence.Count,
+                        sentence.K0,
+                        sentence.K1,
+                        sentence.K2,
+                        sentence.K3,
+                        sentence.K4))
                     continue;
 
                 // --- Living ship ---
@@ -142,6 +148,29 @@ namespace TitanOrbit.ECS
             in ShipCommsCommand sentence)
         {
             byte teamOnly = sentence.TeamOnly != 0 ? (byte)1 : (byte)0;
+            byte hasWaypoint = sentence.HasWaypoint != 0 ? (byte)1 : (byte)0;
+            float waypointX = sentence.WaypointX;
+            float waypointZ = sentence.WaypointZ;
+            if (hasWaypoint != 0 &&
+                (!IsFinite(waypointX) || !IsFinite(waypointZ)))
+            {
+                hasWaypoint = 0;
+                waypointX = 0f;
+                waypointZ = 0f;
+            }
+
+            byte focusKind = sentence.FocusKind;
+            if (focusKind > ShipCommsInbox.FocusKind.Planet)
+                focusKind = ShipCommsInbox.FocusKind.None;
+            if ((focusKind == ShipCommsInbox.FocusKind.MapPing
+                    || focusKind == ShipCommsInbox.FocusKind.Asteroid)
+                && hasWaypoint == 0)
+                focusKind = ShipCommsInbox.FocusKind.None;
+
+            int planetId = sentence.PlanetId > 0 ? sentence.PlanetId : 0;
+            if (focusKind == ShipCommsInbox.FocusKind.Planet && planetId <= 0)
+                focusKind = ShipCommsInbox.FocusKind.None;
+
             var rpc = new ShipCommsRpc
             {
                 NetworkId = networkId,
@@ -149,7 +178,33 @@ namespace TitanOrbit.ECS
                 K0 = sentence.K0,
                 K1 = sentence.K1,
                 K2 = sentence.K2,
+                K3 = sentence.K3,
+                K4 = sentence.K4,
                 TeamOnly = teamOnly,
+                HasWaypoint = hasWaypoint,
+                WaypointX = waypointX,
+                WaypointZ = waypointZ,
+                FocusKind = focusKind,
+                YouNetworkId = sentence.YouNetworkId > 0 ? sentence.YouNetworkId : 0,
+                PlanetId = planetId,
+                Everyone = sentence.Everyone != 0 ? (byte)1 : (byte)0,
+                Us0 = sentence.Us0 > 0 ? sentence.Us0 : 0,
+                Us1 = sentence.Us1 > 0 ? sentence.Us1 : 0,
+                Us2 = sentence.Us2 > 0 ? sentence.Us2 : 0,
+                Us3 = sentence.Us3 > 0 ? sentence.Us3 : 0,
+                MeX = sentence.MeX,
+                MeZ = sentence.MeZ,
+                YouX = sentence.YouX,
+                YouZ = sentence.YouZ,
+                GroupCount = sentence.GroupCount,
+                G0X = sentence.G0X, G0Z = sentence.G0Z,
+                G1X = sentence.G1X, G1Z = sentence.G1Z,
+                G2X = sentence.G2X, G2Z = sentence.G2Z,
+                G3X = sentence.G3X, G3Z = sentence.G3Z,
+                G4X = sentence.G4X, G4Z = sentence.G4Z,
+                G5X = sentence.G5X, G5Z = sentence.G5Z,
+                G6X = sentence.G6X, G6Z = sentence.G6Z,
+                G7X = sentence.G7X, G7Z = sentence.G7Z,
             };
 
             if (teamOnly == 0)
@@ -252,6 +307,12 @@ namespace TitanOrbit.ECS
             }
 
             return false;
+        }
+
+        /// <summary>True when the float is a usable world coordinate (not NaN / inf).</summary>
+        static bool IsFinite(float value)
+        {
+            return value >= float.MinValue && value <= float.MaxValue;
         }
     }
 }

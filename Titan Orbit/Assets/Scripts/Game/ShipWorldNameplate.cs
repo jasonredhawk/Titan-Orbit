@@ -164,6 +164,12 @@ namespace TitanOrbit.Game
 
         int _networkId;
 
+        /// <summary>
+        /// Last team pushed by <see cref="ApplyPresentation"/>. Comms leader lines read this
+        /// instead of an ECS ship gather.
+        /// </summary>
+        public TeamId PresentationTeam { get; private set; }
+
         // --- Hierarchy (world-space root — not a child of the yawing hull) ---
 
         Transform _labelRoot;
@@ -342,6 +348,7 @@ namespace TitanOrbit.Game
         {
             if (networkId > 0)
                 _networkId = networkId;
+            PresentationTeam = team;
             _isMega = isMega;
             EnsureHierarchy();
             if (!_ready || _labelRoot == null)

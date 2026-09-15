@@ -790,7 +790,7 @@ namespace TitanOrbit.ECS
     /// </summary>
     public struct ShipCommsCommand : IRpcCommand
     {
-        /// <summary>How many chips are live (1–3). Slots after this are ignored.</summary>
+        /// <summary>How many chips are live (1–5). Slots after this are ignored.</summary>
         public byte Count;
 
         /// <summary>First keyword index. Required when <see cref="Count"/> ≥ 1.</summary>
@@ -802,15 +802,69 @@ namespace TitanOrbit.ECS
         /// <summary>Third keyword index. Ignored when <see cref="Count"/> is under 3.</summary>
         public byte K2;
 
+        /// <summary>Fourth keyword index. Ignored when <see cref="Count"/> is under 4.</summary>
+        public byte K3;
+
+        /// <summary>Fifth keyword index. Ignored when <see cref="Count"/> is under 5.</summary>
+        public byte K4;
+
         /// <summary>
         /// 1 = teammates only, 0 = every client. The server re-reads the speaker's
         /// <c>ShipState.Team</c> — this flag is a request, not a team id the client can spoof.
         /// </summary>
         public byte TeamOnly;
+
+        /// <summary>1 when <see cref="WaypointX"/> / <see cref="WaypointZ"/> is a map ping.</summary>
+        public byte HasWaypoint;
+
+        /// <summary>World X of the optional minimap ping (canonical torus rectangle).</summary>
+        public float WaypointX;
+
+        /// <summary>World Z of the optional minimap ping (canonical torus rectangle).</summary>
+        public float WaypointZ;
+
+        /// <summary>
+        /// 0 = none, 1 = minimap ping, 2 = asteroid, 3 = planet.
+        /// Coords live in <see cref="WaypointX"/> / <see cref="WaypointZ"/> when 1 or 2.
+        /// </summary>
+        public byte FocusKind;
+
+        /// <summary>Resolved "You" / pointed ship. 0 when the sentence has no player lock.</summary>
+        public int YouNetworkId;
+
+        /// <summary>Resolved planet id for "Orange Planet" / Base. 0 when unused.</summary>
+        public int PlanetId;
+
+        /// <summary>1 when the sentence fans out to every teammate (Everyone / Team).</summary>
+        public byte Everyone;
+
+        /// <summary>Closest-in-range ships for "Us" (0 when unused).</summary>
+        public int Us0;
+
+        /// <summary>Second closest-in-range ship for "Us".</summary>
+        public int Us1;
+
+        /// <summary>Third closest-in-range ship for "Us".</summary>
+        public int Us2;
+
+        /// <summary>Fourth closest-in-range ship for "Us".</summary>
+        public int Us3;
+
+        public float MeX; public float MeZ;
+        public float YouX; public float YouZ;
+        public byte GroupCount;
+        public float G0X; public float G0Z;
+        public float G1X; public float G1Z;
+        public float G2X; public float G2Z;
+        public float G3X; public float G3Z;
+        public float G4X; public float G4Z;
+        public float G5X; public float G5Z;
+        public float G6X; public float G6Z;
+        public float G7X; public float G7Z;
     }
 
     /// <summary>
-    /// [NETCODE] Server → clients: one player's 1–3 keyword callout. Presentation-only
+    /// [NETCODE] Server → clients: one player's 1–5 keyword callout. Presentation-only
     /// on the client (<c>ShipCommsInbox</c> → chips above the hull). Not a ghost field —
     /// the sentence is ephemeral and must not pay snapshot bandwidth every tick.
     /// Team-only rows are targeted per connection; All rows use TargetConnection Null.
@@ -820,7 +874,7 @@ namespace TitanOrbit.ECS
         /// <summary>[NETCODE] Speaker's GhostOwner.NetworkId (from the connection, not the client).</summary>
         public int NetworkId;
 
-        /// <summary>How many chips are live (1–3).</summary>
+        /// <summary>How many chips are live (1–5).</summary>
         public byte Count;
 
         /// <summary>First keyword index. See <see cref="ShipCommsCommand.K0"/>.</summary>
@@ -832,11 +886,62 @@ namespace TitanOrbit.ECS
         /// <summary>Third keyword index. See <see cref="ShipCommsCommand.K2"/>.</summary>
         public byte K2;
 
+        /// <summary>Fourth keyword index. See <see cref="ShipCommsCommand.K3"/>.</summary>
+        public byte K3;
+
+        /// <summary>Fifth keyword index. See <see cref="ShipCommsCommand.K4"/>.</summary>
+        public byte K4;
+
         /// <summary>
         /// 1 when the server scoped this callout to the speaker's team. Clients use it
         /// for chip chrome (TEAM vs ALL), not for filtering — enemies never receive the RPC.
         /// </summary>
         public byte TeamOnly;
+
+        /// <summary>1 when this callout includes a minimap world ping.</summary>
+        public byte HasWaypoint;
+
+        /// <summary>World X of the optional minimap ping.</summary>
+        public float WaypointX;
+
+        /// <summary>World Z of the optional minimap ping.</summary>
+        public float WaypointZ;
+
+        /// <summary>0 = none, 1 = minimap ping, 2 = asteroid, 3 = planet.</summary>
+        public byte FocusKind;
+
+        /// <summary>Resolved "You" ship NetworkId. 0 when unused.</summary>
+        public int YouNetworkId;
+
+        /// <summary>Resolved planet id. 0 when unused.</summary>
+        public int PlanetId;
+
+        /// <summary>1 when the sentence fans out to every teammate (Everyone / Team).</summary>
+        public byte Everyone;
+
+        /// <summary>Closest-in-range ships for "Us" (0 when unused).</summary>
+        public int Us0;
+
+        /// <summary>Second closest-in-range ship for "Us".</summary>
+        public int Us1;
+
+        /// <summary>Third closest-in-range ship for "Us".</summary>
+        public int Us2;
+
+        /// <summary>Fourth closest-in-range ship for "Us".</summary>
+        public int Us3;
+
+        public float MeX; public float MeZ;
+        public float YouX; public float YouZ;
+        public byte GroupCount;
+        public float G0X; public float G0Z;
+        public float G1X; public float G1Z;
+        public float G2X; public float G2Z;
+        public float G3X; public float G3Z;
+        public float G4X; public float G4Z;
+        public float G5X; public float G5Z;
+        public float G6X; public float G6Z;
+        public float G7X; public float G7Z;
     }
 
     /// <summary>

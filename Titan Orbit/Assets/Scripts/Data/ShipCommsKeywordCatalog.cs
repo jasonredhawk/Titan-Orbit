@@ -40,6 +40,12 @@ namespace TitanOrbit.Data
         /// panel folds this category into SUBJECT so we do not show a fourth section.
         /// </summary>
         Objects = 3,
+
+        /// <summary>
+        /// Faction color names (Red / Blue / Green / Orange / Purple). The compose panel
+        /// paints these as their own TEAM section at the top.
+        /// </summary>
+        TeamColor = 4,
     }
 
     /// <summary>
@@ -67,10 +73,16 @@ namespace TitanOrbit.Data
         public const string DefaultResourcesName = "ShipCommsKeywordCatalog";
 
         /// <summary>
-        /// [TITAN-ORBIT] Longest sentence the compose panel and RPCs accept.
-        /// Three chips stay readable above a moving hull.
+        /// Free sentence length (no ad). Slots 4 and 5 unlock for the rest of the match
+        /// after one rewarded ad each.
         /// </summary>
-        public const int MaxSequenceLength = 3;
+        public const int DefaultSequenceLength = 3;
+
+        /// <summary>
+        /// [TITAN-ORBIT] Longest sentence the compose panel and RPCs accept after both
+        /// extra slots are unlocked.
+        /// </summary>
+        public const int MaxSequenceLength = 5;
 
         /// <summary>Designer-editable list. Empty / null at runtime uses <see cref="BuiltInKeywords"/>.</summary>
         [Tooltip("Append-only keyword rows. Do not reorder shipped entries — those bytes are on the wire.")]
@@ -83,8 +95,9 @@ namespace TitanOrbit.Data
 
         /// <summary>
         /// Append-only starter set. Indices 0–13 shipped first; 14–41 later verbs;
-        /// 42–46 are the five team color names. Never reorder these rows — those bytes
-        /// are on the wire.
+        /// 42–46 are the five team color names; 47+ pad even 5-wide rows. Never reorder
+        /// these rows — those bytes are on the wire. "Mine" (index 7) stays for old
+        /// clients but the compose panel hides it; use "Mining" under Tactical.
         /// </summary>
         public static readonly ShipCommsKeyword[] BuiltInKeywords =
         {
@@ -133,11 +146,23 @@ namespace TitanOrbit.Data
             // --- Team colors (append-only; indices 42–46) ---
             // [TITAN-ORBIT] Spoken faction names so "Attack Purple Base" names a team.
             // Spellings must match TeamIdExtensions.ToColorName (Red / Blue / Green / Orange / Purple).
-            new ShipCommsKeyword { label = "Red", category = ShipCommsKeywordCategory.Subject },
-            new ShipCommsKeyword { label = "Blue", category = ShipCommsKeywordCategory.Subject },
-            new ShipCommsKeyword { label = "Green", category = ShipCommsKeywordCategory.Subject },
-            new ShipCommsKeyword { label = "Orange", category = ShipCommsKeywordCategory.Subject },
-            new ShipCommsKeyword { label = "Purple", category = ShipCommsKeywordCategory.Subject },
+            new ShipCommsKeyword { label = "Red", category = ShipCommsKeywordCategory.TeamColor },
+            new ShipCommsKeyword { label = "Blue", category = ShipCommsKeywordCategory.TeamColor },
+            new ShipCommsKeyword { label = "Green", category = ShipCommsKeywordCategory.TeamColor },
+            new ShipCommsKeyword { label = "Orange", category = ShipCommsKeywordCategory.TeamColor },
+            new ShipCommsKeyword { label = "Purple", category = ShipCommsKeywordCategory.TeamColor },
+            // --- 5-wide row padding (append-only; indices 47+) ---
+            new ShipCommsKeyword { label = "Mining", category = ShipCommsKeywordCategory.Tactical },
+            new ShipCommsKeyword { label = "Scout", category = ShipCommsKeywordCategory.Tactical },
+            new ShipCommsKeyword { label = "Rally", category = ShipCommsKeywordCategory.Tactical },
+            new ShipCommsKeyword { label = "Asteroid", category = ShipCommsKeywordCategory.Subject },
+            new ShipCommsKeyword { label = "Home", category = ShipCommsKeywordCategory.Subject },
+            new ShipCommsKeyword { label = "Pad", category = ShipCommsKeywordCategory.Subject },
+            new ShipCommsKeyword { label = "Turret", category = ShipCommsKeywordCategory.Subject },
+            new ShipCommsKeyword { label = "Nice", category = ShipCommsKeywordCategory.Social },
+            new ShipCommsKeyword { label = "Wow", category = ShipCommsKeywordCategory.Social },
+            new ShipCommsKeyword { label = "Later", category = ShipCommsKeywordCategory.Social },
+            new ShipCommsKeyword { label = "Everyone", category = ShipCommsKeywordCategory.Subject },
         };
 
         /// <summary>
@@ -185,6 +210,28 @@ namespace TitanOrbit.Data
 
         /// <summary>How many valid indices exist (0 .. Count-1).</summary>
         public int Count => GetEffectiveKeywords().Count;
+
+        /// <summary>
+        /// Finds the wire index for a chip label. Used to insert "Here" when the
+        /// player pings the docked minimap.
+        /// </summary>
+        public bool TryGetIndex(string label, out byte index)
+        {
+            index = 0;
+            if (string.IsNullOrWhiteSpace(label))
+                return false;
+
+            IReadOnlyList<ShipCommsKeyword> list = GetEffectiveKeywords();
+            for (int i = 0; i < list.Count; i++)
+            {
+                if (!string.Equals(list[i].label, label, StringComparison.OrdinalIgnoreCase))
+                    continue;
+                index = (byte)i;
+                return true;
+            }
+
+            return false;
+        }
 
         /// <summary>
         /// True when <paramref name="index"/> addresses a keyword in the effective list.
@@ -241,10 +288,20 @@ namespace TitanOrbit.Data
         }
 
         /// <summary>
-        /// Server-side sequence check: count is 1–3 and every used index is in range.
+        /// True when the compose matrix should hide this row. "Mine" shipped as a
+        /// subject noun; mining now lives under Tactical as "Mining". The wire index stays.
+        /// </summary>
+        public static bool IsHiddenFromMatrix(string label)
+        {
+            return string.Equals(label, "Mine", StringComparison.OrdinalIgnoreCase);
+        }
+
+        /// <summary>
+        /// Server-side sequence check: count is 1–5 and every used index is in range.
         /// Unused slots after <paramref name="count"/> are ignored (may be 0).
         /// </summary>
-        public bool IsValidSequence(byte count, byte k0, byte k1, byte k2)
+        public bool IsValidSequence(
+            byte count, byte k0, byte k1, byte k2, byte k3, byte k4)
         {
             if (count < 1 || count > MaxSequenceLength)
                 return false;
@@ -255,6 +312,10 @@ namespace TitanOrbit.Data
                 return false;
             if (count >= 3 && !IsValidIndex(k2))
                 return false;
+            if (count >= 4 && !IsValidIndex(k3))
+                return false;
+            if (count >= 5 && !IsValidIndex(k4))
+                return false;
 
             return true;
         }
@@ -262,21 +323,45 @@ namespace TitanOrbit.Data
         /// <summary>
         /// Builds "HELP · DEFEND · BASE" for a recent-row chip or a debug label.
         /// </summary>
-        public string FormatSentence(byte count, byte k0, byte k1, byte k2)
+        public string FormatSentence(
+            byte count, byte k0, byte k1, byte k2, byte k3 = 0, byte k4 = 0)
         {
             if (count < 1)
                 return string.Empty;
 
-            TryGetLabel(k0, out string a);
-            if (count == 1)
-                return a.ToUpperInvariant();
+            var sb = new System.Text.StringBuilder(48);
+            AppendWord(sb, k0);
+            if (count >= 2)
+            {
+                sb.Append(" · ");
+                AppendWord(sb, k1);
+            }
 
-            TryGetLabel(k1, out string b);
-            if (count == 2)
-                return a.ToUpperInvariant() + " · " + b.ToUpperInvariant();
+            if (count >= 3)
+            {
+                sb.Append(" · ");
+                AppendWord(sb, k2);
+            }
 
-            TryGetLabel(k2, out string c);
-            return a.ToUpperInvariant() + " · " + b.ToUpperInvariant() + " · " + c.ToUpperInvariant();
+            if (count >= 4)
+            {
+                sb.Append(" · ");
+                AppendWord(sb, k3);
+            }
+
+            if (count >= 5)
+            {
+                sb.Append(" · ");
+                AppendWord(sb, k4);
+            }
+
+            return sb.ToString();
+        }
+
+        void AppendWord(System.Text.StringBuilder sb, byte index)
+        {
+            TryGetLabel(index, out string word);
+            sb.Append(word.ToUpperInvariant());
         }
 
         /// <summary>True when the Inspector list has at least one labeled row.</summary>

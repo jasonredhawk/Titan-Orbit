@@ -94,6 +94,15 @@ namespace TitanOrbit.UI
         /// </summary>
         bool _respawnSelectLocked;
 
+        /// <summary>
+        /// True while the hold-S comms matrix has reparented this map as a smaller
+        /// full-map dock. Uses expanded projection without hiding the rest of the HUD.
+        /// </summary>
+        bool _commsDocked;
+
+        Transform _commsDockRestoreParent;
+        int _commsDockRestoreSibling;
+
         /// <summary>Unscaled time of the last respawn RPC so a double-click cannot spam the server.</summary>
         float _lastRespawnRequestTime = -10f;
         private Vector2 originalAnchoredPosition;
@@ -409,7 +418,7 @@ namespace TitanOrbit.UI
         private void ApplyCollapsedShipLevelZoom()
         {
             // --- Expanded mode shows the whole torus — do not ship-level scale that radius ---
-            if (isExpanded || !scaleCollapsedRadiusWithShipLevel)
+            if (IsFullMapView || !scaleCollapsedRadiusWithShipLevel)
                 return;
 
             // Bases are captured in Start after collapsedZoomOutMultiplier; guard if Start has not run yet.
@@ -453,6 +462,12 @@ namespace TitanOrbit.UI
 
         /// <summary>True while the minimap is expanded to (near) full-map view.</summary>
         public bool IsExpanded => isExpanded;
+
+        /// <summary>True while comms has this map docked as a smaller full-map ping pad.</summary>
+        public bool IsCommsDocked => _commsDocked;
+
+        /// <summary>Full-map projection (M-expand or comms dock).</summary>
+        bool IsFullMapView => isExpanded || _commsDocked;
 
         /// <summary>
         /// Locks the map in expanded mode so the dead player can click a friendly planet.
@@ -509,6 +524,130 @@ namespace TitanOrbit.UI
             else
                 CollapseMinimap();
         }
+
+        /// <summary>
+        /// Reparents this map into the comms card as a smaller full-map view so the
+        /// player can ping a world point. Does not hide gameplay HUD.
+        /// </summary>
+        public void AttachToCommsDock(RectTransform host)
+        {
+            if (host == null || minimapRect == null || _commsDocked)
+                return;
+
+            if (isExpanded)
+                SetExpanded(false);
+
+            _commsDocked = true;
+            _commsDockRestoreParent = minimapRect.parent;
+            _commsDockRestoreSibling = minimapRect.GetSiblingIndex();
+
+            // Center + explicit sizeDelta — stretch anchors zero sizeDelta, and Update()
+            // used to copy that into displaySize so every blip collapsed to the origin.
+            float size = ResolveLaidOutSquareSize(host);
+            minimapRect.SetParent(host, false);
+            minimapRect.anchorMin = new Vector2(0.5f, 0.5f);
+            minimapRect.anchorMax = new Vector2(0.5f, 0.5f);
+            minimapRect.pivot = new Vector2(0.5f, 0.5f);
+            minimapRect.anchoredPosition = Vector2.zero;
+            minimapRect.sizeDelta = new Vector2(size, size);
+
+            displaySize = size;
+            minimapRadius = GetExpandedWorldRadius(playerTransform != null ? playerTransform.position : Vector3.zero);
+
+            SetupCircularBackground();
+            SetupMask();
+            SetupCircularBorder();
+            if (expandButton != null)
+                expandButton.gameObject.SetActive(false);
+
+            foreach (var marker in edgeMarkers.Values)
+            {
+                if (marker != null)
+                    marker.gameObject.SetActive(false);
+            }
+        }
+
+        /// <summary>Returns the map to the HUD corner circle after comms closes.</summary>
+        public void DetachFromCommsDock()
+        {
+            if (!_commsDocked || minimapRect == null)
+                return;
+
+            Transform hudParent = _commsDockRestoreParent;
+            if (hudParent == null)
+                hudParent = transform.parent;
+
+            if (hudParent != null)
+            {
+                minimapRect.SetParent(hudParent, false);
+                minimapRect.SetSiblingIndex(_commsDockRestoreSibling);
+            }
+
+            // Reparent can leave this GO inactive if the dock was SetActive(false) first.
+            if (!gameObject.activeSelf)
+                gameObject.SetActive(true);
+
+            _commsDocked = false;
+            _commsDockRestoreParent = null;
+            if (expandButton != null)
+                expandButton.gameObject.SetActive(true);
+
+            CollapseMinimap();
+        }
+
+        /// <summary>
+        /// Converts a center-relative minimap local point to a wrapped world XZ ping.
+        /// </summary>
+        public bool TryMinimapLocalToWorld(Vector2 centerRelativeLocal, out Vector3 world)
+        {
+            world = Vector3.zero;
+            if (displaySize < 1f || minimapRadius < 0.01f)
+                return false;
+
+            Vector3 playerPos = PlayerPosition;
+            float nx = centerRelativeLocal.x / (displaySize * 0.5f);
+            float nz = centerRelativeLocal.y / (displaySize * 0.5f);
+            float dx = nx * minimapRadius;
+            float dz = nz * minimapRadius;
+            world = new Vector3(playerPos.x + dx, playerPos.y, playerPos.z + dz);
+            if (ToroidalMap.TryGetMapSize(out float mapW, out float mapH) && mapW > 1f && mapH > 1f)
+            {
+                world.x = WrapCanonical(world.x, mapW);
+                world.z = WrapCanonical(world.z, mapH);
+            }
+
+            return true;
+        }
+
+        /// <summary>
+        /// Pixel width of a square minimap. Stretch layouts report sizeDelta 0 —
+        /// prefer the laid-out rect, then sizeDelta, then a usable floor.
+        /// </summary>
+        static float ResolveLaidOutSquareSize(RectTransform rt)
+        {
+            if (rt == null)
+                return 80f;
+
+            float laidOut = rt.rect.width;
+            if (laidOut >= 8f)
+                return laidOut;
+
+            float delta = rt.sizeDelta.x;
+            if (delta >= 8f)
+                return delta;
+
+            return 80f;
+        }
+
+        /// <summary>Wraps one axis into <c>[-size/2, size/2)</c> — same rectangle as sim hulls.</summary>
+        static float WrapCanonical(float value, float size)
+        {
+            float half = size * 0.5f;
+            value += half;
+            value -= size * Mathf.Floor(value / size);
+            return value - half;
+        }
+
         public Vector3 PlayerPosition => playerTransform != null ? playerTransform.position : Vector3.zero;
 
         public void GetToroidalDeltaForMinimap(Vector3 from, Vector3 to, out float dx, out float dz)
@@ -1314,7 +1453,7 @@ namespace TitanOrbit.UI
         private void ToggleExpand()
         {
             // Death picker stays full-map so every friendly world is clickable.
-            if (_respawnSelectLocked)
+            if (_respawnSelectLocked || _commsDocked)
                 return;
 
             isExpanded = !isExpanded;
@@ -1863,8 +2002,9 @@ namespace TitanOrbit.UI
             // Update display size if minimap size changed
             if (minimapRect != null)
             {
-                float newSize = minimapRect.sizeDelta.x;
-                if (Mathf.Abs(newSize - displaySize) > 1f &&
+                float newSize = ResolveLaidOutSquareSize(minimapRect);
+                if (newSize >= 8f &&
+                    Mathf.Abs(newSize - displaySize) > 1f &&
                     Time.frameCount - _lastCircularSpriteRebuildFrame >= 30)
                 {
                     displaySize = newSize;
@@ -1972,7 +2112,7 @@ namespace TitanOrbit.UI
         private void HandleMinimapClicks()
         {
             // Marker menu is unused in the ECS build — death planet pick must still run.
-            if (markerMenu == null && !_respawnSelectLocked)
+            if (markerMenu == null && !_respawnSelectLocked && !_commsDocked)
             {
                 Debug.LogWarning("HandleMinimapClicks: markerMenu is null!");
                 return;
@@ -2080,7 +2220,7 @@ namespace TitanOrbit.UI
                     // When minimized, pivot is at (1,0) so center is offset
                     // When expanded, pivot is at (0.5,0.5) so center is at (0,0)
                     Vector2 centerOffset = Vector2.zero;
-                    if (!isExpanded)
+                    if (!IsFullMapView)
                     {
                         // Pivot is at bottom-right (1,0), so center is at (-width/2, height/2) in local space
                         centerOffset = new Vector2(-minimapRect.sizeDelta.x / 2f, minimapRect.sizeDelta.y / 2f);
@@ -2111,6 +2251,14 @@ namespace TitanOrbit.UI
                         if (_respawnSelectLocked)
                         {
                             TryHandleRespawnPlanetClick(clickPos);
+                            return;
+                        }
+
+                        // Comms dock: click plants a world ping for the next send.
+                        if (_commsDocked)
+                        {
+                            if (TryMinimapLocalToWorld(centerRelativePoint, out Vector3 world))
+                                ShipCommsClientState.SetPendingWaypoint(world);
                             return;
                         }
                         
@@ -2279,7 +2427,7 @@ namespace TitanOrbit.UI
             RefreshEntityCache(false);
             // Player + entity proxies share logical/display space; toroidal delta handles the seam.
             Vector3 playerPos = playerTransform.position;
-            if (isExpanded)
+            if (IsFullMapView)
                 minimapRadius = GetExpandedWorldRadius(playerPos);
             else
                 ApplyCollapsedShipLevelZoom();

@@ -1,4 +1,6 @@
 using System.Collections.Generic;
+using Shapes;
+using TitanOrbit.Core;
 using TitanOrbit.Data;
 using TitanOrbit.ECS;
 using TitanOrbit.NetCode;
@@ -19,19 +21,21 @@ namespace TitanOrbit.Game
     /// transform (display = sim; no extra wrap tiles).
     /// </para>
     /// Regular nameplates sit world −Z (screen-below). These chips sit world +Z (screen-above)
-    /// on the same play-plane rotation (<c>Euler(-90,0,0)</c>, facing +Y) so they do not tilt
-    /// toward the camera. Borders are a sliced AA frame Image — not UGUI <c>Outline</c>,
-    /// which crawls while the ship flies. Execution order 67012: after
-    /// <see cref="EcsWorldVisualizer"/> and nameplates.
+    /// on the same play-plane rotation (<c>Euler(-90,0,0)</c>, facing +Y) in gameplay. Theatrical
+    /// idle orbit billboards them at the lens like nameplates and scales by camera-to-hull
+    /// distance so remote callouts stay readable. A thin Shapes billboard line in the
+    /// speaker's team color ties the chip row back to the hull.
+    /// Borders are a sliced AA frame Image — not UGUI <c>Outline</c>, which crawls while the
+    /// ship flies. Execution order 67012: after <see cref="EcsWorldVisualizer"/> and nameplates.
     /// </summary>
     [DefaultExecutionOrder(67012)]
-    public sealed class ShipCommsBubblePresenter : MonoBehaviour
+    public sealed class ShipCommsBubblePresenter : ImmediateModeShapeDrawer
     {
         const float LifetimeSeconds = 4f;
         const float FadeSeconds = 0.65f;
         /// <summary>
-        /// Same tiny Y lift as <see cref="ShipWorldNameplate"/> so chips sit on the play plane,
-        /// not tilted toward the camera.
+        /// Same tiny Y lift as <see cref="ShipWorldNameplate"/> so gameplay chips sit on the
+        /// play plane. Theatrical mode keeps this lift and changes rotation plus scale.
         /// </summary>
         const float HeightAbovePlane = 0.08f;
 
@@ -40,6 +44,22 @@ namespace TitanOrbit.Game
 
         const float FallbackXzRadius = 0.7f;
         const float WorldCanvasScale = 0.013f;
+
+        /// <summary>
+        /// Fallback L1 camera height. Theatrical chips grow with camera-to-hull distance
+        /// over this so on-screen size matches gameplay when the lens is that far away.
+        /// Live value comes from <see cref="CameraFollowEcs.Settings.heightAtLevel1"/>.
+        /// </summary>
+        const float TheatricalBillboardRefDistance = 25f;
+
+        /// <summary>Close-up floor so a crane-in cannot shrink chips to unreadable.</summary>
+        const float TheatricalBillboardScaleMin = 0.4f;
+
+        /// <summary>Far-ship cap so a map-wide speaker cannot spawn a giant world canvas.</summary>
+        const float TheatricalBillboardScaleMax = 8f;
+
+        /// <summary>Screen-pixel thickness so the leader stays thin from top-down and theatrical.</summary>
+        const float LeaderLineThicknessPixels = 1.8f;
 
         /// <summary>
         /// Nameplates use world −Z as screen-below. Chips sit on the opposite side so they
@@ -92,6 +112,12 @@ namespace TitanOrbit.Game
             public byte TeamOnly;
             public bool HasLocalCenter;
             public Vector3 LocalXzCenter;
+            public TeamId Team;
+            public Color LineColor;
+            public Vector3 LineFrom;
+            public Vector3 LineTo;
+            public bool HasLine;
+            public ShipCommsInbox.Callout Callout;
         }
 
         /// <summary>
@@ -134,17 +160,17 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Paints chips above <paramref name="networkId"/>'s hull. Replaces any bubble
-        /// already showing for that player and restarts the 4s timer.
+        /// Paints chips above the speaker's hull. Replaces any bubble already showing
+        /// for that player and restarts the 4s timer.
         /// </summary>
-        public static void Show(int networkId, byte count, byte k0, byte k1, byte k2, byte teamOnly)
+        public static void Show(in ShipCommsInbox.Callout callout)
         {
             if (s_Instance == null)
                 EnsureExists();
             if (s_Instance == null)
                 return;
 
-            s_Instance.ApplyCallout(networkId, count, k0, k1, k2, teamOnly);
+            s_Instance.ApplyCallout(callout);
         }
 
         /// <summary>
@@ -155,7 +181,7 @@ namespace TitanOrbit.Game
             // --- Inbox ---
             // [HYBRID] Client simulation enqueued rows; we Instantiates UI on the main thread.
             while (ShipCommsInbox.TryDequeue(out ShipCommsInbox.Callout callout))
-                ApplyCallout(callout.NetworkId, callout.Count, callout.K0, callout.K1, callout.K2, callout.TeamOnly);
+                ApplyCallout(callout);
 
             if (_live.Count <= 0)
                 return;
@@ -197,29 +223,32 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>Creates or recycles a bubble and writes the keyword labels.</summary>
-        void ApplyCallout(int networkId, byte count, byte k0, byte k1, byte k2, byte teamOnly)
+        void ApplyCallout(in ShipCommsInbox.Callout callout)
         {
-            if (networkId <= 0 || count < 1)
+            if (callout.NetworkId <= 0 || callout.Count < 1)
                 return;
 
-            if (!_live.TryGetValue(networkId, out Bubble bubble) || bubble == null || bubble.Root == null)
+            if (!_live.TryGetValue(callout.NetworkId, out Bubble bubble) || bubble == null || bubble.Root == null)
             {
-                bubble = CreateBubble(networkId);
-                _live[networkId] = bubble;
+                bubble = CreateBubble(callout.NetworkId);
+                _live[callout.NetworkId] = bubble;
             }
 
             bubble.Age = 0f;
-            bubble.Count = count;
-            bubble.TeamOnly = teamOnly;
+            bubble.Count = callout.Count;
+            bubble.TeamOnly = callout.TeamOnly;
+            bubble.Callout = callout;
             if (bubble.Group != null)
                 bubble.Group.alpha = 1f;
 
             var catalog = ShipCommsKeywordCatalog.LoadDefault();
             float width = 0f;
-            width += ApplyChip(bubble, 0, count >= 1, k0, catalog, teamOnly);
-            width += ApplyChip(bubble, 1, count >= 2, k1, catalog, teamOnly);
-            width += ApplyChip(bubble, 2, count >= 3, k2, catalog, teamOnly);
-            width += Mathf.Max(0, count - 1) * ChipGap;
+            width += ApplyChip(bubble, 0, callout.Count >= 1, callout.K0, catalog, callout.TeamOnly);
+            width += ApplyChip(bubble, 1, callout.Count >= 2, callout.K1, catalog, callout.TeamOnly);
+            width += ApplyChip(bubble, 2, callout.Count >= 3, callout.K2, catalog, callout.TeamOnly);
+            width += ApplyChip(bubble, 3, callout.Count >= 4, callout.K3, catalog, callout.TeamOnly);
+            width += ApplyChip(bubble, 4, callout.Count >= 5, callout.K4, catalog, callout.TeamOnly);
+            width += Mathf.Max(0, callout.Count - 1) * ChipGap;
             if (bubble.CanvasRect != null)
                 bubble.CanvasRect.sizeDelta = new Vector2(width, ChipHeight + 8f);
 
@@ -281,8 +310,8 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Parks the bubble on the play plane, screen-above the hull. Same world rotation as
-        /// <see cref="ShipWorldNameplate"/>: flat on XZ, facing +Y, no yaw with the ship.
+        /// Parks the bubble screen-above the hull. Gameplay stays flat on XZ like
+        /// <see cref="ShipWorldNameplate"/>; theatrical idle orbit billboards at the lens.
         /// </summary>
         bool TryFollowHull(Bubble bubble)
         {
@@ -297,31 +326,163 @@ namespace TitanOrbit.Game
             EnsureLocalHullCenter(hull, bubble);
             Vector3 centerWorld = hull.TransformPoint(bubble.LocalXzCenter);
 
+            if (_cachedCamera == null)
+                _cachedCamera = Camera.main;
+
+            // [TITAN-ORBIT] Gameplay: Euler −90 X lays the canvas on XZ. Theatrical: same
+            // camera-facing billboard as nameplates / planet labels so the row stays readable
+            // off the top-down plane. Always rewritten so leaving theatrical cannot leave
+            // a leftover billboard.
+            bool theatrical = TitanOrbit.UI.TheatricalWorldSpaceLabelRotation.IsTheatricalEngaged();
+            Quaternion rot = theatrical
+                ? TitanOrbit.UI.TheatricalWorldSpaceLabelRotation.BillboardRotationFacingCamera()
+                : Quaternion.Euler(-90f, 0f, 0f);
+
+            // Gameplay: height zoom (L2+ / MEGA). Theatrical: camera-to-this-hull distance
+            // so close crane-ins stay modest and remote speakers stay readable.
+            float scale = ResolveChipWorldScale(theatrical, _cachedCamera, centerWorld);
+            float halfChipWorld = (ChipHeight + 8f) * scale * 0.5f;
+
             // [TITAN-ORBIT] Nameplates sit world −Z (screen-below). +Z keeps chips readable
             // on the opposite side of the hull, still on the play plane. Add half the canvas
             // height so the near edge clears the hull (the pivot is the chip row center).
             // Anchor XZ from mesh bounds center — hull.position is often off the visual midline.
-            // Scale with camera height so L2+ / MEGA zoom-out keeps the same on-screen size
-            // as L1 — same factor as floating gem/heal counts.
-            float zoom = WorldFloatingCountManager.ResolveCameraZoomScale();
-            float scale = WorldCanvasScale * zoom;
-            float halfChipWorld = (ChipHeight + 8f) * scale * 0.5f;
             Vector3 pos = centerWorld
                 + ScreenAboveWorld * (xzRadius + PaddingPastHull + halfChipWorld);
             pos.y = centerWorld.y + HeightAbovePlane;
 
-            // [TITAN-ORBIT] Euler −90 X lays the canvas on XZ. Negative Y scale un-mirrors
-            // UI after that tilt — same trick as the nameplate label root.
-            bubble.Root.transform.SetPositionAndRotation(pos, Quaternion.Euler(-90f, 0f, 0f));
+            bubble.Root.transform.SetPositionAndRotation(pos, rot);
             bubble.Root.transform.localScale = new Vector3(scale, -scale, scale);
 
-            if (_cachedCamera == null)
-                _cachedCamera = Camera.main;
+            // Leader: chip near-edge → hull visual center. Same play-plane Y as the chips
+            // so top-down stays a short XZ stem; theatrical still reads as “from the row.”
+            Vector3 shipAnchor = centerWorld;
+            shipAnchor.y = pos.y;
+            Vector3 toChip = pos - shipAnchor;
+            float stemLen = toChip.magnitude;
+            if (stemLen > 0.02f)
+            {
+                float inset = Mathf.Min(halfChipWorld, stemLen * 0.45f);
+                bubble.LineFrom = pos - toChip * (inset / stemLen);
+                bubble.LineTo = shipAnchor;
+                bubble.HasLine = true;
+            }
+            else
+            {
+                bubble.HasLine = false;
+            }
+
+            if (bubble.Team == TeamId.None)
+                TryAssignTeamColor(hull, bubble);
+
             if (bubble.WorldCanvas != null && _cachedCamera != null
                 && bubble.WorldCanvas.worldCamera != _cachedCamera)
                 bubble.WorldCanvas.worldCamera = _cachedCamera;
 
             return true;
+        }
+
+        /// <summary>
+        /// Thin team-color stem from each live chip row to its hull. Game cameras only —
+        /// Scene / preview cameras must not lock this pass the way territory fill once did.
+        /// </summary>
+        public override void DrawShapes(Camera cam)
+        {
+            if (cam == null || cam.cameraType != CameraType.Game)
+                return;
+
+            bool pendingPing = ShipCommsClientState.IsOpen && ShipCommsClientState.HasPendingWaypoint;
+            bool pendingYou = ShipCommsClientState.IsOpen && ShipCommsClientState.HasPendingYou;
+            if (_live.Count <= 0 && !pendingPing && !pendingYou)
+                return;
+
+            using (Draw.Command(cam))
+            {
+                Draw.ResetAllDrawStates();
+                Draw.BlendMode = ShapesBlendMode.Transparent;
+                Draw.ThicknessSpace = ThicknessSpace.Pixels;
+                Draw.LineGeometry = LineGeometry.Billboard;
+
+                foreach (var pair in _live)
+                {
+                    Bubble bubble = pair.Value;
+                    if (bubble == null)
+                        continue;
+
+                    float alpha = bubble.Group != null ? bubble.Group.alpha : 1f;
+
+                    Color stem = bubble.LineColor.a > 0.01f ? bubble.LineColor : ChipFrame;
+                    stem.a = 0.9f * alpha;
+                    if (bubble.HasLine && alpha >= 0.01f)
+                        Draw.Line(bubble.LineFrom, bubble.LineTo, LeaderLineThicknessPixels, LineEndCap.None, stem);
+
+                    // Dots keep drawing through their own fade-out even after chips dim.
+                    ShipCommsCalloutGraphics.DrawIntent(in bubble.Callout, bubble.Age, LifetimeSeconds, alpha);
+                }
+
+                if (pendingPing)
+                {
+                    Vector3 ping = ShipCommsClientState.PendingWaypoint;
+                    ping.y = HeightAbovePlane;
+                    Draw.ThicknessSpace = ThicknessSpace.Meters;
+                    Draw.Disc(ping, Vector3.up, 0.38f, ChipFrame);
+                    Draw.ThicknessSpace = ThicknessSpace.Pixels;
+                }
+
+                if (pendingYou)
+                    ShipCommsCalloutGraphics.DrawPendingYou(1f);
+            }
+        }
+
+        /// <summary>
+        /// Reads the hull nameplate's cached team (already painted by the visualizer).
+        /// Local optimistic callouts fall back to the Join Team assign so the stem is
+        /// not white for a frame. No ECS ship gather.
+        /// </summary>
+        static void TryAssignTeamColor(Transform hull, Bubble bubble)
+        {
+            TeamId team = TeamId.None;
+            if (hull != null)
+            {
+                var plate = hull.GetComponent<ShipWorldNameplate>();
+                if (plate != null)
+                    team = plate.PresentationTeam;
+            }
+
+            if (team == TeamId.None &&
+                bubble.NetworkId > 0 &&
+                bubble.NetworkId == EcsGameBridge.GetLocalNetworkId())
+                team = ClientTeamFlowState.ResolvePresentationTeam(TeamId.None);
+
+            if (team == TeamId.None)
+            {
+                bubble.LineColor = ChipFrame;
+                return;
+            }
+
+            bubble.Team = team;
+            bubble.LineColor = team.ToColor();
+        }
+
+        /// <summary>
+        /// World canvas scale. Gameplay follows top-down height zoom. Theatrical uses
+        /// camera-to-speaker distance over L1 height so the chip holds a stable screen size.
+        /// </summary>
+        static float ResolveChipWorldScale(bool theatrical, Camera cam, Vector3 shipCenter)
+        {
+            if (!theatrical || cam == null)
+                return WorldCanvasScale * WorldFloatingCountManager.ResolveCameraZoomScale();
+
+            float dist = Vector3.Distance(cam.transform.position, shipCenter);
+            float refDist = TheatricalBillboardRefDistance;
+            var follow = CameraFollowEcs.Instance;
+            if (follow != null)
+                refDist = Mathf.Max(1f, follow.Settings.heightAtLevel1);
+
+            return WorldCanvasScale * Mathf.Clamp(
+                dist / refDist,
+                TheatricalBillboardScaleMin,
+                TheatricalBillboardScaleMax);
         }
 
         /// <summary>Builds a world-space canvas with three reusable chips.</summary>

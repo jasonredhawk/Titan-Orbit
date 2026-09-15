@@ -6,7 +6,7 @@ using UnityEngine;
 namespace TitanOrbit.Game
 {
     /// <summary>
-    /// Client glue that sends a 1–3 keyword comms sentence to the server.
+    /// Client glue that sends a 1–5 keyword comms sentence to the server.
     /// <para>
     /// [NETCODE] Dedicated / Relay clients send <see cref="ShipCommsCommand"/> from ClientWorld.
     /// Local Host injects the same command onto ServerWorld with
@@ -26,31 +26,59 @@ namespace TitanOrbit.Game
         /// Enqueues the command on Local Host ServerWorld or ClientWorld. Returns true when
         /// an RPC entity was created (not when the server has accepted it).
         /// </summary>
-        /// <param name="count">Live keyword count (1–3).</param>
-        /// <param name="k0">First catalog index.</param>
-        /// <param name="k1">Second catalog index (ignored when count is 1).</param>
-        /// <param name="k2">Third catalog index (ignored when count is under 3).</param>
-        /// <param name="teamOnly">1 = teammates only; 0 = every client.</param>
-        public static bool TrySend(byte count, byte k0, byte k1, byte k2, byte teamOnly)
+        public static bool TrySend(in ShipCommsInbox.Callout payload)
         {
-            if (count < 1 || count > 3)
+            if (payload.Count < 1 || payload.Count > 5)
                 return false;
 
-            // [TITAN-ORBIT] Clamp to 0/1 so a stale caller cannot put junk on the wire.
-            byte channel = teamOnly != 0 ? (byte)1 : (byte)0;
+            byte channel = payload.TeamOnly != 0 ? (byte)1 : (byte)0;
+            var command = new ShipCommsCommand
+            {
+                Count = payload.Count,
+                K0 = payload.K0,
+                K1 = payload.K1,
+                K2 = payload.K2,
+                K3 = payload.K3,
+                K4 = payload.K4,
+                TeamOnly = channel,
+                HasWaypoint = payload.HasWaypoint != 0 ? (byte)1 : (byte)0,
+                WaypointX = payload.WaypointX,
+                WaypointZ = payload.WaypointZ,
+                FocusKind = payload.FocusKind,
+                YouNetworkId = payload.YouNetworkId,
+                PlanetId = payload.PlanetId,
+                Everyone = payload.Everyone,
+                Us0 = payload.Us0,
+                Us1 = payload.Us1,
+                Us2 = payload.Us2,
+                Us3 = payload.Us3,
+                MeX = payload.MeX,
+                MeZ = payload.MeZ,
+                YouX = payload.YouX,
+                YouZ = payload.YouZ,
+                GroupCount = payload.GroupCount,
+                G0X = payload.G0X, G0Z = payload.G0Z,
+                G1X = payload.G1X, G1Z = payload.G1Z,
+                G2X = payload.G2X, G2Z = payload.G2Z,
+                G3X = payload.G3X, G3Z = payload.G3Z,
+                G4X = payload.G4X, G4Z = payload.G4Z,
+                G5X = payload.G5X, G5Z = payload.G5Z,
+                G6X = payload.G6X, G6Z = payload.G6Z,
+                G7X = payload.G7X, G7Z = payload.G7Z,
+            };
 
             int localId = EcsGameBridge.GetLocalNetworkId();
-            if (TryEnqueueLocalHost(count, k0, k1, k2, channel, localId))
+            if (TryEnqueueLocalHost(command, localId))
                 return true;
 
-            return TrySendDedicatedRpc(count, k0, k1, k2, channel);
+            return TrySendDedicatedRpc(command);
         }
 
         /// <summary>
         /// [TITAN-ORBIT] Local Host: create the RPC entity on ServerWorld so
         /// <see cref="ShipCommsServerSystem"/> sees it next tick without IPC.
         /// </summary>
-        static bool TryEnqueueLocalHost(byte count, byte k0, byte k1, byte k2, byte teamOnly, int networkId)
+        static bool TryEnqueueLocalHost(in ShipCommsCommand command, int networkId)
         {
             if (!EcsGameBridge.IsLocalHost())
                 return false;
@@ -67,14 +95,7 @@ namespace TitanOrbit.Game
                 return false;
 
             var rpcEntity = em.CreateEntity();
-            em.AddComponentData(rpcEntity, new ShipCommsCommand
-            {
-                Count = count,
-                K0 = k0,
-                K1 = k1,
-                K2 = k2,
-                TeamOnly = teamOnly,
-            });
+            em.AddComponentData(rpcEntity, command);
             em.AddComponentData(rpcEntity, new ReceiveRpcCommandRequest { SourceConnection = connection });
             return true;
         }
@@ -83,7 +104,7 @@ namespace TitanOrbit.Game
         /// [NETCODE] Dedicated / Relay: SendRpc from ClientWorld. TargetConnection Null = "the
         /// server that owns this client connection."
         /// </summary>
-        static bool TrySendDedicatedRpc(byte count, byte k0, byte k1, byte k2, byte teamOnly)
+        static bool TrySendDedicatedRpc(in ShipCommsCommand command)
         {
             var world = EcsGameBridge.ClientWorld;
             if (world == null || !world.IsCreated)
@@ -91,14 +112,7 @@ namespace TitanOrbit.Game
 
             var em = world.EntityManager;
             var entity = em.CreateEntity();
-            em.AddComponentData(entity, new ShipCommsCommand
-            {
-                Count = count,
-                K0 = k0,
-                K1 = k1,
-                K2 = k2,
-                TeamOnly = teamOnly,
-            });
+            em.AddComponentData(entity, command);
             em.AddComponentData(entity, new SendRpcCommandRequest { TargetConnection = Entity.Null });
             return true;
         }
