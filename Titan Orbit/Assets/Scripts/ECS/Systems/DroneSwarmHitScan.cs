@@ -48,9 +48,16 @@ namespace TitanOrbit.ECS
     /// </summary>
     public static class DroneSwarmHitScan
     {
+        /// <summary>Idle rear poses used so each shield picks its own closest enemy.</summary>
+        static readonly List<Vector3> s_ShieldIdlePos = new List<Vector3>(8);
+
+        /// <summary>Vector3 copy of enemy poses for shared assignment math (Entities has no float3 dict API).</summary>
+        static readonly Dictionary<int, Vector3> s_EnemyPosVec = new Dictionary<int, Vector3>(16);
+
         /// <summary>
         /// Clears and fills <paramref name="targetsOut"/> with every living drone pose this tick.
-        /// Shield block walls use the same sorted-enemy assignment as client visuals.
+        /// Shield block walls use the same sorted-enemy assignment as client visuals
+        /// (enemy hulls plus enemy planetary-defense pads).
         /// </summary>
         public static void RebuildTargets(
             EntityManager em,
@@ -64,7 +71,8 @@ namespace TitanOrbit.ECS
             List<int> shieldSlotsScratch,
             List<int> enemyNetIdsScratch,
             Dictionary<int, float3> enemyPosByNetId,
-            Dictionary<int, DroneSwarmPositioning.ShieldAssignment> shieldAssignments)
+            Dictionary<int, DroneSwarmPositioning.ShieldAssignment> shieldAssignments,
+            List<PlanetaryDefenseHitTarget> defenseTargets = null)
         {
             targetsOut.Clear();
             if (ships.Length == 0)
@@ -111,21 +119,66 @@ namespace TitanOrbit.ECS
                 DroneSwarmPositioning.GetShipBasis(shipPos, shipRot, out shipPos, out Vector3 forward, out Vector3 right);
                 float hullRadius = BodyCollisionMath.GetShipHullRadiusWorld(transform.Scale);
                 float orbitRadius = DroneSwarmPositioning.GetDroneOrbitRadiusFromHull(hullRadius);
+                float coverEx = 0f, coverEz = 0f, coverCx = 0f, coverCz = 0f;
+                if (em.HasComponent<ShipHullColliderState>(ship))
+                {
+                    var hull = em.GetComponentData<ShipHullColliderState>(ship);
+                    coverEx = hull.AppliedCoveringExtentX;
+                    coverEz = hull.AppliedCoveringExtentZ;
+                    coverCx = hull.AppliedCoveringCenterX;
+                    coverCz = hull.AppliedCoveringCenterZ;
+                }
                 int ownerNetId = ghost.NetworkId;
                 byte team = (byte)shipState.Team;
 
-                // --- Enemy list for shield walls (deterministic by NetworkId sort) ---
+                // Gather a bit past ship-center range so a rim drone can still lock its own closest.
+                float gatherPad = DroneSwarmLogic.DefensePadEngageRange + orbitRadius;
+                float gatherHull = DroneSwarmLogic.ShieldEngageRange + orbitRadius;
                 enemyNetIdsScratch.Clear();
                 enemyPosByNetId.Clear();
                 shieldAssignments.Clear();
                 CollectEnemiesInRange(
-                    em, allShipsForEnemies, shipPos, (TeamId)team, ownerNetId,
-                    DroneSwarmLogic.ShieldEngageRange, mapW, mapH,
-                    enemyNetIdsScratch, enemyPosByNetId);
-                DroneSwarmPositioning.BuildShieldAssignments(
-                    shieldSlotsScratch, enemyNetIdsScratch, shieldAssignments);
+                    em, allShipsForEnemies, defenseTargets, shipPos, (TeamId)team, ownerNetId,
+                    gatherHull, gatherPad, mapW, mapH, enemyNetIdsScratch, enemyPosByNetId);
 
                 int shieldCount = math.max(1, shieldSlotsScratch.Count);
+                s_ShieldIdlePos.Clear();
+                for (int sIdx = 0; sIdx < shieldSlotsScratch.Count; sIdx++)
+                {
+                    int idleSlot = shieldSlotsScratch[sIdx];
+                    var idleCtx = new DroneSwarmPositioning.SlotEvaluationContext
+                    {
+                        ShipPos = shipPos,
+                        Forward = forward,
+                        Right = right,
+                        OrbitRadius = orbitRadius,
+                        TimeSeconds = timeSeconds,
+                        ShipNetworkId = ownerNetId,
+                        MapW = mapW,
+                        MapH = mapH,
+                        ShieldOrdinal = sIdx,
+                        ShieldCount = shieldCount,
+                        HasShieldTarget = false,
+                    };
+                    DroneSwarmPositioning.ApplyCoveringHullShape(
+                        ref idleCtx, transform.Scale, coverEx, coverEz, coverCx, coverCz);
+                    s_ShieldIdlePos.Add(
+                        DroneSwarmPositioning.EvaluateSlotPose(
+                            StoreItemType.ShieldDrone, idleSlot, in idleCtx).WorldPosition);
+                }
+
+                s_EnemyPosVec.Clear();
+                for (int e = 0; e < enemyNetIdsScratch.Count; e++)
+                {
+                    int id = enemyNetIdsScratch[e];
+                    if (!enemyPosByNetId.TryGetValue(id, out float3 ep))
+                        continue;
+                    s_EnemyPosVec[id] = new Vector3(ep.x, 0f, ep.z);
+                }
+
+                DroneSwarmPositioning.BuildShieldAssignments(
+                    shieldSlotsScratch, s_ShieldIdlePos, enemyNetIdsScratch, s_EnemyPosVec,
+                    mapW, mapH, shieldAssignments);
 
                 for (int sIdx = 0; sIdx < shieldSlotsScratch.Count; sIdx++)
                 {
@@ -161,6 +214,8 @@ namespace TitanOrbit.ECS
                         IndexOnEnemy = indexOnEnemy,
                         CountOnEnemy = countOnEnemy,
                     };
+                    DroneSwarmPositioning.ApplyCoveringHullShape(
+                        ref ctx, transform.Scale, coverEx, coverEz, coverCx, coverCz);
                     var pose = DroneSwarmPositioning.EvaluateSlotPose(
                         StoreItemType.ShieldDrone, slot, in ctx);
                     int droneLevel = math.max(1, buf[slot].ItemLevel > 0
@@ -268,16 +323,18 @@ namespace TitanOrbit.ECS
         static void CollectEnemiesInRange(
             EntityManager em,
             NativeArray<Entity> ships,
+            List<PlanetaryDefenseHitTarget> defenseTargets,
             Vector3 ownerPos,
             TeamId ownerTeam,
             int ownerNetworkId,
-            float range,
+            float shipRange,
+            float turretRange,
             float mapW,
             float mapH,
             List<int> enemyNetIdsOut,
             Dictionary<int, float3> enemyPosOut)
         {
-            float rangeSq = range * range;
+            float shipRangeSq = shipRange * shipRange;
             for (int i = 0; i < ships.Length; i++)
             {
                 Entity e = ships[i];
@@ -296,11 +353,37 @@ namespace TitanOrbit.ECS
                 pos.y = 0f;
                 float dist = DroneSwarmLogic.ToroidalDistanceXZ(
                     ownerPos.x, ownerPos.z, pos.x, pos.z, mapW, mapH);
-                if (dist * dist > rangeSq)
+                if (dist * dist > shipRangeSq)
                     continue;
 
                 enemyNetIdsOut.Add(ghost.NetworkId);
                 enemyPosOut[ghost.NetworkId] = pos;
+            }
+
+            if (defenseTargets == null || defenseTargets.Count == 0)
+                return;
+
+            float turretRangeSq = turretRange * turretRange;
+            byte ownerTeamByte = (byte)ownerTeam;
+            for (int i = 0; i < defenseTargets.Count; i++)
+            {
+                var pad = defenseTargets[i];
+                if (pad.Team == (byte)TeamId.None || pad.Team == ownerTeamByte)
+                    continue;
+
+                int padId = DroneSwarmLogic.MakeDefensePadEnemyId(pad.PlanetId, pad.SlotIndex);
+                if (padId == 0)
+                    continue;
+
+                float3 pos = pad.Position;
+                pos.y = 0f;
+                float dist = DroneSwarmLogic.ToroidalDistanceXZ(
+                    ownerPos.x, ownerPos.z, pos.x, pos.z, mapW, mapH);
+                if (dist * dist > turretRangeSq)
+                    continue;
+
+                enemyNetIdsOut.Add(padId);
+                enemyPosOut[padId] = pos;
             }
         }
 

@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using TitanOrbit.Data;
+using TitanOrbit.Simulation;
 using UnityEngine;
 
 namespace TitanOrbit.Entities
@@ -30,8 +31,24 @@ namespace TitanOrbit.Entities
         /// <summary>Multiplies (hull + margin) for escort ring size.</summary>
         public const float OrbitRadiusMultiplier = 2.25f;
 
-        /// <summary>Lateral spacing between rear-cluster fighter/mining drones.</summary>
-        public const float RearLateralSpread = 0.75f;
+        /// <summary>
+        /// Rear-hemisphere half-angle from aft (90 = full behind-the-ship half-plane).
+        /// Slot angles stay in [180 − this, 180 + this] so drones never sit ahead of the beam.
+        /// </summary>
+        public const float RearScatterHalfAngleDeg = 90f;
+
+        /// <summary>
+        /// Minimum standoff beyond the covering hull along the slot ray.
+        /// Sized just past <see cref="DroneSwarmPositioning.DroneHitSphereRadius"/> so meshes
+        /// clear the box without sitting a ship-length off the tail.
+        /// </summary>
+        public const float RearMinClearance = 0.28f;
+
+        /// <summary>
+        /// Extra distance beyond <see cref="RearMinClearance"/> (hash 0 → min, hash 1 → min + this).
+        /// Keep this small — the covering box already places the slot on the hull face.
+        /// </summary>
+        public const float RearMaxClearance = 0.35f;
 
         /// <summary>Lateral spacing between shields on the same block wall.</summary>
         public const float ShieldFormationSpacing = 0.75f;
@@ -67,8 +84,33 @@ namespace TitanOrbit.Entities
         /// <summary>Fighter bullet speed (world units / sec).</summary>
         public const float FighterBulletSpeed = 18f;
 
-        /// <summary>Max toroidal distance from owner ship to enemy before fighter may fire.</summary>
+        /// <summary>Max toroidal distance from owner ship to an enemy hull before fighter may fire.</summary>
         public const float FighterEngageRange = 6f;
+
+        /// <summary>
+        /// Max toroidal distance from owner ship to an enemy planetary-defense pad.
+        /// Pads sit on the planet ring and turrets shoot from ~20 (Lv1) to ~40 (Lv6) —
+        /// <see cref="FighterEngageRange"/> never reaches them during a normal planet fight.
+        /// Fighter acquire also uses the drone bolt travel budget when that is larger.
+        /// </summary>
+        public const float DefensePadEngageRange = 24f;
+
+        /// <summary>
+        /// Synthetic shield/fighter target id for a defense pad. GhostOwner NetworkIds stay
+        /// small and positive; 0 remains “no target”.
+        /// </summary>
+        public const int DefensePadEnemyIdBase = 1_000_000;
+
+        /// <summary>Stable id so server hit-scan and client meshes assign the same pad.</summary>
+        public static int MakeDefensePadEnemyId(int planetId, int slotIndex)
+        {
+            if (planetId <= 0 || slotIndex < 0)
+                return 0;
+            return DefensePadEnemyIdBase + planetId * 8 + slotIndex;
+        }
+
+        /// <summary>True when <paramref name="enemyId"/> was minted by <see cref="MakeDefensePadEnemyId"/>.</summary>
+        public static bool IsDefensePadEnemyId(int enemyId) => enemyId >= DefensePadEnemyIdBase;
 
         /// <summary>Mining shots per second.</summary>
         public const float MiningFireRate = 1f;
@@ -115,11 +157,35 @@ namespace TitanOrbit.Entities
         /// </summary>
         public static float DeterministicBasePhaseRad(int shipNetworkId, int slotIndex, StoreItemType droneType)
         {
+            uint hash = MixSlotHash(shipNetworkId, slotIndex, droneType);
+            return (hash % 6283) / 1000f;
+        }
+
+        /// <summary>
+        /// Two independent [0, 1] values from the same slot seed (rear-scatter angle + distance).
+        /// </summary>
+        public static void DeterministicUnit01Pair(
+            int shipNetworkId,
+            int slotIndex,
+            StoreItemType droneType,
+            out float unitA,
+            out float unitB)
+        {
+            uint hash = MixSlotHash(shipNetworkId, slotIndex, droneType);
+            unitA = (hash & 0xFFFFu) / 65535f;
+            hash ^= hash >> 13;
+            hash *= 0x85EBCA6Bu;
+            hash ^= hash >> 16;
+            unitB = (hash & 0xFFFFu) / 65535f;
+        }
+
+        static uint MixSlotHash(int shipNetworkId, int slotIndex, StoreItemType droneType)
+        {
             uint hash = (uint)(shipNetworkId ^ (slotIndex * unchecked((int)0x9E3779B9)) ^ ((int)droneType * unchecked((int)0x85EBCA6B)));
             hash ^= hash >> 16;
             hash *= 0x7FEB352D;
             hash ^= hash >> 15;
-            return (hash % 6283) / 1000f;
+            return hash;
         }
 
         /// <summary>
@@ -213,8 +279,8 @@ namespace TitanOrbit.Entities
 
     /// <summary>
     /// Ship-relative drone formation math shared by client visuals and server combat.
-    /// Ported from the NGO-era <c>DroneSwarmPositioning</c>: rear escort (fighter/mining),
-    /// port/starboard shield idle arcs, and shield block walls toward enemies.
+    /// Fighter / mining / idle shields scatter in the rear half-plane just outside the
+    /// covering hull; active shields still form block walls toward enemies.
     /// Uses seam-correct toroidal XZ offsets (inline wrap) matching <c>ToroidalMapEcs</c>.
     /// <para>
     /// [TITAN-ORBIT] Merged into the same file as <see cref="DroneSwarmLogic"/> (both in the
@@ -228,10 +294,13 @@ namespace TitanOrbit.Entities
         /// <summary>Legacy hit sphere radius for shield-body bullet intercept (world units).</summary>
         public const float DroneHitSphereRadius = 0.42f;
 
-        /// <summary>One shield drone assigned to an enemy (round-robin wall).</summary>
+        /// <summary>One shield drone assigned to its closest in-range enemy.</summary>
         public struct ShieldAssignment
         {
-            /// <summary>Target ship network id (GhostOwner), or 0 when idle.</summary>
+            /// <summary>
+            /// Target ship GhostOwner NetworkId, or a <see cref="DroneSwarmLogic.MakeDefensePadEnemyId"/>
+            /// pad id. 0 = idle (rear scatter).
+            /// </summary>
             public int EnemyNetworkId;
 
             /// <summary>Index of this shield among shields assigned to the same enemy.</summary>
@@ -330,29 +399,91 @@ namespace TitanOrbit.Entities
         }
 
         /// <summary>
-        /// Fighter + mining rear escort: behind the ship with lateral cluster spread.
-        /// <paramref name="behindDistance"/> is the escort radius (hull-based).
+        /// Covering-box half-extent along a ship-local polar ray (0° = forward, 180° = aft).
+        /// Matches the authored hull box: axis-aligned faces, not a sphere.
         /// </summary>
-        public static OrbitSlotTarget ComputeRearEscortOrbitSlot(
+        public static float GetHullRadiusAlongLocalAngle(
+            float extentRight,
+            float extentForward,
+            float localAngleDeg)
+        {
+            float ex = Mathf.Max(0.05f, extentRight);
+            float ez = Mathf.Max(0.05f, extentForward);
+            float rad = localAngleDeg * Mathf.Deg2Rad;
+            float dx = Mathf.Abs(Mathf.Sin(rad));
+            float dz = Mathf.Abs(Mathf.Cos(rad));
+            float tx = dx > 1e-5f ? ex / dx : float.PositiveInfinity;
+            float tz = dz > 1e-5f ? ez / dz : float.PositiveInfinity;
+            float r = Mathf.Min(tx, tz);
+            if (float.IsInfinity(r) || r < 0.05f)
+                return Mathf.Max(ex, ez);
+            return r;
+        }
+
+        /// <summary>
+        /// Stamps world-space covering-box half-extents and hull origin onto <paramref name="ctx"/>.
+        /// Covering values are presentation-space (world = value × transformScale).
+        /// Zero / missing covering falls back to <see cref="BodyCollisionMath.GetShipHullRadiusWorld"/>.
+        /// </summary>
+        public static void ApplyCoveringHullShape(
+            ref SlotEvaluationContext ctx,
+            float transformScale,
+            float coveringExtentX,
+            float coveringExtentZ,
+            float coveringCenterX,
+            float coveringCenterZ)
+        {
+            float scale = Mathf.Max(0.25f, transformScale);
+            float extR = coveringExtentX * scale;
+            float extF = coveringExtentZ * scale;
+            if (extR < 0.05f || extF < 0.05f)
+            {
+                float fallback = BodyCollisionMath.GetShipHullRadiusWorld(transformScale);
+                ctx.HullExtentRight = fallback;
+                ctx.HullExtentForward = fallback;
+                ctx.HullOrigin = ctx.ShipPos;
+                return;
+            }
+
+            ctx.HullExtentRight = extR;
+            ctx.HullExtentForward = extF;
+            Vector3 local = new Vector3(coveringCenterX * scale, 0f, coveringCenterZ * scale);
+            Vector3 origin = ctx.ShipPos + ctx.Right * local.x + ctx.Forward * local.z;
+            origin.y = DroneSwarmLogic.FixedY;
+            ctx.HullOrigin = origin;
+        }
+
+        /// <summary>
+        /// Fighter / mining / idle-shield escort: random rear-hemisphere angle and
+        /// standoff from the covering hull. Hash is deterministic per ship + slot.
+        /// </summary>
+        public static OrbitSlotTarget ComputeRearScatterOrbitSlot(
             Vector3 shipForward,
             Vector3 shipRight,
             int slotIndex,
-            int clusterOrdinal,
-            int clusterCount,
-            float behindDistance,
-            float lateralSpread,
+            int shipNetworkId,
+            StoreItemType droneType,
+            float hullExtentRight,
+            float hullExtentForward,
             float buzzAmplitude,
             float buzzSpeed,
             double timeSeconds,
             float buzzPhase)
         {
+            DroneSwarmLogic.DeterministicUnit01Pair(
+                shipNetworkId, slotIndex, droneType, out float uAngle, out float uRadius);
+
+            float halfArc = Mathf.Clamp(DroneSwarmLogic.RearScatterHalfAngleDeg, 1f, 90f);
+            float angleDeg = 180f + (uAngle * 2f - 1f) * halfArc;
+            float hullAlong = GetHullRadiusAlongLocalAngle(
+                hullExtentRight, hullExtentForward, angleDeg);
+            float extra = DroneSwarmLogic.RearMinClearance
+                + uRadius * DroneSwarmLogic.RearMaxClearance;
+            float radius = hullAlong + extra;
+
             Vector3 behind = -shipForward;
-            float center = (clusterCount - 1) * 0.5f;
-            float lateral = (clusterOrdinal - center) * lateralSpread;
-            float angleDeg = Mathf.Atan2(lateral, behindDistance) * Mathf.Rad2Deg + 180f;
-            float radius = Mathf.Sqrt(behindDistance * behindDistance + lateral * lateral);
             Vector3 buzz = ComputeBuzzOffset(
-                shipRight, behind, slotIndex, clusterOrdinal,
+                shipRight, behind, slotIndex, uAngle,
                 buzzAmplitude, buzzSpeed, timeSeconds, buzzPhase);
             return new OrbitSlotTarget { AngleDeg = angleDeg, Radius = radius, Buzz = buzz };
         }
@@ -508,41 +639,74 @@ namespace TitanOrbit.Entities
         }
 
         /// <summary>
-        /// Round-robin assign each shield slot to an in-range enemy (stable sort by network id).
+        /// Each shield picks the closest in-range enemy from <paramref name="shieldFromPos"/>
+        /// (idle rear pose). Shields that choose the same enemy still share a lateral wall.
         /// </summary>
         /// <param name="shieldSlotIndices">Equipment slots that hold living shield drones.</param>
-        /// <param name="enemyNetworkIds">In-range enemy network ids (will be sorted in place).</param>
+        /// <param name="shieldFromPos">Idle planar pose per slot (same order as the slot list).</param>
+        /// <param name="enemyNetworkIds">Candidate enemy / pad ids.</param>
+        /// <param name="enemyPosById">Planar positions keyed by those ids.</param>
+        /// <param name="mapW">Toroidal width from MapStateSingleton.</param>
+        /// <param name="mapH">Toroidal height from MapStateSingleton.</param>
         /// <param name="assignmentsOut">Cleared then filled keyed by equipment slot index.</param>
         public static void BuildShieldAssignments(
             IReadOnlyList<int> shieldSlotIndices,
+            IReadOnlyList<Vector3> shieldFromPos,
             List<int> enemyNetworkIds,
+            Dictionary<int, Vector3> enemyPosById,
+            float mapW,
+            float mapH,
             Dictionary<int, ShieldAssignment> assignmentsOut)
         {
             assignmentsOut.Clear();
             if (shieldSlotIndices == null || shieldSlotIndices.Count == 0)
                 return;
-            if (enemyNetworkIds == null || enemyNetworkIds.Count == 0)
+            if (enemyNetworkIds == null || enemyNetworkIds.Count == 0 ||
+                shieldFromPos == null || enemyPosById == null)
                 return;
 
-            enemyNetworkIds.Sort();
+            float hullMaxSq = DroneSwarmLogic.ShieldEngageRange * DroneSwarmLogic.ShieldEngageRange;
+            float padMaxSq = DroneSwarmLogic.DefensePadEngageRange * DroneSwarmLogic.DefensePadEngageRange;
             s_CountPerEnemy.Clear();
-            for (int i = 0; i < shieldSlotIndices.Count; i++)
+
+            int n = Mathf.Min(shieldSlotIndices.Count, shieldFromPos.Count);
+            for (int i = 0; i < n; i++)
             {
                 int slot = shieldSlotIndices[i];
-                int enemyId = enemyNetworkIds[i % enemyNetworkIds.Count];
-                if (!s_CountPerEnemy.ContainsKey(enemyId))
-                    s_CountPerEnemy[enemyId] = 0;
-                int indexOnEnemy = s_CountPerEnemy[enemyId];
-                s_CountPerEnemy[enemyId] = indexOnEnemy + 1;
+                Vector3 from = shieldFromPos[i];
+                int bestId = 0;
+                float bestSq = float.MaxValue;
+                for (int e = 0; e < enemyNetworkIds.Count; e++)
+                {
+                    int enemyId = enemyNetworkIds[e];
+                    if (enemyId == 0 || !enemyPosById.TryGetValue(enemyId, out Vector3 ep))
+                        continue;
+
+                    float dist = DroneSwarmLogic.ToroidalDistanceXZ(
+                        from.x, from.z, ep.x, ep.z, mapW, mapH);
+                    float sq = dist * dist;
+                    float maxSq = DroneSwarmLogic.IsDefensePadEnemyId(enemyId) ? padMaxSq : hullMaxSq;
+                    if (sq >= maxSq || sq >= bestSq)
+                        continue;
+                    bestSq = sq;
+                    bestId = enemyId;
+                }
+
+                if (bestId == 0)
+                    continue;
+
+                if (!s_CountPerEnemy.ContainsKey(bestId))
+                    s_CountPerEnemy[bestId] = 0;
+                int indexOnEnemy = s_CountPerEnemy[bestId];
+                s_CountPerEnemy[bestId] = indexOnEnemy + 1;
                 assignmentsOut[slot] = new ShieldAssignment
                 {
-                    EnemyNetworkId = enemyId,
+                    EnemyNetworkId = bestId,
                     IndexOnEnemy = indexOnEnemy,
                     CountOnEnemy = 0,
                 };
             }
 
-            // Fill total counts so lateral wall spacing is even.
             s_AssignKeys.Clear();
             foreach (var key in assignmentsOut.Keys)
                 s_AssignKeys.Add(key);
@@ -614,6 +778,18 @@ namespace TitanOrbit.Entities
 
             /// <summary>How many shields share that enemy.</summary>
             public int CountOnEnemy;
+
+            /// <summary>World-space covering-box half-extent along ship right (X).</summary>
+            public float HullExtentRight;
+
+            /// <summary>World-space covering-box half-extent along ship forward (Z).</summary>
+            public float HullExtentForward;
+
+            /// <summary>
+            /// Covering-box center on FixedY. Rear scatter is measured from here so
+            /// drones sit outside the real hull, not a sphere at the transform origin.
+            /// </summary>
+            public Vector3 HullOrigin;
         }
 
         /// <summary>
@@ -656,10 +832,10 @@ namespace TitanOrbit.Entities
             {
                 case StoreItemType.FighterDrone:
                 case StoreItemType.MiningDrone:
-                    slot = ComputeRearEscortOrbitSlot(
+                    slot = ComputeRearScatterOrbitSlot(
                         ctx.Forward, ctx.Right, slotIndex,
-                        ctx.RearOrdinal, Mathf.Max(1, ctx.RearCount),
-                        ctx.OrbitRadius, DroneSwarmLogic.RearLateralSpread,
+                        ctx.ShipNetworkId, droneType,
+                        ctx.HullExtentRight, ctx.HullExtentForward,
                         DroneSwarmLogic.BuzzAmplitude, DroneSwarmLogic.BuzzSpeed,
                         ctx.TimeSeconds, buzzPhase);
                     break;
@@ -676,10 +852,10 @@ namespace TitanOrbit.Entities
                     }
                     else
                     {
-                        slot = ComputeShieldSideOrbitSlot(
+                        slot = ComputeRearScatterOrbitSlot(
                             ctx.Forward, ctx.Right, slotIndex,
-                            ctx.ShieldOrdinal, Mathf.Max(1, ctx.ShieldCount),
-                            ctx.OrbitRadius,
+                            ctx.ShipNetworkId, droneType,
+                            ctx.HullExtentRight, ctx.HullExtentForward,
                             DroneSwarmLogic.BuzzAmplitude, DroneSwarmLogic.BuzzSpeed,
                             ctx.TimeSeconds, buzzPhase);
                     }
@@ -695,9 +871,11 @@ namespace TitanOrbit.Entities
                     break;
             }
 
+            Vector3 polarOrigin = ctx.HullExtentRight > 0.01f ? ctx.HullOrigin : ctx.ShipPos;
+            polarOrigin.y = DroneSwarmLogic.FixedY;
             float worldAngle = ShipLocalSlotToWorldAngleDeg(
                 ctx.Forward, ctx.Right, slot.AngleDeg, slot.Radius);
-            Vector3 world = WorldPolarToWorld(ctx.ShipPos, worldAngle, slot.Radius);
+            Vector3 world = WorldPolarToWorld(polarOrigin, worldAngle, slot.Radius);
             world += slot.Buzz;
             world.y = DroneSwarmLogic.FixedY;
 

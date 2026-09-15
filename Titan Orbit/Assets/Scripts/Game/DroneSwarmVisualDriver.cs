@@ -24,8 +24,9 @@ namespace TitanOrbit.Game
     /// Fire / hit math stays on <see cref="DroneSwarmLogic.FixedY"/>.
     /// </para>
     /// <para>
-    /// Combat fire is server-only (<c>DroneSwarmCombatSystem</c>). Shield block walls use the same
-    /// sorted-enemy assignment as server hit-scan. Mesh scale =
+    /// Combat fire is server-only (<c>DroneSwarmCombatSystem</c>). Each drone locks the closest
+    /// valid target from its own pose; shield walls use that same per-drone pick as server hit-scan.
+    /// Mesh scale =
     /// prefab localScale × <see cref="StoreItemData.GetDroneVisualScale"/> (L6 mul = 1.0).
     /// </para>
     /// </summary>
@@ -92,7 +93,9 @@ namespace TitanOrbit.Game
         readonly List<int> _rearSlotsScratch = new List<int>(8);
         readonly List<int> _shieldSlotsScratch = new List<int>(8);
         readonly List<int> _enemyNetIdsScratch = new List<int>(16);
+        readonly List<Vector3> _shieldIdlePosScratch = new List<Vector3>(8);
         readonly Dictionary<int, Vector3> _enemyPosByNetId = new Dictionary<int, Vector3>(16);
+        readonly Dictionary<int, Vector3> _enemyAssignPosScratch = new Dictionary<int, Vector3>(16);
         readonly Dictionary<int, DroneSwarmPositioning.ShieldAssignment> _shieldAssignments =
             new Dictionary<int, DroneSwarmPositioning.ShieldAssignment>(8);
         readonly Dictionary<int, TeamId> _enemyTeamByNetId = new Dictionary<int, TeamId>(16);
@@ -100,9 +103,11 @@ namespace TitanOrbit.Game
         /// <summary>Scratch for hybrid asteroid proxy keys (quarantine-safe mining aim).</summary>
         readonly List<Entity> _asteroidProxyScratch = new List<Entity>(512);
 
-        /// <summary>Nearest asteroid planar pos cached for local mining aim (throttled).</summary>
-        Vector3 _cachedNearestAsteroid;
-        bool _hasCachedNearestAsteroid;
+        /// <summary>Scratch for hybrid planet proxy keys (quarantine-safe turret aim).</summary>
+        readonly List<Entity> _planetProxyScratch = new List<Entity>(64);
+
+        /// <summary>Nearby asteroid planar poses for local mining aim (throttled).</summary>
+        readonly List<Vector3> _cachedAsteroidAims = new List<Vector3>(256);
         int _asteroidCacheFrame = -999;
 
         World _cachedQueryWorld;
@@ -258,6 +263,7 @@ namespace TitanOrbit.Game
 
             // Build global enemy cache once (shield assign + fighter facing).
             RefreshGlobalEnemyCache(em, shipEntities);
+            RefreshEnemyTurretAimCache(em);
 
             // Throttled asteroid aim for local mining facing only (never per-drone).
             bool anyMiningVisible = false;
@@ -363,7 +369,11 @@ namespace TitanOrbit.Game
                     group.LayoutFingerprint = layoutFp;
                 }
 
-                UpdateGroupOrbit(group, shipPos, shipRot, shipScale, shipState.Team, netId, timeSeconds, dt, isLocal);
+                ReadCoveringPresentation(em, shipEntity, out float coverEx, out float coverEz, out float coverCx, out float coverCz);
+                UpdateGroupOrbit(
+                    group, shipPos, shipRot, shipScale,
+                    coverEx, coverEz, coverCx, coverCz,
+                    shipState.Team, netId, timeSeconds, dt, isLocal);
             }
 
             // --- Cull groups for ships that left / died ---
@@ -493,16 +503,20 @@ namespace TitanOrbit.Game
                 return false;
             }
 
-            if (em.HasComponent<ShipState>(shipEntity))
-            {
-                var st = em.GetComponentData<ShipState>(shipEntity);
-                scale = BodyCollisionMath.GetShipTierScale(Mathf.Max(1, st.ShipLevel));
-            }
-            else if (em.HasComponent<LocalTransform>(shipEntity))
+            // World hull scale is LocalTransform.Scale — regular ships store tier (+10%/level);
+            // MEGA / Titan hulls store tier-7 × catalog family scale (often ~0.2).
+            // GetShipTierScale(ShipLevel) is wrong for Titans: they stamp ShipLevel 7 (1.6)
+            // while the drawn collider is 1.6 × catalogScale, so drones sat many hull-lengths out.
+            if (em.HasComponent<LocalTransform>(shipEntity))
             {
                 float s = em.GetComponentData<LocalTransform>(shipEntity).Scale;
                 if (s > 0.01f)
                     scale = s;
+            }
+            else if (em.HasComponent<ShipState>(shipEntity))
+            {
+                var st = em.GetComponentData<ShipState>(shipEntity);
+                scale = BodyCollisionMath.GetShipTierScale(Mathf.Max(1, st.ShipLevel));
             }
 
             return true;
@@ -656,6 +670,27 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
+        /// Presentation-space covering box from <see cref="ShipHullColliderState"/> (zeros if missing).
+        /// </summary>
+        static void ReadCoveringPresentation(
+            EntityManager em,
+            Entity shipEntity,
+            out float extentX,
+            out float extentZ,
+            out float centerX,
+            out float centerZ)
+        {
+            extentX = extentZ = centerX = centerZ = 0f;
+            if (!em.HasComponent<ShipHullColliderState>(shipEntity))
+                return;
+            var hull = em.GetComponentData<ShipHullColliderState>(shipEntity);
+            extentX = hull.AppliedCoveringExtentX;
+            extentZ = hull.AppliedCoveringExtentZ;
+            centerX = hull.AppliedCoveringCenterX;
+            centerZ = hull.AppliedCoveringCenterZ;
+        }
+
+        /// <summary>
         /// Places one ship's drones with EvaluateSlotPose (no orbit catch-up — matches server fire).
         /// </summary>
         void UpdateGroupOrbit(
@@ -663,6 +698,10 @@ namespace TitanOrbit.Game
             Vector3 shipPos,
             Quaternion shipRot,
             float shipScale,
+            float coveringExtentX,
+            float coveringExtentZ,
+            float coveringCenterX,
+            float coveringCenterZ,
             TeamId ownerTeam,
             int networkId,
             double timeSeconds,
@@ -690,8 +729,11 @@ namespace TitanOrbit.Game
                     _shieldSlotsScratch.Add(group.Visuals[i].SlotIndex);
             }
 
-            // Per-ship shield assignment from the global enemy cache (filtered by engage range).
-            BuildShieldAssignmentsForShip(basisPos, ownerTeam, networkId);
+            // Each shield picks the closest enemy from its idle rear pose (not round-robin).
+            BuildShieldAssignmentsForShip(
+                basisPos, forward, right, orbitRadius, shipScale,
+                coveringExtentX, coveringExtentZ, coveringCenterX, coveringCenterZ,
+                ownerTeam, networkId, timeSeconds);
 
             int rearCount = Mathf.Max(1, _rearSlotsScratch.Count);
             int shieldCount = Mathf.Max(1, _shieldSlotsScratch.Count);
@@ -737,6 +779,8 @@ namespace TitanOrbit.Game
                     IndexOnEnemy = indexOnEnemy,
                     CountOnEnemy = countOnEnemy,
                 };
+                DroneSwarmPositioning.ApplyCoveringHullShape(
+                    ref ctx, shipScale, coveringExtentX, coveringExtentZ, coveringCenterX, coveringCenterZ);
                 var pose = DroneSwarmPositioning.EvaluateSlotPose(v.ItemType, v.SlotIndex, in ctx);
 
                 // Hub-local: planar offset from ship + presentation Y lift (combat stays FixedY).
@@ -782,15 +826,87 @@ namespace TitanOrbit.Game
             }
         }
 
-        void BuildShieldAssignmentsForShip(Vector3 ownerPos, TeamId ownerTeam, int ownerNetId)
+        /// <summary>
+        /// Collects live enemy turret pad poses from hybrid planet proxies (no map-body gather).
+        /// </summary>
+        void RefreshEnemyTurretAimCache(EntityManager em)
+        {
+            var viz = EcsWorldVisualizer.Active;
+            if (viz == null)
+                return;
+
+            viz.CopyPlanetProxyEntities(_planetProxyScratch);
+            for (int i = 0; i < _planetProxyScratch.Count; i++)
+            {
+                Entity planetEntity = _planetProxyScratch[i];
+                if (!em.Exists(planetEntity) ||
+                    !em.HasComponent<PlanetState>(planetEntity) ||
+                    !em.HasComponent<LocalTransform>(planetEntity) ||
+                    !em.HasBuffer<PlanetaryDefenseSlotElement>(planetEntity))
+                    continue;
+
+                var planet = em.GetComponentData<PlanetState>(planetEntity);
+                if (planet.Ownership == TeamId.None)
+                    continue;
+
+                var buffer = em.GetBuffer<PlanetaryDefenseSlotElement>(planetEntity);
+                if (buffer.Length == 0)
+                    continue;
+
+                var xf = em.GetComponentData<LocalTransform>(planetEntity);
+                float3 planetPos = xf.Position;
+                if (viz.TryGetProxy(planetEntity, out GameObject proxy) && proxy != null)
+                    planetPos = (float3)proxy.transform.position;
+
+                int slotCount = buffer.Length;
+                for (int s = 0; s < slotCount; s++)
+                {
+                    var slot = buffer[s];
+                    if (slot.TurretLevel == 0)
+                        continue;
+
+                    float hp = slot.Health;
+                    if (PlanetaryDefenseClientHealthSync.TryGetHealth(planet.PlanetId, s, out float liveHp))
+                        hp = liveHp;
+                    if (hp <= 0f)
+                        continue;
+
+                    float3 slotPos = PlanetaryDefenseMath.GetSlotWorldPosition(
+                        planetPos, math.max(0.25f, xf.Scale), planet.PlanetLevel, s, slotCount);
+                    int padId = DroneSwarmLogic.MakeDefensePadEnemyId(planet.PlanetId, s);
+                    if (padId == 0)
+                        continue;
+                    _enemyPosByNetId[padId] = new Vector3(slotPos.x, 0f, slotPos.z);
+                    _enemyTeamByNetId[padId] = planet.Ownership;
+                }
+            }
+        }
+
+        void BuildShieldAssignmentsForShip(
+            Vector3 ownerPos,
+            Vector3 forward,
+            Vector3 right,
+            float orbitRadius,
+            float shipScale,
+            float coveringExtentX,
+            float coveringExtentZ,
+            float coveringCenterX,
+            float coveringCenterZ,
+            TeamId ownerTeam,
+            int ownerNetId,
+            double timeSeconds)
         {
             _shieldAssignments.Clear();
             _enemyNetIdsScratch.Clear();
+            _shieldIdlePosScratch.Clear();
+            _enemyAssignPosScratch.Clear();
             if (_shieldSlotsScratch.Count == 0)
                 return;
 
-            float range = DroneSwarmLogic.ShieldEngageRange;
-            float rangeSq = range * range;
+            float gatherHull = DroneSwarmLogic.ShieldEngageRange + orbitRadius;
+            float gatherPad = DroneSwarmLogic.DefensePadEngageRange + orbitRadius;
+            float gatherHullSq = gatherHull * gatherHull;
+            float gatherPadSq = gatherPad * gatherPad;
             foreach (var kv in _enemyPosByNetId)
             {
                 if (ownerNetId > 0 && kv.Key == ownerNetId)
@@ -801,13 +917,40 @@ namespace TitanOrbit.Game
 
                 float d = DroneSwarmLogic.ToroidalDistanceXZ(
                     ownerPos.x, ownerPos.z, kv.Value.x, kv.Value.z, _mapW, _mapH);
-                if (d * d > rangeSq)
+                float maxSq = DroneSwarmLogic.IsDefensePadEnemyId(kv.Key) ? gatherPadSq : gatherHullSq;
+                if (d * d > maxSq)
                     continue;
                 _enemyNetIdsScratch.Add(kv.Key);
+                _enemyAssignPosScratch[kv.Key] = kv.Value;
+            }
+
+            int shieldCount = Mathf.Max(1, _shieldSlotsScratch.Count);
+            for (int i = 0; i < _shieldSlotsScratch.Count; i++)
+            {
+                var idleCtx = new DroneSwarmPositioning.SlotEvaluationContext
+                {
+                    ShipPos = ownerPos,
+                    Forward = forward,
+                    Right = right,
+                    OrbitRadius = orbitRadius,
+                    TimeSeconds = timeSeconds,
+                    ShipNetworkId = ownerNetId,
+                    MapW = _mapW,
+                    MapH = _mapH,
+                    ShieldOrdinal = i,
+                    ShieldCount = shieldCount,
+                    HasShieldTarget = false,
+                };
+                DroneSwarmPositioning.ApplyCoveringHullShape(
+                    ref idleCtx, shipScale, coveringExtentX, coveringExtentZ, coveringCenterX, coveringCenterZ);
+                _shieldIdlePosScratch.Add(
+                    DroneSwarmPositioning.EvaluateSlotPose(
+                        StoreItemType.ShieldDrone, _shieldSlotsScratch[i], in idleCtx).WorldPosition);
             }
 
             DroneSwarmPositioning.BuildShieldAssignments(
-                _shieldSlotsScratch, _enemyNetIdsScratch, _shieldAssignments);
+                _shieldSlotsScratch, _shieldIdlePosScratch, _enemyNetIdsScratch, _enemyAssignPosScratch,
+                _mapW, _mapH, _shieldAssignments);
         }
 
         /// <summary>
@@ -821,11 +964,10 @@ namespace TitanOrbit.Game
                 return;
             _asteroidCacheFrame = Time.frameCount;
 
-            _hasCachedNearestAsteroid = false;
-            _cachedNearestAsteroid = default;
-
+            _cachedAsteroidAims.Clear();
             float3 owner = new float3(from.x, 0f, from.z);
-            float bestSq = DroneSwarmLogic.MiningEngageRange * DroneSwarmLogic.MiningEngageRange;
+            float gather = DroneSwarmLogic.MiningEngageRange + 4f;
+            float gatherSq = gather * gather;
 
             // --- Preferred under quarantine: hybrid GO proxies (no ECS map-body gather) ---
             var viz = EcsWorldVisualizer.Active;
@@ -848,12 +990,9 @@ namespace TitanOrbit.Game
 
                     Vector3 wp = proxy.transform.position;
                     float d = DroneSwarmLogic.ToroidalDistanceXZ(owner.x, owner.z, wp.x, wp.z, _mapW, _mapH);
-                    float sq = d * d;
-                    if (sq >= bestSq)
+                    if (d * d >= gatherSq)
                         continue;
-                    bestSq = sq;
-                    _cachedNearestAsteroid = new Vector3(wp.x, 0f, wp.z);
-                    _hasCachedNearestAsteroid = true;
+                    _cachedAsteroidAims.Add(new Vector3(wp.x, 0f, wp.z));
                 }
             }
             else if (!ClientJoinSettleCache.ShouldSkipMapBodyQueries && _queriesCreated)
@@ -868,12 +1007,9 @@ namespace TitanOrbit.Game
                     float3 p = em.GetComponentData<LocalTransform>(entities[i]).Position;
                     p.y = 0f;
                     float d = DroneSwarmLogic.ToroidalDistanceXZ(owner.x, owner.z, p.x, p.z, _mapW, _mapH);
-                    float sq = d * d;
-                    if (sq >= bestSq)
+                    if (d * d >= gatherSq)
                         continue;
-                    bestSq = sq;
-                    _cachedNearestAsteroid = new Vector3(p.x, 0f, p.z);
-                    _hasCachedNearestAsteroid = true;
+                    _cachedAsteroidAims.Add(new Vector3(p.x, 0f, p.z));
                 }
             }
         }
@@ -921,10 +1057,9 @@ namespace TitanOrbit.Game
             }
             else if (v.ItemType == StoreItemType.MiningDrone &&
                      isLocalOwner &&
-                     _hasCachedNearestAsteroid)
+                     TryGetNearestAsteroidPos(planarWorldPos, out Vector3 rockAim))
             {
-                lookDir = DroneSwarmLogic.ToroidalOffsetXZ(
-                    planarWorldPos, _cachedNearestAsteroid, _mapW, _mapH);
+                lookDir = DroneSwarmLogic.ToroidalOffsetXZ(planarWorldPos, rockAim, _mapW, _mapH);
                 hasTarget = lookDir.sqrMagnitude > 0.0001f;
             }
 
@@ -946,6 +1081,27 @@ namespace TitanOrbit.Game
             }
         }
 
+        bool TryGetNearestAsteroidPos(Vector3 from, out Vector3 pos)
+        {
+            pos = default;
+            float bestSq = DroneSwarmLogic.MiningEngageRange * DroneSwarmLogic.MiningEngageRange;
+            bool found = false;
+            for (int i = 0; i < _cachedAsteroidAims.Count; i++)
+            {
+                Vector3 rock = _cachedAsteroidAims[i];
+                float d = DroneSwarmLogic.ToroidalDistanceXZ(
+                    from.x, from.z, rock.x, rock.z, _mapW, _mapH);
+                float sq = d * d;
+                if (sq >= bestSq)
+                    continue;
+                bestSq = sq;
+                pos = rock;
+                found = true;
+            }
+
+            return found;
+        }
+
         bool TryGetNearestEnemyPos(
             Vector3 from,
             float range,
@@ -954,7 +1110,9 @@ namespace TitanOrbit.Game
             out Vector3 pos)
         {
             pos = default;
-            float bestSq = range * range;
+            float shipMaxSq = range * range;
+            float turretMaxSq = DroneSwarmLogic.DefensePadEngageRange * DroneSwarmLogic.DefensePadEngageRange;
+            float bestSq = float.MaxValue;
             bool found = false;
             foreach (var kv in _enemyPosByNetId)
             {
@@ -967,7 +1125,8 @@ namespace TitanOrbit.Game
                 float d = DroneSwarmLogic.ToroidalDistanceXZ(
                     from.x, from.z, kv.Value.x, kv.Value.z, _mapW, _mapH);
                 float sq = d * d;
-                if (sq >= bestSq)
+                float maxSq = DroneSwarmLogic.IsDefensePadEnemyId(kv.Key) ? turretMaxSq : shipMaxSq;
+                if (sq >= maxSq || sq >= bestSq)
                     continue;
                 bestSq = sq;
                 pos = kv.Value;

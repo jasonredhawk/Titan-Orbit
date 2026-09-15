@@ -238,29 +238,14 @@ namespace TitanOrbit.ECS
             float gemSpawnServerTime = PlanetGemMoonOrbitClock.GetElapsedSecondsOrFallback(
                 state.EntityManager, serverElapsed);
 
-            // --- Derived shield drone spheres (throttle — full rebuild is expensive) ---
-            // [TITAN-ORBIT] Only needed when live bullets exist; rebuild every N ticks and reuse.
+            // --- Planetary defense hit spheres ---
+            // [TITAN-ORBIT] Rebuild every tick while bullets fly — few owned planets, and stale
+            // spheres make “I shot the turret” feel random. Do not share the drone %3 throttle.
+            // Built before shield drones so block walls can assign to enemy pads this tick.
             double droneTime = moonElapsed;
             DroneSwarmSimTime.Publish(droneTime);
             s_DroneHitRebuildCounter++;
             bool needDroneHits = bullets.Length > 0;
-            if (needDroneHits && (s_DroneHitTargets.Count == 0 || (s_DroneHitRebuildCounter % 3) == 0))
-            {
-                using var droneShips = _droneShipQuery.ToEntityArray(Allocator.Temp);
-                using var allShips = _allShipQuery.ToEntityArray(Allocator.Temp);
-                DroneSwarmHitScan.RebuildTargets(
-                    state.EntityManager, droneShips, allShips, droneTime, mapW, mapH,
-                    s_DroneHitTargets, s_DroneRearScratch, s_DroneShieldScratch,
-                    s_DroneEnemyIdsScratch, s_DroneEnemyPos, s_DroneShieldAssign);
-            }
-            else if (!needDroneHits)
-            {
-                s_DroneHitTargets.Clear();
-            }
-
-            // --- Planetary defense hit spheres ---
-            // [TITAN-ORBIT] Rebuild every tick while bullets fly — few owned planets, and stale
-            // spheres make “I shot the turret” feel random. Do not share the drone %3 throttle.
             EnsureDefenseConfigWarmed();
             if (needDroneHits)
             {
@@ -272,6 +257,23 @@ namespace TitanOrbit.ECS
             else
             {
                 s_DefenseHitTargets.Clear();
+            }
+
+            // --- Derived shield drone spheres (throttle — full rebuild is expensive) ---
+            // [TITAN-ORBIT] Only needed when live bullets exist; rebuild every N ticks and reuse.
+            if (needDroneHits && (s_DroneHitTargets.Count == 0 || (s_DroneHitRebuildCounter % 3) == 0))
+            {
+                using var droneShips = _droneShipQuery.ToEntityArray(Allocator.Temp);
+                using var allShips = _allShipQuery.ToEntityArray(Allocator.Temp);
+                DroneSwarmHitScan.RebuildTargets(
+                    state.EntityManager, droneShips, allShips, droneTime, mapW, mapH,
+                    s_DroneHitTargets, s_DroneRearScratch, s_DroneShieldScratch,
+                    s_DroneEnemyIdsScratch, s_DroneEnemyPos, s_DroneShieldAssign,
+                    s_DefenseHitTargets);
+            }
+            else if (!needDroneHits)
+            {
+                s_DroneHitTargets.Clear();
             }
 
             // --- Phase A: homing steer (managed), then Burst sweep ---

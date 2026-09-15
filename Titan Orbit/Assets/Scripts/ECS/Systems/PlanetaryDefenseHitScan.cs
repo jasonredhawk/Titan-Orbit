@@ -18,6 +18,9 @@ namespace TitanOrbit.ECS
         /// <summary>Planet entity that owns the slot buffer.</summary>
         public Entity PlanetEntity;
 
+        /// <summary>Stable <see cref="PlanetState.PlanetId"/> for drone shield assignment keys.</summary>
+        public int PlanetId;
+
         /// <summary>Slot index in <see cref="PlanetaryDefenseSlotElement"/>.</summary>
         public int SlotIndex;
 
@@ -116,6 +119,7 @@ namespace TitanOrbit.ECS
                     targetsOut.Add(new PlanetaryDefenseHitTarget
                     {
                         PlanetEntity = planetEntity,
+                        PlanetId = planet.PlanetId,
                         SlotIndex = i,
                         Position = slotPos,
                         Team = team,

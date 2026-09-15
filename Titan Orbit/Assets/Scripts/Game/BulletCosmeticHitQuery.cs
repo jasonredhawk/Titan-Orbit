@@ -137,6 +137,8 @@ namespace TitanOrbit.Game
         static readonly Dictionary<int, float3> DroneEnemyPos = new Dictionary<int, float3>(16);
         static readonly Dictionary<int, DroneSwarmPositioning.ShieldAssignment> DroneShieldAssign =
             new Dictionary<int, DroneSwarmPositioning.ShieldAssignment>(8);
+        static readonly List<PlanetaryDefenseHitTarget> DefenseScratch =
+            new List<PlanetaryDefenseHitTarget>(32);
 
         /// <summary>
         /// Toroidal XZ grid of asteroids / ships / transports / drones / PD pads.
@@ -208,6 +210,7 @@ namespace TitanOrbit.Game
             s_LastRefreshFrame = frame;
             Obstacles.Clear();
             ShipProxyScratch.Clear();
+            DefenseScratch.Clear();
 
             var world = EcsGameBridge.ClientWorld;
             if (world == null || !world.IsCreated)
@@ -402,7 +405,8 @@ namespace TitanOrbit.Game
                 DroneShieldScratch,
                 DroneEnemyIdsScratch,
                 DroneEnemyPos,
-                DroneShieldAssign);
+                DroneShieldAssign,
+                DefenseScratch);
             ships.Dispose();
 
             for (int i = 0; i < DroneScratch.Count; i++)
@@ -1262,16 +1266,26 @@ namespace TitanOrbit.Game
                     planetPos, planetScale, planet.PlanetLevel, i, slotCount);
                 slotPos.y = PlanetaryDefenseMath.FixedY;
 
+                float hitRadius = PlanetaryDefenseHitScan.ComputeTurretHitRadius(config, slot.TurretLevel);
                 Obstacles.Add(new Obstacle
                 {
                     Kind = ObstacleKind.PlanetaryDefense,
                     SourceEntity = planetEntity,
                     LogicalCenter = slotPos,
-                    Radius = PlanetaryDefenseHitScan.ComputeTurretHitRadius(config, slot.TurretLevel),
+                    Radius = hitRadius,
                     Scale = planetScale,
                     TeamOrOwnership = (byte)planet.Ownership,
                     PlanetId = planet.PlanetId,
                     SlotIndex = i,
+                });
+                DefenseScratch.Add(new PlanetaryDefenseHitTarget
+                {
+                    PlanetEntity = planetEntity,
+                    PlanetId = planet.PlanetId,
+                    SlotIndex = i,
+                    Position = slotPos,
+                    Team = (byte)planet.Ownership,
+                    HitRadius = hitRadius,
                 });
             }
         }
