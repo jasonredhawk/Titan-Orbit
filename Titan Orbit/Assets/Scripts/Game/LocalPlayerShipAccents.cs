@@ -9,6 +9,8 @@ namespace TitanOrbit.Game
     /// Client-side hull paint. Players pick a <see cref="ShipAccentPreset"/>;
     /// Color1 always comes from <see cref="TeamColor1Palette"/>. Packed Color2/3/Glow
     /// are copied from the preset so remotes see the same look without a new ghost field.
+    /// Free players present factory preset 0 in a match. Customize Ship may hold an
+    /// in-memory preview while <see cref="TitanOrbitCosmeticGate.IsHangarPreviewActive"/>.
     /// </summary>
     public static class LocalPlayerShipAccents
     {
@@ -36,8 +38,24 @@ namespace TitanOrbit.Game
             s_Cached = default;
         }
 
+        /// <summary>
+        /// Drops the in-memory paint cache so the next <see cref="Get"/> re-reads prefs
+        /// (or factory defaults when Orbit Unlocked is not owned). Called when the
+        /// entitlement flips mid-session.
+        /// </summary>
+        public static void InvalidateRuntimeCache()
+        {
+            s_HasCache = false;
+        }
+
+        /// <summary>
+        /// Saved (or preview) preset index, or 0 (factory) when locked and not previewing.
+        /// </summary>
         public static int GetPresetIndex()
         {
+            if (!TitanOrbitCosmeticGate.IsCustomizationUnlocked &&
+                !(TitanOrbitCosmeticGate.IsHangarPreviewActive && s_HasCache))
+                return 0;
             Get();
             return s_PresetIndex;
         }
@@ -45,6 +63,17 @@ namespace TitanOrbit.Game
         /// <summary>Factory or the selected preset's packed Color2 / Color3 / Glow.</summary>
         public static ShipAccentColors Get()
         {
+            // --- Match clamp vs studio preview ---
+            // [TITAN-ORBIT] Free players in a match always show factory paint.
+            // Customize Ship sets IsHangarPreviewActive so Get() can return the
+            // in-memory cache without writing PlayerPrefs.
+            if (!TitanOrbitCosmeticGate.IsCustomizationUnlocked)
+            {
+                if (TitanOrbitCosmeticGate.IsHangarPreviewActive && s_HasCache)
+                    return s_Cached;
+                return BuildPaint(0);
+            }
+
             if (s_HasCache)
                 return s_Cached;
 
@@ -67,9 +96,16 @@ namespace TitanOrbit.Game
 
         public static void SetPresetIndex(int index, bool flushToDisk = true)
         {
-            s_PresetIndex = TeamColor1Palette.WrapPresetIndex(index);
+            int wrapped = TeamColor1Palette.WrapPresetIndex(index);
+            if (!TitanOrbitCosmeticGate.AllowsCosmeticRead && wrapped != 0)
+                return;
+
+            s_PresetIndex = wrapped;
             s_Cached = BuildPaint(s_PresetIndex);
             s_HasCache = true;
+            if (!TitanOrbitCosmeticGate.IsCustomizationUnlocked)
+                return;
+
             PlayerPrefs.SetInt(InstanceKey(PrefsKeyPreset), s_PresetIndex);
             PlayerPrefs.SetInt(InstanceKey(PrefsKeyCustom), s_Cached.HasCustom);
             PlayerPrefs.SetInt(InstanceKey(PrefsKeyColor2), (int)s_Cached.Color2Packed);
@@ -90,8 +126,14 @@ namespace TitanOrbit.Game
                 return;
             }
 
+            if (!TitanOrbitCosmeticGate.AllowsCosmeticRead)
+                return;
+
             s_Cached = accents;
             s_HasCache = true;
+            if (!TitanOrbitCosmeticGate.IsCustomizationUnlocked)
+                return;
+
             PlayerPrefs.SetInt(InstanceKey(PrefsKeyCustom), 1);
             PlayerPrefs.SetInt(InstanceKey(PrefsKeyColor2), (int)accents.Color2Packed);
             PlayerPrefs.SetInt(InstanceKey(PrefsKeyColor3), (int)accents.Color3Packed);
@@ -105,6 +147,17 @@ namespace TitanOrbit.Game
         public static void Clear()
         {
             SetPresetIndex(0, flushToDisk: true);
+        }
+
+        /// <summary>
+        /// Writes the in-memory preview to PlayerPrefs after Orbit Unlocked is granted
+        /// while Customize Ship is still open. No-ops when the cache is empty.
+        /// </summary>
+        public static void PersistUnlockedFromCache()
+        {
+            if (!s_HasCache || !TitanOrbitCosmeticGate.IsCustomizationUnlocked)
+                return;
+            SetPresetIndex(s_PresetIndex, flushToDisk: true);
         }
 
         static ShipAccentColors BuildPaint(int index)

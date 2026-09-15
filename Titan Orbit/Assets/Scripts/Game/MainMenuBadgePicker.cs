@@ -383,6 +383,10 @@ namespace TitanOrbit.Game
             go.GetComponent<Button>().onClick.AddListener(() => SelectBadge(capturedId));
         }
 
+        /// <summary>
+        /// Applies the tile. Owners persist it. Free players only preview while
+        /// Customize Ship is open — <see cref="LocalPlayerBadge.Set"/> skips prefs.
+        /// </summary>
         void SelectBadge(int badgeId)
         {
             LocalPlayerBadge.Set(badgeId);

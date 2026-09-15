@@ -26,7 +26,7 @@ namespace TitanOrbit.Services
             IsAdvertisementInitialized = false;
             if (!TitanOrbitAdsGate.ShouldShowAds)
             {
-                Debug.Log("[TitanOrbitGrowIntegration] Skipping Ads init (remove-ads entitlement active).");
+                Debug.Log("[TitanOrbitGrowIntegration] Skipping Ads init (Orbit Unlocked entitlement active).");
                 return;
             }
 

@@ -83,6 +83,8 @@ namespace TitanOrbit.Game
         readonly Image[] _presetSwatches = new Image[6];
         MainMenuBadgePicker _badgePicker;
         readonly Image[] _teamChips = new Image[5];
+        GameObject _unlockBanner;
+        TextMeshProUGUI _unlockBannerLabel;
 
         GameObject _previewRoot;
         Camera _previewCam;
@@ -154,12 +156,15 @@ namespace TitanOrbit.Game
         public void Show(TeamId team)
         {
             _team = team == TeamId.None ? TeamId.TeamA : team;
+            // Free players may cycle every look here; nothing is kept until they buy.
+            TitanOrbitCosmeticGate.BeginHangarPreview();
             EnsureChrome();
             SetPreviewWorldActive(true);
             ApplyTeamToPreview();
             RefreshFromStore();
             RefreshThrusterSection();
-            HidePicker();
+            RefreshUnlockBanner();
+            HidePicker(persist: false);
             gameObject.SetActive(true);
             transform.SetAsLastSibling();
         }
@@ -167,10 +172,98 @@ namespace TitanOrbit.Game
         /// <summary>Hides the studio and tears down the leftover preview camera / hull.</summary>
         public void Close()
         {
-            HidePicker();
-            FlushPersist();
+            HidePicker(persist: false);
+            if (TitanOrbitCosmeticGate.IsCustomizationUnlocked)
+                FlushPersist();
+            TitanOrbitCosmeticGate.EndHangarPreview();
             SetPreviewWorldActive(false);
             gameObject.SetActive(false);
+        }
+
+        void OnEnable()
+        {
+            TitanOrbit.Services.TitanOrbitEntitlements.OrbitUnlockedOwnershipChanged += OnOrbitUnlockedChanged;
+        }
+
+        void OnDisable()
+        {
+            TitanOrbit.Services.TitanOrbitEntitlements.OrbitUnlockedOwnershipChanged -= OnOrbitUnlockedChanged;
+            TitanOrbitCosmeticGate.EndHangarPreview();
+        }
+
+        /// <summary>
+        /// Entitlement flipped while the studio is open — clamp the preview and
+        /// show or hide the Orbit Unlocked buy strip.
+        /// </summary>
+        void OnOrbitUnlockedChanged()
+        {
+            RefreshFromStore();
+            RefreshThrusterSection();
+            RefreshUnlockBanner();
+            if (_badgePicker != null)
+                _badgePicker.RefreshChip();
+        }
+
+        /// <summary>
+        /// Gold CTA under the title. Hidden once Orbit Unlocked is owned.
+        /// </summary>
+        void EnsureUnlockBanner()
+        {
+            Transform panel = transform.Find("Panel");
+            if (panel == null)
+                return;
+
+            Transform existing = panel.Find("UnlockBanner");
+            GameObject banner = existing != null
+                ? existing.gameObject
+                : CreateUi("UnlockBanner", panel, typeof(Image), typeof(Button));
+            var rt = banner.GetComponent<RectTransform>();
+            rt.anchorMin = new Vector2(0.5f, 1f);
+            rt.anchorMax = new Vector2(0.5f, 1f);
+            rt.pivot = new Vector2(0.5f, 1f);
+            rt.sizeDelta = new Vector2(360f, 28f);
+            rt.anchoredPosition = new Vector2(140f, -10f);
+            var bg = banner.GetComponent<Image>();
+            bg.color = new Color(0.95f, 0.78f, 0.22f, 0.92f);
+            var button = banner.GetComponent<Button>();
+            button.targetGraphic = bg;
+            button.transition = Selectable.Transition.None;
+            button.onClick.RemoveAllListeners();
+            button.onClick.AddListener(OpenOrbitUnlockedFromCustomize);
+
+            Transform labelTf = banner.transform.Find("Label");
+            TextMeshProUGUI label = labelTf != null
+                ? labelTf.GetComponent<TextMeshProUGUI>()
+                : CreateTmp(banner.transform, "Label", "PREVIEW ONLY — UNLOCK TO KEEP", 12f, FontStyles.Bold);
+            StretchFull(label.rectTransform);
+            label.alignment = TextAlignmentOptions.Center;
+            label.color = new Color(0.06f, 0.05f, 0.02f, 0.95f);
+            label.raycastTarget = false;
+            label.characterSpacing = 0.8f;
+
+            _unlockBanner = banner;
+            _unlockBannerLabel = label;
+        }
+
+        /// <summary>Shows the buy strip only for free players.</summary>
+        void RefreshUnlockBanner()
+        {
+            if (_unlockBanner == null)
+                EnsureUnlockBanner();
+            if (_unlockBanner == null)
+                return;
+            bool locked = !TitanOrbitCosmeticGate.IsCustomizationUnlocked;
+            _unlockBanner.SetActive(locked);
+            if (_unlockBannerLabel != null)
+                _unlockBannerLabel.text = "PREVIEW ONLY — UNLOCK TO KEEP";
+        }
+
+        /// <summary>Opens the one-item IAP overlay above this studio.</summary>
+        void OpenOrbitUnlockedFromCustomize()
+        {
+            // This overlay is a child Canvas; the parent is the Main Menu canvas.
+            Transform host = transform.parent != null ? transform.parent : transform.root;
+            OrbitUnlockedPurchaseScreen.Open(host);
         }
 
         void OnDestroy()
@@ -207,10 +300,12 @@ namespace TitanOrbit.Game
             EnsureHullSection();
             EnsureBadgeSection();
             EnsureThrusterSection();
+            EnsureUnlockBanner();
             EnsureColorPicker();
             EnsurePickerCloseButton();
             StripPanelDismissesPicker();
             PaintTeamStrip();
+            RefreshUnlockBanner();
         }
 
         /// <summary>Same-frame rebuild so leftover well-row badge chrome cannot sit under the new sections.</summary>
@@ -237,6 +332,8 @@ namespace TitanOrbit.Game
             _badgeEmpty = null;
             _badgeCaption = null;
             _badgePicker = null;
+            _unlockBanner = null;
+            _unlockBannerLabel = null;
             _thrusterStyleLabel = null;
             _thrusterColorLabel = null;
             _thrusterModeLabel = null;
@@ -741,7 +838,7 @@ namespace TitanOrbit.Game
             int next = TeamColor1Palette.WrapPresetIndex(
                 LocalPlayerShipAccents.GetPresetIndex() + delta);
             LocalPlayerShipAccents.SetPresetIndex(next);
-            ShipAccentColorsRpcClient.NotifyChanged();
+            NotifyOwnedCosmeticsChanged();
             RefreshFromStore();
         }
 
@@ -1368,11 +1465,15 @@ namespace TitanOrbit.Game
         {
             LocalPlayerThrusterStyle.Set(style);
             ThrusterVfxBank.DebugCycleIndex = LocalPlayerThrusterStyle.ResolveStyleIndex(style);
-            ShipAccentColorsRpcClient.NotifyChanged();
-            if (rebuildJets)
-                ShipPropulsionVisualApplier.RebuildAllLive();
-            else
-                ShipPropulsionVisualApplier.ApplyTintToAllLive();
+            NotifyOwnedCosmeticsChanged();
+            if (TitanOrbitCosmeticGate.IsCustomizationUnlocked)
+            {
+                if (rebuildJets)
+                    ShipPropulsionVisualApplier.RebuildAllLive();
+                else
+                    ShipPropulsionVisualApplier.ApplyTintToAllLive();
+            }
+
             RefreshPreviewThrusters(rebuildJets);
             _previewFlameColorName = LocalPlayerThrusterStyle.ResolveFlameColorName(style, _team);
             RefreshThrusterSection();
@@ -2173,7 +2274,7 @@ namespace TitanOrbit.Game
         void OnResetClicked()
         {
             LocalPlayerShipAccents.Clear();
-            ShipAccentColorsRpcClient.NotifyChanged();
+            NotifyOwnedCosmeticsChanged();
             HidePicker(persist: false);
             RefreshFromStore();
         }
@@ -2181,7 +2282,7 @@ namespace TitanOrbit.Game
         void PersistAndPreview(bool flush)
         {
             if (flush)
-                ShipAccentColorsRpcClient.NotifyChanged();
+                NotifyOwnedCosmeticsChanged();
             PaintWells();
             PaintPreview();
         }
@@ -2189,6 +2290,17 @@ namespace TitanOrbit.Game
         void FlushPersist()
         {
             LocalPlayerShipAccents.SetPresetIndex(LocalPlayerShipAccents.GetPresetIndex());
+            NotifyOwnedCosmeticsChanged();
+        }
+
+        /// <summary>
+        /// Publishes paint / jets to the match only for Orbit Unlocked owners.
+        /// Free-player preview stays on the studio hull.
+        /// </summary>
+        void NotifyOwnedCosmeticsChanged()
+        {
+            if (!TitanOrbitCosmeticGate.IsCustomizationUnlocked)
+                return;
             ShipAccentColorsRpcClient.NotifyChanged();
         }
 
@@ -2251,10 +2363,11 @@ namespace TitanOrbit.Game
             LocalPlayerThrusterStyle.Set(style);
             _previewFlameColorName = LocalPlayerThrusterStyle.ResolveFlameColorName(style, _team);
             RefreshThrusterSection();
-            ShipPropulsionVisualApplier.ApplyTintToAllLive();
+            if (TitanOrbitCosmeticGate.IsCustomizationUnlocked)
+                ShipPropulsionVisualApplier.ApplyTintToAllLive();
             RefreshPreviewThrusters(rebuild: false);
             if (flush)
-                ShipAccentColorsRpcClient.NotifyChanged();
+                NotifyOwnedCosmeticsChanged();
         }
 
         static AccentSlot LifetimeSlot(int index)

@@ -6383,7 +6383,9 @@ namespace TitanOrbit.UI
             int gearCount = equipment != null ? equipment.Count : 0;
             int emptyNeeded = Mathf.Max(0, cap - cardCount - gearCount);
             // Locked +1 row sits below level-capped empties until the rewarded bonus is granted.
+            // Orbit Unlocked owners never see WATCH AD — the grant helper claims for them.
             bool showLockedExtra = currentShip.LoadoutBonusSlots <= 0
+                && !TitanOrbitEntitlements.IsOrbitUnlockedOwned
                 && (TitanOrbitRewardedAds.CanOfferRewarded || !TitanOrbitAdsGate.ShouldShowAds);
             int slotCount = gearCount + emptyNeeded + (showLockedExtra ? 1 : 0);
             int lockedIndex = showLockedExtra ? slotCount - 1 : -1;

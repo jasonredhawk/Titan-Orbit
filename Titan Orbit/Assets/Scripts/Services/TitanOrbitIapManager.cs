@@ -9,46 +9,64 @@ namespace TitanOrbit.Services
 {
     /// <summary>
     /// Single catalog row for Unity IAP (<see cref="ConfigurationBuilder.AddProduct"/>).
+    /// Product ids must match Google Play Console / App Store Connect exactly.
     /// </summary>
     [Serializable]
     public struct TitanOrbitIapCatalogEntry
     {
-        [Tooltip("Must match Google Play Console / App Store Connect (and the remove-ads id below if applicable).")]
+        [Tooltip("Store product id. Orbit Unlocked is orbit_unlocked.")]
         public string productId;
         public ProductType productType;
     }
 
     /// <summary>
-    /// Unity IAP bootstrap: configure catalog in the Inspector and mirror products in store consoles.
-    /// Entitlements flow through <see cref="TitanOrbitEntitlements"/>.
+    /// Unity IAP bootstrap on the DontDestroyOnLoad services host.
+    /// Catalog is one player-facing SKU — Orbit Unlocked — plus the legacy
+    /// <c>remove_ads</c> row so old receipts still restore.
+    /// <para>
+    /// Entitlements flow through <see cref="TitanOrbitEntitlements"/>. No shop UI lives
+    /// here; <c>OrbitUnlockedPurchaseScreen</c> calls <see cref="InitiatePurchase"/>.
+    /// </para>
+    /// Client-only. Dedicated server never creates this component
+    /// (<see cref="TitanOrbitServicesRuntimeBootstrap"/>).
     /// </summary>
     public class TitanOrbitIapManager : MonoBehaviour, IDetailedStoreListener
     {
         [SerializeField] bool initializeOnAwake = true;
-        [Tooltip("Must match one catalog entry with type NonConsumable.")]
-        [SerializeField] string removeAdsProductId = "remove_ads";
-        [Tooltip("All IAP products; extend this list as you add SKUs.")]
+
+        [Tooltip("Live non-consumable SKU. Mirror this id in the store consoles.")]
+        [SerializeField] string orbitUnlockedProductId = TitanOrbitEntitlements.OrbitUnlockedProductIdDefault;
+
+        [Tooltip("All IAP products. Keep orbit_unlocked plus legacy remove_ads for restore.")]
         [SerializeField] TitanOrbitIapCatalogEntry[] catalog;
 
         IStoreController _controller;
         IExtensionProvider _extensions;
 
+        /// <summary>
+        /// [UNITY] Reset runs in the Editor when the component is first added.
+        /// Runtime AddComponent skips Reset — <see cref="EnsureCatalogDefaults"/> covers that.
+        /// </summary>
         void Reset()
         {
-            // --- Reset ---
-            removeAdsProductId = "remove_ads";
-            catalog = new[]
-            {
-                new TitanOrbitIapCatalogEntry { productId = "remove_ads", productType = ProductType.NonConsumable }
-            };
+            // --- Editor defaults ---
+            orbitUnlockedProductId = TitanOrbitEntitlements.OrbitUnlockedProductIdDefault;
+            catalog = BuildDefaultCatalog();
         }
 
+        /// <summary>
+        /// Registers the product id on entitlements before UnityPurchasing starts.
+        /// </summary>
         void Awake()
         {
             EnsureCatalogDefaults();
-            TitanOrbitEntitlements.RegisterRemoveAdsProductId(removeAdsProductId);
+            TitanOrbitEntitlements.RegisterOrbitUnlockedProductId(orbitUnlockedProductId);
         }
 
+        /// <summary>
+        /// [UNITY] Start is async so we can wait for a UGS guest session. IAP can
+        /// initialize without auth, but the player id in logs is nicer with it.
+        /// </summary>
         async void Start()
         {
             // --- Unity lifecycle ---
@@ -66,19 +84,76 @@ namespace TitanOrbit.Services
             InitializePurchasing();
         }
 
+        /// <summary>
+        /// Fills an empty catalog and guarantees both the live SKU and the legacy
+        /// remove-ads id are present so restore can see either receipt.
+        /// </summary>
         void EnsureCatalogDefaults()
         {
             // --- Ensure setup ---
+            if (string.IsNullOrWhiteSpace(orbitUnlockedProductId))
+                orbitUnlockedProductId = TitanOrbitEntitlements.OrbitUnlockedProductIdDefault;
+
             if (catalog == null || catalog.Length == 0)
             {
-                catalog = new[]
-                {
-                    new TitanOrbitIapCatalogEntry { productId = "remove_ads", productType = ProductType.NonConsumable }
-                };
+                catalog = BuildDefaultCatalog();
+                return;
             }
 
-            if (string.IsNullOrWhiteSpace(removeAdsProductId))
-                removeAdsProductId = "remove_ads";
+            bool hasLive = false;
+            bool hasLegacy = false;
+            for (int i = 0; i < catalog.Length; i++)
+            {
+                string id = catalog[i].productId?.Trim();
+                if (string.Equals(id, orbitUnlockedProductId, StringComparison.Ordinal) ||
+                    string.Equals(id, TitanOrbitEntitlements.OrbitUnlockedProductIdDefault, StringComparison.Ordinal))
+                    hasLive = true;
+                if (string.Equals(id, TitanOrbitEntitlements.LegacyRemoveAdsProductId, StringComparison.Ordinal))
+                    hasLegacy = true;
+            }
+
+            if (hasLive && hasLegacy)
+                return;
+
+            // Scene instances from the remove-ads era only listed one row — append the missing ids.
+            var expanded = new List<TitanOrbitIapCatalogEntry>(catalog);
+            if (!hasLive)
+            {
+                expanded.Add(new TitanOrbitIapCatalogEntry
+                {
+                    productId = orbitUnlockedProductId,
+                    productType = ProductType.NonConsumable
+                });
+            }
+
+            if (!hasLegacy)
+            {
+                expanded.Add(new TitanOrbitIapCatalogEntry
+                {
+                    productId = TitanOrbitEntitlements.LegacyRemoveAdsProductId,
+                    productType = ProductType.NonConsumable
+                });
+            }
+
+            catalog = expanded.ToArray();
+        }
+
+        /// <summary>Live Orbit Unlocked row plus legacy remove-ads for restore.</summary>
+        static TitanOrbitIapCatalogEntry[] BuildDefaultCatalog()
+        {
+            return new[]
+            {
+                new TitanOrbitIapCatalogEntry
+                {
+                    productId = TitanOrbitEntitlements.OrbitUnlockedProductIdDefault,
+                    productType = ProductType.NonConsumable
+                },
+                new TitanOrbitIapCatalogEntry
+                {
+                    productId = TitanOrbitEntitlements.LegacyRemoveAdsProductId,
+                    productType = ProductType.NonConsumable
+                }
+            };
         }
 
         /// <summary>Safe to call multiple times; second call is a no-op after success.</summary>
@@ -105,8 +180,20 @@ namespace TitanOrbit.Services
             UnityPurchasing.Initialize(this, builder);
         }
 
+        /// <summary>True after <see cref="OnInitialized"/> — buy/restore need this.</summary>
         public bool IsStoreReady => _controller != null;
 
+        /// <summary>Inspector / runtime product id for the live SKU.</summary>
+        public string OrbitUnlockedProductId
+        {
+            get
+            {
+                EnsureCatalogDefaults();
+                return orbitUnlockedProductId;
+            }
+        }
+
+        /// <summary>Starts a store purchase. No-ops when the controller is not ready.</summary>
         public void InitiatePurchase(string productId)
         {
             // --- InitiatePurchase ---
@@ -121,6 +208,13 @@ namespace TitanOrbit.Services
             _controller.InitiatePurchase(productId.Trim());
         }
 
+        /// <summary>Convenience: buy the live Orbit Unlocked SKU.</summary>
+        public void InitiateOrbitUnlockedPurchase()
+        {
+            InitiatePurchase(OrbitUnlockedProductId);
+        }
+
+        /// <summary>Localized price from the store, or empty when the catalog is not ready.</summary>
         public string GetLocalizedPriceString(string productId)
         {
             // --- Compute value ---
@@ -158,6 +252,7 @@ namespace TitanOrbit.Services
             onFinished?.Invoke(true, null);
         }
 
+        /// <summary>[UNITY] Store finished initializing. We immediately restore owned non-consumables.</summary>
         public void OnInitialized(IStoreController controller, IExtensionProvider extensions)
         {
             // --- OnInitialized ---
@@ -178,6 +273,10 @@ namespace TitanOrbit.Services
             Debug.LogWarning("[TitanOrbitIapManager] Init failed: " + error + " — " + message);
         }
 
+        /// <summary>
+        /// Store confirmed a purchase. We grant entitlements immediately and mark
+        /// the transaction complete (no pending server validation in v1).
+        /// </summary>
         public PurchaseProcessingResult ProcessPurchase(PurchaseEventArgs args)
         {
             // --- ProcessPurchase ---
@@ -198,6 +297,9 @@ namespace TitanOrbit.Services
             Debug.LogWarning("[TitanOrbitIapManager] Purchase failed: " + failureReason);
         }
 
+        /// <summary>
+        /// Walks the catalog and grants Orbit Unlocked for any non-consumable with a receipt.
+        /// </summary>
         void ReconcileNonConsumableEntitlements()
         {
             // --- ReconcileNonConsumableEntitlements ---
@@ -264,16 +366,22 @@ namespace TitanOrbit.Services
             return "Available";
         }
 
+        /// <summary>
+        /// True when local entitlements already own this SKU, or the store receipt exists.
+        /// </summary>
         public bool IsPurchasedOrHasReceipt(string productId)
         {
             // --- IsPurchasedOrHasReceipt ---
             if (string.IsNullOrWhiteSpace(productId))
                 return false;
             string id = productId.Trim();
-            if (!string.IsNullOrEmpty(TitanOrbitEntitlements.RemoveAdsProductId) &&
-                string.Equals(id, TitanOrbitEntitlements.RemoveAdsProductId, StringComparison.Ordinal) &&
-                TitanOrbitEntitlements.IsRemoveAdsOwned)
+
+            // Local flag wins so Editor grants and migrated remove-ads show as owned
+            // even when the fake Editor store has no receipt.
+            if (TitanOrbitEntitlements.ProductGrantsOrbitUnlocked(id) &&
+                TitanOrbitEntitlements.IsOrbitUnlockedOwned)
                 return true;
+
             if (!TryGetStoreProduct(id, out var p))
                 return false;
             if (p.definition.type == ProductType.NonConsumable || p.definition.type == ProductType.Subscription)

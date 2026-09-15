@@ -118,8 +118,8 @@ namespace TitanOrbit.Services
         }
 
         /// <summary>
-        /// True when this client can offer an ad button (or instant remove-ads grant).
-        /// Windows player without remove-ads returns false so the extra slot stays hidden
+        /// True when this client can offer an ad button (or instant Orbit Unlocked grant).
+        /// Windows player without Orbit Unlocked returns false so the extra slot stays hidden
         /// rather than showing a dead "WATCH AD" that can never complete.
         /// Editor always returns true so Play Mode can exercise the flow.
         /// </summary>
@@ -159,7 +159,7 @@ namespace TitanOrbit.Services
         }
 
         /// <summary>
-        /// Wires platform SDKs. Safe to call more than once. Skips when remove-ads is owned
+        /// Wires platform SDKs. Safe to call more than once. Skips when Orbit Unlocked is owned
         /// (no point downloading ad creatives).
         /// </summary>
         public void TryInitializeBackends()
@@ -170,7 +170,7 @@ namespace TitanOrbit.Services
 #endif
             if (!TitanOrbitAdsGate.ShouldShowAds)
             {
-                Debug.Log("[TitanOrbitRewardedAds] Skipping SDK init (remove-ads entitlement active).");
+                Debug.Log("[TitanOrbitRewardedAds] Skipping SDK init (Orbit Unlocked entitlement active).");
                 return;
             }
 
@@ -184,7 +184,7 @@ namespace TitanOrbit.Services
         }
 
         /// <summary>
-        /// Resolves remove-ads, Editor simulate, then the platform backend.
+        /// Resolves Orbit Unlocked, Editor simulate, then the platform backend.
         /// Only one show at a time — a second click while IsShowing fails immediately.
         /// </summary>
         void ShowInternal(string placementId, Action<TitanOrbitRewardedAdResult> onComplete)

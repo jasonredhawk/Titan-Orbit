@@ -1,6 +1,7 @@
 using TitanOrbit.Core;
 using TitanOrbit.Data;
 using TitanOrbit.NetCode;
+using TitanOrbit.Services;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
@@ -15,7 +16,7 @@ namespace TitanOrbit.Game
     ///
     /// Layout contract:
     ///   Sign in (top-right) · Logo (centered, below top edge) · Player name label+input (tight) ·
-    ///   Play / Join / Customize ship / Local client (lower) · Status
+    ///   Play / Join / Customize ship / Unlock Orbit / Local client (lower) · Status
     /// Local host is omitted because Play already starts local host when local options are enabled.
     /// </summary>
     public static class MainMenuPresenter
@@ -136,13 +137,34 @@ namespace TitanOrbit.Game
                 onJoinGame,
                 playButton != null ? 1 : 0);
 
+            int customizeIndex = playButton != null ? 2 : 1;
             CreateOrWireStackButton(
                 stack,
                 "CustomizeShipButton",
                 "Customize ship",
                 buttonStyle,
                 () => OpenCustomizeShip(panel.transform),
-                playButton != null ? 2 : 1);
+                customizeIndex);
+
+            // Orbit Unlocked IAP — one SKU for ads-off + hangar + auto +1 slot.
+            string unlockLabel = TitanOrbitEntitlements.IsOrbitUnlockedOwned
+                ? "Orbit Unlocked"
+                : "Unlock Orbit";
+            CreateOrWireStackButton(
+                stack,
+                "UnlockOrbitButton",
+                unlockLabel,
+                buttonStyle,
+                null,
+                customizeIndex + 1);
+            var unlockGo = stack.Find("UnlockOrbitButton");
+            if (unlockGo != null)
+            {
+                var binder = unlockGo.GetComponent<OrbitUnlockedMenuButton>();
+                if (binder == null)
+                    binder = unlockGo.gameObject.AddComponent<OrbitUnlockedMenuButton>();
+                binder.Bind();
+            }
 
             if (TitanOrbitMultiplayerConfig.ShowLocalPlayOptions)
             {

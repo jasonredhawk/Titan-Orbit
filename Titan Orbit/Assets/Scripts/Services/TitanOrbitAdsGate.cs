@@ -3,17 +3,18 @@ using UnityEngine;
 namespace TitanOrbit.Services
 {
     /// <summary>
-    /// Entry point for ad eligibility (remove-ads IAP).
-    /// Interstitials stay a no-op. Rewarded video goes through
+    /// Entry point for ad eligibility. Orbit Unlocked (<see cref="TitanOrbitEntitlements.IsOrbitUnlockedOwned"/>)
+    /// turns videos off. Interstitials stay a no-op. Rewarded video goes through
     /// <see cref="TitanOrbitRewardedAds"/> after this gate.
     /// </summary>
     public static class TitanOrbitAdsGate
     {
         /// <summary>
-        /// True when this client should play a video (no remove-ads entitlement).
-        /// Remove-ads owners still get death / extra-slot rewards instantly via the facade.
+        /// True when this client should play a video (no Orbit Unlocked entitlement).
+        /// Owners still get death keep-loadout instantly via the rewarded facade.
+        /// The +1 slot is auto-granted for owners and never shows this gate.
         /// </summary>
-        public static bool ShouldShowAds => !TitanOrbitEntitlements.IsRemoveAdsOwned;
+        public static bool ShouldShowAds => !TitanOrbitEntitlements.IsOrbitUnlockedOwned;
 
         public static bool TryBeginInterstitial(string placementId, out string skipReason)
         {
@@ -27,7 +28,7 @@ namespace TitanOrbit.Services
 
             if (!ShouldShowAds)
             {
-                skipReason = "remove_ads_owned";
+                skipReason = "orbit_unlocked_owned";
                 return false;
             }
 

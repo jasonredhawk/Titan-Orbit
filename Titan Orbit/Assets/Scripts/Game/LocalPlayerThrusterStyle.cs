@@ -11,6 +11,8 @@ namespace TitanOrbit.Game
     /// Four JetFlame types (Ribbon, Default, Heavy, Soft). Color drives
     /// ParticleSystem Color over Lifetime. Follow-team locks the ramp to Color1;
     /// locked-chosen seeds the ramp from the picker, then each stop can be edited.
+    /// Free players present the default jet in a match. Customize Ship may hold an
+    /// in-memory preview while <see cref="TitanOrbitCosmeticGate.IsHangarPreviewActive"/>.
     /// </summary>
     public static class LocalPlayerThrusterStyle
     {
@@ -71,8 +73,25 @@ namespace TitanOrbit.Game
             s_Cached = default;
         }
 
+        /// <summary>
+        /// Drops the in-memory jet cache so the next <see cref="Get"/> re-reads prefs
+        /// (or the default style when Orbit Unlocked is not owned).
+        /// </summary>
+        public static void InvalidateRuntimeCache()
+        {
+            s_HasCache = false;
+        }
+
         public static Style Get()
         {
+            // --- Match clamp vs studio preview ---
+            if (!TitanOrbitCosmeticGate.IsCustomizationUnlocked)
+            {
+                if (TitanOrbitCosmeticGate.IsHangarPreviewActive && s_HasCache)
+                    return s_Cached;
+                return default;
+            }
+
             if (s_HasCache)
                 return s_Cached;
 
@@ -139,9 +158,15 @@ namespace TitanOrbit.Game
 
         public static void Set(Style style)
         {
+            if (!TitanOrbitCosmeticGate.AllowsCosmeticRead && style.HasCustom != 0)
+                return;
+
             style.StyleIndex = (byte)ThrusterVfxBank.WrapStyleIndex(style.StyleIndex);
             s_Cached = style;
             s_HasCache = true;
+            if (!TitanOrbitCosmeticGate.IsCustomizationUnlocked)
+                return;
+
             PlayerPrefs.SetInt(InstanceKey(PrefsKeyCustom), style.HasCustom);
             PlayerPrefs.SetInt(InstanceKey(PrefsKeyStyle), style.StyleIndex);
             PlayerPrefs.SetInt(InstanceKey(PrefsKeyFollow), style.FollowTeam);
@@ -157,6 +182,17 @@ namespace TitanOrbit.Game
         public static void Clear()
         {
             Set(default);
+        }
+
+        /// <summary>
+        /// Writes the in-memory preview to PlayerPrefs after Orbit Unlocked is granted
+        /// while Customize Ship is still open.
+        /// </summary>
+        public static void PersistUnlockedFromCache()
+        {
+            if (!s_HasCache || !TitanOrbitCosmeticGate.IsCustomizationUnlocked)
+                return;
+            Set(s_Cached);
         }
 
         /// <summary>
