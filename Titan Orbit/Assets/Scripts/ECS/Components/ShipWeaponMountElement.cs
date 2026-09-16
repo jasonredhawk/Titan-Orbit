@@ -67,6 +67,13 @@ namespace TitanOrbit.ECS
         public float ReferenceFirePower;
 
         /// <summary>
+        /// [TITAN-ORBIT] Catalog <c>firePowerPerExtraLevel</c> for this barrel.
+        /// Weapon-fire SFX piano: base = <see cref="ReferenceFirePower"/> (top C);
+        /// max = base + this × 12 (L6 + L6 Fire Power). MEGA unique weapons stay 0.
+        /// </summary>
+        public float FirePowerPerExtraLevel;
+
+        /// <summary>
         /// [TITAN-ORBIT] Acquire + travel range for this barrel (MEGA catalog component
         /// <c>bulletRange</c>). Regular ships leave this 0 and use hull <c>ShipWeaponConfig</c>.
         /// </summary>

@@ -20,7 +20,10 @@ namespace TitanOrbit.ECS
         public static void SendSpawn(
             ref EntityCommandBuffer ecb,
             in BulletElement bullet,
-            int mountIndex = 0)
+            int mountIndex = 0,
+            float firePowerLive = 0f,
+            float firePowerBase = 0f,
+            float firePowerPerExtra = 0f)
         {
             if (bullet.Sequence == 0)
                 return;
@@ -39,6 +42,9 @@ namespace TitanOrbit.ECS
                 Lifetime = bullet.Lifetime,
                 MaxDistance = bullet.MaxDistance,
                 Damage = bullet.Damage,
+                FirePowerLive = firePowerLive,
+                FirePowerBase = firePowerBase,
+                FirePowerPerExtra = firePowerPerExtra,
                 OwnerTeam = bullet.OwnerTeam,
                 OwnerNetworkId = bullet.OwnerNetworkId,
                 BankIndex = bullet.BankIndex,
@@ -66,6 +72,9 @@ namespace TitanOrbit.ECS
                 Lifetime = bullet.Lifetime,
                 MaxDistance = bullet.MaxDistance,
                 Damage = bullet.Damage,
+                FirePowerLive = firePowerLive,
+                FirePowerBase = firePowerBase,
+                FirePowerPerExtra = firePowerPerExtra,
                 OwnerTeam = bullet.OwnerTeam,
                 OwnerNetworkId = bullet.OwnerNetworkId,
                 BankIndex = bullet.BankIndex,

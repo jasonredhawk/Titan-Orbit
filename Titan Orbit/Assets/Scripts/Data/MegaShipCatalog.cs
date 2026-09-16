@@ -134,15 +134,19 @@ namespace TitanOrbit.Data
 
         /// <summary>
         /// Unique-component / type-table bank field meaning "use the named default for this
-        /// weapon type" (Bullets / Plasma / Rockets / Laser).
+        /// weapon type" (Bullets / FireballsV2 / Rockets / Laser).
         /// </summary>
         public const int InheritTypeTableBankIndex = -1;
 
         /// <summary>Named <see cref="BulletVfxBank"/> default for rapid MEGA guns.</summary>
         public const string DefaultWeaponBulletBankName = "Bullets";
 
-        /// <summary>Named <see cref="BulletVfxBank"/> default for MEGA cannons.</summary>
-        public const string DefaultWeaponCannonBankName = "Plasma";
+        /// <summary>
+        /// Named <see cref="BulletVfxBank"/> default for MEGA cannons.
+        /// FireballsV2 — same heavy profile as Fireballs, but the V2 prefabs
+        /// have a muzzle flash (V1 <c>muzzleParticle</c> is null).
+        /// </summary>
+        public const string DefaultWeaponCannonBankName = "FireballsV2";
 
         /// <summary>
         /// Named <see cref="BulletVfxBank"/> default for MEGA missiles.
@@ -344,8 +348,8 @@ namespace TitanOrbit.Data
         [BulletVfxBankCategory(true, "Default (Bullets)")]
         public int weaponBulletBankIndex = InheritTypeTableBankIndex;
 
-        [Tooltip("BulletVfxBank category for MEGA cannons. Named default is Plasma.")]
-        [BulletVfxBankCategory(true, "Default (Plasma)")]
+        [Tooltip("BulletVfxBank category for MEGA cannons. Named default is FireballsV2.")]
+        [BulletVfxBankCategory(true, "Default (FireballsV2)")]
         public int weaponCannonBankIndex = InheritTypeTableBankIndex;
 
         [Tooltip("BulletVfxBank category for MEGA missile launchers. Named default is Rockets (target-seeking, same as store ALT rockets).")]
@@ -597,7 +601,7 @@ namespace TitanOrbit.Data
 
         /// <summary>
         /// BulletVfxBank category for a MEGA weapon type. Authored type-table index wins;
-        /// -1 resolves the named default (Bullets / Plasma / Rockets / Laser).
+        /// -1 resolves the named default (Bullets / FireballsV2 / Rockets / Laser).
         /// </summary>
         public int GetTypeTableBankIndex(string partType)
         {

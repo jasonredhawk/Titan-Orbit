@@ -5,11 +5,15 @@ namespace TitanOrbit.Audio
 {
     /// <summary>
     /// Central client audio hub for music and gameplay SFX.
-    /// Owns pooled <see cref="AudioSource"/>s for weapons, gems, and impacts so overlapping
-    /// one-shots can use different pitches without fighting a single source.
+    /// Owns pooled <see cref="AudioSource"/>s for weapons (32), gems (16), and impacts (24)
+    /// so overlapping one-shots can use different pitches without fighting a single source.
+    /// Unity real voices are 64 in Project Settings so a MEGA volley is not virtualized away.
     /// Gem deposit/collect, bullet muzzle/projectile/impact, and hull ram/grind share
     /// <see cref="GemMusicalPitch"/> (chromatic 88-key piano). Gems key off cargo value;
-    /// bullets and collisions key off fire power / ram-grind damage via
+    /// bullets key off Extra Level fire power after <see cref="GemMusicalPitch.FirePowerToPianoAmount"/>
+    /// (each gun / cannon / rocket / sniper uses its authored base as top C) and volume via
+    /// <see cref="GemMusicalPitch.FirePowerToShootVolumeScale"/> (one clip, louder
+    /// heavy shots — not a per-weapon-type mixer); collisions key off ram-grind damage via
     /// <see cref="ResolveFirePowerPitch"/>.
     /// Multi-gem collect batches play a C-major chord via <see cref="GemChordValues"/>.
     /// Singleton with DontDestroyOnLoad — UI and hybrid presenters call into <see cref="Instance"/>.
@@ -37,10 +41,16 @@ namespace TitanOrbit.Audio
         [SerializeField] private AudioSource[] impactSoundSources;
         private int nextImpactSoundIndex;
 
-        private const int WEAPON_SOUND_POOL_SIZE = 6;
-        /// <summary>Large enough for a 3–4 note collect chord plus overlapping sequential pickups.</summary>
-        private const int GEM_SOUND_POOL_SIZE = 10;
-        private const int IMPACT_SOUND_POOL_SIZE = 6;
+        /// <summary>
+        /// Concurrent weapon-fire voices. MEGA hulls can volley 8–32 mounts in one
+        /// tick — the old 6-source pool reused a source that was still playing,
+        /// which snapped pitch and ate the cannon one-shot.
+        /// </summary>
+        private const int WEAPON_SOUND_POOL_SIZE = 32;
+        /// <summary>Collect chords plus overlapping sequential pickups.</summary>
+        private const int GEM_SOUND_POOL_SIZE = 16;
+        /// <summary>Clustered Titan / multi-gun impacts in the same frame.</summary>
+        private const int IMPACT_SOUND_POOL_SIZE = 24;
         private const float IMPACT_PITCH_MIN = 0.3f;
         private const float IMPACT_PITCH_MAX = 2.4f;
         /// <summary>Unity AudioClip pitch usable range (safety clamp after piano resolve).</summary>
@@ -74,6 +84,8 @@ namespace TitanOrbit.Audio
         [SerializeField] private float sfxVolume = 1f;
         [Header("SFX Mix")]
         [SerializeField] private float shootVolume = 1f;
+        [Tooltip("Extra PlayOneShot multiplier at high fire power (~50, Titan cannons). Everyday guns stay at Shoot Volume.")]
+        [SerializeField] private float heavyShootVolumeMul = 3.25f;
         [SerializeField] private float impactVolume = 1f;
         [SerializeField] private float asteroidCollisionVolume = 1f;
         [SerializeField] private float shipCollisionVolume = 1f;
@@ -156,48 +168,67 @@ namespace TitanOrbit.Audio
         }
 
         /// <summary>
-        /// Maps per-shot fire power onto the same chromatic piano as gems
-        /// (<see cref="GemMusicalPitch"/>). Fire power 1 = <see cref="weaponPitchMax"/>;
+        /// Maps a piano amount onto the same chromatic ladder as gems
+        /// (<see cref="GemMusicalPitch"/>). Amount 1 = <see cref="weaponPitchMax"/>;
         /// each +1 step is one semitone down. <see cref="weaponPitchMin"/> is a floor only.
+        /// Weapon / bullet callers pass
+        /// <see cref="GemMusicalPitch.FirePowerToPianoAmount"/> first (per-weapon
+        /// Extra Level piano). Ram/grind already compresses via
+        /// <c>CollisionSfxPianoAmount</c> before this.
         /// </summary>
+        /// <param name="firePower">Piano amount from <see cref="GemMusicalPitch.FirePowerToPianoAmount"/>.</param>
         public float ResolveFirePowerPitch(float firePower)
         {
             return GemMusicalPitch.ResolvePitch(firePower, weaponPitchMax, weaponPitchMin);
         }
 
         /// <summary>
+        /// Extra PlayOneShot scale for this fire power. Guns stay at 1;
+        /// Titan / high-FP cannons rise toward <see cref="heavyShootVolumeMul"/>.
+        /// There is no separate cannon clip or weapon-type mixer.
+        /// </summary>
+        /// <param name="firePower">Per-shot damage (same value used for pitch).</param>
+        public float ResolveFirePowerShootVolumeScale(float firePower)
+        {
+            return GemMusicalPitch.FirePowerToShootVolumeScale(firePower, heavyShootVolumeMul);
+        }
+
+        /// <summary>
         /// Play weapon fire sound at a resolved pitch (typically
         /// <see cref="ResolveFirePowerPitch"/>). Call once per cannon that fired.
+        /// <paramref name="volumeScale"/> is the fire-power loudness boost
+        /// (1 = everyday gun, ~3 = Titan cannon) on top of <see cref="shootVolume"/>.
         /// </summary>
         /// <param name="pitch">Pitch multiplier. Safety-clamped to Unity's 0.01–3 range.</param>
-        public void PlayWeaponShootSound(float pitch)
+        /// <param name="volumeScale">Fire-power volume multiplier. 1 leaves the mix unchanged.</param>
+        public void PlayWeaponShootSound(float pitch, float volumeScale = 1f)
         {
             // --- PlayWeaponShootSound ---
             if (shootSound == null) return;
             EnsureWeaponSoundPool();
-            if (weaponSoundSources == null || weaponSoundSources.Length == 0) { PlaySFX(shootSound); return; }
+            float volume = GetSFXVolume(shootVolume * Mathf.Max(0f, volumeScale));
+            if (weaponSoundSources == null || weaponSoundSources.Length == 0)
+            {
+                PlaySFX(shootSound, shootVolume * Mathf.Max(0f, volumeScale));
+                return;
+            }
             float p = Mathf.Clamp(pitch, UnityPitchMin, UnityPitchMax);
             AudioSource src = weaponSoundSources[nextWeaponSoundIndex % weaponSoundSources.Length];
             nextWeaponSoundIndex = (nextWeaponSoundIndex + 1) % weaponSoundSources.Length;
             if (src != null)
             {
                 src.pitch = p;
-                src.PlayOneShot(shootSound, GetSFXVolume(shootVolume));
+                src.PlayOneShot(shootSound, volume);
             }
         }
 
+        /// <summary>
+        /// Grows <see cref="weaponSoundSources"/> to <see cref="WEAPON_SOUND_POOL_SIZE"/>.
+        /// A too-small Inspector array used to win and leave Titan volleys on 6 voices.
+        /// </summary>
         private void EnsureWeaponSoundPool()
         {
-            // --- Ensure setup ---
-            if (weaponSoundSources != null && weaponSoundSources.Length > 0) return;
-            weaponSoundSources = new AudioSource[WEAPON_SOUND_POOL_SIZE];
-            for (int i = 0; i < WEAPON_SOUND_POOL_SIZE; i++)
-            {
-                var src = gameObject.AddComponent<AudioSource>();
-                src.playOnAwake = false;
-                src.outputAudioMixerGroup = sfxGroup;
-                weaponSoundSources[i] = src;
-            }
+            EnsurePooledSources(ref weaponSoundSources, WEAPON_SOUND_POOL_SIZE);
         }
 
         public void PlayImpactSound()
@@ -535,32 +566,47 @@ namespace TitanOrbit.Audio
             return Mathf.Max(0f, sfxVolume * clipVolumeMultiplier);
         }
 
-        private void EnsureGemSoundPool()
+        /// <summary>
+        /// Grows a round-robin <see cref="AudioSource"/> pool to <paramref name="size"/>.
+        /// Existing Inspector entries are kept; new sources are added on this
+        /// GameObject (one-time, not per shot).
+        /// </summary>
+        /// <param name="pool">Serialized or runtime array. Replaced when grown.</param>
+        /// <param name="size">Target voice count.</param>
+        void EnsurePooledSources(ref AudioSource[] pool, int size)
         {
-            // --- Ensure setup ---
-            if (gemSoundSources != null && gemSoundSources.Length > 0) return;
-            gemSoundSources = new AudioSource[GEM_SOUND_POOL_SIZE];
-            for (int i = 0; i < GEM_SOUND_POOL_SIZE; i++)
+            // --- Grow, do not shrink ---
+            // [TITAN-ORBIT] Pitch lives on the AudioSource. PlayOneShot on a source
+            // that is still ringing steals that pitch — MEGA volleys need one
+            // source per overlapping shot. Init-only AddComponent, not per frame.
+            if (size < 1)
+                size = 1;
+            if (pool != null && pool.Length >= size)
+                return;
+
+            int have = pool != null ? pool.Length : 0;
+            var grown = new AudioSource[size];
+            for (int i = 0; i < have; i++)
+                grown[i] = pool[i];
+            for (int i = have; i < size; i++)
             {
                 var src = gameObject.AddComponent<AudioSource>();
                 src.playOnAwake = false;
                 src.outputAudioMixerGroup = sfxGroup;
-                gemSoundSources[i] = src;
+                grown[i] = src;
             }
+
+            pool = grown;
+        }
+
+        private void EnsureGemSoundPool()
+        {
+            EnsurePooledSources(ref gemSoundSources, GEM_SOUND_POOL_SIZE);
         }
 
         private void EnsureImpactSoundPool()
         {
-            // --- Ensure setup ---
-            if (impactSoundSources != null && impactSoundSources.Length > 0) return;
-            impactSoundSources = new AudioSource[IMPACT_SOUND_POOL_SIZE];
-            for (int i = 0; i < IMPACT_SOUND_POOL_SIZE; i++)
-            {
-                var src = gameObject.AddComponent<AudioSource>();
-                src.playOnAwake = false;
-                src.outputAudioMixerGroup = sfxGroup;
-                impactSoundSources[i] = src;
-            }
+            EnsurePooledSources(ref impactSoundSources, IMPACT_SOUND_POOL_SIZE);
         }
 
         public void SetMusicVolume(float volume)

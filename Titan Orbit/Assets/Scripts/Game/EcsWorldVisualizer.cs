@@ -3370,7 +3370,8 @@ namespace TitanOrbit.Game
                         scaleMul,
                         tracer.Damage);
                     AudioManager.Instance?.PlayWeaponShootSound(
-                        BulletVisualFactory.GetFirePowerSoundPitch(tracer.Damage));
+                        BulletVisualFactory.GetFirePowerSoundPitch(tracer.Damage),
+                        BulletVisualFactory.GetFirePowerShootVolume(tracer.Damage));
 
                     GameObject visual = BulletVisualFactory.BuildVisual(
                         go.transform,

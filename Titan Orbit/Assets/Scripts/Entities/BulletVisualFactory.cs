@@ -120,7 +120,9 @@ namespace TitanOrbit.Entities
             int bankIndex,
             TeamId team,
             float scaleMultiplier,
-            float firePower)
+            float firePower,
+            float baseFirePower = 0f,
+            float firePowerPerExtra = 0f)
         {
             // Keep authored / mount world Y so the flash sits on the weapon, not the ground plane.
             Vector3 dir = direction;
@@ -130,7 +132,7 @@ namespace TitanOrbit.Entities
             dir.Normalize();
 
             float visualScale = GetBulletVisualScale(bank, scaleMultiplier, bankIndex);
-            float pitch = GetFirePowerSoundPitch(firePower);
+            float pitch = GetFirePowerSoundPitch(firePower, baseFirePower, firePowerPerExtra);
             Color flashColor = GetTeamBulletColor(team);
 
             if (!Application.isMobilePlatform && bank != null)
@@ -163,7 +165,9 @@ namespace TitanOrbit.Entities
             float scaleMultiplier,
             Transform attachParent = null,
             float duration = 0f,
-            Vector3 surfaceNormal = default)
+            Vector3 surfaceNormal = default,
+            float baseFirePower = 0f,
+            float firePowerPerExtra = 0f)
         {
             // [TITAN-ORBIT] Isolation F1 — skip impact Instantiates/Rent to bisect destroy stutter.
             if (TitanOrbitDebugFlags.IsolateDisableImpactVfx)
@@ -171,7 +175,7 @@ namespace TitanOrbit.Entities
 
             // Keep the caller Y (drawn surface). Flattening to 0 put flashes under large rocks / moons.
             float impactScale = GetImpactScale(bank, scaleMultiplier, bankIndex);
-            float pitch = GetFirePowerSoundPitch(damage);
+            float pitch = GetFirePowerSoundPitch(damage, baseFirePower, firePowerPerExtra);
             float life = duration > 0.05f ? duration : DefaultImpactDuration;
 
             if (Application.isMobilePlatform)
@@ -231,15 +235,46 @@ namespace TitanOrbit.Entities
         }
 
         /// <summary>
-        /// Chromatic piano pitch from per-shot fire power (same ladder as gems).
-        /// Fire power 1 = highest C; each +1 is one semitone down.
+        /// Chromatic piano pitch from Extra Level fire power.
+        /// Each gun / cannon / rocket / sniper uses its authored base as the top C
+        /// and walks down toward base + perExtra × max Extra Levels.
+        /// Used for muzzle one-shots, tracer prefab AudioSources, and bullet impacts.
         /// </summary>
-        public static float GetFirePowerSoundPitch(float firePower)
+        /// <param name="firePower">Live Extra Level fire power (pre-bank). 0 falls back to top C.</param>
+        /// <param name="baseFirePower">Catalog / unique-component base (top C). 0 = use live as base.</param>
+        /// <param name="firePowerPerExtra">Catalog Per Extra Level. MEGA unique weapons are 0.</param>
+        /// <returns>Unity <see cref="AudioSource.pitch"/> multiplier.</returns>
+        public static float GetFirePowerSoundPitch(
+            float firePower,
+            float baseFirePower = 0f,
+            float firePowerPerExtra = 0f)
         {
+            // --- Per-weapon Extra Level piano ---
+            // [TITAN-ORBIT] Do not pass bank-scaled plan.Damage as live — B-key
+            // Fireballs 1.15× would shove a MEGA cannon off its own top C.
+            float pianoAmount = GemMusicalPitch.FirePowerToPianoAmount(
+                firePower, baseFirePower, firePowerPerExtra);
             AudioManager audio = AudioManager.Instance;
             if (audio != null)
-                return audio.ResolveFirePowerPitch(firePower);
-            return GemMusicalPitch.ResolvePitch(firePower, 1f, 0.01f);
+                return audio.ResolveFirePowerPitch(pianoAmount);
+            return GemMusicalPitch.ResolvePitch(pianoAmount, 1f, 0.01f);
+        }
+
+        /// <summary>
+        /// PlayOneShot volume scale from raw fire power. Everyday guns stay at 1;
+        /// Titan ~50-FP cannons use the heavy multiplier. Pitch uses Extra Level.
+        /// </summary>
+        /// <param name="firePower">Per-shot damage (mount fire power, not hull-sum DPS).</param>
+        /// <returns>Multiplier on top of <c>AudioManager</c> shoot mix.</returns>
+        public static float GetFirePowerShootVolume(float firePower)
+        {
+            // --- Fire-power loudness ---
+            // [TITAN-ORBIT] One shared shoot clip. Volume follows raw damage so a
+            // slow Titan cannon is not lost next to machine-gun chatter.
+            AudioManager audio = AudioManager.Instance;
+            if (audio != null)
+                return audio.ResolveFirePowerShootVolumeScale(firePower);
+            return GemMusicalPitch.FirePowerToShootVolumeScale(firePower);
         }
 
         public static float GetImpactSoundPitch(float damage)

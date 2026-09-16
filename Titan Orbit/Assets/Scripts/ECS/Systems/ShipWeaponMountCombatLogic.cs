@@ -125,6 +125,7 @@ namespace TitanOrbit.ECS
                 mount.FirePower = Mathf.Max(0.1f, leveledPower);
                 mount.FireRate = Mathf.Max(0.1f, leveledRate);
                 mount.ReferenceFirePower = Mathf.Max(0.1f, basePower);
+                mount.FirePowerPerExtraLevel = Mathf.Max(0f, powerPer);
                 mounts[i] = mount;
 
                 damageSum += mount.FirePower;

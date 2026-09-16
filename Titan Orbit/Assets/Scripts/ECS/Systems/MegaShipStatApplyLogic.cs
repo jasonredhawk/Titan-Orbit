@@ -348,6 +348,7 @@ namespace TitanOrbit.ECS
             float partSpeed = resolved.bulletSpeed > 0.01f ? resolved.bulletSpeed : raw.bulletSpeed;
             mount.BulletSpeed = math.max(0.1f, partSpeed);
             mount.ReferenceFirePower = math.max(0f, raw.firePower);
+            mount.FirePowerPerExtraLevel = 0f;
             mount.WeaponRotationSpeed = 0f;
             mount.BulletBankIndex = row != null
                 ? catalog.ResolveWeaponBankIndex(row)

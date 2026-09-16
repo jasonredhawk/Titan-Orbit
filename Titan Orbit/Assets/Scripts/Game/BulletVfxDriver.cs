@@ -72,6 +72,12 @@ namespace TitanOrbit.Game
             public float MaxDistance;
             public float Traveled;
             public float Damage;
+            /// <summary>Extra Level fire power (pre-bank) for the weapon-type pitch piano.</summary>
+            public float FirePowerLive;
+            /// <summary>Catalog / unique-component base (top C).</summary>
+            public float FirePowerBase;
+            /// <summary>Catalog Per Extra Level. MEGA unique weapons are 0.</summary>
+            public float FirePowerPerExtra;
             public byte OwnerTeam;
             public int BankIndex;
             public float ScaleMultiplier;
@@ -1034,6 +1040,9 @@ namespace TitanOrbit.Game
             adopted.BankIndex = req.BankIndex;
             adopted.ScaleMultiplier = req.ScaleMultiplier > 0f ? req.ScaleMultiplier : adopted.ScaleMultiplier;
             adopted.Damage = req.Damage;
+            adopted.FirePowerLive = req.FirePowerLive;
+            adopted.FirePowerBase = req.FirePowerBase;
+            adopted.FirePowerPerExtra = req.FirePowerPerExtra;
             // [TITAN-ORBIT] Lifetime <= 0 = distance-only (PD turrets); do not clamp to 0.05s.
             adopted.RemainingLifetime = ResolveTracerLifetime(req.Lifetime);
             adopted.MaxDistance = math.max(0.5f, req.MaxDistance);
@@ -1254,9 +1263,12 @@ namespace TitanOrbit.Game
             spawnDisplay.y = mountY;
 
             // --- Muzzle flash at fire origin ---
-            // Skip when the bolt dies at the barrel (nose-touch / spawned inside).
-            // Hull collision should show the impact animation, not a gun flash on the ship.
+            // Skip the flash when the bolt dies at the barrel (nose-touch / spawned
+            // inside) so hull collision shows the impact only. Fire SFX still plays —
+            // Fireballs V1 has no muzzle prefab/audio, and MEGA cannons were silent
+            // whenever this probe hit nearby world geometry.
             float cameraScale = ResolveMegaCameraVisualScale();
+            float pianoLive = req.FirePowerLive > 0.01f ? req.FirePowerLive : req.Damage;
             if (!IsImmediateCollisionSpawn(in req))
             {
                 BulletVisualFactory.PlayMuzzleVfx(
@@ -1266,10 +1278,20 @@ namespace TitanOrbit.Game
                     bankIndex,
                     team,
                     scaleMul * cameraScale,
-                    req.Damage);
-                AudioManager.Instance?.PlayWeaponShootSound(
-                    BulletVisualFactory.GetFirePowerSoundPitch(req.Damage));
+                    pianoLive,
+                    req.FirePowerBase,
+                    req.FirePowerPerExtra);
             }
+
+            // --- Fire start one-shot ---
+            // [TITAN-ORBIT] Shared AudioManager clip. Not the Sci-Fi muzzle prefab —
+            // Fireballs / several banks have muzzleParticle = null, so pitching a
+            // muzzle AudioSource would play nothing. Pitch uses Extra Level bookends,
+            // not bank-scaled plan.Damage.
+            AudioManager.GetOrFind()?.PlayWeaponShootSound(
+                BulletVisualFactory.GetFirePowerSoundPitch(
+                    pianoLive, req.FirePowerBase, req.FirePowerPerExtra),
+                BulletVisualFactory.GetFirePowerShootVolume(req.Damage));
 
             // --- Pooled tracer shell (destroy-probe: spawnMs ~14 ms was Instantiates here) ---
             GameObject projectilePrefab = null;
@@ -1302,7 +1324,8 @@ namespace TitanOrbit.Game
             VfxUrpCompat.ApplyImpactVisualScale(go, visualScale);
             VfxUrpCompat.PrepareVfxInstance(go);
             BulletVisualFactory.SetAudioPitchInHierarchy(
-                go, BulletVisualFactory.GetFirePowerSoundPitch(req.Damage));
+                go, BulletVisualFactory.GetFirePowerSoundPitch(
+                    pianoLive, req.FirePowerBase, req.FirePowerPerExtra));
 
             ClientBulletStretchVisual stretch = go.GetComponent<ClientBulletStretchVisual>();
             if (_bank != null
@@ -1340,6 +1363,9 @@ namespace TitanOrbit.Game
                 MaxDistance = math.max(0.5f, req.MaxDistance),
                 Traveled = 0f,
                 Damage = req.Damage,
+                FirePowerLive = req.FirePowerLive,
+                FirePowerBase = req.FirePowerBase,
+                FirePowerPerExtra = req.FirePowerPerExtra,
                 OwnerTeam = req.OwnerTeam,
                 BankIndex = bankIndex,
                 ScaleMultiplier = scaleMul,
@@ -1668,8 +1694,10 @@ namespace TitanOrbit.Game
             if (t.Go != null)
                 t.Go.transform.position = hitDisplay;
 
+            float impactPianoLive = t.FirePowerLive > 0.01f ? t.FirePowerLive : t.Damage;
             BulletVisualFactory.SpawnBulletImpactVfx(
-                hitDisplay, _bank, bankIndex, team, t.Damage, scaleMul, attachParent);
+                hitDisplay, _bank, bankIndex, team, impactPianoLive, scaleMul, attachParent,
+                0f, default, t.FirePowerBase, t.FirePowerPerExtra);
 
             // --- Remember for HitRpc / SpawnRpc reconcile ---
             // Mining floats and turret HP wait for HitRpc (authoritative remaining Health).

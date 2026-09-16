@@ -794,7 +794,13 @@ namespace TitanOrbit.ECS
                 ScaleMultiplier = plan.VisualScale,
             });
 
-            BulletNetNotify.SendSpawn(ref ecb, spawn, mountIdx);
+            BulletNetNotify.SendSpawn(
+                ref ecb,
+                spawn,
+                mountIdx,
+                mount.FirePower,
+                mount.ReferenceFirePower,
+                mount.FirePowerPerExtraLevel);
 
             // --- Same-frame spawn collide (substepped — MEGA sniper + shipVel can skip a rock) ---
             EnsureObstacleHash(state.EntityManager, mapW, mapH);

@@ -482,6 +482,15 @@ namespace TitanOrbit.ECS
         /// <summary>Display damage (impact VFX intensity; server owns real damage).</summary>
         public float Damage;
 
+        /// <summary>Extra Level fire power (pre-bank) for the per-weapon pitch piano.</summary>
+        public float FirePowerLive;
+
+        /// <summary>Catalog / unique-component base fire power (top C for this gun / cannon / rocket / sniper).</summary>
+        public float FirePowerBase;
+
+        /// <summary>Catalog Per Extra Level. 0 on MEGA unique weapons and PD / drones.</summary>
+        public float FirePowerPerExtra;
+
         /// <summary>Shooter team as byte.</summary>
         public byte OwnerTeam;
 
