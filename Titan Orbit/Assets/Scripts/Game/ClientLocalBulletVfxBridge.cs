@@ -224,8 +224,12 @@ namespace TitanOrbit.Game
             int shotCount;
             float energySpend;
             int nextMountIndexAfter = _nextMountIndex;
+            var gunners = isMega && world.EntityManager.HasBuffer<MegaShipGunnerSlotElement>(shipEntity)
+                ? world.EntityManager.GetBuffer<MegaShipGunnerSlotElement>(shipEntity)
+                : default;
             if (isMega)
             {
+                ShipWeaponKind.RestoreMountKindsFromGhostedSlots(mounts, gunners);
                 if (!ShipWeaponFireLogic.TryPlanMegaFire(
                         _predictedEnergy,
                         mounts,
@@ -298,6 +302,8 @@ namespace TitanOrbit.Game
                     continue;
 
                 ShipWeaponMountElement mount = mounts[mountIdx];
+                if (isMega && ShipWeaponKind.IsCannonLaser(mount, gunners, mountIdx))
+                    continue;
                 int shotBank = isMega ? mount.BulletBankIndex : bankIndex;
                 if (shotBank < 0)
                     shotBank = bankIndex;

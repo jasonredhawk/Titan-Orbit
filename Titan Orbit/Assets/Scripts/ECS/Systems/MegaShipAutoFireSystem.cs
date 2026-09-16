@@ -16,7 +16,9 @@ namespace TitanOrbit.ECS
     /// <summary>
     /// Server: MEGA mounts auto-aim like planetary turrets, but only fire when the MEGA
     /// owner's <see cref="ShipInput.Fire"/> is held. Only the ship owner aims these guns —
-    /// there is no remote Take Control path.
+    /// there is no remote Take Control path. Cannon barrels stay parked and lock anyone
+    /// Cannon lasers use the same in-range auto-aim, then the turret slews onto
+    /// that lock; <see cref="CannonLaserCombatSystem"/> burns once the barrel faces it.
     /// Damage mode treats enemy ships, planetary defense turrets, and enemy moon
     /// shields as one priority — closest in range wins. Asteroids are second
     /// (only when no combat target is in that gun's range). Heal mode aims at the
@@ -24,11 +26,11 @@ namespace TitanOrbit.ECS
     /// <see cref="TitanOrbitDebugFlags.MegaShipsAutoFireAsteroids"/> is on
     /// (Editor / MPPM host).
     /// <para>
-    /// Each gun searches from its own muzzle when Fire is pressed. Locks stay until
-    /// that target dies, leaves that gun's range, a higher-priority class enters
-    /// range, or the owner releases Fire (release clears locks so the next press
-    /// re-acquires).
-    /// If a gun finds nothing, it fires along hull forward until Fire is released.
+    /// Each gun searches from its own muzzle when Fire is pressed. A live lock
+    /// sticks — a closer ship will not steal it. If that target dies or leaves
+    /// range, the barrel grabs the next closest. Releasing Fire clears locks so
+    /// the next press re-acquires (to switch off a still-valid target).
+    /// If a gun finds nothing, it fires along hull forward until someone enters range.
     /// Aim points are lead intercepts from <see cref="MegaShipLeadAim"/> — target velocity
     /// minus this hull's velocity — so inherited <c>shipVel</c> on the bullet does not
     /// undershoot. Turrets slew toward that lock (or hull forward) before
@@ -38,9 +40,9 @@ namespace TitanOrbit.ECS
     /// </para>
     /// <para>
     /// [TITAN-ORBIT] MEGAs have no overdrive. <see cref="ShipInput.Overdrive"/> (Shift)
-    /// locks hull heading and points each gun at the mouse
+    /// locks hull heading and points every gun and cannon at the mouse
     /// world point (<see cref="ShipInput.AimPlanarDir"/> × <see cref="ShipInput.AimDistance"/>).
-    /// Fire is still required to spend energy.
+    /// Cannons hitscan the 33° cone along that aim. Fire is still required to spend energy.
     /// </para>
     /// Map size comes from <see cref="MapStateSingleton"/>. Distances use
     /// <see cref="ToroidalMapEcs.ToroidalDistance"/>.
@@ -178,6 +180,7 @@ namespace TitanOrbit.ECS
                 var gunners = EntityManager.HasBuffer<MegaShipGunnerSlotElement>(mega)
                     ? EntityManager.GetBuffer<MegaShipGunnerSlotElement>(mega)
                     : default;
+                ShipWeaponKind.RestoreMountKindsFromGhostedSlots(mounts, gunners);
 
                 bool heal = EntityManager.HasComponent<ShipLoadoutState>(mega) &&
                             EntityManager.GetComponentData<ShipLoadoutState>(mega).HealingBulletsActive;
@@ -199,18 +202,22 @@ namespace TitanOrbit.ECS
                 bool ownerShift = IsOwnerShiftHeld(mega);
                 bool ownerWantsFire = OwnerWantsFire(mega);
 
-                // --- Shift: all MEGA guns look at the mouse ---
+                // --- Shift: every Titan barrel looks at the mouse ---
                 // [TITAN-ORBIT] Owner Shift is the MEGA "strafe / lock heading" mode.
-                // Auto-locks stay cleared so releasing Shift re-acquires from scratch.
+                // Auto-locks clear so releasing Shift re-acquires. Cannons hitscan
+                // the cone along that mouse aim instead of keeping a sticky lock.
                 if (ownerShift)
                 {
-                    ClearAimSlots(mega);
+                    ClearManualAimSlots(mega);
                     AimUnoccupiedMountsAtMouse(mega, xf, mounts, gunners, mapW, mapH, dt);
-                    continue;
                 }
 
                 if (!ownerWantsFire)
+                {
+                    // Next Fire press must search again — do not keep a lock across a release.
+                    ClearAutoAimTargetSlots(mega);
                     continue;
+                }
 
                 if (!EntityManager.HasBuffer<MegaShipAutoAimSlotElement>(mega))
                     continue;
@@ -241,36 +248,85 @@ namespace TitanOrbit.ECS
                     asteroidsLoaded = true;
                 }
 
+                if (ownerShift)
+                {
+                    // Barrel already faces the cursor. Pick who sits in that cone
+                    // this tick — do not rotate back onto a sticky lock.
+                    for (int m = 0; m < mountCount; m++)
+                    {
+                        if (!ShipWeaponKind.IsCannonLaser(mounts[m], gunners, m))
+                            continue;
+
+                        var mount = mounts[m];
+                        float3 muzzle = ResolveMuzzle(xf, mount);
+                        float3 barrelFwd = MegaShipWeaponAim.GetBarrelForward(in xf, in mount);
+                        float mountRange = ResolveMountRange(mount, in weapon);
+                        if (TryAcquireClosestTarget(
+                            mega, ship.Team, heal, muzzle, shooterVel, 0f, mountRange,
+                            mapW, mapH, moonElapsed, MegaShipAutoAimClass.None,
+                            ships, shipStates, shipXfs, planets,
+                            debugAsteroids, asteroidEntities, asteroidStates, asteroidXfs,
+                            out Entity coneTarget, out float3 coneAim, out float coneDist,
+                            coneLock: true, barrelFwd))
+                        {
+                            aims[m] = new MegaShipAutoAimSlotElement
+                            {
+                                Target = coneTarget,
+                                AimPoint = coneAim,
+                                InterceptDistance = coneDist,
+                            };
+                        }
+                        else
+                        {
+                            aims[m] = new MegaShipAutoAimSlotElement
+                            {
+                                Target = mega,
+                                AimPoint = default,
+                            };
+                        }
+                    }
+
+                    continue;
+                }
+
                 for (int m = 0; m < mountCount; m++)
                 {
-                    var slot = aims[m];
-                    if (slot.Target == mega)
-                        continue;
+                    bool isCannon = ShipWeaponKind.IsCannonLaser(mounts[m], gunners, m);
 
-                    float3 muzzle = ResolveMuzzle(xf, mounts[m]);
-                    float mountRange = ResolveMountRange(mounts[m], in weapon) + 8f;
-                    int mountBank = mounts[m].BulletBankIndex >= 0
-                        ? mounts[m].BulletBankIndex
+                    var slot = aims[m];
+                    var mount = mounts[m];
+                    float3 muzzle = ResolveMuzzle(xf, mount);
+                    float3 barrelFwd = MegaShipWeaponAim.GetBarrelForward(in xf, in mount);
+                    float mountRange = ResolveMountRange(mount, in weapon);
+                    if (!isCannon)
+                        mountRange += 8f;
+                    int mountBank = mount.BulletBankIndex >= 0
+                        ? mount.BulletBankIndex
                         : bankIndex;
-                    float leadBulletSpeed = ResolveLeadBulletSpeed(
-                        in weapon, mounts[m], mountBank, shipLevel);
-                    bool kept = TryKeepStickyTarget(
+                    float leadBulletSpeed = isCannon
+                        ? 0f
+                        : ResolveLeadBulletSpeed(
+                            in weapon, in mount, mountBank, shipLevel);
+                    // Live lock sticks (no closer-target steal). Dead / out of range
+                    // falls through to a fresh closest-target search.
+                    bool hadLock = slot.Target != Entity.Null && slot.Target != mega;
+                    bool kept = hadLock && TryKeepStickyTarget(
                         mega, ship.Team, heal, muzzle, shooterVel, leadBulletSpeed, mountRange,
-                        mapW, mapH, moonElapsed, ref slot);
-                    var betterThan = MegaShipAutoAimClass.None;
+                        mapW, mapH, moonElapsed, ref slot,
+                        coneLock: false, barrelFwd);
                     if (kept)
                     {
-                        betterThan = ClassifyStickyTarget(
-                            slot.Target, ship.Team, heal, muzzle, mountRange,
-                            mapW, mapH, moonElapsed);
+                        aims[m] = slot;
+                        continue;
                     }
 
                     if (TryAcquireClosestTarget(
                         mega, ship.Team, heal, muzzle, shooterVel, leadBulletSpeed, mountRange,
-                        mapW, mapH, moonElapsed, betterThan,
+                        mapW, mapH, moonElapsed, MegaShipAutoAimClass.None,
                         ships, shipStates, shipXfs, planets,
                         debugAsteroids, asteroidEntities, asteroidStates, asteroidXfs,
-                        out Entity target, out float3 aimPoint, out float interceptDistance))
+                        out Entity target, out float3 aimPoint, out float interceptDistance,
+                        coneLock: false, barrelFwd))
                     {
                         aims[m] = new MegaShipAutoAimSlotElement
                         {
@@ -278,10 +334,6 @@ namespace TitanOrbit.ECS
                             AimPoint = aimPoint,
                             InterceptDistance = interceptDistance,
                         };
-                    }
-                    else if (kept)
-                    {
-                        aims[m] = slot;
                     }
                     else
                     {
@@ -463,6 +515,53 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
+        /// Drop every auto-lock so Shift mouse-aim owns the barrels. Releasing
+        /// Shift re-acquires on the next Fire hold.
+        /// </summary>
+        void ClearManualAimSlots(Entity mega)
+        {
+            var mounts = EntityManager.HasBuffer<ShipWeaponMountElement>(mega)
+                ? EntityManager.GetBuffer<ShipWeaponMountElement>(mega)
+                : default;
+            if (EntityManager.HasBuffer<MegaShipAutoAimSlotElement>(mega))
+            {
+                var aims = EntityManager.GetBuffer<MegaShipAutoAimSlotElement>(mega);
+                for (int i = 0; i < aims.Length; i++)
+                    aims[i] = default;
+            }
+
+            if (!EntityManager.HasBuffer<MegaShipGunnerSlotElement>(mega))
+                return;
+
+            var gunners = EntityManager.GetBuffer<MegaShipGunnerSlotElement>(mega);
+            for (int i = 0; i < gunners.Length; i++)
+            {
+                var slot = gunners[i];
+                slot.TargetDistance = 0f;
+                slot.AimWorldX = 0f;
+                slot.AimWorldZ = 0f;
+                slot.TargetGhostId = 0;
+                if (mounts.IsCreated && i < mounts.Length)
+                    slot.CurrentYawDeg = MegaShipWeaponAim.GetLocalYawDeg(mounts[i].LocalRotation);
+                gunners[i] = slot;
+            }
+        }
+
+        /// <summary>
+        /// Drop sticky target entities only. Gunner yaw is left alone (Shift mouse-aim
+        /// still writes those slots). Next Fire press searches again.
+        /// </summary>
+        void ClearAutoAimTargetSlots(Entity mega)
+        {
+            if (!EntityManager.HasBuffer<MegaShipAutoAimSlotElement>(mega))
+                return;
+
+            var aims = EntityManager.GetBuffer<MegaShipAutoAimSlotElement>(mega);
+            for (int i = 0; i < aims.Length; i++)
+                aims[i] = default;
+        }
+
+        /// <summary>
         /// Drop all sticky locks and clear ghosted aim so clients park barrels on the hull.
         /// Next Fire press runs a fresh per-muzzle search.
         /// </summary>
@@ -502,7 +601,9 @@ namespace TitanOrbit.ECS
             float mapW,
             float mapH,
             double moonElapsed,
-            ref MegaShipAutoAimSlotElement aim)
+            ref MegaShipAutoAimSlotElement aim,
+            bool coneLock = false,
+            float3 coneFwd = default)
         {
             Entity target = aim.Target;
             if (target == Entity.Null || target == self || !EntityManager.Exists(target))
@@ -524,10 +625,16 @@ namespace TitanOrbit.ECS
 
                 var xf = EntityManager.GetComponentData<LocalTransform>(target);
                 float3 pos = MegaShipCombatAim.GetAimPoint(EntityManager, target, xf);
-                if (ToroidalMapEcs.ToroidalDistance(from, pos, mapW, mapH) > range)
+                if (!PassesRangeAndCone(from, coneFwd, pos, range, mapW, mapH, coneLock))
                 {
                     aim = default;
                     return false;
+                }
+
+                if (coneLock)
+                {
+                    WriteHitscanAim(pos, from, mapW, mapH, ref aim);
+                    return true;
                 }
 
                 WriteLeadAim(from, shooterVel, pos, ReadPlanarVelocity(target), bulletSpeed,
@@ -547,6 +654,18 @@ namespace TitanOrbit.ECS
                     return false;
                 }
 
+                if (!PassesRangeAndCone(from, coneFwd, planetAim, range, mapW, mapH, coneLock))
+                {
+                    aim = default;
+                    return false;
+                }
+
+                if (coneLock)
+                {
+                    WriteHitscanAim(planetAim, from, mapW, mapH, ref aim);
+                    return true;
+                }
+
                 WriteLeadAim(from, shooterVel, planetAim, planetVel, bulletSpeed,
                     range, mapW, mapH, ref aim);
                 return true;
@@ -564,10 +683,16 @@ namespace TitanOrbit.ECS
                 }
 
                 float3 pos = EntityManager.GetComponentData<LocalTransform>(target).Position;
-                if (ToroidalMapEcs.ToroidalDistance(from, pos, mapW, mapH) > range)
+                if (!PassesRangeAndCone(from, coneFwd, pos, range, mapW, mapH, coneLock))
                 {
                     aim = default;
                     return false;
+                }
+
+                if (coneLock)
+                {
+                    WriteHitscanAim(pos, from, mapW, mapH, ref aim);
+                    return true;
                 }
 
                 WriteLeadAim(from, shooterVel, pos, ReadPlanarVelocity(target), bulletSpeed,
@@ -591,43 +716,11 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// Class of a live sticky lock. Ships, hostile pads, and moon shields are
-        /// one combat class; asteroids are lower.
-        /// </summary>
-        MegaShipAutoAimClass ClassifyStickyTarget(
-            Entity target,
-            TeamId ownerTeam,
-            bool heal,
-            float3 from,
-            float range,
-            float mapW,
-            float mapH,
-            double moonElapsed)
-        {
-            if (target == Entity.Null || !EntityManager.Exists(target))
-                return MegaShipAutoAimClass.None;
-
-            if (EntityManager.HasComponent<ShipState>(target))
-                return MegaShipAutoAimClass.Combat;
-
-            if (!heal
-                && EntityManager.HasComponent<PlanetState>(target)
-                && TryResolvePlanetAim(
-                    target, ownerTeam, from, range, mapW, mapH, moonElapsed, out _, out _))
-                return MegaShipAutoAimClass.Combat;
-
-            if (!heal && EntityManager.HasComponent<AsteroidState>(target))
-                return MegaShipAutoAimClass.Asteroid;
-
-            return MegaShipAutoAimClass.None;
-        }
-
-        /// <summary>
         /// Closest in-range target from this muzzle. Ships, hostile pads, and moon
         /// shields compete by toroidal distance; (debug) asteroids are only used when
         /// none of those are in range. Two guns may lock the same entity.
-        /// <paramref name="betterThan"/> skips classes at or below a live sticky lock
-        /// so a combat target can steal an asteroid, not the reverse.
+        /// Used when a barrel has no live lock (first press, or the last target died / left range).
+        /// <paramref name="betterThan"/> is kept so a first search can skip a lower class.
         /// mapW/mapH from <see cref="MapStateSingleton"/>.
         /// </summary>
         bool TryAcquireClosestTarget(
@@ -652,7 +745,9 @@ namespace TitanOrbit.ECS
             NativeArray<LocalTransform> asteroidXfs,
             out Entity target,
             out float3 aimPoint,
-            out float interceptDistance)
+            out float interceptDistance,
+            bool coneLock = false,
+            float3 coneFwd = default)
         {
             target = Entity.Null;
             aimPoint = default;
@@ -686,6 +781,8 @@ namespace TitanOrbit.ECS
                         float d = ToroidalMapEcs.ToroidalDistance(from, pos, mapW, mapH);
                         if (d >= best)
                             continue;
+                        if (!PassesRangeAndCone(from, coneFwd, pos, range, mapW, mapH, coneLock))
+                            continue;
                         best = d;
                         target = ships[i];
                         nowPos = pos;
@@ -697,6 +794,11 @@ namespace TitanOrbit.ECS
                 {
                     if (target == Entity.Null)
                         return false;
+                    if (coneLock)
+                    {
+                        WriteHitscanAimValues(nowPos, from, mapW, mapH, out aimPoint, out interceptDistance);
+                        return true;
+                    }
                     WriteLeadAimValues(from, shooterVel, nowPos, nowVel, bulletSpeed, range,
                         mapW, mapH, out aimPoint, out interceptDistance);
                     return true;
@@ -715,6 +817,8 @@ namespace TitanOrbit.ECS
                         float d = ToroidalMapEcs.ToroidalDistance(from, planetAim, mapW, mapH);
                         if (d >= best)
                             continue;
+                        if (!PassesRangeAndCone(from, coneFwd, planetAim, range, mapW, mapH, coneLock))
+                            continue;
                         best = d;
                         target = planet;
                         nowPos = planetAim;
@@ -724,6 +828,11 @@ namespace TitanOrbit.ECS
 
                 if (target != Entity.Null)
                 {
+                    if (coneLock)
+                    {
+                        WriteHitscanAimValues(nowPos, from, mapW, mapH, out aimPoint, out interceptDistance);
+                        return true;
+                    }
                     WriteLeadAimValues(from, shooterVel, nowPos, nowVel, bulletSpeed, range,
                         mapW, mapH, out aimPoint, out interceptDistance);
                     return true;
@@ -752,6 +861,8 @@ namespace TitanOrbit.ECS
                     float d = ToroidalMapEcs.ToroidalDistance(from, rockPos, mapW, mapH);
                     if (d >= best)
                         continue;
+                    if (!PassesRangeAndCone(from, coneFwd, rockPos, range, mapW, mapH, coneLock))
+                        continue;
                     best = d;
                     target = asteroidEntities[a];
                     nowPos = rockPos;
@@ -761,6 +872,12 @@ namespace TitanOrbit.ECS
 
             if (target == Entity.Null)
                 return false;
+
+            if (coneLock)
+            {
+                WriteHitscanAimValues(nowPos, from, mapW, mapH, out aimPoint, out interceptDistance);
+                return true;
+            }
 
             WriteLeadAimValues(from, shooterVel, nowPos, nowVel, bulletSpeed, range,
                 mapW, mapH, out aimPoint, out interceptDistance);
@@ -986,6 +1103,51 @@ namespace TitanOrbit.ECS
             return math.max(PlanetaryDefenseAimMath.MinBulletSpeed, speed);
         }
 
+        /// <summary>
+        /// Range plus optional 33° barrel cone. Projectile guns ignore the cone.
+        /// </summary>
+        static bool PassesRangeAndCone(
+            float3 from,
+            float3 coneFwd,
+            float3 targetPos,
+            float range,
+            float mapW,
+            float mapH,
+            bool coneLock)
+        {
+            if (coneLock)
+                return CannonLaserMath.IsInRangeAndCone(
+                    from, coneFwd, targetPos, range, mapW, mapH, out _);
+
+            return ToroidalMapEcs.ToroidalDistance(from, targetPos, mapW, mapH) <= range;
+        }
+
+        /// <summary>Hitscan lock — current point, no projectile lead.</summary>
+        static void WriteHitscanAim(
+            float3 targetPos,
+            float3 muzzle,
+            float mapW,
+            float mapH,
+            ref MegaShipAutoAimSlotElement aim)
+        {
+            WriteHitscanAimValues(targetPos, muzzle, mapW, mapH, out float3 aimPoint, out float dist);
+            aim.AimPoint = aimPoint;
+            aim.InterceptDistance = dist;
+        }
+
+        /// <summary>Current target point and toroidal muzzle distance.</summary>
+        static void WriteHitscanAimValues(
+            float3 targetPos,
+            float3 muzzle,
+            float mapW,
+            float mapH,
+            out float3 aimPoint,
+            out float interceptDistance)
+        {
+            aimPoint = targetPos;
+            interceptDistance = ToroidalMapEcs.ToroidalDistance(muzzle, targetPos, mapW, mapH);
+        }
+
         /// <summary>Writes lead intercept onto a sticky slot (keeps <see cref="MegaShipAutoAimSlotElement.Target"/>).</summary>
         static void WriteLeadAim(
             float3 muzzle,
@@ -1021,6 +1183,15 @@ namespace TitanOrbit.ECS
             out float3 aimPoint,
             out float interceptDistance)
         {
+            // Hitscan weapons (cannon lasers pass 0). A 0-speed lead solve is a
+            // hull-rendezvous point — while the Titan moves that sits well off
+            // the target and the 33° burn cone fails every tick.
+            if (bulletSpeed <= 0.01f)
+            {
+                WriteHitscanAimValues(targetPos, muzzle, mapW, mapH, out aimPoint, out interceptDistance);
+                return;
+            }
+
             if (MegaShipLeadAim.TryComputeFireSolution(
                     muzzle, shooterVel, targetPos, targetVel, bulletSpeed,
                     mapW, mapH, engageRange,

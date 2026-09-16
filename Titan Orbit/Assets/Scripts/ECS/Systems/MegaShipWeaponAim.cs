@@ -253,6 +253,8 @@ namespace TitanOrbit.ECS
             slot.AimWorldX = aimPoint.x;
             slot.AimWorldZ = aimPoint.z;
             slot.TargetGhostId = tracking ? targetGhostId : 0;
+            if (mount.WeaponKind != 0)
+                slot.WeaponKind = mount.WeaponKind;
             gunners[mountIndex] = slot;
         }
 

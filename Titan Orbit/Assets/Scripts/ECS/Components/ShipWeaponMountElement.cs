@@ -100,6 +100,13 @@ namespace TitanOrbit.ECS
         /// hull <c>ShipLoadoutState.RuntimeBulletIndex</c>.
         /// </summary>
         public int BulletBankIndex;
+
+        /// <summary>
+        /// [TITAN-ORBIT] MEGA unique-weapon class (<see cref="ShipWeaponKind"/>).
+        /// Cannons are hitscan lasers; other values still spawn bullets.
+        /// Regular family barrels leave this 0 (gun).
+        /// </summary>
+        public byte WeaponKind;
     }
 
     /// <summary>

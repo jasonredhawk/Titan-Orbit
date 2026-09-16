@@ -57,12 +57,20 @@ namespace TitanOrbit.ECS
 
         /// <summary>Branch to restore on the previous level.</summary>
         [GhostField] public int PreviousBranch;
+
+        /// <summary>
+        /// Cannon lasers emptied the energy pool. Cleared at
+        /// ≥ <c>CannonLaserMath.RechargeRatio</c> of MaxEnergy. Ghosted so
+        /// client beams (including Shift mouse-aim) hide during the wait.
+        /// </summary>
+        [GhostField] public bool CannonLaserLockout;
     }
 
     /// <summary>
     /// Server-only sticky auto-aim, one slot per weapon mount. Each muzzle searches
-    /// when Fire is pressed (ships / pads / moon shields first, asteroids second).
-    /// Locks clear when Fire is released so the next press re-acquires.
+    /// when Fire is pressed (ships / pads / moon shields first, asteroids second)
+    /// and keeps that lock until the target dies, leaves range, or Fire is released.
+    /// Target == this hull means no current lock (hull-forward fire).
     /// <para>
     /// [TITAN-ORBIT] <see cref="AimPoint"/> is the lead intercept (target motion +
     /// this hull's velocity), not the target's current pivot. Phase B still fires
@@ -139,5 +147,13 @@ namespace TitanOrbit.ECS
         /// </summary>
         [GhostField]
         public int TargetGhostId;
+
+        /// <summary>
+        /// MEGA unique-weapon class (<see cref="ShipWeaponKind"/>). Ghosted so predicted
+        /// clients keep cannon-laser barrels after mount-buffer rollback (mount
+        /// <c>WeaponKind</c> is not a GhostField).
+        /// </summary>
+        [GhostField]
+        public byte WeaponKind;
     }
 }

@@ -188,6 +188,7 @@ namespace TitanOrbit.ECS
         /// MEGA energy hybrid: volley every ready barrel only when the pool covers
         /// <b>every armed gun</b> (not just the ones off cooldown). Otherwise fire
         /// exactly the cursor gun — cheaper ready barrels do not sneak a shot.
+        /// Cannon lasers are skipped — they burn via <see cref="CannonLaserCombatSystem"/>.
         /// </summary>
         public static bool TryPlanMegaFire(
             float currentEnergy,
@@ -212,7 +213,7 @@ namespace TitanOrbit.ECS
             int armedCount = 0;
             for (int i = 0; i < mountCount; i++)
             {
-                if (mounts[i].FirePower <= 0.01f)
+                if (mounts[i].FirePower <= 0.01f || ShipWeaponKind.IsCannonLaser(mounts[i]))
                     continue;
                 bankCost += mounts[i].FirePower;
                 armedCount++;
@@ -231,7 +232,8 @@ namespace TitanOrbit.ECS
                 for (int i = 0; i < mountCount && shotCount < capacity; i++)
                 {
                     ShipWeaponMountElement mount = mounts[i];
-                    if (mount.FirePower <= 0.01f || mount.FireCooldown > 0.001f)
+                    if (mount.FirePower <= 0.01f || mount.FireCooldown > 0.001f
+                        || ShipWeaponKind.IsCannonLaser(mount))
                         continue;
                     shots[shotCount++] = BuildMegaShot(i, mount, fallbackFireRate);
                     totalEnergySpend += mount.FirePower;
@@ -313,7 +315,7 @@ namespace TitanOrbit.ECS
             for (int n = 0; n < mountCount; n++)
             {
                 int i = (start + n) % mountCount;
-                if (mounts[i].FirePower <= 0.01f)
+                if (mounts[i].FirePower <= 0.01f || ShipWeaponKind.IsCannonLaser(mounts[i]))
                     continue;
                 mountIndex = i;
                 return true;

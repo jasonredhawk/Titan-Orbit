@@ -143,8 +143,8 @@ namespace TitanOrbit.Data
 
         /// <summary>
         /// Named <see cref="BulletVfxBank"/> default for MEGA cannons.
-        /// FireballsV2 — same heavy profile as Fireballs, but the V2 prefabs
-        /// have a muzzle flash (V1 <c>muzzleParticle</c> is null).
+        /// Cannons are hitscan lasers now — this bank is unused for projectiles.
+        /// The live beam is <c>CannonLaserVfx</c> (Archanor LaserStatic).
         /// </summary>
         public const string DefaultWeaponCannonBankName = "FireballsV2";
 

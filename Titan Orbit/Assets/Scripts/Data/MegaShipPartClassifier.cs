@@ -6,10 +6,12 @@ using UnityEngine;
 namespace TitanOrbit.Data
 {
     /// <summary>
-    /// MEGA weapon mounts are tagged prefabs (<c>Gun</c>, <c>Cannon</c>, <c>Missile</c>,
-    /// <c>Sniper</c>). Discovery walks the hull until it hits a tagged GameObject and stops —
-    /// children of that prefab are one turret. Identity is the prefab asset name, not the
-    /// instance name Unity may have suffixed with <c> (1)</c>.
+    /// MEGA weapon mounts prefer Unity tags (<c>Gun</c>, <c>Cannon</c>, <c>Missile</c>,
+    /// <c>Sniper</c>) but the hull prefabs were never tagged, so discovery also treats
+    /// turret / gun / launcher names as one assembly. Walks the hull until it hits a
+    /// tagged or named weapon and stops — children of that prefab are one turret.
+    /// Identity is the prefab asset name, not the instance name Unity may have
+    /// suffixed with <c> (1)</c>.
     /// </summary>
     public static class MegaShipPartClassifier
     {
@@ -76,7 +78,7 @@ namespace TitanOrbit.Data
                     continue;
                 }
 
-                if (IsLegacyNamedWeapon(child))
+                if (IsNamedWeapon(child))
                 {
                     into.Add(child);
                     continue;
@@ -92,8 +94,39 @@ namespace TitanOrbit.Data
             return t != null && TryGetWeaponTag(t.gameObject, out _);
         }
 
-        /// <summary>True when this transform is a MEGA tagged weapon mount.</summary>
-        public static bool IsWeaponMountTransform(Transform t) => IsTaggedWeapon(t);
+        /// <summary>
+        /// True when this transform is a MEGA weapon mount: Unity tag, or a turret / gun /
+        /// launcher name. Folders like <c>Turrets</c> / <c>Guns</c> are not mounts.
+        /// </summary>
+        public static bool IsWeaponMountTransform(Transform t)
+        {
+            return IsTaggedWeapon(t) || IsNamedWeapon(t);
+        }
+
+        /// <summary>
+        /// Assembly root <see cref="CollectWeaponAssemblies"/> would keep: tagged, or the
+        /// first named weapon in this branch (no tagged / named ancestor under the hull).
+        /// Nested barrels stay children of that one turret.
+        /// </summary>
+        public static bool IsWeaponAssemblyRoot(Transform t, Transform hull)
+        {
+            if (t == null || t == hull)
+                return false;
+            if (IsTaggedWeapon(t))
+                return true;
+            if (!IsNamedWeapon(t))
+                return false;
+
+            Transform parent = t.parent;
+            while (parent != null && parent != hull)
+            {
+                if (IsTaggedWeapon(parent) || IsNamedWeapon(parent))
+                    return false;
+                parent = parent.parent;
+            }
+
+            return true;
+        }
 
         /// <summary>Reads Gun / Cannon / Missile / Sniper from <paramref name="go"/>.</summary>
         public static bool TryGetWeaponTag(GameObject go, out string tag)
@@ -217,6 +250,13 @@ namespace TitanOrbit.Data
                 || id.IndexOf("rail", StringComparison.Ordinal) >= 0)
                 return ShipFamilyPartTypes.WeaponSniper;
 
+            // GalacticLeopard Turret_Dual / Turret_Quad are named "Turret_*" but
+            // designers treat them as cannon / missile, not rapid guns.
+            if (id.IndexOf("quad", StringComparison.Ordinal) >= 0)
+                return ShipFamilyPartTypes.WeaponMissile;
+            if (id.IndexOf("dual", StringComparison.Ordinal) >= 0)
+                return ShipFamilyPartTypes.WeaponCannon;
+
             if (id.IndexOf("missile", StringComparison.Ordinal) >= 0
                 || id.IndexOf("launcher", StringComparison.Ordinal) >= 0
                 || id.IndexOf("rocket", StringComparison.Ordinal) >= 0)
@@ -266,13 +306,17 @@ namespace TitanOrbit.Data
             return false;
         }
 
-        static bool IsLegacyNamedWeapon(Transform t)
+        /// <summary>True when the object name is a MEGA turret / gun / launcher (not a folder).</summary>
+        public static bool IsNamedWeapon(Transform t)
         {
             if (t == null)
                 return false;
 
             string name = t.name;
             if (string.IsNullOrEmpty(name))
+                return false;
+
+            if (IsWeaponGroupFolder(name))
                 return false;
 
             if (ContainsIgnoreCase(name, "TurretBase"))

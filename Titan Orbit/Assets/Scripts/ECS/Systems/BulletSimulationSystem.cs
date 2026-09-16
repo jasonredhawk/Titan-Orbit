@@ -531,6 +531,11 @@ namespace TitanOrbit.ECS
             if (!ownerMayFire)
                 return;
 
+            var gunners = state.EntityManager.HasBuffer<MegaShipGunnerSlotElement>(mega)
+                ? state.EntityManager.GetBuffer<MegaShipGunnerSlotElement>(mega)
+                : default;
+            ShipWeaponKind.RestoreMountKindsFromGhostedSlots(mounts, gunners);
+
             if (!ShipWeaponFireLogic.TryPlanMegaFire(
                     shipState.CurrentEnergy,
                     mounts,
@@ -558,6 +563,8 @@ namespace TitanOrbit.ECS
                     continue;
 
                 var mount = mounts[m];
+                if (ShipWeaponKind.IsCannonLaser(mount, gunners, m))
+                    continue;
                 int mountBank = mount.BulletBankIndex >= 0 ? mount.BulletBankIndex : fallbackBankIndex;
                 float categoryUpgradeScale = vfxBankForScale != null
                     ? vfxBankForScale.GetCategoryUpgradeVisualScaleMultiplier(mountBank)

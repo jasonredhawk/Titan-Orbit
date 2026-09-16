@@ -280,7 +280,9 @@ namespace TitanOrbit.ECS
                 if (row == null)
                     usedTypeTableFallback = true;
 
-                WriteMountCombat(catalog, em, shipEntity, mounts, w, row, raw, partType);
+                WriteMountCombat(
+                    catalog, em, shipEntity, mounts, w, row, raw, partType,
+                    MegaShipPartClassifier.GetPrefabAssetName(t));
                 w++;
             }
 
@@ -334,7 +336,8 @@ namespace TitanOrbit.ECS
             int mountIndex,
             MegaShipComponentEntry row,
             in MegaShipPartStats raw,
-            string partType)
+            string partType,
+            string instanceName = null)
         {
             // Unique-row firePower stays raw (0 = authored unarmed). Type-table fallback
             // uses the resolved type numbers so dedicated barrels are never mute.
@@ -353,6 +356,11 @@ namespace TitanOrbit.ECS
             mount.BulletBankIndex = row != null
                 ? catalog.ResolveWeaponBankIndex(row)
                 : catalog.GetTypeTableBankIndex(partType);
+            mount.WeaponKind = ShipWeaponKind.Resolve(
+                row,
+                partType,
+                row != null ? row.displayName : null,
+                instanceName);
             mounts[mountIndex] = mount;
             if (em.HasBuffer<MegaShipGunnerSlotElement>(shipEntity))
             {
@@ -363,6 +371,12 @@ namespace TitanOrbit.ECS
                 if (mountIndex < 0 || mountIndex >= gunners.Length
                     || !MegaShipWeaponAim.IsTrackingAim(gunners[mountIndex]))
                     MegaShipWeaponAim.WriteGhostedYaw(gunners, mountIndex, mount);
+                else if (mountIndex >= 0 && mountIndex < gunners.Length && mount.WeaponKind != 0)
+                {
+                    var slot = gunners[mountIndex];
+                    slot.WeaponKind = mount.WeaponKind;
+                    gunners[mountIndex] = slot;
+                }
             }
         }
 
@@ -499,6 +513,9 @@ namespace TitanOrbit.ECS
                     AimWorldX = 0f,
                     AimWorldZ = 0f,
                     TargetGhostId = 0,
+                    WeaponKind = mounts.IsCreated && i < mounts.Length
+                        ? mounts[i].WeaponKind
+                        : (byte)0,
                 });
             }
         }

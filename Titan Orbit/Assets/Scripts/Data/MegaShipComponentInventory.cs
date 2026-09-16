@@ -21,6 +21,13 @@ namespace TitanOrbit.Data
         public bool isWeapon;
 
         /// <summary>
+        /// Hitscan cannon laser instead of a projectile. Independent of
+        /// <see cref="partType"/> — check this on any unique weapon to burn a beam.
+        /// </summary>
+        [Tooltip("Hitscan laser (no bullet). Unchecked weapons fire their normal projectile / missile / sniper.")]
+        public bool isLaser;
+
+        /// <summary>
         /// BulletVfxBank category this weapon fires. -1 inherits the catalog type-table
         /// bank for <see cref="partType"/> (guns / cannons / missiles / snipers).
         /// </summary>
@@ -61,15 +68,26 @@ namespace TitanOrbit.Data
 
             var previous = new Dictionary<string, MegaShipPartStats>(StringComparer.OrdinalIgnoreCase);
             var previousBanks = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-            if (keepManualStats && catalog.uniqueComponents != null)
+            var previousLaser = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+            var previousWeapons = new Dictionary<string, MegaShipComponentEntry>(StringComparer.OrdinalIgnoreCase);
+            if (catalog.uniqueComponents != null)
             {
                 for (int i = 0; i < catalog.uniqueComponents.Count; i++)
                 {
                     var old = catalog.uniqueComponents[i];
                     if (old == null || string.IsNullOrEmpty(old.displayName))
                         continue;
-                    previous[old.displayName] = old.stats;
-                    previousBanks[old.displayName] = old.bulletPrefabIndex;
+                    if (keepManualStats)
+                    {
+                        previous[old.displayName] = old.stats;
+                        previousBanks[old.displayName] = old.bulletPrefabIndex;
+                    }
+
+                    previousLaser[old.displayName] = old.isLaser;
+
+                    // Reset/refresh must not drop guns just because tags are missing.
+                    if (old.isWeapon || ShipFamilyPartTypes.IsWeapon(old.partType))
+                        previousWeapons[old.displayName] = old;
                 }
             }
 
@@ -93,7 +111,29 @@ namespace TitanOrbit.Data
                     row.stats = kept;
                 if (keepManualStats && previousBanks.TryGetValue(row.displayName, out int keptBank))
                     row.bulletPrefabIndex = keptBank;
+                if (previousLaser.TryGetValue(row.displayName, out bool keptLaser))
+                    row.isLaser = keptLaser;
                 next.Add(row);
+            }
+
+            if (previousWeapons.Count > 0)
+            {
+                for (int i = 0; i < next.Count; i++)
+                {
+                    MegaShipComponentEntry row = next[i];
+                    if (row != null && !string.IsNullOrEmpty(row.displayName))
+                        previousWeapons.Remove(row.displayName);
+                }
+
+                foreach (var leftover in previousWeapons)
+                {
+                    MegaShipComponentEntry kept = leftover.Value;
+                    if (kept == null)
+                        continue;
+                    if (!keepManualStats && catalog != null)
+                        kept.stats = catalog.GetStatsForPartType(kept.partType);
+                    next.Add(kept);
+                }
             }
 
             next.Sort(CompareUnique);
@@ -254,6 +294,7 @@ namespace TitanOrbit.Data
                     displayName = id,
                     partType = partType,
                     isWeapon = isWeapon,
+                    isLaser = ShipFamilyPartTypes.IsWeaponCannonProfile(partType),
                     bulletPrefabIndex = MegaShipCatalog.InheritTypeTableBankIndex,
                     stats = catalog != null
                         ? catalog.GetStatsForPartType(partType)
@@ -274,7 +315,7 @@ namespace TitanOrbit.Data
             if (t == null || t == root)
                 return false;
 
-            if (MegaShipPartClassifier.IsTaggedWeapon(t))
+            if (MegaShipPartClassifier.IsWeaponAssemblyRoot(t, root))
             {
                 partType = MegaShipPartClassifier.ResolvePartType(t);
                 isWeapon = true;

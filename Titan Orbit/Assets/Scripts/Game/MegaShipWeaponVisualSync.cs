@@ -20,6 +20,7 @@ namespace TitanOrbit.Game
         struct Entry
         {
             public int GhostId;
+            public Entity Entity;
             public Vector3 DisplayPos;
         }
 
@@ -44,9 +45,28 @@ namespace TitanOrbit.Game
                 Entries.Add(new Entry
                 {
                     GhostId = ghostId,
+                    Entity = kv.Key,
                     DisplayPos = kv.Value.transform.position,
                 });
             }
+        }
+
+        /// <summary>Ghost entity for a live hybrid proxy, if this id was rebuilt this frame.</summary>
+        public static bool TryGetEntity(int ghostId, out Entity entity)
+        {
+            entity = Entity.Null;
+            if (ghostId == 0)
+                return false;
+
+            for (int i = 0; i < Entries.Count; i++)
+            {
+                if (Entries[i].GhostId != ghostId)
+                    continue;
+                entity = Entries[i].Entity;
+                return entity != Entity.Null;
+            }
+
+            return false;
         }
 
         /// <summary>Display position of a ghost id, tiled near <paramref name="reference"/>.</summary>
@@ -299,12 +319,27 @@ namespace TitanOrbit.Game
     [DefaultExecutionOrder(67020)]
     public sealed class MegaShipWeaponVisualBinding : MonoBehaviour
     {
+        /// <summary>Live hybrid MEGA turret bindings for cannon-laser beams.</summary>
+        public static readonly List<MegaShipWeaponVisualBinding> Live =
+            new List<MegaShipWeaponVisualBinding>(8);
+
         public Transform[] YawRoots;
         public Transform[] Barrels;
         public Vector3[] RestBarrelLocalFwd;
         public Entity ShipEntity;
         float[] _heldWorldYawDeg;
         float[] _heldWorldYawTime;
+
+        void OnEnable()
+        {
+            if (!Live.Contains(this))
+                Live.Add(this);
+        }
+
+        void OnDisable()
+        {
+            Live.Remove(this);
+        }
 
         static readonly List<Transform> JointScratch = new List<Transform>(16);
 
