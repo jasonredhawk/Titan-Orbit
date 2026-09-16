@@ -209,7 +209,8 @@ namespace TitanOrbit.UI
                 IsMainMenuShowing() ||
                 MoonOrbitClientState.IsOrbitMenuVisible ||
                 HUDController.LocalPlayerDeathHidesHud ||
-                HUDController.MinimapExpandedObscuresHud)
+                HUDController.MinimapExpandedObscuresHud ||
+                HUDController.CommsMatrixObscuresHud)
             {
                 SetVisible(false);
                 return;

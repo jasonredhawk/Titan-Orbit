@@ -1520,7 +1520,7 @@ namespace TitanOrbit.UI
                         !ship.AwaitingTeamSelection &&
                         ship.Team != TeamId.None &&
                         !ClientTeamFlowState.ShouldSuppressLocalPlayerControl();
-            if (HUDController.ShipUpgradeTreeObscuresHud || HUDController.MinimapExpandedObscuresHud)
+            if (HUDController.GameplayChromeObscured)
                 show = false;
 
             // --- Visibility and layout refresh ---

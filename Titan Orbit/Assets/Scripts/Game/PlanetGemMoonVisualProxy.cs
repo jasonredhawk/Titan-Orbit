@@ -38,6 +38,8 @@ namespace TitanOrbit.Game
 
         public bool IsHome => _isHome;
 
+        public TeamId Team => _team;
+
         /// <summary>
         /// Moon body radius in moon-root local space. Planet roots are unit-scale, so this
         /// equals <see cref="MoonBodyRadiusWorld"/> (no inherited planet scale).

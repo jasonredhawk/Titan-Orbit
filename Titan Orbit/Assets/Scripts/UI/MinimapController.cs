@@ -102,6 +102,22 @@ namespace TitanOrbit.UI
 
         Transform _commsDockRestoreParent;
         int _commsDockRestoreSibling;
+        RectTransform _commsPingRt;
+        static readonly Color CommsPingColor = new Color(0.35f, 0.72f, 0.95f, 0.95f);
+        const float CommsPingSize = 16f;
+        const int MaxCommsMapLines = 24;
+        static readonly Vector3[] s_CommsFrom = new Vector3[MaxCommsMapLines];
+        static readonly Vector3[] s_CommsTo = new Vector3[MaxCommsMapLines];
+        static readonly Color[] s_CommsColors = new Color[MaxCommsMapLines];
+        static readonly int[] s_CommsRanks = new int[MaxCommsMapLines];
+
+        struct CommsMapLine
+        {
+            public Image Outline;
+            public Image Core;
+        }
+
+        readonly List<CommsMapLine> _commsPathLines = new List<CommsMapLine>(8);
 
         /// <summary>Unscaled time of the last respawn RPC so a double-click cannot spam the server.</summary>
         float _lastRespawnRequestTime = -10f;
@@ -529,7 +545,7 @@ namespace TitanOrbit.UI
         /// Reparents this map into the comms card as a smaller full-map view so the
         /// player can ping a world point. Does not hide gameplay HUD.
         /// </summary>
-        public void AttachToCommsDock(RectTransform host)
+        public void AttachToCommsDock(RectTransform host, float size = 0f)
         {
             if (host == null || minimapRect == null || _commsDocked)
                 return;
@@ -541,10 +557,14 @@ namespace TitanOrbit.UI
             _commsDockRestoreParent = minimapRect.parent;
             _commsDockRestoreSibling = minimapRect.GetSiblingIndex();
 
-            // Center + explicit sizeDelta — stretch anchors zero sizeDelta, and Update()
-            // used to copy that into displaySize so every blip collapsed to the origin.
-            float size = ResolveLaidOutSquareSize(host);
+            // Caller size wins. Do not trust host.rect.width this frame — the dock
+            // was just enabled and the laid-out rect is still the HUD circle.
+            if (size < 8f)
+                size = Mathf.Max(host.sizeDelta.x, host.rect.width);
+            size = Mathf.Max(80f, size);
+
             minimapRect.SetParent(host, false);
+            minimapRect.localScale = Vector3.one;
             minimapRect.anchorMin = new Vector2(0.5f, 0.5f);
             minimapRect.anchorMax = new Vector2(0.5f, 0.5f);
             minimapRect.pivot = new Vector2(0.5f, 0.5f);
@@ -592,7 +612,188 @@ namespace TitanOrbit.UI
             if (expandButton != null)
                 expandButton.gameObject.SetActive(true);
 
+            HideCommsPingMarker();
             CollapseMinimap();
+        }
+
+        /// <summary>
+        /// Cyan bullseye on the docked comms map at the pending Here ping.
+        /// One Image, reused — hide when the ping is cleared or comms closes.
+        /// </summary>
+        void EnsureCommsPingMarker()
+        {
+            if (_commsPingRt != null || minimapContent == null)
+                return;
+
+            var go = new GameObject("CommsPing");
+            go.transform.SetParent(minimapContent, false);
+            var img = go.AddComponent<Image>();
+            img.raycastTarget = false;
+            img.sprite = CreateBullseyeSprite(false, 32);
+            img.color = CommsPingColor;
+
+            _commsPingRt = go.GetComponent<RectTransform>();
+            _commsPingRt.sizeDelta = new Vector2(CommsPingSize, CommsPingSize);
+            _commsPingRt.anchorMin = new Vector2(0.5f, 0.5f);
+            _commsPingRt.anchorMax = new Vector2(0.5f, 0.5f);
+            _commsPingRt.pivot = new Vector2(0.5f, 0.5f);
+            go.SetActive(false);
+        }
+
+        void UpdateCommsPingMarker(Vector3 playerPos)
+        {
+            if (!_commsDocked || !ShipCommsClientState.HasPendingWaypoint || minimapRadius < 0.01f)
+            {
+                HideCommsPingMarker();
+                return;
+            }
+
+            EnsureCommsPingMarker();
+            if (_commsPingRt == null)
+                return;
+
+            GetToroidalDelta(playerPos, ShipCommsClientState.PendingWaypoint, out float dx, out float dz);
+            float normX = dx / minimapRadius;
+            float normZ = dz / minimapRadius;
+            _commsPingRt.anchoredPosition = new Vector2(
+                normX * displaySize * 0.5f,
+                normZ * displaySize * 0.5f);
+
+            if (!_commsPingRt.gameObject.activeSelf)
+            {
+                _commsPingRt.gameObject.SetActive(true);
+                _commsPingRt.SetAsLastSibling();
+            }
+
+            float pulse = 1f + 0.12f * Mathf.Sin(Time.unscaledTime * 8f);
+            _commsPingRt.localScale = new Vector3(pulse, pulse, 1f);
+        }
+
+        void HideCommsPingMarker()
+        {
+            if (_commsPingRt != null && _commsPingRt.gameObject.activeSelf)
+                _commsPingRt.gameObject.SetActive(false);
+        }
+
+        /// <summary>
+        /// Projects live world comms lines onto the map (HUD circle and comms dock).
+        /// Uses shortest-path offsets so a wrap does not stretch across the disc.
+        /// </summary>
+        void UpdateCommsPathLines(Vector3 playerPos)
+        {
+            if (minimapContent == null || displaySize < 8f || minimapRadius < 0.01f)
+            {
+                HideCommsPathLines();
+                return;
+            }
+
+            int count = ShipCommsBubblePresenter.CopyLivePathSegments(
+                s_CommsFrom, s_CommsTo, s_CommsColors, s_CommsRanks, MaxCommsMapLines);
+            if (count <= 0)
+            {
+                HideCommsPathLines();
+                return;
+            }
+
+            float half = displaySize * 0.5f;
+            float invR = 1f / minimapRadius;
+            for (int i = 0; i < count; i++)
+            {
+                CommsMapLine line = EnsureCommsPathLine(i);
+                GetToroidalDelta(playerPos, s_CommsFrom[i], out float fx, out float fz);
+                GetToroidalDelta(s_CommsFrom[i], s_CommsTo[i], out float ox, out float oz);
+                Vector2 a = new Vector2(fx * invR * half, fz * invR * half);
+                Vector2 b = new Vector2((fx + ox) * invR * half, (fz + oz) * invR * half);
+                Vector2 delta = b - a;
+                float len = delta.magnitude;
+                if (len < 1.5f)
+                {
+                    HideCommsMapLine(line);
+                    continue;
+                }
+
+                ShipCommsCalloutGraphics.ResolveLineStrokeForRank(
+                    s_CommsRanks[i], forMinimap: true,
+                    out float corePx, out float outlinePx, out Color outlineColor);
+
+                Vector2 mid = (a + b) * 0.5f;
+                float angle = Mathf.Atan2(delta.y, delta.x) * Mathf.Rad2Deg;
+                Color core = s_CommsColors[i];
+                core.a = 0.92f;
+                if (outlinePx > corePx && line.Outline != null)
+                    PlaceCommsMapStroke(line.Outline, mid, len, outlinePx, angle, outlineColor, asLast: false);
+                else if (line.Outline != null && line.Outline.gameObject.activeSelf)
+                    line.Outline.gameObject.SetActive(false);
+                PlaceCommsMapStroke(line.Core, mid, len, corePx, angle, core, asLast: true);
+                if (line.Outline != null && line.Outline.gameObject.activeSelf && line.Core != null)
+                    line.Outline.transform.SetSiblingIndex(line.Core.transform.GetSiblingIndex());
+            }
+
+            for (int i = count; i < _commsPathLines.Count; i++)
+                HideCommsMapLine(_commsPathLines[i]);
+        }
+
+        CommsMapLine EnsureCommsPathLine(int index)
+        {
+            while (_commsPathLines.Count <= index)
+            {
+                _commsPathLines.Add(new CommsMapLine
+                {
+                    Outline = CreateCommsMapStroke("CommsPathOutline"),
+                    Core = CreateCommsMapStroke("CommsPathLine"),
+                });
+            }
+
+            return _commsPathLines[index];
+        }
+
+        Image CreateCommsMapStroke(string name)
+        {
+            var go = new GameObject(name);
+            go.transform.SetParent(minimapContent, false);
+            var img = go.AddComponent<Image>();
+            img.raycastTarget = false;
+            img.sprite = GetOrCreateWhiteUiSprite();
+            img.type = Image.Type.Simple;
+            img.color = Color.white;
+            var rt = go.GetComponent<RectTransform>();
+            rt.anchorMin = new Vector2(0.5f, 0.5f);
+            rt.anchorMax = new Vector2(0.5f, 0.5f);
+            rt.pivot = new Vector2(0.5f, 0.5f);
+            rt.sizeDelta = new Vector2(8f, 2f);
+            go.SetActive(false);
+            return img;
+        }
+
+        static void PlaceCommsMapStroke(
+            Image img, Vector2 mid, float length, float thickness, float angle, Color color, bool asLast)
+        {
+            if (img == null)
+                return;
+            RectTransform rt = img.rectTransform;
+            rt.anchoredPosition = mid;
+            rt.sizeDelta = new Vector2(length, Mathf.Max(1.6f, thickness));
+            rt.localRotation = Quaternion.Euler(0f, 0f, angle);
+            color.a = 1f;
+            img.color = color;
+            if (!img.gameObject.activeSelf)
+                img.gameObject.SetActive(true);
+            if (asLast)
+                rt.SetAsLastSibling();
+        }
+
+        static void HideCommsMapLine(CommsMapLine line)
+        {
+            if (line.Outline != null && line.Outline.gameObject.activeSelf)
+                line.Outline.gameObject.SetActive(false);
+            if (line.Core != null && line.Core.gameObject.activeSelf)
+                line.Core.gameObject.SetActive(false);
+        }
+
+        void HideCommsPathLines()
+        {
+            for (int i = 0; i < _commsPathLines.Count; i++)
+                HideCommsMapLine(_commsPathLines[i]);
         }
 
         /// <summary>
@@ -629,12 +830,10 @@ namespace TitanOrbit.UI
                 return 80f;
 
             float laidOut = rt.rect.width;
-            if (laidOut >= 8f)
-                return laidOut;
-
             float delta = rt.sizeDelta.x;
-            if (delta >= 8f)
-                return delta;
+            float best = Mathf.Max(laidOut, delta);
+            if (best >= 8f)
+                return best;
 
             return 80f;
         }
@@ -2258,7 +2457,10 @@ namespace TitanOrbit.UI
                         if (_commsDocked)
                         {
                             if (TryMinimapLocalToWorld(centerRelativePoint, out Vector3 world))
+                            {
                                 ShipCommsClientState.SetPendingWaypoint(world);
+                                UpdateCommsPingMarker(PlayerPosition);
+                            }
                             return;
                         }
                         
@@ -2693,6 +2895,8 @@ namespace TitanOrbit.UI
 
             // Position after all EnsureBlip calls so new blips never flash at center (0,0) for a frame.
             UpdateBlipPositions(playerPos, worldToMinimapScale);
+            UpdateCommsPingMarker(playerPos);
+            UpdateCommsPathLines(playerPos);
 
             RebuildLastFrameAsteroidInstanceIds();
             UpdateDeadAsteroidGhosts(playerPos);

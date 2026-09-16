@@ -201,6 +201,9 @@ namespace TitanOrbit.Game
         /// <summary>Asteroid proxy keys only — DetectAsteroidGemBursts must not walk ships/planets/gems.</summary>
         readonly HashSet<Entity> _asteroidProxyEntities = new HashSet<Entity>();
 
+        /// <summary>Gem proxy keys — comms "Gems" walks this, never asteroids.</summary>
+        readonly HashSet<Entity> _gemProxyEntities = new HashSet<Entity>();
+
         /// <summary>Ship proxy keys — pose sync walks this instead of a per-frame ship gather.</summary>
         readonly HashSet<Entity> _shipProxyEntities = new HashSet<Entity>();
 
@@ -395,6 +398,7 @@ namespace TitanOrbit.Game
             _proxies.Clear();
             _proxyKinds.Clear();
             _asteroidProxyEntities.Clear();
+            _gemProxyEntities.Clear();
             _asteroidBurstFired.Clear();
             _asteroidLastKnown.Clear();
             _proxyGemBonusTint.Clear();
@@ -789,6 +793,25 @@ namespace TitanOrbit.Game
             TeamId teamFilter,
             bool homeOnly,
             out int planetId,
+            out Vector3 worldPos,
+            TeamId excludeTeam = TeamId.None,
+            bool allowFallback = true)
+        {
+            if (TryFindClosestPlanetFiltered(
+                    aim, teamFilter, homeOnly, excludeTeam, out planetId, out worldPos))
+                return true;
+            if (allowFallback && teamFilter != TeamId.None && excludeTeam == TeamId.None)
+                return TryFindClosestPlanetFiltered(
+                    aim, TeamId.None, homeOnly, excludeTeam, out planetId, out worldPos);
+            return false;
+        }
+
+        bool TryFindClosestPlanetFiltered(
+            Vector3 aim,
+            TeamId teamFilter,
+            bool homeOnly,
+            TeamId excludeTeam,
+            out int planetId,
             out Vector3 worldPos)
         {
             planetId = 0;
@@ -801,6 +824,8 @@ namespace TitanOrbit.Game
                 if (homeOnly && !kv.Value.IsHome)
                     continue;
                 if (teamFilter != TeamId.None && kv.Value.Team != teamFilter)
+                    continue;
+                if (excludeTeam != TeamId.None && kv.Value.Team == excludeTeam)
                     continue;
                 if (kv.Value.PlanetId == 0)
                     continue;
@@ -844,22 +869,62 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
+        /// Collider-scale planet radius from the visual-body child. Dictionary walk only.
+        /// </summary>
+        public bool TryGetPlanetColliderRadius(int planetId, out float radius)
+        {
+            radius = 0f;
+            if (planetId == 0)
+                return false;
+
+            foreach (var kv in _proxyPlanetVisuals)
+            {
+                if (kv.Value.PlanetId != planetId)
+                    continue;
+                if (!_proxies.TryGetValue(kv.Key, out GameObject go) || go == null)
+                    continue;
+
+                float scale = 1f;
+                if (PlanetVisualBody.TryGet(go.transform, out Transform body) && body != null)
+                    scale = Mathf.Max(0.25f, body.localScale.x);
+                radius = BodyCollisionMath.GetPlanetBodyRadiusWorld(scale);
+                return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>
         /// Closest live asteroid proxy to <paramref name="aim"/> on the torus.
-        /// Optional territory filter (Orange Asteroid); falls back to any rock if none match.
+        /// Optional territory filter (Red / Orange Asteroid) uses live ownership, not the
+        /// viewer-biased tint cache. <paramref name="allowFallback"/> may widen to any rock
+        /// when the filter misses — callers that named a color should pass false.
         /// Map size from <see cref="ToroidalMap"/>.
         /// </summary>
         public bool TryFindClosestAsteroid(Vector3 aim, TeamId territoryFilter, out Vector3 worldPos)
         {
-            if (TryFindClosestAsteroidFiltered(aim, territoryFilter, out worldPos))
+            return TryFindClosestAsteroid(aim, territoryFilter, out worldPos, out _);
+        }
+
+        /// <summary>
+        /// Closest live asteroid plus collider-scale radius from proxy scale.
+        /// </summary>
+        public bool TryFindClosestAsteroid(
+            Vector3 aim, TeamId territoryFilter, out Vector3 worldPos, out float radius,
+            TeamId excludeTeam = TeamId.None, bool allowFallback = true)
+        {
+            if (TryFindClosestAsteroidFiltered(aim, territoryFilter, excludeTeam, out worldPos, out radius))
                 return true;
-            if (territoryFilter != TeamId.None)
-                return TryFindClosestAsteroidFiltered(aim, TeamId.None, out worldPos);
+            if (allowFallback && territoryFilter != TeamId.None && excludeTeam == TeamId.None)
+                return TryFindClosestAsteroidFiltered(aim, TeamId.None, excludeTeam, out worldPos, out radius);
             return false;
         }
 
-        bool TryFindClosestAsteroidFiltered(Vector3 aim, TeamId territoryFilter, out Vector3 worldPos)
+        bool TryFindClosestAsteroidFiltered(
+            Vector3 aim, TeamId territoryFilter, TeamId excludeTeam, out Vector3 worldPos, out float radius)
         {
             worldPos = default;
+            radius = 0f;
             float best = float.MaxValue;
             bool found = false;
 
@@ -867,10 +932,21 @@ namespace TitanOrbit.Game
             {
                 if (!_proxies.TryGetValue(entity, out GameObject go) || go == null)
                     continue;
-                if (territoryFilter != TeamId.None
-                    && _proxyAsteroidTerritory.TryGetValue(entity, out TeamId territory)
-                    && territory != territoryFilter)
-                    continue;
+                if (territoryFilter != TeamId.None || excludeTeam != TeamId.None)
+                {
+                    // Live PIT ownership — the tint cache prefers the viewer's team on
+                    // overlap and may still be empty (budgeted). "Red Asteroid" must
+                    // match Red territory, not the nearest painted rock.
+                    Vector3 wrapped = ToroidalMap.WrapPosition(go.transform.position);
+                    PlanetConnectionPresentationTriangles.GetOwnershipAtPosition(
+                        new float3(wrapped.x, 0f, wrapped.z), out byte mask, out _);
+                    if (territoryFilter != TeamId.None
+                        && !PlanetConnectionGraphLogic.TeamMaskContains(mask, territoryFilter))
+                        continue;
+                    if (excludeTeam != TeamId.None
+                        && PlanetConnectionGraphLogic.TeamMaskContains(mask, excludeTeam))
+                        continue;
+                }
 
                 float d = ToroidalMap.ToroidalDistance(aim, go.transform.position);
                 if (d >= best)
@@ -878,6 +954,43 @@ namespace TitanOrbit.Game
 
                 best = d;
                 worldPos = go.transform.position;
+                radius = BodyCollisionMath.GetAsteroidBodyRadiusWorld(
+                    Mathf.Max(0.1f, go.transform.lossyScale.x));
+                found = true;
+            }
+
+            return found;
+        }
+
+        /// <summary>
+        /// Closest live gem proxy to <paramref name="aim"/> on the torus.
+        /// Never returns an asteroid. <paramref name="maxRange"/> ≤ 0 is unbounded.
+        /// Map size from <see cref="ToroidalMap"/>.
+        /// </summary>
+        public bool TryFindClosestGem(
+            Vector3 aim, float maxRange, out Vector3 worldPos, out float radius)
+        {
+            worldPos = default;
+            radius = 0f;
+            float best = float.MaxValue;
+            bool found = false;
+            float cap = maxRange > 0f ? maxRange : float.MaxValue;
+
+            foreach (Entity entity in _gemProxyEntities)
+            {
+                if (!_proxies.TryGetValue(entity, out GameObject go) || go == null || !go.activeInHierarchy)
+                    continue;
+
+                float d = ToroidalMap.ToroidalDistance(aim, go.transform.position);
+                if (d >= best || d > cap)
+                    continue;
+
+                best = d;
+                worldPos = go.transform.position;
+                if (GemVisualDiameterRegistry.TryGetDiameter(entity, out float diameter) && diameter > 0.05f)
+                    radius = diameter * 0.5f;
+                else
+                    radius = Mathf.Max(0.12f, go.transform.lossyScale.x * 0.5f);
                 found = true;
             }
 
@@ -1785,6 +1898,8 @@ namespace TitanOrbit.Game
                 UnregisterProxyKindCounts(prev);
                 if (prev == ProxyVisualKind.Asteroid)
                     _asteroidProxyEntities.Remove(entity);
+                else if (prev == ProxyVisualKind.Gem)
+                    _gemProxyEntities.Remove(entity);
                 else if (prev == ProxyVisualKind.Ship)
                     _shipProxyEntities.Remove(entity);
             }
@@ -1792,6 +1907,8 @@ namespace TitanOrbit.Game
             _proxyKinds[entity] = kind;
             if (kind == ProxyVisualKind.Asteroid)
                 _asteroidProxyEntities.Add(entity);
+            else if (kind == ProxyVisualKind.Gem)
+                _gemProxyEntities.Add(entity);
             else if (kind == ProxyVisualKind.Ship)
                 _shipProxyEntities.Add(entity);
 
@@ -3096,6 +3213,7 @@ namespace TitanOrbit.Game
                 }
 
                 _asteroidProxyEntities.Remove(entity);
+                _gemProxyEntities.Remove(entity);
                 _shipProxyEntities.Remove(entity);
                 _proxies.Remove(entity);
                 _proxyNetworkIds.Remove(entity);

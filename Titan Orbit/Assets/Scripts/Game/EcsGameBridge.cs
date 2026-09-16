@@ -496,34 +496,27 @@ namespace TitanOrbit.Game
         public static bool TryGetLocalShipAttributeUpgrades(out ShipAttributeUpgradeState attributes)
         {
             attributes = default;
+
+            // --- Cached / seeded local hull (no extra CreateEntityQuery) ---
+            // [TITAN-ORBIT] ShipAttributeUpgradeHUD called this every Update + LateUpdate.
+            // A fresh tagged query here was ~dozens of KB GC on top of the frame-cached
+            // LocalPlayerShipTag resolve already used by TryGetLocalShipState.
+            if (TryGetCachedLocalPlayerShipEntity(out var em, out var shipEntity))
+            {
+                if (!em.HasComponent<ShipAttributeUpgradeState>(shipEntity))
+                    return true;
+                attributes = em.GetComponentData<ShipAttributeUpgradeState>(shipEntity);
+                return true;
+            }
+
+            if (ClientJoinSettleCache.ShouldSkipShipEntityQueries)
+                return false;
+
             var world = GetLocalPlayerShipWorld();
             if (world == null || !world.IsCreated)
                 return false;
 
-            var em = world.EntityManager;
-
-            // --- Instantiates / post–TeamChoice hold: no tagged CalculateEntityCount ---
-            // [TITAN-ORBIT] Same Crash!!! window as TryGetCachedLocalPlayerShipEntity (2026-07-30).
-            if (ClientJoinSettleCache.ShouldSkipShipEntityQueries)
-                return false;
-
-            // --- Tiny tagged lookup first (safe after Instantiates idle) ---
-            // [TITAN-ORBIT] TryGetLocalShipEntity scans all ships and is gated off during Instantiates
-            // (asteroid destroy → gem ghosts). Without this path, ShipAttributeUpgradeHUD set attrs
-            // to default and flashed empty tick marks every burst.
-            using (var tagged = em.CreateEntityQuery(typeof(LocalPlayerShipTag), typeof(ShipTag)))
-            {
-                if (tagged.CalculateEntityCount() == 1)
-                {
-                    var shipEntity = tagged.GetSingletonEntity();
-                    if (!em.HasComponent<ShipAttributeUpgradeState>(shipEntity))
-                        return true;
-                    attributes = em.GetComponentData<ShipAttributeUpgradeState>(shipEntity);
-                    return true;
-                }
-            }
-
-            // --- Broader resolve (skipped during Settling / GhostSpawnBacklog — Crash!!! risk) ---
+            em = world.EntityManager;
             if (!TryGetLocalShipEntity(em, out var resolvedShip))
                 return false;
 

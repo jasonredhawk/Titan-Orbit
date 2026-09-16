@@ -209,6 +209,16 @@ namespace TitanOrbit.Core
         }
 
         /// <summary>
+        /// Forgets the last play-plane aim so the next send resolves from the speaker hull.
+        /// Recent-sentence reuse must not keep the previous rock / planet click.
+        /// </summary>
+        public static void ClearLastPlayAim()
+        {
+            s_HasLastPlayAim = false;
+            s_LastPlayAim = Vector3.zero;
+        }
+
+        /// <summary>
         /// Flips or sets the All / Team channel and writes PlayerPrefs so the next
         /// session (and the next hold-S) keep the same choice.
         /// </summary>

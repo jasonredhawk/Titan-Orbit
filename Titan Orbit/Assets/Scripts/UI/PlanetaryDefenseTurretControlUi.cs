@@ -145,7 +145,7 @@ namespace TitanOrbit.UI
 
             PlanetaryDefenseTurretClientState.SetControlling(false, Vector3.zero, false, 0f);
 
-            if (HUDController.MinimapExpandedObscuresHud)
+            if (HUDController.MinimapExpandedObscuresHud || HUDController.CommsMatrixObscuresHud)
             {
                 HideButton();
                 return;

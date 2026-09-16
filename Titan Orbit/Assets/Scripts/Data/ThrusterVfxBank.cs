@@ -35,7 +35,7 @@ namespace TitanOrbit.Data
         /// <summary>Soft folder (JetFlameSoftWhite + color variants).</summary>
         public const int SoftStyleIndex = 3;
 
-        /// <summary>Locked Soft starts on the authored white prefab, then the lifetime wells tint it.</summary>
+        /// <summary>Soft white fallback when no team Color1 variant is authored.</summary>
         public const string NeutralFlameColorName = "White";
 
         static readonly string[] StyleDisplayNames = { "Ribbon", "Default", "Heavy", "Soft" };

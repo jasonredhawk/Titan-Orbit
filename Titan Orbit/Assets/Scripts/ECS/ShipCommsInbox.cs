@@ -54,15 +54,15 @@ namespace TitanOrbit.ECS
             public float WaypointZ;
 
             /// <summary>
-            /// 0 = none, 1 = minimap ping, 2 = asteroid, 3 = planet.
-            /// Sender-resolved so every viewer draws the same pointer.
+            /// 0 = none, 1 = minimap ping, 2 = asteroid, 3 = planet, 4 = moon,
+            /// 5 = pad, 6 = turret, 7 = gem. Sender-resolved so every viewer draws the same pointer.
             /// </summary>
             public byte FocusKind;
 
             /// <summary>Closest ship locked by "You". 0 when unused.</summary>
             public int YouNetworkId;
 
-            /// <summary>Closest planet locked by "Orange Planet" / Base. 0 when unused.</summary>
+            /// <summary>Closest planet, or the parent planet of a locked moon. 0 when unused.</summary>
             public int PlanetId;
 
             /// <summary>1 when the sentence fans out to every teammate (Everyone / Team).</summary>
@@ -80,19 +80,19 @@ namespace TitanOrbit.ECS
             /// <summary>Fourth "Us" ship.</summary>
             public int Us3;
 
-            /// <summary>Frozen speaker XZ at send. Draw never follows the live hull.</summary>
+            /// <summary>Speaker XZ fallback if the live hull is gone.</summary>
             public float MeX;
 
-            /// <summary>Frozen speaker Z at send.</summary>
+            /// <summary>Speaker Z fallback if the live hull is gone.</summary>
             public float MeZ;
 
-            /// <summary>Frozen "You" XZ at send.</summary>
+            /// <summary>"You" XZ fallback if that hull is gone.</summary>
             public float YouX;
 
-            /// <summary>Frozen "You" Z at send.</summary>
+            /// <summary>"You" Z fallback if that hull is gone.</summary>
             public float YouZ;
 
-            /// <summary>How many frozen Us / Everyone seats are live (0–8).</summary>
+            /// <summary>How many Us / Everyone fallback seats are stored (0–8).</summary>
             public byte GroupCount;
 
             public float G0X; public float G0Z;
@@ -112,6 +112,10 @@ namespace TitanOrbit.ECS
             public const byte MapPing = 1;
             public const byte Asteroid = 2;
             public const byte Planet = 3;
+            public const byte Moon = 4;
+            public const byte Pad = 5;
+            public const byte Turret = 6;
+            public const byte Gem = 7;
         }
 
         /// <summary>Pending callouts. Capacity is not reserved — comms are rare.</summary>

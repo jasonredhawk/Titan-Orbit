@@ -824,8 +824,10 @@ namespace TitanOrbit.ECS
         public float WaypointZ;
 
         /// <summary>
-        /// 0 = none, 1 = minimap ping, 2 = asteroid, 3 = planet.
-        /// Coords live in <see cref="WaypointX"/> / <see cref="WaypointZ"/> when 1 or 2.
+        /// 0 = none, 1 = minimap ping, 2 = asteroid, 3 = planet, 4 = moon,
+        /// 5 = pad, 6 = turret, 7 = gem.
+        /// Coords live in <see cref="WaypointX"/> / <see cref="WaypointZ"/> when 1, 2, or 7.
+        /// Moon / planet / pad / turret also use <see cref="PlanetId"/>.
         /// </summary>
         public byte FocusKind;
 
@@ -907,7 +909,7 @@ namespace TitanOrbit.ECS
         /// <summary>World Z of the optional minimap ping.</summary>
         public float WaypointZ;
 
-        /// <summary>0 = none, 1 = minimap ping, 2 = asteroid, 3 = planet.</summary>
+        /// <summary>0 = none, 1 = ping, 2 = asteroid, 3 = planet, 4 = moon, 5 = pad, 6 = turret, 7 = gem.</summary>
         public byte FocusKind;
 
         /// <summary>Resolved "You" ship NetworkId. 0 when unused.</summary>

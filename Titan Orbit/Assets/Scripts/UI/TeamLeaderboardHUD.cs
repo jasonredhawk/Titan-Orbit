@@ -239,6 +239,7 @@ namespace TitanOrbit.UI
                 hide = true;
             if (hideWhenMinimapExpanded &&
                 (HUDController.MinimapExpandedObscuresHud ||
+                 HUDController.CommsMatrixObscuresHud ||
                  (_minimapController != null && _minimapController.IsExpanded)))
                 hide = true;
             // [TITAN-ORBIT] Same death hide as minimap / rockets — keep the explosion unobstructed.

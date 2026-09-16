@@ -216,6 +216,16 @@ namespace TitanOrbit.UI
         /// <summary>Min seconds between gem-only STATS chip rebuilds while grinding.</summary>
         const float CargoChipRepaintMinInterval = 0.4f;
 
+        /// <summary>
+        /// Cheap identity (no chassis string / part aggregate). When this is unchanged we skip
+        /// <see cref="TryResolveChipLiveContext"/> — that path allocated ~27KB every LateUpdate
+        /// (Profiler: ShipAttributeUpgradeHUD self GC).
+        /// </summary>
+        int _lastCheapIdentityKey = int.MinValue;
+
+        /// <summary>Last time we walked equipped gear for the chip snapshot key.</summary>
+        float _lastEquipmentPollTime = -999f;
+
         // --- STATS toggle (shows/hides chip row + hover tips) ---
         private RectTransform _statsToggleRect;
         private TextMeshProUGUI _statsToggleLabel;
@@ -349,7 +359,7 @@ namespace TitanOrbit.UI
                 return false;
             if (ship.IsDead || ship.AwaitingTeamSelection || ship.Team == TeamId.None)
                 return false;
-            if (HUDController.ShipUpgradeTreeObscuresHud || HUDController.MinimapExpandedObscuresHud)
+            if (HUDController.GameplayChromeObscured)
                 return false;
 
             return true;
@@ -807,6 +817,7 @@ namespace TitanOrbit.UI
             {
                 // Turning STATS back on — force one chip rebuild on the next Update.
                 _statsSnapshotKey = int.MinValue;
+                _lastCheapIdentityKey = int.MinValue;
             }
 
             if (_uiBuilt)
@@ -1236,6 +1247,44 @@ namespace TitanOrbit.UI
                 h = h * 31 + megaCatalogKey;
                 // Orbit Menu gear — buying a cockpit must rebuild chips even when level/attrs stay put.
                 h = h * 31 + equipmentHash;
+                return h;
+            }
+        }
+
+        /// <summary>
+        /// Identity that can be hashed without chassis strings or equipment buffer walks.
+        /// Used to skip <see cref="TryResolveChipLiveContext"/> on unchanged frames.
+        /// </summary>
+        static int ComputeCheapChipIdentityKey(
+            in ShipState ship,
+            in ShipAttributeUpgradeState attrs,
+            float componentSize,
+            int gemBucket,
+            int bankKey,
+            int megaCatalogKey)
+        {
+            unchecked
+            {
+                int h = 17;
+                h = h * 31 + ship.ShipLevel;
+                h = h * 31 + (int)ship.Team;
+                h = h * 31 + ship.BranchIndex;
+                h = h * 31 + ship.ShipFamilyConfigIndex;
+                h = h * 31 + attrs.FirePower;
+                h = h * 31 + attrs.BulletSpeed;
+                h = h * 31 + attrs.MaxHealth;
+                h = h * 31 + attrs.HealthRegen;
+                h = h * 31 + attrs.EnergyCapacity;
+                h = h * 31 + attrs.EnergyRegen;
+                h = h * 31 + attrs.MovementSpeed;
+                h = h * 31 + attrs.RotationSpeed;
+                h = h * 31 + attrs.GemCapacity;
+                h = h * 31 + attrs.PeopleCapacity;
+                h = h * 31 + Mathf.RoundToInt(componentSize * 100f);
+                h = h * 31 + ship.CurrentPeople;
+                h = h * 31 + gemBucket;
+                h = h * 31 + bankKey;
+                h = h * 31 + megaCatalogKey;
                 return h;
             }
         }
@@ -2115,19 +2164,41 @@ namespace TitanOrbit.UI
             if (!statsChipsVisible)
                 return;
 
+            // --- Cheap dirty check (no chassis ToString / AggregateAndEvaluate) ---
+            // [TITAN-ORBIT] Profiler median frame: this LateUpdate self-allocated 27KB because
+            // TryResolveChipLiveContext ran every tick just to decide not to repaint.
+            int gemBucket = Mathf.RoundToInt(ship.CurrentGems);
+            TryGetLocalHullComponentSize(out float componentSize);
+            int megaKey = 0;
+            if (EcsGameBridge.TryGetLocalMegaShipState(out MegaShipState mega))
+                megaKey = mega.CatalogIndex + 1;
+            int cheapKey = ComputeCheapChipIdentityKey(
+                in ship,
+                in attrs,
+                componentSize,
+                gemBucket,
+                BulletBankHudCopy.SnapshotKey(),
+                megaKey);
+            bool cheapChanged = cheapKey != _lastCheapIdentityKey;
+            bool havePainted = _statsSnapshotKey != int.MinValue;
+            if (!cheapChanged && havePainted &&
+                Time.unscaledTime - _lastEquipmentPollTime < CargoChipRepaintMinInterval)
+                return;
+
             if (!TryResolveChipLiveContext(out _, out var live, out _) || !IsChipLiveContextReady(in live))
                 return;
 
             // Key includes ComponentSize + people so cargo mass tax repaints MS/TS.
             // Gems are bucketed + throttled — 4 Hz grind expulsion must not ForceMeshUpdate
             // every pulse (Profiler hitch ~9.6 ms on ShipAttributeUpgradeHUD.LateUpdate).
+            _lastCheapIdentityKey = cheapKey;
+            _lastEquipmentPollTime = Time.unscaledTime;
             int snapshotKey = ComputeStatsSnapshotKey(
                 in ship,
                 in attrs,
                 live.ComponentSize,
                 live.IsMega ? live.MegaCatalogIndex + 1 : 0,
                 ResolveLocalEquipmentHash());
-            int gemBucket = Mathf.RoundToInt(ship.CurrentGems);
             bool identityChanged = snapshotKey != _statsSnapshotKey;
             bool gemsChanged = gemBucket != _lastGemBucket;
             if (!identityChanged && !gemsChanged)
@@ -2198,6 +2269,10 @@ namespace TitanOrbit.UI
                 return;
 
             EnsureUiBuilt();
+
+            // Comms / expanded map hide this strip — do not remeasure against a docked minimap.
+            if (HUDController.GameplayChromeObscured)
+                return;
 
             // Layout only when screen / canvas / minimap geometry actually changes — not every frame.
             // Continuous remeasure against the minimap left edge caused sub-pixel button jitter

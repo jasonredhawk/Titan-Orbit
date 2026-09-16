@@ -8,13 +8,19 @@ using UnityEngine;
 namespace TitanOrbit.Game
 {
     /// <summary>
-    /// Resolves hold-S keyword sentences into world waypoints and paints a stadium
-    /// wave of stationary dots along those paths. Sender locks mouse-dependent
-    /// targets (You / Us / closest planet) onto the RPC so every viewer matches.
+    /// Resolves hold-S keyword sentences into world waypoints and paints a simple
+    /// on/off line between those targets. Sender locks identities (You / Us /
+    /// planet id) onto the RPC so every viewer follows the same movers.
     /// <para>
-    /// Word order is the path direction: "Me Planet" waves Me → planet; "Planet Me"
-    /// waves the other way. Group words (Us / Everyone) fan to the next node.
-        /// Ten recycled discs hop along 1-unit seats; they fade, they do not slide.
+        /// Word order is the path direction: "Me Planet" is Me → planet; "Planet Me"
+        /// the other way. Consecutive nouns each get a segment ("Me Asteroid Moon"
+        /// is Me → asteroid and asteroid → moon). A lone world noun implies Me.
+        /// Team-owned nouns default to the speaker's team unless Attack / Enemy /
+        /// a color word says otherwise. Verbs tint the following segment.
+        /// Group words (Us / Everyone) fan to the next node.
+    /// Lines grow from source to dest and repeat so travel direction is obvious.
+    /// Endpoints are hollow rings sized to each target's collider.
+        /// Top-3 team rank thickens the stroke only — no medal lining.
     /// Map size from <see cref="ToroidalMap"/>.
     /// </para>
     /// Client presentation only — no ECS gathers.
@@ -22,24 +28,34 @@ namespace TitanOrbit.Game
     public static class ShipCommsCalloutGraphics
     {
         public const float YouSelectRange = 120f;
-        public const int MaxUsLocks = 8;
+        /// <summary>Wire slots <c>Us0</c>–<c>Us3</c>. Identity is locked; pose is live.</summary>
+        public const int MaxUsLocks = 4;
         public const int MaxEveryone = 8;
 
-        /// <summary>Seconds for the wave front to travel start → end (matches chip life).</summary>
-        const float TravelSeconds = 4f;
+        /// <summary>Line grows from source to dest, then repeats so direction is readable.</summary>
+        const float PathTravelOnSeconds = 0.55f;
+        const float PathTravelGapSeconds = 0.12f;
+        const float PathLineThinPixels = 2f;
+        const float PathLineRank3Pixels = 3.4f;
+        const float PathLineRank2Pixels = 4.6f;
+        const float PathLineRank1Pixels = 6f;
+        const float PathLineMinimapScale = 0.92f;
 
-        /// <summary>Recycled discs — only this many are drawn; each hops to the next 1-unit seat.</summary>
-        const int RecycleDots = 10;
-
-        /// <summary>World-unit gap between seats. Map size from <see cref="ToroidalMap"/>.</summary>
-        const float StepUnits = 1f;
-
-        const int MaxStations = 200;
         const int MaxPaths = 8;
-        const int MaxPts = 6;
-        const float DotRadius = 0.22f;
         const float NodeRadius = 0.34f;
-        const float PlayPlaneY = 0.08f;
+        const float PlayPlaneY = 0.14f;
+        const float DefaultPingRadius = 0.38f;
+        /// <summary>
+        /// Tight halo just outside the collider. Thickness is pixels so the ring
+        /// stays readable from the gameplay camera.
+        /// </summary>
+        const float RingSmallScale = 1.28f;
+        const float RingSmallPad = 0.38f;
+        const float RingSmallMax = 5f;
+        const float RingLargeScale = 1.08f;
+        const float RingLargePad = 0.32f;
+        const float RingMinRadius = 0.62f;
+        const float RingThicknessPixels = 2.8f;
 
         static readonly int[] s_IdScratch = new int[MaxEveryone];
         static readonly int[] s_AnchorScratch = new int[8];
@@ -48,39 +64,65 @@ namespace TitanOrbit.Game
         static readonly Vector3[] s_ExpandB = new Vector3[MaxEveryone];
         static readonly Vector3[] s_PathFrom = new Vector3[MaxPaths];
         static readonly Vector3[] s_PathTo = new Vector3[MaxPaths];
-        static readonly Vector3[] s_EvalPts = new Vector3[MaxPts];
-        static readonly float[] s_LensScratch = new float[MaxPts];
+        static readonly float[] s_PathFromR = new float[MaxPaths];
+        static readonly float[] s_PathToR = new float[MaxPaths];
+        static readonly Color[] s_PathColor = new Color[MaxPaths];
+        static readonly Color[] s_AnchorInbound = new Color[8];
+        static readonly float[] s_RadiusA = new float[MaxEveryone];
+        static readonly float[] s_RadiusB = new float[MaxEveryone];
+        static int s_LastNodeCount;
+        static int s_ExtraRockKey;
+        static Vector3 s_ExtraRock;
+        static float s_ExtraRockR;
+        static bool s_ExtraRockOk;
 
         /// <summary>
         /// Fills sender-resolved locks on <paramref name="callout"/> from the live
-        /// sentence plus the last play-plane aim. One-shot on send.
+        /// sentence plus the last play-plane aim. Runs on every send, including
+        /// Recent reuse, so Asteroid / planet / You are chosen again.
         /// </summary>
         public static void BindResolvedTargets(ref ShipCommsInbox.Callout callout)
         {
             ParseWords(in callout, out ParsedWords words);
             Vector3 aim = ResolveAim(callout.NetworkId);
             TeamId speakerTeam = ReadSpeakerTeam(callout.NetworkId);
-            bool keepMapPing = callout.HasWaypoint != 0
-                && (callout.FocusKind == ShipCommsInbox.FocusKind.MapPing
-                    || callout.FocusKind == ShipCommsInbox.FocusKind.None);
+            // Only a typed Here word keeps a player-picked ping. Leftover waypoints
+            // (Recent reuse, or FocusKind still None) must not freeze the old rock.
+            bool keepMapPing = words.HasHere && callout.HasWaypoint != 0;
 
-            if (words.HasYou || words.HasShip || words.HasAlly)
+            ResolveWorldTeamPref(in words, speakerTeam, out TeamId preferTeam, out TeamId excludeTeam);
+            bool hasWorldNoun = words.HasPlanet || words.HasMoon || words.HasHome
+                || words.HasPad || words.HasTurret || words.HasAsteroid || words.HasGems || words.HasHere;
+
+            bool lockYou = words.HasYou || words.HasShip || words.HasAlly
+                || (words.Hostile && !hasWorldNoun && !words.HasThem && !words.HasUs && !words.HasEveryone);
+            if (lockYou)
             {
-                int locked = ShipCommsClientState.HasPendingYou
-                    ? ShipCommsClientState.PendingYouNetworkId
-                    : 0;
+                int locked = 0;
+                if (ShipCommsClientState.HasPendingYou)
+                    locked = ShipCommsClientState.PendingYouNetworkId;
+                if (locked == callout.NetworkId)
+                    locked = 0;
+
+                bool teammatesOnly = words.Friendly && !words.Hostile && !words.HasAlly && !words.HasEnemy;
+                bool enemiesOnly = words.Hostile || words.HasAlly || words.HasEnemy;
+                if (words.HasYou && !words.Hostile && !words.Friendly && !words.HasAlly && !words.HasEnemy)
+                {
+                    teammatesOnly = false;
+                    enemiesOnly = false;
+                }
+
                 if (locked <= 0)
-                    TryResolveYou(aim, callout.NetworkId, out locked);
-                callout.YouNetworkId = locked;
-            }
+                {
+                    int n = CollectClosest(
+                        aim, YouSelectRange, callout.NetworkId, speakerTeam,
+                        teammatesOnly, enemiesOnly, s_IdScratch, 1);
+                    locked = n > 0 ? s_IdScratch[0] : 0;
+                }
 
-            if (words.HasThem || words.HasEnemy)
-            {
-                int them = CollectClosest(
-                    aim, YouSelectRange, callout.NetworkId, speakerTeam,
-                    teammatesOnly: false, enemiesOnly: true, s_IdScratch, 1);
-                if (them > 0 && callout.YouNetworkId <= 0)
-                    callout.YouNetworkId = s_IdScratch[0];
+                if (locked == callout.NetworkId)
+                    locked = 0;
+                callout.YouNetworkId = locked;
             }
 
             callout.Everyone = words.HasEveryone || words.HasTeam ? (byte)1 : (byte)0;
@@ -98,30 +140,106 @@ namespace TitanOrbit.Game
             }
             else
             {
+                // Gems never fall back to an asteroid. Each world noun binds on its
+                // own so "Asteroid Moon" can store a rock waypoint and a moon planet id.
                 var viz = EcsWorldVisualizer.Active;
-                if ((words.HasAsteroid || words.HasGems)
+                bool boundPickup = false;
+                if (words.HasGems
                     && viz != null
-                    && viz.TryFindClosestAsteroid(aim, words.ColorTeam, out Vector3 rock))
+                    && viz.TryFindClosestGem(aim, YouSelectRange, out Vector3 gem, out _))
                 {
                     callout.HasWaypoint = 1;
-                    callout.WaypointX = rock.x;
-                    callout.WaypointZ = rock.z;
-                    callout.FocusKind = ShipCommsInbox.FocusKind.Asteroid;
+                    callout.WaypointX = gem.x;
+                    callout.WaypointZ = gem.z;
+                    callout.FocusKind = ShipCommsInbox.FocusKind.Gem;
+                    boundPickup = true;
                 }
-                else if (words.HasPlanet || words.HasMoon || words.HasHome)
+                else if (words.HasAsteroid && viz != null)
                 {
-                    TeamId planetTeam = words.ColorTeam;
-                    if (words.HasHome && planetTeam == TeamId.None)
-                        planetTeam = speakerTeam;
+                    // Color words are a hard filter — "Red Asteroid" must not fall back
+                    // to the nearest unowned / other-team rock.
+                    TeamId rockTeam = words.ColorTeam;
+                    TeamId rockExclude = rockTeam == TeamId.None ? excludeTeam : TeamId.None;
+                    bool allowFallback = rockTeam == TeamId.None && rockExclude == TeamId.None;
+                    if (viz.TryFindClosestAsteroid(
+                            aim, rockTeam, out Vector3 rock, out _,
+                            rockExclude, allowFallback))
+                    {
+                        callout.HasWaypoint = 1;
+                        callout.WaypointX = rock.x;
+                        callout.WaypointZ = rock.z;
+                        callout.FocusKind = ShipCommsInbox.FocusKind.Asteroid;
+                        boundPickup = true;
+                    }
+                }
+
+                if (words.HasMoon)
+                {
+                    bool homeMoon = words.HasHome;
+                    if (PlanetGemMoonVisualRegistry.TryFindClosestMoon(
+                        aim, preferTeam, homeMoon, out int moonPlanetId, out Vector3 moonPos,
+                        allowFallback: !homeMoon && preferTeam == TeamId.None && excludeTeam == TeamId.None,
+                        excludeTeam))
+                    {
+                        callout.PlanetId = moonPlanetId;
+                        if (!boundPickup)
+                        {
+                            callout.HasWaypoint = 1;
+                            callout.WaypointX = moonPos.x;
+                            callout.WaypointZ = moonPos.z;
+                            callout.FocusKind = ShipCommsInbox.FocusKind.Moon;
+                        }
+                    }
+                }
+                else if (words.HasTurret)
+                {
+                    if (PlanetaryDefenseVisualDriver.TryFindClosestDefenseSlot(
+                        aim, preferTeam, turretOnly: true,
+                        out int turretPlanetId, out Vector3 turretPos, out _,
+                        excludeTeam, allowFallback: preferTeam == TeamId.None && excludeTeam == TeamId.None))
+                    {
+                        callout.PlanetId = turretPlanetId;
+                        if (!boundPickup)
+                        {
+                            callout.HasWaypoint = 1;
+                            callout.WaypointX = turretPos.x;
+                            callout.WaypointZ = turretPos.z;
+                            callout.FocusKind = ShipCommsInbox.FocusKind.Turret;
+                        }
+                    }
+                }
+                else if (words.HasPad)
+                {
+                    if (PlanetaryDefenseVisualDriver.TryFindClosestDefenseSlot(
+                        aim, preferTeam, turretOnly: false,
+                        out int padPlanetId, out Vector3 padPos, out _,
+                        excludeTeam, allowFallback: preferTeam == TeamId.None && excludeTeam == TeamId.None))
+                    {
+                        callout.PlanetId = padPlanetId;
+                        if (!boundPickup)
+                        {
+                            callout.HasWaypoint = 1;
+                            callout.WaypointX = padPos.x;
+                            callout.WaypointZ = padPos.z;
+                            callout.FocusKind = ShipCommsInbox.FocusKind.Pad;
+                        }
+                    }
+                }
+                else if (words.HasPlanet || words.HasHome)
+                {
                     if (viz != null
                         && viz.TryFindClosestPlanet(
-                            aim, planetTeam, words.HasHome, out int planetId, out Vector3 planetPos))
+                            aim, preferTeam, words.HasHome, out int planetId, out Vector3 planetPos,
+                            excludeTeam, allowFallback: preferTeam == TeamId.None && excludeTeam == TeamId.None && !words.HasHome))
                     {
                         callout.PlanetId = planetId;
-                        callout.HasWaypoint = 1;
-                        callout.WaypointX = planetPos.x;
-                        callout.WaypointZ = planetPos.z;
-                        callout.FocusKind = ShipCommsInbox.FocusKind.Planet;
+                        if (!boundPickup)
+                        {
+                            callout.HasWaypoint = 1;
+                            callout.WaypointX = planetPos.x;
+                            callout.WaypointZ = planetPos.z;
+                            callout.FocusKind = ShipCommsInbox.FocusKind.Planet;
+                        }
                     }
                 }
             }
@@ -130,8 +248,8 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Writes speaker / You / Us seats at send time. Playback uses these only —
-        /// live hulls may have moved or the rock may have died later.
+        /// Locks Us network ids at send and writes XZ fallbacks if a hull later despawns.
+        /// Draw follows live proxies — it does not stay on these seats.
         /// </summary>
         static void SnapshotFrozen(
             ref ShipCommsInbox.Callout callout,
@@ -159,21 +277,43 @@ namespace TitanOrbit.Game
             }
             else if (words.HasUs)
             {
-                if (TryHullPos(callout.NetworkId, out me))
+                if (callout.NetworkId > 0)
                 {
-                    s_PosScratch[0] = me;
+                    s_IdScratch[0] = callout.NetworkId;
+                    if (!TryHullPos(callout.NetworkId, out s_PosScratch[0]))
+                        s_PosScratch[0] = new Vector3(callout.MeX, 0f, callout.MeZ);
                     n = 1;
                 }
 
                 int extra = CollectClosest(
                     aim, YouSelectRange, callout.NetworkId, speakerTeam,
-                    teammatesOnly: true, enemiesOnly: false, s_IdScratch, MaxUsLocks - n);
-                for (int i = 0; i < extra && n < MaxEveryone; i++)
+                    teammatesOnly: true, enemiesOnly: false, s_AnchorScratch, MaxUsLocks - n);
+                for (int i = 0; i < extra && n < MaxUsLocks; i++)
                 {
-                    if (!TryHullPos(s_IdScratch[i], out Vector3 mate))
+                    int id = s_AnchorScratch[i];
+                    if (id <= 0 || !TryHullPos(id, out Vector3 mate))
                         continue;
-                    s_PosScratch[n++] = mate;
+                    s_IdScratch[n] = id;
+                    s_PosScratch[n] = mate;
+                    n++;
                 }
+
+                for (int i = 0; i < MaxUsLocks; i++)
+                    SetUsId(ref callout, i, i < n ? s_IdScratch[i] : 0);
+            }
+            else if (words.HasThem)
+            {
+                n = CollectClosest(
+                    aim, YouSelectRange, callout.NetworkId, speakerTeam,
+                    teammatesOnly: false, enemiesOnly: true, s_IdScratch, MaxUsLocks);
+                for (int i = 0; i < n; i++)
+                {
+                    if (!TryHullPos(s_IdScratch[i], out s_PosScratch[i]))
+                        s_PosScratch[i] = Vector3.zero;
+                }
+
+                for (int i = 0; i < MaxUsLocks; i++)
+                    SetUsId(ref callout, i, i < n ? s_IdScratch[i] : 0);
             }
 
             callout.GroupCount = (byte)n;
@@ -184,15 +324,117 @@ namespace TitanOrbit.Game
             }
         }
 
-        /// <summary>Closest ship to <paramref name="aim"/> within <see cref="YouSelectRange"/>.</summary>
+        /// <summary>Closest other ship to <paramref name="aim"/> within <see cref="YouSelectRange"/>. Never the speaker.</summary>
         public static bool TryResolveYou(Vector3 aim, int excludeNetworkId, out int networkId)
         {
-            return ShipWeaponProxyRegistry.TryGetClosestHull(
-                aim, YouSelectRange, excludeNetworkId, out networkId, out _);
+            return TryResolveYou(aim, excludeNetworkId, TeamId.None, false, false, out networkId);
+        }
+
+        public static bool TryResolveYou(
+            Vector3 aim, int excludeNetworkId, TeamId speakerTeam, bool teammatesOnly, bool enemiesOnly,
+            out int networkId)
+        {
+            networkId = 0;
+            int n = ShipWeaponProxyRegistry.CollectClosestHulls(
+                aim, YouSelectRange, excludeNetworkId, speakerTeam, teammatesOnly, enemiesOnly, s_IdScratch, 1);
+            if (n <= 0)
+                return false;
+            networkId = s_IdScratch[0];
+            return networkId > 0 && networkId != excludeNetworkId;
+        }
+
+        /// <summary>True when the local viewer is the speaker or on the speaker's team.</summary>
+        public static bool LocalViewerCanSeePaths(int speakerNetworkId)
+        {
+            int localId = EcsGameBridge.GetLocalNetworkId();
+            if (localId > 0 && localId == speakerNetworkId)
+                return true;
+            TeamId local = ClientTeamFlowState.ResolvePresentationTeam(TeamId.None);
+            TeamId speaker = ReadSpeakerTeam(speakerNetworkId);
+            return local != TeamId.None && speaker != TeamId.None && local == speaker;
+        }
+
+        static void ResolveWorldTeamPref(
+            in ParsedWords words, TeamId speakerTeam, out TeamId preferTeam, out TeamId excludeTeam)
+        {
+            preferTeam = TeamId.None;
+            excludeTeam = TeamId.None;
+            if (words.ColorTeam != TeamId.None)
+            {
+                preferTeam = words.ColorTeam;
+                return;
+            }
+
+            if (words.Hostile && !words.Friendly)
+                excludeTeam = speakerTeam;
+            else if (words.Friendly && !words.Hostile)
+                preferTeam = speakerTeam;
+            else if (words.Hostile)
+                excludeTeam = speakerTeam;
+            else if (speakerTeam != TeamId.None)
+                preferTeam = speakerTeam;
+        }
+
+        /// <summary>Action-word tint used by both path lines and matrix tile fonts.</summary>
+        public static readonly Color ChipIdleFill = new Color(0.03f, 0.05f, 0.09f, 0.96f);
+        public static readonly Color ChipSelectedFill = new Color(0.05f, 0.12f, 0.22f, 0.98f);
+        public static readonly Color ChipLabel = new Color(0.88f, 0.92f, 0.98f, 1f);
+        public static readonly Color ChipDefaultAccent = new Color(0.35f, 0.72f, 0.95f, 0.95f);
+        /// <summary>Default world-chip border — steel, not cyan or team-channel amber.</summary>
+        public static readonly Color ChipNeutralFrame = new Color(0.40f, 0.48f, 0.56f, 0.90f);
+
+        public static bool TryGetLineColor(string label, out Color color)
+        {
+            return TryActionColor(label, out color);
         }
 
         /// <summary>
-        /// True when this label is a world anchor (Me / You / Planet / …).
+        /// Same fill / font / accent as a matrix tile so world chips match the HUD.
+        /// Team words get a faction wash; tactical words keep a grey button and colored font.
+        /// </summary>
+        public static void ResolveChipPaint(
+            string label, bool selected, out Color fill, out Color labelColor, out Color accent)
+        {
+            accent = ChipDefaultAccent;
+            bool isTeam = TeamIdExtensions.TryParseColorName(label, out TeamId team);
+            bool isLine = false;
+            if (isTeam)
+                accent = team.ToColor();
+            else if (TryActionColor(label, out Color line))
+            {
+                accent = line;
+                isLine = true;
+            }
+
+            Color idle = isTeam ? Color.Lerp(ChipIdleFill, accent, 0.28f) : ChipIdleFill;
+            Color picked = isTeam ? Color.Lerp(ChipSelectedFill, accent, 0.4f) : ChipSelectedFill;
+            fill = selected ? picked : idle;
+            labelColor = isTeam || isLine
+                ? Color.Lerp(ChipLabel, accent, isLine ? 0.75f : 0.55f)
+                : ChipLabel;
+        }
+
+        /// <summary>
+        /// World-chip border: faction / action tint when that word owns a color, otherwise steel.
+        /// Team-only channel is not a border color.
+        /// </summary>
+        public static Color ResolveChipFrameColor(string label)
+        {
+            if (TeamIdExtensions.TryParseColorName(label, out TeamId team))
+                return team.ToColor();
+            if (TryActionColor(label, out Color line))
+                return line;
+            return ChipNeutralFrame;
+        }
+
+        /// <summary>Action-word line color for a live callout, or false when the path stays white.</summary>
+        public static bool TryGetCalloutLineColor(in ShipCommsInbox.Callout callout, out Color color)
+        {
+            color = ResolveActionColor(in callout);
+            return color.a > 0.01f && (color.r + color.g + color.b) < 2.85f;
+        }
+
+        /// <summary>
         /// Used by the compose panel to lock targets on click.
         /// </summary>
         public static bool IsAnchorLabel(string label)
@@ -202,28 +444,43 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Stadium-wave dots + waypoint discs for one callout. Must run inside an
-        /// existing Shapes <c>Draw.Command</c>. Follows live hulls; ping / asteroid stay frozen.
+        /// On/off path lines + waypoint discs for one callout. Must run inside an
+        /// existing Shapes <c>Draw.Command</c>. Hulls and planets are live; ping /
+        /// asteroid stay frozen.
         /// </summary>
         public static void DrawIntent(in ShipCommsInbox.Callout callout, float age, float lifetime, float alpha)
         {
             if (callout.Count < 1)
                 return;
+            if (!LocalViewerCanSeePaths(callout.NetworkId))
+                return;
 
-            Color color = ResolveActionColor(in callout);
+            ParseWords(in callout, out ParsedWords words);
+            Color color = ResolveActionColor(in words);
+            ResolveLineStroke(callout.NetworkId, forMinimap: false, out float corePx, out float outlinePx, out Color outline);
 
-            int pathCount = BuildPaths(in callout, s_PathFrom, s_PathTo, MaxPaths);
-            Draw.ThicknessSpace = ThicknessSpace.Meters;
+            int pathCount = BuildPaths(in callout, in words, s_PathFrom, s_PathTo, s_PathFromR, s_PathToR, MaxPaths);
 
-            for (int p = 0; p < pathCount; p++)
+            if (pathCount > 0 && TryGetTravelT(age, out float travelT))
             {
-                s_EvalPts[0] = Lift(s_PathFrom[p]);
-                s_EvalPts[1] = Lift(UnwrapToward(s_PathFrom[p], s_PathTo[p]));
-                DrawPathDots(s_EvalPts, 2, age, lifetime, color);
+                Draw.ThicknessSpace = ThicknessSpace.Pixels;
+                for (int p = 0; p < pathCount; p++)
+                {
+                    Color line = s_PathColor[p].a > 0.01f ? s_PathColor[p] : color;
+                    line.a = 0.95f;
+                    Vector3 from = Lift(s_PathFrom[p]);
+                    Vector3 to = Lift(UnwrapToward(s_PathFrom[p], s_PathTo[p]));
+                    if (!TryTrimToRings(from, to, s_PathFromR[p], s_PathToR[p], out Vector3 a, out Vector3 b))
+                        continue;
+                    if (!TryTravelSegment(a, b, travelT, out Vector3 sa, out Vector3 sb))
+                        continue;
+                    if (outlinePx > corePx)
+                        Draw.Line(sa, sb, outlinePx, LineEndCap.None, outline);
+                    Draw.Line(sa, sb, corePx, LineEndCap.None, line);
+                }
             }
 
-            DrawNodes(in callout, color, alpha);
-            Draw.ThicknessSpace = ThicknessSpace.Pixels;
+            DrawNodes(in callout, in words, color, alpha, pathCount);
         }
 
         /// <summary>Compose-time pointer on a locked "You" hull.</summary>
@@ -235,140 +492,166 @@ namespace TitanOrbit.Game
                 return;
 
             Color c = new Color(0.35f, 0.72f, 0.95f, 0.85f * alpha);
-            Draw.ThicknessSpace = ThicknessSpace.Meters;
-            Draw.Disc(Lift(pos), Vector3.up, NodeRadius, c);
-            Draw.ThicknessSpace = ThicknessSpace.Pixels;
+            DrawHollowRing(
+                Lift(pos),
+                HullRadius(ShipCommsClientState.PendingYouNetworkId),
+                c,
+                ShipCommsClientState.PendingYouNetworkId);
         }
 
-        static void DrawPathDots(Vector3[] pts, int count, float age, float lifetime, Color color)
+        /// <summary>0–1 grow along the path this cycle, or false during the short gap.</summary>
+        public static bool TryGetTravelT(float age, out float t)
         {
-            if (count < 2)
-                return;
-
-            float length = 0f;
-            for (int i = 0; i < count - 1; i++)
-                length += Vector3.Distance(pts[i], pts[i + 1]);
-            if (length < 0.15f)
-                return;
-
-            // One seat per world unit. A disc stays on its seat through fade-out;
-            // only then is that slot reused on the next front seat.
-            int stations = Mathf.Clamp(Mathf.RoundToInt(length / StepUnits) + 1, 2, MaxStations);
-            float life = Mathf.Max(0.35f, Mathf.Min(TravelSeconds, lifetime));
-            const float fadeSteps = 1f;
-            // Front travels stations-1 seats, then the remaining train needs
-            // RecycleDots + fadeSteps more so every leftover disc can fade out
-            // before the callout dies.
-            float denom = (stations - 1) + RecycleDots + fadeSteps;
-            float wave = (age / life) * denom;
-
-            int i0 = Mathf.Max(0, Mathf.CeilToInt(wave - RecycleDots - fadeSteps));
-            int i1 = Mathf.Min(stations - 1, Mathf.FloorToInt(wave));
-            for (int i = i0; i <= i1; i++)
+            float cycle = PathTravelOnSeconds + PathTravelGapSeconds;
+            if (cycle < 0.05f)
             {
-                float phase = wave - i;
-                if (phase < 0f)
-                    continue;
-
-                float envelope = RecycleFade(phase, RecycleDots, fadeSteps);
-                if (envelope < 0.02f)
-                    continue;
-
-                float t = i / (float)(stations - 1);
-                Color c = color;
-                c.a = envelope;
-                Draw.Disc(EvaluatePoly(pts, count, t), Vector3.up, DotRadius, c);
+                t = 1f;
+                return true;
             }
+
+            float u = age % cycle;
+            if (u >= PathTravelOnSeconds)
+            {
+                t = 0f;
+                return false;
+            }
+
+            t = u / PathTravelOnSeconds;
+            return true;
+        }
+
+        static bool TryTravelSegment(Vector3 from, Vector3 to, float t, out Vector3 a, out Vector3 b)
+        {
+            a = from;
+            b = Vector3.Lerp(from, to, Mathf.Clamp01(t));
+            return (b - a).sqrMagnitude > 0.0004f;
         }
 
         /// <summary>
-        /// Stadium seat: fade in as the front arrives, hold, then fade out. The disc
-        /// is not dropped until the out envelope hits 0 — that is when it may hop
-        /// to the next 1-unit seat. After the front reaches the last station the
-        /// remaining train keeps aging through this same envelope so every disc
-        /// finishes fading out.
+        /// Live path segments for the minimap (already ring-trimmed, shortest wrap).
+        /// Returns how many entries were written from <paramref name="start"/>.
         /// </summary>
-        static float RecycleFade(float phase, float holdWindow, float fadeSteps)
+        public static int CopyVisiblePaths(
+            in ShipCommsInbox.Callout callout,
+            float age,
+            Vector3[] from,
+            Vector3[] to,
+            Color[] colors,
+            int[] ranks,
+            int start,
+            int max)
         {
-            fadeSteps = Mathf.Max(0.05f, fadeSteps);
-            if (phase < fadeSteps)
-                return Smooth01(phase / fadeSteps);
-            if (phase <= holdWindow)
-                return 1f;
-            float outEnd = holdWindow + fadeSteps;
-            if (phase < outEnd)
-                return Smooth01((outEnd - phase) / fadeSteps);
-            return 0f;
-        }
+            if (from == null || to == null || colors == null || start >= max)
+                return 0;
+            if (!LocalViewerCanSeePaths(callout.NetworkId))
+                return 0;
+            if (!TryGetTravelT(age, out float travelT))
+                return 0;
 
-        static float Smooth01(float u)
-        {
-            u = Mathf.Clamp01(u);
-            return u * u * (3f - 2f * u);
-        }
+            ParseWords(in callout, out ParsedWords words);
+            int n = BuildPaths(in callout, in words, s_PathFrom, s_PathTo, s_PathFromR, s_PathToR, MaxPaths);
+            if (n <= 0)
+                return 0;
 
-        static Vector3 EvaluatePoly(Vector3[] pts, int count, float t)
-        {
-            if (count <= 1)
-                return pts[0];
-            if (t <= 0f)
-                return pts[0];
-            if (t >= 1f)
-                return pts[count - 1];
-
-            float acc = 0f;
-            int segs = count - 1;
-            for (int i = 0; i < segs; i++)
+            Color fallback = ResolveActionColor(in words);
+            int rank = ReadSpeakerTeamRank(callout.NetworkId);
+            int written = 0;
+            for (int i = 0; i < n && start + written < max; i++)
             {
-                s_LensScratch[i] = Vector3.Distance(pts[i], pts[i + 1]);
-                acc += s_LensScratch[i];
-            }
-
-            if (acc < 0.001f)
-                return pts[0];
-
-            float remain = t * acc;
-            for (int i = 0; i < segs; i++)
-            {
-                if (remain > s_LensScratch[i] && i < segs - 1)
-                {
-                    remain -= s_LensScratch[i];
+                Vector3 a = s_PathFrom[i];
+                Vector3 b = UnwrapToward(a, s_PathTo[i]);
+                if (!TryTrimToRings(a, b, s_PathFromR[i], s_PathToR[i], out Vector3 ta, out Vector3 tb))
                     continue;
-                }
-
-                float u = s_LensScratch[i] > 0.0001f ? remain / s_LensScratch[i] : 1f;
-                return Vector3.Lerp(pts[i], pts[i + 1], u);
+                if (!TryTravelSegment(ta, tb, travelT, out Vector3 sa, out Vector3 sb))
+                    continue;
+                int slot = start + written;
+                from[slot] = sa;
+                to[slot] = sb;
+                colors[slot] = s_PathColor[i].a > 0.01f ? s_PathColor[i] : fallback;
+                if (ranks != null)
+                    ranks[slot] = rank;
+                written++;
             }
 
-            return pts[count - 1];
+            return written;
+        }
+
+        /// <summary>1-based team rank of the speaker, or 0 when unknown.</summary>
+        public static int ReadSpeakerTeamRank(int networkId)
+        {
+            return ShipMatchScoreLogic.TryGetTeamRank(networkId, out int rank) ? rank : 0;
+        }
+
+        /// <summary>
+        /// Stroke width for the speaker's team rank. Top 3 are thicker; no medal outline.
+        /// </summary>
+        public static void ResolveLineStroke(
+            int networkId, bool forMinimap, out float corePx, out float outlinePx, out Color outlineColor)
+        {
+            int rank = ReadSpeakerTeamRank(networkId);
+            ResolveLineStrokeForRank(rank, forMinimap, out corePx, out outlinePx, out outlineColor);
+        }
+
+        public static void ResolveLineStrokeForRank(
+            int teamRank, bool forMinimap, out float corePx, out float outlinePx, out Color outlineColor)
+        {
+            outlineColor = default;
+            outlinePx = 0f;
+            switch (teamRank)
+            {
+                case 1:
+                    corePx = PathLineRank1Pixels;
+                    break;
+                case 2:
+                    corePx = PathLineRank2Pixels;
+                    break;
+                case 3:
+                    corePx = PathLineRank3Pixels;
+                    break;
+                default:
+                    corePx = PathLineThinPixels;
+                    break;
+            }
+
+            if (forMinimap)
+            {
+                corePx *= PathLineMinimapScale;
+                outlinePx *= PathLineMinimapScale;
+            }
         }
 
         static int BuildPaths(
             in ShipCommsInbox.Callout callout,
+            in ParsedWords words,
             Vector3[] from,
             Vector3[] to,
+            float[] fromR,
+            float[] toR,
             int maxPaths)
         {
-            ParseWords(in callout, out ParsedWords words);
-            int nodeCount = CollectOrderedAnchors(in callout, in words, s_AnchorScratch);
+            int nodeCount = CollectOrderedAnchors(in callout, in words, s_AnchorScratch, s_AnchorInbound);
+            nodeCount = CompactAnchors(in callout, in words, s_AnchorScratch, s_AnchorInbound, nodeCount);
+            s_LastNodeCount = nodeCount;
             if (nodeCount <= 0)
                 return 0;
 
+            Color fallback = ResolveActionColor(in callout);
             int written = 0;
 
-            // Word order is direction: first anchor → next. "Planet Me" is planet → Me.
+            // Word order is direction: first noun → next. "Me Asteroid Moon" is two segments.
             for (int i = 0; i < nodeCount - 1 && written < maxPaths; i++)
             {
-                int fromN = ExpandAnchor(in callout, in words, s_AnchorScratch[i], s_ExpandA);
-                int toN = ExpandAnchor(in callout, in words, s_AnchorScratch[i + 1], s_ExpandB);
+                int fromN = ExpandAnchor(in callout, in words, s_AnchorScratch[i], s_ExpandA, s_RadiusA);
+                int toN = ExpandAnchor(in callout, in words, s_AnchorScratch[i + 1], s_ExpandB, s_RadiusB);
                 if (fromN <= 0 || toN <= 0)
                     continue;
 
+                Color seg = s_AnchorInbound[i + 1].a > 0.01f ? s_AnchorInbound[i + 1] : fallback;
+
                 if (fromN == 1 && toN == 1)
                 {
-                    from[written] = s_ExpandA[0];
-                    to[written] = s_ExpandB[0];
-                    written++;
+                    WritePath(from, to, fromR, toR, ref written,
+                        s_ExpandA[0], s_ExpandB[0], s_RadiusA[0], s_RadiusB[0], seg);
                     continue;
                 }
 
@@ -376,9 +659,8 @@ namespace TitanOrbit.Game
                 {
                     for (int a = 0; a < fromN && written < maxPaths; a++)
                     {
-                        from[written] = s_ExpandA[a];
-                        to[written] = s_ExpandB[0];
-                        written++;
+                        WritePath(from, to, fromR, toR, ref written,
+                            s_ExpandA[a], s_ExpandB[0], s_RadiusA[a], s_RadiusB[0], seg);
                     }
 
                     continue;
@@ -388,9 +670,8 @@ namespace TitanOrbit.Game
                 {
                     for (int b = 0; b < toN && written < maxPaths; b++)
                     {
-                        from[written] = s_ExpandA[0];
-                        to[written] = s_ExpandB[b];
-                        written++;
+                        WritePath(from, to, fromR, toR, ref written,
+                            s_ExpandA[0], s_ExpandB[b], s_RadiusA[0], s_RadiusB[b], seg);
                     }
 
                     continue;
@@ -398,26 +679,27 @@ namespace TitanOrbit.Game
 
                 for (int a = 0; a < fromN && written < maxPaths; a++)
                 {
-                    from[written] = s_ExpandA[a];
-                    to[written] = s_ExpandB[a % toN];
-                    written++;
+                    int tb = a % toN;
+                    WritePath(from, to, fromR, toR, ref written,
+                        s_ExpandA[a], s_ExpandB[tb], s_RadiusA[a], s_RadiusB[tb], seg);
                 }
             }
 
-            // Lone focus + an action still gets Me → target so a solo "Mining Asteroid" reads.
-            if (written == 0 && TryFrozenMe(in callout, out Vector3 speaker))
+            // Lone focus still gets Me → target so a solo "Moon" or "Mining Asteroid" reads.
+            if (written == 0 && TryLiveMe(in callout, out Vector3 speaker))
             {
-                if (TryFocusPos(in callout, in words, out Vector3 lone))
+                Color loneColor = fallback;
+                if (nodeCount >= 1 && s_AnchorInbound[0].a > 0.01f)
+                    loneColor = s_AnchorInbound[0];
+                if (TryFocusPos(in callout, in words, out Vector3 lone, out float loneR))
                 {
-                    from[0] = speaker;
-                    to[0] = lone;
-                    written = 1;
+                    WritePath(from, to, fromR, toR, ref written,
+                        speaker, lone, HullRadius(callout.NetworkId), loneR, loneColor);
                 }
-                else if (TryFrozenYou(in callout, out Vector3 you))
+                else if (TryLiveYou(in callout, out Vector3 you))
                 {
-                    from[0] = speaker;
-                    to[0] = you;
-                    written = 1;
+                    WritePath(from, to, fromR, toR, ref written,
+                        speaker, you, HullRadius(callout.NetworkId), HullRadius(callout.YouNetworkId), loneColor);
                 }
             }
 
@@ -426,28 +708,35 @@ namespace TitanOrbit.Game
 
         /// <summary>
         /// Ordered anchor kinds as bytes (see <see cref="AnchorId"/>). Color / action
-        /// words are skipped so "Me Heal You" is Me then You.
+        /// words are skipped so "Me Heal You" is Me then You. Each noun stores the
+        /// last verb color before it so Me Mining Asteroid Deposit Moon can tint
+        /// each segment separately.
         /// </summary>
         static int CollectOrderedAnchors(
             in ShipCommsInbox.Callout callout,
             in ParsedWords words,
-            int[] dst)
+            int[] dst,
+            Color[] inbound)
         {
             int n = 0;
+            Color pending = default;
             var catalog = ShipCommsKeywordCatalog.LoadDefault();
-            AppendAnchor(catalog, callout.K0, callout.Count >= 1, dst, ref n);
-            AppendAnchor(catalog, callout.K1, callout.Count >= 2, dst, ref n);
-            AppendAnchor(catalog, callout.K2, callout.Count >= 3, dst, ref n);
-            AppendAnchor(catalog, callout.K3, callout.Count >= 4, dst, ref n);
-            AppendAnchor(catalog, callout.K4, callout.Count >= 5, dst, ref n);
+            CollectWord(catalog, callout.K0, callout.Count >= 1, in words, dst, inbound, ref n, ref pending);
+            CollectWord(catalog, callout.K1, callout.Count >= 2, in words, dst, inbound, ref n, ref pending);
+            CollectWord(catalog, callout.K2, callout.Count >= 3, in words, dst, inbound, ref n, ref pending);
+            CollectWord(catalog, callout.K3, callout.Count >= 4, in words, dst, inbound, ref n, ref pending);
+            CollectWord(catalog, callout.K4, callout.Count >= 5, in words, dst, inbound, ref n, ref pending);
 
-            if (callout.HasWaypoint != 0 || callout.FocusKind == ShipCommsInbox.FocusKind.Planet)
+            if (callout.HasWaypoint != 0
+                || callout.FocusKind == ShipCommsInbox.FocusKind.Planet
+                || callout.FocusKind == ShipCommsInbox.FocusKind.Moon
+                || callout.FocusKind == ShipCommsInbox.FocusKind.Pad
+                || callout.FocusKind == ShipCommsInbox.FocusKind.Turret)
             {
                 bool already = false;
                 for (int i = 0; i < n; i++)
                 {
-                    if (dst[i] == AnchorId.Here || dst[i] == AnchorId.Asteroid
-                        || dst[i] == AnchorId.Planet)
+                    if (IsWorldAnchor(dst[i]))
                     {
                         already = true;
                         break;
@@ -456,12 +745,23 @@ namespace TitanOrbit.Game
 
                 if (!already && n < dst.Length)
                 {
-                    if (callout.FocusKind == ShipCommsInbox.FocusKind.Planet)
-                        dst[n++] = AnchorId.Planet;
+                    int extra;
+                    if (callout.FocusKind == ShipCommsInbox.FocusKind.Turret)
+                        extra = AnchorId.Turret;
+                    else if (callout.FocusKind == ShipCommsInbox.FocusKind.Pad)
+                        extra = AnchorId.Pad;
+                    else if (callout.FocusKind == ShipCommsInbox.FocusKind.Moon)
+                        extra = AnchorId.Moon;
+                    else if (callout.FocusKind == ShipCommsInbox.FocusKind.Planet)
+                        extra = AnchorId.Planet;
                     else if (callout.FocusKind == ShipCommsInbox.FocusKind.Asteroid)
-                        dst[n++] = AnchorId.Asteroid;
+                        extra = AnchorId.Asteroid;
+                    else if (callout.FocusKind == ShipCommsInbox.FocusKind.Gem)
+                        extra = AnchorId.Gems;
                     else
-                        dst[n++] = AnchorId.Here;
+                        extra = AnchorId.Here;
+                    inbound[n] = pending;
+                    dst[n++] = extra;
                 }
             }
 
@@ -469,58 +769,219 @@ namespace TitanOrbit.Game
             return n;
         }
 
-        static void AppendAnchor(
-            ShipCommsKeywordCatalog catalog, byte index, bool live, int[] dst, ref int n)
+        /// <summary>
+        /// Drops nouns that have no live target. A lone world noun (or a chain with
+        /// no speaker word) prepends Me — "Moon" is Me → friendly moon.
+        /// </summary>
+        static int CompactAnchors(
+            in ShipCommsInbox.Callout callout,
+            in ParsedWords words,
+            int[] dst,
+            Color[] inbound,
+            int n)
+        {
+            int write = 0;
+            for (int i = 0; i < n; i++)
+            {
+                int a = dst[i];
+                if (ExpandAnchor(in callout, in words, a, s_ExpandA, s_RadiusA) <= 0)
+                    continue;
+                dst[write] = a;
+                inbound[write] = inbound[i];
+                write++;
+            }
+
+            bool hasMe = false;
+            bool hasShipSrc = false;
+            bool hasWorld = false;
+            for (int i = 0; i < write; i++)
+            {
+                int a = dst[i];
+                if (a == AnchorId.Me)
+                    hasMe = true;
+                else if (a == AnchorId.You || a == AnchorId.Us || a == AnchorId.Everyone)
+                    hasShipSrc = true;
+                else if (IsWorldAnchor(a))
+                    hasWorld = true;
+            }
+
+            if (!hasMe
+                && hasWorld
+                && !hasShipSrc
+                && write < dst.Length
+                && ExpandAnchor(in callout, in words, AnchorId.Me, s_ExpandA, s_RadiusA) > 0)
+            {
+                for (int i = write; i > 0; i--)
+                {
+                    dst[i] = dst[i - 1];
+                    inbound[i] = inbound[i - 1];
+                }
+
+                dst[0] = AnchorId.Me;
+                inbound[0] = default;
+                write++;
+            }
+
+            return write;
+        }
+
+        static void CollectWord(
+            ShipCommsKeywordCatalog catalog,
+            byte index,
+            bool live,
+            in ParsedWords words,
+            int[] dst,
+            Color[] inbound,
+            ref int n,
+            ref Color pending)
         {
             if (!live || n >= dst.Length)
                 return;
             if (!catalog.TryGetLabel(index, out string label))
                 return;
-            Classify(label, out WordKind kind, out _);
+            Classify(label, out WordKind kind, out Color action);
+            if (kind == WordKind.Action)
+            {
+                if (action.a > 0.01f)
+                    pending = action;
+                return;
+            }
+
+            // "Home Moon" is one home-moon target, not home planet then a moon.
+            if (kind == WordKind.Home && words.HasMoon)
+                return;
+            bool worldNoun = words.HasPlanet || words.HasMoon || words.HasHome
+                || words.HasPad || words.HasTurret || words.HasAsteroid || words.HasGems || words.HasHere;
+            if (worldNoun && (kind == WordKind.Enemy || kind == WordKind.Ally))
+                return;
             int id = KindToAnchor(kind);
             if (id == 0)
                 return;
+            inbound[n] = pending;
             dst[n++] = id;
+            pending = default;
+        }
+
+        static bool IsWorldAnchor(int id)
+        {
+            return id == AnchorId.Here || id == AnchorId.Asteroid || id == AnchorId.Gems
+                || id == AnchorId.Planet || id == AnchorId.Moon
+                || id == AnchorId.Pad || id == AnchorId.Turret;
+        }
+
+        static void WritePath(
+            Vector3[] from, Vector3[] to, float[] fromR, float[] toR, ref int written,
+            Vector3 a, Vector3 b, float ra, float rb, Color color)
+        {
+            from[written] = a;
+            to[written] = b;
+            fromR[written] = VisualRingRadius(ra);
+            toR[written] = VisualRingRadius(rb);
+            s_PathColor[written] = color;
+            written++;
         }
 
         static int ExpandAnchor(
-            in ShipCommsInbox.Callout callout, in ParsedWords words, int anchor, Vector3[] dst)
+            in ShipCommsInbox.Callout callout, in ParsedWords words, int anchor,
+            Vector3[] dst, float[] radii)
         {
             switch (anchor)
             {
                 case AnchorId.Me:
-                    return TryFrozenMe(in callout, out dst[0]) ? 1 : 0;
-                case AnchorId.You:
-                    return TryFrozenYou(in callout, out dst[0]) ? 1 : 0;
-                case AnchorId.Us:
-                case AnchorId.Everyone:
-                    return ReadFrozenGroup(in callout, dst);
-                case AnchorId.Here:
-                case AnchorId.Asteroid:
-                case AnchorId.Planet:
-                    if (callout.HasWaypoint == 0)
+                    if (!TryLiveMe(in callout, out dst[0]))
                         return 0;
-                    dst[0] = new Vector3(callout.WaypointX, 0f, callout.WaypointZ);
+                    radii[0] = HullRadius(callout.NetworkId);
                     return 1;
+                case AnchorId.You:
+                    if (!TryLiveYou(in callout, out dst[0]))
+                        return 0;
+                    radii[0] = HullRadius(callout.YouNetworkId);
+                    return 1;
+                case AnchorId.Us:
+                    return ReadLiveUs(in callout, dst, radii);
+                case AnchorId.Everyone:
+                    return ReadLiveEveryone(in callout, dst, radii);
+                case AnchorId.Here:
+                    return TryHerePos(in callout, out dst[0], out radii[0]) ? 1 : 0;
+                case AnchorId.Asteroid:
+                    return TryAsteroidPos(in callout, in words, out dst[0], out radii[0]) ? 1 : 0;
+                case AnchorId.Gems:
+                    return TryGemPos(in callout, out dst[0], out radii[0]) ? 1 : 0;
+                case AnchorId.Planet:
+                    return TryPlanetPos(in callout, out dst[0], out radii[0]) ? 1 : 0;
+                case AnchorId.Moon:
+                    return TryMoonPos(in callout, out dst[0], out radii[0]) ? 1 : 0;
+                case AnchorId.Pad:
+                    return TryDefensePos(in callout, turretOnly: false, out dst[0], out radii[0]) ? 1 : 0;
+                case AnchorId.Turret:
+                    return TryDefensePos(in callout, turretOnly: true, out dst[0], out radii[0]) ? 1 : 0;
                 default:
                     _ = words;
                     return 0;
             }
         }
 
-        static bool TryFrozenMe(in ShipCommsInbox.Callout callout, out Vector3 pos)
+        static bool TryLiveMe(in ShipCommsInbox.Callout callout, out Vector3 pos)
         {
+            if (TryHullPos(callout.NetworkId, out pos))
+                return true;
             pos = new Vector3(callout.MeX, 0f, callout.MeZ);
-            return pos.x != 0f || pos.z != 0f || TryHullPos(callout.NetworkId, out pos);
+            return pos.x != 0f || pos.z != 0f;
         }
 
-        static bool TryFrozenYou(in ShipCommsInbox.Callout callout, out Vector3 pos)
+        static bool TryLiveYou(in ShipCommsInbox.Callout callout, out Vector3 pos)
         {
+            pos = default;
+            if (callout.YouNetworkId <= 0 || callout.YouNetworkId == callout.NetworkId)
+                return false;
+            if (TryHullPos(callout.YouNetworkId, out pos))
+                return true;
             pos = new Vector3(callout.YouX, 0f, callout.YouZ);
             return pos.x != 0f || pos.z != 0f;
         }
 
-        static int ReadFrozenGroup(in ShipCommsInbox.Callout callout, Vector3[] dst)
+        static int ReadLiveUs(in ShipCommsInbox.Callout callout, Vector3[] dst, float[] radii)
+        {
+            int written = 0;
+            int cap = dst != null ? Mathf.Min(MaxUsLocks, dst.Length) : 0;
+            for (int i = 0; i < cap; i++)
+            {
+                int id = GetUsId(in callout, i);
+                if (id <= 0 || !TryHullPos(id, out dst[written]))
+                    continue;
+                if (written < s_IdScratch.Length)
+                    s_IdScratch[written] = id;
+                if (radii != null)
+                    radii[written] = HullRadius(id);
+                written++;
+            }
+
+            return written > 0 ? written : ReadFrozenGroup(in callout, dst, radii);
+        }
+
+        static int ReadLiveEveryone(in ShipCommsInbox.Callout callout, Vector3[] dst, float[] radii)
+        {
+            if (dst == null)
+                return 0;
+
+            TeamId team = ReadSpeakerTeam(callout.NetworkId);
+            int n = ShipWeaponProxyRegistry.CollectHullsOnTeam(
+                team, s_IdScratch, dst, Mathf.Min(MaxEveryone, dst.Length));
+            if (n > 0)
+            {
+                if (radii != null)
+                {
+                    for (int i = 0; i < n; i++)
+                        radii[i] = HullRadius(s_IdScratch[i]);
+                }
+
+                return n;
+            }
+
+            return ReadFrozenGroup(in callout, dst, radii);
+        }
+
+        static int ReadFrozenGroup(in ShipCommsInbox.Callout callout, Vector3[] dst, float[] radii)
         {
             int n = Mathf.Min(callout.GroupCount, dst.Length);
             int written = 0;
@@ -528,10 +989,35 @@ namespace TitanOrbit.Game
             {
                 if (!TryGetGroup(in callout, i, out dst[written]))
                     continue;
+                if (radii != null)
+                    radii[written] = NodeRadius;
                 written++;
             }
 
             return written;
+        }
+
+        static void SetUsId(ref ShipCommsInbox.Callout callout, int i, int id)
+        {
+            switch (i)
+            {
+                case 0: callout.Us0 = id; break;
+                case 1: callout.Us1 = id; break;
+                case 2: callout.Us2 = id; break;
+                case 3: callout.Us3 = id; break;
+            }
+        }
+
+        static int GetUsId(in ShipCommsInbox.Callout callout, int i)
+        {
+            switch (i)
+            {
+                case 0: return callout.Us0;
+                case 1: return callout.Us1;
+                case 2: return callout.Us2;
+                case 3: return callout.Us3;
+                default: return 0;
+            }
         }
 
         static void SetGroup(ref ShipCommsInbox.Callout callout, int i, Vector3 p)
@@ -568,34 +1054,218 @@ namespace TitanOrbit.Game
             return true;
         }
 
-        static bool TryFocusPos(
-            in ShipCommsInbox.Callout callout, in ParsedWords words, out Vector3 pos)
+        static bool TryMoonPos(in ShipCommsInbox.Callout callout, out Vector3 pos, out float radius)
         {
-            pos = default;
-            if (callout.HasWaypoint != 0)
+            radius = NodeRadius;
+            if (callout.PlanetId > 0
+                && PlanetGemMoonVisualRegistry.TryGetMoon(callout.PlanetId, out var moon)
+                && moon != null)
             {
-                pos = new Vector3(callout.WaypointX, 0f, callout.WaypointZ);
+                pos = moon.MoonWorldPosition;
+                radius = Mathf.Max(0.15f, moon.MoonBodyRadiusWorld);
                 return true;
             }
 
-            _ = words;
+            if (callout.FocusKind == ShipCommsInbox.FocusKind.Moon)
+                return TryFrozenWaypoint(in callout, out pos);
+            pos = default;
             return false;
         }
 
-        static void DrawNodes(in ShipCommsInbox.Callout callout, Color color, float alpha)
+        static bool TryPlanetPos(in ShipCommsInbox.Callout callout, out Vector3 pos, out float radius)
         {
-            ParseWords(in callout, out ParsedWords words);
+            radius = NodeRadius;
+            if (callout.PlanetId > 0)
+            {
+                var viz = EcsWorldVisualizer.Active;
+                if (viz != null && viz.TryGetPlanetWorldPosition(callout.PlanetId, out pos))
+                {
+                    if (!viz.TryGetPlanetColliderRadius(callout.PlanetId, out radius))
+                        radius = NodeRadius;
+                    return true;
+                }
+            }
+
+            if (callout.FocusKind == ShipCommsInbox.FocusKind.Planet)
+                return TryFrozenWaypoint(in callout, out pos);
+            pos = default;
+            return false;
+        }
+
+        static bool TryDefensePos(
+            in ShipCommsInbox.Callout callout, bool turretOnly, out Vector3 pos, out float radius)
+        {
+            radius = NodeRadius;
+            Vector3 near = new Vector3(callout.WaypointX, 0f, callout.WaypointZ);
+            if (callout.PlanetId > 0
+                && PlanetaryDefenseVisualDriver.TryGetDefenseSlotPose(
+                    callout.PlanetId, near, turretOnly, out pos, out radius))
+                return true;
+
+            if ((turretOnly && callout.FocusKind == ShipCommsInbox.FocusKind.Turret)
+                || (!turretOnly && callout.FocusKind == ShipCommsInbox.FocusKind.Pad))
+                return TryFrozenWaypoint(in callout, out pos);
+            pos = default;
+            return false;
+        }
+
+        static bool TryFrozenWaypoint(in ShipCommsInbox.Callout callout, out Vector3 pos)
+        {
+            pos = default;
+            if (callout.HasWaypoint == 0)
+                return false;
+            pos = new Vector3(callout.WaypointX, 0f, callout.WaypointZ);
+            return true;
+        }
+
+        static bool TryFocusPos(
+            in ShipCommsInbox.Callout callout, in ParsedWords words, out Vector3 pos, out float radius)
+        {
+            radius = DefaultPingRadius;
+            if (callout.FocusKind == ShipCommsInbox.FocusKind.Moon)
+                return TryMoonPos(in callout, out pos, out radius);
+            if (callout.FocusKind == ShipCommsInbox.FocusKind.Planet)
+                return TryPlanetPos(in callout, out pos, out radius);
+            if (callout.FocusKind == ShipCommsInbox.FocusKind.Pad)
+                return TryDefensePos(in callout, turretOnly: false, out pos, out radius);
+            if (callout.FocusKind == ShipCommsInbox.FocusKind.Turret)
+                return TryDefensePos(in callout, turretOnly: true, out pos, out radius);
+            if (callout.FocusKind == ShipCommsInbox.FocusKind.Asteroid)
+                return TryAsteroidPos(in callout, in words, out pos, out radius);
+            if (callout.FocusKind == ShipCommsInbox.FocusKind.Gem)
+                return TryGemPos(in callout, out pos, out radius);
+
+            _ = words;
+            return TryHerePos(in callout, out pos, out radius);
+        }
+
+        static bool TryHerePos(in ShipCommsInbox.Callout callout, out Vector3 pos, out float radius)
+        {
+            radius = DefaultPingRadius;
+            return TryFrozenWaypoint(in callout, out pos);
+        }
+
+        static bool TryAsteroidPos(
+            in ShipCommsInbox.Callout callout, in ParsedWords words, out Vector3 pos, out float radius)
+        {
+            pos = default;
+            radius = NodeRadius;
+            if (!words.HasAsteroid && callout.FocusKind != ShipCommsInbox.FocusKind.Asteroid)
+                return false;
+
+            int key = CalloutDrawKey(in callout);
+            if (s_ExtraRockKey == key)
+            {
+                pos = s_ExtraRock;
+                radius = s_ExtraRockR;
+                return s_ExtraRockOk;
+            }
+
+            // One proxy walk per callout — radius comes from the rock's collider scale.
+            s_ExtraRockKey = key;
+            var viz = EcsWorldVisualizer.Active;
+            Vector3 aim = callout.HasWaypoint != 0
+                ? new Vector3(callout.WaypointX, 0f, callout.WaypointZ)
+                : ResolveAim(callout.NetworkId);
+            bool allowFallback = words.ColorTeam == TeamId.None;
+            s_ExtraRockOk = viz != null
+                && viz.TryFindClosestAsteroid(
+                    aim, words.ColorTeam, out s_ExtraRock, out s_ExtraRockR,
+                    TeamId.None, allowFallback);
+            if (s_ExtraRockOk)
+            {
+                pos = s_ExtraRock;
+                radius = s_ExtraRockR;
+                return true;
+            }
+
+            if (callout.FocusKind == ShipCommsInbox.FocusKind.Asteroid
+                && TryFrozenWaypoint(in callout, out pos))
+                return true;
+            return false;
+        }
+
+        static bool TryGemPos(in ShipCommsInbox.Callout callout, out Vector3 pos, out float radius)
+        {
+            radius = DefaultPingRadius;
+            pos = default;
+            if (callout.FocusKind != ShipCommsInbox.FocusKind.Gem)
+                return false;
+            return TryFrozenWaypoint(in callout, out pos);
+        }
+
+        static int CalloutDrawKey(in ShipCommsInbox.Callout callout)
+        {
+            unchecked
+            {
+                int h = callout.NetworkId;
+                h = h * 31 + callout.Count;
+                h = h * 31 + callout.K0;
+                h = h * 31 + callout.K1;
+                h = h * 31 + callout.K2;
+                h = h * 31 + callout.K3;
+                h = h * 31 + callout.K4;
+                h = h * 31 + callout.FocusKind;
+                h = h * 31 + callout.PlanetId;
+                h = h * 31 + callout.HasWaypoint;
+                h = h * 31 + (int)(callout.WaypointX * 10f);
+                h = h * 31 + (int)(callout.WaypointZ * 10f);
+                return h;
+            }
+        }
+
+        static void DrawNodes(
+            in ShipCommsInbox.Callout callout, in ParsedWords words, Color color, float alpha, int pathCount)
+        {
             Color c = color;
-            c.a = alpha * 0.7f;
-            if (words.HasMe && TryFrozenMe(in callout, out Vector3 me))
-                Draw.Disc(Lift(me), Vector3.up, NodeRadius * 0.55f, c);
-            if (TryFrozenYou(in callout, out Vector3 you))
-                Draw.Disc(Lift(you), Vector3.up, NodeRadius, c);
-            int group = ReadFrozenGroup(in callout, s_ExpandA);
+            c.a = alpha * 0.85f;
+            if (TryLiveMe(in callout, out Vector3 me)
+                && (words.HasMe || SpeakerOnPath(me, pathCount)))
+            {
+                DrawHollowRing(Lift(me), HullRadius(callout.NetworkId), c, callout.NetworkId);
+            }
+
+            if (TryLiveYou(in callout, out Vector3 you))
+                DrawHollowRing(Lift(you), HullRadius(callout.YouNetworkId), c, callout.YouNetworkId);
+
+            int group = 0;
+            if (words.HasEveryone || words.HasTeam)
+                group = ReadLiveEveryone(in callout, s_ExpandA, s_RadiusA);
+            else if (words.HasUs)
+                group = ReadLiveUs(in callout, s_ExpandA, s_RadiusA);
             for (int i = 0; i < group; i++)
-                Draw.Disc(Lift(s_ExpandA[i]), Vector3.up, NodeRadius * 0.85f, c);
-            if (TryFocusPos(in callout, default, out Vector3 focus))
-                Draw.Disc(Lift(focus), Vector3.up, NodeRadius, c);
+            {
+                int owner = i < s_IdScratch.Length ? s_IdScratch[i] : 0;
+                DrawHollowRing(Lift(s_ExpandA[i]), s_RadiusA[i], c, owner > 0 ? owner : callout.NetworkId);
+            }
+
+            int worldN = s_LastNodeCount;
+            for (int i = 0; i < worldN; i++)
+            {
+                int anchor = s_AnchorScratch[i];
+                if (anchor == AnchorId.Me || anchor == AnchorId.You
+                    || anchor == AnchorId.Us || anchor == AnchorId.Everyone)
+                    continue;
+                int hits = ExpandAnchor(in callout, in words, anchor, s_ExpandA, s_RadiusA);
+                for (int h = 0; h < hits; h++)
+                    DrawHollowRing(Lift(s_ExpandA[h]), s_RadiusA[h], c, callout.NetworkId);
+            }
+        }
+
+        static bool SpeakerOnPath(Vector3 speaker, int pathCount)
+        {
+            const float nearSq = 0.45f * 0.45f;
+            for (int i = 0; i < pathCount; i++)
+            {
+                Vector3 a = s_PathFrom[i] - speaker;
+                Vector3 b = s_PathTo[i] - speaker;
+                a.y = 0f;
+                b.y = 0f;
+                if (a.sqrMagnitude <= nearSq || b.sqrMagnitude <= nearSq)
+                    return true;
+            }
+
+            return false;
         }
 
         static Vector3 ResolveAim(int speakerId)
@@ -640,6 +1310,47 @@ namespace TitanOrbit.Game
             return p;
         }
 
+        static float HullRadius(int networkId)
+        {
+            if (networkId > 0
+                && ShipWeaponProxyRegistry.TryGetCachedHullClearance(networkId, out _, out float xz)
+                && xz > 0.05f)
+                return xz;
+            return NodeRadius;
+        }
+
+        static float VisualRingRadius(float colliderRadius)
+        {
+            float r = Mathf.Max(0.05f, colliderRadius);
+            if (r <= RingSmallMax)
+                return Mathf.Max(RingMinRadius, r * RingSmallScale + RingSmallPad);
+            return r * RingLargeScale + RingLargePad;
+        }
+
+        static void DrawHollowRing(Vector3 pos, float radius, Color color, int ownerNetworkId)
+        {
+            _ = ownerNetworkId;
+            Draw.Ring(pos, Vector3.up, VisualRingRadius(radius), RingThicknessPixels, color);
+        }
+
+        static bool TryTrimToRings(
+            Vector3 from, Vector3 to, float r0, float r1, out Vector3 a, out Vector3 b)
+        {
+            a = from;
+            b = to;
+            Vector3 delta = to - from;
+            float len = delta.magnitude;
+            r0 = Mathf.Max(0f, r0);
+            r1 = Mathf.Max(0f, r1);
+            if (len <= r0 + r1 + 0.08f)
+                return false;
+
+            Vector3 dir = delta / len;
+            a = from + dir * r0;
+            b = to - dir * r1;
+            return true;
+        }
+
         /// <summary>
         /// Shortest-path tip so a wrap-edge mark does not stretch the long way.
         /// Map size from <see cref="ToroidalMap"/> (unset → Euclidean).
@@ -653,6 +1364,11 @@ namespace TitanOrbit.Game
         static Color ResolveActionColor(in ShipCommsInbox.Callout callout)
         {
             ParseWords(in callout, out ParsedWords words);
+            return ResolveActionColor(in words);
+        }
+
+        static Color ResolveActionColor(in ParsedWords words)
+        {
             if (words.ActionColor.a > 0.01f)
                 return words.ActionColor;
             if (words.ColorTeam != TeamId.None)
@@ -685,14 +1401,25 @@ namespace TitanOrbit.Game
                 case WordKind.Us: words.HasUs = true; break;
                 case WordKind.Everyone: words.HasEveryone = true; break;
                 case WordKind.Team: words.HasTeam = true; break;
-                case WordKind.Them: words.HasThem = true; break;
-                case WordKind.Enemy: words.HasEnemy = true; break;
-                case WordKind.Ally: words.HasAlly = true; break;
+                case WordKind.Them:
+                    words.HasThem = true;
+                    words.Hostile = true;
+                    break;
+                case WordKind.Enemy:
+                    words.HasEnemy = true;
+                    words.Hostile = true;
+                    break;
+                case WordKind.Ally:
+                    words.HasAlly = true;
+                    words.Hostile = true;
+                    break;
                 case WordKind.Ship: words.HasShip = true; break;
                 case WordKind.Here: words.HasHere = true; break;
                 case WordKind.Planet: words.HasPlanet = true; break;
                 case WordKind.Moon: words.HasMoon = true; break;
                 case WordKind.Home: words.HasHome = true; break;
+                case WordKind.Pad: words.HasPad = true; break;
+                case WordKind.Turret: words.HasTurret = true; break;
                 case WordKind.Asteroid: words.HasAsteroid = true; break;
                 case WordKind.Gems: words.HasGems = true; break;
                 case WordKind.Color:
@@ -703,6 +1430,10 @@ namespace TitanOrbit.Game
                     words.HasAction = true;
                     words.ActionColor = action;
                     words.Converge |= IsConvergeLabel(label);
+                    if (IsHostileVerb(label))
+                        words.Hostile = true;
+                    if (IsFriendlyVerb(label))
+                        words.Friendly = true;
                     break;
             }
         }
@@ -726,7 +1457,9 @@ namespace TitanOrbit.Game
             if (Eq(label, "Here")) { kind = WordKind.Here; return; }
             if (Eq(label, "Planet")) { kind = WordKind.Planet; return; }
             if (Eq(label, "Moon")) { kind = WordKind.Moon; return; }
-            if (Eq(label, "Base") || Eq(label, "Home") || Eq(label, "Pad") || Eq(label, "Dock"))
+            if (Eq(label, "Pad")) { kind = WordKind.Pad; return; }
+            if (Eq(label, "Turret")) { kind = WordKind.Turret; return; }
+            if (Eq(label, "Base") || Eq(label, "Home"))
             {
                 kind = WordKind.Home;
                 return;
@@ -752,21 +1485,28 @@ namespace TitanOrbit.Game
                 case WordKind.You:
                 case WordKind.Ship:
                 case WordKind.Ally:
-                case WordKind.Them:
                 case WordKind.Enemy:
                     return AnchorId.You;
-                case WordKind.Us: return AnchorId.Us;
+                case WordKind.Them:
+                case WordKind.Us:
+                    return AnchorId.Us;
                 case WordKind.Everyone:
                 case WordKind.Team:
                     return AnchorId.Everyone;
                 case WordKind.Here: return AnchorId.Here;
                 case WordKind.Planet:
-                case WordKind.Moon:
                 case WordKind.Home:
                     return AnchorId.Planet;
+                case WordKind.Moon:
+                    return AnchorId.Moon;
+                case WordKind.Pad:
+                    return AnchorId.Pad;
+                case WordKind.Turret:
+                    return AnchorId.Turret;
                 case WordKind.Asteroid:
-                case WordKind.Gems:
                     return AnchorId.Asteroid;
+                case WordKind.Gems:
+                    return AnchorId.Gems;
                 default: return 0;
             }
         }
@@ -774,40 +1514,40 @@ namespace TitanOrbit.Game
         static bool IsConvergeLabel(string label)
         {
             return Eq(label, "Mining") || Eq(label, "Attack") || Eq(label, "Kill")
-                || Eq(label, "Capture") || Eq(label, "Rally") || Eq(label, "Scout")
+                || Eq(label, "Capture") || Eq(label, "Dock") || Eq(label, "Deposit")
+                || Eq(label, "Transport")
                 || Eq(label, "Incoming") || Eq(label, "Defend");
+        }
+
+        static bool IsHostileVerb(string label)
+        {
+            return Eq(label, "Attack") || Eq(label, "Kill") || Eq(label, "Push")
+                || Eq(label, "Incoming") || Eq(label, "Capture");
+        }
+
+        static bool IsFriendlyVerb(string label)
+        {
+            return Eq(label, "Defend") || Eq(label, "Hold") || Eq(label, "Help") || Eq(label, "Heal");
         }
 
         static bool TryActionColor(string label, out Color color)
         {
             color = default;
+            if (Eq(label, "Attack")) { color = new Color(0.92f, 0.18f, 0.16f); return true; }
+            if (Eq(label, "Defend")) { color = new Color(0.22f, 0.45f, 0.95f); return true; }
+            if (Eq(label, "Wait")) { color = new Color(0.70f, 0.72f, 0.78f); return true; }
+            if (Eq(label, "Help")) { color = new Color(0.18f, 0.88f, 0.95f); return true; }
+            if (Eq(label, "Follow")) { color = new Color(0.55f, 0.82f, 1f); return true; }
+            if (Eq(label, "Retreat")) { color = new Color(0.65f, 0.40f, 0.78f); return true; }
+            if (Eq(label, "Hold")) { color = new Color(0.16f, 0.30f, 0.72f); return true; }
+            if (Eq(label, "Push")) { color = new Color(1f, 0.34f, 0.12f); return true; }
+            if (Eq(label, "Incoming")) { color = new Color(1f, 0.42f, 0.10f); return true; }
             if (Eq(label, "Heal")) { color = new Color(0.20f, 0.85f, 0.32f); return true; }
+            if (Eq(label, "Capture")) { color = new Color(0.92f, 0.28f, 0.62f); return true; }
+            if (Eq(label, "Kill")) { color = new Color(0.70f, 0.07f, 0.12f); return true; }
             if (Eq(label, "Mining")) { color = new Color(0.95f, 0.55f, 0.12f); return true; }
-            if (Eq(label, "Attack") || Eq(label, "Kill") || Eq(label, "Push"))
-            {
-                color = new Color(0.92f, 0.18f, 0.16f);
-                return true;
-            }
-
-            if (Eq(label, "Defend") || Eq(label, "Hold"))
-            {
-                color = new Color(0.22f, 0.45f, 0.95f);
-                return true;
-            }
-
-            if (Eq(label, "Help")) { color = new Color(0.25f, 0.85f, 0.95f); return true; }
-            if (Eq(label, "Follow") || Eq(label, "Scout"))
-            {
-                color = new Color(0.70f, 0.90f, 1f);
-                return true;
-            }
-
-            if (Eq(label, "Capture")) { color = new Color(0.95f, 0.55f, 0.12f); return true; }
-            if (Eq(label, "Retreat")) { color = new Color(0.65f, 0.45f, 0.70f); return true; }
-            if (Eq(label, "Rally")) { color = new Color(0.95f, 0.85f, 0.40f); return true; }
-            if (Eq(label, "Incoming")) { color = new Color(0.95f, 0.50f, 0.15f); return true; }
-            if (Eq(label, "Wait")) { color = new Color(0.75f, 0.75f, 0.80f); return true; }
-            if (Eq(label, "Transport")) { color = new Color(0.45f, 0.75f, 0.95f); return true; }
+            if (Eq(label, "Transport")) { color = new Color(0.38f, 0.72f, 0.98f); return true; }
+            if (Eq(label, "Dock") || Eq(label, "Deposit")) { color = new Color(0.95f, 0.78f, 0.22f); return true; }
             return false;
         }
 
@@ -832,6 +1572,8 @@ namespace TitanOrbit.Game
             Planet,
             Moon,
             Home,
+            Pad,
+            Turret,
             Asteroid,
             Gems,
             Color,
@@ -847,6 +1589,10 @@ namespace TitanOrbit.Game
             public const int Here = 5;
             public const int Planet = 6;
             public const int Asteroid = 7;
+            public const int Moon = 8;
+            public const int Pad = 9;
+            public const int Turret = 10;
+            public const int Gems = 11;
         }
 
         struct ParsedWords
@@ -864,10 +1610,14 @@ namespace TitanOrbit.Game
             public bool HasPlanet;
             public bool HasMoon;
             public bool HasHome;
+            public bool HasPad;
+            public bool HasTurret;
             public bool HasAsteroid;
             public bool HasGems;
             public bool HasAction;
             public bool Converge;
+            public bool Hostile;
+            public bool Friendly;
             public TeamId ColorTeam;
             public Color ActionColor;
         }

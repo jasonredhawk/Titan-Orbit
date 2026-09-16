@@ -1607,6 +1607,9 @@ namespace TitanOrbit.Game
         public const int PointsPerGem = 2;
         public const int PointsPerPerson = 5;
 
+        /// <summary>Last <see cref="ComputeTeamRanks"/> snapshot (owner NetworkId → 1-based rank).</summary>
+        static readonly Dictionary<int, int> s_RankByNetworkId = new Dictionary<int, int>(32);
+
         /// <summary>Combined score from ghosted match-long stats.</summary>
         public static int ComputeCombinedScore(int kills, int gemsDeposited, int peopleDelivered)
         {
@@ -1651,6 +1654,22 @@ namespace TitanOrbit.Game
                 for (int i = 0; i < list.Count; i++)
                     rankByNetworkId[list[i].OwnerNetworkId] = i + 1;
             }
+
+            s_RankByNetworkId.Clear();
+            foreach (var kv in rankByNetworkId)
+                s_RankByNetworkId[kv.Key] = kv.Value;
+        }
+
+        /// <summary>
+        /// 1-based rank on that player's team from the last nameplate flush.
+        /// Missing / unknown owners return false.
+        /// </summary>
+        public static bool TryGetTeamRank(int networkId, out int rank)
+        {
+            if (networkId > 0 && s_RankByNetworkId.TryGetValue(networkId, out rank) && rank > 0)
+                return true;
+            rank = 0;
+            return false;
         }
 
         static int CompareScoreThenId(ShipTopOfTeamRoles.Candidate a, ShipTopOfTeamRoles.Candidate b)

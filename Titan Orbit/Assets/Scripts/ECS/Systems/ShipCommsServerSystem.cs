@@ -160,15 +160,20 @@ namespace TitanOrbit.ECS
             }
 
             byte focusKind = sentence.FocusKind;
-            if (focusKind > ShipCommsInbox.FocusKind.Planet)
+            if (focusKind > ShipCommsInbox.FocusKind.Gem)
                 focusKind = ShipCommsInbox.FocusKind.None;
             if ((focusKind == ShipCommsInbox.FocusKind.MapPing
-                    || focusKind == ShipCommsInbox.FocusKind.Asteroid)
+                    || focusKind == ShipCommsInbox.FocusKind.Asteroid
+                    || focusKind == ShipCommsInbox.FocusKind.Gem)
                 && hasWaypoint == 0)
                 focusKind = ShipCommsInbox.FocusKind.None;
 
             int planetId = sentence.PlanetId > 0 ? sentence.PlanetId : 0;
-            if (focusKind == ShipCommsInbox.FocusKind.Planet && planetId <= 0)
+            if ((focusKind == ShipCommsInbox.FocusKind.Planet
+                    || focusKind == ShipCommsInbox.FocusKind.Moon
+                    || focusKind == ShipCommsInbox.FocusKind.Pad
+                    || focusKind == ShipCommsInbox.FocusKind.Turret)
+                && planetId <= 0)
                 focusKind = ShipCommsInbox.FocusKind.None;
 
             var rpc = new ShipCommsRpc

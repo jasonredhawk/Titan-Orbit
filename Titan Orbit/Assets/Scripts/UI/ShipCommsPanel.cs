@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using TitanOrbit.Core;
 using TitanOrbit.Data;
@@ -6,6 +7,7 @@ using TitanOrbit.Game;
 using TitanOrbit.Input;
 using TitanOrbit.NetCode;
 using TitanOrbit.Services;
+using TitanOrbit.Shared;
 using TMPro;
 using UnityEngine;
 using UnityEngine.EventSystems;
@@ -41,15 +43,30 @@ namespace TitanOrbit.UI
         public const float TileGap = 4f;
         public const int KeywordColumns = 5;
 
-        const float RecentColWidth = 156f;
+        /// <summary>RECENT row is one-third smaller than the matrix; chips sit inside that row.</summary>
+        const float RecentScale = 2f / 3f;
+        const float RecentChipFit = 0.85f;
+        const float RecentChipWidth = TileWidth * RecentScale * RecentChipFit;
+        const float RecentChipHeight = TileHeight * RecentScale * RecentChipFit;
+        const float RecentChipGap = TileGap * RecentScale;
+        const float RecentChipFont = 6.5f;
+        const float RecentRowPadLeft = 8f;
+        const float RecentRowPadRight = 4f;
+        const float RecentColWidth =
+            RecentRowPadLeft
+            + ShipCommsKeywordCatalog.MaxSequenceLength * RecentChipWidth
+            + (ShipCommsKeywordCatalog.MaxSequenceLength - 1) * RecentChipGap
+            + RecentRowPadRight;
         const float RootGap = 10f;
+        /// <summary>Keeps the docked map circle inside the chrome instead of kissing the card edge.</summary>
+        const float MinimapCircleInset = 20f;
         const float HeaderHeight = 26f;
         const float AudienceToggleWidth = 52f;
         const float AudienceToggleGap = 4f;
         const float BannerHeight = 14f;
         const float SectionGap = 6f;
         const float PanelPad = 12f;
-        const float RecentRowHeight = 22f;
+        const float RecentRowHeight = TileHeight * RecentScale;
 
         static readonly Color FillColor = new Color(0.012f, 0.016f, 0.028f, 1f);
         static readonly Color CaptionPlateColor = new Color(0.018f, 0.028f, 0.045f, 1f);
@@ -64,6 +81,8 @@ namespace TitanOrbit.UI
         static readonly Color LabelOutline = new Color(0.02f, 0.04f, 0.08f, 0.85f);
         static readonly Color SeparatorColor = new Color(0.12f, 0.18f, 0.28f, 0.85f);
         static readonly Color TeamChannelColor = new Color(0.95f, 0.62f, 0.22f, 0.95f);
+        /// <summary>Same white plate as world-chip All frames.</summary>
+        static readonly Color AllChannelColor = new Color(1f, 1f, 1f, 0.92f);
 
         /// <summary>Keyword bytes chosen this hold, in click order (max 5).</summary>
         readonly List<byte> _sequence = new List<byte>(ShipCommsKeywordCatalog.MaxSequenceLength);
@@ -76,6 +95,8 @@ namespace TitanOrbit.UI
         CanvasGroup _group;
         RectTransform _panel;
         PlayerInputHandler _input;
+        Keyboard _cachedKeyboard;
+        UnityEngine.Camera _playAimCamera;
         TextMeshProUGUI _headerSub;
         Image _allFill;
         Image _teamFill;
@@ -86,6 +107,7 @@ namespace TitanOrbit.UI
         bool _wasHeld;
         bool _built;
         RectTransform _minimapDock;
+        RectTransform _minimapHost;
         float _overlayW;
         float _dockSize;
         bool _minimapDocked;
@@ -106,6 +128,8 @@ namespace TitanOrbit.UI
             public Color Accent;
             /// <summary>True when this tile is one of the five team color keywords.</summary>
             public bool IsTeamColor;
+            /// <summary>True when this word paints a colored comms line (Heal, Attack, …).</summary>
+            public bool IsLineColor;
         }
 
         /// <summary>One of the five sequence chips at the top of the card.</summary>
@@ -126,13 +150,22 @@ namespace TitanOrbit.UI
             Social = 3,
         }
 
-        /// <summary>One of the last-sent sentence chips in the RECENT column.</summary>
-        struct RecentSlot
+        /// <summary>One keyword chip inside a RECENT row.</summary>
+        struct RecentChip
         {
             public Image Fill;
             public TextMeshProUGUI Label;
             public Outline Outline;
+        }
+
+        /// <summary>One of the last-sent sentences: a selectable row of up to five chips.</summary>
+        sealed class RecentSlot
+        {
+            public Image Fill;
+            public Image Caret;
+            public Outline Outline;
             public Button Button;
+            public readonly RecentChip[] Chips = new RecentChip[ShipCommsKeywordCatalog.MaxSequenceLength];
         }
 
         /// <summary>
@@ -173,6 +206,7 @@ namespace TitanOrbit.UI
         void OnDestroy()
         {
             UndockMinimap();
+            HUDController.SetCommsMatrixObscuresHud(false);
             if (ShipCommsClientState.IsOpen)
                 ShipCommsClientState.SetOpen(false);
         }
@@ -219,20 +253,28 @@ namespace TitanOrbit.UI
                 TrySendSequence();
                 SetOpen(false, clearSequence: true);
             }
-            else if (!held)
+            else if (!held && ShipCommsClientState.IsOpen)
             {
                 SetOpen(false, clearSequence: false);
+            }
+            else if (!held && _minimapDock != null && _minimapDock.childCount > 0)
+            {
                 // Recover a map left under the dock after a prior close that disabled it first.
-                if (_minimapDock != null && _minimapDock.childCount > 0)
-                    UndockMinimap();
+                UndockMinimap();
             }
 
             _wasHeld = held && canUse;
-            TrySamplePlayAim();
+
+            // Aim / recent-wheel only matter while the matrix is up. Sampling Camera.main
+            // and IsPointerOverGameObject every closed frame showed up as extra LateUpdate work.
+            if (held && canUse)
+                TrySamplePlayAim();
             if (ShipCommsClientState.IsOpen)
+            {
                 TryStepRecentFromWheel();
-            if (ShipCommsClientState.IsOpen && ShipCommsClientState.ConsumeWaypointChipDirty())
-                EnsureMapPointChip();
+                if (ShipCommsClientState.ConsumeWaypointChipDirty())
+                    EnsureMapPointChip();
+            }
         }
 
         /// <summary>
@@ -279,8 +321,9 @@ namespace TitanOrbit.UI
             if (EventSystem.current != null && EventSystem.current.IsPointerOverGameObject())
                 return;
 
-            UnityEngine.Camera cam = UnityEngine.Camera.main;
-            if (_input != null && _input.TryGetMouseWorldPosition(cam, out Vector3 world))
+            if (_playAimCamera == null)
+                _playAimCamera = UnityEngine.Camera.main;
+            if (_input != null && _input.TryGetMouseWorldPosition(_playAimCamera, out Vector3 world))
                 ShipCommsClientState.SetLastPlayAim(world);
         }
 
@@ -318,6 +361,8 @@ namespace TitanOrbit.UI
 
             Keyboard keyboard = Keyboard.current;
             if (keyboard == null)
+                keyboard = _cachedKeyboard;
+            if (keyboard == null)
             {
                 foreach (var device in InputSystem.devices)
                 {
@@ -329,6 +374,7 @@ namespace TitanOrbit.UI
                 }
             }
 
+            _cachedKeyboard = keyboard;
             return keyboard != null && keyboard.sKey.isPressed;
         }
 
@@ -352,6 +398,7 @@ namespace TitanOrbit.UI
             if (!open && wasOpen)
             {
                 UndockMinimap();
+                HUDController.SetCommsMatrixObscuresHud(false);
                 if (clearSequence)
                 {
                     ShipCommsClientState.ClearPendingWaypoint();
@@ -381,6 +428,7 @@ namespace TitanOrbit.UI
                 PaintSequence();
                 ShipCommsClientState.ClearPendingWaypoint();
                 ShipCommsClientState.ClearPendingYou();
+                HUDController.SetCommsMatrixObscuresHud(true);
                 DockMinimap();
             }
 
@@ -498,9 +546,13 @@ namespace TitanOrbit.UI
             Vector3 aim = ShipCommsClientState.HasLastPlayAim
                 ? ShipCommsClientState.LastPlayAim
                 : Vector3.zero;
-            if (ShipCommsCalloutGraphics.TryResolveYou(
-                    aim, EcsGameBridge.GetLocalNetworkId(), out int youId))
+            int localId = EcsGameBridge.GetLocalNetworkId();
+            if (ShipCommsCalloutGraphics.TryResolveYou(aim, localId, out int youId)
+                && youId > 0
+                && youId != localId)
                 ShipCommsClientState.SetPendingYou(youId);
+            else
+                ShipCommsClientState.ClearPendingYou();
         }
 
         bool SequenceHasYou() => SequenceHasLabel("You");
@@ -591,13 +643,16 @@ namespace TitanOrbit.UI
             if (sentence.Count >= 5 && allowed >= 5)
                 _sequence.Add(sentence.K4);
 
-            if (sentence.HasWaypoint != 0)
+            // Here pings replay the clicked map point. Asteroid / planet / You resolve
+            // again from the speaker so "Asteroid" is a new closest rock.
+            if (sentence.HasWaypoint != 0 && SequenceHasHere())
                 ShipCommsClientState.SetPendingWaypoint(
                     new Vector3(sentence.WaypointX, 0f, sentence.WaypointZ));
             else
                 ShipCommsClientState.ClearPendingWaypoint();
 
             ShipCommsClientState.ClearPendingYou();
+            ShipCommsClientState.ClearLastPlayAim();
             _recentCursor = index;
             PaintSequence();
             PaintRecent();
@@ -618,14 +673,22 @@ namespace TitanOrbit.UI
                     label = word;
 
                 PreviewSlot slot = _preview[i];
+                Color previewFill = locked ? CaptionPlateColor : (filled ? TileSelected : PreviewEmpty);
+                Color previewLabel = filled ? BodyTextColor : CaptionTextColor;
+                Color previewAccent = AccentColor;
+                if (filled)
+                    ShipCommsCalloutGraphics.ResolveChipPaint(label, selected: true, out previewFill, out previewLabel, out previewAccent);
                 if (slot.Fill != null)
-                    slot.Fill.color = locked ? CaptionPlateColor : (filled ? TileSelected : PreviewEmpty);
+                    slot.Fill.color = previewFill;
                 if (slot.Outline != null)
+                {
+                    slot.Outline.effectColor = previewAccent;
                     slot.Outline.enabled = filled && !locked;
+                }
                 if (slot.Label != null)
                 {
                     slot.Label.text = locked ? string.Empty : (filled ? label.ToUpperInvariant() : (i + 1).ToString());
-                    slot.Label.color = filled ? BodyTextColor : CaptionTextColor;
+                    slot.Label.color = previewLabel;
                 }
 
                 if (slot.LockLabel != null)
@@ -640,32 +703,28 @@ namespace TitanOrbit.UI
                 KeywordTile tile = _tiles[t];
                 int order = IndexOfSequence(tile.Index);
                 bool selected = order >= 0;
-                bool isTeamColor = tile.IsTeamColor;
+                string word = catalog.TryGetLabel(tile.Index, out string painted) ? painted : string.Empty;
+                ShipCommsCalloutGraphics.ResolveChipPaint(word, selected, out Color fill, out Color labelColor, out Color accent);
                 if (tile.Fill != null)
-                {
-                    // Color words keep a faction wash so "Purple" reads as the purple team.
-                    Color idle = isTeamColor ? Color.Lerp(TileIdle, tile.Accent, 0.28f) : TileIdle;
-                    Color picked = isTeamColor ? Color.Lerp(TileSelected, tile.Accent, 0.4f) : TileSelected;
-                    tile.Fill.color = selected ? picked : idle;
-                }
+                    tile.Fill.color = fill;
                 if (tile.Outline != null)
                 {
-                    tile.Outline.effectColor = tile.Accent;
+                    tile.Outline.effectColor = accent;
                     tile.Outline.enabled = selected;
                 }
                 if (tile.Caret != null)
                 {
-                    tile.Caret.color = tile.Accent;
+                    tile.Caret.color = accent;
                     tile.Caret.enabled = selected;
                 }
                 if (tile.OrderBadge != null)
                 {
                     tile.OrderBadge.text = selected ? (order + 1).ToString() : string.Empty;
-                    tile.OrderBadge.color = tile.Accent;
+                    tile.OrderBadge.color = accent;
                     tile.OrderBadge.enabled = selected;
                 }
-                if (tile.Label != null && isTeamColor)
-                    tile.Label.color = Color.Lerp(BodyTextColor, tile.Accent, 0.55f);
+                if (tile.Label != null)
+                    tile.Label.color = labelColor;
             }
         }
 
@@ -688,29 +747,71 @@ namespace TitanOrbit.UI
             for (int i = 0; i < _recent.Length; i++)
             {
                 RecentSlot slot = _recent[i];
+                if (slot == null)
+                    continue;
+
                 bool filled = ShipCommsHistory.TryGet(i, out ShipCommsHistory.Sentence sentence);
                 bool selected = filled && i == _recentCursor;
                 if (slot.Fill != null)
                     slot.Fill.color = selected
-                        ? new Color(0.08f, 0.20f, 0.34f, 0.98f)
+                        ? Color.Lerp(TileSelected, AllChannelColor, 0.42f)
                         : (filled ? TileSelected : PreviewEmpty);
                 if (slot.Outline != null)
-                    slot.Outline.enabled = filled;
+                {
+                    slot.Outline.effectColor = AllChannelColor;
+                    slot.Outline.effectDistance = selected ? new Vector2(2f, -2f) : new Vector2(0.8f, -0.8f);
+                    slot.Outline.enabled = selected;
+                }
+                if (slot.Caret != null)
+                {
+                    slot.Caret.color = AllChannelColor;
+                    slot.Caret.enabled = selected;
+                }
                 if (slot.Button != null)
                     slot.Button.interactable = filled;
-                if (slot.Label != null)
+
+                for (int c = 0; c < slot.Chips.Length; c++)
                 {
-                    slot.Label.text = filled
-                        ? catalog.FormatSentence(
-                            sentence.Count,
-                            sentence.K0,
-                            sentence.K1,
-                            sentence.K2,
-                            sentence.K3,
-                            sentence.K4)
-                        : "—";
-                    slot.Label.color = filled ? BodyTextColor : CaptionTextColor;
+                    bool on = filled && c < sentence.Count;
+                    PaintRecentChip(slot.Chips[c], catalog, on ? SentenceKeyword(in sentence, c) : (byte)0, on);
                 }
+            }
+        }
+
+        /// <summary>Paints one RECENT chip like a selected matrix / preview tile.</summary>
+        static void PaintRecentChip(RecentChip chip, ShipCommsKeywordCatalog catalog, byte index, bool on)
+        {
+            if (chip.Fill != null)
+                chip.Fill.gameObject.SetActive(on);
+            if (!on)
+                return;
+
+            string label = catalog.TryGetLabel(index, out string word) ? word : "?";
+            ShipCommsCalloutGraphics.ResolveChipPaint(label, selected: true, out Color fill, out Color body, out Color accent);
+            if (chip.Fill != null)
+                chip.Fill.color = fill;
+            if (chip.Outline != null)
+            {
+                chip.Outline.effectColor = accent;
+                chip.Outline.enabled = true;
+            }
+            if (chip.Label != null)
+            {
+                chip.Label.text = label.ToUpperInvariant();
+                chip.Label.color = body;
+            }
+        }
+
+        static byte SentenceKeyword(in ShipCommsHistory.Sentence sentence, int slot)
+        {
+            switch (slot)
+            {
+                case 0: return sentence.K0;
+                case 1: return sentence.K1;
+                case 2: return sentence.K2;
+                case 3: return sentence.K3;
+                case 4: return sentence.K4;
+                default: return 0;
             }
         }
 
@@ -751,8 +852,12 @@ namespace TitanOrbit.UI
                 + CategoryBlockHeight(subjectCount) + SectionGap
                 + CategoryBlockHeight(socialCount)
                 + PanelPad;
+            float recentH = BannerHeight + RecentChipGap
+                + ShipCommsHistory.MaxEntries * RecentRowHeight
+                + (ShipCommsHistory.MaxEntries - 1) * RecentChipGap;
+            overlayH = Mathf.Max(overlayH, PanelPad * 2f + recentH);
             _overlayW = overlayW;
-            _dockSize = Mathf.Clamp(overlayH, 220f, 340f);
+            _dockSize = overlayH;
 
             var panelGo = new GameObject("Panel", typeof(RectTransform), typeof(Image));
             panelGo.transform.SetParent(transform, false);
@@ -875,7 +980,7 @@ namespace TitanOrbit.UI
             _allLabel = CreateLabel(_allFill.transform, "Label", "ALL", 9f, BodyTextColor, TextAlignmentOptions.Center);
             Stretch(_allLabel.rectTransform, 2f);
             _allOutline = _allFill.gameObject.AddComponent<Outline>();
-            _allOutline.effectColor = AccentColor;
+            _allOutline.effectColor = AllChannelColor;
             _allOutline.effectDistance = new Vector2(1f, -1f);
             _allOutline.useGraphicAlpha = false;
             _allFill.gameObject.GetComponent<Button>().onClick.AddListener(() => OnAudienceClicked(false));
@@ -884,7 +989,7 @@ namespace TitanOrbit.UI
             _teamLabel = CreateLabel(_teamFill.transform, "Label", "TEAM", 9f, BodyTextColor, TextAlignmentOptions.Center);
             Stretch(_teamLabel.rectTransform, 2f);
             _teamOutline = _teamFill.gameObject.AddComponent<Outline>();
-            _teamOutline.effectColor = TeamChannelColor;
+            _teamOutline.effectColor = AllChannelColor;
             _teamOutline.effectDistance = new Vector2(1f, -1f);
             _teamOutline.useGraphicAlpha = false;
             _teamFill.gameObject.GetComponent<Button>().onClick.AddListener(() => OnAudienceClicked(true));
@@ -905,25 +1010,42 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
+        /// Local faction RGB for the TEAM pill — same palette as world-chip Team frames.
+        /// White until Join Team so the pill is not the old amber stand-in.
+        /// </summary>
+        static Color ResolveLocalTeamAccent()
+        {
+            TeamId team = ClientTeamFlowState.ResolvePresentationTeam(TeamId.None);
+            return team != TeamId.None ? team.ToColor() : AllChannelColor;
+        }
+
+        /// <summary>
         /// Highlights the active All / Team pill and updates the HOLD S subtitle
         /// so the channel is readable without staring at the switch.
         /// </summary>
         void PaintAudience()
         {
             bool teamOnly = ShipCommsClientState.TeamOnly;
+            Color teamAccent = ResolveLocalTeamAccent();
 
             if (_allFill != null)
-                _allFill.color = teamOnly ? TileIdle : TileSelected;
+                _allFill.color = teamOnly ? TileIdle : Color.Lerp(TileSelected, AllChannelColor, 0.22f);
             if (_teamFill != null)
-                _teamFill.color = teamOnly ? Color.Lerp(TileSelected, TeamChannelColor, 0.35f) : TileIdle;
+                _teamFill.color = teamOnly ? Color.Lerp(TileSelected, teamAccent, 0.35f) : TileIdle;
             if (_allOutline != null)
+            {
+                _allOutline.effectColor = AllChannelColor;
                 _allOutline.enabled = !teamOnly;
+            }
             if (_teamOutline != null)
+            {
+                _teamOutline.effectColor = teamAccent;
                 _teamOutline.enabled = teamOnly;
+            }
             if (_allLabel != null)
-                _allLabel.color = teamOnly ? CaptionTextColor : BodyTextColor;
+                _allLabel.color = teamOnly ? CaptionTextColor : AllChannelColor;
             if (_teamLabel != null)
-                _teamLabel.color = teamOnly ? TeamChannelColor : CaptionTextColor;
+                _teamLabel.color = teamOnly ? teamAccent : CaptionTextColor;
             if (_headerSub != null)
             {
                 int allowed = ShipCommsClientState.AllowedSequenceLength;
@@ -994,31 +1116,80 @@ namespace TitanOrbit.UI
             bannerRt.sizeDelta = new Vector2(0f, BannerHeight);
             banner.characterSpacing = 1.4f;
 
-            float y = BannerHeight + 4f;
+            float y = BannerHeight + RecentChipGap;
             for (int i = 0; i < _recent.Length; i++)
             {
                 int slot = i;
                 Image tile = CreateTile(parent, "Recent" + i, 0f, y, RecentColWidth, RecentRowHeight, PreviewEmpty);
-                var label = CreateLabel(tile.transform, "Label", "—", 7f, CaptionTextColor, TextAlignmentOptions.Left);
-                Stretch(label.rectTransform, 4f);
+                var caretGo = new GameObject("Caret", typeof(RectTransform), typeof(Image));
+                caretGo.transform.SetParent(tile.transform, false);
+                var caretRt = caretGo.GetComponent<RectTransform>();
+                caretRt.anchorMin = new Vector2(0f, 0f);
+                caretRt.anchorMax = new Vector2(0f, 1f);
+                caretRt.pivot = new Vector2(0f, 0.5f);
+                caretRt.sizeDelta = new Vector2(4f, -4f);
+                caretRt.anchoredPosition = new Vector2(2f, 0f);
+                var caret = caretGo.GetComponent<Image>();
+                caret.color = AllChannelColor;
+                caret.raycastTarget = false;
+                caret.enabled = false;
                 var outline = tile.gameObject.AddComponent<Outline>();
-                outline.effectColor = AccentColor;
-                outline.effectDistance = new Vector2(0.8f, -0.8f);
+                outline.effectColor = AllChannelColor;
+                outline.effectDistance = new Vector2(2f, -2f);
                 outline.useGraphicAlpha = false;
                 outline.enabled = false;
                 var btn = tile.gameObject.GetComponent<Button>();
                 btn.onClick.AddListener(() => OnRecentClicked(slot));
                 btn.interactable = false;
 
-                _recent[i] = new RecentSlot
+                var row = new RecentSlot
                 {
                     Fill = tile,
-                    Label = label,
+                    Caret = caret,
                     Outline = outline,
                     Button = btn,
                 };
-                y += RecentRowHeight + 4f;
+                for (int c = 0; c < row.Chips.Length; c++)
+                    row.Chips[c] = CreateRecentChip(tile.transform, c);
+                _recent[i] = row;
+                y += RecentRowHeight + RecentChipGap;
             }
+        }
+
+        /// <summary>One matrix-sized chip inside a RECENT row. Clicks go through to the row.</summary>
+        static RecentChip CreateRecentChip(Transform parent, int slot)
+        {
+            float x = RecentRowPadLeft + slot * (RecentChipWidth + RecentChipGap);
+            var go = new GameObject("Chip" + slot, typeof(RectTransform), typeof(Image));
+            go.transform.SetParent(parent, false);
+            var rt = go.GetComponent<RectTransform>();
+            rt.anchorMin = new Vector2(0f, 0.5f);
+            rt.anchorMax = new Vector2(0f, 0.5f);
+            rt.pivot = new Vector2(0f, 0.5f);
+            rt.anchoredPosition = new Vector2(x, 0f);
+            rt.sizeDelta = new Vector2(RecentChipWidth, RecentChipHeight);
+            var fill = go.GetComponent<Image>();
+            fill.color = TileSelected;
+            fill.raycastTarget = false;
+
+            var label = CreateLabel(go.transform, "Label", string.Empty, RecentChipFont, BodyTextColor, TextAlignmentOptions.Center);
+            Stretch(label.rectTransform, 2f);
+            label.enableWordWrapping = false;
+            label.overflowMode = TextOverflowModes.Ellipsis;
+
+            var outline = go.AddComponent<Outline>();
+            outline.effectColor = AccentColor;
+            outline.effectDistance = new Vector2(1.1f, -1.1f);
+            outline.useGraphicAlpha = false;
+            outline.enabled = false;
+
+            go.SetActive(false);
+            return new RecentChip
+            {
+                Fill = fill,
+                Label = label,
+                Outline = outline,
+            };
         }
 
         /// <summary>One banner plus a wrapping row of tiles for that section.</summary>
@@ -1041,17 +1212,15 @@ namespace TitanOrbit.UI
             y += BannerHeight;
 
             int placed = 0;
-            for (int i = 0; i < words.Count; i++)
+            int[] order = CollectSectionOrder(words, section);
+            for (int p = 0; p < order.Length; p++)
             {
-                if (!MatchesSection(words[i], section))
-                    continue;
-
+                int i = order[p];
                 int col = placed % KeywordColumns;
                 int row = placed / KeywordColumns;
                 float x = col * (TileWidth + TileGap);
                 float tileY = y + row * (TileHeight + TileGap);
-                byte index = (byte)i;
-                KeywordTile tile = CreateKeywordTile(parent, index, words[i].label, x, tileY);
+                KeywordTile tile = CreateKeywordTile(parent, (byte)i, words[i].label, x, tileY);
                 _tiles.Add(tile);
                 placed++;
             }
@@ -1066,15 +1235,9 @@ namespace TitanOrbit.UI
             // --- Faction tint ---
             // [TITAN-ORBIT] Red / Blue / Green / Orange / Purple use the same RGB as hulls
             // so "Attack Purple Base" is scannable in the SUBJECT grid.
-            Color accent = AccentColor;
-            bool isTeamColor = false;
-            if (TeamIdExtensions.TryParseColorName(label, out TeamId team))
-            {
-                accent = team.ToColor();
-                isTeamColor = true;
-            }
-
-            Color idleFill = isTeamColor ? Color.Lerp(TileIdle, accent, 0.28f) : TileIdle;
+            ShipCommsCalloutGraphics.ResolveChipPaint(label, selected: false, out Color idleFill, out Color labelColor, out Color accent);
+            bool isTeamColor = TeamIdExtensions.TryParseColorName(label, out _);
+            bool isLineColor = !isTeamColor && ShipCommsCalloutGraphics.TryGetLineColor(label, out _);
             Image fill = CreateTile(parent, "Kw" + index, x, y, TileWidth, TileHeight, idleFill);
 
             var caretGo = new GameObject("Caret", typeof(RectTransform), typeof(Image));
@@ -1090,7 +1253,6 @@ namespace TitanOrbit.UI
             caret.raycastTarget = false;
             caret.enabled = false;
 
-            Color labelColor = isTeamColor ? Color.Lerp(BodyTextColor, accent, 0.55f) : BodyTextColor;
             var text = CreateLabel(fill.transform, "Label", label.ToUpperInvariant(), 10f, labelColor, TextAlignmentOptions.Center);
             Stretch(text.rectTransform, 4f);
             text.enableWordWrapping = false;
@@ -1123,6 +1285,7 @@ namespace TitanOrbit.UI
                 Caret = caret,
                 Accent = accent,
                 IsTeamColor = isTeamColor,
+                IsLineColor = isLineColor,
             };
         }
 
@@ -1135,7 +1298,7 @@ namespace TitanOrbit.UI
         {
             if (string.IsNullOrWhiteSpace(word.label))
                 return false;
-            if (ShipCommsKeywordCatalog.IsHiddenFromMatrix(word.label))
+            if (ShipCommsKeywordCatalog.IsHiddenFromMatrix(in word))
                 return false;
 
             bool isColor = TeamIdExtensions.TryParseColorName(word.label, out _);
@@ -1154,6 +1317,49 @@ namespace TitanOrbit.UI
                 default:
                     return false;
             }
+        }
+
+        /// <summary>
+        /// Wire indices for one banner. TEAM keeps catalog order (Red…Purple);
+        /// Tactical / Subject / Social are A–Z by label. Indices themselves never move.
+        /// </summary>
+        static int[] CollectSectionOrder(IReadOnlyList<ShipCommsKeyword> words, MatrixSection section)
+        {
+            int n = 0;
+            for (int i = 0; i < words.Count; i++)
+            {
+                if (MatchesSection(words[i], section))
+                    n++;
+            }
+
+            var order = new int[n];
+            int w = 0;
+            for (int i = 0; i < words.Count; i++)
+            {
+                if (!MatchesSection(words[i], section))
+                    continue;
+                order[w++] = i;
+            }
+
+            if (section != MatrixSection.Team)
+            {
+                for (int a = 1; a < order.Length; a++)
+                {
+                    int key = order[a];
+                    string keyLabel = words[key].label;
+                    int b = a - 1;
+                    while (b >= 0
+                        && string.Compare(words[order[b]].label, keyLabel, StringComparison.OrdinalIgnoreCase) > 0)
+                    {
+                        order[b + 1] = order[b];
+                        b--;
+                    }
+
+                    order[b + 1] = key;
+                }
+            }
+
+            return order;
         }
 
         /// <summary>How many labeled rows belong under this banner.</summary>
@@ -1310,8 +1516,9 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// Empty host to the left of the compose card. The live minimap reparents here
-        /// while S is held so the player can ping a world point.
+        /// Space-glass card to the left of the compose panel, same height, same chrome.
+        /// The live minimap reparents into the inner host while S is held so the player
+        /// can ping a world point.
         /// </summary>
         void BuildMinimapDock()
         {
@@ -1321,28 +1528,64 @@ namespace TitanOrbit.UI
             _minimapDock.anchorMin = new Vector2(0.5f, 0.5f);
             _minimapDock.anchorMax = new Vector2(0.5f, 0.5f);
             _minimapDock.pivot = new Vector2(0.5f, 0.5f);
-            _minimapDock.sizeDelta = new Vector2(_dockSize, _dockSize);
-            _minimapDock.anchoredPosition = new Vector2(
-                -_overlayW * 0.5f - RootGap - _dockSize * 0.5f,
-                0f);
+            LayoutMinimapDock(_dockSize);
             var bg = go.GetComponent<Image>();
             bg.color = FillColor;
             bg.raycastTarget = false;
+            BuildSciFiChrome(_minimapDock);
+
+            var hostGo = new GameObject("MapHost", typeof(RectTransform));
+            hostGo.transform.SetParent(_minimapDock, false);
+            _minimapHost = hostGo.GetComponent<RectTransform>();
+            _minimapHost.anchorMin = new Vector2(0.5f, 0.5f);
+            _minimapHost.anchorMax = new Vector2(0.5f, 0.5f);
+            _minimapHost.pivot = new Vector2(0.5f, 0.5f);
+            _minimapHost.anchoredPosition = Vector2.zero;
+            LayoutMinimapDock(_dockSize);
+
             go.SetActive(false);
         }
 
-        /// <summary>Reparents the HUD minimap into the dock as a smaller full-map view.</summary>
+        /// <summary>Square card whose side matches the compose panel height.</summary>
+        void LayoutMinimapDock(float panelHeight)
+        {
+            float side = Mathf.Max(80f, panelHeight);
+            _dockSize = side;
+            // Shift the pair so minimap + matrix sit as one centered group.
+            float groupShift = (side + RootGap) * 0.5f;
+            if (_panel != null)
+                _panel.anchoredPosition = new Vector2(groupShift, 0f);
+
+            if (_minimapDock != null)
+            {
+                _minimapDock.sizeDelta = new Vector2(side, side);
+                _minimapDock.anchoredPosition = new Vector2(
+                    groupShift - _overlayW * 0.5f - RootGap - side * 0.5f,
+                    0f);
+            }
+
+            if (_minimapHost != null)
+            {
+                float mapSide = Mathf.Max(72f, side - MinimapCircleInset * 2f);
+                _minimapHost.sizeDelta = new Vector2(mapSide, mapSide);
+            }
+        }
+
+        /// <summary>Reparents the HUD minimap into the dock as a full-height map view.</summary>
         void DockMinimap()
         {
-            if (_minimapDocked || _minimapDock == null)
+            if (_minimapDocked || _minimapHost == null)
                 return;
 
             var minimap = FindMinimapController();
             if (minimap == null)
                 return;
 
+            float panelH = _panel != null ? _panel.sizeDelta.y : _dockSize;
+            LayoutMinimapDock(panelH);
             _minimapDock.gameObject.SetActive(true);
-            minimap.AttachToCommsDock(_minimapDock);
+            float mapSide = _minimapHost.sizeDelta.x;
+            minimap.AttachToCommsDock(_minimapHost, mapSide);
             _minimapDocked = true;
         }
 

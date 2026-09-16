@@ -8,7 +8,8 @@ namespace TitanOrbit.ECS
     /// [NETCODE] Player-chosen Colorize accents and thruster style on a ship ghost.
     /// Color1 stays on the team material (Red / Blue / Green / Orange / Purple).
     /// Paint fields override Color2, Color3, and the three emission slots.
-    /// Thruster fields pick one of four JetFlame types plus a packed locked tint.
+    /// Thruster fields pick one of four JetFlame types. Color always follows team Color1;
+    /// packed tint / lifetime stops stay on the ghost for layout compatibility.
     /// <para>
     /// Must be baked on <see cref="Authoring.StarshipGhostAuthoring"/>. A runtime-only
     /// <c>AddComponent</c> does not register GhostFields, so remotes would never see

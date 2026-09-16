@@ -15,9 +15,10 @@ namespace TitanOrbit.Game
     /// <c>GhostOwner.NetworkId</c> — a new callout replaces the old one.
     /// <para>
     /// Client presentation only. Driven by <see cref="ShipCommsInbox"/> (RPC echo) and by
-    /// <see cref="Show"/> for the speaker's optimistic local preview. Team-only callouts
-    /// use amber frames; color keywords (Purple, Red, …) tint to that faction. Anchors
-    /// through <see cref="ShipWeaponProxyRegistry"/> so we follow the wrapped hull
+    /// <see cref="Show"/> for the speaker's optimistic local preview. Chip frames stay
+    /// steel unless that word owns a color (Purple, Red, Heal, Attack, …). One plate
+    /// outlines the whole row: white for All, the speaker's team color for Team.
+    /// Anchors through <see cref="ShipWeaponProxyRegistry"/> so we follow the wrapped hull
     /// transform (display = sim; no extra wrap tiles).
     /// </para>
     /// Regular nameplates sit world −Z (screen-below). These chips sit world +Z (screen-above)
@@ -76,14 +77,17 @@ namespace TitanOrbit.Game
         const float ChipGap = 4f;
         const float ChipPadX = 8f;
         const float FrameInset = 2f;
+        /// <summary>Gap so the All / Team plate reads as one outline around every chip.</summary>
+        const float ChannelPad = 4f;
         const int WorldSortingOrder = 5010;
 
         static readonly Color ChipFill = new Color(0.03f, 0.05f, 0.09f, 0.96f);
-        static readonly Color ChipFrame = new Color(0.35f, 0.72f, 0.95f, 0.95f);
+        static readonly Color ChipFrame = ShipCommsCalloutGraphics.ChipNeutralFrame;
         static readonly Color ChipText = new Color(0.88f, 0.92f, 0.98f, 1f);
         static readonly Color ChipOutline = new Color(0.02f, 0.04f, 0.08f, 0.85f);
         static readonly Color ChipCaret = new Color(0.35f, 0.72f, 0.95f, 0.95f);
-        static readonly Color TeamChannelFrame = new Color(0.95f, 0.62f, 0.22f, 0.95f);
+        static readonly Color ChipAccent = ShipCommsCalloutGraphics.ChipDefaultAccent;
+        static readonly Color AllChannelFrame = new Color(1f, 1f, 1f, 0.92f);
 
         static ShipCommsBubblePresenter s_Instance;
         static Sprite s_PlateSprite;
@@ -100,6 +104,7 @@ namespace TitanOrbit.Game
             public Canvas WorldCanvas;
             public RectTransform CanvasRect;
             public CanvasGroup Group;
+            public Image ChannelFrame;
             public readonly TextMeshProUGUI[] Labels = new TextMeshProUGUI[ShipCommsKeywordCatalog.MaxSequenceLength];
             public readonly GameObject[] Chips = new GameObject[ShipCommsKeywordCatalog.MaxSequenceLength];
             public readonly LayoutElement[] ChipLayouts = new LayoutElement[ShipCommsKeywordCatalog.MaxSequenceLength];
@@ -174,6 +179,32 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
+        /// Copies live comms path segments (world XZ) for the minimap overlay.
+        /// No alloc; respects the same on/off pulse as the world lines.
+        /// </summary>
+        public static int CopyLivePathSegments(
+            Vector3[] from, Vector3[] to, Color[] colors, int[] ranks, int max)
+        {
+            if (s_Instance == null || from == null || to == null || colors == null || max <= 0)
+                return 0;
+
+            int written = 0;
+            foreach (var pair in s_Instance._live)
+            {
+                Bubble bubble = pair.Value;
+                if (bubble == null || written >= max)
+                    break;
+                if (bubble.Age >= LifetimeSeconds)
+                    continue;
+
+                written += ShipCommsCalloutGraphics.CopyVisiblePaths(
+                    in bubble.Callout, bubble.Age, from, to, colors, ranks, written, max);
+            }
+
+            return written;
+        }
+
+        /// <summary>
         /// Drains the RPC inbox, then parks every live bubble above its hull.
         /// </summary>
         void LateUpdate()
@@ -243,14 +274,15 @@ namespace TitanOrbit.Game
 
             var catalog = ShipCommsKeywordCatalog.LoadDefault();
             float width = 0f;
-            width += ApplyChip(bubble, 0, callout.Count >= 1, callout.K0, catalog, callout.TeamOnly);
-            width += ApplyChip(bubble, 1, callout.Count >= 2, callout.K1, catalog, callout.TeamOnly);
-            width += ApplyChip(bubble, 2, callout.Count >= 3, callout.K2, catalog, callout.TeamOnly);
-            width += ApplyChip(bubble, 3, callout.Count >= 4, callout.K3, catalog, callout.TeamOnly);
-            width += ApplyChip(bubble, 4, callout.Count >= 5, callout.K4, catalog, callout.TeamOnly);
+            width += ApplyChip(bubble, 0, callout.Count >= 1, callout.K0, catalog);
+            width += ApplyChip(bubble, 1, callout.Count >= 2, callout.K1, catalog);
+            width += ApplyChip(bubble, 2, callout.Count >= 3, callout.K2, catalog);
+            width += ApplyChip(bubble, 3, callout.Count >= 4, callout.K3, catalog);
+            width += ApplyChip(bubble, 4, callout.Count >= 5, callout.K4, catalog);
             width += Mathf.Max(0, callout.Count - 1) * ChipGap;
             if (bubble.CanvasRect != null)
-                bubble.CanvasRect.sizeDelta = new Vector2(width, ChipHeight + 8f);
+                bubble.CanvasRect.sizeDelta = new Vector2(width + ChannelPad * 2f, ChipHeight + ChannelPad * 2f);
+            PaintChannelFrame(bubble);
 
             TryFollowHull(bubble);
         }
@@ -259,7 +291,8 @@ namespace TitanOrbit.Game
         /// Shows or hides one chip, writes its label, and sizes it like a panel button.
         /// Returns the chip width used for the row (0 when hidden).
         /// </summary>
-        static float ApplyChip(Bubble bubble, int slot, bool visible, byte index, ShipCommsKeywordCatalog catalog, byte teamOnly)
+        static float ApplyChip(
+            Bubble bubble, int slot, bool visible, byte index, ShipCommsKeywordCatalog catalog)
         {
             GameObject chip = bubble.Chips[slot];
             if (chip != null)
@@ -272,25 +305,18 @@ namespace TitanOrbit.Game
             TextMeshProUGUI tmp = bubble.Labels[slot];
             tmp.text = text.ToUpperInvariant();
 
-            // --- Channel + faction chrome ---
-            // Team-only rows use amber frames so teammates can tell the callout was not All.
-            // Color words (Purple, Red, …) tint caret / fill / label to that team's RGB.
-            Color frame = teamOnly != 0 ? TeamChannelFrame : ChipFrame;
-            Color caret = frame;
-            Color fill = ChipFill;
-            Color body = ChipText;
-            if (catalog.TryGetTeamColor(index, out Color teamColor))
-            {
-                caret = teamColor;
-                frame = teamColor;
-                fill = Color.Lerp(ChipFill, teamColor, 0.28f);
-                body = Color.Lerp(ChipText, teamColor, 0.5f);
-            }
+            // Same paint as a selected matrix tile so Attack stays grey+red font, Red stays faction wash.
+            // Per-chip border is the word color only. All / Team is the row plate.
+            ShipCommsCalloutGraphics.ResolveChipPaint(text, selected: true, out Color fill, out Color body, out Color accent);
+            Color frame = ShipCommsCalloutGraphics.ResolveChipFrameColor(text);
 
             if (bubble.Frames[slot] != null)
                 bubble.Frames[slot].color = frame;
             if (bubble.Carets[slot] != null)
-                bubble.Carets[slot].color = caret;
+            {
+                bubble.Carets[slot].color = accent;
+                bubble.Carets[slot].enabled = true;
+            }
             if (bubble.Fills[slot] != null)
                 bubble.Fills[slot].color = fill;
             tmp.color = body;
@@ -341,7 +367,8 @@ namespace TitanOrbit.Game
             // Gameplay: height zoom (L2+ / MEGA). Theatrical: camera-to-this-hull distance
             // so close crane-ins stay modest and remote speakers stay readable.
             float scale = ResolveChipWorldScale(theatrical, _cachedCamera, centerWorld);
-            float halfChipWorld = (ChipHeight + 8f) * scale * 0.5f;
+            float canvasH = bubble.CanvasRect != null ? bubble.CanvasRect.sizeDelta.y : ChipHeight + ChannelPad * 2f;
+            float halfChipWorld = canvasH * scale * 0.5f;
 
             // [TITAN-ORBIT] Nameplates sit world −Z (screen-below). +Z keeps chips readable
             // on the opposite side of the hull, still on the play plane. Add half the canvas
@@ -374,6 +401,7 @@ namespace TitanOrbit.Game
 
             if (bubble.Team == TeamId.None)
                 TryAssignTeamColor(hull, bubble);
+            PaintChannelFrame(bubble);
 
             if (bubble.WorldCanvas != null && _cachedCamera != null
                 && bubble.WorldCanvas.worldCamera != _cachedCamera)
@@ -411,12 +439,12 @@ namespace TitanOrbit.Game
 
                     float alpha = bubble.Group != null ? bubble.Group.alpha : 1f;
 
-                    Color stem = bubble.LineColor.a > 0.01f ? bubble.LineColor : ChipFrame;
+                    bool seePaths = ShipCommsCalloutGraphics.LocalViewerCanSeePaths(bubble.NetworkId);
+                    Color stem = bubble.LineColor.a > 0.01f ? bubble.LineColor : ChipAccent;
                     stem.a = 0.9f * alpha;
-                    if (bubble.HasLine && alpha >= 0.01f)
+                    if (seePaths && bubble.HasLine && alpha >= 0.01f)
                         Draw.Line(bubble.LineFrom, bubble.LineTo, LeaderLineThicknessPixels, LineEndCap.None, stem);
 
-                    // Dots keep drawing through their own fade-out even after chips dim.
                     ShipCommsCalloutGraphics.DrawIntent(in bubble.Callout, bubble.Age, LifetimeSeconds, alpha);
                 }
 
@@ -425,7 +453,7 @@ namespace TitanOrbit.Game
                     Vector3 ping = ShipCommsClientState.PendingWaypoint;
                     ping.y = HeightAbovePlane;
                     Draw.ThicknessSpace = ThicknessSpace.Meters;
-                    Draw.Disc(ping, Vector3.up, 0.38f, ChipFrame);
+                    Draw.Disc(ping, Vector3.up, 0.38f, ChipAccent);
                     Draw.ThicknessSpace = ThicknessSpace.Pixels;
                 }
 
@@ -456,12 +484,35 @@ namespace TitanOrbit.Game
 
             if (team == TeamId.None)
             {
-                bubble.LineColor = ChipFrame;
+                bubble.LineColor = ChipAccent;
                 return;
             }
 
             bubble.Team = team;
             bubble.LineColor = team.ToColor();
+            PaintChannelFrame(bubble);
+        }
+
+        /// <summary>
+        /// One plate around the row: white for All, speaker faction RGB for Team.
+        /// Sliced AA sprite — not UGUI Outline (that crawls while the hull moves).
+        /// </summary>
+        static void PaintChannelFrame(Bubble bubble)
+        {
+            if (bubble == null || bubble.ChannelFrame == null)
+                return;
+
+            Color color = AllChannelFrame;
+            if (bubble.TeamOnly != 0)
+            {
+                if (bubble.Team != TeamId.None)
+                    color = bubble.Team.ToColor();
+                else if (bubble.LineColor.a > 0.01f)
+                    color = bubble.LineColor;
+            }
+
+            color.a = 0.94f;
+            bubble.ChannelFrame.color = color;
         }
 
         /// <summary>
@@ -507,19 +558,25 @@ namespace TitanOrbit.Game
             rect.pivot = new Vector2(0.5f, 0.5f);
             rect.anchorMin = new Vector2(0.5f, 0.5f);
             rect.anchorMax = new Vector2(0.5f, 0.5f);
-            rect.sizeDelta = new Vector2(ChipWidth, ChipHeight + 8f);
+            rect.sizeDelta = new Vector2(ChipWidth + ChannelPad * 2f, ChipHeight + ChannelPad * 2f);
             float zoom = WorldFloatingCountManager.ResolveCameraZoomScale();
             float scale = WorldCanvasScale * zoom;
             root.transform.SetPositionAndRotation(Vector3.zero, Quaternion.Euler(-90f, 0f, 0f));
             root.transform.localScale = new Vector3(scale, -scale, scale);
+
+            var channelGo = new GameObject("ChannelFrame", typeof(RectTransform), typeof(Image));
+            channelGo.transform.SetParent(root.transform, false);
+            Stretch(channelGo.GetComponent<RectTransform>(), 0f);
+            var channelImage = channelGo.GetComponent<Image>();
+            StylePlate(channelImage, AllChannelFrame);
 
             var row = new GameObject("Row", typeof(RectTransform), typeof(HorizontalLayoutGroup));
             row.transform.SetParent(root.transform, false);
             var rowRt = row.GetComponent<RectTransform>();
             rowRt.anchorMin = Vector2.zero;
             rowRt.anchorMax = Vector2.one;
-            rowRt.offsetMin = Vector2.zero;
-            rowRt.offsetMax = Vector2.zero;
+            rowRt.offsetMin = new Vector2(ChannelPad, ChannelPad);
+            rowRt.offsetMax = new Vector2(-ChannelPad, -ChannelPad);
             var h = row.GetComponent<HorizontalLayoutGroup>();
             h.spacing = ChipGap;
             h.childAlignment = TextAnchor.MiddleCenter;
@@ -535,6 +592,7 @@ namespace TitanOrbit.Game
                 WorldCanvas = canvas,
                 CanvasRect = rect,
                 Group = group,
+                ChannelFrame = channelImage,
             };
 
             for (int i = 0; i < ShipCommsKeywordCatalog.MaxSequenceLength; i++)
@@ -549,7 +607,7 @@ namespace TitanOrbit.Game
                 le.minWidth = ChipWidth;
                 le.minHeight = ChipHeight;
 
-                // Cyan frame first (behind). Sliced AA sprite — not UGUI Outline, which jitters in flight.
+                // Neutral frame first (behind). Sliced AA sprite — not UGUI Outline, which jitters in flight.
                 var frameGo = new GameObject("Frame", typeof(RectTransform), typeof(Image));
                 frameGo.transform.SetParent(chipGo.transform, false);
                 Stretch(frameGo.GetComponent<RectTransform>(), 0f);

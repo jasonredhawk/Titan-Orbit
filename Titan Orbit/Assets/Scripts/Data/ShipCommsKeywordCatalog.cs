@@ -98,6 +98,8 @@ namespace TitanOrbit.Data
         /// 42–46 are the five team color names; 47+ pad even 5-wide rows. Never reorder
         /// these rows — those bytes are on the wire. "Mine" (index 7) stays for old
         /// clients but the compose panel hides it; use "Mining" under Tactical.
+        /// Indices 47–48 were Scout/Rally and now read Transport/Deposit. Subject
+        /// Transport (34) and Dock (38) stay on the wire but are hidden from the matrix.
         /// </summary>
         public static readonly ShipCommsKeyword[] BuiltInKeywords =
         {
@@ -153,8 +155,8 @@ namespace TitanOrbit.Data
             new ShipCommsKeyword { label = "Purple", category = ShipCommsKeywordCategory.TeamColor },
             // --- 5-wide row padding (append-only; indices 47+) ---
             new ShipCommsKeyword { label = "Mining", category = ShipCommsKeywordCategory.Tactical },
-            new ShipCommsKeyword { label = "Scout", category = ShipCommsKeywordCategory.Tactical },
-            new ShipCommsKeyword { label = "Rally", category = ShipCommsKeywordCategory.Tactical },
+            new ShipCommsKeyword { label = "Transport", category = ShipCommsKeywordCategory.Tactical },
+            new ShipCommsKeyword { label = "Deposit", category = ShipCommsKeywordCategory.Tactical },
             new ShipCommsKeyword { label = "Asteroid", category = ShipCommsKeywordCategory.Subject },
             new ShipCommsKeyword { label = "Home", category = ShipCommsKeywordCategory.Subject },
             new ShipCommsKeyword { label = "Pad", category = ShipCommsKeywordCategory.Subject },
@@ -288,12 +290,21 @@ namespace TitanOrbit.Data
         }
 
         /// <summary>
-        /// True when the compose matrix should hide this row. "Mine" shipped as a
-        /// subject noun; mining now lives under Tactical as "Mining". The wire index stays.
+        /// True when the compose matrix should hide this row. Wire indices stay.
+        /// "Mine" shipped as a subject; mining is Tactical "Mining".
+        /// Subject "Transport" / "Dock" shipped first; those verbs now live under Tactical
+        /// as Transport / Deposit.
         /// </summary>
-        public static bool IsHiddenFromMatrix(string label)
+        public static bool IsHiddenFromMatrix(in ShipCommsKeyword word)
         {
-            return string.Equals(label, "Mine", StringComparison.OrdinalIgnoreCase);
+            if (string.IsNullOrWhiteSpace(word.label))
+                return true;
+            if (string.Equals(word.label, "Mine", StringComparison.OrdinalIgnoreCase))
+                return true;
+            if (word.category != ShipCommsKeywordCategory.Subject)
+                return false;
+            return string.Equals(word.label, "Transport", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(word.label, "Dock", StringComparison.OrdinalIgnoreCase);
         }
 
         /// <summary>

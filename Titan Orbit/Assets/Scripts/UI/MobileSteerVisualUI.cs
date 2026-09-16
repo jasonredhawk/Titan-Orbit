@@ -139,7 +139,7 @@ namespace TitanOrbit.UI
                 return;
 
             // --- Death / expanded map: no steer chrome over the explosion or full map ---
-            if (HUDController.LocalPlayerDeathHidesHud || HUDController.MinimapExpandedObscuresHud)
+            if (HUDController.LocalPlayerDeathHidesHud || HUDController.MinimapExpandedObscuresHud || HUDController.CommsMatrixObscuresHud)
             {
                 _canvasGroup.alpha = 0f;
                 _steerVisualPrimed = false;

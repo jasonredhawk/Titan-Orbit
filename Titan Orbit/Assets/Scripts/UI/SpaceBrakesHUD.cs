@@ -97,7 +97,8 @@ namespace TitanOrbit.UI
                 IsMainMenuShowing() ||
                 !EcsGameBridge.HasLocalPlayerShip() ||
                 HUDController.LocalPlayerDeathHidesHud ||
-                HUDController.MinimapExpandedObscuresHud)
+                HUDController.MinimapExpandedObscuresHud ||
+                HUDController.CommsMatrixObscuresHud)
             {
                 SetVisible(false);
                 return;

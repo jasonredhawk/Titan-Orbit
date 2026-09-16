@@ -7,10 +7,9 @@ using UnityEngine;
 namespace TitanOrbit.Game
 {
     /// <summary>
-    /// Client-side thruster type / color for the hull studio.
-    /// Four JetFlame types (Ribbon, Default, Heavy, Soft). Color drives
-    /// ParticleSystem Color over Lifetime. Follow-team locks the ramp to Color1;
-    /// locked-chosen seeds the ramp from the picker, then each stop can be edited.
+    /// Client-side thruster type for the hull studio.
+    /// Four JetFlame types (Ribbon, Default, Heavy, Soft). Color is always
+    /// the match team's Color1 — players only pick the type.
     /// Free players present the default jet in a match. Customize Ship may hold an
     /// in-memory preview while <see cref="TitanOrbitCosmeticGate.IsHangarPreviewActive"/>.
     /// </summary>
@@ -39,8 +38,9 @@ namespace TitanOrbit.Game
             public uint Life3Packed;
 
             public bool IsCustom => HasCustom != 0;
-            public bool UseTeamColor => !IsCustom || FollowTeam != 0;
-            public bool HasLifetimeStops => !UseTeamColor && LifeCustom != 0;
+
+            /// <summary>Jets always follow team Color1. Packed color / lifetime fields stay on the ghost for layout.</summary>
+            public bool UseTeamColor => true;
 
             public int CacheKey
             {
@@ -88,12 +88,12 @@ namespace TitanOrbit.Game
             if (!TitanOrbitCosmeticGate.IsCustomizationUnlocked)
             {
                 if (TitanOrbitCosmeticGate.IsHangarPreviewActive && s_HasCache)
-                    return s_Cached;
+                    return NormalizeTeamColor(s_Cached);
                 return default;
             }
 
             if (s_HasCache)
-                return s_Cached;
+                return NormalizeTeamColor(s_Cached);
 
             int custom = PlayerPrefs.GetInt(InstanceKey(PrefsKeyCustom), 0);
             if (custom == 0)
@@ -103,7 +103,7 @@ namespace TitanOrbit.Game
                 return s_Cached;
             }
 
-            s_Cached = new Style
+            s_Cached = NormalizeTeamColor(new Style
             {
                 HasCustom = 1,
                 StyleIndex = (byte)ThrusterVfxBank.WrapStyleIndex(
@@ -115,7 +115,7 @@ namespace TitanOrbit.Game
                 Life1Packed = (uint)PlayerPrefs.GetInt(InstanceKey(PrefsKeyLife1), 0),
                 Life2Packed = (uint)PlayerPrefs.GetInt(InstanceKey(PrefsKeyLife2), 0),
                 Life3Packed = (uint)PlayerPrefs.GetInt(InstanceKey(PrefsKeyLife3), 0),
-            };
+            });
             s_HasCache = true;
             return s_Cached;
         }
@@ -129,7 +129,7 @@ namespace TitanOrbit.Game
 
         public static Style FromGhost(in ShipAccentColors ghost)
         {
-            return new Style
+            return NormalizeTeamColor(new Style
             {
                 HasCustom = ghost.ThrusterCustom,
                 StyleIndex = ghost.ThrusterStyle,
@@ -140,20 +140,21 @@ namespace TitanOrbit.Game
                 Life1Packed = ghost.ThrusterLife1Packed,
                 Life2Packed = ghost.ThrusterLife2Packed,
                 Life3Packed = ghost.ThrusterLife3Packed,
-            };
+            });
         }
 
         public static void CopyTo(ref ShipAccentColors accents, in Style style)
         {
-            accents.ThrusterCustom = style.HasCustom;
-            accents.ThrusterStyle = style.StyleIndex;
-            accents.ThrusterFollowTeam = style.FollowTeam;
-            accents.ThrusterColorPacked = style.ColorPacked;
-            accents.ThrusterLifeCustom = style.LifeCustom;
-            accents.ThrusterLife0Packed = style.Life0Packed;
-            accents.ThrusterLife1Packed = style.Life1Packed;
-            accents.ThrusterLife2Packed = style.Life2Packed;
-            accents.ThrusterLife3Packed = style.Life3Packed;
+            Style normalized = NormalizeTeamColor(style);
+            accents.ThrusterCustom = normalized.HasCustom;
+            accents.ThrusterStyle = normalized.StyleIndex;
+            accents.ThrusterFollowTeam = normalized.FollowTeam;
+            accents.ThrusterColorPacked = normalized.ColorPacked;
+            accents.ThrusterLifeCustom = normalized.LifeCustom;
+            accents.ThrusterLife0Packed = normalized.Life0Packed;
+            accents.ThrusterLife1Packed = normalized.Life1Packed;
+            accents.ThrusterLife2Packed = normalized.Life2Packed;
+            accents.ThrusterLife3Packed = normalized.Life3Packed;
         }
 
         public static void Set(Style style)
@@ -162,6 +163,7 @@ namespace TitanOrbit.Game
                 return;
 
             style.StyleIndex = (byte)ThrusterVfxBank.WrapStyleIndex(style.StyleIndex);
+            style = NormalizeTeamColor(style);
             s_Cached = style;
             s_HasCache = true;
             if (!TitanOrbitCosmeticGate.IsCustomizationUnlocked)
@@ -195,150 +197,35 @@ namespace TitanOrbit.Game
             Set(s_Cached);
         }
 
-        /// <summary>
-        /// Studio Reset Jets: keep the current type, switch to Locked Chosen Color,
-        /// and seed the well + lifetime ramp from default white.
-        /// </summary>
-        public static Style CreateLockedWhite(int styleIndex)
+        /// <summary>Studio Reset Jets: Default type, locked to team Color1.</summary>
+        public static Style CreateTeamFollow(int styleIndex)
         {
-            var style = new Style
+            return NormalizeTeamColor(new Style
             {
                 HasCustom = 1,
                 StyleIndex = (byte)ThrusterVfxBank.WrapStyleIndex(styleIndex),
-                FollowTeam = 0,
-                ColorPacked = ShipAccentColors.Pack(new Color32(255, 255, 255, 255)),
-                LifeCustom = 0,
-            };
-            WriteAnchorStops(ref style, TeamId.None);
-            return style;
+            });
         }
 
         /// <summary>
-        /// Authored flame name (Blue / Green / Purple / Red / Yellow / White).
-        /// Follow-team uses Color1 hue. Locked Soft always starts on
-        /// JetFlameSoftWhite so the lifetime palette can reach white.
+        /// Authored flame name (Blue / Green / Purple / Red / Yellow).
+        /// Always the nearest authored variant to team Color1.
         /// </summary>
         public static string ResolveFlameColorName(in Style style, TeamId team)
         {
-            if (!style.UseTeamColor &&
-                ResolveStyleIndex(style) == ThrusterVfxBank.SoftStyleIndex)
-                return ThrusterVfxBank.NeutralFlameColorName;
-
-            return ThrusterVfxBank.NearestFlameColorName(ResolveRawTint(style, team));
+            return ThrusterVfxBank.NearestFlameColorName(ResolveRawTint(team));
         }
 
-        /// <summary>
-        /// Well / gradient body color. Follow-team uses Color1; locked uses the
-        /// picker. Value is lifted so a black pick still has a visible lifetime fade.
-        /// </summary>
+        /// <summary>Well / gradient body color — always team Color1.</summary>
         public static Color32 ResolveTint(in Style style, TeamId team)
         {
-            Color color = ResolveRawTint(style, team);
-            Color.RGBToHSV(color, out float h, out float s, out float v);
-            if (v < 0.22f)
-                v = 0.22f;
-            return ShipColorizeAccentApplier.Opaque(Color.HSVToRGB(h, s, v));
+            return ResolveRawTint(team);
         }
 
-        /// <summary>
-        /// Team follow uses the authored team ramp. Locked uses edited stops when
-        /// the player has touched a lifetime square; otherwise the Color well rebuilds
-        /// the four-stop envelope.
-        /// </summary>
+        /// <summary>Team Color1 ramp: hot core, team body, dark tail.</summary>
         public static Gradient ResolveLifetime(in Style style, TeamId team)
         {
-            if (style.UseTeamColor)
-                return ThrusterFlameLifetimeColors.ForTeam(team);
-            if (style.HasLifetimeStops)
-            {
-                return ThrusterFlameLifetimeColors.FromStops(
-                    ShipAccentColors.Unpack(style.Life0Packed),
-                    ShipAccentColors.Unpack(style.Life1Packed),
-                    ShipAccentColors.Unpack(style.Life2Packed),
-                    ShipAccentColors.Unpack(style.Life3Packed));
-            }
-
-            return ThrusterFlameLifetimeColors.FromAnchor(ResolveTint(style, team), team);
-        }
-
-        public static Color32 GetLifetimeStop(in Style style, int index, TeamId team)
-        {
-            index = Mathf.Clamp(index, 0, 3);
-            if (style.HasLifetimeStops)
-                return ShipAccentColors.Unpack(GetLifePacked(style, index));
-
-            Gradient gradient = ResolveLifetime(style, team);
-            GradientColorKey[] keys = gradient.colorKeys;
-            if (keys != null && index < keys.Length)
-                return ShipColorizeAccentApplier.Opaque(keys[index].color);
-
-            return ShipColorizeAccentApplier.Opaque(gradient.Evaluate(
-                ThrusterFlameLifetimeColors.SampleTimes[index]));
-        }
-
-        public static void WriteAnchorStops(ref Style style, TeamId team)
-        {
-            Gradient gradient = ThrusterFlameLifetimeColors.FromAnchor(ResolveTint(style, team), team);
-            GradientColorKey[] keys = gradient.colorKeys;
-            style.Life0Packed = PackKey(keys, 0);
-            style.Life1Packed = PackKey(keys, 1);
-            style.Life2Packed = PackKey(keys, 2);
-            style.Life3Packed = PackKey(keys, 3);
-            style.LifeCustom = 0;
-        }
-
-        public static void SetLifetimeStop(ref Style style, int index, Color32 color, TeamId team)
-        {
-            if (style.LifeCustom == 0)
-                WriteAnchorStops(ref style, team);
-
-            uint packed = ShipAccentColors.Pack(color);
-            switch (index)
-            {
-                case 1:
-                    style.Life1Packed = packed;
-                    break;
-                case 2:
-                    style.Life2Packed = packed;
-                    break;
-                case 3:
-                    style.Life3Packed = packed;
-                    break;
-                default:
-                    style.Life0Packed = packed;
-                    break;
-            }
-
-            style.LifeCustom = 1;
-        }
-
-        static uint GetLifePacked(in Style style, int index)
-        {
-            switch (index)
-            {
-                case 1: return style.Life1Packed;
-                case 2: return style.Life2Packed;
-                case 3: return style.Life3Packed;
-                default: return style.Life0Packed;
-            }
-        }
-
-        static uint PackKey(GradientColorKey[] keys, int index)
-        {
-            Color32 color = keys != null && index < keys.Length
-                ? ShipColorizeAccentApplier.Opaque(keys[index].color)
-                : new Color32(255, 255, 255, 255);
-            return ShipAccentColors.Pack(color);
-        }
-
-        static Color32 ResolveRawTint(in Style style, TeamId team)
-        {
-            TeamId resolved = team == TeamId.None ? TeamId.TeamA : team;
-            if (style.UseTeamColor)
-                return ShipColorizeAccentApplier.Opaque(TeamColor1Palette.GetColor1(resolved));
-            if (style.ColorPacked != 0)
-                return ShipAccentColors.Unpack(style.ColorPacked);
-            return ShipColorizeAccentApplier.Opaque(TeamColor1Palette.GetColor1(resolved));
+            return ThrusterFlameLifetimeColors.ForTeam(team);
         }
 
         public static int ResolveStyleIndex(in Style style)
@@ -346,6 +233,31 @@ namespace TitanOrbit.Game
             if (!style.IsCustom)
                 return ThrusterVfxBank.DefaultStyleIndex;
             return ThrusterVfxBank.WrapStyleIndex(style.StyleIndex);
+        }
+
+        /// <summary>
+        /// Drops leftover locked-color / lifetime-stop prefs so ghosts stay team-follow.
+        /// Packed color fields remain on the wire for ghost layout compatibility.
+        /// </summary>
+        static Style NormalizeTeamColor(Style style)
+        {
+            if (style.HasCustom == 0)
+                return default;
+
+            style.FollowTeam = 1;
+            style.ColorPacked = 0;
+            style.LifeCustom = 0;
+            style.Life0Packed = 0;
+            style.Life1Packed = 0;
+            style.Life2Packed = 0;
+            style.Life3Packed = 0;
+            return style;
+        }
+
+        static Color32 ResolveRawTint(TeamId team)
+        {
+            TeamId resolved = team == TeamId.None ? TeamId.TeamA : team;
+            return ShipColorizeAccentApplier.Opaque(TeamColor1Palette.GetColor1(resolved));
         }
 
         static string InstanceKey(string key) => TitanOrbitPlayModeUtility.GetInstancePlayerPrefsKey(key);

@@ -1338,19 +1338,27 @@ namespace TitanOrbit.Game
                 return;
             }
 
+            // Regular hulls: do not gather every ship just to learn "not MEGA".
+            // TryGetLocalShipEntityOnWorld allocated on the LateUpdate that the Profiler
+            // attributed to this camera (~8.8KB self GC on the median frame).
+            if (!EcsGameBridge.TryGetLocalMegaShipState(out _))
+            {
+                _hasMegaView = false;
+                return;
+            }
+
             _hasMegaView = false;
             _megaFollowOffset = Vector3.zero;
             _megaViewRadius = 0f;
 
-            var world = EcsGameBridge.ClientWorld;
+            var world = EcsGameBridge.GetLocalPlayerShipWorld();
             if (world == null || !world.IsCreated)
-                return;
-            if (!EcsGameBridge.TryGetLocalShipEntityOnWorld(world, out var shipEntity))
                 return;
 
             var em = world.EntityManager;
-            if (!em.HasComponent<MegaShipState>(shipEntity)
-                || !em.GetComponentData<MegaShipState>(shipEntity).IsMega
+            if (!LocalShipEntitySeed.TryGetSeededShip(em, out var shipEntity)
+                || shipEntity == Entity.Null
+                || !em.Exists(shipEntity)
                 || !em.HasComponent<LocalTransform>(shipEntity))
                 return;
 
