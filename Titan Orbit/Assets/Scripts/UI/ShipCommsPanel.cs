@@ -108,6 +108,11 @@ namespace TitanOrbit.UI
         /// <summary>Near-void plate so a locked command tile does not read as a live chip.</summary>
         static readonly Color CommanderLockedFill = new Color(0.008f, 0.008f, 0.012f, 0.92f);
         /// <summary>
+        /// Opaque void over a commander-gated RECENT row. Chips sit under this veil,
+        /// so LOCK needs a solid plate or the gold stamp washes out on the sentence.
+        /// </summary>
+        static readonly Color CommanderLockedRecentVeil = new Color(0.008f, 0.008f, 0.012f, 0.97f);
+        /// <summary>
         /// Bright command brass for the LOCK stamp. Close to
         /// <see cref="TeamCommanderRules.Gold"/> so gated tiles read at a glance,
         /// but not the live selected outline (that glow is still off while locked).
@@ -332,6 +337,11 @@ namespace TitanOrbit.UI
             public Image Caret;
             public Outline Outline;
             public Button Button;
+            /// <summary>
+            /// Dark glass over the sentence chips while this machine is not a commander.
+            /// Sits under <see cref="LockLabel"/> so the stamp has a readable plate.
+            /// </summary>
+            public Image LockVeil;
             /// <summary>Gold LOCK stamp over a command sentence while this machine is not a commander.</summary>
             public TextMeshProUGUI LockLabel;
             public readonly RecentChip[] Chips = new RecentChip[ShipCommsKeywordCatalog.MaxSequenceLength];
@@ -1082,9 +1092,9 @@ namespace TitanOrbit.UI
         /// <summary>
         /// Fills the RECENT column from <see cref="ShipCommsHistory"/>. Rows past the
         /// free first three stay ghosted under one unlock plate until that video runs.
-        /// A filled row that used command-deck words is temporarily locked (dark plate
-        /// + LOCK stamp, same language as the command tiles) while this machine is
-        /// not a commander. The sentence stays in history; we do not rewrite it.
+        /// A filled row that used command-deck words is temporarily locked (opaque
+        /// veil + LOCK stamp, same language as the command tiles) while this machine
+        /// is not a commander. The sentence stays in history; we do not rewrite it.
         /// </summary>
         void PaintRecent()
         {
@@ -1107,11 +1117,11 @@ namespace TitanOrbit.UI
 
                 // --- Row plate ---
                 // Ad-locked rows stay the caption plate under the veil. Command-gated
-                // rows use the same near-void fill as locked command tiles.
+                // rows use an opaque void so LOCK does not sit on see-through chips.
                 if (slot.Fill != null)
                 {
                     if (commanderLocked)
-                        slot.Fill.color = CommanderLockedFill;
+                        slot.Fill.color = CommanderLockedRecentVeil;
                     else if (adLocked)
                         slot.Fill.color = CaptionPlateColor;
                     else
@@ -1132,6 +1142,11 @@ namespace TitanOrbit.UI
                 }
                 if (slot.Button != null)
                     slot.Button.interactable = !adLocked && !commanderLocked && filled;
+                if (slot.LockVeil != null)
+                {
+                    slot.LockVeil.enabled = commanderLocked;
+                    slot.LockVeil.color = CommanderLockedRecentVeil;
+                }
                 if (slot.LockLabel != null)
                 {
                     slot.LockLabel.enabled = commanderLocked;
@@ -1758,7 +1773,15 @@ namespace TitanOrbit.UI
                 for (int c = 0; c < row.Chips.Length; c++)
                     row.Chips[c] = CreateRecentChip(tile.transform, c);
 
-                // Built after the chips so the stamp draws on top of the row.
+                // [TITAN-ORBIT] Veil sits above the chips and under LOCK. The row
+                // fill is behind the sentence, so without this plate the gold stamp
+                // reads on top of live chip colors and disappears.
+                var lockVeil = CreateIgnoredImage(tile.transform, "LockVeil", CommanderLockedRecentVeil);
+                Stretch(lockVeil.rectTransform, 0f);
+                lockVeil.enabled = false;
+                row.LockVeil = lockVeil;
+
+                // Built after the veil so the stamp draws on the opaque plate.
                 // Hidden until PaintRecent sees a command sentence on a non-commander.
                 var lockLabel = CreateLabel(
                     tile.transform, "Lock", "LOCK", 8f, CommanderLockedStamp, TextAlignmentOptions.Center);
