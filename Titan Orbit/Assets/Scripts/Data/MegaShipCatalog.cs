@@ -117,10 +117,24 @@ namespace TitanOrbit.Data
         public const float DefaultPurchaseGemCost = 1200f;
 
         /// <summary>
-        /// Hard cap on MEGA bullet travel (and intercept-lead extension).
-        /// Shorter live rounds cut BulletSimulationSystem + tracer cost on volleys.
+        /// Ceiling for extra intercept-lead on short MEGA guns (volley cost).
+        /// Must not cut a longer barrel's authored <c>bulletRange</c> — snipers
+        /// are catalogued at 40 and must fly that far. Use
+        /// <see cref="ClampInterceptTravel"/> when spawning a led shot.
         /// </summary>
         public const float MaxBulletTravelDistance = 28f;
+
+        /// <summary>
+        /// Flight budget for a MEGA intercept shot. Honors the barrel's own
+        /// range; <see cref="MaxBulletTravelDistance"/> only caps extra lead
+        /// on shorter guns so volleys cannot fly across the map.
+        /// </summary>
+        public static float ClampInterceptTravel(float engageRange, float leadDistance)
+        {
+            float engage = Mathf.Max(0.5f, engageRange);
+            float travelCap = Mathf.Max(engage, MaxBulletTravelDistance);
+            return Mathf.Min(leadDistance, travelCap);
+        }
 
         /// <summary>Default acquire + travel range for rapid MEGA guns (world units). Written by Apply Default Type-Table Stats.</summary>
         public const float DefaultBulletAcquireRange = 20f;
@@ -231,10 +245,16 @@ namespace TitanOrbit.Data
         /// </summary>
         public const int HullColliderRevision = 5;
 
-        /// <summary>Minimum troop cap after resolve.</summary>
+        /// <summary>
+        /// Last-resort troop cap floor when <see cref="runtimeMinimumStats"/> is unset.
+        /// Live hulls use the catalog sum (cockpit + wings), not this constant.
+        /// </summary>
         public const float MinHullPeople = 400f;
 
-        /// <summary>Default troop cap when the catalog sum is still 0.</summary>
+        /// <summary>
+        /// Last-resort troop cap when a hull sum is still 0 and
+        /// <see cref="runtimeDefaultStats"/> is unset. Authored catalog defaults win.
+        /// </summary>
         public const float DefaultHullPeople = 600f;
 
         /// <summary>Default extra world radius around a MEGA when framing the gameplay camera.</summary>
@@ -1022,17 +1042,14 @@ namespace TitanOrbit.Data
                 ? CreateBuiltInRuntimeMinimums()
                 : runtimeMinimumStats;
             // Existing catalog assets may have seeded health/move defaults with traverse still 0.
-            if (defaults.maxPeople < DefaultHullPeople)
-                defaults.maxPeople = DefaultHullPeople;
-            if (mins.maxPeople < MinHullPeople)
-                mins.maxPeople = MinHullPeople;
             if (defaults.energyCap < DefaultHullEnergy)
                 defaults.energyCap = DefaultHullEnergy;
             if (mins.energyCap < MinHullEnergy)
                 mins.energyCap = MinHullEnergy;
-            // Energy regen stays on the catalog: runtimeDefaultStats / runtimeMinimumStats
-            // plus the raw hull sum. Do not raise authored mins to a hardcoded floor —
-            // that flattened every Titan to 22/s when unique-component totals were 4–21.
+            // Troop cap and energy regen stay on the catalog: runtimeDefaultStats /
+            // runtimeMinimumStats plus the raw hull sum. Do not raise authored people
+            // mins to a hardcoded 400 — that flattened every Titan whose cockpit+wings
+            // total was 40–300. Energy regen had the same 22/s flatten.
             return MegaShipPartStats.ApplyRuntimeDefaultsAndMinimums(raw, defaults, mins);
         }
 

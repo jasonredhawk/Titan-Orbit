@@ -756,9 +756,9 @@ namespace TitanOrbit.ECS
                 float lead = PlanetaryDefenseAimMath.ComputeBulletMaxDistance(
                     engage, interceptDistance);
                 // MEGA volleys were flying to the lead point with no cap (48u+).
-                // That kept dozens of live rounds in sim/VFX. Cap travel; undershoot
-                // a fleeing target past MaxBulletTravelDistance rather than hitch.
-                plan.MaxDistance = math.min(lead, MegaShipCatalog.MaxBulletTravelDistance);
+                // Cap extra lead on short guns; never cut a longer barrel (sniper 40)
+                // or the shot dies short of a lock the auto-aim already accepted.
+                plan.MaxDistance = MegaShipCatalog.ClampInterceptTravel(engage, lead);
                 if (plan.MaxDistance > engage + 0.01f)
                 {
                     float planarMuzzleSpeed = math.length(plan.Velocity - shipVel);

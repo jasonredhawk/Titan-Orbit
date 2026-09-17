@@ -326,8 +326,8 @@ namespace TitanOrbit.ECS
                     float3 muzzle = ResolveMuzzle(xf, mount);
                     float3 barrelFwd = MegaShipWeaponAim.GetBarrelForward(in xf, in mount);
                     float acquireRange = ResolveMountRange(mount, in weapon);
-                    if (!isCannon)
-                        acquireRange += 8f;
+                    // Projectiles must acquire inside travel range. A +8 pad here
+                    // locked rocks the sniper could not reach — no hit, no float.
                     float keepRange = isCannon
                         ? CannonLaserMath.KeepRange(acquireRange)
                         : acquireRange;

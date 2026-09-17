@@ -71,9 +71,9 @@ namespace TitanOrbit.ECS
                     effective.energyCap > 0.01f ? effective.energyCap : MegaShipCatalog.DefaultHullEnergy,
                     MegaShipCatalog.MinHullEnergy,
                     MegaShipCatalog.MaxHullEnergy);
-                ship.PeopleCapacity = Mathf.Max(
-                    Mathf.RoundToInt(MegaShipCatalog.MinHullPeople),
-                    Mathf.RoundToInt(effective.maxPeople));
+                // SumFromEntry already resolved catalog defaults/mins. Do not clamp
+                // to MinHullPeople (400) — that hid cockpit+wing sums of 40–300.
+                ship.PeopleCapacity = Mathf.Max(0, Mathf.RoundToInt(effective.maxPeople));
                 ship.ShipLevel = 7;
                 ship.BranchIndex = mega.MegaSlotIndex;
                 ship.Health = ship.AwaitingTeamSelection || ship.Health <= 0.01f
@@ -101,13 +101,13 @@ namespace TitanOrbit.ECS
                 weapon.BulletSpeed = bulletSpeed;
                 weapon.BulletDamage = firePower;
                 weapon.EnergyCostPerShot = firePower;
-                weapon.BulletMaxDistance = Mathf.Min(
-                    MegaShipCatalog.MaxBulletTravelDistance,
-                    Mathf.Max(
-                        1f,
-                        effective.bulletRange > 0.01f
-                            ? effective.bulletRange
-                            : MegaShipCatalog.DefaultBulletAcquireRange));
+                // Hull display range is the longest barrel. Do not clamp to
+                // MaxBulletTravelDistance — that cap is only extra lead on short guns.
+                weapon.BulletMaxDistance = Mathf.Max(
+                    1f,
+                    effective.bulletRange > 0.01f
+                        ? effective.bulletRange
+                        : MegaShipCatalog.DefaultBulletAcquireRange);
                 weapon.BulletLifetime = Mathf.Max(0.25f, weapon.BulletMaxDistance / Mathf.Max(1f, bulletSpeed));
                 weapon.ReferenceBulletDamage = firePower;
                 weapon.ReferenceBulletSpeed = bulletSpeed;
@@ -257,9 +257,7 @@ namespace TitanOrbit.ECS
                 var mount = mounts[m];
                 if (mount.BulletRange > 0.5f)
                     continue;
-                mount.BulletRange = math.min(
-                    MegaShipCatalog.MaxBulletTravelDistance,
-                    MegaShipCatalog.DefaultBulletAcquireRange);
+                mount.BulletRange = MegaShipCatalog.DefaultBulletAcquireRange;
                 mounts[m] = mount;
             }
         }
@@ -359,9 +357,8 @@ namespace TitanOrbit.ECS
             var mount = mounts[mountIndex];
             mount.FirePower = math.max(0f, raw.firePower);
             mount.FireRate = math.max(0.15f, resolved.fireRate > 0.01f ? resolved.fireRate : raw.fireRate);
-            mount.BulletRange = math.min(
-                MegaShipCatalog.MaxBulletTravelDistance,
-                math.max(4f, resolved.bulletRange > 0.5f ? resolved.bulletRange : raw.bulletRange));
+            mount.BulletRange = math.max(
+                4f, resolved.bulletRange > 0.5f ? resolved.bulletRange : raw.bulletRange);
             float partSpeed = resolved.bulletSpeed > 0.01f ? resolved.bulletSpeed : raw.bulletSpeed;
             mount.BulletSpeed = math.max(0.1f, partSpeed);
             mount.ReferenceFirePower = math.max(0f, raw.firePower);

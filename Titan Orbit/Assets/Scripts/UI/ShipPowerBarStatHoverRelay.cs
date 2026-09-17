@@ -17,7 +17,8 @@ namespace TitanOrbit.UI
     /// <see cref="ShipPowerBarStatTooltip"/>. A nested tip canvas (or any later
     /// sibling over the pointer) made EventSystem fire Exit on the same hover,
     /// so the STAT TELEMETRY card vanished. LateUpdate containment against the
-    /// dark tray ignores that hole.
+    /// dark tray ignores that hole. Among overlapping live bars we keep the
+    /// closest visible tray so a stale full-card rect cannot steal the hover.
     /// </para>
     /// Click / drag still forward to the card Button / ScrollRect when this pad
     /// has raycastTarget, so purchase and list scroll keep working.
@@ -91,8 +92,8 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// One pointer sample for every live bar. Called from <see cref="Probe.LateUpdate"/>
-        /// only while the Orbit Menu flag is on.
+        /// One pointer sample for every live bar. Called from <see cref="Probe.LateUpdate"/>.
+        /// Picks the closest visible tray under the cursor — not the first enabled bar.
         /// </summary>
         public static void TickAll()
         {
@@ -100,6 +101,10 @@ namespace TitanOrbit.UI
             // Do not gate on IsOrbitMenuVisible. That flag has been wrong during
             // warmup / close, and it would keep the STAT TELEMETRY card dead.
             // Inactive parents already drop us from s_Live via OnDisable.
+            // [TITAN-ORBIT] First-in-list used to win. Warmup leftovers, GEAR tiles, and
+            // a stale full-card track can all "contain" the same screen point. The player
+            // then sees no card (wrong bar, off-screen tip) except on the rare frame
+            // the real 16px tray was first. Closest visible tray wins instead.
             if (!TryReadPointerScreen(out Vector2 screen))
             {
                 ShipPowerBarStatTooltip.Hide();
@@ -109,6 +114,8 @@ namespace TitanOrbit.UI
 
             ShipPowerBarStatHoverRelay hit = null;
             int slot = -1;
+            float bestArea = float.MaxValue;
+            float bestDist = float.MaxValue;
             for (int i = 0; i < s_Live.Count; i++)
             {
                 ShipPowerBarStatHoverRelay relay = s_Live[i];
@@ -116,18 +123,24 @@ namespace TitanOrbit.UI
                     continue;
                 if (!relay.gameObject.activeInHierarchy)
                     continue;
+                if (!IsShownForHover(relay.transform))
+                    continue;
 
                 UnityEngine.Camera cam = EventCameraFor(relay.transform);
-                if (!relay.Owner.ContainsScreenPoint(screen, cam))
+                if (!relay.Owner.TryHitSlot(screen, cam, out int picked, out float area, out float dist))
                     continue;
 
-                int picked = relay.Owner.PickSlotAtScreenPoint(screen, cam);
-                if (picked < 0)
+                // Closest tray center = the bar under the cursor. A leftover full-card
+                // rect loses to the 16px track. Same distance: smaller tray (MEGA vs L6).
+                bool better = dist + 0.5f < bestDist
+                    || (Mathf.Abs(dist - bestDist) <= 0.5f && area < bestArea);
+                if (!better)
                     continue;
 
+                bestArea = area;
+                bestDist = dist;
                 hit = relay;
                 slot = picked;
-                break;
             }
 
             if (hit == null)
@@ -149,6 +162,42 @@ namespace TitanOrbit.UI
 
             hit._hoverSlot = slot;
             hit.Owner.ShowStatTooltip(slot);
+        }
+
+        /// <summary>
+        /// False when a parent CanvasGroup has faded this bar out (hidden warmup,
+        /// concealed dock). Those leftover rects must not steal the hover.
+        /// </summary>
+        /// <param name="t">Hover pad or bar transform.</param>
+        /// <returns>True when the player can see this hierarchy.</returns>
+        static bool IsShownForHover(Transform t)
+        {
+            if (t == null)
+                return false;
+
+            // --- Walk CanvasGroups ---
+            // [UNITY] Alpha multiplies down the chain unless ignoreParentGroups is on.
+            // Join warmup keeps the 24-node tree active at alpha 0 so layout can
+            // measure — those trays still have world rects over the loading screen.
+            float alpha = 1f;
+            Transform walk = t;
+            while (walk != null)
+            {
+                CanvasGroup group = walk.GetComponent<CanvasGroup>();
+                if (group != null)
+                {
+                    if (group.ignoreParentGroups)
+                        alpha = group.alpha;
+                    else
+                        alpha *= group.alpha;
+                    if (alpha < 0.01f)
+                        return false;
+                }
+
+                walk = walk.parent;
+            }
+
+            return true;
         }
 
         /// <summary>Screen-space camera for Overlay (null) vs Camera-space canvases.</summary>

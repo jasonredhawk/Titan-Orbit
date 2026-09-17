@@ -56,6 +56,15 @@ namespace TitanOrbit.UI
         bool _hoverMegaPool;
         string _hoverChassisId;
 
+        /// <summary>
+        /// Extra pixels around the dark tray. Matches the invisible HoverHit pad so
+        /// a 10px stacked bar stays hittable without needing the 4px fill under the cursor.
+        /// </summary>
+        const float HoverPadPx = 8f;
+
+        /// <summary>Reused world-corner buffer so hover never allocates per slot per frame.</summary>
+        static readonly Vector3[] s_WorldCorners = new Vector3[4];
+
         public float TrackWidth { get; private set; }
 
         /// <summary>Stores segment images and bar metrics from <see cref="BuildBar"/>.</summary>
@@ -951,25 +960,7 @@ namespace TitanOrbit.UI
         /// </summary>
         public bool ContainsScreenPoint(Vector2 screenPoint, UnityEngine.Camera eventCamera)
         {
-            RectTransform tray = transform.parent != null && transform.parent.name == "PowerBarTrack"
-                ? transform.parent as RectTransform
-                : transform as RectTransform;
-            if (tray != null && tray.rect.width > 1f && tray.rect.height > 1f
-                && RectTransformUtility.RectangleContainsScreenPoint(tray, screenPoint, eventCamera))
-                return true;
-
-            if (segments == null)
-                return false;
-            for (int i = 0; i < segments.Length; i++)
-            {
-                RectTransform slot = GetSlotRect(i);
-                if (slot == null || !slot.gameObject.activeInHierarchy)
-                    continue;
-                if (RectTransformUtility.RectangleContainsScreenPoint(slot, screenPoint, eventCamera))
-                    return true;
-            }
-
-            return false;
+            return TryHitSlot(screenPoint, eventCamera, out _, out _, out _);
         }
 
         /// <summary>
@@ -982,7 +973,198 @@ namespace TitanOrbit.UI
         /// </param>
         public int PickSlotAtScreenPoint(Vector2 screenPoint, UnityEngine.Camera eventCamera)
         {
+            return TryHitSlot(screenPoint, eventCamera, out int slot, out _, out _) ? slot : -1;
+        }
+
+        /// <summary>
+        /// Maps the pointer to a painted slot on this bar. Tries the canvas camera, then
+        /// the Overlay (null) camera, so a Screen Space mismatch cannot hide the card.
+        /// </summary>
+        /// <param name="screenPoint">Mouse or touch in screen pixels.</param>
+        /// <param name="eventCamera">Preferred canvas camera (null = Overlay).</param>
+        /// <param name="slot">Slot 0–9 when this returns true.</param>
+        /// <param name="area">Tray width × height. Tie-break when two trays are equally close.</param>
+        /// <param name="distSq">Sqr distance from the pointer to the tray center.</param>
+        /// <returns>True when the pointer is over this tray (plus a few pixels of pad).</returns>
+        public bool TryHitSlot(
+            Vector2 screenPoint,
+            UnityEngine.Camera eventCamera,
+            out int slot,
+            out float area,
+            out float distSq)
+        {
+            // --- Preferred camera, then the other ---
+            // [UNITY] Overlay wants a null camera. Screen Space Camera wants worldCamera.
+            // The wrong one still returns a local point — just in the wrong space — so
+            // a tree bar looks empty until the cursor luckily lines up.
+            if (TryHitSlotWithCamera(screenPoint, eventCamera, out slot, out area, out distSq))
+                return true;
+
+            UnityEngine.Camera other = eventCamera == null ? FindRootWorldCamera() : null;
+            if (other == eventCamera)
+                return false;
+            return TryHitSlotWithCamera(screenPoint, other, out slot, out area, out distSq);
+        }
+
+        /// <summary>Root canvas worldCamera, or null when this bar has no camera canvas.</summary>
+        UnityEngine.Camera FindRootWorldCamera()
+        {
+            Canvas canvas = GetComponentInParent<Canvas>();
+            if (canvas == null)
+                return null;
+            if (canvas.rootCanvas != null)
+                canvas = canvas.rootCanvas;
+            return canvas.worldCamera;
+        }
+
+        /// <summary>One-camera hit test: padded tray, then painted slots, then stacked 5×2 map.</summary>
+        bool TryHitSlotWithCamera(
+            Vector2 screenPoint,
+            UnityEngine.Camera eventCamera,
+            out int slot,
+            out float area,
+            out float distSq)
+        {
+            slot = -1;
+            area = float.MaxValue;
+            distSq = float.MaxValue;
+
             EnsureSlotLayers();
+            RectTransform tray = ResolveHoverTray();
+            if (tray == null)
+                return false;
+
+            if (!TryLocalInPaddedRect(tray, screenPoint, eventCamera, HoverPadPx, out Vector2 local))
+            {
+                // Tray can be 0px for one layout frame after warmup. Fall back to any
+                // painted slot that still has a real rect.
+                if (!TryPickPaintedSlot(screenPoint, eventCamera, out slot, out area, out distSq))
+                    return false;
+                return slot >= 0;
+            }
+
+            area = Mathf.Max(1f, tray.rect.width) * Mathf.Max(1f, tray.rect.height);
+            Vector2 trayCenter = tray.rect.center;
+            distSq = (local - trayCenter).sqrMagnitude;
+
+            // --- Exact slot under the cursor ---
+            if (TryPickPaintedSlot(screenPoint, eventCamera, out int painted, out _, out _))
+            {
+                slot = painted;
+                return true;
+            }
+
+            // --- Tree layout: five equal columns, two stacked lanes ---
+            // Slot rects are ~4px. After a skipped ForceRebuild they are often 0×0, so
+            // we map from the tray instead of asking each Slot_N rect.
+            if (IsMoonTreeStacked())
+            {
+                slot = MapStackedSlot(tray.rect, local);
+                return slot >= 0;
+            }
+
+            slot = NearestSlot(screenPoint, eventCamera);
+            return slot >= 0;
+        }
+
+        /// <summary>Dark PowerBarTrack when the tree card wrapped us; otherwise this row.</summary>
+        RectTransform ResolveHoverTray()
+        {
+            if (transform.parent != null && transform.parent.name == "PowerBarTrack")
+                return transform.parent as RectTransform;
+            return transform as RectTransform;
+        }
+
+        /// <summary>
+        /// True when this bar stacked each ODEMC pair (Orbit Menu tree / Your Ship).
+        /// Equipment cards keep a HorizontalLayoutGroup and must use painted slot widths.
+        /// </summary>
+        bool IsMoonTreeStacked()
+        {
+            Transform pair = GetPairTransform(0);
+            return pair != null && pair.GetComponent<VerticalLayoutGroup>() != null;
+        }
+
+        /// <summary>
+        /// Converts a screen point into tray-local space and tests the padded rect.
+        /// [UNITY] ScreenPointToLocalPointInRectangle returns true for any conversion;
+        /// we still have to test the padded bounds ourselves.
+        /// </summary>
+        static bool TryLocalInPaddedRect(
+            RectTransform rt,
+            Vector2 screenPoint,
+            UnityEngine.Camera eventCamera,
+            float pad,
+            out Vector2 local)
+        {
+            local = default;
+            if (rt == null || rt.rect.width <= 1f || rt.rect.height <= 1f)
+                return false;
+            if (!RectTransformUtility.ScreenPointToLocalPointInRectangle(rt, screenPoint, eventCamera, out local))
+                return false;
+
+            Rect r = rt.rect;
+            return local.x >= r.xMin - pad && local.x <= r.xMax + pad
+                && local.y >= r.yMin - pad && local.y <= r.yMax + pad;
+        }
+
+        /// <summary>Slot whose live rect contains the pointer. Skips 0px / hidden equipment pairs.</summary>
+        bool TryPickPaintedSlot(
+            Vector2 screenPoint,
+            UnityEngine.Camera eventCamera,
+            out int slot,
+            out float area,
+            out float distSq)
+        {
+            slot = -1;
+            area = float.MaxValue;
+            distSq = float.MaxValue;
+            if (segments == null)
+                return false;
+
+            for (int i = 0; i < segments.Length; i++)
+            {
+                RectTransform slotRt = GetSlotRect(i);
+                if (slotRt == null || !slotRt.gameObject.activeInHierarchy)
+                    continue;
+                if (slotRt.rect.width <= 1f || slotRt.rect.height <= 1f)
+                    continue;
+                if (!RectTransformUtility.RectangleContainsScreenPoint(slotRt, screenPoint, eventCamera))
+                    continue;
+
+                slot = i;
+                area = slotRt.rect.width * slotRt.rect.height;
+                slotRt.GetWorldCorners(s_WorldCorners);
+                Vector3 worldCenter = (s_WorldCorners[0] + s_WorldCorners[2]) * 0.5f;
+                Vector2 screenCenter = RectTransformUtility.WorldToScreenPoint(eventCamera, worldCenter);
+                distSq = (screenCenter - screenPoint).sqrMagnitude;
+                return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// Five equal columns across the tray, top lane = even slot (Fire Power, …),
+        /// bottom lane = odd slot (Bullet Speed, …). Matches ApplyMoonTreeFlexLayout.
+        /// </summary>
+        static int MapStackedSlot(Rect tray, Vector2 local)
+        {
+            int pairCount = ShipAbilityCategoryColors.PowerBreakdownPairCount;
+            if (tray.width <= 0.01f || tray.height <= 0.01f || pairCount <= 0)
+                return -1;
+
+            float nx = Mathf.Clamp01((local.x - tray.xMin) / tray.width);
+            float ny = Mathf.Clamp01((local.y - tray.yMin) / tray.height);
+            int pair = Mathf.Clamp((int)(nx * pairCount), 0, pairCount - 1);
+            // [UNITY] Rect local Y is up. VerticalLayoutGroup paints the first child at the top.
+            int tone = ny >= 0.5f ? 0 : 1;
+            return pair * 2 + tone;
+        }
+
+        /// <summary>Closest painted slot by screen-space center. No per-call array alloc.</summary>
+        int NearestSlot(Vector2 screenPoint, UnityEngine.Camera eventCamera)
+        {
             if (segments == null)
                 return -1;
 
@@ -990,16 +1172,12 @@ namespace TitanOrbit.UI
             float nearestDist = float.MaxValue;
             for (int i = 0; i < segments.Length; i++)
             {
-                RectTransform slot = GetSlotRect(i);
-                if (slot == null || !slot.gameObject.activeInHierarchy)
+                RectTransform slotRt = GetSlotRect(i);
+                if (slotRt == null || !slotRt.gameObject.activeInHierarchy)
                     continue;
 
-                if (RectTransformUtility.RectangleContainsScreenPoint(slot, screenPoint, eventCamera))
-                    return i;
-
-                Vector3[] corners = new Vector3[4];
-                slot.GetWorldCorners(corners);
-                Vector3 worldCenter = (corners[0] + corners[2]) * 0.5f;
+                slotRt.GetWorldCorners(s_WorldCorners);
+                Vector3 worldCenter = (s_WorldCorners[0] + s_WorldCorners[2]) * 0.5f;
                 Vector2 screenCenter = RectTransformUtility.WorldToScreenPoint(eventCamera, worldCenter);
                 float dist = (screenCenter - screenPoint).sqrMagnitude;
                 if (dist < nearestDist)
@@ -1015,7 +1193,11 @@ namespace TitanOrbit.UI
         /// <summary>Opens the shared STAT TELEMETRY card for one painted slot.</summary>
         public void ShowStatTooltip(int statIndex)
         {
+            // Prefer the slot so the card sits beside the hovered lane. A 0px slot
+            // (stale layout) would park the tip at the origin — use the dark tray instead.
             RectTransform anchor = GetSlotRect(statIndex);
+            if (anchor == null || anchor.rect.width < 1f || anchor.rect.height < 1f)
+                anchor = ResolveHoverTray();
             if (anchor == null)
                 anchor = transform as RectTransform;
             ShipPowerBarStatTooltip.Show(
