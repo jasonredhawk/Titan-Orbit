@@ -87,7 +87,23 @@ namespace TitanOrbit.Systems
             string cid = ship.CurrentChassisId;
             if (string.IsNullOrEmpty(cid))
                 cid = GetStarterChassisId();
-            return Config.GetShipFamilyDefinitionForChassisId(cid);
+
+            ShipFamilyDefinition family = Config.GetShipFamilyDefinitionForChassisId(cid);
+            if (family != null)
+                return family;
+
+            // Titan chassis ids are MEGA_### — no family prefix. Use the ghosted family
+            // index (store planet on purchase, or previous L6) so GEAR tiles still resolve.
+            if (MegaShipCatalog.IsMegaChassisId(cid)
+                && EcsGameBridge.TryGetLocalShipState(out ShipState shipState))
+            {
+                family = Config.GetFamilyByConfigIndex(shipState.ShipFamilyConfigIndex)
+                    ?.shipFamilyDefinition;
+                if (family != null)
+                    return family;
+            }
+
+            return null;
         }
 
         public string GetStarterChassisId()

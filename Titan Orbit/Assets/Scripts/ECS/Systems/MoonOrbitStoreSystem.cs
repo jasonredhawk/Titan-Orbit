@@ -727,19 +727,19 @@ namespace TitanOrbit.ECS
                 return false;
             }
 
-            if (!TryResolveFamilyForShip(em, shipEntity, ship, out ShipFamilyDefinition family) || family == null)
+            // --- Catalog row (family is optional) ---
+            // [TITAN-ORBIT] Titan chassis ids are MEGA_### — they have no family prefix.
+            // Prefer the docked / previous family when it exists, then any-family lookup
+            // so a CosmicShark cockpit still buys on a Titan.
+            TryResolveFamilyForShip(em, shipEntity, ship, out ShipFamilyDefinition family);
+            ShipFamilyComponentEntry entry = null;
+            if (family != null)
+                family.TryGetComponentEntry(componentId, out entry);
+            if (entry == null
+                && (!BulletBankProfileUtility.TryFindComponentInAnyFamily(componentId, out entry) || entry == null))
             {
-                message = "Ship family not found.";
+                message = "Component not in catalog.";
                 return false;
-            }
-
-            if (!family.TryGetComponentEntry(componentId, out ShipFamilyComponentEntry entry) || entry == null)
-            {
-                if (!BulletBankProfileUtility.TryFindComponentInAnyFamily(componentId, out entry) || entry == null)
-                {
-                    message = "Component not in catalog.";
-                    return false;
-                }
             }
 
             if (HasComponentEquipped(em, shipEntity, componentId))
@@ -1091,7 +1091,64 @@ namespace TitanOrbit.ECS
             if (!ShipStatApplyLogic.TryResolveChassisId(
                     em, shipEntity, ship.Team, ship.ShipLevel, branch, out string chassisId))
                 return false;
-            return ShipStatApplyLogic.TryResolveFamilyForChassisId(chassisId, out family) && family != null;
+
+            if (ShipStatApplyLogic.TryResolveFamilyForChassisId(chassisId, out family) && family != null)
+                return true;
+
+            // Titan hulls use MEGA_### — that prefix is not a PlanetShipFamilyConfig family.
+            return TryResolveFamilyForMegaOrFallback(em, shipEntity, ship, out family);
+        }
+
+        /// <summary>
+        /// Family catalog for a Titan (or any chassis whose id has no family prefix).
+        /// Prefers the moon you are docked at, then the ghosted family index stamped on
+        /// Titan purchase, then the previous L6 family, then home AstroEagle.
+        /// Used so GEAR / card spin still have a shop catalog after buying a MEGA hull.
+        /// </summary>
+        static bool TryResolveFamilyForMegaOrFallback(
+            EntityManager em,
+            Entity shipEntity,
+            in ShipState ship,
+            out ShipFamilyDefinition family)
+        {
+            family = null;
+            var config = ShipStatApplyLogic.Config;
+            if (config == null)
+                return false;
+
+            // --- Docked moon shop ---
+            if (em.HasComponent<ShipMoonDockState>(shipEntity))
+            {
+                int planetId = em.GetComponentData<ShipMoonDockState>(shipEntity).MoonPlanetId;
+                if (planetId > 0 && TryFindPlanetById(em, planetId, out _, out var storePlanet))
+                {
+                    family = config.GetFamilyByConfigIndex(ResolveStoreFamilyConfigIndex(storePlanet))
+                        ?.shipFamilyDefinition;
+                    if (family != null)
+                        return true;
+                }
+            }
+
+            // --- Family index on the ship (Titan purchase writes the store planet's family) ---
+            family = config.GetFamilyByConfigIndex(ship.ShipFamilyConfigIndex)?.shipFamilyDefinition;
+            if (family != null)
+                return true;
+
+            // --- Previous L6 family after Titan death restore bookkeeping ---
+            if (em.HasComponent<MegaShipState>(shipEntity))
+            {
+                var mega = em.GetComponentData<MegaShipState>(shipEntity);
+                if (mega.IsMega)
+                {
+                    family = config.GetFamilyByConfigIndex(mega.PreviousFamilyIndex)?.shipFamilyDefinition;
+                    if (family != null)
+                        return true;
+                }
+            }
+
+            family = config.GetFamilyByConfigIndex(PlanetShipFamilyAssignment.HomeFamilyConfigIndex)
+                ?.shipFamilyDefinition;
+            return family != null;
         }
 
         static bool HasComponentEquipped(EntityManager em, Entity shipEntity, string componentId)

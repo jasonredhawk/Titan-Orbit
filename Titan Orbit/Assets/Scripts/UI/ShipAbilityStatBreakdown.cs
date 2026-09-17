@@ -13,7 +13,9 @@ namespace TitanOrbit.UI
     /// Colour-coded calculation grids for the ten bottom Ship Ability chips.
     /// PARTS table: PRIMARY Base + each part’s own PerExtra × levels (extras add no Base).
     /// MASS TAX table (Move / Accel / Turn): gems / troops / hull → drag → chip.
-    /// MEGA hulls skip Extra Level and show static catalog part sums (no +per-buy).
+    /// MEGA hulls skip Extra Level on catalog parts and show static unique-component
+    /// sums (no +per-buy). Equipped moon-store gear adds PerExtra × shipLevel only
+    /// (no Base) and appears in a GEAR section on Titan cards.
     /// Token colours are shared: violet = start scale, amber = part count N, steel = Primary,
     /// cyan = PerExtra, blue = shipLevel, green = ability, mint = total.
     /// Presentation-only — never writes ECS.
@@ -140,10 +142,13 @@ namespace TitanOrbit.UI
                     unitSuffix = " DPS/s";
                     if (live.IsMega)
                     {
+                        // Catalog per-gun DPS, plus Extra-Leveled LOADOUT guns when AllGunDps was filled.
                         var mega = MegaShipCatalog.Load();
                         value = mega != null
                             ? mega.GetPowerBreakdown(live.MegaCatalogIndex).GetDisplayDps()
                             : ShipFamilyPowerScoreBreakdown.ComputeSustainedDps(eff.firePower, eff.fireRate);
+                        if (live.AllGunDps > 0.0001f)
+                            value = live.AllGunDps;
                         nextStep = 0f;
                     }
                     else if (live.AllGunDps > 0.0001f)
@@ -1286,7 +1291,6 @@ namespace TitanOrbit.UI
             in ShipSpeedometerStatTooltips.LiveContext live,
             in ShipAttributeUpgradeState attrs)
         {
-            _ = parts;
             // --- Readout (no purchase language) ---
             ShipStatTooltipChrome.AppendSectionBanner(sb, "READOUT", "7EC8FF");
             sb.Append("<b><color=#E8F4FF>").Append(shortLabel).Append(" — ").Append(title)
@@ -1297,7 +1301,7 @@ namespace TitanOrbit.UI
             if (!string.IsNullOrEmpty(unit))
                 AppendTint(sb, HexMute, unit);
             sb.AppendLine();
-                AppendTint(sb, HexMute, "Titan hull — static catalog (not Extra Level)");
+                AppendTint(sb, HexMute, "Titan hull — static catalog; gear is PerExtra only");
             sb.AppendLine();
 
             StatField field = abilityIndex switch
@@ -1327,11 +1331,12 @@ namespace TitanOrbit.UI
 
             if (abilityIndex == 6)
             {
-                AppendMegaMoveCard(sb, in live, chipVal);
+                AppendMegaMoveCard(sb, in parts, in live, chipVal);
                 return;
             }
 
             AppendMegaCatalogParts(sb, in live, field, unit);
+            AppendMegaGearParts(sb, in parts, field, unit, live.Ship.ShipLevel);
             AppendTotalLine(sb, chipVal, unit);
 
             if (abilityIndex == 0)
@@ -1339,10 +1344,12 @@ namespace TitanOrbit.UI
                 // Chip / power bar use per-gun catalog DPS, not summed-rate × summed-damage.
                 ShipStatTooltipChrome.AppendSectionBanner(sb, "RELATED", "FFAA66");
                 var mega = MegaShipCatalog.Load();
-                float chipDps = mega != null
-                    ? mega.GetPowerBreakdown(live.MegaCatalogIndex).GetDisplayDps()
-                    : ShipFamilyPowerScoreBreakdown.ComputeSustainedDps(
-                        live.EffectiveStats.firePower, live.EffectiveStats.fireRate);
+                float chipDps = live.AllGunDps > 0.0001f
+                    ? live.AllGunDps
+                    : mega != null
+                        ? mega.GetPowerBreakdown(live.MegaCatalogIndex).GetDisplayDps()
+                        : ShipFamilyPowerScoreBreakdown.ComputeSustainedDps(
+                            live.EffectiveStats.firePower, live.EffectiveStats.fireRate);
                 sb.Append("Chip DPS  ").Append(FResult(chipDps)).Append("/s").AppendLine();
                 float dps = live.Weapon.BulletDamage * live.Weapon.FireRate;
                 sb.Append("Hull avg  ").Append(FResult(live.Weapon.BulletDamage)).Append("/hit  ");
@@ -1420,12 +1427,78 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
+        /// Lists equipped moon-store ship components that contribute
+        /// <paramref name="field"/> after PerExtra × <paramref name="shipLevel"/> (no Base).
+        /// Hidden when the Titan has no LOADOUT gear for this chip.
+        /// </summary>
+        static void AppendMegaGearParts(
+            StringBuilder sb,
+            in ShipSpeedometerStatTooltips.PartCache parts,
+            StatField field,
+            string unitLabel,
+            int shipLevel)
+        {
+            if (!parts.Valid
+                || parts.Ids == null
+                || parts.Stats == null
+                || parts.StoreExtraStartIndex == int.MaxValue
+                || field == StatField.MaxGems)
+                return;
+
+            int start = parts.StoreExtraStartIndex;
+            if (start < 0 || start >= parts.Ids.Count)
+                return;
+
+            int level = Mathf.Max(1, shipLevel);
+            bool wroteHeader = false;
+            int n = Mathf.Min(parts.Ids.Count, parts.Stats.Count);
+            for (int i = start; i < n; i++)
+            {
+                string id = parts.Ids[i];
+                if (string.IsNullOrWhiteSpace(id))
+                    continue;
+
+                ShipComponentAbilityStats extra = MegaShipStatsCalculator.EvaluateLoadoutExtra(
+                    parts.Stats[i], id, level);
+                extra.maxGems = 0f;
+                float value = ReadField(extra, field);
+                if (value <= 0.0001f)
+                    continue;
+
+                if (!wroteHeader)
+                {
+                    ShipStatTooltipChrome.AppendSectionBanner(sb, "GEAR", "FFAA66");
+                    AppendTint(sb, HexMute, "LOADOUT extras add PerExtra × Titan tier (no Base)");
+                    sb.AppendLine();
+                    wroteHeader = true;
+                }
+
+                string label = ShipComponentStoreData.FormatComponentId(id);
+                if (BulletBankProfileUtility.TryFindComponentInAnyFamily(id, out ShipFamilyComponentEntry entry)
+                    && entry != null)
+                    label = ShipComponentStoreData.GetDisplayName(entry);
+
+                AppendTint(sb, HexCount, "1×");
+                sb.Append(" ").Append(label).Append("  ");
+                AppendTint(sb, HexResult, FDetail(value));
+                if (!string.IsNullOrEmpty(unitLabel))
+                {
+                    sb.Append(" ");
+                    AppendTint(sb, HexMute, unitLabel);
+                }
+
+                sb.AppendLine();
+            }
+        }
+
+        /// <summary>
         /// MEGA cruise: fastest Engine + extra% of the rest — same as
         /// <see cref="MegaShipComponentInventory.CombineEngineCruise"/>.
         /// Thrusters fill in only when the hull has no engines.
         /// </summary>
         static void AppendMegaMoveCard(
             StringBuilder sb,
+            in ShipSpeedometerStatTooltips.PartCache parts,
             in ShipSpeedometerStatTooltips.LiveContext live,
             float chipVal)
         {
@@ -1491,6 +1564,8 @@ namespace TitanOrbit.UI
             }
 
             AppendMegaCatalogParts(sb, in live, StatField.AccelerationCap, "Accel");
+            AppendMegaGearParts(sb, in parts, StatField.MoveSpeed, "Move", live.Ship.ShipLevel);
+            AppendMegaGearParts(sb, in parts, StatField.AccelerationCap, "Accel", live.Ship.ShipLevel);
             AppendTurnMassTax(sb, live);
             AppendTotalLine(sb, chipVal, "Move");
         }

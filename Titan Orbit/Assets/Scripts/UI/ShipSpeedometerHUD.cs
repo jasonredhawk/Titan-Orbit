@@ -1144,11 +1144,13 @@ namespace TitanOrbit.UI
                 bool megaChassis = MegaShipCatalog.IsMegaChassisId(chassisId);
                 if (megaChassis)
                 {
-                    // Static catalog sum — MEGAs have no Extra Level and no bottom-HUD purchases.
-                    // GetEffectiveStatsAtShipLevel would treat shipLevel 7 as six Extra Level steps
-                    // and inflate every chip far above the motor.
+                    // Frozen catalog hull + PerExtra-only LOADOUT gear. Do not Extra-Level
+                    // the whole Titan as a regular L7 family — that inflates every chip.
+                    ShipComponentStoreVisualScaleLogic.CollectExtraComponentIds(
+                        em, shipEntity, out var extraIds);
                     if (MegaShipCatalog.TryParseCatalogIndex(chassisId, out ushort megaIdx))
-                        MegaShipStatsCalculator.TrySumForCatalogIndex(megaIdx, out effectiveStats);
+                        MegaShipStatsCalculator.TrySumForCatalogIndex(
+                            megaIdx, extraIds, ship.ShipLevel, out effectiveStats);
                     else
                         ShipStatApplyLogic.TryGetBaseStatsForChassis(
                             chassisId, ship.ShipLevel, out effectiveStats);

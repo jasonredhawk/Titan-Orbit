@@ -102,11 +102,26 @@ namespace TitanOrbit.ECS
         public int BulletBankIndex;
 
         /// <summary>
+        /// [TITAN-ORBIT] MEGA type-table tracer scale (Gun / Cannon / Missile / Sniper).
+        /// Regular ships leave this 0 and use hull <c>ShipWeaponConfig.BulletScale</c>.
+        /// </summary>
+        public float BulletScale;
+
+        /// <summary>
         /// [TITAN-ORBIT] MEGA unique-weapon class (<see cref="ShipWeaponKind"/>).
         /// Cannons are hitscan lasers; other values still spawn bullets.
         /// Regular family barrels leave this 0 (gun).
         /// </summary>
         public byte WeaponKind;
+
+        /// <summary>
+        /// Authored tracer scale for this barrel. MEGA mounts use
+        /// <see cref="BulletScale"/> when set; otherwise the hull fallback.
+        /// </summary>
+        public static float ResolveAuthoredScale(in ShipWeaponMountElement mount, float hullBulletScale)
+        {
+            return mount.BulletScale > 0.01f ? mount.BulletScale : math.max(0.1f, hullBulletScale);
+        }
     }
 
     /// <summary>

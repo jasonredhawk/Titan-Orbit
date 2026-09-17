@@ -301,7 +301,9 @@ namespace TitanOrbit.ECS
             if (em.Exists(shipEntity) && em.HasComponent<ShipState>(shipEntity))
                 familyIndex = em.GetComponentData<ShipState>(shipEntity).ShipFamilyConfigIndex;
 
-            // --- MEGA hulls use a frozen stat table (no Extra Level / attributes) ---
+            // --- MEGA hulls: frozen catalog + PerExtra-only moon-store gear ---
+            // [TITAN-ORBIT] Unique-component totals stay static. LOADOUT ShipComponent
+            // rows add PerExtra × shipLevel only (no second Base).
             if (em.Exists(shipEntity)
                 && em.HasComponent<MegaShipState>(shipEntity)
                 && em.GetComponentData<MegaShipState>(shipEntity).IsMega)

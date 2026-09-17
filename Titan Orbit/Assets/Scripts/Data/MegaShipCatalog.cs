@@ -159,6 +159,9 @@ namespace TitanOrbit.Data
         /// <summary>Named <see cref="BulletVfxBank"/> default for MEGA snipers.</summary>
         public const string DefaultWeaponSniperBankName = "Laser";
 
+        /// <summary>Default tracer / VFX scale when a type-table bank scale is unset (0).</summary>
+        public const float DefaultWeaponBankScale = 1f;
+
         /// <summary>Minimum cruise speed after summing a hull (thruster-only prefabs).</summary>
         public const float MinHullMoveSpeed = 12f;
 
@@ -356,17 +359,33 @@ namespace TitanOrbit.Data
         [BulletVfxBankCategory(true, "Default (Bullets)")]
         public int weaponBulletBankIndex = InheritTypeTableBankIndex;
 
+        [Tooltip("Tracer / impact visual scale for rapid MEGA guns. 1 = default bank size. 0 uses 1.")]
+        [Min(0.05f)]
+        public float weaponBulletBankScale = DefaultWeaponBankScale;
+
         [Tooltip("BulletVfxBank category for MEGA cannons. Named default is FireballsV2.")]
         [BulletVfxBankCategory(true, "Default (FireballsV2)")]
         public int weaponCannonBankIndex = InheritTypeTableBankIndex;
+
+        [Tooltip("Tracer / impact visual scale for MEGA cannons that still fire projectiles. 1 = default bank size. 0 uses 1.")]
+        [Min(0.05f)]
+        public float weaponCannonBankScale = DefaultWeaponBankScale;
 
         [Tooltip("BulletVfxBank category for MEGA missile launchers. Named default is Rockets (target-seeking, same as store ALT rockets).")]
         [BulletVfxBankCategory(true, "Default (Rockets)")]
         public int weaponMissileBankIndex = InheritTypeTableBankIndex;
 
+        [Tooltip("Tracer / impact visual scale for MEGA missile launchers. 1 = default bank size. 0 uses 1.")]
+        [Min(0.05f)]
+        public float weaponMissileBankScale = DefaultWeaponBankScale;
+
         [Tooltip("BulletVfxBank category for MEGA snipers. Named default is Laser.")]
         [BulletVfxBankCategory(true, "Default (Laser)")]
         public int weaponSniperBankIndex = InheritTypeTableBankIndex;
+
+        [Tooltip("Tracer / impact visual scale for MEGA snipers. 1 = default bank size. 0 uses 1.")]
+        [Min(0.05f)]
+        public float weaponSniperBankScale = DefaultWeaponBankScale;
 
         [Tooltip("Cockpit / bridge — troop cap lives here.")]
         public MegaShipPartStats cockpitStats;
@@ -619,6 +638,31 @@ namespace TitanOrbit.Data
             return ResolveNamedBankIndex(GetDefaultBankNameForPartType(partType));
         }
 
+        /// <summary>Authored type-table tracer scale for a weapon part type (0 when unset).</summary>
+        public float GetAuthoredTypeTableBankScale(string partType)
+        {
+            if (string.Equals(partType, ShipFamilyPartTypes.WeaponSniper, StringComparison.OrdinalIgnoreCase))
+                return weaponSniperBankScale;
+            if (string.Equals(partType, ShipFamilyPartTypes.WeaponMissile, StringComparison.OrdinalIgnoreCase))
+                return weaponMissileBankScale;
+            if (string.Equals(partType, ShipFamilyPartTypes.WeaponCannon, StringComparison.OrdinalIgnoreCase))
+                return weaponCannonBankScale;
+            if (string.Equals(partType, ShipFamilyPartTypes.WeaponBullet, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(partType, "Weapon", StringComparison.OrdinalIgnoreCase))
+                return weaponBulletBankScale;
+            return DefaultWeaponBankScale;
+        }
+
+        /// <summary>
+        /// Tracer / impact visual scale for a MEGA weapon type. Unset (0) fields use
+        /// <see cref="DefaultWeaponBankScale"/>.
+        /// </summary>
+        public float GetTypeTableBankScale(string partType)
+        {
+            float authored = GetAuthoredTypeTableBankScale(partType);
+            return authored > 0.001f ? authored : DefaultWeaponBankScale;
+        }
+
         /// <summary>
         /// Bank this unique weapon fires. Authored <see cref="MegaShipComponentEntry.bulletPrefabIndex"/>
         /// wins; -1 inherits <see cref="GetTypeTableBankIndex"/>.
@@ -628,6 +672,15 @@ namespace TitanOrbit.Data
             if (row != null && row.bulletPrefabIndex >= 0)
                 return row.bulletPrefabIndex;
             return GetTypeTableBankIndex(row != null ? row.partType : null);
+        }
+
+        /// <summary>
+        /// Tracer scale this unique weapon fires. Type-table scale for
+        /// <see cref="MegaShipComponentEntry.partType"/> (unset fields use 1).
+        /// </summary>
+        public float ResolveWeaponBankScale(MegaShipComponentEntry row)
+        {
+            return GetTypeTableBankScale(row != null ? row.partType : null);
         }
 
         /// <summary>First armed unique weapon bank on a hull (HUD / ram display), or false.</summary>
@@ -1160,6 +1213,7 @@ namespace TitanOrbit.Data
                 weaponRotationSpeed: DefaultWeaponRotationSpeed);
 
             SeedUnsetTypeTableBanksFromNames();
+            SeedUnsetTypeTableBankScales();
 
             cockpitStats = CreateStatic(
                 firePower: 0f, bulletSpeed: 0f, bulletRange: 0f, fireRate: 0f, ramming: 4f,
@@ -1216,6 +1270,22 @@ namespace TitanOrbit.Data
                 weaponMissileBankIndex = ResolveNamedBankIndex(DefaultWeaponMissileBankName);
             if (weaponSniperBankIndex < 0)
                 weaponSniperBankIndex = ResolveNamedBankIndex(DefaultWeaponSniperBankName);
+        }
+
+        /// <summary>
+        /// Writes <see cref="DefaultWeaponBankScale"/> onto type-table scale fields that are still 0
+        /// so older catalog assets show 1 in the inspector instead of an empty float.
+        /// </summary>
+        void SeedUnsetTypeTableBankScales()
+        {
+            if (weaponBulletBankScale <= 0.001f)
+                weaponBulletBankScale = DefaultWeaponBankScale;
+            if (weaponCannonBankScale <= 0.001f)
+                weaponCannonBankScale = DefaultWeaponBankScale;
+            if (weaponMissileBankScale <= 0.001f)
+                weaponMissileBankScale = DefaultWeaponBankScale;
+            if (weaponSniperBankScale <= 0.001f)
+                weaponSniperBankScale = DefaultWeaponBankScale;
         }
 
         /// <summary>
@@ -1344,7 +1414,10 @@ namespace TitanOrbit.Data
             if (weaponBulletStats.firePower <= 0.01f && hullStats.healthCap <= 0.01f)
                 ApplyDefaultStaticStats();
             else
+            {
                 SeedUnsetFamilyScalesFromGlobal();
+                SeedUnsetTypeTableBankScales();
+            }
         }
 #endif
     }

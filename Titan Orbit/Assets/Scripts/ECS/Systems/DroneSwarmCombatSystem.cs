@@ -26,11 +26,13 @@ namespace TitanOrbit.ECS
     /// <para>
     /// [TITAN-ORBIT] Combat drones fire at purchase-level damage from
     /// <see cref="StoreItemData.GetCombatDroneDamage"/> (not ship <c>BulletDamage</c>) —
-    /// about 1/6 of the ship fire-power curve. Each drone uses the bullet bank of the
+    /// Level 1 = 0.6, Level 6 = 2.4 (4×). Each drone uses the bullet bank of the
     /// planet family it was bought from (stamped on
     /// <see cref="EquippedEquipmentElement.ComponentId"/>). Bank multipliers stay as
-    /// authored (1.25 fire power stays 1.25). Strength stats (pull/push force, radii,
-    /// burn DPS) use <see cref="DroneSwarmLogic.DroneFirePowerScale"/> (1/6); durations
+    /// authored (1.25 fire power stays 1.25). Unique-ability Extra Levels use
+    /// <c>droneLevel − 1</c> so a Level-6 drone's burn / heal / multipliers are
+    /// stronger than a Level-1's. Strength stats (pull/push force, radii, burn DPS)
+    /// still use <see cref="DroneSwarmLogic.DroneFirePowerScale"/> (1/6); durations
     /// and tick intervals stay at the bullet type's authored times.
     /// Mining bolts use <see cref="BulletDamageFilter.AsteroidsOnly"/>; fighters use
     /// <see cref="BulletDamageFilter.ShipsOnly"/> — Starblast-style pass-through.
@@ -379,13 +381,14 @@ namespace TitanOrbit.ECS
                     int droneLevel = buf[slot].ItemLevel > 0
                         ? buf[slot].ItemLevel
                         : StoreItemData.DroneReferenceMaxLevel;
-                    // One-sixth ship fire-power curve (L1 ≈ 0.67, L6 = 1.5). Bank multipliers
-                    // (e.g. 1.25 fire power) then apply unchanged — never the hull's live guns.
+                    // L1 = 0.6, L6 = 2.4 (4×). Bank multipliers (e.g. 1.25 fire power)
+                    // then apply unchanged — never the hull's live guns.
                     float damage = math.max(0.05f, StoreItemData.GetCombatDroneDamage(droneLevel)
                         * CardEffectQuery.GetMul(EntityManager, entity, CardEffectKind.DroneDamageMul));
-                    // Authored primary abilities only; StrengthScale (1/6) shrinks force/radius/DPS.
-                    // Durations and tick intervals stay at the bullet type's authored times.
-                    const int firePowerExtras = 0;
+                    // Extra Levels = droneLevel − 1 so unique bank abilities (burn DPS,
+                    // heal, damage muls) climb with the same purchase rung as HP / FP.
+                    // StrengthScale (1/6) still shrinks force/radius/DPS vs a ship shot.
+                    int firePowerExtras = StoreItemData.GetDroneFirePowerExtraLevels(droneLevel);
                     // [TITAN-ORBIT] Starblast-style target filters — mining ignores ships; fighters ignore rocks.
                     var damageFilter = isFighter
                         ? BulletDamageFilter.ShipsOnly
@@ -422,7 +425,8 @@ namespace TitanOrbit.ECS
                         OwnerTeam = ownerTeam,
                         Sequence = sequence,
                         BankIndex = math.max(0, bankIndex),
-                        // Mini tracer (0.58) is visual only. Gameplay strength is 1/6.
+                        // Mini tracer (0.58) is visual only. StrengthScale (1/6) shrinks
+                        // unique effects; Damage already used the leveled FP curve.
                         ScaleMultiplier = DroneSwarmLogic.DroneBulletVisualScale,
                         DamageFilter = damageFilter,
                         FirePowerExtraLevels = firePowerExtras,

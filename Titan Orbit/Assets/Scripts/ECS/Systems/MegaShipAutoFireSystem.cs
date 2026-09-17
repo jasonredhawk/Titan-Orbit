@@ -22,7 +22,9 @@ namespace TitanOrbit.ECS
     /// Damage mode treats enemy ships, planetary defense turrets, and enemy moon
     /// shields as one priority — closest in range wins. Asteroids are second
     /// (only when no combat target is in that gun's range). Heal mode aims at the
-    /// nearest friendly ship. Asteroids are targeted only when
+    /// nearest friendly ship. Cannon lasers also acquire asteroids (lowest
+    /// priority) so a destroyed rock does not leave the beam stuck. Projectile
+    /// guns only auto-aim rocks when
     /// <see cref="TitanOrbitDebugFlags.MegaShipsAutoFireAsteroids"/> is on
     /// (Editor / MPPM host).
     /// <para>
@@ -42,7 +44,8 @@ namespace TitanOrbit.ECS
     /// [TITAN-ORBIT] MEGAs have no overdrive. <see cref="ShipInput.Overdrive"/> (Shift)
     /// locks hull heading and points every gun and cannon at the mouse
     /// world point (<see cref="ShipInput.AimPlanarDir"/> × <see cref="ShipInput.AimDistance"/>).
-    /// Cannons hitscan the 33° cone along that aim. Fire is still required to spend energy.
+    /// Cannons hitscan the 33° cone along that aim and keep a sticky lock in
+    /// that cone. Fire is still required to spend energy.
     /// </para>
     /// Map size comes from <see cref="MapStateSingleton"/>. Distances use
     /// <see cref="ToroidalMapEcs.ToroidalDistance"/>.
@@ -204,11 +207,12 @@ namespace TitanOrbit.ECS
 
                 // --- Shift: every Titan barrel looks at the mouse ---
                 // [TITAN-ORBIT] Owner Shift is the MEGA "strafe / lock heading" mode.
-                // Auto-locks clear so releasing Shift re-acquires. Cannons hitscan
-                // the cone along that mouse aim instead of keeping a sticky lock.
+                // Projectile auto-locks clear so releasing Shift re-acquires.
+                // Cannon lasers keep a sticky cone lock — wiping it every tick
+                // re-focused the beam and restarted the hum.
                 if (ownerShift)
                 {
-                    ClearManualAimSlots(mega);
+                    ClearProjectileAimSlots(mega);
                     AimUnoccupiedMountsAtMouse(mega, xf, mounts, gunners, mapW, mapH, dt);
                 }
 
@@ -240,7 +244,19 @@ namespace TitanOrbit.ECS
                     planetsLoaded = true;
                 }
 
-                if (!heal && debugAsteroids && !asteroidsLoaded)
+                bool cannonsWantAsteroids = false;
+                if (!heal)
+                {
+                    for (int m = 0; m < mounts.Length; m++)
+                    {
+                        if (!ShipWeaponKind.IsCannonLaser(mounts[m], gunners, m))
+                            continue;
+                        cannonsWantAsteroids = true;
+                        break;
+                    }
+                }
+
+                if (!heal && (debugAsteroids || cannonsWantAsteroids) && !asteroidsLoaded)
                 {
                     asteroidEntities = _asteroidQuery.ToEntityArray(Allocator.Temp);
                     asteroidStates = _asteroidQuery.ToComponentDataArray<AsteroidState>(Allocator.Temp);
@@ -250,22 +266,34 @@ namespace TitanOrbit.ECS
 
                 if (ownerShift)
                 {
-                    // Barrel already faces the cursor. Pick who sits in that cone
-                    // this tick — do not rotate back onto a sticky lock.
+                    // Barrel already faces the cursor. Keep the last cone lock;
+                    // only search again when that target leaves the cone / range.
                     for (int m = 0; m < mountCount; m++)
                     {
                         if (!ShipWeaponKind.IsCannonLaser(mounts[m], gunners, m))
                             continue;
 
+                        var slot = aims[m];
                         var mount = mounts[m];
                         float3 muzzle = ResolveMuzzle(xf, mount);
                         float3 barrelFwd = MegaShipWeaponAim.GetBarrelForward(in xf, in mount);
-                        float mountRange = ResolveMountRange(mount, in weapon);
+                        float acquireRange = ResolveMountRange(mount, in weapon);
+                        float keepRange = CannonLaserMath.KeepRange(acquireRange);
+                        bool hadLock = slot.Target != Entity.Null && slot.Target != mega;
+                        if (hadLock && TryKeepStickyTarget(
+                            mega, ship.Team, heal, muzzle, shooterVel, 0f, keepRange,
+                            mapW, mapH, moonElapsed, ref slot,
+                            coneLock: true, barrelFwd))
+                        {
+                            aims[m] = slot;
+                            continue;
+                        }
+
                         if (TryAcquireClosestTarget(
-                            mega, ship.Team, heal, muzzle, shooterVel, 0f, mountRange,
+                            mega, ship.Team, heal, muzzle, shooterVel, 0f, acquireRange,
                             mapW, mapH, moonElapsed, MegaShipAutoAimClass.None,
                             ships, shipStates, shipXfs, planets,
-                            debugAsteroids, asteroidEntities, asteroidStates, asteroidXfs,
+                            true, asteroidEntities, asteroidStates, asteroidXfs,
                             out Entity coneTarget, out float3 coneAim, out float coneDist,
                             coneLock: true, barrelFwd))
                         {
@@ -297,9 +325,12 @@ namespace TitanOrbit.ECS
                     var mount = mounts[m];
                     float3 muzzle = ResolveMuzzle(xf, mount);
                     float3 barrelFwd = MegaShipWeaponAim.GetBarrelForward(in xf, in mount);
-                    float mountRange = ResolveMountRange(mount, in weapon);
+                    float acquireRange = ResolveMountRange(mount, in weapon);
                     if (!isCannon)
-                        mountRange += 8f;
+                        acquireRange += 8f;
+                    float keepRange = isCannon
+                        ? CannonLaserMath.KeepRange(acquireRange)
+                        : acquireRange;
                     int mountBank = mount.BulletBankIndex >= 0
                         ? mount.BulletBankIndex
                         : bankIndex;
@@ -307,11 +338,11 @@ namespace TitanOrbit.ECS
                         ? 0f
                         : ResolveLeadBulletSpeed(
                             in weapon, in mount, mountBank, shipLevel);
-                    // Live lock sticks (no closer-target steal). Dead / out of range
-                    // falls through to a fresh closest-target search.
+                    // Live lock sticks (no closer-target steal). Dead / out of
+                    // keep-range falls through to a fresh closest-target search.
                     bool hadLock = slot.Target != Entity.Null && slot.Target != mega;
                     bool kept = hadLock && TryKeepStickyTarget(
-                        mega, ship.Team, heal, muzzle, shooterVel, leadBulletSpeed, mountRange,
+                        mega, ship.Team, heal, muzzle, shooterVel, leadBulletSpeed, keepRange,
                         mapW, mapH, moonElapsed, ref slot,
                         coneLock: false, barrelFwd);
                     if (kept)
@@ -321,10 +352,10 @@ namespace TitanOrbit.ECS
                     }
 
                     if (TryAcquireClosestTarget(
-                        mega, ship.Team, heal, muzzle, shooterVel, leadBulletSpeed, mountRange,
+                        mega, ship.Team, heal, muzzle, shooterVel, leadBulletSpeed, acquireRange,
                         mapW, mapH, moonElapsed, MegaShipAutoAimClass.None,
                         ships, shipStates, shipXfs, planets,
-                        debugAsteroids, asteroidEntities, asteroidStates, asteroidXfs,
+                        debugAsteroids || isCannon, asteroidEntities, asteroidStates, asteroidXfs,
                         out Entity target, out float3 aimPoint, out float interceptDistance,
                         coneLock: false, barrelFwd))
                     {
@@ -515,27 +546,40 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// Drop every auto-lock so Shift mouse-aim owns the barrels. Releasing
-        /// Shift re-acquires on the next Fire hold.
+        /// Drop projectile auto-locks only. Cannon laser slots stay so Shift
+        /// mouse-aim does not wipe a live cone lock every tick.
         /// </summary>
-        void ClearManualAimSlots(Entity mega)
+        void ClearProjectileAimSlots(Entity mega)
         {
             var mounts = EntityManager.HasBuffer<ShipWeaponMountElement>(mega)
                 ? EntityManager.GetBuffer<ShipWeaponMountElement>(mega)
                 : default;
+            var gunners = EntityManager.HasBuffer<MegaShipGunnerSlotElement>(mega)
+                ? EntityManager.GetBuffer<MegaShipGunnerSlotElement>(mega)
+                : default;
+            if (mounts.IsCreated)
+                ShipWeaponKind.RestoreMountKindsFromGhostedSlots(mounts, gunners);
+
             if (EntityManager.HasBuffer<MegaShipAutoAimSlotElement>(mega))
             {
                 var aims = EntityManager.GetBuffer<MegaShipAutoAimSlotElement>(mega);
                 for (int i = 0; i < aims.Length; i++)
+                {
+                    if (mounts.IsCreated && i < mounts.Length
+                        && ShipWeaponKind.IsCannonLaser(mounts[i], gunners, i))
+                        continue;
                     aims[i] = default;
+                }
             }
 
-            if (!EntityManager.HasBuffer<MegaShipGunnerSlotElement>(mega))
+            if (!gunners.IsCreated)
                 return;
 
-            var gunners = EntityManager.GetBuffer<MegaShipGunnerSlotElement>(mega);
             for (int i = 0; i < gunners.Length; i++)
             {
+                if (mounts.IsCreated && i < mounts.Length
+                    && ShipWeaponKind.IsCannonLaser(mounts[i], gunners, i))
+                    continue;
                 var slot = gunners[i];
                 slot.TargetDistance = 0f;
                 slot.AimWorldX = 0f;
@@ -676,7 +720,7 @@ namespace TitanOrbit.ECS
                 && EntityManager.HasComponent<LocalTransform>(target))
             {
                 var rock = EntityManager.GetComponentData<AsteroidState>(target);
-                if (rock.IsDestroyed || rock.Health <= 0.01f)
+                if (!rock.IsAliveForCombat)
                 {
                     aim = default;
                     return false;
@@ -854,7 +898,7 @@ namespace TitanOrbit.ECS
                 for (int a = 0; a < rockCount; a++)
                 {
                     var rock = asteroidStates[a];
-                    if (rock.IsDestroyed || rock.Health <= 0.01f)
+                    if (!rock.IsAliveForCombat)
                         continue;
 
                     float3 rockPos = asteroidXfs[a].Position;

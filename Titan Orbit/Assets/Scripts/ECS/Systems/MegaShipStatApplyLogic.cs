@@ -11,10 +11,12 @@ using UnityEngine;
 namespace TitanOrbit.ECS
 {
     /// <summary>
-    /// Writes static MEGA motor / weapon / vitals onto a ship. No Extra Level, no attribute
-    /// upgrades, gem cap forced to 0. Each mount fires the catalog unique-component (or
-    /// type-table) bullet bank — not the store planet's gameplay family. Fire mode is
-    /// Energy Hybrid; Phase B uses <see cref="ShipWeaponFireLogic.TryPlanMegaFire"/>.
+    /// Writes MEGA / Titan motor / weapon / vitals onto a ship. Hull parts stay frozen
+    /// (no Extra Level, no attribute upgrades). Equipped moon-store ship components in
+    /// LOADOUT slots add PerExtra × shipLevel only (no Base) onto those frozen totals.
+    /// Gem cap stays 0. Each mount fires the catalog unique-component (or type-table)
+    /// bullet bank — not the store planet's gameplay family. Fire mode is Energy Hybrid;
+    /// Phase B uses <see cref="ShipWeaponFireLogic.TryPlanMegaFire"/>.
     /// Paired with <see cref="ShipStatApplyLogic.ApplyToShip"/> which routes here when
     /// <see cref="MegaShipState.IsMega"/> is true.
     /// </summary>
@@ -26,7 +28,8 @@ namespace TitanOrbit.ECS
         static bool s_LoggedDedicatedWeaponFallback;
 
         /// <summary>
-        /// Applies frozen MEGA stats and resizes the ghosted aim-slot buffer to match weapon mounts.
+        /// Applies frozen MEGA hull stats plus PerExtra-only moon-store gear, then resizes
+        /// the ghosted aim-slot buffer to match weapon mounts.
         /// </summary>
         public static void ApplyToShip(
             EntityManager em,
@@ -41,7 +44,18 @@ namespace TitanOrbit.ECS
                 return;
 
             string chassisId = MegaShipCatalog.FormatChassisId(mega.CatalogIndex);
-            MegaShipStatsCalculator.SumFromEntry(entry, catalog, out ShipComponentAbilityStats effective);
+
+            // --- Frozen hull + PerExtra-only LOADOUT gear ---
+            // [TITAN-ORBIT] Catalog unique-parts keep Base. Moon-store ShipComponent rows
+            // add PerExtra × shipLevel only (no second Base) so a purchased cockpit raises
+            // Titan health by Extra Level steps, not by copying another catalog Base.
+            int shipLevel = 7;
+            if (em.HasComponent<ShipState>(shipEntity))
+                shipLevel = math.max(1, em.GetComponentData<ShipState>(shipEntity).ShipLevel);
+            ShipComponentStoreVisualScaleLogic.CollectExtraComponentIds(
+                em, shipEntity, out List<string> extraIds);
+            MegaShipStatsCalculator.SumFromEntry(
+                entry, catalog, extraIds, shipLevel, out ShipComponentAbilityStats effective);
             effective.maxGems = 0f;
 
             // --- Caps (server / authoritative only) ---
@@ -194,9 +208,10 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// Overwrites each MEGA mount's firePower / fireRate / bulletRange / bulletSpeed from
-        /// the unique component named like that prefab child. Family combat apply runs first
-        /// and would otherwise stamp regular-ship numbers onto MEGA barrels.
+        /// Overwrites each MEGA mount's firePower / fireRate / bulletRange / bulletSpeed /
+        /// bank / tracer scale from the unique component named like that prefab child.
+        /// Family combat apply runs first and would otherwise stamp regular-ship numbers
+        /// onto MEGA barrels.
         /// <para>
         /// Dedicated IL2CPP (Docker / Edgegap) cannot use Editor PrefabUtility names. If the
         /// unique-row lookup misses, type-table stats (or <c>componentCounts</c> when the
@@ -355,6 +370,9 @@ namespace TitanOrbit.ECS
             mount.BulletBankIndex = row != null
                 ? catalog.ResolveWeaponBankIndex(row)
                 : catalog.GetTypeTableBankIndex(partType);
+            mount.BulletScale = row != null
+                ? catalog.ResolveWeaponBankScale(row)
+                : catalog.GetTypeTableBankScale(partType);
             mount.WeaponKind = ShipWeaponKind.Resolve(
                 row,
                 partType,

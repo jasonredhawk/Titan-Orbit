@@ -11,11 +11,11 @@ namespace TitanOrbit.Data
     /// <para>
     /// [TITAN-ORBIT] Drones (fighter, mining, shield) and other leveled store goods are sold at
     /// <see cref="GetStorePurchaseLevel"/> — <c>min(ship, docked planet)</c>. A level-6 ship on a
-    /// level-3 moon can only buy level-3 gear. Cost, visual size, and (for combat drones) damage
-    /// scale with that purchase level — they do <b>not</b> copy the ship's live <c>BulletDamage</c>.
-    /// Rough ship firepower thumb-rule is ~3 + 1 per level; combat drones deal one-sixth:
-    /// <c>0.5 + (1/6)×level</c> (level 1 → ≈0.67, level 6 → 1.5 DPS at 1 shot/sec).
-    /// Visual size uses the same relative curve with level 6 = prefab scale 1.0.
+    /// level-3 moon can only buy level-3 gear. Cost, visual size, HP, and (for combat drones)
+    /// fire power scale with that purchase level — they do <b>not</b> copy the ship's live
+    /// <c>BulletDamage</c>. Combat fire power and fighter/mining HP lerp Level 1 → Level 6
+    /// (same style as planetary-defense turrets). Level 6 is 4× Level 1 on both ladders.
+    /// Visual size tracks the fire-power curve with level 6 = prefab scale 1.0.
     /// </para>
     /// </summary>
     public static class StoreItemData
@@ -23,33 +23,57 @@ namespace TitanOrbit.Data
         // --- Drone leveling (fighter + mining + shield) ---
 
         /// <summary>
-        /// Design reference for “full size / full HP” drones. Matches the combat damage
-        /// target (level 6 → 1.5 dmg). Levels above this clamp visual/HP scale at 1.0.
+        /// Design reference for “full size / full stats” drones. Level-1 → Level-6 fire
+        /// power and HP lerp toward these tops. Levels above this keep growing one extra
+        /// step (same idea as planetary-defense Level 7).
         /// </summary>
         public const int DroneReferenceMaxLevel = 6;
 
         /// <summary>
-        /// Constant term in the combat-drone damage curve. [TITAN-ORBIT] One-sixth of the
-        /// rough base ship firepower thumb-rule (3 ÷ 6 = 0.5).
+        /// Fighter / mining damage per shot at purchase Level 1 (before family-bank muls).
+        /// [TITAN-ORBIT] Still about one-sixth of a Level-1 ship gun (~3 fire power).
         /// </summary>
-        public const float CombatDroneBaseDamage = 0.5f;
+        public const float CombatDroneDamageAtLevel1 = 0.6f;
 
         /// <summary>
-        /// Damage added per purchase level. [TITAN-ORBIT] One-sixth of the rough ship
-        /// +1 firepower-per-level thumb-rule. Level 6 → 0.5 + 1 = 1.5.
+        /// Fighter / mining damage per shot at purchase Level 6. 4× Level 1 so a late
+        /// drone is clearly stronger than an early one (0.6 → 2.4).
         /// </summary>
-        public const float CombatDroneDamagePerLevel = 1f / 6f;
+        public const float CombatDroneDamageAtLevel6 = 2.4f;
 
         /// <summary>
-        /// Fighter / mining drone HP at <see cref="DroneReferenceMaxLevel"/>. Shield drones use
-        /// <see cref="ShieldDroneHpMultiplier"/> × this value. Lower purchase levels scale down
-        /// with the same relative curve as visual size.
+        /// Legacy alias for the Level-1 fire-power end. Prefer
+        /// <see cref="CombatDroneDamageAtLevel1"/>.
         /// </summary>
-        public const int DroneMaxHpAtReferenceLevel = 30;
+        public const float CombatDroneBaseDamage = CombatDroneDamageAtLevel1;
+
+        /// <summary>
+        /// Legacy per-level step if someone still adds <c>base + per × level</c>.
+        /// Live combat uses the Level-1 → Level-6 lerp instead.
+        /// </summary>
+        public const float CombatDroneDamagePerLevel =
+            (CombatDroneDamageAtLevel6 - CombatDroneDamageAtLevel1) / (DroneReferenceMaxLevel - 1);
+
+        /// <summary>
+        /// Fighter / mining max HP at purchase Level 1. Shield drones use
+        /// <see cref="ShieldDroneHpMultiplier"/> × this ladder.
+        /// </summary>
+        public const int DroneHpAtLevel1 = 10;
+
+        /// <summary>
+        /// Fighter / mining max HP at purchase Level 6. 4× Level 1 (10 → 40).
+        /// </summary>
+        public const int DroneHpAtLevel6 = 40;
+
+        /// <summary>
+        /// Fighter / mining HP at <see cref="DroneReferenceMaxLevel"/>. Prefer
+        /// <see cref="DroneHpAtLevel6"/>.
+        /// </summary>
+        public const int DroneMaxHpAtReferenceLevel = DroneHpAtLevel6;
 
         /// <summary>
         /// [TITAN-ORBIT] Shields tank more — 3× fighter/mining HP at the same purchase level
-        /// (level 6 shield → 90 HP when combat drones are at 30).
+        /// (level 6 shield → 120 HP when combat drones are at 40).
         /// </summary>
         public const int ShieldDroneHpMultiplier = 3;
 
@@ -87,28 +111,64 @@ namespace TitanOrbit.Data
         }
 
         /// <summary>
+        /// 0 at Level 1, 1 at Level 6. Levels above 6 step past 1 (Level 7 = 1.2).
+        /// Shared by fire power, HP, and any other drone ladder that should stay in lockstep.
+        /// </summary>
+        /// <param name="itemLevel">Purchase level (clamped to ≥ 1).</param>
+        /// <returns>Linear t for <c>LerpUnclamped(level1, level6, t)</c>.</returns>
+        public static float GetDroneLevelT(int itemLevel)
+        {
+            // --- Ladder t ---
+            // [TITAN-ORBIT] Same 1→6 lerp planetary defense uses. Denominator is 5
+            // (six rungs minus one) so Level 1 = 0 and Level 6 = 1.
+            int level = Mathf.Max(1, itemLevel);
+            float denom = Mathf.Max(1, DroneReferenceMaxLevel - 1);
+            return (level - 1) / denom;
+        }
+
+        /// <summary>
         /// Per-shot damage for a fighter or mining drone bought at <paramref name="itemLevel"/>.
         /// Same curve for both types — fire rate / target filter differ in combat systems.
         /// </summary>
         /// <param name="itemLevel">Ship level at purchase time (clamped to ≥ 1).</param>
         /// <returns>
-        /// <c>0.5 + (1/6)×level</c>. Level 1 ≈ 0.67; level 6 = 1.5 (at 1 shot/sec that is DPS).
+        /// Level 1 = <see cref="CombatDroneDamageAtLevel1"/> (0.6);
+        /// Level 6 = <see cref="CombatDroneDamageAtLevel6"/> (2.4). 4× from first to last rung.
         /// </returns>
         public static float GetCombatDroneDamage(int itemLevel)
         {
             // --- Level curve ---
-            // [TITAN-ORBIT] Intentionally uses ×level (not ×(level−1)) so level 6 = 1.5 as designed.
+            // [TITAN-ORBIT] Linear lerp, not the old 0.5 + (1/6)×level (that only grew 2.25×).
             // Cost still anchors on GetCombatDroneDamage(1) so level-1 catalog prices stay original.
-            int level = Mathf.Max(1, itemLevel);
-            return CombatDroneBaseDamage + CombatDroneDamagePerLevel * level;
+            float t = GetDroneLevelT(itemLevel);
+            return Mathf.Max(0.05f, Mathf.LerpUnclamped(
+                CombatDroneDamageAtLevel1, CombatDroneDamageAtLevel6, t));
         }
 
         /// <summary>
-        /// Shared level power used for cost / size / shield HP. 1.0 at level 1; grows with the
-        /// combat damage curve so all drone kinds stay on one ladder.
+        /// Unique-ability Extra Levels for a drone bought at <paramref name="itemLevel"/>.
+        /// Level 1 = 0 (authored bank numbers); Level 6 = 5 extra rungs so burn / heal /
+        /// damage multipliers grow with the same purchase rung as fire power and HP.
+        /// Does <b>not</b> include the ship's live Fire Power attribute purchases.
+        /// </summary>
+        /// <param name="itemLevel">Stamped purchase level (clamped to ≥ 1).</param>
+        public static int GetDroneFirePowerExtraLevels(int itemLevel)
+        {
+            // --- Purchase extras ---
+            // [TITAN-ORBIT] Same (level − 1) ships use for chassis Extra Levels, but locked
+            // to the drone's ItemLevel so a Level-3 drone stays Level-3 after the ship ranks up.
+            return Mathf.Max(0, Mathf.Max(1, itemLevel) - 1);
+        }
+
+        /// <summary>
+        /// Shared level power used for cost and visual size. 1.0 at level 1; grows with the
+        /// combat damage curve so all drone kinds stay on one price / size ladder.
+        /// HP uses <see cref="GetDroneMaxHp(StoreItemType, int)"/> (its own 4× lerp).
         /// </summary>
         public static float GetDroneLevelPowerMul(int itemLevel)
         {
+            // --- Cost / size vs Level 1 ---
+            // [TITAN-ORBIT] Level 1 keeps the original catalog gem price; Level 6 costs 4×.
             float power = GetCombatDroneDamage(itemLevel);
             float powerL1 = GetCombatDroneDamage(1);
             return power / Mathf.Max(0.01f, powerL1);
@@ -117,7 +177,8 @@ namespace TitanOrbit.Data
         /// <summary>
         /// Level size multiplier applied on top of the drone prefab's authored localScale.
         /// 1.0 at <see cref="DroneReferenceMaxLevel"/> (same visual size as before leveling);
-        /// smaller at lower levels (~0.44 at level 1). Levels above reference clamp at 1.0.
+        /// smaller at lower levels (0.25 at level 1 — the clamp floor). Levels above
+        /// reference clamp at 1.0.
         /// </summary>
         public static float GetDroneVisualScale(int itemLevel)
         {
@@ -311,17 +372,21 @@ namespace TitanOrbit.Data
 
         /// <summary>
         /// Max HP stored in equipment RemainingCharges. Scales with purchase level so a
-        /// level-1 drone is weaker than a level-6 drone. Fighter/mining use
-        /// <see cref="DroneMaxHpAtReferenceLevel"/> at max level; shields use
+        /// level-1 drone is weaker than a level-6 drone. Fighter/mining lerp
+        /// <see cref="DroneHpAtLevel1"/> → <see cref="DroneHpAtLevel6"/>; shields use
         /// <see cref="ShieldDroneHpMultiplier"/> × that (3× tougher at the same level).
         /// </summary>
         public static int GetDroneMaxHp(StoreItemType item, int itemLevel)
         {
             if (!IsDrone(item)) return 1;
 
-            // --- Shared level scale (same curve as visual size) ---
-            float scale = GetDroneVisualScale(itemLevel);
-            int combatHp = Mathf.Max(1, Mathf.RoundToInt(DroneMaxHpAtReferenceLevel * scale));
+            // --- Combat HP ladder (independent of mesh scale) ---
+            // [TITAN-ORBIT] Same GetDroneLevelT as fire power so HP and damage climb together.
+            // Visual size still uses GetDroneVisualScale; we do not reuse that ratio here
+            // because it clamped at 1.0 and only grew ~2.3× (13 → 30).
+            float t = GetDroneLevelT(itemLevel);
+            int combatHp = Mathf.Max(1, Mathf.RoundToInt(Mathf.LerpUnclamped(
+                DroneHpAtLevel1, DroneHpAtLevel6, t)));
 
             // --- Shields tank more ---
             // [TITAN-ORBIT] Block wall role: 3× fighter/mining HP at every purchase level.
@@ -357,7 +422,8 @@ namespace TitanOrbit.Data
                 {
                     // [TITAN-ORBIT] Asteroid-immune: fighter bolts only hurt ships (Starblast-style).
                     float dmg = GetCombatDroneDamage(level);
-                    return $"Lv.{level} · {dmg:0.##} dmg/shot vs ships.";
+                    int hp = GetDroneMaxHp(item, level);
+                    return $"Lv.{level} · {dmg:0.##} FP · {hp} HP · vs ships.";
                 }
                 case StoreItemType.ShieldDrone:
                 {
@@ -368,7 +434,8 @@ namespace TitanOrbit.Data
                 {
                     // [TITAN-ORBIT] Ship-immune: mining bolts only hurt asteroids (Starblast-style).
                     float dmg = GetCombatDroneDamage(level);
-                    return $"Lv.{level} · {dmg:0.##} dmg/shot vs rocks.";
+                    int hp = GetDroneMaxHp(item, level);
+                    return $"Lv.{level} · {dmg:0.##} FP · {hp} HP · vs rocks.";
                 }
                 case StoreItemType.SmallRockets:
                 case StoreItemType.LargeRockets:

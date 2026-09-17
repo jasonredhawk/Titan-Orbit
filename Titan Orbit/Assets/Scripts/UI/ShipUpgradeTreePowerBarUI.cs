@@ -748,6 +748,7 @@ namespace TitanOrbit.UI
             }
 
             LayoutRebuilder.ForceRebuildLayoutImmediate(barRow);
+            RefreshHoverHitRect();
         }
 
         static void StretchRect(RectTransform rt)
@@ -857,6 +858,7 @@ namespace TitanOrbit.UI
             if (_hoverRelay != null)
             {
                 _hoverRelay.Owner = this;
+                RefreshHoverHitRect();
                 return;
             }
 
@@ -877,17 +879,17 @@ namespace TitanOrbit.UI
                 hitGo = new GameObject("HoverHit");
                 hitGo.transform.SetParent(hitParent, false);
                 RectTransform hitRt = hitGo.AddComponent<RectTransform>();
-                hitRt.anchorMin = Vector2.zero;
-                hitRt.anchorMax = Vector2.one;
-                // Extra pad so a 4px stacked lane is hittable without covering the name/preview.
-                hitRt.offsetMin = new Vector2(-4f, -8f);
-                hitRt.offsetMax = new Vector2(4f, 8f);
                 var hitLe = hitGo.AddComponent<LayoutElement>();
                 hitLe.ignoreLayout = true;
                 var hitImg = hitGo.AddComponent<Image>();
-                // [UNITY] Alpha 0 still receives EventSystem hits unless alphaHitTestMinimumThreshold > 0.
-                hitImg.color = new Color(0f, 0f, 0f, 0f);
+                // [UNITY] A sprite-less Image can skip the raycast mesh. Use the same
+                // 1×1 white fill as the lanes, then alpha-0 so the pad stays invisible.
+                hitImg.sprite = GetFillSprite();
+                hitImg.color = new Color(1f, 1f, 1f, 0f);
                 hitImg.raycastTarget = true;
+                if (hitImg.canvasRenderer != null)
+                    hitImg.canvasRenderer.cullTransparentMesh = false;
+                ApplyHoverHitStretch(hitRt);
             }
             else if (hitGo.transform.parent != hitParent)
             {
@@ -898,7 +900,76 @@ namespace TitanOrbit.UI
             if (_hoverRelay == null)
                 _hoverRelay = hitGo.AddComponent<ShipPowerBarStatHoverRelay>();
             _hoverRelay.Owner = this;
-            hitGo.transform.SetAsLastSibling();
+            RefreshHoverHitRect();
+        }
+
+        /// <summary>
+        /// Re-applies stretch + last-sibling after a layout rebuild. PowerBarTrack is a
+        /// VerticalLayoutGroup — without ignoreLayout the pad can collapse to 0px and
+        /// never receive pointer enter.
+        /// </summary>
+        void RefreshHoverHitRect()
+        {
+            if (_hoverRelay == null)
+                return;
+
+            Transform hit = _hoverRelay.transform;
+            var hitLe = hit.GetComponent<LayoutElement>();
+            if (hitLe != null)
+                hitLe.ignoreLayout = true;
+
+            var hitImg = hit.GetComponent<Image>();
+            if (hitImg != null)
+            {
+                if (hitImg.sprite == null)
+                    hitImg.sprite = GetFillSprite();
+                hitImg.raycastTarget = true;
+                if (hitImg.canvasRenderer != null)
+                    hitImg.canvasRenderer.cullTransparentMesh = false;
+            }
+
+            ApplyHoverHitStretch(hit as RectTransform);
+            hit.SetAsLastSibling();
+        }
+
+        /// <summary>Fills the dark tray with a few extra pixels so 4px stacked lanes stay hoverable.</summary>
+        static void ApplyHoverHitStretch(RectTransform hitRt)
+        {
+            if (hitRt == null)
+                return;
+            hitRt.anchorMin = Vector2.zero;
+            hitRt.anchorMax = Vector2.one;
+            hitRt.pivot = new Vector2(0.5f, 0.5f);
+            hitRt.offsetMin = new Vector2(-4f, -8f);
+            hitRt.offsetMax = new Vector2(4f, 8f);
+        }
+
+        /// <summary>
+        /// True when <paramref name="screenPoint"/> is over this bar's dark tray
+        /// (or any painted slot). Used by the hover probe so a 0px HoverHit overlay
+        /// cannot hide the STAT TELEMETRY card.
+        /// </summary>
+        public bool ContainsScreenPoint(Vector2 screenPoint, UnityEngine.Camera eventCamera)
+        {
+            RectTransform tray = transform.parent != null && transform.parent.name == "PowerBarTrack"
+                ? transform.parent as RectTransform
+                : transform as RectTransform;
+            if (tray != null && tray.rect.width > 1f && tray.rect.height > 1f
+                && RectTransformUtility.RectangleContainsScreenPoint(tray, screenPoint, eventCamera))
+                return true;
+
+            if (segments == null)
+                return false;
+            for (int i = 0; i < segments.Length; i++)
+            {
+                RectTransform slot = GetSlotRect(i);
+                if (slot == null || !slot.gameObject.activeInHierarchy)
+                    continue;
+                if (RectTransformUtility.RectangleContainsScreenPoint(slot, screenPoint, eventCamera))
+                    return true;
+            }
+
+            return false;
         }
 
         /// <summary>
@@ -953,7 +1024,8 @@ namespace TitanOrbit.UI
                 in _hoverMaxes,
                 _hoverMegaPool,
                 anchor,
-                _hoverChassisId);
+                _hoverChassisId,
+                _hoverRelay);
         }
 
         /// <summary>Slot wrapper rect (fill + dim). Null when the segment was never built.</summary>

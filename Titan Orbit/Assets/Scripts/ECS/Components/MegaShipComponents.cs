@@ -64,6 +64,12 @@ namespace TitanOrbit.ECS
         /// client beams (including Shift mouse-aim) hide during the wait.
         /// </summary>
         [GhostField] public bool CannonLaserLockout;
+
+        /// <summary>
+        /// True while Fire is held and cannons are not energy-locked. Ghosted so
+        /// remote beams hide on Fire release / lockout without parking turrets.
+        /// </summary>
+        [GhostField] public bool CannonLaserPulseOn;
     }
 
     /// <summary>

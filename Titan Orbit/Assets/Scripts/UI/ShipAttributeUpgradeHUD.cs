@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using TitanOrbit.Core;
 using TitanOrbit.Data;
 using TitanOrbit.ECS;
@@ -34,7 +35,8 @@ namespace TitanOrbit.UI
     /// MEGA hulls keep the ten buttons visible but disabled (no Extra Level purchases) and hide
     /// the little tick squares so the strip does not look like upgrades are still available.
     /// MEGA identity is latched through gem Instantiates (plow destroy) so ticks/costs do not flicker.
-    /// Quick-stat chips and hover details use <see cref="MegaShipStatsCalculator"/> (no +per-buy).
+    /// Titan chips use <see cref="MegaShipStatsCalculator"/> (frozen hull + PerExtra-only
+    /// LOADOUT gear, no +per-buy).
     /// Chip values and tip bodies are rebuilt when the ship / ability snapshot key changes
     /// (new ship, ability purchase, or B-key bullet type) — never every frame for live
     /// HP/speed/cargo. Fire Power / Bullet Speed numbers include the live bank's
@@ -1526,14 +1528,16 @@ namespace TitanOrbit.UI
             }
 
             live.IsMega = mega;
-            if (mega && MegaShipStatsCalculator.TrySumForCatalogIndex(megaIndex, out ShipComponentAbilityStats megaStats))
+            if (mega && TrySumLocalMegaWithGear(
+                    megaIndex, ship.ShipLevel, out ShipComponentAbilityStats megaStats, out float megaDps))
             {
-                // --- MEGA: catalog totals only ---
+                // --- MEGA: frozen catalog + PerExtra-only LOADOUT gear ---
                 // [TITAN-ORBIT] Team+level+branch would resolve a regular L7 family chassis
-                // (same slot index as the MEGA planet slot) and Extra-Level it. MEGAs are
-                // static — no Extra Level, no +per-buy, gem cap stays 0.
+                // (same slot index as the MEGA planet slot) and Extra-Level the hull. Titans
+                // stay static on unique-parts; moon-store extras add PerExtra × tier only.
                 live.MegaCatalogIndex = megaIndex;
                 live.EffectiveStats = megaStats;
+                live.AllGunDps = megaDps;
                 live.ChassisMaxSpeed = megaStats.moveSpeed;
                 live.ChassisAccel = megaStats.accelerationCap > 0.1f
                     ? megaStats.accelerationCap
@@ -1693,6 +1697,54 @@ namespace TitanOrbit.UI
                 return 0;
 
             return ShipStatApplyLogic.ComputeEquippedLoadoutFingerprint(em, ship);
+        }
+
+        /// <summary>
+        /// Catalog Titan totals plus PerExtra-only moon-store ship components on the local hull.
+        /// Uses the seeded local-ship lookup — no extra archetype gather.
+        /// </summary>
+        /// <param name="megaIndex">Catalog row for the current Titan.</param>
+        /// <param name="shipLevel">Ghosted ship level (7 on a live Titan).</param>
+        /// <param name="megaStats">Hull + gear totals when this returns true.</param>
+        static bool TrySumLocalMegaWithGear(
+            ushort megaIndex,
+            int shipLevel,
+            out ShipComponentAbilityStats megaStats,
+            out float megaDps)
+        {
+            megaStats = default;
+            megaDps = 0f;
+            var extraIds = CollectLocalStoreComponentIds();
+            if (!MegaShipStatsCalculator.TrySumForCatalogIndex(
+                    megaIndex, extraIds, shipLevel, out megaStats))
+                return false;
+
+            // Per-gun catalog DPS + Extra-Leveled LOADOUT guns (not summed-rate × summed-FP).
+            var megaCat = MegaShipCatalog.Load();
+            if (megaCat != null)
+                megaDps = megaCat.GetPowerBreakdown(megaIndex).GetDisplayDps();
+            megaDps += MegaShipStatsCalculator.SumEquippedWeaponDps(extraIds, shipLevel);
+            return true;
+        }
+
+        /// <summary>
+        /// Equipped moon-store ship-component ids on the local owner. Empty when the
+        /// seed is missing (Join Team Instantiates) — chips then show catalog-only.
+        /// </summary>
+        static List<string> CollectLocalStoreComponentIds()
+        {
+            var world = EcsGameBridge.GetLocalPlayerShipWorld();
+            if (world == null || !world.IsCreated)
+                return new List<string>(0);
+
+            var em = world.EntityManager;
+            if (!LocalShipEntitySeed.TryGetSeededShip(em, out Entity ship)
+                || ship == Entity.Null
+                || !em.Exists(ship))
+                return new List<string>(0);
+
+            ShipComponentStoreVisualScaleLogic.CollectExtraComponentIds(em, ship, out var extraIds);
+            return extraIds;
         }
 
         static bool TryGetLocalHullComponentSize(out float componentSize)

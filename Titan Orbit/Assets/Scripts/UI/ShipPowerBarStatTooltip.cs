@@ -19,8 +19,10 @@ namespace TitanOrbit.UI
     /// Parenting this card to <c>FindFirstObjectByType&lt;Canvas&gt;()</c> used to park it
     /// on a gameplay HUD canvas (order 0–80). Sibling order cannot beat another canvas,
     /// so the panel sat behind the whole menu and looked like hover was gone.
-    /// We now parent to the hovered bar's root canvas and give the card its own
-    /// nested Canvas above the dock.
+    /// We parent to the hovered bar's Orbit Menu canvas and give the card its own
+    /// nested Canvas (sort 260) so it paints above the dock. Hover show/hide is
+    /// pointer-vs-tray math in <see cref="ShipPowerBarStatHoverRelay"/> — not
+    /// EventSystem enter/exit — so this draw batch cannot hide the card.
     /// </para>
     /// </summary>
     public static class ShipPowerBarStatTooltip
@@ -36,9 +38,7 @@ namespace TitanOrbit.UI
 
         /// <summary>
         /// Nested-canvas sort so the card paints above Orbit Menu (200) and below
-        /// death / match-end / escape overlays (8500+). Same idea as
-        /// <see cref="ShipAttributeUpgradeHUD"/> ability chips — a child Canvas with
-        /// <c>overrideSorting</c> is a separate draw batch.
+        /// death / match-end / escape overlays (8500+).
         /// </summary>
         const int TipSortingOrder = 260;
 
@@ -46,6 +46,8 @@ namespace TitanOrbit.UI
         static Image s_RankThumb;
         static Canvas s_HostCanvas;
         static int s_ActiveSlot = -1;
+        /// <summary>Hover relay that opened the card. Exit / disable on a different bar must not steal this tip.</summary>
+        static object s_ActiveOwner;
 
         /// <summary>
         /// Shows (or retargets) the shared card for one power-bar slot.
@@ -57,13 +59,15 @@ namespace TitanOrbit.UI
         /// <param name="megaPool">True when the bar used MEGA catalog maxes.</param>
         /// <param name="anchor">Slot or bar rect to sit the tip next to.</param>
         /// <param name="thisChassisId">Optional chassis on this card.</param>
+        /// <param name="owner">Hover relay that owns this showing; used so another bar's exit cannot hide it.</param>
         public static void Show(
             int statIndex,
             in ShipFamilyPowerScoreBreakdown breakdown,
             in ShipPowerBarStatMaxes maxes,
             bool megaPool,
             RectTransform anchor,
-            string thisChassisId)
+            string thisChassisId,
+            object owner)
         {
             if (statIndex < 0 || statIndex >= ShipAbilityCategoryColors.PowerBreakdownStatCount)
                 return;
@@ -79,6 +83,7 @@ namespace TitanOrbit.UI
             AttachToHostCanvas(host);
 
             s_ActiveSlot = statIndex;
+            s_ActiveOwner = owner;
 
             float thisValue = breakdown.GetDisplayStatValue(statIndex);
             float maxValue = maxes.Get(statIndex);
@@ -97,7 +102,7 @@ namespace TitanOrbit.UI
             ApplyRankThumb(statIndex, megaPool, thisChassisId, thisValue);
             SizeToBody();
             PositionNear(anchor);
-            ElevateDrawOrder();
+            EnsureTipCanvas();
 
             if (!s_Chrome.Root.activeSelf)
                 s_Chrome.Root.SetActive(true);
@@ -107,12 +112,24 @@ namespace TitanOrbit.UI
         public static void Hide()
         {
             s_ActiveSlot = -1;
+            s_ActiveOwner = null;
             if (s_Chrome.Root != null && s_Chrome.Root.activeSelf)
                 s_Chrome.Root.SetActive(false);
         }
 
+        /// <summary>Hides only if <paramref name="owner"/> is the relay that opened the card.</summary>
+        public static void HideIfOwner(object owner)
+        {
+            if (owner == null || !ReferenceEquals(s_ActiveOwner, owner))
+                return;
+            Hide();
+        }
+
         /// <summary>Slot currently shown, or -1 when hidden. Hover relays use this to skip rebuilds.</summary>
         public static int ActiveSlot => s_ActiveSlot;
+
+        /// <summary>Relay that opened the card, or null when hidden.</summary>
+        public static object ActiveOwner => s_ActiveOwner;
 
         /// <summary>
         /// Canvas that should own the floating card. Prefers the hovered bar's root
@@ -170,7 +187,8 @@ namespace TitanOrbit.UI
             s_RankThumb.preserveAspect = true;
             s_RankThumb.enabled = false;
 
-            ElevateDrawOrder();
+            EnsureTipCanvas();
+            EnsureHostTmpChannels(host);
 
             if (s_Chrome.Root != null)
                 s_Chrome.Root.SetActive(false);
@@ -189,37 +207,45 @@ namespace TitanOrbit.UI
             s_HostCanvas = host;
             if (s_Chrome.RootRect.parent != host.transform)
                 s_Chrome.RootRect.SetParent(host.transform, false);
+            EnsureTipCanvas();
+            EnsureHostTmpChannels(host);
         }
 
         /// <summary>
-        /// Gives the calculation card its own nested Canvas so it paints above Orbit Menu chrome.
-        /// Called on first build and again on each show — a later sibling can steal hierarchy order.
+        /// Nested canvas so the card draws above Orbit Menu chrome. No GraphicRaycaster —
+        /// hover is tray containment, not EventSystem enter, so this batch cannot steal the pointer.
         /// </summary>
-        static void ElevateDrawOrder()
+        static void EnsureTipCanvas()
         {
             if (s_Chrome.Root == null)
                 return;
 
-            // --- Nested canvas (beats overlay HUDs that sibling-order cannot) ---
-            // [UNITY] Without overrideSorting, SetAsLastSibling only wins inside one canvas.
-            // Rocket / brakes / fire-type HUDs are order 80; Orbit Menu is 200.
             Canvas tipCanvas = s_Chrome.Root.GetComponent<Canvas>();
             if (tipCanvas == null)
                 tipCanvas = s_Chrome.Root.AddComponent<Canvas>();
 
             tipCanvas.overrideSorting = true;
             tipCanvas.sortingOrder = TipSortingOrder;
-
-            // [UNITY] Nested canvases start with no extra shader channels. TMP needs TexCoord1
-            // (and usually Normal / Tangent) or the STAT TELEMETRY body text disappears.
             tipCanvas.additionalShaderChannels =
                 AdditionalCanvasShaderChannels.TexCoord1
                 | AdditionalCanvasShaderChannels.Normal
                 | AdditionalCanvasShaderChannels.Tangent;
-
-            // Intentional: no GraphicRaycaster — fill/frame are already non-raycast so the
-            // pointer stays on the power-bar HoverHit and clicks still buy the hull.
             s_Chrome.Root.transform.SetAsLastSibling();
+        }
+
+        /// <summary>
+        /// TMP body text needs TexCoord1 on the host canvas. We used to put those
+        /// channels on a nested tip canvas; they now live on the Orbit Menu canvas
+        /// so the body stays visible without a second draw batch.
+        /// </summary>
+        static void EnsureHostTmpChannels(Canvas host)
+        {
+            if (host == null)
+                return;
+            host.additionalShaderChannels |=
+                AdditionalCanvasShaderChannels.TexCoord1
+                | AdditionalCanvasShaderChannels.Normal
+                | AdditionalCanvasShaderChannels.Tangent;
         }
 
         /// <summary>Shows the winner's menu sprite when the hovered hull is not RANK 1.</summary>
@@ -256,8 +282,9 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// Parks the tip above-right of the hovered slot, then clamps to the canvas
-        /// so a left-edge card does not spill off-screen.
+        /// Parks the tip to the right of the hovered slot (or left if it would clip),
+        /// then clamps to the canvas. Kept beside the lane so the card does not sit
+        /// on top of the power-bar hit pad.
         /// </summary>
         static void PositionNear(RectTransform anchor)
         {
@@ -273,26 +300,33 @@ namespace TitanOrbit.UI
 
             Vector3[] corners = new Vector3[4];
             anchor.GetWorldCorners(corners);
-            // corners[2] = top-right of the slot in world space.
             // [UNITY] Qualify Camera — TitanOrbit.Camera is a namespace and would steal the short name.
             // Overlay canvases use a null camera (screen pixels = canvas space).
             UnityEngine.Camera cam = s_HostCanvas.renderMode == RenderMode.ScreenSpaceOverlay
                 ? null
                 : s_HostCanvas.worldCamera;
-            Vector2 screen = RectTransformUtility.WorldToScreenPoint(cam, corners[2]);
+
+            // Slot top-right and bottom-right — we sit just to the right, vertically centered.
+            Vector2 screenRight = RectTransformUtility.WorldToScreenPoint(cam, (corners[2] + corners[3]) * 0.5f);
+            Vector2 screenLeft = RectTransformUtility.WorldToScreenPoint(cam, (corners[0] + corners[1]) * 0.5f);
             RectTransformUtility.ScreenPointToLocalPointInRectangle(
-                canvasRt, screen, cam, out Vector2 local);
+                canvasRt, screenRight, cam, out Vector2 localRight);
+            RectTransformUtility.ScreenPointToLocalPointInRectangle(
+                canvasRt, screenLeft, cam, out Vector2 localLeft);
 
-            s_Chrome.RootRect.pivot = new Vector2(0f, 0f);
-            Vector2 pos = local + new Vector2(8f, 8f);
-
-            // --- Clamp to canvas ---
             Vector2 size = s_Chrome.RootRect.sizeDelta;
             Rect canvasRect = canvasRt.rect;
-            float maxX = canvasRect.xMax - size.x - 8f;
-            float maxY = canvasRect.yMax - size.y - 8f;
-            float minX = canvasRect.xMin + 8f;
-            float minY = canvasRect.yMin + 8f;
+            const float gap = 14f;
+            bool placeRight = localRight.x + gap + size.x <= canvasRect.xMax - 8f;
+            s_Chrome.RootRect.pivot = placeRight ? new Vector2(0f, 0.5f) : new Vector2(1f, 0.5f);
+            Vector2 pos = placeRight
+                ? localRight + new Vector2(gap, 0f)
+                : localLeft + new Vector2(-gap, 0f);
+
+            float maxX = canvasRect.xMax - (placeRight ? size.x : 0f) - 8f;
+            float minX = canvasRect.xMin + (placeRight ? 0f : size.x) + 8f;
+            float maxY = canvasRect.yMax - size.y * 0.5f - 8f;
+            float minY = canvasRect.yMin + size.y * 0.5f + 8f;
             pos.x = Mathf.Clamp(pos.x, minX, maxX);
             pos.y = Mathf.Clamp(pos.y, minY, maxY);
             s_Chrome.RootRect.anchoredPosition = pos;

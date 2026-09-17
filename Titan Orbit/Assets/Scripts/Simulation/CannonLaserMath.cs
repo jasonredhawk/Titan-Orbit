@@ -21,6 +21,27 @@ namespace TitanOrbit.Simulation
         /// </summary>
         public const float RechargeRatio = 0.10f;
 
+        /// <summary>
+        /// Extra keep radius past acquire range. Muzzle motion on a wide Titan
+        /// used to drop a lock every tick and re-search (beam / hum on-off).
+        /// </summary>
+        public const float KeepRangePad = 8f;
+
+        /// <summary>Hold a live lock this far past acquire range (fraction).</summary>
+        public const float KeepRangeFactor = 1.25f;
+
+        /// <summary>
+        /// Floor written to ghost <c>TargetDistance</c> while burning. A surface
+        /// hit next to the muzzle used to write ~0 and hide the beam.
+        /// </summary>
+        public const float MinTrackingDistance = 0.25f;
+
+        /// <summary>Sticky hold range from an acquire range (hysteresis).</summary>
+        public static float KeepRange(float acquireRange)
+        {
+            return math.max(0.5f, acquireRange) * KeepRangeFactor + KeepRangePad;
+        }
+
         /// <summary>Minimum planar length before a direction can be normalized.</summary>
         const float MinDirectionSq = 0.0001f;
 

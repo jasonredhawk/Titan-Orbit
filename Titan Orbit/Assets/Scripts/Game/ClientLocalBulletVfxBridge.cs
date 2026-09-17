@@ -330,7 +330,7 @@ namespace TitanOrbit.Game
                     lifetime,
                     weaponCfg.FireRate,
                     mount.BulletRange,
-                    weaponCfg.BulletScale,
+                    ShipWeaponMountElement.ResolveAuthoredScale(in mount, weaponCfg.BulletScale),
                     refDamage,
                     refMuzzleSpeed,
                     shotBank,

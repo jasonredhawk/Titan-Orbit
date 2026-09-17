@@ -166,8 +166,8 @@ namespace TitanOrbit.UI
             public float AllGunDpsNextStep;
 
             /// <summary>
-            /// True when the local hull is a MEGA. Chips hide +per-buy and the details card
-            /// shows catalog sums instead of Extra Level (MEGAs are not bottom-bar upgradable).
+            /// True when the local hull is a MEGA / Titan. Chips hide +per-buy. Details
+            /// cards show frozen catalog parts plus PerExtra-only LOADOUT gear.
             /// </summary>
             public bool IsMega;
 
@@ -219,7 +219,7 @@ namespace TitanOrbit.UI
             // [TITAN-ORBIT] MEGA_### is not an AstroEagle/CosmicShark chassis. Instantiating
             // a family prefab here would list the wrong parts and Extra-Level them.
             if (MegaShipCatalog.IsMegaChassisId(chassisId))
-                return TryRefreshMegaPartCache(chassisId, shipLevel, ref cache);
+                return TryRefreshMegaPartCache(em, shipEntity, chassisId, shipLevel, equipmentHash, ref cache);
 
             // --- Resolve family + tier prefab ---
             if (!ShipStatApplyLogic.TryResolveFamilyForChassisId(chassisId, out ShipFamilyDefinition family)
@@ -293,15 +293,26 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// Fills <paramref name="cache"/> from the MEGA unique-component library × hull counts.
-        /// No prefab Instantiate, no Extra Level, no moon-store extras (MEGAs do not buy parts).
-        /// Each counted copy is one list row so the details card can show <c>3× Armor1</c>.
+        /// Fills <paramref name="cache"/> from the MEGA unique-component library × hull counts,
+        /// then appends equipped moon-store ship components (raw catalog stats, Extra Level later).
+        /// Hull rows stay frozen. Store extras sit after <see cref="PartCache.StoreExtraStartIndex"/>
+        /// so Titan chips can list GEAR separately from catalog parts.
+        /// Each counted hull copy is one list row so the details card can show <c>3× Armor1</c>.
         /// </summary>
+        /// <param name="em">Client visualization world EntityManager.</param>
+        /// <param name="shipEntity">Local ship ghost (reads the equipment buffer).</param>
         /// <param name="chassisId">MEGA chassis id (<c>MEGA_007</c>).</param>
-        /// <param name="shipLevel">Unused for MEGA math — stored so the cache key stays stable.</param>
+        /// <param name="shipLevel">Stored so the cache key stays stable when extras Extra-Level.</param>
+        /// <param name="equipmentHash">Store-component hash from <see cref="TryRefreshPartCache"/>.</param>
         /// <param name="cache">In/out part cache for chip / tip grids.</param>
-        /// <returns>True when at least one unique component was listed.</returns>
-        static bool TryRefreshMegaPartCache(string chassisId, int shipLevel, ref PartCache cache)
+        /// <returns>True when at least one unique component or extra was listed.</returns>
+        static bool TryRefreshMegaPartCache(
+            EntityManager em,
+            Entity shipEntity,
+            string chassisId,
+            int shipLevel,
+            int equipmentHash,
+            ref PartCache cache)
         {
             // --- Catalog row ---
             var catalog = MegaShipCatalog.Load();
@@ -351,12 +362,30 @@ namespace TitanOrbit.UI
                 }
             }
 
+            // --- Moon-store extras after hull rows (raw catalog stats, ×1 scale) ---
+            // [TITAN-ORBIT] Same append as regular ships. These rows Extra-Level as
+            // PerExtra × shipLevel only in MegaShipStatsCalculator.EvaluateLoadoutExtra.
+            // Do not Extra-Level the whole Titan list or hull parts inflate at shipLevel 7.
+            int extraStart = cache.Ids.Count;
+            var extraIds = CollectStoreComponentIds(em, shipEntity);
+            for (int i = 0; i < extraIds.Count; i++)
+            {
+                string id = extraIds[i];
+                if (!ShipFamilyStatsCalculator.TryResolveComponentStats(null, id, out ShipComponentAbilityStats extra))
+                    continue;
+                cache.Ids.Add(id);
+                cache.Stats.Add(extra);
+                cache.LocalScales.Add(Vector3.one);
+            }
+
             cache.Propulsion = default;
             cache.Family = null;
             cache.ChassisId = chassisId;
             cache.ShipLevel = shipLevel;
-            cache.EquipmentHash = 0;
-            cache.StoreExtraStartIndex = int.MaxValue;
+            cache.EquipmentHash = equipmentHash;
+            cache.StoreExtraStartIndex = extraIds.Count > 0 && cache.Ids.Count > extraStart
+                ? extraStart
+                : int.MaxValue;
             cache.Valid = cache.Ids.Count > 0;
             return cache.Valid;
         }

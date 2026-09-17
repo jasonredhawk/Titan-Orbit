@@ -125,7 +125,8 @@ namespace TitanOrbit.Editor
                 "Cyan wins when a hull is both unarmed and missing other stats. " +
                 "Cruise speed is fastest engine or thruster + Extra Engine Speed Percent of the rest.\n\n" +
                 "Weapon Bullet Banks (Gun / Cannon / Missile / Sniper) pick the BulletVfxBank category those MEGA " +
-                "weapon types fire. Unique weapon rows can override; Type table default inherits the type-table bank. " +
+                "weapon types fire. Each type also has a Bank Scale (default 1) for tracer / impact size. " +
+                "Unique weapon rows can override the bank; Type table default inherits the type-table bank. " +
                 "MEGAs no longer use the store planet's family bank. " +
                 "Is Laser on a unique weapon makes that barrel a hitscan beam. Refresh keeps the toggle.\n\n" +
                 "Apply Default Type-Table Stats seeds the type table plus the In-game Default/Minimum Stats blocks " +

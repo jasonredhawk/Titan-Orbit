@@ -727,7 +727,7 @@ namespace TitanOrbit.ECS
                 lifetime,
                 weaponCfg.FireRate,
                 mount.BulletRange,
-                weaponCfg.BulletScale,
+                ShipWeaponMountElement.ResolveAuthoredScale(in mount, weaponCfg.BulletScale),
                 refDamage,
                 refMuzzleSpeed,
                 bankIndex,

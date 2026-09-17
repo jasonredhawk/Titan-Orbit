@@ -136,7 +136,9 @@ namespace TitanOrbit.Entities
 
         // --- Combat tuning (legacy DroneSwarmController defaults) ---
         // [TITAN-ORBIT] Per-shot damage is NOT here — fighter/mining use
-        // StoreItemData.GetCombatDroneDamage(purchaseLevel). Fire rate / range stay constant.
+        // StoreItemData.GetCombatDroneDamage(purchaseLevel) (L1 = 0.6, L6 = 2.4).
+        // Fire rate / range stay constant. HP lives on RemainingCharges from
+        // StoreItemData.GetDroneMaxHp (L1 = 10, L6 = 40; shields ×3).
 
         /// <summary>Fighter shots per second.</summary>
         public const float FighterFireRate = 1.2f;
@@ -203,8 +205,10 @@ namespace TitanOrbit.Entities
 
         /// <summary>
         /// Gameplay strength of drone shots vs the same authored bullet type on a ship.
-        /// Applies to damage (via <see cref="StoreItemData.GetCombatDroneDamage"/>), burn DPS,
-        /// heal amount, pull/push force, pull radius, and blast radius.
+        /// Applies to burn DPS, heal amount, pull/push force, pull radius, and blast
+        /// radius. Per-shot <c>Damage</c> already comes from
+        /// <see cref="StoreItemData.GetCombatDroneDamage"/> (grows 4× L1→L6).
+        /// Unique-ability Extra Levels use <c>droneLevel − 1</c> in combat.
         /// Does <b>not</b> scale bank multipliers (e.g. 1.25 fire power stays 1.25) or
         /// time fields (burn duration, tick interval, shock / gravity lifetime).
         /// </summary>
