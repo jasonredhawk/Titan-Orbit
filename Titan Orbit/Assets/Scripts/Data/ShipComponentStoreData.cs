@@ -155,6 +155,7 @@ namespace TitanOrbit.Data
                 case "Thruster": return "\u25B2";
                 case "Wing": return "\u25C7";
                 case "Cockpit": return "\u25CE";
+                case "Cargo": return "\u25A3";
                 case "Arm": return "\u2692";
                 default:
                     return entry.componentId.Trim().Substring(0, 1).ToUpperInvariant();

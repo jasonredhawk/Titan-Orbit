@@ -271,6 +271,9 @@ namespace TitanOrbit.Data
                 || id.IndexOf("gun", StringComparison.Ordinal) >= 0)
                 return ShipFamilyPartTypes.WeaponBullet;
 
+            if (ShipFamilyPartTypes.IsCargoLikeName(childName))
+                return ShipFamilyPartTypes.Cargo;
+
             return ShipFamilyPartTypes.InferFromComponentName(childName);
         }
 

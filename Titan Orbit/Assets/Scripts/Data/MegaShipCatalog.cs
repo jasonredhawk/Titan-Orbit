@@ -425,6 +425,9 @@ namespace TitanOrbit.Data
         [Tooltip("Armor / body / leftover parts.")]
         public MegaShipPartStats hullStats;
 
+        [Tooltip("Cargo / hold / storage parts on Titan hulls.")]
+        public MegaShipPartStats cargoStats;
+
         [Header("In-game default stats")]
         [Tooltip("Used in-game when a hull's summed stat is 0. Firepower stays 0. Catalog sums keep the raw 0.")]
         public MegaShipPartStats runtimeDefaultStats;
@@ -757,6 +760,8 @@ namespace TitanOrbit.Data
                 return thrusterStats;
             if (string.Equals(partType, ShipFamilyPartTypes.Tail, StringComparison.OrdinalIgnoreCase))
                 return tailStats;
+            if (ShipFamilyPartTypes.IsCargoProfile(partType))
+                return cargoStats;
             return hullStats;
         }
 
@@ -1262,11 +1267,17 @@ namespace TitanOrbit.Data
                 health: 32f, healthRegen: 0.45f, energy: 0f, energyRegen: 0f,
                 move: 0f, accel: 0f, turn: 0f, gems: 0f, people: 0f);
 
+            cargoStats = CreateStatic(
+                firePower: 0f, bulletSpeed: 0f, bulletRange: 0f, fireRate: 0f, ramming: 1.2f,
+                health: 40f, healthRegen: 2f, energy: 20f, energyRegen: 0.4f,
+                move: 0f, accel: 0f, turn: 0f, gems: 0f, people: 0f);
+
             runtimeDefaultStats = CreateBuiltInRuntimeDefaults();
             runtimeMinimumStats = CreateBuiltInRuntimeMinimums();
             ApplyTypeTableBulletRangesToUniqueWeapons();
             ApplyTypeTableBulletBanksToUniqueWeapons();
             ApplyTypeTableVitalsToUniqueParts();
+            ApplyTypeTableStatsToUniqueCargoParts();
             MegaShipComponentInventory.RecalcAllShipSums(this);
             if (cameraHullViewPadding <= 0f)
                 cameraHullViewPadding = DefaultCameraHullViewPadding;
@@ -1355,7 +1366,7 @@ namespace TitanOrbit.Data
         }
 
         /// <summary>
-        /// Writes type-table energy / people onto cockpit, engine, and wing unique rows.
+        /// Writes type-table energy / people onto cockpit, engine, wing, and cargo unique rows.
         /// </summary>
         void ApplyTypeTableVitalsToUniqueParts()
         {
@@ -1369,7 +1380,8 @@ namespace TitanOrbit.Data
                     continue;
                 if (!string.Equals(row.partType, ShipFamilyPartTypes.Cockpit, StringComparison.OrdinalIgnoreCase)
                     && !ShipFamilyPartTypes.IsEngineProfile(row.partType)
-                    && !string.Equals(row.partType, ShipFamilyPartTypes.Wing, StringComparison.OrdinalIgnoreCase))
+                    && !string.Equals(row.partType, ShipFamilyPartTypes.Wing, StringComparison.OrdinalIgnoreCase)
+                    && !ShipFamilyPartTypes.IsCargoProfile(row.partType))
                     continue;
 
                 MegaShipPartStats table = GetStatsForPartType(row.partType);
@@ -1381,6 +1393,29 @@ namespace TitanOrbit.Data
                 if (table.maxPeople > 0.5f)
                     stats.maxPeople = table.maxPeople;
                 row.stats = stats;
+            }
+        }
+
+        /// <summary>
+        /// Writes type-table cargo stats onto unique cargo / hold / storage rows and
+        /// stamps their part type so Titan hulls pick up <see cref="cargoStats"/>.
+        /// </summary>
+        void ApplyTypeTableStatsToUniqueCargoParts()
+        {
+            if (uniqueComponents == null)
+                return;
+
+            for (int i = 0; i < uniqueComponents.Count; i++)
+            {
+                MegaShipComponentEntry row = uniqueComponents[i];
+                if (row == null)
+                    continue;
+                if (!ShipFamilyPartTypes.IsCargoProfile(row.partType)
+                    && !ShipFamilyPartTypes.IsCargoLikeName(row.displayName))
+                    continue;
+
+                row.partType = ShipFamilyPartTypes.Cargo;
+                row.stats = cargoStats;
             }
         }
 

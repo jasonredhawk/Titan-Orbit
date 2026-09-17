@@ -499,25 +499,44 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// Leaves death-picker mode, collapses the map, and resets blip scale pulses.
+        /// Leaves death-picker mode, collapses the map, and restores planet blip look.
+        /// [TITAN-ORBIT] The picker dims unowned worlds and pulses friendly ones; those
+        /// Image tints must be cleared here. <see cref="UpdatePlanetBlip"/> caches the
+        /// un-dimmed team color and can skip rewriting the fill after respawn.
         /// </summary>
         void ExitRespawnPlanetSelect()
         {
             _respawnSelectLocked = false;
             if (expandButton != null)
                 expandButton.gameObject.SetActive(true);
-            ResetRespawnSelectBlipScales();
+            RestoreRespawnSelectBlipAppearance();
             if (isExpanded)
                 SetExpanded(false);
         }
 
-        /// <summary>Clears the friendly-planet pulse scale so live play is not left enlarged.</summary>
-        void ResetRespawnSelectBlipScales()
+        /// <summary>
+        /// Clears the friendly-planet pulse scale and the dim/pulse fill tint so live
+        /// play does not keep looking like the death picker.
+        /// Called from <see cref="ExitRespawnPlanetSelect"/> before the next blip pass.
+        /// </summary>
+        void RestoreRespawnSelectBlipAppearance()
         {
             foreach (var kv in blips)
             {
-                if (kv.Value != null)
-                    kv.Value.localScale = Vector3.one;
+                RectTransform rt = kv.Value;
+                if (rt == null)
+                    continue;
+
+                // Pulse used localScale; live radar always wants identity scale.
+                rt.localScale = Vector3.one;
+
+                // Layout cache still holds the real team color from before the picker tint.
+                if (!planetBlipLayoutState.TryGetValue(kv.Key, out var layout))
+                    continue;
+
+                Image fill = FindPlanetFillImage(rt);
+                if (fill != null)
+                    fill.color = layout.Color;
             }
         }
 
@@ -2537,16 +2556,17 @@ namespace TitanOrbit.UI
         /// <summary>
         /// While choosing a respawn world: pulse friendly planet fills and dim the rest
         /// so the clickable set is obvious. No extra GameObjects — retints existing Images.
+        /// [TITAN-ORBIT] This writes straight onto PlanetFill. The layout cache in
+        /// <see cref="UpdatePlanetBlip"/> still stores the un-dimmed team color, so
+        /// <see cref="RestoreRespawnSelectBlipAppearance"/> must put that color back
+        /// when the picker closes (otherwise worlds stay dim after respawn).
         /// </summary>
         void ApplyRespawnSelectPlanetTint(RectTransform blipRt, MinimapBlipAnchor p)
         {
             if (!_respawnSelectLocked || blipRt == null || p == null)
                 return;
 
-            Transform fillTf = blipRt.Find("PlanetFill");
-            if (fillTf == null)
-                return;
-            Image img = fillTf.GetComponent<Image>();
+            Image img = FindPlanetFillImage(blipRt);
             if (img == null)
                 return;
 
@@ -2566,6 +2586,26 @@ namespace TitanOrbit.UI
                 img.color = new Color(baseColor.r * 0.35f, baseColor.g * 0.35f, baseColor.b * 0.35f, 0.32f);
                 blipRt.localScale = Vector3.one;
             }
+        }
+
+        /// <summary>
+        /// Planet discs keep the team tint on a child named PlanetFill, not the root.
+        /// Returns that Image, or the root Image if the child is missing (older blips).
+        /// </summary>
+        static Image FindPlanetFillImage(RectTransform blipRt)
+        {
+            if (blipRt == null)
+                return null;
+
+            Transform fillTf = blipRt.Find("PlanetFill");
+            if (fillTf != null)
+            {
+                Image fill = fillTf.GetComponent<Image>();
+                if (fill != null)
+                    return fill;
+            }
+
+            return blipRt.GetComponent<Image>();
         }
 
         private void UpdateBlips()
@@ -3709,6 +3749,7 @@ namespace TitanOrbit.UI
         /// <summary>
         /// Refreshes planet blip layout when size, population, level, or team color changes.
         /// Also keeps the moon-orbit ring sized/tinted to the gem-moon path (position scale).
+        /// Cache hits still rewrite PlanetFill so a leftover death-picker dim cannot stick.
         /// </summary>
         private void UpdatePlanetBlip(
             RectTransform blipRt,
@@ -3737,7 +3778,14 @@ namespace TitanOrbit.UI
                 prev.DefenseTurretBuiltMask == turretMask &&
                 prev.Color.r == c32.r && prev.Color.g == c32.g && prev.Color.b == c32.b && prev.Color.a == c32.a)
             {
-                // Layout is stable — still retint the orbit ring so multi-team cycles animate.
+                // Layout is stable — skip sprite rebuilds. Still write the fill so a leftover
+                // death-picker dim/pulse cannot stick after respawn (cache compared the
+                // un-dimmed team color, not the Image sitting on the disc).
+                Image cachedFill = FindPlanetFillImage(blipRt);
+                if (cachedFill != null)
+                    cachedFill.color = color;
+
+                // Orbit ring still retints every frame so multi-team cycles animate.
                 ApplyPlanetOrbitRingOccupancyTint(blipRt, p.PlanetId);
                 MinimapPlanetHoverTip.AttachToPlanetBlip(blipRt, p, qSize);
                 return;
@@ -3759,12 +3807,7 @@ namespace TitanOrbit.UI
             AddOrUpdatePlanetOrbitRing(blipRt, planetWorldSize, worldToMinimapScale, p.PlanetId);
 
             // --- Planet fill tint ---
-            Image planetImg = null;
-            var fillTf = blipRt.Find("PlanetFill");
-            if (fillTf != null)
-                planetImg = fillTf.GetComponent<Image>();
-            if (planetImg == null)
-                planetImg = blipRt.GetComponent<Image>();
+            Image planetImg = FindPlanetFillImage(blipRt);
             if (planetImg != null)
                 planetImg.color = color;
 

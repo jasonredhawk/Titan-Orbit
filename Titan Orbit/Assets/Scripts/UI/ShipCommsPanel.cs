@@ -24,7 +24,10 @@ namespace TitanOrbit.UI
     /// words on the same 5-wide row. An All / Team / Commander toggle and the RECENT chip list are remembered in PlayerPrefs
     /// so both survive a new match. Free players get three RECENT rows; one ad unlocks the rest.
     /// Commander is the top-three command deck: it unlocks
-    /// Everyone / Escort / Form Up and paints gold chrome.
+    /// Everyone / Escort / Form Up and paints gold chrome. A RECENT row that used those
+    /// words is temporarily locked (same LOCK stamp as the tiles) when this machine
+    /// drops out of the top three — the sentence stays in history and lights up again
+    /// if rank returns. We do not strip it into a different, non-command sentence.
     /// <para>
     /// Client presentation only. Sending goes through <see cref="ShipCommsRpcClient"/>
     /// (RPC — Remote Procedure Call: the client asks the server to broadcast or target
@@ -150,6 +153,13 @@ namespace TitanOrbit.UI
 
         /// <summary>Highlighted RECENT row while S is held. -1 = none.</summary>
         int _recentCursor = -1;
+
+        /// <summary>
+        /// Last commander rank we painted while S was held. Rank can flip mid-hold
+        /// (a teammate deposits). We only rebuild audience / tiles / RECENT when
+        /// this changes so LateUpdate does not recolor the card every frame.
+        /// </summary>
+        bool _lastPaintedLocalCommander;
 
         /// <summary>One plate over compose slots 4+5. Hidden after the keyword unlock ad.</summary>
         UnlockGate _slotUnlockGate;
@@ -306,6 +316,8 @@ namespace TitanOrbit.UI
             public Image Caret;
             public Outline Outline;
             public Button Button;
+            /// <summary>Gold LOCK stamp over a command sentence while this machine is not a commander.</summary>
+            public TextMeshProUGUI LockLabel;
             public readonly RecentChip[] Chips = new RecentChip[ShipCommsKeywordCatalog.MaxSequenceLength];
         }
 
@@ -414,9 +426,9 @@ namespace TitanOrbit.UI
                 TrySamplePlayAim();
             if (ShipCommsClientState.IsOpen)
             {
-                // Rank can change while S is held (a teammate deposits). Drop Commander
-                // if this machine falls out of the top three so locked words cannot send.
-                EnsureCommanderChannelStillValid();
+                // Rank can change while S is held (a teammate deposits). Drop Commander,
+                // strip command words from the rail, and lock RECENT rows that used them.
+                EnsureCommanderLocksWhileOpen();
                 TryStepRecentFromWheel();
                 if (ShipCommsClientState.ConsumeWaypointChipDirty())
                     EnsureMapPointChip();
@@ -425,8 +437,10 @@ namespace TitanOrbit.UI
 
         /// <summary>
         /// Mouse wheel steps the RECENT column: up = newer (toward the top),
-        /// down = older. First notch loads the latest sentence. Locked rows
-        /// stay skipped until the one RECENT unlock ad runs.
+        /// down = older. First notch loads the latest sentence that this machine
+        /// may still send. Ad-locked rows stay skipped until the one RECENT unlock
+        /// ad runs. Command sentences are skipped while this player is not a
+        /// commander — they stay in history and become walkable again if rank returns.
         /// </summary>
         void TryStepRecentFromWheel()
         {
@@ -445,12 +459,36 @@ namespace TitanOrbit.UI
                 return;
 
             int delta = scrollY > 0f ? -1 : 1;
-            int next = _recentCursor < 0 ? 0 : _recentCursor + delta;
-            next = Mathf.Clamp(next, 0, walkable - 1);
-            if (next == _recentCursor)
+
+            // --- First notch vs step ---
+            // No cursor yet: newest walkable row that is not commander-gated.
+            // Already on a row: keep walking in the scroll direction and skip gates.
+            int start = _recentCursor < 0 ? 0 : _recentCursor + delta;
+            int next = FindWalkableRecentRow(start, delta, walkable);
+            if (next < 0 || next == _recentCursor)
                 return;
 
             OnRecentClicked(next);
+        }
+
+        /// <summary>
+        /// First filled RECENT slot in range that is not commander-gated.
+        /// </summary>
+        /// <param name="start">Index to try first (already stepped from the cursor).</param>
+        /// <param name="step">+1 older, −1 newer.</param>
+        /// <param name="walkable">Exclusive end of the free or unlocked range.</param>
+        /// <returns>Row index, or −1 when every remaining slot is empty or gated.</returns>
+        int FindWalkableRecentRow(int start, int step, int walkable)
+        {
+            int i = start;
+            while (i >= 0 && i < walkable)
+            {
+                if (!IsRecentCommanderLocked(i) && ShipCommsHistory.TryGet(i, out _))
+                    return i;
+                i += step;
+            }
+
+            return -1;
         }
 
         static bool TryReadScrollY(out float scrollY)
@@ -580,6 +618,7 @@ namespace TitanOrbit.UI
                 PaintRecent();
                 PaintAudience();
                 PaintSequence();
+                _lastPaintedLocalCommander = IsLocalCommander();
                 ShipCommsClientState.ClearPendingWaypoint();
                 ShipCommsClientState.ClearPendingYou();
                 ShipCommsClientState.ClearPendingUs();
@@ -821,6 +860,8 @@ namespace TitanOrbit.UI
         /// <summary>
         /// Loads a previous sentence into the 1/2/3 rail so release-S sends it again.
         /// Rows past the free first three sit under one unlock plate until that ad runs.
+        /// A command sentence is ignored while this machine is not a commander — the
+        /// row stays in history and the click is a no-op until rank returns.
         /// </summary>
         void OnRecentClicked(int index)
         {
@@ -833,16 +874,26 @@ namespace TitanOrbit.UI
                 return;
             }
 
+            if (IsRecentCommanderLocked(index))
+                return;
+
             ApplyRecentSentence(index);
         }
 
         /// <summary>
         /// Copies history slot <paramref name="index"/> onto the compose rail.
-        /// Caller already checked that the row is unlocked and exists.
+        /// Caller already checked that the row is unlocked and exists. Command
+        /// sentences are refused while this machine is not a commander so we never
+        /// silently turn "Everyone Attack Planet" into "Attack Planet".
         /// </summary>
         void ApplyRecentSentence(int index)
         {
             if (!ShipCommsHistory.TryGet(index, out ShipCommsHistory.Sentence sentence))
+                return;
+
+            // [TITAN-ORBIT] Keep the saved sentence intact. The RECENT row shows LOCK
+            // until this player is a commander again.
+            if (IsRecentCommanderLocked(index))
                 return;
 
             _sequence.Clear();
@@ -872,15 +923,10 @@ namespace TitanOrbit.UI
                 ShipCommsClientState.ClearPendingUs();
             ShipCommsClientState.ClearLastPlayAim();
 
-            // Recent rows that used command words snap back to the Commander channel
-            // when this machine still owns a command-deck seat. Otherwise strip them.
-            if (SequenceHasCommanderKeyword())
-            {
-                if (IsLocalCommander())
-                    ShipCommsClientState.SetChannel(ShipCommsChannel.Commander);
-                else
-                    StripCommanderKeywordsFromSequence();
-            }
+            // Command sentences snap the audience pill back to CMDR. We already
+            // refused the click when this machine is not on the command deck.
+            if (SequenceHasCommanderKeyword() && IsLocalCommander())
+                ShipCommsClientState.SetChannel(ShipCommsChannel.Commander);
 
             _recentCursor = index;
             PaintAudience();
@@ -1000,29 +1046,46 @@ namespace TitanOrbit.UI
         /// <summary>
         /// Fills the RECENT column from <see cref="ShipCommsHistory"/>. Rows past the
         /// free first three stay ghosted under one unlock plate until that video runs.
+        /// A filled row that used command-deck words is temporarily locked (dark plate
+        /// + LOCK stamp, same language as the command tiles) while this machine is
+        /// not a commander. The sentence stays in history; we do not rewrite it.
         /// </summary>
         void PaintRecent()
         {
             var catalog = ShipCommsKeywordCatalog.LoadDefault();
+            bool commanderLive = IsLocalCommander();
             for (int i = 0; i < _recent.Length; i++)
             {
                 RecentSlot slot = _recent[i];
                 if (slot == null)
                     continue;
 
-                bool locked = !ShipCommsClientState.IsRecentRowUnlocked(i);
+                bool adLocked = !ShipCommsClientState.IsRecentRowUnlocked(i);
                 bool hasSentence = ShipCommsHistory.TryGet(i, out ShipCommsHistory.Sentence sentence);
                 bool filled = hasSentence;
-                bool selected = !locked && filled && i == _recentCursor;
+                bool commanderLocked = !adLocked
+                    && filled
+                    && !commanderLive
+                    && SentenceUsesCommanderKeyword(catalog, in sentence);
+                bool selected = !adLocked && !commanderLocked && filled && i == _recentCursor;
+
+                // --- Row plate ---
+                // Ad-locked rows stay the caption plate under the veil. Command-gated
+                // rows use the same near-void fill as locked command tiles.
                 if (slot.Fill != null)
-                    slot.Fill.color = locked
-                        ? CaptionPlateColor
-                        : (selected
+                {
+                    if (commanderLocked)
+                        slot.Fill.color = CommanderLockedFill;
+                    else if (adLocked)
+                        slot.Fill.color = CaptionPlateColor;
+                    else
+                        slot.Fill.color = selected
                             ? Color.Lerp(TileSelected, AllChannelColor, 0.42f)
-                            : (filled ? TileSelected : PreviewEmpty));
+                            : (filled ? TileSelected : PreviewEmpty);
+                }
                 if (slot.Outline != null)
                 {
-                    slot.Outline.effectColor = AllChannelColor;
+                    slot.Outline.effectColor = commanderLocked ? CommanderLockedStamp : AllChannelColor;
                     slot.Outline.effectDistance = selected ? new Vector2(2f, -2f) : new Vector2(0.8f, -0.8f);
                     slot.Outline.enabled = selected;
                 }
@@ -1032,7 +1095,13 @@ namespace TitanOrbit.UI
                     slot.Caret.enabled = selected;
                 }
                 if (slot.Button != null)
-                    slot.Button.interactable = !locked && filled;
+                    slot.Button.interactable = !adLocked && !commanderLocked && filled;
+                if (slot.LockLabel != null)
+                {
+                    slot.LockLabel.enabled = commanderLocked;
+                    slot.LockLabel.text = commanderLocked ? "LOCK" : string.Empty;
+                    slot.LockLabel.color = CommanderLockedStamp;
+                }
 
                 for (int c = 0; c < slot.Chips.Length; c++)
                 {
@@ -1042,7 +1111,7 @@ namespace TitanOrbit.UI
                         catalog,
                         on ? SentenceKeyword(in sentence, c) : (byte)0,
                         on,
-                        ghost: locked);
+                        ghost: adLocked || commanderLocked);
                 }
             }
 
@@ -1377,20 +1446,38 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// Drops the Commander channel (and any command-deck words in the rail) when
-        /// this machine is no longer in the top three. Called while S is held.
+        /// While S is held, rank can flip (a teammate deposits). Drop the Commander
+        /// channel, strip command-deck words from the compose rail, and lock RECENT
+        /// rows that used those words. We only repaint when commander status changes
+        /// so this LateUpdate path stays cheap.
         /// </summary>
-        void EnsureCommanderChannelStillValid()
+        void EnsureCommanderLocksWhileOpen()
         {
-            if (ShipCommsClientState.Channel != ShipCommsChannel.Commander)
-                return;
-            if (IsLocalCommander())
+            bool commander = IsLocalCommander();
+
+            // --- Channel ---
+            // The CMDR pill is a request, not a rank. If this machine fell out of
+            // the top three, collapse to Team so a release-S cannot ask for Commander.
+            if (ShipCommsClientState.Channel == ShipCommsChannel.Commander && !commander)
+                ShipCommsClientState.SetChannel(ShipCommsChannel.Team);
+
+            // --- Compose rail ---
+            // Words typed this hold cannot send once the command deck is gone.
+            if (!commander && SequenceHasCommanderKeyword())
+                StripCommanderKeywordsFromSequence();
+
+            // --- RECENT cursor ---
+            // Deselect a command sentence so the locked row does not stay highlighted.
+            if (!commander && _recentCursor >= 0 && IsRecentCommanderLocked(_recentCursor))
+                _recentCursor = -1;
+
+            if (commander == _lastPaintedLocalCommander)
                 return;
 
-            ShipCommsClientState.SetChannel(ShipCommsChannel.Team);
-            StripCommanderKeywordsFromSequence();
+            _lastPaintedLocalCommander = commander;
             PaintAudience();
             PaintSequence();
+            PaintRecent();
         }
 
         /// <summary>
@@ -1526,6 +1613,36 @@ namespace TitanOrbit.UI
             return false;
         }
 
+        /// <summary>
+        /// True when RECENT slot <paramref name="index"/> used a command-deck word
+        /// and this machine is not a commander. Ad-locked rows stay under the
+        /// watch-ad veil instead — this gate is only the temporary rank lock.
+        /// </summary>
+        /// <param name="index">RECENT column row (0 = newest).</param>
+        bool IsRecentCommanderLocked(int index)
+        {
+            if (IsLocalCommander())
+                return false;
+            if (!ShipCommsClientState.IsRecentRowUnlocked(index))
+                return false;
+            if (!ShipCommsHistory.TryGet(index, out ShipCommsHistory.Sentence sentence))
+                return false;
+
+            return SentenceUsesCommanderKeyword(ShipCommsKeywordCatalog.LoadDefault(), in sentence);
+        }
+
+        /// <summary>
+        /// True when any live keyword in a saved sentence is a command-deck word
+        /// (Everyone, Escort, Form Up, …).
+        /// </summary>
+        static bool SentenceUsesCommanderKeyword(
+            ShipCommsKeywordCatalog catalog,
+            in ShipCommsHistory.Sentence sentence)
+        {
+            return catalog.SequenceUsesCommanderKeyword(
+                sentence.Count, sentence.K0, sentence.K1, sentence.K2, sentence.K3, sentence.K4);
+        }
+
         /// <summary>Five clickable sequence chips. Slots 4–5 start under one unlock plate.</summary>
         void BuildPreviewRail(Transform parent, ref float y)
         {
@@ -1650,6 +1767,17 @@ namespace TitanOrbit.UI
                 };
                 for (int c = 0; c < row.Chips.Length; c++)
                     row.Chips[c] = CreateRecentChip(tile.transform, c);
+
+                // Built after the chips so the stamp draws on top of the row.
+                // Hidden until PaintRecent sees a command sentence on a non-commander.
+                var lockLabel = CreateLabel(
+                    tile.transform, "Lock", "LOCK", 8f, CommanderLockedStamp, TextAlignmentOptions.Center);
+                Stretch(lockLabel.rectTransform, 2f);
+                lockLabel.characterSpacing = 1.2f;
+                lockLabel.fontStyle = FontStyles.Bold;
+                lockLabel.enabled = false;
+                row.LockLabel = lockLabel;
+
                 _recent[i] = row;
                 y += RecentRowHeight + gap;
             }

@@ -132,7 +132,8 @@ namespace TitanOrbit.Editor
                 "Apply Default Type-Table Stats seeds the type table plus the In-game Default/Minimum Stats blocks " +
                 "(move 12, accel 8, health 800, energy 1400, people 600, gun range 32, cannon 40, missile 36, sniper 48). " +
                 "It also writes those ranges onto unique weapon rows, seeds inherit weapon banks from the type table, " +
-                "and energy/people onto cockpit/engine/wing rows, then recalculates hull sums. " +
+                "energy/people onto cockpit/engine/wing rows, and cargo-hold stats onto Cargo / Hold / " +
+                "Storage unique rows, then recalculates hull sums. " +
                 "Then click Refresh Unique Components + Recalc Ship Sums so stored hull sums stay raw " +
                 "(zeros stay 0; orange rows stay honest). Refresh adds new names and keeps hand-edited stats " +
                 "except the ranges just written. " +

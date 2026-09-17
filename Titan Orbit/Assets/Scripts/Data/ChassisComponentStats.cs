@@ -630,6 +630,7 @@ namespace TitanOrbit.Data
             // whole ship (and compound under already-scaled wings/engines).
             if (addToTotals
                 && (string.Equals(type, ShipFamilyPartTypes.Hull, System.StringComparison.OrdinalIgnoreCase)
+                    || ShipFamilyPartTypes.IsCargoProfile(type)
                     || string.Equals(type, "Part", System.StringComparison.OrdinalIgnoreCase)))
             {
                 stats.partCount++;
