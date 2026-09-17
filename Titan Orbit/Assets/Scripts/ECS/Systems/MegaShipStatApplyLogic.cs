@@ -148,10 +148,9 @@ namespace TitanOrbit.ECS
             var vitals = new ShipVitalsConfig
             {
                 HealthRegenPerSecond = Mathf.Max(0f, effective.healthRegen),
-                EnergyRegenPerSecond = Mathf.Clamp(
-                    effective.energyRegen > 0.01f ? effective.energyRegen : MegaShipCatalog.DefaultHullEnergyRegen,
-                    MegaShipCatalog.MinHullEnergyRegen,
-                    MegaShipCatalog.MaxHullEnergyRegen),
+                // SumFromEntry already resolved catalog defaults/mins. Do not clamp to the
+                // old 22–50 band — that made every Titan read 22/s.
+                EnergyRegenPerSecond = Mathf.Max(0f, effective.energyRegen),
                 HealthRegenDelayAfterDamage = 0.35f,
             };
             if (em.HasComponent<ShipVitalsConfig>(shipEntity))

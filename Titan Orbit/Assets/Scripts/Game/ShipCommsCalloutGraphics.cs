@@ -26,6 +26,8 @@ namespace TitanOrbit.Game
     /// Lines grow from source to dest and repeat so travel direction is obvious.
     /// Endpoints are hollow rings sized to each target's collider.
         /// Top-3 team rank thickens the stroke only — no medal lining.
+    /// Commander-keyword paths linger 10s after the 4s chips fade, thinner and quieter.
+    /// Target rings expire with the chips — only the stroke stays.
     /// Map size from <see cref="ToroidalMap"/>.
     /// </para>
     /// Client presentation only — no ECS gathers.
@@ -42,6 +44,30 @@ namespace TitanOrbit.Game
         /// </summary>
         public const int MaxTaggedPlayers = 16;
 
+        /// <summary>
+        /// After the chip row fades, commander-keyword paths stay this many more seconds
+        /// as a thin ghost so the order remains readable without covering the fight.
+        /// </summary>
+        public const float CommanderPathLingerSeconds = 10f;
+
+        /// <summary>Full-opacity path core while the 4s chips are still up.</summary>
+        public const float PathLineLiveAlpha = 0.95f;
+
+        /// <summary>
+        /// Ghost-path opacity after the chips fade. Low enough that hulls and beams
+        /// stay readable; high enough that a teammate can still follow the order.
+        /// </summary>
+        public const float PathLineLingerAlpha = 0.38f;
+
+        /// <summary>
+        /// Rank stroke shrinks to this fraction during linger (rank-1 6px → ~2.3px).
+        /// Floored by <see cref="PathLineLingerMinPixels"/> so it cannot vanish.
+        /// </summary>
+        public const float PathLineLingerStrokeScale = 0.38f;
+
+        /// <summary>Smallest linger core in screen pixels.</summary>
+        public const float PathLineLingerMinPixels = 1.15f;
+
         /// <summary>Line grows from source to dest, then repeats so direction is readable.</summary>
         const float PathTravelOnSeconds = 0.55f;
         const float PathTravelGapSeconds = 0.12f;
@@ -50,6 +76,8 @@ namespace TitanOrbit.Game
         const float PathLineRank2Pixels = 4.6f;
         const float PathLineRank1Pixels = 6f;
         const float PathLineMinimapScale = 0.92f;
+        /// <summary>Last slice of the linger window fades the ghost instead of popping off.</summary>
+        const float PathLingerFadeSeconds = 0.65f;
 
         const int MaxPaths = 8;
         const float NodeRadius = 0.34f;
@@ -632,9 +660,92 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
+        /// True when this sentence used a command-deck word (Everyone, Form Up, …)
+        /// so the path may linger after the 4s chip row fades. Channel-only
+        /// commander chrome without those words still expires with the chips.
+        /// </summary>
+        /// <param name="callout">Live inbox row (speaker + keyword bytes).</param>
+        public static bool ShouldLingerCommanderPaths(in ShipCommsInbox.Callout callout)
+        {
+            if (callout.Count < 1)
+                return false;
+            if (TeamCommanderRules.Sanitize(callout.TeamOnly) != ShipCommsChannel.Commander)
+                return false;
+
+            var catalog = ShipCommsKeywordCatalog.LoadDefault();
+            return catalog != null
+                && catalog.SequenceUsesCommanderKeyword(
+                    callout.Count, callout.K0, callout.K1, callout.K2, callout.K3, callout.K4);
+        }
+
+        /// <summary>
+        /// How the path should look at <paramref name="age"/>. Before
+        /// <paramref name="chipLifetime"/> the stroke is full rank width and the
+        /// grow-and-repeat travel pulse stays on. After that (commander linger)
+        /// the line is thinner, partly transparent, and drawn full-length so it
+        /// stops flashing.
+        /// </summary>
+        /// <param name="age">Seconds since this callout appeared.</param>
+        /// <param name="chipLifetime">Chip-row lifetime (4s). Linger starts here.</param>
+        /// <param name="lingerSeconds">Extra seconds after chips fade. 0 = no linger.</param>
+        /// <param name="strokeScale">1 while live; &lt;1 during linger.</param>
+        /// <param name="lineAlpha">Core opacity for world and minimap strokes.</param>
+        /// <param name="useTravelPulse">False during linger so the ghost stays still.</param>
+        /// <returns>False when this callout should no longer draw.</returns>
+        public static bool TryResolvePathPresentation(
+            float age,
+            float chipLifetime,
+            float lingerSeconds,
+            out float strokeScale,
+            out float lineAlpha,
+            out bool useTravelPulse)
+        {
+            strokeScale = 1f;
+            lineAlpha = PathLineLiveAlpha;
+            useTravelPulse = true;
+
+            float expireAt = chipLifetime + Mathf.Max(0f, lingerSeconds);
+            if (age >= expireAt)
+                return false;
+
+            // --- Live chips ---
+            // Same look as before: thick rank stroke, on/off travel pulse.
+            if (age < chipLifetime || lingerSeconds <= 0f)
+                return true;
+
+            // --- Commander ghost ---
+            // [TITAN-ORBIT] After the message chips fade, keep the path stroke as a
+            // quiet reminder. Rings stay off. No travel pulse — a repeating grow
+            // would stay loud.
+            useTravelPulse = false;
+            strokeScale = PathLineLingerStrokeScale;
+            lineAlpha = PathLineLingerAlpha;
+
+            float fadeStart = expireAt - PathLingerFadeSeconds;
+            if (age > fadeStart && PathLingerFadeSeconds > 0.01f)
+                lineAlpha *= 1f - Mathf.Clamp01((age - fadeStart) / PathLingerFadeSeconds);
+
+            return lineAlpha > 0.01f;
+        }
+
+        /// <summary>
+        /// Shrinks a resolved rank stroke for the linger window. Shared by world
+        /// Shapes lines and the minimap overlay so both stay in lockstep.
+        /// </summary>
+        /// <param name="corePx">Rank core thickness (pixels). Scaled in place.</param>
+        /// <param name="outlinePx">Optional outline thickness. Scaled in place.</param>
+        public static void ApplyLingerStroke(ref float corePx, ref float outlinePx)
+        {
+            corePx = Mathf.Max(PathLineLingerMinPixels, corePx * PathLineLingerStrokeScale);
+            outlinePx *= PathLineLingerStrokeScale;
+        }
+
+        /// <summary>
         /// On/off path lines + waypoint discs for one callout. Must run inside an
         /// existing Shapes <c>Draw.Command</c>. Hulls and planets are live; ping /
-        /// asteroid stay frozen.
+        /// asteroid stay frozen. After <paramref name="lifetime"/> a commander
+        /// sentence keeps a thinner, quieter path ghost for
+        /// <see cref="CommanderPathLingerSeconds"/> — rings do not linger.
         /// </summary>
         public static void DrawIntent(in ShipCommsInbox.Callout callout, float age, float lifetime, float alpha)
         {
@@ -643,19 +754,34 @@ namespace TitanOrbit.Game
             if (!LocalViewerCanSeePaths(callout.NetworkId))
                 return;
 
+            float lingerSeconds = ShouldLingerCommanderPaths(in callout)
+                ? CommanderPathLingerSeconds
+                : 0f;
+            if (!TryResolvePathPresentation(
+                    age, lifetime, lingerSeconds,
+                    out float strokeScale, out float lineAlpha, out bool useTravelPulse))
+                return;
+
             ParseWords(in callout, out ParsedWords words);
             Color color = ResolveActionColor(in words);
             ResolveLineStroke(callout.NetworkId, forMinimap: false, out float corePx, out float outlinePx, out Color outline);
+            if (strokeScale < 0.999f)
+                ApplyLingerStroke(ref corePx, ref outlinePx);
 
             int pathCount = BuildPaths(in callout, in words, s_PathFrom, s_PathTo, s_PathFromR, s_PathToR, MaxPaths);
 
-            if (pathCount > 0 && TryGetTravelT(age, out float travelT))
+            bool drawStroke = pathCount > 0;
+            float travelT = 1f;
+            if (drawStroke && useTravelPulse)
+                drawStroke = TryGetTravelT(age, out travelT);
+
+            if (drawStroke)
             {
                 Draw.ThicknessSpace = ThicknessSpace.Pixels;
                 for (int p = 0; p < pathCount; p++)
                 {
                     Color line = s_PathColor[p].a > 0.01f ? s_PathColor[p] : color;
-                    line.a = 0.95f;
+                    line.a = lineAlpha;
                     Vector3 from = Lift(s_PathFrom[p]);
                     Vector3 to = Lift(UnwrapToward(s_PathFrom[p], s_PathTo[p]));
                     if (!TryTrimToRings(from, to, s_PathFromR[p], s_PathToR[p], out Vector3 a, out Vector3 b))
@@ -663,12 +789,19 @@ namespace TitanOrbit.Game
                     if (!TryTravelSegment(a, b, travelT, out Vector3 sa, out Vector3 sb))
                         continue;
                     if (outlinePx > corePx)
-                        Draw.Line(sa, sb, outlinePx, LineEndCap.None, outline);
+                    {
+                        Color ghostOutline = outline;
+                        ghostOutline.a *= lineAlpha / PathLineLiveAlpha;
+                        Draw.Line(sa, sb, outlinePx, LineEndCap.None, ghostOutline);
+                    }
                     Draw.Line(sa, sb, corePx, LineEndCap.None, line);
                 }
             }
 
-            DrawNodes(in callout, in words, color, alpha, pathCount);
+            // Rings are part of the 4s message, not the ghost. After chips fade,
+            // only the path stroke stays.
+            if (age < lifetime)
+                DrawNodes(in callout, in words, color, alpha, pathCount);
         }
 
         /// <summary>Compose-time pointer on a locked "You" hull.</summary>
@@ -684,7 +817,8 @@ namespace TitanOrbit.Game
                 Lift(pos),
                 HullRadius(ShipCommsClientState.PendingYouNetworkId),
                 c,
-                ShipCommsClientState.PendingYouNetworkId);
+                ShipCommsClientState.PendingYouNetworkId,
+                RingThicknessPixels);
         }
 
         /// <summary>0–1 grow along the path this cycle, or false during the short gap.</summary>
@@ -718,14 +852,20 @@ namespace TitanOrbit.Game
         /// <summary>
         /// Live path segments for the minimap (already ring-trimmed, shortest wrap).
         /// Returns how many entries were written from <paramref name="start"/>.
+        /// Commander linger writes a quieter alpha and sets <paramref name="linger"/>
+        /// so the map stroke can shrink to match the world ghost.
         /// </summary>
+        /// <param name="chipLifetime">Same 4s chip window the world drawer uses.</param>
+        /// <param name="linger">Optional per-slot flag. True = apply linger stroke.</param>
         public static int CopyVisiblePaths(
             in ShipCommsInbox.Callout callout,
             float age,
+            float chipLifetime,
             Vector3[] from,
             Vector3[] to,
             Color[] colors,
             int[] ranks,
+            bool[] linger,
             int start,
             int max)
         {
@@ -733,7 +873,17 @@ namespace TitanOrbit.Game
                 return 0;
             if (!LocalViewerCanSeePaths(callout.NetworkId))
                 return 0;
-            if (!TryGetTravelT(age, out float travelT))
+
+            float lingerSeconds = ShouldLingerCommanderPaths(in callout)
+                ? CommanderPathLingerSeconds
+                : 0f;
+            if (!TryResolvePathPresentation(
+                    age, chipLifetime, lingerSeconds,
+                    out _, out float lineAlpha, out bool useTravelPulse))
+                return 0;
+
+            float travelT = 1f;
+            if (useTravelPulse && !TryGetTravelT(age, out travelT))
                 return 0;
 
             ParseWords(in callout, out ParsedWords words);
@@ -743,6 +893,7 @@ namespace TitanOrbit.Game
 
             Color fallback = ResolveActionColor(in words);
             int rank = ReadSpeakerTeamRank(callout.NetworkId);
+            bool lingering = lingerSeconds > 0f && age >= chipLifetime;
             int written = 0;
             for (int i = 0; i < n && start + written < max; i++)
             {
@@ -755,9 +906,13 @@ namespace TitanOrbit.Game
                 int slot = start + written;
                 from[slot] = sa;
                 to[slot] = sb;
-                colors[slot] = s_PathColor[i].a > 0.01f ? s_PathColor[i] : fallback;
+                Color painted = s_PathColor[i].a > 0.01f ? s_PathColor[i] : fallback;
+                painted.a = lineAlpha;
+                colors[slot] = painted;
                 if (ranks != null)
                     ranks[slot] = rank;
+                if (linger != null)
+                    linger[slot] = lingering;
                 written++;
             }
 
@@ -1520,11 +1675,11 @@ namespace TitanOrbit.Game
             if (TryLiveMe(in callout, out Vector3 me)
                 && (words.HasMe || SpeakerOnPath(me, pathCount)))
             {
-                DrawHollowRing(Lift(me), HullRadius(callout.NetworkId), c, callout.NetworkId);
+                DrawHollowRing(Lift(me), HullRadius(callout.NetworkId), c, callout.NetworkId, RingThicknessPixels);
             }
 
             if (TryLiveYou(in callout, out Vector3 you))
-                DrawHollowRing(Lift(you), HullRadius(callout.YouNetworkId), c, callout.YouNetworkId);
+                DrawHollowRing(Lift(you), HullRadius(callout.YouNetworkId), c, callout.YouNetworkId, RingThicknessPixels);
 
             int group = 0;
             if (words.HasEveryone || words.HasTeam)
@@ -1536,7 +1691,7 @@ namespace TitanOrbit.Game
             for (int i = 0; i < group; i++)
             {
                 int owner = i < s_IdScratch.Length ? s_IdScratch[i] : 0;
-                DrawHollowRing(Lift(s_ExpandA[i]), s_RadiusA[i], c, owner > 0 ? owner : callout.NetworkId);
+                DrawHollowRing(Lift(s_ExpandA[i]), s_RadiusA[i], c, owner > 0 ? owner : callout.NetworkId, RingThicknessPixels);
             }
 
             int worldN = s_LastNodeCount;
@@ -1548,7 +1703,7 @@ namespace TitanOrbit.Game
                     continue;
                 int hits = ExpandAnchor(in callout, in words, anchor, s_ExpandA, s_RadiusA);
                 for (int h = 0; h < hits; h++)
-                    DrawHollowRing(Lift(s_ExpandA[h]), s_RadiusA[h], c, callout.NetworkId);
+                    DrawHollowRing(Lift(s_ExpandA[h]), s_RadiusA[h], c, callout.NetworkId, RingThicknessPixels);
             }
         }
 
@@ -1629,10 +1784,10 @@ namespace TitanOrbit.Game
             return r * RingLargeScale + RingLargePad;
         }
 
-        static void DrawHollowRing(Vector3 pos, float radius, Color color, int ownerNetworkId)
+        static void DrawHollowRing(Vector3 pos, float radius, Color color, int ownerNetworkId, float thicknessPixels)
         {
             _ = ownerNetworkId;
-            Draw.Ring(pos, Vector3.up, VisualRingRadius(radius), RingThicknessPixels, color);
+            Draw.Ring(pos, Vector3.up, VisualRingRadius(radius), thicknessPixels, color);
         }
 
         static bool TryTrimToRings(

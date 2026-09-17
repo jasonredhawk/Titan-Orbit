@@ -177,13 +177,19 @@ namespace TitanOrbit.Data
         /// <summary>Hard cap so stale catalog sums cannot return to ~3000 energy.</summary>
         public const float MaxHullEnergy = 2200f;
 
-        /// <summary>Minimum energy regen after resolve.</summary>
-        public const float MinHullEnergyRegen = 22f;
+        /// <summary>
+        /// Last-resort energy regen floor when <see cref="runtimeMinimumStats"/> is unset.
+        /// Live hulls use the catalog sum (cockpit + engines + armor), not this constant.
+        /// </summary>
+        public const float MinHullEnergyRegen = 1f;
 
-        /// <summary>Default energy regen when the catalog sum is still 0.</summary>
-        public const float DefaultHullEnergyRegen = 36f;
+        /// <summary>
+        /// Last-resort energy regen when a hull sum is still 0 and
+        /// <see cref="runtimeDefaultStats"/> is unset. Authored catalog defaults win.
+        /// </summary>
+        public const float DefaultHullEnergyRegen = 25f;
 
-        /// <summary>Hard cap on regen — full volley still drains, but the bar recovers between bursts.</summary>
+        /// <summary>Optional high-end regen hint for tooling. Live hulls are not clamped to this.</summary>
         public const float MaxHullEnergyRegen = 50f;
 
         /// <summary>Floor on MEGA PhysicsMass / ramming mass so rocks cannot shove the hull.</summary>
@@ -234,8 +240,8 @@ namespace TitanOrbit.Data
         /// <summary>Hard cap on MEGA camera height so tracers stay readable.</summary>
         public const float DefaultCameraMaxHeight = 90f;
 
-        /// <summary>Default extra propulsion cruise contribution (2% of every engine past the fastest).</summary>
-        public const float DefaultExtraEngineSpeedPercent = 0.02f;
+        /// <summary>Default extra propulsion cruise contribution (5% of every engine past the fastest).</summary>
+        public const float DefaultExtraEngineSpeedPercent = 0.05f;
 
         /// <summary>Default MEGA turret traverse when a weapon row leaves weaponRotationSpeed at 0.</summary>
         public const float DefaultWeaponRotationSpeed = 90f;
@@ -300,7 +306,7 @@ namespace TitanOrbit.Data
         [HideInInspector]
         public float globalScale = DefaultGlobalScale;
 
-        [Tooltip("Cruise speed = fastest engine + this fraction of every other engine's moveSpeed. Thrusters are ignored unless the hull has no engines. Default 0.02 (2%).")]
+        [Tooltip("Cruise speed = fastest engine + this fraction of every other engine's moveSpeed. Thrusters are ignored unless the hull has no engines. Default 0.05 (5%).")]
         [Range(0f, 1f)]
         public float extraEngineSpeedPercent = DefaultExtraEngineSpeedPercent;
 
@@ -907,7 +913,7 @@ namespace TitanOrbit.Data
             return entry != null ? GetScaleForFamily(entry.visualFamily) : GetGlobalScale();
         }
 
-        /// <summary>Extra propulsion cruise fraction (0.02 = 2% of every engine past the fastest).</summary>
+        /// <summary>Extra propulsion cruise fraction (0.05 = 5% of every engine past the fastest).</summary>
         public float GetExtraEngineSpeedPercent()
         {
             return extraEngineSpeedPercent > 0f ? extraEngineSpeedPercent : DefaultExtraEngineSpeedPercent;
@@ -969,12 +975,11 @@ namespace TitanOrbit.Data
                 mins.maxPeople = MinHullPeople;
             if (defaults.energyCap < DefaultHullEnergy)
                 defaults.energyCap = DefaultHullEnergy;
-            if (defaults.energyRegen < DefaultHullEnergyRegen)
-                defaults.energyRegen = DefaultHullEnergyRegen;
             if (mins.energyCap < MinHullEnergy)
                 mins.energyCap = MinHullEnergy;
-            if (mins.energyRegen < MinHullEnergyRegen)
-                mins.energyRegen = MinHullEnergyRegen;
+            // Energy regen stays on the catalog: runtimeDefaultStats / runtimeMinimumStats
+            // plus the raw hull sum. Do not raise authored mins to a hardcoded floor —
+            // that flattened every Titan to 22/s when unique-component totals were 4–21.
             return MegaShipPartStats.ApplyRuntimeDefaultsAndMinimums(raw, defaults, mins);
         }
 

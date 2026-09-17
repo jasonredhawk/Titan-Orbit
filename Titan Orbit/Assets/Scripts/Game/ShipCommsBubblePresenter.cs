@@ -30,12 +30,15 @@ namespace TitanOrbit.Game
     /// idle orbit billboards them at the lens like nameplates and scales by camera-to-hull
     /// distance so remote callouts stay readable. A thin Shapes billboard line in the
     /// speaker's team color ties the chip row back to the hull.
+    /// Commander-keyword paths keep drawing for 10s after the 4s chips fade, thinner
+    /// and partly transparent so the order stays visible without blocking the fight.
     /// Borders are a sliced AA frame Image — not UGUI <c>Outline</c>, which crawls while the
     /// ship flies. Execution order 67012: after <see cref="EcsWorldVisualizer"/> and nameplates.
     /// </summary>
     [DefaultExecutionOrder(67012)]
     public sealed class ShipCommsBubblePresenter : ImmediateModeShapeDrawer
     {
+        /// <summary>Chip row + full-opacity path. After this, commander ghosts may linger.</summary>
         const float LifetimeSeconds = 4f;
         const float FadeSeconds = 0.65f;
         /// <summary>
@@ -141,6 +144,11 @@ namespace TitanOrbit.Game
             public int SourceNetworkId;
             /// <summary>True = world −Z (below nameplate). False = world +Z (above hull).</summary>
             public bool ScreenBelow;
+            /// <summary>
+            /// Cached at paint time: this sentence used a Commander keyword, so the
+            /// path stays after the chips fade. Echo rows never linger (no world lines).
+            /// </summary>
+            public bool LingerPaths;
         }
 
         /// <summary>
@@ -191,7 +199,7 @@ namespace TitanOrbit.Game
 
         /// <summary>
         /// Paints chips above the speaker's hull. Replaces any bubble already showing
-        /// for that player and restarts the 4s timer.
+        /// for that player and restarts the 4s chip timer (commander paths may linger).
         /// </summary>
         public static void Show(in ShipCommsInbox.Callout callout)
         {
@@ -205,10 +213,12 @@ namespace TitanOrbit.Game
 
         /// <summary>
         /// Copies live comms path segments (world XZ) for the minimap overlay.
-        /// No alloc; respects the same on/off pulse as the world lines.
+        /// No alloc; respects the same on/off pulse as the world lines, including
+        /// the quieter commander linger after the 4s chips fade.
         /// </summary>
+        /// <param name="linger">Optional per-slot flag. True = thinner ghost stroke.</param>
         public static int CopyLivePathSegments(
-            Vector3[] from, Vector3[] to, Color[] colors, int[] ranks, int max)
+            Vector3[] from, Vector3[] to, Color[] colors, int[] ranks, int max, bool[] linger = null)
         {
             if (s_Instance == null || from == null || to == null || colors == null || max <= 0)
                 return 0;
@@ -219,14 +229,35 @@ namespace TitanOrbit.Game
                 Bubble bubble = pair.Value;
                 if (bubble == null || written >= max)
                     break;
-                if (bubble.Age >= LifetimeSeconds)
+                if (bubble.Age >= ResolveExpireSeconds(bubble))
                     continue;
 
                 written += ShipCommsCalloutGraphics.CopyVisiblePaths(
-                    in bubble.Callout, bubble.Age, from, to, colors, ranks, written, max);
+                    in bubble.Callout,
+                    bubble.Age,
+                    LifetimeSeconds,
+                    from,
+                    to,
+                    colors,
+                    ranks,
+                    linger,
+                    written,
+                    max);
             }
 
             return written;
+        }
+
+        /// <summary>
+        /// When this speaker bubble should be destroyed. Commander-keyword paths
+        /// keep the row alive (chips hidden) so DrawIntent can paint the ghost.
+        /// Echo chips never linger — they have no path of their own.
+        /// </summary>
+        static float ResolveExpireSeconds(Bubble bubble)
+        {
+            if (bubble != null && !bubble.IsEcho && bubble.LingerPaths)
+                return LifetimeSeconds + ShipCommsCalloutGraphics.CommanderPathLingerSeconds;
+            return LifetimeSeconds;
         }
 
         /// <summary>
@@ -253,8 +284,10 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Ages one bubble map, fades the last slice, and follows hulls. Dead keys
-        /// are destroyed after the walk so we never mutate the dictionary mid-foreach.
+        /// Ages one bubble map, fades the last slice of the 4s chip window, and
+        /// follows hulls while chips are up. Commander-keyword speaker rows stay
+        /// after that (chips hidden) so the path ghost can keep drawing.
+        /// Dead keys are destroyed after the walk so we never mutate the dictionary mid-foreach.
         /// </summary>
         /// <param name="map">Speaker bubbles or commander echoes.</param>
         /// <param name="destroyEcho">True when <paramref name="map"/> is <see cref="_echo"/>.</param>
@@ -277,24 +310,47 @@ namespace TitanOrbit.Game
                 bubble.Age += dt;
 
                 // --- Expire ---
-                if (bubble.Age >= LifetimeSeconds || bubble.Root == null)
+                // Commander linger keeps the bubble past 4s so world/minimap paths
+                // can keep drawing. Echo rows and All/Team sentences still die at 4s.
+                if (bubble.Age >= ResolveExpireSeconds(bubble) || bubble.Root == null)
                 {
                     _deadIds.Add(pair.Key);
                     continue;
                 }
 
-                // --- Fade on the last slice of the lifetime ---
+                bool chipsAlive = bubble.Age < LifetimeSeconds;
+
+                // --- Fade on the last slice of the chip lifetime ---
+                // Linger does not keep the UGUI chips — only the Shapes path.
                 if (bubble.Group != null)
                 {
-                    float fadeStart = LifetimeSeconds - FadeSeconds;
-                    float alpha = bubble.Age < fadeStart
-                        ? 1f
-                        : 1f - Mathf.Clamp01((bubble.Age - fadeStart) / FadeSeconds);
-                    bubble.Group.alpha = alpha;
+                    if (!chipsAlive)
+                    {
+                        bubble.Group.alpha = 0f;
+                    }
+                    else
+                    {
+                        float fadeStart = LifetimeSeconds - FadeSeconds;
+                        float alpha = bubble.Age < fadeStart
+                            ? 1f
+                            : 1f - Mathf.Clamp01((bubble.Age - fadeStart) / FadeSeconds);
+                        bubble.Group.alpha = alpha;
+                    }
                 }
 
-                if (!TryFollowHull(bubble))
-                    _deadIds.Add(pair.Key);
+                if (bubble.WorldCanvas != null)
+                    bubble.WorldCanvas.enabled = chipsAlive;
+
+                if (chipsAlive)
+                {
+                    if (!TryFollowHull(bubble))
+                        _deadIds.Add(pair.Key);
+                }
+                else
+                {
+                    // Stem is a chip-to-hull line. Hide it once the chips are gone.
+                    bubble.HasLine = false;
+                }
             }
 
             for (int i = 0; i < _deadIds.Count; i++)
@@ -405,8 +461,12 @@ namespace TitanOrbit.Game
             bubble.ScreenBelow = screenBelow;
             bubble.SourceNetworkId = sourceNetworkId;
             bubble.HasLocalCenter = false;
+            // Echo chips sit under tagged hulls and never own a path, so they never linger.
+            bubble.LingerPaths = !screenBelow && ShipCommsCalloutGraphics.ShouldLingerCommanderPaths(in callout);
             if (bubble.Group != null)
                 bubble.Group.alpha = 1f;
+            if (bubble.WorldCanvas != null)
+                bubble.WorldCanvas.enabled = true;
 
             var catalog = ShipCommsKeywordCatalog.LoadDefault();
             float width = 0f;

@@ -237,7 +237,7 @@ namespace TitanOrbit.Data
         /// Empty list → 0 (in-game default/minimum fills it).
         /// </summary>
         /// <param name="engineMoves">moveSpeed from the owning cruise parts.</param>
-        /// <param name="extraPercent">Catalog extraEngineSpeedPercent (0.02 = 2%).</param>
+        /// <param name="extraPercent">Catalog extraEngineSpeedPercent (0.05 = 5%).</param>
         public static float CombineEngineCruise(List<float> engineMoves, float extraPercent)
         {
             if (engineMoves == null || engineMoves.Count == 0)

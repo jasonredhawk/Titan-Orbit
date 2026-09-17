@@ -1238,6 +1238,9 @@ namespace TitanOrbit.Game
             // without waiting for GhostSpawn idle (314/315 hang).
             ClientJoinSettleCache.SetMapProxyBuildReady(
                 EcsGameBridge.IsMapProxyCountReady(out _, out _, out _));
+
+            // Cannon lasers are world-space lines — pin them to the barrels just posed.
+            CannonLaserBeamVisual.SyncAfterHullProxies();
         }
 
         /// <summary>

@@ -23,6 +23,11 @@ namespace TitanOrbit.Game
     /// to the mouse. While a lock is burning, this driver also reports <c>DPS × dt</c>
     /// to <see cref="EcsFloatingCountPresenter"/> so laser hull / rock hits show the
     /// same floating damage numbers as <c>BulletHitRpc</c> (lasers never send that RPC).
+    /// <para>
+    /// The Archanor line is world-space. Pose the root and snap the
+    /// <see cref="LineRenderer"/> after hybrid hulls move — otherwise the beam sits
+    /// on last physics tick while the titan interpolates (jitter while moving).
+    /// </para>
     /// </summary>
     [DefaultExecutionOrder(67040)]
     public sealed class CannonLaserBeamVisual : MonoBehaviour
@@ -46,6 +51,7 @@ namespace TitanOrbit.Game
         {
             public GameObject Root;
             public MonoBehaviour Vendor;
+            public LineRenderer Line;
             public TeamId Team;
             public float LastUsed;
             public float LastSeenLive;
@@ -93,6 +99,9 @@ namespace TitanOrbit.Game
 
         CannonLaserVfxSettings _settings;
 
+        /// <summary>Frame when <see cref="SyncAfterHullProxies"/> already posed beams.</summary>
+        int _syncedAfterHullsFrame = -1;
+
         /// <summary>[UNITY] Ensures a scene driver exists after load.</summary>
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         static void EnsureInstanceExists()
@@ -132,10 +141,37 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
+        /// Pins live beams to barrels the visualizer just posed (LateUpdate or
+        /// <c>onBeforeRender</c>). Same-frame second calls no-op.
+        /// </summary>
+        public static void SyncAfterHullProxies()
+        {
+            if (_instance == null)
+                return;
+            if (_instance._syncedAfterHullsFrame == Time.frameCount)
+                return;
+            _instance.TickBeams();
+            _instance._syncedAfterHullsFrame = Time.frameCount;
+        }
+
+        /// <summary>
+        /// Fallback when the hybrid visualizer did not sync this frame (batch /
+        /// headless). Skip when <see cref="SyncAfterHullProxies"/> already ran.
+        /// </summary>
+        void LateUpdate()
+        {
+            if (!Application.isPlaying)
+                return;
+            if (_syncedAfterHullsFrame == Time.frameCount)
+                return;
+            TickBeams();
+        }
+
+        /// <summary>
         /// Updates pooled beams from ghosted MEGA gunner locks. Uses hybrid barrel
         /// transforms when present so the line sits on the drawn turret.
         /// </summary>
-        void LateUpdate()
+        void TickBeams()
         {
             if (!Application.isPlaying)
                 return;
@@ -258,6 +294,7 @@ namespace TitanOrbit.Game
                 slot.Root.transform.rotation = Quaternion.LookRotation(toEnd.normalized, Vector3.up);
                 ApplyVendorLength(slot.Vendor, toEnd.magnitude);
                 SetBeamShown(slot, true);
+                ApplyVendorLinePose(slot, muzzle, end);
 
                 // --- Floating damage (same channels as BulletHitRpc) ---
                 // [TITAN-ORBIT] Hitscan has no tracer / HitRpc. Asteroids are
@@ -539,6 +576,7 @@ namespace TitanOrbit.Game
             {
                 Root = root,
                 Vendor = vendor,
+                Line = root.GetComponentInChildren<LineRenderer>(true),
                 Team = team,
                 LastUsed = Time.unscaledTime,
                 Shown = true,
@@ -644,6 +682,60 @@ namespace TitanOrbit.Game
                 CacheVendorFields(vendor.GetType());
             s_BeamCollidesField?.SetValue(vendor, false);
             s_BeamLengthField?.SetValue(vendor, math.max(0.05f, length));
+        }
+
+        /// <summary>
+        /// Writes the world-space line and muzzle/impact FX for this frame.
+        /// Vendor <c>LateUpdate</c> also does this; we snap here so
+        /// <see cref="SyncAfterHullProxies"/> (including <c>onBeforeRender</c>)
+        /// is not left one physics tick behind the hull.
+        /// </summary>
+        static void ApplyVendorLinePose(BeamSlot slot, Vector3 muzzle, Vector3 end)
+        {
+            if (slot == null)
+                return;
+
+            if (slot.Line == null && slot.Root != null)
+                slot.Line = slot.Root.GetComponentInChildren<LineRenderer>(true);
+
+            LineRenderer line = slot.Line;
+            if (line != null)
+            {
+                line.useWorldSpace = true;
+                if (line.positionCount < 2)
+                    line.positionCount = 2;
+                line.SetPosition(0, muzzle);
+                line.SetPosition(1, end);
+            }
+
+            if (slot.Vendor == null)
+                return;
+            if (s_BeamStartField == null)
+                CacheVendorFields(slot.Vendor.GetType());
+
+            var startGo = s_BeamStartField != null
+                ? s_BeamStartField.GetValue(slot.Vendor) as GameObject
+                : null;
+            var endGo = s_BeamEndField != null
+                ? s_BeamEndField.GetValue(slot.Vendor) as GameObject
+                : null;
+            if (startGo != null)
+            {
+                startGo.transform.position = muzzle;
+                Vector3 look = end - muzzle;
+                look.y = 0f;
+                if (look.sqrMagnitude > 1e-8f)
+                    startGo.transform.rotation = Quaternion.LookRotation(look, Vector3.up);
+            }
+
+            if (endGo != null)
+            {
+                endGo.transform.position = end;
+                Vector3 look = muzzle - end;
+                look.y = 0f;
+                if (look.sqrMagnitude > 1e-8f)
+                    endGo.transform.rotation = Quaternion.LookRotation(look, Vector3.up);
+            }
         }
 
         /// <summary>

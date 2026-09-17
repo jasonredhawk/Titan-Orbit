@@ -111,6 +111,7 @@ namespace TitanOrbit.UI
         static readonly Vector3[] s_CommsTo = new Vector3[MaxCommsMapLines];
         static readonly Color[] s_CommsColors = new Color[MaxCommsMapLines];
         static readonly int[] s_CommsRanks = new int[MaxCommsMapLines];
+        static readonly bool[] s_CommsLinger = new bool[MaxCommsMapLines];
 
         struct CommsMapLine
         {
@@ -670,6 +671,7 @@ namespace TitanOrbit.UI
         /// <summary>
         /// Projects live world comms lines onto the map (HUD circle and comms dock).
         /// Uses shortest-path offsets so a wrap does not stretch across the disc.
+        /// Commander linger copies the same thinner, quieter stroke as the world ghost.
         /// </summary>
         void UpdateCommsPathLines(Vector3 playerPos)
         {
@@ -680,7 +682,7 @@ namespace TitanOrbit.UI
             }
 
             int count = ShipCommsBubblePresenter.CopyLivePathSegments(
-                s_CommsFrom, s_CommsTo, s_CommsColors, s_CommsRanks, MaxCommsMapLines);
+                s_CommsFrom, s_CommsTo, s_CommsColors, s_CommsRanks, MaxCommsMapLines, s_CommsLinger);
             if (count <= 0)
             {
                 HideCommsPathLines();
@@ -711,7 +713,12 @@ namespace TitanOrbit.UI
                 Vector2 mid = (a + b) * 0.5f;
                 float angle = Mathf.Atan2(delta.y, delta.x) * Mathf.Rad2Deg;
                 Color core = s_CommsColors[i];
-                core.a = 0.92f;
+                // World DrawIntent already wrote linger alpha onto the color. Live
+                // paths still get the usual near-solid map stroke.
+                if (s_CommsLinger[i])
+                    ShipCommsCalloutGraphics.ApplyLingerStroke(ref corePx, ref outlinePx);
+                else
+                    core.a = 0.92f;
                 if (outlinePx > corePx && line.Outline != null)
                     PlaceCommsMapStroke(line.Outline, mid, len, outlinePx, angle, outlineColor, asLast: false);
                 else if (line.Outline != null && line.Outline.gameObject.activeSelf)

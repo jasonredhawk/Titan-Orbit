@@ -379,6 +379,30 @@ namespace TitanOrbit.Data
         }
 
         /// <summary>
+        /// True when any live slot in a 5-word sentence is a command-deck word
+        /// (Everyone, Escort, Form Up, …). Used by presentation to keep commander
+        /// path lines after the chip row fades, and by the server to reject spoofs.
+        /// </summary>
+        /// <param name="count">How many keywords were typed (1–5).</param>
+        /// <param name="k0">First wire index.</param>
+        /// <param name="k1">Second wire index.</param>
+        /// <param name="k2">Third wire index.</param>
+        /// <param name="k3">Fourth wire index.</param>
+        /// <param name="k4">Fifth wire index.</param>
+        public bool SequenceUsesCommanderKeyword(byte count, byte k0, byte k1, byte k2, byte k3, byte k4)
+        {
+            if (count >= 1 && IsCommanderKeyword(k0))
+                return true;
+            if (count >= 2 && IsCommanderKeyword(k1))
+                return true;
+            if (count >= 3 && IsCommanderKeyword(k2))
+                return true;
+            if (count >= 4 && IsCommanderKeyword(k3))
+                return true;
+            return count >= 5 && IsCommanderKeyword(k4);
+        }
+
+        /// <summary>
         /// True when this chip label is a command-deck word (Everyone, Escort, Form Up, …).
         /// Used by the compose panel and chip paint when the catalog row is not handy.
         /// </summary>
