@@ -13,8 +13,11 @@ namespace TitanOrbit.Simulation
         /// <summary>Burst launch (asteroid destroy, combat/ram spill). Soft mining nudge when false.</summary>
         public const byte FlagBurst = 1;
 
-        /// <summary>Yellow territory-bonus tint.</summary>
+        /// <summary>Yellow territory-bonus tint. Mutually exclusive with <see cref="FlagMinerBonus"/>.</summary>
         public const byte FlagBonus = 2;
+
+        /// <summary>Blue top-miner command-bonus tint. Mutually exclusive with <see cref="FlagBonus"/>.</summary>
+        public const byte FlagMinerBonus = 4;
 
         public float3 Position;
         public float Value;
@@ -30,17 +33,42 @@ namespace TitanOrbit.Simulation
         public float LaunchSpeedMul;
 
         public bool Burst => (Flags & FlagBurst) != 0;
-        public bool IsBonusGem => (Flags & FlagBonus) != 0;
 
-        public static byte PackFlags(bool burst, bool isBonusGem)
+        /// <summary>True when this crystal is the yellow triangle extra (not the blue miner extra).</summary>
+        public bool IsBonusGem => Tint == GemVisualTint.TerritoryBonus;
+
+        /// <summary>Packed tint — red, yellow triangle, or blue top-miner.</summary>
+        public GemVisualTint Tint
+        {
+            get
+            {
+                if ((Flags & FlagMinerBonus) != 0)
+                    return GemVisualTint.MinerCommander;
+                if ((Flags & FlagBonus) != 0)
+                    return GemVisualTint.TerritoryBonus;
+                return GemVisualTint.Standard;
+            }
+        }
+
+        /// <summary>
+        /// Packs burst + tint. Yellow and blue never share a bit — a mixed flag would
+        /// make client hydrate pick the first one and the two extras would look the same.
+        /// </summary>
+        public static byte PackFlags(bool burst, GemVisualTint tint)
         {
             byte flags = 0;
             if (burst)
                 flags |= FlagBurst;
-            if (isBonusGem)
+            if (tint == GemVisualTint.MinerCommander)
+                flags |= FlagMinerBonus;
+            else if (tint == GemVisualTint.TerritoryBonus)
                 flags |= FlagBonus;
             return flags;
         }
+
+        /// <summary>Legacy bool pack — true means yellow triangle, never blue miner.</summary>
+        public static byte PackFlags(bool burst, bool isBonusGem) =>
+            PackFlags(burst, isBonusGem ? GemVisualTint.TerritoryBonus : GemVisualTint.Standard);
     }
 
     /// <summary>
@@ -55,7 +83,8 @@ namespace TitanOrbit.Simulation
         public float3 Velocity;
         public float3 AngularVelocity;
         public float Value;
-        public bool IsBonusGem;
+        public GemVisualTint Tint;
+        public bool IsBonusGem => Tint == GemVisualTint.TerritoryBonus;
         public byte BurstIndex;
         public float SpawnServerTime;
         public int ExcludePickupNetworkId;
@@ -94,7 +123,7 @@ namespace TitanOrbit.Simulation
             bool burst,
             float spawnServerTime,
             byte burstIndex = 0,
-            bool isBonusGem = false,
+            GemVisualTint tint = GemVisualTint.Standard,
             float burstIntensity = 1f,
             int excludePickupNetworkId = 0,
             float excludePickupUntilServerTime = 0f,
@@ -109,7 +138,7 @@ namespace TitanOrbit.Simulation
                 Salt = salt,
                 SpawnServerTime = spawnServerTime,
                 BurstIndex = burstIndex,
-                Flags = GemSpawnRecipe.PackFlags(burst, isBonusGem),
+                Flags = GemSpawnRecipe.PackFlags(burst, tint),
                 BurstIntensity = burstIntensity,
                 ExcludePickupNetworkId = excludePickupNetworkId,
                 ExcludePickupUntilServerTime = excludePickupUntilServerTime,
@@ -180,7 +209,7 @@ namespace TitanOrbit.Simulation
                 Velocity = vel,
                 AngularVelocity = ang,
                 Value = recipe.Value,
-                IsBonusGem = recipe.IsBonusGem,
+                Tint = recipe.Tint,
                 BurstIndex = recipe.BurstIndex,
                 SpawnServerTime = recipe.SpawnServerTime,
                 ExcludePickupNetworkId = recipe.ExcludePickupNetworkId,
@@ -206,7 +235,7 @@ namespace TitanOrbit.Simulation
             float remaining,
             uint seed,
             float spawnServerTime,
-            bool isBonusGem,
+            GemVisualTint tint,
             GemExplosionSettings settings,
             GemSpawnRecipe[] dst)
         {
@@ -238,7 +267,7 @@ namespace TitanOrbit.Simulation
                     burst: true,
                     spawnServerTime,
                     burstIndex: (byte)i,
-                    isBonusGem: isBonusGem);
+                    tint: tint);
             }
 
             return written;

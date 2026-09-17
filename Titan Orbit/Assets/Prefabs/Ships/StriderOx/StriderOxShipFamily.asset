@@ -171,8 +171,8 @@ MonoBehaviour:
       bulletRangePerExtraLevel: 0
       fireRate: 0
       fireRatePerExtraLevel: 0
-      rammingPower: 1
-      rammingPowerPerExtraLevel: 0.25
+      rammingPower: 3
+      rammingPowerPerExtraLevel: 0.5
       healthCap: 6.3
       healthCapPerExtraLevel: 6.3
       healthRegen: 0.22500002
@@ -894,7 +894,7 @@ MonoBehaviour:
     powerScore: 155.74557
     powerScoreAtMaxLevel: 208.21616
     powerScoreBreakdown:
-      offense: 19.5625
+      offense: 22.375
       defense: 42.225582
       energy: 35
       mobility: 20.67
@@ -903,7 +903,7 @@ MonoBehaviour:
       bulletSpeed: 12
       fireRate: 3
       sustainedDps: 0
-      rammingPower: 1.5625
+      rammingPower: 4.375
       healthCap: 40.953728
       healthRegen: 1.2718549
       energyCap: 30
@@ -913,7 +913,7 @@ MonoBehaviour:
       gemCap: 24
       peopleCap: 22
     powerScoreBreakdownAtShipLevel:
-      offense: 19.875
+      offense: 23
       defense: 65.77616
       energy: 49
       mobility: 23.240002
@@ -922,7 +922,7 @@ MonoBehaviour:
       bulletSpeed: 12
       fireRate: 3
       sustainedDps: 0
-      rammingPower: 1.875
+      rammingPower: 5
       healthCap: 63.794952
       healthRegen: 1.9812095
       energyCap: 42
@@ -974,7 +974,7 @@ MonoBehaviour:
     powerScore: 182.20999
     powerScoreAtMaxLevel: 380.51498
     powerScoreBreakdown:
-      offense: 19.5625
+      offense: 22.375
       defense: 56.024998
       energy: 28
       mobility: 37.785
@@ -983,7 +983,7 @@ MonoBehaviour:
       bulletSpeed: 12
       fireRate: 3
       sustainedDps: 0
-      rammingPower: 1.5625
+      rammingPower: 4.375
       healthCap: 54.337498
       healthRegen: 1.6875001
       energyCap: 24
@@ -993,7 +993,7 @@ MonoBehaviour:
       gemCap: 26
       peopleCap: 24
     powerScoreBreakdownAtShipLevel:
-      offense: 20.5
+      offense: 24.25
       defense: 168.075
       energy: 49
       mobility: 51.84
@@ -1002,7 +1002,7 @@ MonoBehaviour:
       bulletSpeed: 12
       fireRate: 3
       sustainedDps: 0
-      rammingPower: 2.5
+      rammingPower: 6.25
       healthCap: 163.0125
       healthRegen: 5.0625005
       energyCap: 42
@@ -1054,7 +1054,7 @@ MonoBehaviour:
     powerScore: 177.30806
     powerScoreAtMaxLevel: 374.3172
     powerScoreBreakdown:
-      offense: 40.3125
+      offense: 43.125
       defense: 34.288055
       energy: 62
       mobility: 41.670002
@@ -1063,7 +1063,7 @@ MonoBehaviour:
       bulletSpeed: 10
       fireRate: 3
       sustainedDps: 11.25
-      rammingPower: 1.5625
+      rammingPower: 4.375
       healthCap: 33.255283
       healthRegen: 1.0327728
       energyCap: 57
@@ -1073,7 +1073,7 @@ MonoBehaviour:
       gemCap: 12
       peopleCap: 15
     powerScoreBreakdownAtShipLevel:
-      offense: 47.5
+      offense: 51.25
       defense: 103.53721
       energy: 131
       mobility: 67.38
@@ -1082,7 +1082,7 @@ MonoBehaviour:
       bulletSpeed: 12
       fireRate: 3
       sustainedDps: 18
-      rammingPower: 2.5
+      rammingPower: 6.25
       healthCap: 100.41862
       healthRegen: 3.1185908
       energyCap: 120
@@ -1134,7 +1134,7 @@ MonoBehaviour:
     powerScore: 223.50452
     powerScoreAtMaxLevel: 665.635
     powerScoreBreakdown:
-      offense: 40.3125
+      offense: 43.125
       defense: 57.98451
       energy: 62
       mobility: 40.87
@@ -1143,7 +1143,7 @@ MonoBehaviour:
       bulletSpeed: 10
       fireRate: 3
       sustainedDps: 11.25
-      rammingPower: 1.5625
+      rammingPower: 4.375
       healthCap: 56.237988
       healthRegen: 1.7465215
       energyCap: 57
@@ -1153,7 +1153,7 @@ MonoBehaviour:
       gemCap: 26
       peopleCap: 24
     powerScoreBreakdownAtShipLevel:
-      offense: 52.625
+      offense: 57
       defense: 250.01505
       energy: 177
       mobility: 79.72
@@ -1162,7 +1162,7 @@ MonoBehaviour:
       bulletSpeed: 13
       fireRate: 3
       sustainedDps: 22.5
-      rammingPower: 3.125
+      rammingPower: 7.5
       healthCap: 242.48447
       healthRegen: 7.5305734
       energyCap: 162
@@ -1214,7 +1214,7 @@ MonoBehaviour:
     powerScore: 186.79135
     powerScoreAtMaxLevel: 519.99475
     powerScoreBreakdown:
-      offense: 40.3125
+      offense: 43.125
       defense: 46.771347
       energy: 62
       mobility: 19.07
@@ -1223,7 +1223,7 @@ MonoBehaviour:
       bulletSpeed: 10
       fireRate: 3
       sustainedDps: 11.25
-      rammingPower: 1.5625
+      rammingPower: 4.375
       healthCap: 45.36257
       healthRegen: 1.4087757
       energyCap: 57
@@ -1233,7 +1233,7 @@ MonoBehaviour:
       gemCap: 24
       peopleCap: 22
     powerScoreBreakdownAtShipLevel:
-      offense: 52.625
+      offense: 57
       defense: 182.37473
       energy: 177
       mobility: 23.92
@@ -1242,7 +1242,7 @@ MonoBehaviour:
       bulletSpeed: 13
       fireRate: 3
       sustainedDps: 22.5
-      rammingPower: 3.125
+      rammingPower: 7.5
       healthCap: 176.88152
       healthRegen: 5.4932146
       energyCap: 162
@@ -1294,7 +1294,7 @@ MonoBehaviour:
     powerScore: 222.27457
     powerScoreAtMaxLevel: 655.8805
     powerScoreBreakdown:
-      offense: 47.0625
+      offense: 49.875
       defense: 51.17552
       energy: 73.86912
       mobility: 40.87
@@ -1303,7 +1303,7 @@ MonoBehaviour:
       bulletSpeed: 10
       fireRate: 6
       sustainedDps: 22.5
-      rammingPower: 1.5625
+      rammingPower: 4.375
       healthCap: 49.63409
       healthRegen: 1.5414314
       energyCap: 71.03067
@@ -1313,7 +1313,7 @@ MonoBehaviour:
       gemCap: 21.886826
       peopleCap: 21.355816
     powerScoreBreakdownAtShipLevel:
-      offense: 63.125
+      offense: 67.5
       defense: 221.76059
       energy: 203.60735
       mobility: 79.72
@@ -1322,7 +1322,7 @@ MonoBehaviour:
       bulletSpeed: 13
       fireRate: 6
       sustainedDps: 45
-      rammingPower: 3.125
+      rammingPower: 7.5
       healthCap: 215.08105
       healthRegen: 6.6795354
       energyCap: 195.09201
@@ -1374,7 +1374,7 @@ MonoBehaviour:
     powerScore: 224.6043
     powerScoreAtMaxLevel: 883.28894
     powerScoreBreakdown:
-      offense: 40.3125
+      offense: 43.125
       defense: 55.83825
       energy: 56.696835
       mobility: 49.87
@@ -1383,7 +1383,7 @@ MonoBehaviour:
       bulletSpeed: 10
       fireRate: 3
       sustainedDps: 11.25
-      rammingPower: 1.5625
+      rammingPower: 4.375
       healthCap: 54.156376
       healthRegen: 1.6818751
       energyCap: 52.45443
@@ -1393,7 +1393,7 @@ MonoBehaviour:
       gemCap: 26
       peopleCap: 24
     powerScoreBreakdownAtShipLevel:
-      offense: 57.75
+      offense: 62.75
       defense: 315.98096
       energy: 202.84798
       mobility: 167.26
@@ -1402,7 +1402,7 @@ MonoBehaviour:
       bulletSpeed: 14
       fireRate: 3
       sustainedDps: 27
-      rammingPower: 3.75
+      rammingPower: 8.75
       healthCap: 306.46347
       healthRegen: 9.5175
       energyCap: 186.72684
@@ -1454,7 +1454,7 @@ MonoBehaviour:
     powerScore: 223.50452
     powerScoreAtMaxLevel: 842.28723
     powerScoreBreakdown:
-      offense: 40.3125
+      offense: 43.125
       defense: 57.98451
       energy: 62
       mobility: 40.87
@@ -1463,7 +1463,7 @@ MonoBehaviour:
       bulletSpeed: 10
       fireRate: 3
       sustainedDps: 11.25
-      rammingPower: 1.5625
+      rammingPower: 4.375
       healthCap: 56.237988
       healthRegen: 1.7465215
       energyCap: 57
@@ -1473,7 +1473,7 @@ MonoBehaviour:
       gemCap: 26
       peopleCap: 24
     powerScoreBreakdownAtShipLevel:
-      offense: 57.75
+      offense: 62.75
       defense: 326.82724
       energy: 223
       mobility: 95.26
@@ -1482,7 +1482,7 @@ MonoBehaviour:
       bulletSpeed: 14
       fireRate: 3
       sustainedDps: 27
-      rammingPower: 3.75
+      rammingPower: 8.75
       healthCap: 316.98303
       healthRegen: 9.844194
       energyCap: 204
@@ -1534,7 +1534,7 @@ MonoBehaviour:
     powerScore: 224.77124
     powerScoreAtMaxLevel: 782.3609
     powerScoreBreakdown:
-      offense: 47.0625
+      offense: 49.875
       defense: 45.564556
       energy: 78.54935
       mobility: 40.07
@@ -1543,7 +1543,7 @@ MonoBehaviour:
       bulletSpeed: 10
       fireRate: 6
       sustainedDps: 22.5
-      rammingPower: 1.5625
+      rammingPower: 4.375
       healthCap: 44.19213
       healthRegen: 1.3724265
       energyCap: 75.0423
@@ -1553,7 +1553,7 @@ MonoBehaviour:
       gemCap: 24
       peopleCap: 22
     powerScoreBreakdownAtShipLevel:
-      offense: 69.75
+      offense: 74.75
       defense: 233.79144
       energy: 273.28754
       mobility: 88.86
@@ -1562,7 +1562,7 @@ MonoBehaviour:
       bulletSpeed: 14
       fireRate: 6
       sustainedDps: 54
-      rammingPower: 3.75
+      rammingPower: 8.75
       healthCap: 226.74953
       healthRegen: 7.0419116
       energyCap: 259.96075
@@ -1614,7 +1614,7 @@ MonoBehaviour:
     powerScore: 224.23741
     powerScoreAtMaxLevel: 849.49896
     powerScoreBreakdown:
-      offense: 47.0625
+      offense: 49.875
       defense: 58.5424
       energy: 77.74372
       mobility: 21.67
@@ -1623,7 +1623,7 @@ MonoBehaviour:
       bulletSpeed: 10
       fireRate: 6
       sustainedDps: 22.5
-      rammingPower: 1.5625
+      rammingPower: 4.375
       healthCap: 56.779076
       healthRegen: 1.7633256
       energyCap: 74.35176
@@ -1633,7 +1633,7 @@ MonoBehaviour:
       gemCap: 24.22016
       peopleCap: 21.7752
     powerScoreBreakdownAtShipLevel:
-      offense: 69.75
+      offense: 74.75
       defense: 344.10513
       energy: 270.2261
       mobility: 22.86
@@ -1642,7 +1642,7 @@ MonoBehaviour:
       bulletSpeed: 14
       fireRate: 6
       sustainedDps: 54
-      rammingPower: 3.75
+      rammingPower: 8.75
       healthCap: 333.7405
       healthRegen: 10.364612
       energyCap: 257.33667
@@ -1694,7 +1694,7 @@ MonoBehaviour:
     powerScore: 248.40018
     powerScoreAtMaxLevel: 1161.3712
     powerScoreBreakdown:
-      offense: 47.0625
+      offense: 49.875
       defense: 66.60517
       energy: 71.5
       mobility: 40.87
@@ -1703,7 +1703,7 @@ MonoBehaviour:
       bulletSpeed: 10
       fireRate: 6
       sustainedDps: 22.5
-      rammingPower: 1.5625
+      rammingPower: 4.375
       healthCap: 64.59899
       healthRegen: 2.00618
       energyCap: 69
@@ -1713,7 +1713,7 @@ MonoBehaviour:
       gemCap: 30.2
       peopleCap: 26.7
     powerScoreBreakdownAtShipLevel:
-      offense: 76.375
+      offense: 82
       defense: 474.44626
       energy: 296.5
       mobility: 110.8
@@ -1722,7 +1722,7 @@ MonoBehaviour:
       bulletSpeed: 15
       fireRate: 6
       sustainedDps: 63
-      rammingPower: 4.375
+      rammingPower: 10
       healthCap: 460.1557
       healthRegen: 14.29055
       energyCap: 285
@@ -1774,7 +1774,7 @@ MonoBehaviour:
     powerScore: 241.216
     powerScoreAtMaxLevel: 1064.4529
     powerScoreBreakdown:
-      offense: 47.0625
+      offense: 49.875
       defense: 55.909424
       energy: 82.629265
       mobility: 37.07
@@ -1783,7 +1783,7 @@ MonoBehaviour:
       bulletSpeed: 10
       fireRate: 6
       sustainedDps: 22.5
-      rammingPower: 1.5625
+      rammingPower: 4.375
       healthCap: 54.225407
       healthRegen: 1.684019
       energyCap: 78.53937
@@ -1793,7 +1793,7 @@ MonoBehaviour:
       gemCap: 26
       peopleCap: 24
     powerScoreBreakdownAtShipLevel:
-      offense: 76.375
+      offense: 82
       defense: 377.03458
       energy: 347.6946
       mobility: 72.8
@@ -1802,7 +1802,7 @@ MonoBehaviour:
       bulletSpeed: 15
       fireRate: 6
       sustainedDps: 63
-      rammingPower: 4.375
+      rammingPower: 10
       healthCap: 365.6781
       healthRegen: 11.3564625
       energyCap: 328.8811
@@ -1854,7 +1854,7 @@ MonoBehaviour:
     powerScore: 237.54568
     powerScoreAtMaxLevel: 1093.3092
     powerScoreBreakdown:
-      offense: 47.0625
+      offense: 49.875
       defense: 52.29
       energy: 74.988556
       mobility: 46.87
@@ -1863,7 +1863,7 @@ MonoBehaviour:
       bulletSpeed: 10
       fireRate: 6
       sustainedDps: 22.5
-      rammingPower: 1.5625
+      rammingPower: 4.375
       healthCap: 50.715
       healthRegen: 1.575
       energyCap: 71.99019
@@ -1873,7 +1873,7 @@ MonoBehaviour:
       gemCap: 26
       peopleCap: 24
     powerScoreBreakdownAtShipLevel:
-      offense: 76.375
+      offense: 82
       defense: 354.82498
       energy: 312.54736
       mobility: 170.8
@@ -1882,7 +1882,7 @@ MonoBehaviour:
       bulletSpeed: 15
       fireRate: 6
       sustainedDps: 63
-      rammingPower: 4.375
+      rammingPower: 10
       healthCap: 344.13748
       healthRegen: 10.6875
       energyCap: 298.75488
@@ -1934,7 +1934,7 @@ MonoBehaviour:
     powerScore: 243.228
     powerScoreAtMaxLevel: 1062.7665
     powerScoreBreakdown:
-      offense: 47.0625
+      offense: 49.875
       defense: 47.808002
       energy: 89
       mobility: 40.87
@@ -1943,7 +1943,7 @@ MonoBehaviour:
       bulletSpeed: 10
       fireRate: 6
       sustainedDps: 22.5
-      rammingPower: 1.5625
+      rammingPower: 4.375
       healthCap: 46.368004
       healthRegen: 1.44
       energyCap: 84
@@ -1953,7 +1953,7 @@ MonoBehaviour:
       gemCap: 25.4
       peopleCap: 23.25
     powerScoreBreakdownAtShipLevel:
-      offense: 76.375
+      offense: 82
       defense: 313.3665
       energy: 377
       mobility: 110.8
@@ -1962,7 +1962,7 @@ MonoBehaviour:
       bulletSpeed: 15
       fireRate: 6
       sustainedDps: 63
-      rammingPower: 4.375
+      rammingPower: 10
       healthCap: 303.92773
       healthRegen: 9.438749
       energyCap: 354
@@ -2014,7 +2014,7 @@ MonoBehaviour:
     powerScore: 249.83533
     powerScoreAtMaxLevel: 1117.3783
     powerScoreBreakdown:
-      offense: 47.0625
+      offense: 49.875
       defense: 57.565327
       energy: 89
       mobility: 40.07
@@ -2023,7 +2023,7 @@ MonoBehaviour:
       bulletSpeed: 10
       fireRate: 6
       sustainedDps: 22.5
-      rammingPower: 1.5625
+      rammingPower: 4.375
       healthCap: 55.831432
       healthRegen: 1.7338955
       energyCap: 84
@@ -2033,7 +2033,7 @@ MonoBehaviour:
       gemCap: 24
       peopleCap: 22
     powerScoreBreakdownAtShipLevel:
-      offense: 76.375
+      offense: 82
       defense: 407.57828
       energy: 377
       mobility: 102.8
@@ -2042,7 +2042,7 @@ MonoBehaviour:
       bulletSpeed: 15
       fireRate: 6
       sustainedDps: 63
-      rammingPower: 4.375
+      rammingPower: 10
       healthCap: 395.30182
       healthRegen: 12.276455
       energyCap: 354
@@ -2094,7 +2094,7 @@ MonoBehaviour:
     powerScore: 274.8685
     powerScoreAtMaxLevel: 1437.988
     powerScoreBreakdown:
-      offense: 53.8125
+      offense: 56.625
       defense: 58.770275
       energy: 102
       mobility: 40.87
@@ -2103,7 +2103,7 @@ MonoBehaviour:
       bulletSpeed: 10
       fireRate: 9
       sustainedDps: 33.75
-      rammingPower: 1.5625
+      rammingPower: 4.375
       healthCap: 57.000088
       healthRegen: 1.770189
       energyCap: 99
@@ -2113,7 +2113,7 @@ MonoBehaviour:
       gemCap: 29.92805
       peopleCap: 26.525175
     powerScoreBreakdownAtShipLevel:
-      offense: 98
+      offense: 104.25
       defense: 475.70422
       energy: 491.40002
       mobility: 126.340004
@@ -2122,7 +2122,7 @@ MonoBehaviour:
       bulletSpeed: 16
       fireRate: 9
       sustainedDps: 108
-      rammingPower: 5
+      rammingPower: 11.25
       healthCap: 461.3758
       healthRegen: 14.328441
       energyCap: 475.2
@@ -2174,7 +2174,7 @@ MonoBehaviour:
     powerScore: 324.46094
     powerScoreAtMaxLevel: 1692.8468
     powerScoreBreakdown:
-      offense: 60.5625
+      offense: 63.375
       defense: 60.19268
       energy: 143
       mobility: 40.87
@@ -2183,7 +2183,7 @@ MonoBehaviour:
       bulletSpeed: 10
       fireRate: 12
       sustainedDps: 45
-      rammingPower: 1.5625
+      rammingPower: 4.375
       healthCap: 58.379646
       healthRegen: 1.8130325
       energyCap: 138
@@ -2193,7 +2193,7 @@ MonoBehaviour:
       gemCap: 28.999231
       peopleCap: 27.74904
     powerScoreBreakdownAtShipLevel:
-      offense: 113
+      offense: 119.25
       defense: 493.9649
       energy: 693
       mobility: 126.340004
@@ -2202,7 +2202,7 @@ MonoBehaviour:
       bulletSpeed: 16
       fireRate: 12
       sustainedDps: 144
-      rammingPower: 5
+      rammingPower: 11.25
       healthCap: 479.08646
       healthRegen: 14.87846
       energyCap: 666
@@ -2254,7 +2254,7 @@ MonoBehaviour:
     powerScore: 262.53
     powerScoreAtMaxLevel: 1460.835
     powerScoreBreakdown:
-      offense: 47.0625
+      offense: 49.875
       defense: 59.76
       energy: 89
       mobility: 46.87
@@ -2263,7 +2263,7 @@ MonoBehaviour:
       bulletSpeed: 10
       fireRate: 6
       sustainedDps: 22.5
-      rammingPower: 1.5625
+      rammingPower: 4.375
       healthCap: 57.96
       healthRegen: 1.8000001
       energyCap: 84
@@ -2273,7 +2273,7 @@ MonoBehaviour:
       gemCap: 26
       peopleCap: 24
     powerScoreBreakdownAtShipLevel:
-      offense: 83
+      offense: 89.25
       defense: 511.695
       energy: 441
       mobility: 198.34
@@ -2282,7 +2282,7 @@ MonoBehaviour:
       bulletSpeed: 16
       fireRate: 6
       sustainedDps: 72
-      rammingPower: 5
+      rammingPower: 11.25
       healthCap: 496.2825
       healthRegen: 15.412499
       energyCap: 414
@@ -2334,7 +2334,7 @@ MonoBehaviour:
     powerScore: 265.74954
     powerScoreAtMaxLevel: 1503.5153
     powerScoreBreakdown:
-      offense: 47.0625
+      offense: 49.875
       defense: 68.723274
       energy: 89
       mobility: 43.87
@@ -2343,7 +2343,7 @@ MonoBehaviour:
       bulletSpeed: 10
       fireRate: 6
       sustainedDps: 22.5
-      rammingPower: 1.5625
+      rammingPower: 4.375
       healthCap: 66.6533
       healthRegen: 2.0699782
       energyCap: 84
@@ -2353,7 +2353,7 @@ MonoBehaviour:
       gemCap: 24.32991
       peopleCap: 22.92637
     powerScoreBreakdownAtShipLevel:
-      offense: 83
+      offense: 89.25
       defense: 603.6167
       energy: 441
       mobility: 162.34
@@ -2362,7 +2362,7 @@ MonoBehaviour:
       bulletSpeed: 16
       fireRate: 6
       sustainedDps: 72
-      rammingPower: 5
+      rammingPower: 11.25
       healthCap: 585.4355
       healthRegen: 18.181225
       energyCap: 414
@@ -2414,7 +2414,7 @@ MonoBehaviour:
     powerScore: 289.22134
     powerScoreAtMaxLevel: 1427.2152
     powerScoreBreakdown:
-      offense: 60.5625
+      offense: 63.375
       defense: 48.555
       energy: 132.71707
       mobility: 40.87
@@ -2423,7 +2423,7 @@ MonoBehaviour:
       bulletSpeed: 10
       fireRate: 12
       sustainedDps: 45
-      rammingPower: 1.5625
+      rammingPower: 4.375
       healthCap: 47.0925
       healthRegen: 1.4625001
       energyCap: 129.18607
@@ -2433,7 +2433,7 @@ MonoBehaviour:
       gemCap: 24
       peopleCap: 22
     powerScoreBreakdownAtShipLevel:
-      offense: 113
+      offense: 119.25
       defense: 377.235
       energy: 637.47217
       mobility: 126.340004
@@ -2442,7 +2442,7 @@ MonoBehaviour:
       bulletSpeed: 16
       fireRate: 12
       sustainedDps: 144
-      rammingPower: 5
+      rammingPower: 11.25
       healthCap: 365.8725
       healthRegen: 11.3625
       energyCap: 618.4047
@@ -2494,7 +2494,7 @@ MonoBehaviour:
     powerScore: 275.39056
     powerScoreAtMaxLevel: 1402.7134
     powerScoreBreakdown:
-      offense: 60.5625
+      offense: 63.375
       defense: 52.22934
       energy: 120.62176
       mobility: 40.785
@@ -2503,7 +2503,7 @@ MonoBehaviour:
       bulletSpeed: 10
       fireRate: 12
       sustainedDps: 45
-      rammingPower: 1.5625
+      rammingPower: 4.375
       healthCap: 50.656166
       healthRegen: 1.5731728
       energyCap: 118.81865
@@ -2513,7 +2513,7 @@ MonoBehaviour:
       gemCap: 22.164629
       peopleCap: 21.534405
     powerScoreBreakdownAtShipLevel:
-      offense: 113
+      offense: 119.25
       defense: 443.83792
       energy: 551.3316
       mobility: 125.32
@@ -2522,7 +2522,7 @@ MonoBehaviour:
       bulletSpeed: 16
       fireRate: 12
       sustainedDps: 144
-      rammingPower: 5
+      rammingPower: 11.25
       healthCap: 430.4693
       healthRegen: 13.368612
       energyCap: 544.56995

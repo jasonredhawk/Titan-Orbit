@@ -71,7 +71,7 @@ namespace TitanOrbit.ECS
 
             if (em.HasComponent<AsteroidState>(target) && em.HasComponent<LocalTransform>(target))
             {
-                ApplyAsteroid(em, ecb, target, attackerTeam, muzzle, mapW, mapH, damage, ref result);
+                ApplyAsteroid(em, ecb, target, attackerTeam, attackerNetworkId, muzzle, mapW, mapH, damage, ref result);
                 return result;
             }
 
@@ -265,6 +265,7 @@ namespace TitanOrbit.ECS
             EntityCommandBuffer ecb,
             Entity asteroid,
             TeamId attackerTeam,
+            int attackerNetworkId,
             float3 muzzle,
             float mapW,
             float mapH,
@@ -282,6 +283,7 @@ namespace TitanOrbit.ECS
                 : xf.Position;
             rock.Health -= damage;
             rock.LastInteractTeam = attackerTeam;
+            rock.LastInteractNetworkId = attackerNetworkId;
             if (rock.Health <= 0f)
             {
                 rock.Health = 0f;

@@ -1,6 +1,7 @@
 using Unity.Collections;
 using Unity.Entities;
 using Unity.NetCode;
+using Unity.Transforms;
 
 namespace TitanOrbit.ECS
 {
@@ -11,7 +12,9 @@ namespace TitanOrbit.ECS
     /// <para>
     /// World: ClientSimulation. Group: SimulationSystemGroup. Paired with
     /// <see cref="ShipCommsServerSystem"/>. Team-only rows only arrive when this
-    /// connection is on the speaker's team (the server already filtered).
+    /// connection is on the speaker's team (the server already filtered). Incoming
+    /// rows are dropped while the local hull is jammed in enemy territory so a
+    /// late RPC cannot paint chips the player should not hear.
     /// </para>
     /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ClientSimulation)]
@@ -20,10 +23,32 @@ namespace TitanOrbit.ECS
     {
         /// <summary>
         /// Copies each inbound callout into the process-wide inbox, then destroys the RPC entity.
+        /// Jammed local hulls still consume the RPC so it cannot linger, but they do not enqueue.
         /// </summary>
         public void OnUpdate(ref SystemState state)
         {
             var ecb = new EntityCommandBuffer(Allocator.Temp);
+
+            // --- Local jam snapshot ---
+            // One pose read for this tick. Server already skipped jammed listeners;
+            // this drop covers Local Host races and a hull that entered fill after send.
+            // [ECS/DOTS] SystemAPI.Query stays in OnUpdate so the source generator can
+            // rewrite it (static helpers do not get that rewrite).
+            bool localJammed = false;
+            // [NETCODE] GhostOwnerIsLocal — enableable tag on the connection-owned ghost.
+            foreach (var (transform, ship) in SystemAPI
+                         .Query<RefRO<LocalTransform>, RefRO<ShipState>>()
+                         .WithAll<ShipTag, GhostOwnerIsLocal>())
+            {
+                if (ship.ValueRO.IsDead || ship.ValueRO.AwaitingTeamSelection)
+                    break;
+
+                localJammed = ShipCommsJam.IsPositionJammed(
+                    transform.ValueRO.Position,
+                    ship.ValueRO.Team,
+                    PlanetConnectionGraphSide.Client);
+                break;
+            }
 
             // --- Drain inbound RPCs ---
             // [NETCODE] ReceiveRpcCommandRequest marks inbound RPC entities from the network.
@@ -32,6 +57,11 @@ namespace TitanOrbit.ECS
                          .WithAll<ReceiveRpcCommandRequest>()
                          .WithEntityAccess())
             {
+                // Always consume — a jammed drop must not leave the RPC entity forever.
+                ecb.DestroyEntity(entity);
+                if (localJammed)
+                    continue;
+
                 ShipCommsRpc row = rpc.ValueRO;
                 ShipCommsInbox.Enqueue(new ShipCommsInbox.Callout
                 {
@@ -68,7 +98,6 @@ namespace TitanOrbit.ECS
                     G6X = row.G6X, G6Z = row.G6Z,
                     G7X = row.G7X, G7Z = row.G7Z,
                 });
-                ecb.DestroyEntity(entity);
             }
 
             ecb.Playback(state.EntityManager);

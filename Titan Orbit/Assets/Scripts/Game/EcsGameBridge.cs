@@ -57,6 +57,7 @@ namespace TitanOrbit.Game
             s_PlanetStateCacheFrame = -1;
             InvalidateLocalPlayerShipFrameCache();
             PlayerNameRosterCache.Clear();
+            CommsMuteList.Clear();
             PlayerNameRpcClient.ResetSession();
             ShipAccentColorsRpcClient.ResetSession();
         }
@@ -2035,6 +2036,7 @@ namespace TitanOrbit.Game
             s_PlanetStateCacheFrame = -1;
             GemTractorBeamVisibilityTracker.Clear();
             PlayerNameRosterCache.Clear();
+            CommsMuteList.Clear();
             PlayerNameRpcClient.ResetSession();
             ShipAccentColorsRpcClient.ResetSession();
         }

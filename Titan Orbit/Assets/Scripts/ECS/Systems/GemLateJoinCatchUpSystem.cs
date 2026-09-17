@@ -69,7 +69,7 @@ namespace TitanOrbit.ECS
                         SpawnServerTime = s.SpawnServerTime,
                         Phase = motion[g].Phase,
                         BurstIndex = motion[g].BurstIndex,
-                        IsBonusGem = s.IsBonusGem ? (byte)1 : (byte)0,
+                        IsBonusGem = (byte)s.Tint,
                         ExcludePickupNetworkId = s.ExcludePickupNetworkId,
                         ExcludePickupUntilServerTime = s.ExcludePickupUntilServerTime,
                         TractorShipId = motion[g].TractorShipId,

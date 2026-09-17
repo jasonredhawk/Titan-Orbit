@@ -8,6 +8,8 @@ namespace TitanOrbit.Game
     /// Shared by minimap role dots and ship world nameplates so rules stay identical:
     /// zero scores never win; ties → lowest owner NetworkId.
     /// Client presentation only — reads already-synced cargo/score caches, never ECS gathers.
+    /// Server combat / gem bonuses use <c>ShipCommandRoleSnapshot</c> with the same
+    /// <see cref="TeamCommandRoleRules"/> so a badge and a 5% bonus cannot drift.
     /// </summary>
     public static class ShipTopOfTeamRoles
     {
@@ -153,14 +155,20 @@ namespace TitanOrbit.Game
                    ids.TransporterNetworkId == networkId;
         }
 
-        /// <summary>Higher score wins; equal score → lower NetworkId.</summary>
-        static bool IsBetterTop(int candidateScore, int candidateId, int currentScore, int currentId)
+        /// <summary>
+        /// True when this owner holds at least one living title on <paramref name="team"/>.
+        /// Same rule as the Command Deck / CMDR pill — score rank alone is not enough.
+        /// </summary>
+        public static bool HoldsCommandSeat(TeamId team, int networkId)
         {
-            if (candidateScore > currentScore)
-                return true;
-            if (candidateScore < currentScore)
-                return false;
-            return candidateId < currentId;
+            return TeamCommanderRules.HoldsCommandSeat(
+                IsKiller(team, networkId),
+                IsMiner(team, networkId),
+                IsTransporter(team, networkId));
         }
+
+        /// <summary>Higher score wins; equal score → lower NetworkId. Shared with the server snapshot.</summary>
+        static bool IsBetterTop(int candidateScore, int candidateId, int currentScore, int currentId) =>
+            TeamCommandRoleRules.IsBetterTop(candidateScore, candidateId, currentScore, currentId);
     }
 }

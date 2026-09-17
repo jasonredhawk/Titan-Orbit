@@ -409,6 +409,9 @@ namespace TitanOrbit.ECS
 
                 if (isMega)
                 {
+                    bool megaKiller = SystemAPI.TryGetSingleton<ShipCommandRoleSnapshot>(out var megaRoles)
+                                      && megaRoles.IsKiller(
+                                          shipState.ValueRO.Team, ghostOwner.ValueRO.NetworkId);
                     FireMegaReadyMountsAlongBarrel(
                         ref state, ref ecb, bulletEntity, entity,
                         mounts, ownerMayFire, input.ValueRO, weaponCfg.ValueRO,
@@ -416,7 +419,8 @@ namespace TitanOrbit.ECS
                         transform.ValueRO, ghostOwner.ValueRO,
                         bankIndex, vfxBankForScale, shipVel,
                         dt, mapW, mapH, moonElapsed, serverElapsed,
-                        gemPrefab, gemSpawnServerTime, energyRegen);
+                        gemPrefab, gemSpawnServerTime, energyRegen,
+                        megaKiller);
                     continue;
                 }
 
@@ -436,10 +440,16 @@ namespace TitanOrbit.ECS
                         weaponState.ValueRO.FireCooldown))
                     continue;
 
+                // [TITAN-ORBIT] Top killer: +5% damage, same energy. Snapshot rebuilt this tick.
+                bool topKiller = SystemAPI.TryGetSingleton<ShipCommandRoleSnapshot>(out var killerRoles)
+                                 && killerRoles.IsKiller(
+                                     shipState.ValueRO.Team, ghostOwner.ValueRO.NetworkId);
+
                 // --- Spawn each planned barrel with that mount’s own damage / VFX scale ---
                 for (int shot = 0; shot < shotCount; shot++)
                 {
                     var planned = s_ShotScratch[shot];
+                    planned.Damage = TeamCommandRoleRules.ScaleFirePower(planned.Damage, topKiller);
                     int mountIdx = planned.MountIndex;
                     var mount = mounts[mountIdx];
                     ResolveFirePose(transform.ValueRO, in mount, out float3 fireOrigin, out float3 fireForward);
@@ -526,7 +536,8 @@ namespace TitanOrbit.ECS
             double serverElapsed,
             Entity gemPrefab,
             float gemSpawnServerTime,
-            float energyRegen)
+            float energyRegen,
+            bool topKiller)
         {
             if (!ownerMayFire)
                 return;
@@ -558,6 +569,7 @@ namespace TitanOrbit.ECS
             for (int shot = 0; shot < shotCount; shot++)
             {
                 var planned = s_ShotScratch[shot];
+                planned.Damage = TeamCommandRoleRules.ScaleFirePower(planned.Damage, topKiller);
                 int m = planned.MountIndex;
                 if (m < 0 || m >= mounts.Length)
                     continue;
@@ -1461,8 +1473,9 @@ namespace TitanOrbit.ECS
                     }
 
                     asteroid.Health -= hitDamage;
-                    // [TITAN-ORBIT] Destroy yellow gems use LastInteractTeam ∩ TerritoryTeamsMask.
+                    // [TITAN-ORBIT] Destroy yellow / blue extras use last interactor ∩ mask / title.
                     asteroid.LastInteractTeam = (TeamId)b.OwnerTeam;
+                    asteroid.LastInteractNetworkId = b.OwnerNetworkId;
                     if (asteroid.Health <= 0f)
                     {
                         asteroid.Health = 0f;

@@ -819,8 +819,8 @@ namespace TitanOrbit.ECS
 
         /// <summary>
         /// Audience request: 0 = All, 1 = Team, 2 = Commander. The server re-reads the
-        /// speaker's <c>ShipState.Team</c> and commander rank — this byte is a request,
-        /// not a team id or rank the client can spoof. Field name stayed <c>TeamOnly</c>
+        /// speaker's <c>ShipState.Team</c> and earned command seat — this byte is a request,
+        /// not a team id or title the client can spoof. Field name stayed <c>TeamOnly</c>
         /// so older clients still deserialize the same RPC layout.
         /// </summary>
         public byte TeamOnly;
@@ -990,7 +990,7 @@ namespace TitanOrbit.ECS
         /// <summary>ServerTick-timeline seconds when the gem spawned.</summary>
         public float SpawnServerTime;
 
-        /// <summary>Bit 0 = burst, bit 1 = bonus tint. See <c>GemSpawnRecipe</c>.</summary>
+        /// <summary>Bit 0 = burst, bit 1 = yellow triangle, bit 2 = blue top-miner. See <c>GemSpawnRecipe</c>.</summary>
         public byte Flags;
 
         /// <summary>Asteroid-burst slot (0 for mining / combat nuggets).</summary>
@@ -1033,7 +1033,10 @@ namespace TitanOrbit.ECS
         /// <summary>ServerTick-timeline seconds for the whole burst.</summary>
         public float SpawnServerTime;
 
-        /// <summary>1 = yellow territory bonus burst.</summary>
+        /// <summary>
+        /// Crystal tint for this burst: 0 = red leftover, 1 = yellow triangle, 2 = blue top-miner.
+        /// <see cref="TitanOrbit.Simulation.GemVisualTint"/>. Yellow and blue are separate RPCs.
+        /// </summary>
         public byte IsBonus;
     }
 
@@ -1118,7 +1121,10 @@ namespace TitanOrbit.ECS
         /// <summary>Burst slot (presentation only).</summary>
         public byte BurstIndex;
 
-        /// <summary>1 = yellow bonus tint.</summary>
+        /// <summary>
+        /// Crystal tint: 0 = red, 1 = yellow triangle, 2 = blue top-miner
+        /// (<see cref="TitanOrbit.Simulation.GemVisualTint"/>).
+        /// </summary>
         public byte IsBonusGem;
 
         /// <summary>Spilling ship NetworkId, or 0.</summary>

@@ -522,6 +522,34 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
+        /// Last baked Persistent runtime-triangle array for <paramref name="sideKind"/>
+        /// without collecting planet snapshots. Do <b>not</b> Dispose.
+        /// <para>
+        /// [TITAN-ORBIT] Comms jam and other RPC-time checks must not rebuild the graph.
+        /// Drive already baked verts on the last publish / motor collect. Missing array
+        /// means this side has never published — caller should fail open (not jammed).
+        /// An empty created array still returns true: zero triangles means open space.
+        /// </para>
+        /// </summary>
+        /// <param name="sideKind">Server authority or client presentation list.</param>
+        /// <param name="triangles">Persistent native (empty when the graph has no faces).</param>
+        /// <returns>False only when this side has never allocated a runtime array.</returns>
+        public static bool TryGetPublishedRuntimeNative(
+            PlanetConnectionGraphSide sideKind,
+            out NativeArray<PlanetConnectionGraphLogic.RuntimeTriangle> triangles)
+        {
+            Side side = sideKind == PlanetConnectionGraphSide.Server ? Server : Client;
+            if (!side.RuntimeNative.IsCreated)
+            {
+                triangles = default;
+                return false;
+            }
+
+            triangles = side.RuntimeNative;
+            return true;
+        }
+
+        /// <summary>
         /// Returns a job-readable Persistent runtime-triangle array (do <b>not</b> Dispose).
         /// Primary path: verts already baked at publish from graph PlanetInput.
         /// Fallback: rebuild from motor planet snapshots only when the bake was incomplete

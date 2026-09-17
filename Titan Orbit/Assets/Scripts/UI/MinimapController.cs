@@ -32,7 +32,8 @@ namespace TitanOrbit.UI
     /// Hovering a planet disc (or its off-screen edge arrow) shows the proper world name via
     /// <see cref="MinimapPlanetHoverTip"/>. Team Attack / Defend orders live in the
     /// <see cref="ShipCommsPanel"/> Comms Matrix — this map no longer pops those buttons.
-    /// Clicks still pick a respawn planet (death overlay) or plant a Here ping (comms dock).
+    /// Clicks still pick a respawn planet (death overlay) or plant a Here ping (comms dock),
+    /// except while comms are jammed in enemy territory — then the docked map is locked.
     /// Live comms sentences keep a dest bullseye on this disc for the message (and
     /// commander linger), clamped to the rim when the world point sits outside radar.
     /// Client presentation only — reads <see cref="MinimapBlipAnchor"/> caches, never map-body ECS gathers.
@@ -659,9 +660,21 @@ namespace TitanOrbit.UI
             go.SetActive(false);
         }
 
+        /// <summary>
+        /// Places the compose-time Here bullseye on the docked map. Hidden while
+        /// enemy-territory jam covers the dock so a leftover ping cannot peek
+        /// through the veil.
+        /// </summary>
+        /// <param name="playerPos">Local hull world pose used as the map origin.</param>
         void UpdateCommsPingMarker(Vector3 playerPos)
         {
-            if (!_commsDocked || !ShipCommsClientState.HasPendingWaypoint || minimapRadius < 0.01f)
+            // --- Jam / missing ping ---
+            // [TITAN-ORBIT] The docked map click path is custom (not UGUI). Jam hides
+            // this marker even if a Here was planted before the hull crossed the fill.
+            if (!_commsDocked
+                || ShipCommsRpcClient.IsLocalShipJammed()
+                || !ShipCommsClientState.HasPendingWaypoint
+                || minimapRadius < 0.01f)
             {
                 HideCommsPingMarker();
                 return;
@@ -2409,8 +2422,13 @@ namespace TitanOrbit.UI
 
                         // Comms dock: click plants a world ping for the next send.
                         // A planet disc locks that world's name onto the Here chip.
+                        // [TITAN-ORBIT] Custom hit-test ignores the jam Image veil, so
+                        // refuse Here pings here when the hull is in enemy fill.
                         if (_commsDocked)
                         {
+                            if (ShipCommsRpcClient.IsLocalShipJammed())
+                                return;
+
                             if (TryFindPlanetBlipAtScreen(clickPos, out MinimapBlipAnchor planet)
                                 && planet != null
                                 && planet.PlanetId > 0)

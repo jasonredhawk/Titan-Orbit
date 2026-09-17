@@ -29,7 +29,7 @@ namespace TitanOrbit.ECS
             float remainingValue,
             uint seed,
             float spawnServerTime,
-            bool isBonus)
+            GemVisualTint tint)
         {
             origin.y = 0f;
             Entity rpcEntity = ecb.CreateEntity();
@@ -39,7 +39,7 @@ namespace TitanOrbit.ECS
                 RemainingValue = remainingValue,
                 Seed = seed,
                 SpawnServerTime = spawnServerTime,
-                IsBonus = isBonus ? (byte)1 : (byte)0,
+                IsBonus = (byte)tint,
             });
             ecb.AddComponent(rpcEntity, new SendRpcCommandRequest { TargetConnection = Entity.Null });
         }

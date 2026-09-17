@@ -34,7 +34,13 @@ namespace TitanOrbit.Game
         /// [TITAN-ORBIT] Extra-yield gem tint (NGO bonusGemTintColor ≈ yellow). Cosmetic only —
         /// same pickup as the red crystal.
         /// </summary>
-        static readonly Color BonusGemTintColor = new Color(1f, 0.9f, 0.15f, 0.55f);
+        static readonly Color BonusGemTintColor = GemVisualTintColors.TerritoryBonus;
+
+        /// <summary>
+        /// [TITAN-ORBIT] Top-miner 5% tint — ice blue, never yellow, so it cannot be
+        /// mistaken for a triangle extra sitting on the same rock.
+        /// </summary>
+        static readonly Color MinerCommanderTintColor = GemVisualTintColors.MinerCommander;
 
         /// <summary>
         /// Shared tinted material for normal (red) gem proxies.
@@ -43,6 +49,9 @@ namespace TitanOrbit.Game
 
         /// <summary>Shared yellow material for territory bonus gems.</summary>
         static Material s_sharedBonusTintedGemMaterial;
+
+        /// <summary>Shared blue material for top-miner command-bonus gems.</summary>
+        static Material s_sharedMinerTintedGemMaterial;
 
         /// <summary>True after <see cref="EnsureSharedTintReady"/> finished material + keyword setup.</summary>
         static bool s_tintReady;
@@ -64,6 +73,7 @@ namespace TitanOrbit.Game
         {
             s_sharedTintedGemMaterial = null;
             s_sharedBonusTintedGemMaterial = null;
+            s_sharedMinerTintedGemMaterial = null;
             s_tintReady = false;
         }
 
@@ -76,18 +86,27 @@ namespace TitanOrbit.Game
         /// <param name="instance">Active GameObject, or null on failure.</param>
         /// <returns>True when a visual is ready to place.</returns>
         public static bool TryCreateGemVisual(GameObject gemPrefab, float gemValue, out GameObject instance) =>
-            TryCreateGemVisual(gemPrefab, gemValue, isBonusGem: false, out instance);
+            TryCreateGemVisual(gemPrefab, gemValue, GemVisualTint.Standard, out instance);
+
+        /// <summary>Rents a gem visual and applies red or yellow from the legacy bonus flag.</summary>
+        public static bool TryCreateGemVisual(
+            GameObject gemPrefab, float gemValue, bool isBonusGem, out GameObject instance) =>
+            TryCreateGemVisual(
+                gemPrefab,
+                gemValue,
+                isBonusGem ? GemVisualTint.TerritoryBonus : GemVisualTint.Standard,
+                out instance);
 
         /// <summary>
-        /// Rents a gem visual and applies red or yellow tint from <paramref name="isBonusGem"/>.
+        /// Rents a gem visual and applies red, yellow (triangle), or blue (top miner).
         /// </summary>
         public static bool TryCreateGemVisual(
-            GameObject gemPrefab, float gemValue, bool isBonusGem, out GameObject instance)
+            GameObject gemPrefab, float gemValue, GemVisualTint tint, out GameObject instance)
         {
             GemVisualPool.EnsurePrefab(gemPrefab);
             if (!GemVisualPool.TryRent(gemValue, out instance, "GemTagProxy"))
                 return false;
-            ApplyGemTint(instance, isBonusGem);
+            ApplyGemTint(instance, tint);
             return true;
         }
 
@@ -116,17 +135,21 @@ namespace TitanOrbit.Game
             instance = Object.Instantiate(gemPrefab);
             instance.name = "GemTagProxy";
             StripForProxy(instance, immediateStrip);
-            ApplyGemTint(instance, isBonusGem: false);
+            ApplyGemTint(instance, GemVisualTint.Standard);
             float scale = ComputeVisualScale(gemValue);
             instance.transform.localScale = Vector3.one * scale;
             return true;
         }
 
         /// <summary>
-        /// Re-applies red/yellow shared tint on an already-rented gem proxy (pool shells start red).
+        /// Re-applies shared tint on an already-rented gem proxy (pool shells start red).
         /// </summary>
         public static void ApplyTintForBonusFlag(GameObject root, bool isBonusGem) =>
-            ApplyGemTint(root, isBonusGem);
+            ApplyGemTint(root, isBonusGem ? GemVisualTint.TerritoryBonus : GemVisualTint.Standard);
+
+        /// <summary>Re-applies red, yellow, or blue on an already-rented gem proxy.</summary>
+        public static void ApplyTint(GameObject root, GemVisualTint tint) =>
+            ApplyGemTint(root, tint);
 
         /// <summary>
         /// [TITAN-ORBIT] Builds the shared URP tint material (and warms keywords) before combat.
@@ -135,7 +158,10 @@ namespace TitanOrbit.Game
         /// <param name="gemPrefab">Prefab whose MeshRenderer supplies the source material.</param>
         public static void EnsureSharedTintReady(GameObject gemPrefab)
         {
-            if (s_tintReady && s_sharedTintedGemMaterial != null && s_sharedBonusTintedGemMaterial != null)
+            if (s_tintReady
+                && s_sharedTintedGemMaterial != null
+                && s_sharedBonusTintedGemMaterial != null
+                && s_sharedMinerTintedGemMaterial != null)
                 return;
 
             if (gemPrefab == null)
@@ -148,8 +174,9 @@ namespace TitanOrbit.Game
             var probe = Object.Instantiate(gemPrefab);
             probe.name = "GemTintProbe";
             probe.SetActive(false);
-            ApplyGemTint(probe, isBonusGem: false);
-            ApplyGemTint(probe, isBonusGem: true);
+            ApplyGemTint(probe, GemVisualTint.Standard);
+            ApplyGemTint(probe, GemVisualTint.TerritoryBonus);
+            ApplyGemTint(probe, GemVisualTint.MinerCommander);
             Object.Destroy(probe);
 
             // --- Force URP to compile the transparent variant off the destroy frame ---
@@ -272,12 +299,12 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Tints the gem mesh red (normal) or yellow (territory bonus) with URP Lit alpha blending.
-        /// Uses two shared materials (no per-Instantiates Material alloc).
+        /// Tints the gem mesh red, yellow (triangle), or blue (top miner) with URP Lit alpha.
+        /// Uses three shared materials (no per-Instantiates Material alloc).
         /// </summary>
         /// <param name="root">Gem proxy root (may have a child MeshRenderer).</param>
-        /// <param name="isBonusGem">True → yellow bonus tint.</param>
-        static void ApplyGemTint(GameObject root, bool isBonusGem)
+        /// <param name="tint">Which command / territory colour this crystal should read as.</param>
+        static void ApplyGemTint(GameObject root, GemVisualTint tint)
         {
             var renderer = root.GetComponentInChildren<Renderer>();
             if (renderer == null)
@@ -286,7 +313,9 @@ namespace TitanOrbit.Game
             renderer.shadowCastingMode = ShadowCastingMode.Off;
 
             // --- Build shared tinted materials once from the prefab's sharedMaterial ---
-            if (s_sharedTintedGemMaterial == null || s_sharedBonusTintedGemMaterial == null)
+            if (s_sharedTintedGemMaterial == null
+                || s_sharedBonusTintedGemMaterial == null
+                || s_sharedMinerTintedGemMaterial == null)
             {
                 Material source = renderer.sharedMaterial != null
                     ? renderer.sharedMaterial
@@ -308,10 +337,24 @@ namespace TitanOrbit.Game
                     };
                     ConfigureUrpTransparentTint(s_sharedBonusTintedGemMaterial, BonusGemTintColor);
                 }
+
+                if (s_sharedMinerTintedGemMaterial == null)
+                {
+                    s_sharedMinerTintedGemMaterial = new Material(source)
+                    {
+                        name = "TitanOrbit_GemMinerTinted_Shared",
+                    };
+                    ConfigureUrpTransparentTint(s_sharedMinerTintedGemMaterial, MinerCommanderTintColor);
+                }
             }
 
             // [UNITY] sharedMaterial — all gems of a tint class share one Material.
-            renderer.sharedMaterial = isBonusGem ? s_sharedBonusTintedGemMaterial : s_sharedTintedGemMaterial;
+            if (tint == GemVisualTint.MinerCommander)
+                renderer.sharedMaterial = s_sharedMinerTintedGemMaterial;
+            else if (tint == GemVisualTint.TerritoryBonus)
+                renderer.sharedMaterial = s_sharedBonusTintedGemMaterial;
+            else
+                renderer.sharedMaterial = s_sharedTintedGemMaterial;
         }
 
         /// <summary>

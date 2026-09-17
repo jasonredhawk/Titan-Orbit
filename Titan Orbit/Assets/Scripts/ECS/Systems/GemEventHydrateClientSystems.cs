@@ -29,7 +29,7 @@ namespace TitanOrbit.ECS
             public float Remaining;
             public uint Seed;
             public float SpawnServerTime;
-            public bool IsBonus;
+            public GemVisualTint Tint;
         }
 
         /// <summary>Consumes inbound gem RPCs every client tick.</summary>
@@ -65,7 +65,7 @@ namespace TitanOrbit.ECS
                     Remaining = r.RemainingValue,
                     Seed = r.Seed,
                     SpawnServerTime = r.SpawnServerTime,
-                    IsBonus = r.IsBonus != 0,
+                    Tint = (GemVisualTint)r.IsBonus,
                 });
                 destroyEcb.DestroyEntity(reqEntity);
             }
@@ -119,7 +119,7 @@ namespace TitanOrbit.ECS
                     var b = bursts[i];
                     float elapsed = math.max(0f, now - b.SpawnServerTime);
                     ClientLocalGemSpawn.SpawnBurst(
-                        em, gemPrefab, b.Origin, b.Remaining, b.Seed, b.SpawnServerTime, b.IsBonus, elapsed);
+                        em, gemPrefab, b.Origin, b.Remaining, b.Seed, b.SpawnServerTime, b.Tint, elapsed);
                 }
 
                 for (int i = 0; i < spawns.Length; i++)

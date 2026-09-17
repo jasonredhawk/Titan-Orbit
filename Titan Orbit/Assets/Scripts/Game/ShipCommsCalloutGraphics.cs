@@ -561,9 +561,19 @@ namespace TitanOrbit.Game
             dst[n++] = id;
         }
 
-        /// <summary>True when the local viewer is the speaker or on the speaker's team.</summary>
+        /// <summary>
+        /// True when the local viewer is the speaker or on the speaker's team.
+        /// False when this client muted the speaker — lingering commander paths
+        /// must not draw for one extra frame after chips are dropped.
+        /// </summary>
+        /// <param name="speakerNetworkId">GhostOwner.NetworkId of the ship that sent the sentence.</param>
         public static bool LocalViewerCanSeePaths(int speakerNetworkId)
         {
+            // [TITAN-ORBIT] Mute hides chips and path pings. Check first so a
+            // lingering DrawIntent call cannot paint after TickBubbles queued destroy.
+            if (CommsMuteList.IsMuted(speakerNetworkId))
+                return false;
+
             int localId = EcsGameBridge.GetLocalNetworkId();
             if (localId > 0 && localId == speakerNetworkId)
                 return true;

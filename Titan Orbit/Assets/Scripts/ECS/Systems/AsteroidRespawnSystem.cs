@@ -233,6 +233,7 @@ namespace TitanOrbit.ECS
                 MaxGems = gems,
                 MaxHealth = health,
                 LastInteractTeam = TeamId.None,
+                LastInteractNetworkId = 0,
             };
             if (em.HasComponent<AsteroidState>(e))
                 em.SetComponentData(e, asteroidState);

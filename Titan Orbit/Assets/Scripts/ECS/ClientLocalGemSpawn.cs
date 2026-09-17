@@ -104,13 +104,13 @@ namespace TitanOrbit.ECS
             float remainingValue,
             uint seed,
             float spawnServerTime,
-            bool isBonus,
+            GemVisualTint tint,
             float integrateElapsedSeconds = 0f)
         {
             origin.y = 0f;
             var settings = GemExplosionSettingsCache.ResolveOrDefault();
             int count = GemBurstExpansion.FillRecipes(
-                origin, remainingValue, seed, spawnServerTime, isBonus, settings, BurstScratch);
+                origin, remainingValue, seed, spawnServerTime, tint, settings, BurstScratch);
             for (int i = 0; i < count; i++)
                 SpawnFromRecipe(em, gemPrefab, BurstScratch[i], integrateElapsedSeconds);
         }
@@ -133,7 +133,7 @@ namespace TitanOrbit.ECS
                 Velocity = rpc.Velocity,
                 AngularVelocity = rpc.AngularVelocity,
                 Value = rpc.Value,
-                IsBonusGem = rpc.IsBonusGem != 0,
+                Tint = (GemVisualTint)rpc.IsBonusGem,
                 BurstIndex = rpc.BurstIndex,
                 SpawnServerTime = rpc.SpawnServerTime,
                 ExcludePickupNetworkId = rpc.ExcludePickupNetworkId,
@@ -262,7 +262,7 @@ namespace TitanOrbit.ECS
                 Size = resolved.Scale,
                 DepositTeam = TeamId.None,
                 SpawnServerTime = resolved.SpawnServerTime,
-                IsBonusGem = resolved.IsBonusGem,
+                Tint = resolved.Tint,
                 ExcludePickupNetworkId = resolved.ExcludePickupNetworkId,
                 ExcludePickupUntilServerTime = resolved.ExcludePickupUntilServerTime,
                 IsConsumed = false,

@@ -33,8 +33,10 @@ namespace TitanOrbit.Game
     /// Commander-keyword paths keep drawing for 10s after the 4s chips fade, thinner
     /// and partly transparent so the order stays visible without blocking the fight.
     /// Minimap dest icons use the same window so the target stays on the radar disc.
-    /// Borders are a sliced AA frame Image — not UGUI <c>Outline</c>, which crawls while the
-    /// ship flies. Execution order 67012: after <see cref="EcsWorldVisualizer"/> and nameplates.
+    /// Incoming chips, stems, and radar dests hide while the local hull is jammed in
+    /// enemy territory. Borders are a sliced AA frame Image — not UGUI <c>Outline</c>,
+    /// which crawls while the ship flies. Execution order 67012: after
+    /// <see cref="EcsWorldVisualizer"/> and nameplates.
     /// </summary>
     [DefaultExecutionOrder(67012)]
     public sealed class ShipCommsBubblePresenter : ImmediateModeShapeDrawer
@@ -104,6 +106,8 @@ namespace TitanOrbit.Game
 
         static ShipCommsBubblePresenter s_Instance;
         static Sprite s_PlateSprite;
+        /// <summary>True after the last jam pass hid leftover chips. Avoids SetActive every frame.</summary>
+        bool _bubblesHiddenByJam;
 
         readonly Dictionary<int, Bubble> _live = new Dictionary<int, Bubble>(16);
         /// <summary>Commander echo chips keyed by the tagged ship's NetworkId (not the speaker).</summary>
@@ -208,6 +212,8 @@ namespace TitanOrbit.Game
                 EnsureExists();
             if (s_Instance == null)
                 return;
+            if (ShipCommsRpcClient.IsLocalShipJammed())
+                return;
 
             s_Instance.ApplyCallout(callout);
         }
@@ -222,6 +228,8 @@ namespace TitanOrbit.Game
             Vector3[] from, Vector3[] to, Color[] colors, int[] ranks, int max, bool[] linger = null)
         {
             if (s_Instance == null || from == null || to == null || colors == null || max <= 0)
+                return 0;
+            if (ShipCommsRpcClient.IsLocalShipJammed())
                 return 0;
 
             int written = 0;
@@ -260,6 +268,8 @@ namespace TitanOrbit.Game
             Vector3[] positions, Color[] colors, bool[] linger, int max)
         {
             if (s_Instance == null || positions == null || colors == null || max <= 0)
+                return 0;
+            if (ShipCommsRpcClient.IsLocalShipJammed())
                 return 0;
 
             int written = 0;
@@ -302,6 +312,22 @@ namespace TitanOrbit.Game
         /// </summary>
         void LateUpdate()
         {
+            // --- Enemy-territory jam ---
+            // [TITAN-ORBIT] A jammed hull cannot hear. Drop inbox rows and hide leftover
+            // chips so enemy fill is silent even if a bubble was already mid-lifetime.
+            bool jammed = ShipCommsRpcClient.IsLocalShipJammed();
+            if (jammed)
+            {
+                while (ShipCommsInbox.TryDequeue(out _))
+                {
+                }
+
+                SetBubblesVisible(false);
+                return;
+            }
+
+            SetBubblesVisible(true);
+
             // --- Inbox ---
             // [HYBRID] Client simulation enqueued rows; we Instantiates UI on the main thread.
             while (ShipCommsInbox.TryDequeue(out ShipCommsInbox.Callout callout))
@@ -325,6 +351,7 @@ namespace TitanOrbit.Game
         /// follows hulls while chips are up. Commander-keyword speaker rows stay
         /// after that (chips hidden) so the path ghost can keep drawing.
         /// Dead keys are destroyed after the walk so we never mutate the dictionary mid-foreach.
+        /// Local mute (leaderboard) kills a row on this tick even if chips were already up.
         /// </summary>
         /// <param name="map">Speaker bubbles or commander echoes.</param>
         /// <param name="destroyEcho">True when <paramref name="map"/> is <see cref="_echo"/>.</param>
@@ -339,6 +366,19 @@ namespace TitanOrbit.Game
             {
                 Bubble bubble = pair.Value;
                 if (bubble == null)
+                {
+                    _deadIds.Add(pair.Key);
+                    continue;
+                }
+
+                // --- Local mute ---
+                // [TITAN-ORBIT] Inbox already skips new callouts from a muted speaker.
+                // This catches chips already on screen when the player clicks Mute.
+                // Live map keys are the speaker NetworkId. Echo keys are the tagged
+                // hull — we mute by SourceNetworkId (the commander who issued the order).
+                if (destroyEcho
+                    ? CommsMuteList.IsMuted(bubble.SourceNetworkId)
+                    : CommsMuteList.IsMuted(pair.Key))
                 {
                     _deadIds.Add(pair.Key);
                     continue;
@@ -400,12 +440,47 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
+        /// Shows or hides leftover speaker / echo chip roots. Used while the local
+        /// hull is jammed so a mid-lifetime bubble does not keep talking in enemy fill.
+        /// Age still freezes for that window because LateUpdate returns early.
+        /// </summary>
+        /// <param name="visible">False hides every live root; true restores them.</param>
+        void SetBubblesVisible(bool visible)
+        {
+            bool hide = !visible;
+            if (hide == _bubblesHiddenByJam)
+                return;
+
+            _bubblesHiddenByJam = hide;
+            SetBubbleMapActive(_live, visible);
+            SetBubbleMapActive(_echo, visible);
+        }
+
+        /// <summary>SetActive on each remaining chip root in one bubble map.</summary>
+        static void SetBubbleMapActive(Dictionary<int, Bubble> map, bool visible)
+        {
+            foreach (var pair in map)
+            {
+                Bubble bubble = pair.Value;
+                if (bubble?.Root != null)
+                    bubble.Root.SetActive(visible);
+            }
+        }
+
+        /// <summary>
         /// Creates or recycles the speaker's above-hull chips, then plants commander
         /// echo chips under every tagged teammate (Everyone / Us / You).
+        /// Bails when the speaker is on this client's mute list so a queued callout
+        /// that raced the mute click never paints.
         /// </summary>
         void ApplyCallout(in ShipCommsInbox.Callout callout)
         {
             if (callout.NetworkId <= 0 || callout.Count < 1)
+                return;
+
+            // [TITAN-ORBIT] Same mute key as the inbox. Belt-and-suspenders if a
+            // callout was already dequeued when the player clicked Mute.
+            if (CommsMuteList.IsMuted(callout.NetworkId))
                 return;
 
             PaintBubbleMap(
@@ -656,6 +731,10 @@ namespace TitanOrbit.Game
             if (cam == null || cam.cameraType != CameraType.Game)
                 return;
 
+            // Jammed listeners do not draw received stems / intent. Compose previews
+            // (Here / You / Us while S is held) still paint so the lock card is not blind.
+            bool jammed = ShipCommsRpcClient.IsLocalShipJammed();
+
             bool pendingPing = ShipCommsClientState.IsOpen && ShipCommsClientState.HasPendingWaypoint;
             bool pendingYou = ShipCommsClientState.IsOpen && ShipCommsClientState.HasPendingYou;
             bool pendingUs = ShipCommsClientState.IsOpen && ShipCommsClientState.HasPendingUs;
@@ -669,8 +748,11 @@ namespace TitanOrbit.Game
                 Draw.ThicknessSpace = ThicknessSpace.Pixels;
                 Draw.LineGeometry = LineGeometry.Billboard;
 
-                DrawBubbleStems(_live, drawIntent: true);
-                DrawBubbleStems(_echo, drawIntent: false);
+                if (!jammed)
+                {
+                    DrawBubbleStems(_live, drawIntent: true);
+                    DrawBubbleStems(_echo, drawIntent: false);
+                }
 
                 if (pendingPing)
                 {

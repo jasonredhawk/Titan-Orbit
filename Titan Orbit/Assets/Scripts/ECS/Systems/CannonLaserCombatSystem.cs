@@ -227,6 +227,7 @@ namespace TitanOrbit.ECS
 
                 float dps = CannonLaserMath.ComputeDps(mount.FirePower, mount.FireRate);
                 float slice = dps * dt;
+                // [TITAN-ORBIT] Energy drain stays at authored DPS; only the hit is +5% for the top killer.
                 if ((canBurn || mouseStream) && energy < slice)
                 {
                     if (energy <= 0.0001f)
@@ -274,9 +275,12 @@ namespace TitanOrbit.ECS
                 if (!_gemCarry.TryGetValue(target, out float carry))
                     carry = 0f;
 
+                bool topKiller = SystemAPI.TryGetSingleton<ShipCommandRoleSnapshot>(out var roles)
+                                 && roles.IsKiller(ship.Team, attackerNet);
                 var hit = CannonLaserHitApply.Apply(
                     EntityManager, ecb, target, ship.Team, attackerNet,
-                    muzzle, slice, heal, acquireRange, mapW, mapH, moonElapsed, serverElapsed,
+                    muzzle, TeamCommandRoleRules.ScaleFirePower(slice, topKiller),
+                    heal, acquireRange, mapW, mapH, moonElapsed, serverElapsed,
                     gemPrefab, gemSpawnServerTime, ref carry);
                 _gemCarry[target] = carry;
 

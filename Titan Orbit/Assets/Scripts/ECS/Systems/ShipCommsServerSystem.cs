@@ -2,14 +2,18 @@ using TitanOrbit.Core;
 using TitanOrbit.Data;
 using Unity.Collections;
 using Unity.Entities;
+using Unity.Mathematics;
 using Unity.NetCode;
+using Unity.Transforms;
 
 namespace TitanOrbit.ECS
 {
     /// <summary>
-    /// Server: accepts <see cref="ShipCommsCommand"/>, checks the speaker has a living ship,
-    /// rate-limits the connection, then sends <see cref="ShipCommsRpc"/> to All clients,
-    /// teammates, or teammates-as-Commander (top-three rank + command-deck words).
+    /// Server: accepts <see cref="ShipCommsCommand"/>, checks the speaker has a living ship
+    /// that is not jammed in enemy territory, rate-limits the connection, then sends
+    /// <see cref="ShipCommsRpc"/> to All clients, teammates, or teammates-as-Commander
+    /// (earned killer / miner / troop title + command-deck words). Recipients currently flying in a
+    /// non-friendly triangle are skipped so jammed hulls cannot hear callouts.
     /// <para>
     /// World: ServerSimulation. Group: SimulationSystemGroup. Not Burst-compiled — we load the
     /// managed <see cref="ShipCommsKeywordCatalog"/> to validate indices.
@@ -19,7 +23,7 @@ namespace TitanOrbit.ECS
     /// <see cref="NetworkId"/>. The command has no client-supplied id, so a player cannot put
     /// chips above someone else's hull. <c>TeamOnly</c> is a channel request (All / Team /
     /// Commander); this system reads the speaker's <see cref="ShipState.Team"/> and
-    /// commander rank and targets those connections so a client cannot leak team chat
+    /// earned command seat and targets those connections so a client cannot leak team chat
     /// to enemies or spoof command-deck words. Local Host injects the command with
     /// <c>ReceiveRpcCommandRequest</c> already set (see <c>ShipCommsRpcClient</c>) because
     /// client→server SendRpc can drop under Instantiates load.
@@ -83,16 +87,25 @@ namespace TitanOrbit.ECS
                 // Ghost — NetCode replica. IsDead means hull+cargo emptied; AwaitingTeamSelection
                 // is the join-team plaque before the player has a flying hull.
                 // Use EntityManager (not a nested SystemAPI.Query) — we are already iterating RPCs.
-                if (!TryGetLivingSpeakerTeam(em, networkId, out TeamId speakerTeam))
+                if (!TryGetLivingSpeaker(em, networkId, out TeamId speakerTeam, out float3 speakerPos))
+                    continue;
+
+                // --- Enemy-territory jam ---
+                // [TITAN-ORBIT] A hull inside a triangle it does not own cannot speak.
+                // Open space and friendly overlaps stay clear. Client HUD shows the lock;
+                // this reject is the authority so a spoofed RPC cannot leak chips.
+                if (ShipCommsJam.IsPositionJammed(
+                        speakerPos, speakerTeam, PlanetConnectionGraphSide.Server))
                     continue;
 
                 // --- Commander gate ---
-                // [TITAN-ORBIT] Commander keywords and the Commander channel are for the
-                // top three scorers on the speaker's team. Rank is recomputed from ghosted
-                // match stats here — the client pill is only a request.
+                // [TITAN-ORBIT] Commander keywords and the Commander channel are for
+                // earned category titles (living top killer / miner / troop mover).
+                // Snapshot is rebuilt first each sim tick — the client pill is only a request.
                 ShipCommsChannel channel = TeamCommanderRules.Sanitize(sentence.TeamOnly);
                 bool usesCommanderWords = SequenceUsesCommanderKeyword(catalog, sentence);
-                bool isCommander = SpeakerIsCommander(em, networkId, speakerTeam);
+                bool isCommander = SystemAPI.TryGetSingleton<ShipCommandRoleSnapshot>(out var roles)
+                    && roles.HoldsCommandSeat(speakerTeam, networkId);
                 if (usesCommanderWords && (!isCommander || channel != ShipCommsChannel.Commander))
                     continue;
                 if (channel == ShipCommsChannel.Commander && !isCommander)
@@ -124,15 +137,31 @@ namespace TitanOrbit.ECS
 
         /// <summary>
         /// True when a ship ghost owned by <paramref name="networkId"/> is alive and in play.
-        /// Writes that hull's team so team-only delivery can target teammates.
+        /// Writes that hull's team so team-only delivery can target teammates, and the
+        /// world pose so enemy-territory jam can run the same point-in-triangle test
+        /// the motor uses for friendly speed.
         /// Ships are few — a linear query on an RPC (not every tick) is cheap.
         /// </summary>
-        static bool TryGetLivingSpeakerTeam(EntityManager em, int networkId, out TeamId team)
+        /// <param name="em">Server world EntityManager.</param>
+        /// <param name="networkId">GhostOwner id of the connection that sent the command.</param>
+        /// <param name="team">Living hull's faction, or None when not found.</param>
+        /// <param name="position">Living hull <see cref="LocalTransform.Position"/> (Y unused).</param>
+        static bool TryGetLivingSpeaker(
+            EntityManager em,
+            int networkId,
+            out TeamId team,
+            out float3 position)
         {
             team = TeamId.None;
-            using var query = em.CreateEntityQuery(typeof(ShipTag), typeof(GhostOwner), typeof(ShipState));
+            position = float3.zero;
+
+            // LocalTransform — DOTS world pose on the ghost. Same component the drive job
+            // wraps into the canonical torus after physics.
+            using var query = em.CreateEntityQuery(
+                typeof(ShipTag), typeof(GhostOwner), typeof(ShipState), typeof(LocalTransform));
             using var owners = query.ToComponentDataArray<GhostOwner>(Allocator.Temp);
             using var states = query.ToComponentDataArray<ShipState>(Allocator.Temp);
+            using var transforms = query.ToComponentDataArray<LocalTransform>(Allocator.Temp);
             for (int i = 0; i < owners.Length; i++)
             {
                 if (owners[i].NetworkId != networkId)
@@ -142,6 +171,7 @@ namespace TitanOrbit.ECS
                     return false;
 
                 team = states[i].Team;
+                position = transforms[i].Position;
                 return true;
             }
 
@@ -167,80 +197,6 @@ namespace TitanOrbit.ECS
             if (sentence.Count >= 5 && catalog.IsCommanderKeyword(sentence.K4))
                 return true;
             return false;
-        }
-
-        /// <summary>
-        /// True when <paramref name="networkId"/> is among the top
-        /// <see cref="TeamCommanderRules.Slots"/> scorers on <paramref name="team"/>.
-        /// Dead hulls still count — the Command Deck matches the leaderboard, not
-        /// living-only nameplate roles. AwaitingTeamSelection is skipped (no faction).
-        /// Ships are few; this runs on a rate-limited RPC, not every tick.
-        /// </summary>
-        static bool SpeakerIsCommander(EntityManager em, int networkId, TeamId team)
-        {
-            if (networkId <= 0 || team == TeamId.None)
-                return false;
-
-            using var query = em.CreateEntityQuery(
-                typeof(ShipTag),
-                typeof(GhostOwner),
-                typeof(ShipState),
-                typeof(ShipMatchStats));
-            using var owners = query.ToComponentDataArray<GhostOwner>(Allocator.Temp);
-            using var states = query.ToComponentDataArray<ShipState>(Allocator.Temp);
-            using var stats = query.ToComponentDataArray<ShipMatchStats>(Allocator.Temp);
-
-            // Stack scratch — a team is a handful of ships, never a managed List on the RPC.
-            const int cap = 32;
-            var ids = new NativeArray<int>(cap, Allocator.Temp);
-            var scores = new NativeArray<int>(cap, Allocator.Temp);
-            int n = 0;
-            for (int i = 0; i < owners.Length && n < cap; i++)
-            {
-                if (states[i].AwaitingTeamSelection || states[i].Team != team)
-                    continue;
-                int id = owners[i].NetworkId;
-                if (id <= 0)
-                    continue;
-                ids[n] = id;
-                scores[n] = TeamCommanderRules.CombinedScore(
-                    stats[i].Kills,
-                    stats[i].GemsDeposited,
-                    stats[i].PeopleDelivered);
-                n++;
-            }
-
-            // Sort score desc, then NetworkId asc — same tie-break as the leaderboard.
-            for (int a = 1; a < n; a++)
-            {
-                int keyId = ids[a];
-                int keyScore = scores[a];
-                int b = a - 1;
-                while (b >= 0
-                    && (scores[b] < keyScore
-                        || (scores[b] == keyScore && ids[b] > keyId)))
-                {
-                    ids[b + 1] = ids[b];
-                    scores[b + 1] = scores[b];
-                    b--;
-                }
-
-                ids[b + 1] = keyId;
-                scores[b + 1] = keyScore;
-            }
-
-            int rank = 0;
-            for (int i = 0; i < n; i++)
-            {
-                if (ids[i] != networkId)
-                    continue;
-                rank = i + 1;
-                break;
-            }
-
-            ids.Dispose();
-            scores.Dispose();
-            return TeamCommanderRules.IsCommanderRank(rank);
         }
 
         /// <summary>
@@ -323,7 +279,7 @@ namespace TitanOrbit.ECS
 
             if (!TeamCommanderRules.IsTeamScoped(channel))
             {
-                BroadcastAll(ecb, rpc);
+                SendToEligibleConnections(ecb, em, rpc, teamFilter: TeamId.None);
                 return;
             }
 
@@ -336,19 +292,62 @@ namespace TitanOrbit.ECS
                 return;
             }
 
-            SendToTeam(ecb, em, speakerTeam, rpc);
+            SendToEligibleConnections(ecb, em, rpc, teamFilter: speakerTeam);
         }
 
         /// <summary>
-        /// [NETCODE] TargetConnection = Null means every connected client, including the sender.
-        /// Dedicated clients apply this in <see cref="ShipCommsRpcClientSystem"/>. The sender
-        /// also paints an optimistic local bubble so they do not wait on RTT.
+        /// Sends one targeted RPC per in-game connection that may hear this callout.
+        /// <paramref name="teamFilter"/> None = All channel (every faction). A real
+        /// team = Team / Commander (same-team hulls only).
+        /// <para>
+        /// [NETCODE] We no longer use TargetConnection = Null for All. A broadcast
+        /// would also land on jammed listeners. One targeted send per connection lets
+        /// us skip hulls flying in enemy fill. Ships are few; this is still one RPC
+        /// event, not a per-tick gather.
+        /// </para>
+        /// Dead hulls still receive (death screen). AwaitingTeamSelection is skipped
+        /// on the Team channel. Living hulls in a non-friendly triangle are skipped
+        /// on every channel.
         /// </summary>
-        static void BroadcastAll(EntityCommandBuffer ecb, in ShipCommsRpc rpc)
+        /// <param name="ecb">Playback buffer for the announce entities.</param>
+        /// <param name="em">Server world EntityManager.</param>
+        /// <param name="rpc">Accepted sentence to echo.</param>
+        /// <param name="teamFilter">None = every in-game connection; else that team only.</param>
+        static void SendToEligibleConnections(
+            EntityCommandBuffer ecb,
+            EntityManager em,
+            in ShipCommsRpc rpc,
+            TeamId teamFilter)
         {
-            Entity announce = ecb.CreateEntity();
-            ecb.AddComponent(announce, rpc);
-            ecb.AddComponent(announce, new SendRpcCommandRequest { TargetConnection = Entity.Null });
+            // --- Ship snapshots for team + jam ---
+            // LocalTransform is the same pose the drive job wraps. Dead ships keep a
+            // pose but ConnectionIsJammed treats IsDead as clear (not flying).
+            using var shipQuery = em.CreateEntityQuery(
+                typeof(ShipTag), typeof(GhostOwner), typeof(ShipState), typeof(LocalTransform));
+            using var owners = shipQuery.ToComponentDataArray<GhostOwner>(Allocator.Temp);
+            using var states = shipQuery.ToComponentDataArray<ShipState>(Allocator.Temp);
+            using var transforms = shipQuery.ToComponentDataArray<LocalTransform>(Allocator.Temp);
+
+            using var connQuery = em.CreateEntityQuery(typeof(NetworkId), typeof(NetworkStreamInGame));
+            using var connections = connQuery.ToEntityArray(Allocator.Temp);
+            using var ids = connQuery.ToComponentDataArray<NetworkId>(Allocator.Temp);
+
+            for (int c = 0; c < connections.Length; c++)
+            {
+                int connId = ids[c].Value;
+
+                // --- Team channel: same faction, already picked a color ---
+                if (teamFilter != TeamId.None && !ConnectionIsOnTeam(owners, states, connId, teamFilter))
+                    continue;
+
+                // --- All / Team: skip living hulls inside enemy fill ---
+                if (ConnectionIsJammed(owners, states, transforms, connId))
+                    continue;
+
+                Entity announce = ecb.CreateEntity();
+                ecb.AddComponent(announce, rpc);
+                ecb.AddComponent(announce, new SendRpcCommandRequest { TargetConnection = connections[c] });
+            }
         }
 
         /// <summary>
@@ -373,32 +372,32 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// Sends one targeted RPC per in-game connection whose ship is on
-        /// <paramref name="team"/>. Includes dead hulls so a teammate on the death
-        /// screen still sees the callout. Skips AwaitingTeamSelection (no faction yet).
+        /// True when <paramref name="networkId"/> owns a living ship that is currently
+        /// inside a non-friendly triangle. Dead / join-plaque hulls are not jammed —
+        /// they are not flying. A connection with no ship stays clear (fail open).
         /// </summary>
-        static void SendToTeam(EntityCommandBuffer ecb, EntityManager em, TeamId team, in ShipCommsRpc rpc)
+        static bool ConnectionIsJammed(
+            NativeArray<GhostOwner> owners,
+            NativeArray<ShipState> states,
+            NativeArray<LocalTransform> transforms,
+            int networkId)
         {
-            // --- Teammate NetworkIds ---
-            // [ECS/DOTS] Ships are few; two Temp arrays on a rate-limited RPC is cheap.
-            using var shipQuery = em.CreateEntityQuery(typeof(ShipTag), typeof(GhostOwner), typeof(ShipState));
-            using var owners = shipQuery.ToComponentDataArray<GhostOwner>(Allocator.Temp);
-            using var states = shipQuery.ToComponentDataArray<ShipState>(Allocator.Temp);
-
-            using var connQuery = em.CreateEntityQuery(typeof(NetworkId), typeof(NetworkStreamInGame));
-            using var connections = connQuery.ToEntityArray(Allocator.Temp);
-            using var ids = connQuery.ToComponentDataArray<NetworkId>(Allocator.Temp);
-
-            for (int c = 0; c < connections.Length; c++)
+            for (int i = 0; i < owners.Length; i++)
             {
-                int connId = ids[c].Value;
-                if (!ConnectionIsOnTeam(owners, states, connId, team))
+                if (owners[i].NetworkId != networkId)
                     continue;
 
-                Entity announce = ecb.CreateEntity();
-                ecb.AddComponent(announce, rpc);
-                ecb.AddComponent(announce, new SendRpcCommandRequest { TargetConnection = connections[c] });
+                // Death screen / Join Team: not flying, so they may still hear.
+                if (states[i].IsDead || states[i].AwaitingTeamSelection)
+                    return false;
+
+                return ShipCommsJam.IsPositionJammed(
+                    transforms[i].Position,
+                    states[i].Team,
+                    PlanetConnectionGraphSide.Server);
             }
+
+            return false;
         }
 
         /// <summary>

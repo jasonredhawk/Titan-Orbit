@@ -202,15 +202,21 @@ namespace TitanOrbit.ECS
                 // Live PlanetLevel / ShipLevel every tick — leveling mid-orbit must change chunk size.
                 int shipLevel = math.max(1, shipState.ValueRO.ShipLevel);
                 int planetLevel = math.max(1, planetState.PlanetLevel);
-                float loadChunk = PeopleTransportMath.GetTransferChunk(shipLevel, planetLevel);
-                float transferMul = CardEffectQuery.GetMul(state.EntityManager, shipEntity, CardEffectKind.PeopleTransferSpeedMul);
-                float loadStep = loadChunk * dt * PeopleTransportConstants.TransferSpeedMultiplier * transferMul;
                 int shipNetworkId = GetShipNetworkId(ref state, shipEntity);
                 if (shipNetworkId == 0)
                 {
                     orbit.ValueRW.IsTransferringPeople = false;
                     continue;
                 }
+
+                // [TITAN-ORBIT] Top troop commander packs 5% more people per sphere
+                // (round-to-nearest). Load step uses the same chunk so throughput rises too.
+                bool topTroop = SystemAPI.TryGetSingleton<ShipCommandRoleSnapshot>(out var troopRoles)
+                                && troopRoles.IsTransporter(shipState.ValueRO.Team, shipNetworkId);
+                float loadChunk = TeamCommandRoleRules.ScaleTransferChunk(
+                    PeopleTransportMath.GetTransferChunk(shipLevel, planetLevel), topTroop);
+                float transferMul = CardEffectQuery.GetMul(state.EntityManager, shipEntity, CardEffectKind.PeopleTransferSpeedMul);
+                float loadStep = loadChunk * dt * PeopleTransportConstants.TransferSpeedMultiplier * transferMul;
                 float3 planetPos = planetTransform.Position;
                 bool friendly = shipState.ValueRO.Team != TeamId.None && planetState.Ownership == shipState.ValueRO.Team;
                 orbit.ValueRW.IsTransferringPeople = ComputeIsTransferringPeople(
@@ -226,7 +232,8 @@ namespace TitanOrbit.ECS
                 if (wantUnload)
                 {
                     transfer.TransferDirection = PeopleTransferDirection.Unload;
-                    int unloadChunk = PeopleTransportMath.GetTransferChunk(shipLevel, planetLevel);
+                    int unloadChunk = TeamCommandRoleRules.ScaleTransferChunk(
+                        PeopleTransportMath.GetTransferChunk(shipLevel, planetLevel), topTroop);
                     bool intervalReady = transfer.UnloadAccumulator <= 0.01f ||
                         (now - transfer.UnloadAccumulator) >=
                         PeopleTransportConstants.UnloadDispatchIntervalSeconds;

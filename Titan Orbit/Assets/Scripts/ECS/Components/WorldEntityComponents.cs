@@ -1,4 +1,5 @@
 using TitanOrbit.Core;
+using TitanOrbit.Simulation;
 using Unity.Entities;
 using Unity.Mathematics;
 using Unity.NetCode;
@@ -100,6 +101,13 @@ namespace TitanOrbit.ECS
         public TeamId LastInteractTeam;
 
         /// <summary>
+        /// [TITAN-ORBIT] Server-only: last ship NetworkId that mined, shot, rammed, or burned
+        /// this rock. Blue top-miner 5% gems Instantiates on destroy only when this id still
+        /// holds the miner title. 0 = unknown (no blue extra). Not ghosted.
+        /// </summary>
+        public int LastInteractNetworkId;
+
+        /// <summary>
         /// Live rock for combat / aim. Matches destroy + HitRpc (<c>Health ≤ 0.01</c>),
         /// not a raw zero compare — leftover 0.00x HP corpses stay hidden on the client
         /// while miners would otherwise keep shooting empty space.
@@ -140,11 +148,13 @@ namespace TitanOrbit.ECS
         public float SpawnServerTime;
 
         /// <summary>
-        /// [TITAN-ORBIT] Yellow tint only (NGO <c>isBonusGem</c>). Marks extra yield from a
-        /// friendly triangle so players can see the bonus. Tractor, pickup, and cargo treat
-        /// this like any other gem — colour does not gate who may collect.
+        /// [TITAN-ORBIT] Crystal colour only. Red = base yield, yellow = triangle extra,
+        /// blue = top-miner 5%. Tractor, pickup, and cargo ignore tint — any ship may scoop.
         /// </summary>
-        public bool IsBonusGem;
+        public GemVisualTint Tint;
+
+        /// <summary>True when this is the yellow triangle extra (not the blue miner extra).</summary>
+        public bool IsBonusGem => Tint == GemVisualTint.TerritoryBonus;
 
         /// <summary>
         /// <see cref="GhostOwner.NetworkId"/> of the ship that spilled this gem from

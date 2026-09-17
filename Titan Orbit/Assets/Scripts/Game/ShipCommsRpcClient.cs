@@ -20,9 +20,49 @@ namespace TitanOrbit.Game
     /// connections — the client cannot pick another team's inbox or spoof command rank.
     /// The panel also paints an optimistic local bubble so the speaker does not wait on RTT.
     /// Server validation / rate-limit still decide whether everyone else sees it.
+    /// Enemy-territory jam is checked here first so a jammed hull never enqueues a command.
     /// </summary>
     public static class ShipCommsRpcClient
     {
+        /// <summary>Remembered <see cref="Time.frameCount"/> for <see cref="IsLocalShipJammed"/>.</summary>
+        static int s_JamFrame = -1;
+
+        /// <summary>Jam result computed on <see cref="s_JamFrame"/>.</summary>
+        static bool s_JamCached;
+
+        /// <summary>
+        /// True when the local living hull is flying inside a non-friendly triangle.
+        /// HUD, optimistic chips, and this send path share the same test so a jammed
+        /// player cannot compose a sentence the server would reject.
+        /// Cached once per frame — panel, presenter, and minimap dests all ask.
+        /// </summary>
+        public static bool IsLocalShipJammed()
+        {
+            int frame = Time.frameCount;
+            if (s_JamFrame == frame)
+                return s_JamCached;
+
+            s_JamFrame = frame;
+            s_JamCached = EvaluateLocalJam();
+            return s_JamCached;
+        }
+
+        /// <summary>
+        /// Live PIT against the client territory graph. Dead / join-plaque / missing
+        /// hulls are not jammed so the death screen can still hear team callouts.
+        /// </summary>
+        static bool EvaluateLocalJam()
+        {
+            if (!EcsGameBridge.TryGetLocalShipState(out ShipState ship))
+                return false;
+            if (ship.IsDead || ship.AwaitingTeamSelection)
+                return false;
+            if (!EcsGameBridge.TryGetLocalShipPosition(out var pos))
+                return false;
+
+            return ShipCommsJam.IsPositionJammed(pos, ship.Team, PlanetConnectionGraphSide.Client);
+        }
+
         /// <summary>
         /// Enqueues the command on Local Host ServerWorld or ClientWorld. Returns true when
         /// an RPC entity was created (not when the server has accepted it).
@@ -30,6 +70,12 @@ namespace TitanOrbit.Game
         public static bool TrySend(in ShipCommsInbox.Callout payload)
         {
             if (payload.Count < 1 || payload.Count > 5)
+                return false;
+
+            // --- Enemy-territory jam ---
+            // [TITAN-ORBIT] Server rejects this too. Dropping here skips the optimistic
+            // local bubble and the rate-limit burn from a doomed command.
+            if (IsLocalShipJammed())
                 return false;
 
             // Preserve Commander (2). Collapsing to 0/1 would drop command chrome on the echo.

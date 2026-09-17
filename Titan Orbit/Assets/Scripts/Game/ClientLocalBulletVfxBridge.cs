@@ -281,11 +281,13 @@ namespace TitanOrbit.Game
 
             int enqueued = 0;
             float spent = 0f;
+            bool topKiller = ShipTopOfTeamRoles.IsKiller(shipState.Team, ownerNetworkId);
 
             // --- Enqueue planned mounts from live weapon transforms ---
             for (int shot = 0; shot < shotCount; shot++)
             {
                 var planned = s_ShotScratch[shot];
+                planned.Damage = TeamCommandRoleRules.ScaleFirePower(planned.Damage, topKiller);
                 int mountIdx = planned.MountIndex;
                 // MEGA auto-aim is server-only. Hull-forward anticipation steals the
                 // SpawnRpc (adopt keeps that wrong velocity) so the turret takes

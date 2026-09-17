@@ -49,8 +49,8 @@ namespace TitanOrbit.Data
 
         /// <summary>
         /// Command-deck words (Everyone, Escort, Form Up, …). The compose panel shows these
-        /// under COMMANDER; they only send when the speaker is a top-three commander
-        /// on the Commander channel. Wire indices still work for older clients.
+        /// under COMMANDER; they only send when the speaker holds an earned category
+        /// title and the Commander channel is armed. Wire indices still work for older clients.
         /// </summary>
         Commander = 5,
     }
@@ -178,7 +178,7 @@ namespace TitanOrbit.Data
             new ShipCommsKeyword { label = "Later", category = ShipCommsKeywordCategory.Social },
             new ShipCommsKeyword { label = "Everyone", category = ShipCommsKeywordCategory.Commander },
             // --- Commander verbs (append-only; indices 58+) ---
-            // [TITAN-ORBIT] Orders a top-three commander speaks to the squad. Same 5-wide
+            // [TITAN-ORBIT] Orders an earned commander speaks to the squad. Same 5-wide
             // row math as SUBJECT. Do not reorder — those bytes are on the wire.
             new ShipCommsKeyword { label = "Form Up", category = ShipCommsKeywordCategory.Commander },
             new ShipCommsKeyword { label = "Spread", category = ShipCommsKeywordCategory.Commander },

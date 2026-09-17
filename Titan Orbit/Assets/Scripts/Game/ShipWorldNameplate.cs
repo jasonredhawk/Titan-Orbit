@@ -1624,7 +1624,8 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// True when this 1-based team rank is a command-deck seat (top three).
+        /// True when this 1-based team score rank is 1–3. Path-stroke thickness only —
+        /// not command authority. Use <see cref="IsCommander"/> for the Command Deck.
         /// </summary>
         /// <param name="rank">1 = highest combined score on that team.</param>
         public static bool IsCommanderRank(int rank)
@@ -1633,13 +1634,24 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// True when the last nameplate rank flush listed <paramref name="networkId"/>
-        /// in the top three on their team. Missing owners are not commanders.
+        /// True when the last nameplate role flush listed <paramref name="networkId"/>
+        /// as a living killer, miner, or troop title. A zero-score hull can still be
+        /// rank 1 on an empty team; that is not a command seat.
         /// </summary>
         /// <param name="networkId">GhostOwner.NetworkId to test.</param>
         public static bool IsCommander(int networkId)
         {
-            return TryGetTeamRank(networkId, out int rank) && IsCommanderRank(rank);
+            if (networkId <= 0)
+                return false;
+
+            // --- Earned titles, not score rank ---
+            // ShipTopOfTeamRoles already refuses score 0 and dead hulls. We probe
+            // every playable faction because this helper has no team argument.
+            return ShipTopOfTeamRoles.HoldsCommandSeat(TeamId.TeamA, networkId)
+                || ShipTopOfTeamRoles.HoldsCommandSeat(TeamId.TeamB, networkId)
+                || ShipTopOfTeamRoles.HoldsCommandSeat(TeamId.TeamC, networkId)
+                || ShipTopOfTeamRoles.HoldsCommandSeat(TeamId.TeamD, networkId)
+                || ShipTopOfTeamRoles.HoldsCommandSeat(TeamId.TeamE, networkId);
         }
 
         /// <summary>

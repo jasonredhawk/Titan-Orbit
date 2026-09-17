@@ -23,11 +23,15 @@ namespace TitanOrbit.UI
     /// Inside each rail, slim telemetry captions (STRIKE, WHO, GEAR, …) keep related
     /// words on the same 5-wide row. An All / Team / Commander toggle and the RECENT chip list are remembered in PlayerPrefs
     /// so both survive a new match. Free players get three RECENT rows; one ad unlocks the rest.
-    /// Commander is the top-three command deck: it unlocks
-    /// Everyone / Escort / Form Up and paints gold chrome. A RECENT row that used those
-    /// words is temporarily locked (same LOCK stamp as the tiles) when this machine
-    /// drops out of the top three — the sentence stays in history and lights up again
-    /// if rank returns. We do not strip it into a different, non-command sentence.
+    /// Commander is an earned Command Deck seat (living top killer, miner, or troop
+    /// mover): it unlocks Everyone / Escort / Form Up and paints gold chrome. A RECENT
+    /// row that used those words is temporarily locked (same LOCK stamp as the tiles)
+    /// when this machine loses every title — the sentence stays in history and lights
+    /// up again if a title returns. We do not strip it into a different, non-command sentence.
+    /// Flying inside a non-friendly territory triangle jams comms: a lock veil covers
+    /// the keyword card <b>and</b> the docked minimap (COMMS JAMMED / FROM ENEMY
+    /// TERRITORY). Clicks, Here pings, and release-S do nothing. Open space and
+    /// friendly overlaps stay clear.
     /// <para>
     /// Client presentation only. Sending goes through <see cref="ShipCommsRpcClient"/>
     /// (RPC — Remote Procedure Call: the client asks the server to broadcast or target
@@ -115,6 +119,12 @@ namespace TitanOrbit.UI
         static readonly Color AdGateVeil = new Color(0.010f, 0.012f, 0.020f, 0.82f);
         /// <summary>Amber plate for the single watch-ad CTA (same hue as the old AD stamp).</summary>
         static readonly Color AdGatePlate = new Color(0.07f, 0.045f, 0.018f, 0.96f);
+        /// <summary>Dark veil over every compose button while flying in enemy fill.</summary>
+        static readonly Color JamVeil = new Color(0.018f, 0.008f, 0.010f, 0.88f);
+        /// <summary>Hostile red plate for the jam lock stamp (not command gold).</summary>
+        static readonly Color JamPlate = new Color(0.08f, 0.018f, 0.022f, 0.96f);
+        /// <summary>Lock caption — reads as jammed, not as a command-deck unlock.</summary>
+        static readonly Color JamStamp = new Color(0.95f, 0.32f, 0.34f, 0.98f);
 
         /// <summary>Keyword bytes chosen this hold, in click order (max 5).</summary>
         readonly List<byte> _sequence = new List<byte>(ShipCommsKeywordCatalog.MaxSequenceLength);
@@ -165,6 +175,12 @@ namespace TitanOrbit.UI
         UnlockGate _slotUnlockGate;
         /// <summary>One plate over every RECENT row past the free three. Hidden after that unlock ad.</summary>
         UnlockGate _recentUnlockGate;
+        /// <summary>Full-card lock while the local hull is in a non-friendly triangle.</summary>
+        GameObject _jamOverlay;
+        /// <summary>Same lock over the docked minimap so Here pings cannot be planted.</summary>
+        GameObject _jamMinimapOverlay;
+        /// <summary>Last painted jam visibility so LateUpdate does not SetActive every frame.</summary>
+        bool _jamOverlayVisible;
 
         /// <summary>One keyword button in the matrix.</summary>
         struct KeywordTile
@@ -412,9 +428,11 @@ namespace TitanOrbit.UI
             {
                 SetOpen(false, clearSequence: false);
             }
-            else if (!held && _minimapDock != null && _minimapDock.childCount > 0)
+            else if (!held && _minimapDocked)
             {
                 // Recover a map left under the dock after a prior close that disabled it first.
+                // Do not key this off childCount — chrome, MapHost, and the jam veil
+                // live on the dock even when the HUD map is already back in the corner.
                 UndockMinimap();
             }
 
@@ -429,9 +447,15 @@ namespace TitanOrbit.UI
                 // Rank can change while S is held (a teammate deposits). Drop Commander,
                 // strip command words from the rail, and lock RECENT rows that used them.
                 EnsureCommanderLocksWhileOpen();
-                TryStepRecentFromWheel();
-                if (ShipCommsClientState.ConsumeWaypointChipDirty())
-                    EnsureMapPointChip();
+                // Hull can cross a triangle edge mid-hold — show or lift the jam veil live.
+                bool jammed = ShipCommsRpcClient.IsLocalShipJammed();
+                PaintJamLock(jammed);
+                if (!jammed)
+                {
+                    TryStepRecentFromWheel();
+                    if (ShipCommsClientState.ConsumeWaypointChipDirty())
+                        EnsureMapPointChip();
+                }
             }
         }
 
@@ -635,6 +659,12 @@ namespace TitanOrbit.UI
         /// </summary>
         void TrySendSequence()
         {
+            // --- Enemy-territory jam ---
+            // Overlay already blocks clicks. Release-S must not sneak a sentence out
+            // if the hull crossed into enemy fill after the last paint.
+            if (ShipCommsRpcClient.IsLocalShipJammed())
+                return;
+
             // --- Channel ---
             // [TITAN-ORBIT] PlayerPrefs-backed All / Team / Commander toggle. The server
             // re-checks team and commander rank — this byte is a request, not a rank the
@@ -713,6 +743,8 @@ namespace TitanOrbit.UI
         void OnKeywordClicked(byte index)
         {
             if (!ShipCommsClientState.IsOpen)
+                return;
+            if (ShipCommsRpcClient.IsLocalShipJammed())
                 return;
 
             // Locked command-deck tiles stay visible so the squad can see the unlock,
@@ -835,6 +867,8 @@ namespace TitanOrbit.UI
         {
             if (!ShipCommsClientState.IsOpen)
                 return;
+            if (ShipCommsRpcClient.IsLocalShipJammed())
+                return;
             if (slot < 0 || slot >= ShipCommsKeywordCatalog.MaxSequenceLength)
                 return;
 
@@ -866,6 +900,8 @@ namespace TitanOrbit.UI
         void OnRecentClicked(int index)
         {
             if (!ShipCommsClientState.IsOpen)
+                return;
+            if (ShipCommsRpcClient.IsLocalShipJammed())
                 return;
 
             if (!ShipCommsClientState.IsRecentRowUnlocked(index))
@@ -1240,6 +1276,19 @@ namespace TitanOrbit.UI
                 RecentColWidth,
                 overlayH - PanelPad * 2f);
             BuildRecentColumn(recent, recentRows, recentInnerH);
+            try
+            {
+                BuildJamOverlay();
+            }
+            catch (Exception e)
+            {
+                // Jam veils are presentation-only. A TMP/UGUI failure here used to
+                // abort Awake, disable this behaviour, and make hold-S do nothing.
+                Debug.LogException(e);
+            }
+
+            if (_minimapDock != null)
+                _minimapDock.gameObject.SetActive(false);
 
             _built = true;
         }
@@ -1362,6 +1411,8 @@ namespace TitanOrbit.UI
         {
             if (!ShipCommsClientState.IsOpen)
                 return;
+            if (ShipCommsRpcClient.IsLocalShipJammed())
+                return;
 
             // Non-commanders can see the CMDR pill but cannot arm it.
             if (channel == ShipCommsChannel.Commander && !IsLocalCommander())
@@ -1387,7 +1438,7 @@ namespace TitanOrbit.UI
         /// <summary>
         /// Highlights the active All / Team / CMDR pill and updates the HOLD S subtitle
         /// so the channel is readable without staring at the switch. The CMDR pill
-        /// stays dim when this machine is not in the top three.
+        /// stays dim when this machine holds no earned category title.
         /// </summary>
         void PaintAudience()
         {
@@ -1446,18 +1497,18 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// While S is held, rank can flip (a teammate deposits). Drop the Commander
-        /// channel, strip command-deck words from the compose rail, and lock RECENT
-        /// rows that used those words. We only repaint when commander status changes
-        /// so this LateUpdate path stays cheap.
+        /// While S is held, titles can flip (a teammate deposits more gems). Drop the
+        /// Commander channel, strip command-deck words from the compose rail, and lock
+        /// RECENT rows that used those words. We only repaint when commander status
+        /// changes so this LateUpdate path stays cheap.
         /// </summary>
         void EnsureCommanderLocksWhileOpen()
         {
             bool commander = IsLocalCommander();
 
             // --- Channel ---
-            // The CMDR pill is a request, not a rank. If this machine fell out of
-            // the top three, collapse to Team so a release-S cannot ask for Commander.
+            // The CMDR pill is a request, not a title. If this machine lost every
+            // category seat, collapse to Team so a release-S cannot ask for Commander.
             if (ShipCommsClientState.Channel == ShipCommsChannel.Commander && !commander)
                 ShipCommsClientState.SetChannel(ShipCommsChannel.Team);
 
@@ -1493,8 +1544,8 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// True when command-deck tiles may enter the sentence: this machine is a
-        /// top-three commander <b>and</b> the CMDR pill is armed.
+        /// True when command-deck tiles may enter the sentence: this machine holds
+        /// an earned category title <b>and</b> the CMDR pill is armed.
         /// </summary>
         static bool CommanderKeywordsUnlocked()
         {
@@ -1502,9 +1553,11 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// True when the local player is one of the top three scorers on their team.
-        /// Prefers the live minimap list (same sort as the leaderboard, includes dead
-        /// hulls). Falls back to the last nameplate rank flush when the map is empty.
+        /// True when the local player currently holds a living killer, miner, or
+        /// troop title on their team. Score rank alone is never enough — a fresh
+        /// spawn on an empty board stays crew until they earn a category.
+        /// Prefers the last minimap / nameplate role flush; falls back to scanning
+        /// every playable faction when team is still unknown.
         /// </summary>
         static bool IsLocalCommander()
         {
@@ -1512,81 +1565,18 @@ namespace TitanOrbit.UI
             if (localId <= 0)
                 return false;
 
-            if (TryGetLocalCommanderFromMinimap(localId, out bool fromMap))
-                return fromMap;
-
-            return ShipMatchScoreLogic.IsCommander(localId);
-        }
-
-        /// <summary>
-        /// Ranks the local team from minimap ship anchors. Same score weights and
-        /// NetworkId tie-break as <see cref="TeamLeaderboardHUD"/>. Returns false
-        /// when the cache has no teammates yet (join / first frames).
-        /// </summary>
-        /// <param name="localId">Local GhostOwner.NetworkId.</param>
-        /// <param name="isCommander">True when localId is rank 1–3 on that team.</param>
-        static bool TryGetLocalCommanderFromMinimap(int localId, out bool isCommander)
-        {
-            isCommander = false;
-            var sync = MinimapEcsEntitySync.Instance;
-            IReadOnlyList<MinimapBlipAnchor> ships = sync != null ? sync.Ships : null;
-            if (ships == null || ships.Count == 0)
-                return false;
-
+            // --- Local team ---
+            // Presentation team covers join-team frames before the living hull is ready.
             TeamId team = TeamId.None;
             if (EcsGameBridge.TryGetLocalShipState(out var localShip))
                 team = localShip.Team;
             if (team == TeamId.None)
                 team = ClientTeamFlowState.ResolvePresentationTeam(TeamId.None);
-            if (team == TeamId.None)
-                return false;
 
-            int betterOrEqual = 0;
-            int myScore = -1;
-            int seen = 0;
-            for (int i = 0; i < ships.Count; i++)
-            {
-                MinimapBlipAnchor a = ships[i];
-                if (a == null || a.Kind != MinimapBlipKind.Ship)
-                    continue;
-                if (a.Team != team || a.AwaitingTeamSelection || a.OwnerNetworkId <= 0)
-                    continue;
+            if (team != TeamId.None)
+                return ShipTopOfTeamRoles.HoldsCommandSeat(team, localId);
 
-                seen++;
-                int score = ShipMatchScoreLogic.ComputeCombinedScore(
-                    Mathf.Max(0, a.Kills),
-                    Mathf.Max(0, a.GemsDeposited),
-                    Mathf.Max(0, a.PeopleDelivered));
-                if (a.OwnerNetworkId == localId)
-                    myScore = score;
-            }
-
-            if (seen == 0 || myScore < 0)
-                return false;
-
-            // Rank = 1 + how many teammates sort strictly ahead (score desc, id asc).
-            for (int i = 0; i < ships.Count; i++)
-            {
-                MinimapBlipAnchor a = ships[i];
-                if (a == null || a.Kind != MinimapBlipKind.Ship)
-                    continue;
-                if (a.Team != team || a.AwaitingTeamSelection || a.OwnerNetworkId <= 0)
-                    continue;
-                if (a.OwnerNetworkId == localId)
-                    continue;
-
-                int score = ShipMatchScoreLogic.ComputeCombinedScore(
-                    Mathf.Max(0, a.Kills),
-                    Mathf.Max(0, a.GemsDeposited),
-                    Mathf.Max(0, a.PeopleDelivered));
-                bool ahead = score > myScore
-                    || (score == myScore && a.OwnerNetworkId < localId);
-                if (ahead)
-                    betterOrEqual++;
-            }
-
-            isCommander = TeamCommanderRules.IsCommanderRank(betterOrEqual + 1);
-            return true;
+            return ShipMatchScoreLogic.IsCommander(localId);
         }
 
         /// <summary>Removes command-deck words from the current compose rail.</summary>
@@ -2516,7 +2506,9 @@ namespace TitanOrbit.UI
             _minimapHost.anchoredPosition = Vector2.zero;
             LayoutMinimapDock(_dockSize);
 
-            go.SetActive(false);
+            // Stay active until BuildJamOverlay parents the lock veil. Building TMP /
+            // UGUI on an inactive dock threw in Awake and disabled this behaviour,
+            // so hold-S never opened the matrix.
         }
 
         /// <summary>Square card whose side matches the compose panel height.</summary>
@@ -2682,6 +2674,132 @@ namespace TitanOrbit.UI
                 Root = go,
                 Button = btn,
             };
+        }
+
+        /// <summary>
+        /// Builds the enemy-territory lock on the keyword card and the docked minimap.
+        /// The map uses its own mouse hit-test (not UGUI), so the veil is the visual
+        /// lock; <see cref="MinimapController"/> also refuses Here pings while jammed.
+        /// </summary>
+        void BuildJamOverlay()
+        {
+            _jamOverlay = CreateJamOverlay(_panel, "JamLock");
+            _jamMinimapOverlay = CreateJamOverlay(_minimapDock, "JamLock");
+            _jamOverlayVisible = false;
+        }
+
+        /// <summary>
+        /// One raycast-blocking veil plus the LOCK / COMMS JAMMED plate. Last sibling
+        /// so it sits above keywords or the reparented HUD map.
+        /// </summary>
+        /// <param name="parent">Compose card or minimap dock.</param>
+        /// <param name="name">GameObject name in the hierarchy.</param>
+        /// <returns>Hidden overlay root, or null when <paramref name="parent"/> is missing.</returns>
+        GameObject CreateJamOverlay(Transform parent, string name)
+        {
+            if (parent == null)
+                return null;
+
+            var go = new GameObject(name, typeof(RectTransform), typeof(Image));
+            go.transform.SetParent(parent, false);
+            var rt = go.GetComponent<RectTransform>();
+            Stretch(rt, 0f);
+            var veil = go.GetComponent<Image>();
+            veil.color = JamVeil;
+            veil.raycastTarget = true;
+
+            // --- Center lock plate ---
+            // Same CTA language as the ad-gate plate: dark glass, thin rail, two-line
+            // caption. Hostile red instead of amber so it cannot be mistaken for WATCH AD.
+            var plate = CreateIgnoredImage(go.transform, "Plate", JamPlate);
+            var plateRt = plate.rectTransform;
+            plateRt.anchorMin = new Vector2(0.5f, 0.5f);
+            plateRt.anchorMax = new Vector2(0.5f, 0.5f);
+            plateRt.pivot = new Vector2(0.5f, 0.5f);
+            plateRt.anchoredPosition = Vector2.zero;
+            plateRt.sizeDelta = new Vector2(260f, 72f);
+            var plateOutline = plate.gameObject.AddComponent<Outline>();
+            plateOutline.effectColor = JamStamp;
+            plateOutline.effectDistance = new Vector2(1.1f, -1.1f);
+            plateOutline.useGraphicAlpha = false;
+
+            var accent = CreateIgnoredImage(plate.transform, "Accent", JamStamp);
+            var accentRt = accent.rectTransform;
+            accentRt.anchorMin = new Vector2(0f, 1f);
+            accentRt.anchorMax = new Vector2(1f, 1f);
+            accentRt.pivot = new Vector2(0.5f, 1f);
+            accentRt.sizeDelta = new Vector2(-10f, 2f);
+            accentRt.anchoredPosition = Vector2.zero;
+
+            var lockLabel = CreateLabel(
+                plate.transform, "Lock", "LOCK", 9f, JamStamp, TextAlignmentOptions.Center);
+            lockLabel.fontStyle = FontStyles.Bold;
+            lockLabel.characterSpacing = 2.2f;
+            var lockRt = lockLabel.rectTransform;
+            lockRt.anchorMin = new Vector2(0f, 0.68f);
+            lockRt.anchorMax = new Vector2(1f, 1f);
+            lockRt.offsetMin = new Vector2(8f, 0f);
+            lockRt.offsetMax = new Vector2(-8f, -6f);
+
+            var title = CreateLabel(
+                plate.transform,
+                "Title",
+                "COMMS JAMMED",
+                13f,
+                JamStamp,
+                TextAlignmentOptions.Center);
+            title.fontStyle = FontStyles.Bold;
+            title.characterSpacing = 1.2f;
+            var titleRt = title.rectTransform;
+            titleRt.anchorMin = new Vector2(0f, 0.32f);
+            titleRt.anchorMax = new Vector2(1f, 0.72f);
+            titleRt.offsetMin = new Vector2(8f, 0f);
+            titleRt.offsetMax = new Vector2(-8f, 0f);
+
+            var sub = CreateLabel(
+                plate.transform,
+                "Sub",
+                "FROM ENEMY TERRITORY",
+                8f,
+                CaptionTextColor,
+                TextAlignmentOptions.Center);
+            sub.characterSpacing = 0.8f;
+            var subRt = sub.rectTransform;
+            subRt.anchorMin = new Vector2(0f, 0f);
+            subRt.anchorMax = new Vector2(1f, 0.36f);
+            subRt.offsetMin = new Vector2(8f, 6f);
+            subRt.offsetMax = new Vector2(-8f, 0f);
+
+            go.transform.SetAsLastSibling();
+            go.SetActive(false);
+            return go;
+        }
+
+        /// <summary>
+        /// Shows or hides the enemy-territory lock on both the keyword card and the
+        /// docked minimap. Called while S is held so crossing a triangle edge
+        /// mid-compose updates the veil without reopening the card.
+        /// </summary>
+        /// <param name="jammed">True when the local hull is in a non-friendly triangle.</param>
+        void PaintJamLock(bool jammed)
+        {
+            if (jammed == _jamOverlayVisible)
+                return;
+
+            _jamOverlayVisible = jammed;
+            SetJamOverlayActive(_jamOverlay, jammed);
+            SetJamOverlayActive(_jamMinimapOverlay, jammed);
+        }
+
+        /// <summary>Toggles one jam veil and keeps it above later-reparented children.</summary>
+        static void SetJamOverlayActive(GameObject overlay, bool jammed)
+        {
+            if (overlay == null)
+                return;
+
+            overlay.SetActive(jammed);
+            if (jammed)
+                overlay.transform.SetAsLastSibling();
         }
 
         /// <summary>Shows or hides a group unlock plate and blocks clicks while a video is up.</summary>

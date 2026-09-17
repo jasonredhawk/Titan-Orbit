@@ -135,6 +135,10 @@ namespace TitanOrbit.ECS
                 if (ship.IsDead || ship.AwaitingTeamSelection)
                     continue;
 
+                int interactNet = 0;
+                if (state.EntityManager.HasComponent<GhostOwner>(shipEntity))
+                    interactNet = state.EntityManager.GetComponentData<GhostOwner>(shipEntity).NetworkId;
+
                 // --- Stowed in planetary defense turret: hull is removed from play ---
                 if (state.EntityManager.HasComponent<ShipTurretControlState>(shipEntity) &&
                     state.EntityManager.GetComponentData<ShipTurretControlState>(shipEntity).IsControlling)
@@ -218,7 +222,7 @@ namespace TitanOrbit.ECS
                                 state.EntityManager.GetComponentData<AsteroidState>(other).Health);
 
                         if (remainingHp > 0.01f)
-                            ApplyAsteroidDamage(ref state, other, remainingHp, ship.Team);
+                            ApplyAsteroidDamage(ref state, other, remainingHp, ship.Team, interactNet);
                         if (IsDeadAsteroid(ref state, other))
                             AsteroidDeathPhysics.QueueStripColliders(ecb, state.EntityManager, other);
 
@@ -274,7 +278,7 @@ namespace TitanOrbit.ECS
                         float intensity = ShipComponentRammingSuggestions.ComputeRamImpactGemExpulsionIntensity(
                             impactForceN, selfDamage);
 
-                        ApplyAsteroidDamage(ref state, other, asteroidDamage, ship.Team);
+                        ApplyAsteroidDamage(ref state, other, asteroidDamage, ship.Team, interactNet);
                         if (IsDeadAsteroid(ref state, other))
                         {
                             // [PHYSICS] Drop the hull this tick so the next physics step cannot
@@ -725,7 +729,10 @@ namespace TitanOrbit.ECS
                 ShipComponentRammingSuggestions.ComputeRamGrindGemExpulsionIntensity(
                     taxedAccel, selfPulse);
 
-            ApplyAsteroidDamage(ref state, asteroid, asteroidPulse, ship.Team);
+            int grindNet = 0;
+            if (state.EntityManager.HasComponent<GhostOwner>(shipEntity))
+                grindNet = state.EntityManager.GetComponentData<GhostOwner>(shipEntity).NetworkId;
+            ApplyAsteroidDamage(ref state, asteroid, asteroidPulse, ship.Team, grindNet);
             if (IsDeadAsteroid(ref state, asteroid))
                 AsteroidDeathPhysics.QueueStripColliders(ecb, state.EntityManager, asteroid);
 
@@ -812,7 +819,12 @@ namespace TitanOrbit.ECS
         /// and must <see cref="AsteroidDeathPhysics.QueueStripColliders"/> on kill so the next
         /// physics step cannot ram a 0-HP hull.
         /// </summary>
-        static void ApplyAsteroidDamage(ref SystemState state, Entity asteroid, float damage, TeamId interactTeam)
+        static void ApplyAsteroidDamage(
+            ref SystemState state,
+            Entity asteroid,
+            float damage,
+            TeamId interactTeam,
+            int interactNetworkId)
         {
             if (damage <= 0.0001f || !state.EntityManager.Exists(asteroid))
                 return;
@@ -828,6 +840,7 @@ namespace TitanOrbit.ECS
             // [TITAN-ORBIT] Health is independent of RemainingGems (AsteroidSettings ratios).
             a.Health -= damage;
             a.LastInteractTeam = interactTeam;
+            a.LastInteractNetworkId = interactNetworkId;
             if (a.Health <= 0f)
             {
                 a.Health = 0f;

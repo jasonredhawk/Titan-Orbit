@@ -36,8 +36,8 @@ namespace TitanOrbit.Core
 
         /// <summary>
         /// Current All / Team / Commander audience. All is the default for first-time players.
-        /// Commander is only valid while this machine is a top-three commander — the panel
-        /// drops back to Team when rank falls.
+        /// Commander is only valid while this machine holds an earned category title —
+        /// the panel drops back to Team when every title is lost.
         /// </summary>
         public static ShipCommsChannel Channel
         {

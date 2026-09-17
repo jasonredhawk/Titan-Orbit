@@ -197,6 +197,7 @@ namespace TitanOrbit.ECS
 
                     asteroid.Health -= damage;
                     asteroid.LastInteractTeam = (TeamId)inst.SourceTeam;
+                    asteroid.LastInteractNetworkId = inst.SourceNetworkId;
                     if (asteroid.Health <= 0f)
                     {
                         asteroid.Health = 0f;

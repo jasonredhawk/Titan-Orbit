@@ -131,7 +131,7 @@ namespace TitanOrbit.Game
         readonly Dictionary<Entity, TeamId> _proxyAsteroidTerritory = new Dictionary<Entity, TeamId>();
 
         /// <summary>Last applied bonus-gem tint flag per gem proxy (skip retint every sync).</summary>
-        readonly Dictionary<Entity, bool> _proxyGemBonusTint = new Dictionary<Entity, bool>();
+        readonly Dictionary<Entity, GemVisualTint> _proxyGemBonusTint = new Dictionary<Entity, GemVisualTint>();
 
         /// <summary>
         /// [TITAN-ORBIT] Client topology revision last used for asteroid tint PIT.
@@ -1317,15 +1317,15 @@ namespace TitanOrbit.Game
                         continue;
                     }
                     gemValue = gemState.Value;
-                    // [TITAN-ORBIT] IsBonusGem can arrive one snapshot after Instantiates — retint
-                    // so a territory yellow gem does not stay on the pooled red material.
-                    // Skip GetComponentInChildren + sharedMaterial write when the flag is unchanged
+                    // [TITAN-ORBIT] Tint can arrive one snapshot after Instantiates — retint
+                    // so a yellow / blue extra does not stay on the pooled red material.
+                    // Skip GetComponentInChildren + sharedMaterial write when the tint is unchanged
                     // (grind dumps gems at 4 Hz; walking them all used to retint every frame).
-                    if (!_proxyGemBonusTint.TryGetValue(entity, out bool appliedBonus) ||
-                        appliedBonus != gemState.IsBonusGem)
+                    if (!_proxyGemBonusTint.TryGetValue(entity, out GemVisualTint appliedTint) ||
+                        appliedTint != gemState.Tint)
                     {
-                        GemVisualApplier.ApplyTintForBonusFlag(go, gemState.IsBonusGem);
-                        _proxyGemBonusTint[entity] = gemState.IsBonusGem;
+                        GemVisualApplier.ApplyTint(go, gemState.Tint);
+                        _proxyGemBonusTint[entity] = gemState.Tint;
                     }
                     // [TITAN-ORBIT] ServerTick clock — World.Time diverges on late-join (moon orbit rule).
                     float now = PlanetGemMoonOrbitClock.TryGetElapsedSeconds(out double tickNow, includeTickFraction: true)
@@ -1855,7 +1855,7 @@ namespace TitanOrbit.Game
                 // [TITAN-ORBIT] No ClientGemBurstPresenter invent. Pose comes from the
                 // interpolated gem ghost; GemClientMotionApplier copies LocalTransform.
                 if (!GemVisualApplier.TryCreateGemVisual(
-                        gemVisualPrefab, state.Value, state.IsBonusGem, out go))
+                        gemVisualPrefab, state.Value, state.Tint, out go))
                 {
                     go = GameObject.CreatePrimitive(PrimitiveType.Sphere);
                     go.name = "GemTagProxy";
@@ -1864,7 +1864,7 @@ namespace TitanOrbit.Game
                     var renderer = go.GetComponent<Renderer>();
                     if (renderer != null)
                         renderer.material = WorldBodyVisualApplier.CreateLitMaterial(
-                            state.IsBonusGem ? new Color(1f, 0.9f, 0.15f) : Color.red);
+                            GemVisualTintColors.FallbackLit(state.Tint));
                 }
                 else
                 {
@@ -3592,7 +3592,7 @@ namespace TitanOrbit.Game
                 // DrawGems catch-up — same pool Rent + motion applier as urgent Instantiates path.
                 GemVisualPool.EnsurePrefab(gemVisualPrefab);
                 if (!GemVisualApplier.TryCreateGemVisual(
-                        gemVisualPrefab, state.Value, state.IsBonusGem, out go))
+                        gemVisualPrefab, state.Value, state.Tint, out go))
                 {
                     go = GameObject.CreatePrimitive(PrimitiveType.Sphere);
                     go.name = "GemTagProxy";
@@ -3601,7 +3601,7 @@ namespace TitanOrbit.Game
                     var renderer = go.GetComponent<Renderer>();
                     if (renderer != null)
                         renderer.material = WorldBodyVisualApplier.CreateLitMaterial(
-                            state.IsBonusGem ? new Color(1f, 0.9f, 0.15f) : Color.red);
+                            GemVisualTintColors.FallbackLit(state.Tint));
                 }
 
                 _proxies[entity] = go;

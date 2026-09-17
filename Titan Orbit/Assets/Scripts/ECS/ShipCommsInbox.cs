@@ -140,13 +140,20 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// Enqueues one callout. Ignores NetworkId ≤ 0 or an empty count.
-        /// <paramref name="teamOnly"/> is presentation-only here — the server already
-        /// filtered who receives the RPC.
+        /// Enqueues one callout. Ignores NetworkId ≤ 0, an empty count, or a speaker
+        /// this client muted on the leaderboard (<see cref="CommsMuteList"/>).
+        /// Channel is presentation-only here — the server already filtered who receives the RPC.
         /// </summary>
         public static void Enqueue(in Callout callout)
         {
             if (callout.NetworkId <= 0 || callout.Count < 1)
+                return;
+
+            // [TITAN-ORBIT] Local mute — server still sent the RPC. Drop here so the
+            // presenter never paints chips, commander echoes, or path pings.
+            // The local player is never added to the mute list, so our own optimistic
+            // preview (ShipCommsPanel) still reaches the queue.
+            if (CommsMuteList.IsMuted(callout.NetworkId))
                 return;
 
             s_Pending.Enqueue(callout);

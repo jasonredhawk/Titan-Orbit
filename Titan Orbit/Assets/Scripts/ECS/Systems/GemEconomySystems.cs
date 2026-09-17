@@ -203,6 +203,7 @@ namespace TitanOrbit.ECS
                 ToroidalMapEcs.SetMapSize(mapW, mapH);
 
             var ecb = new EntityCommandBuffer(Allocator.Temp);
+            bool haveRoles = SystemAPI.TryGetSingleton<ShipCommandRoleSnapshot>(out var roles);
 
             // --- Home planet levels for territory gem bonus (1 + 0.05 × homeLevel) ---
             // [TITAN-ORBIT] Same formula as NGO MiningSystem when ship's team is in TerritoryTeamsMask.
@@ -259,10 +260,20 @@ namespace TitanOrbit.ECS
                         shipState.ValueRO.Team, a.TerritoryTeamsMask, homeLevel);
                     float bonusValue = mined * (gemMult - 1f);
 
+                    // --- Top-miner command bonus (blue, never mixed into yellow) ---
+                    // [TITAN-ORBIT] 5% of the red chip Instantiates as its own blue crystal.
+                    // Triangle yellow stays a separate spawn so both extras can sit on one rock.
+                    int minerNetId = 0;
+                    if (state.EntityManager.HasComponent<GhostOwner>(shipEntity))
+                        minerNetId = state.EntityManager.GetComponentData<GhostOwner>(shipEntity).NetworkId;
+                    bool isTopMiner = haveRoles && roles.IsMiner(shipState.ValueRO.Team, minerNetId);
+                    float minerBonus = TeamCommandRoleRules.GemBonusValue(mined, isTopMiner);
+
                     a.RemainingGems -= mined;
-                    // [TITAN-ORBIT] Record miner team so destroy Instantiates extra yellow yield
-                    // only inside that team's triangle. Collection is still free-for-all.
+                    // [TITAN-ORBIT] Record miner so destroy Instantiates yellow (team) and
+                    // blue (this NetworkId still holding the title). Collection is free-for-all.
                     a.LastInteractTeam = shipState.ValueRO.Team;
+                    a.LastInteractNetworkId = minerNetId;
                     if (a.RemainingGems <= 0f)
                     {
                         a.RemainingGems = 0f;
@@ -281,7 +292,7 @@ namespace TitanOrbit.ECS
                         (uint)asteroidEntity.Index,
                         burst: false,
                         spawnServerTime,
-                        isBonusGem: false);
+                        tint: GemVisualTint.Standard);
                     if (bonusValue >= GemEconomyConstants.MinGemSpawnValue)
                     {
                         GemSpawning.Spawn(
@@ -292,7 +303,20 @@ namespace TitanOrbit.ECS
                             (uint)asteroidEntity.Index + 7919u,
                             burst: false,
                             spawnServerTime,
-                            isBonusGem: true);
+                            tint: GemVisualTint.TerritoryBonus);
+                    }
+
+                    if (minerBonus >= GemEconomyConstants.MinGemSpawnValue)
+                    {
+                        GemSpawning.Spawn(
+                            ecb,
+                            prefabs.Gem,
+                            asteroidTransform.ValueRO.Position,
+                            minerBonus,
+                            (uint)asteroidEntity.Index + 4813u,
+                            burst: false,
+                            spawnServerTime,
+                            tint: GemVisualTint.MinerCommander);
                     }
                 }
             }
@@ -1049,6 +1073,7 @@ namespace TitanOrbit.ECS
             public float MaxHealth;
             public float Size;
             public TeamId LastInteractTeam;
+            public int LastInteractNetworkId;
             public byte TerritoryTeamsMask;
             public int LayoutSlot;
         }
@@ -1107,6 +1132,7 @@ namespace TitanOrbit.ECS
                     MaxHealth = a.MaxHealth,
                     Size = a.Size,
                     LastInteractTeam = a.LastInteractTeam,
+                    LastInteractNetworkId = a.LastInteractNetworkId,
                     TerritoryTeamsMask = a.TerritoryTeamsMask,
                     LayoutSlot = AsteroidLayoutSlot.Read(em, entity),
                 });
@@ -1150,17 +1176,37 @@ namespace TitanOrbit.ECS
                     bonusExtra = remaining * (mult - 1f);
                 }
 
+                // --- Top-miner command bonus (blue, its own burst) ---
+                // [TITAN-ORBIT] 5% of the red leftover. Not added into yellow — players see
+                // two extra colours when a titled miner pops a triangle rock.
+                float minerExtra = 0f;
+                if (dead.LastInteractNetworkId > 0
+                    && remaining >= GemEconomyConstants.MinGemSpawnValue
+                    && SystemAPI.TryGetSingleton<ShipCommandRoleSnapshot>(out var roles)
+                    && roles.IsMiner(dead.LastInteractTeam, dead.LastInteractNetworkId))
+                {
+                    minerExtra = TeamCommandRoleRules.GemBonusValue(remaining, true);
+                }
+
                 if (canSpawnGems && remaining >= GemEconomyConstants.MinGemSpawnValue)
                 {
                     // Deterministic seed so client immediate burst can match count/feel closely.
                     uint seed = math.hash(new uint2((uint)entity.Index, math.hash(pos)));
                     SpawnAsteroidDestructionGems(
-                        ecb, gemPrefab, pos, remaining, seed, settings, spawnTime, isBonusGem: false);
+                        ecb, gemPrefab, pos, remaining, seed, settings, spawnTime,
+                        GemVisualTint.Standard);
                     if (bonusExtra >= GemEconomyConstants.MinGemSpawnValue)
                     {
                         SpawnAsteroidDestructionGems(
                             ecb, gemPrefab, pos, bonusExtra, seed + 1337u, settings, spawnTime,
-                            isBonusGem: true);
+                            GemVisualTint.TerritoryBonus);
+                    }
+
+                    if (minerExtra >= GemEconomyConstants.MinGemSpawnValue)
+                    {
+                        SpawnAsteroidDestructionGems(
+                            ecb, gemPrefab, pos, minerExtra, seed + 2741u, settings, spawnTime,
+                            GemVisualTint.MinerCommander);
                     }
                 }
 
@@ -1228,11 +1274,11 @@ namespace TitanOrbit.ECS
             uint seed,
             GemExplosionSettings settings,
             float spawnServerTime,
-            bool isBonusGem)
+            GemVisualTint tint)
         {
             var recipes = new GemSpawnRecipe[GemExplosionMath.AbsoluteMaxGemCount];
             int count = GemBurstExpansion.FillRecipes(
-                pos, remaining, seed, spawnServerTime, isBonusGem, settings, recipes);
+                pos, remaining, seed, spawnServerTime, tint, settings, recipes);
             for (int i = 0; i < count; i++)
             {
                 GemSpawning.SpawnFromRecipe(
@@ -1240,7 +1286,7 @@ namespace TitanOrbit.ECS
             }
 
             if (count > 0)
-                GemNetNotify.SendBurst(ref ecb, pos, remaining, seed, spawnServerTime, isBonusGem);
+                GemNetNotify.SendBurst(ref ecb, pos, remaining, seed, spawnServerTime, tint);
         }
     }
 
@@ -1287,7 +1333,7 @@ namespace TitanOrbit.ECS
             float spawnServerTime,
             GemExplosionSettings settings = null,
             byte burstIndex = 0,
-            bool isBonusGem = false,
+            GemVisualTint tint = GemVisualTint.Standard,
             float burstIntensity = 1f,
             int excludePickupNetworkId = 0,
             float excludePickupUntilServerTime = 0f,
@@ -1306,7 +1352,7 @@ namespace TitanOrbit.ECS
                 burst,
                 spawnServerTime,
                 burstIndex,
-                isBonusGem,
+                tint,
                 burstIntensity,
                 excludePickupNetworkId,
                 excludePickupUntilServerTime,
@@ -1341,7 +1387,7 @@ namespace TitanOrbit.ECS
                 Size = resolved.Scale,
                 DepositTeam = TeamId.None,
                 SpawnServerTime = resolved.SpawnServerTime,
-                IsBonusGem = resolved.IsBonusGem,
+                Tint = resolved.Tint,
                 ExcludePickupNetworkId = resolved.ExcludePickupNetworkId,
                 ExcludePickupUntilServerTime = resolved.ExcludePickupUntilServerTime,
             });
@@ -1423,7 +1469,7 @@ namespace TitanOrbit.ECS
                 spawnServerTime,
                 settings: settings,
                 burstIndex: 0,
-                isBonusGem: false,
+                tint: GemVisualTint.Standard,
                 burstIntensity: math.saturate(intensity),
                 excludePickupNetworkId: excludeId,
                 excludePickupUntilServerTime: blockUntil);
@@ -1512,7 +1558,7 @@ namespace TitanOrbit.ECS
                 spawnServerTime,
                 settings: settings,
                 burstIndex: 0,
-                isBonusGem: false,
+                tint: GemVisualTint.Standard,
                 burstIntensity: 0.25f,
                 excludePickupNetworkId: excludeId,
                 excludePickupUntilServerTime: blockUntil,
