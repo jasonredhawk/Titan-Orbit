@@ -103,6 +103,12 @@ namespace TitanOrbit.Core
         static int s_PendingYouNetworkId;
 
         /// <summary>
+        /// True when this hold has "Us" on the rail. Compose rings the speaker plus
+        /// friendlies inside <c>YouSelectRange</c> of that hull — not the mouse.
+        /// </summary>
+        static bool s_HasPendingUs;
+
+        /// <summary>
         /// Free RECENT rows for players who have not watched the unlock ad.
         /// Rows after this sit under one unlock plate until that video (or remove-ads) opens them all.
         /// </summary>
@@ -152,6 +158,9 @@ namespace TitanOrbit.Core
         /// <summary>NetworkId locked by clicking "You". 0 when none.</summary>
         public static int PendingYouNetworkId => s_PendingYouNetworkId;
 
+        /// <summary>True when this hold has "Us" on the compose rail.</summary>
+        public static bool HasPendingUs => s_HasPendingUs;
+
         /// <summary>
         /// [UNITY] Domain Reload off leaves statics sticky across Play Mode. Clear the
         /// fire-suppression flag and drop the prefs cache so the next Play re-reads disk.
@@ -175,6 +184,7 @@ namespace TitanOrbit.Core
             s_LastPlayAim = Vector3.zero;
             s_HasPendingYou = false;
             s_PendingYouNetworkId = 0;
+            s_HasPendingUs = false;
         }
 
         /// <summary>
@@ -295,6 +305,23 @@ namespace TitanOrbit.Core
         {
             s_HasPendingYou = false;
             s_PendingYouNetworkId = 0;
+        }
+
+        /// <summary>
+        /// Marks "Us" as live for this hold so compose can ring the speaker plus
+        /// nearby friendlies. The set is gathered live each draw — we do not freeze
+        /// ids here the way You does, because ships can enter or leave that circle
+        /// while S is still held.
+        /// </summary>
+        public static void SetPendingUs()
+        {
+            s_HasPendingUs = true;
+        }
+
+        /// <summary>Drops the pending "Us" preview (new hold, toggle-off, or send consumed).</summary>
+        public static void ClearPendingUs()
+        {
+            s_HasPendingUs = false;
         }
 
         /// <summary>

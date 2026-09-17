@@ -15,11 +15,12 @@ namespace TitanOrbit.Game
         /// Word order is the path direction: "Me Planet" is Me → planet; "Planet Me"
         /// the other way. Consecutive nouns each get a segment ("Me Asteroid Moon"
         /// is Me → asteroid and asteroid → moon). A lone world noun implies Me,
-        /// unless the sentence named You / Us and nobody was locked — then the
+        /// unless the sentence named You and nobody was locked — then the
         /// source stays empty and only the world ring draws ("You Asteroid" is a
-        /// rock circle). Us is friendlies inside <see cref="YouSelectRange"/> of
-        /// the speaker hull. Escort is every teammate with troops aboard inside
-        /// that range of the mouse aim. Team-owned nouns default to the speaker's
+        /// rock circle). Us is the speaker plus friendlies inside
+        /// <see cref="YouSelectRange"/> of that hull, so "Us Asteroid" is we →
+        /// rock even when nobody else is nearby. Escort is every teammate with
+        /// troops aboard inside that range of the mouse aim. Team-owned nouns default to the speaker's
         /// team unless Attack / Enemy / a color word says otherwise. Verbs tint
         /// the following segment.
         /// Group words (Us / Escort / Everyone) fan to the next node.
@@ -27,7 +28,8 @@ namespace TitanOrbit.Game
     /// Endpoints are hollow rings sized to each target's collider.
         /// Top-3 team rank thickens the stroke only — no medal lining.
     /// Commander-keyword paths linger 10s after the 4s chips fade, thinner and quieter.
-    /// Target rings expire with the chips — only the stroke stays.
+    /// World target rings expire with the chips — only the stroke stays.
+    /// Minimap dest icons stay with the path, including that commander linger.
     /// Map size from <see cref="ToroidalMap"/>.
     /// </para>
     /// Client presentation only — no ECS gathers.
@@ -361,10 +363,11 @@ namespace TitanOrbit.Game
         /// Locks Us network ids at send and writes XZ fallbacks if a hull later despawns.
         /// Draw follows live proxies — it does not stay on these seats.
         /// <para>
-        /// [TITAN-ORBIT] Us is teammates inside <see cref="YouSelectRange"/> of the
-        /// speaker hull. Escort is every teammate that has troops aboard and sits
-        /// inside that same range of the play-plane mouse aim. Empty Us / Escort
-        /// stays empty (same as empty You).
+        /// [TITAN-ORBIT] Us is the speaker plus teammates inside
+        /// <see cref="YouSelectRange"/> of that hull. Escort is every teammate
+        /// that has troops aboard and sits inside that same range of the
+        /// play-plane mouse aim. Empty Escort stays empty (same as empty You).
+        /// Us is empty only when the speaker hull itself cannot be found.
         /// </para>
         /// </summary>
         static void SnapshotFrozen(
@@ -419,26 +422,31 @@ namespace TitanOrbit.Game
             }
             else if (words.HasUs)
             {
-                // --- Friendlies around the speaker ---
-                // Origin is the speaker hull written above (Me XZ if the proxy is
-                // gone). Aim is only a last-ditch fallback when we have no pose.
-                Vector3 usOrigin = me.x != 0f || me.z != 0f
-                    ? me
-                    : new Vector3(callout.MeX, 0f, callout.MeZ);
-                if (usOrigin.x == 0f && usOrigin.z == 0f)
-                    usOrigin = aim;
-
-                n = CollectClosest(
-                    usOrigin, YouSelectRange, callout.NetworkId, speakerTeam,
-                    teammatesOnly: true, enemiesOnly: false, s_IdScratch, MaxUsLocks);
+                // --- Speaker plus friendlies around that hull ---
+                // [TITAN-ORBIT] Us means "we". The speaker is always a target.
+                // Nearby teammates fill Us0–Us3 so remotes can follow those hulls.
+                // Origin is the speaker pose written above; aim is only a last-ditch
+                // fallback when we have no Me XZ at all.
+                n = CollectUsTargets(
+                    callout.NetworkId, speakerTeam, me, aim, s_TagIdScratch, MaxUsLocks + 1);
                 for (int i = 0; i < n; i++)
                 {
-                    if (!TryHullPos(s_IdScratch[i], out s_PosScratch[i]))
+                    if (!TryHullPos(s_TagIdScratch[i], out s_PosScratch[i]))
                         s_PosScratch[i] = Vector3.zero;
                 }
 
-                for (int i = 0; i < MaxUsLocks; i++)
-                    SetUsId(ref callout, i, i < n ? s_IdScratch[i] : 0);
+                int usSlot = 0;
+                for (int i = 0; i < n && usSlot < MaxUsLocks; i++)
+                {
+                    int id = s_TagIdScratch[i];
+                    if (id <= 0 || id == callout.NetworkId)
+                        continue;
+                    SetUsId(ref callout, usSlot, id);
+                    usSlot++;
+                }
+
+                for (int i = usSlot; i < MaxUsLocks; i++)
+                    SetUsId(ref callout, i, 0);
             }
             else if (words.HasThem)
             {
@@ -821,6 +829,38 @@ namespace TitanOrbit.Game
                 RingThicknessPixels);
         }
 
+        /// <summary>
+        /// Compose-time rings for "Us": this hull plus friendlies inside
+        /// <see cref="YouSelectRange"/>. Gathered live so a teammate who flies
+        /// into the circle while S is held still lights up before send.
+        /// </summary>
+        public static void DrawPendingUs(float alpha)
+        {
+            if (!ShipCommsClientState.HasPendingUs)
+                return;
+
+            int speaker = EcsGameBridge.GetLocalNetworkId();
+            if (speaker <= 0)
+                return;
+
+            // --- Live "we" ---
+            // Same cyan as pending You so compose locks read as one language.
+            // Speaker first, then up to MaxUsLocks teammates around that hull.
+            Vector3 me = Vector3.zero;
+            TryHullPos(speaker, out me);
+            TeamId team = ReadSpeakerTeam(speaker);
+            int n = CollectUsTargets(
+                speaker, team, me, me, s_TagIdScratch, MaxUsLocks + 1);
+            Color c = new Color(0.35f, 0.72f, 0.95f, 0.85f * alpha);
+            for (int i = 0; i < n; i++)
+            {
+                int id = s_TagIdScratch[i];
+                if (id <= 0 || !TryHullPos(id, out Vector3 pos))
+                    continue;
+                DrawHollowRing(Lift(pos), HullRadius(id), c, id, RingThicknessPixels);
+            }
+        }
+
         /// <summary>0–1 grow along the path this cycle, or false during the short gap.</summary>
         public static bool TryGetTravelT(float age, out float t)
         {
@@ -917,6 +957,118 @@ namespace TitanOrbit.Game
             }
 
             return written;
+        }
+
+        /// <summary>
+        /// Destination world XZ points for the minimap target icon. Independent of
+        /// the grow-and-repeat travel pulse so the bullseye stays up for the whole
+        /// message, including commander linger. Dedupes Everyone / Us fans that share
+        /// one planet. A world-only sentence (empty You + Asteroid) still writes
+        /// that rock even when no line grew.
+        /// </summary>
+        /// <param name="chipLifetime">Same 4s chip window the world drawer uses.</param>
+        /// <param name="linger">Optional per-slot flag. True = quieter linger chrome.</param>
+        /// <returns>How many unique dests were written from <paramref name="start"/>.</returns>
+        public static int CopyVisibleTargets(
+            in ShipCommsInbox.Callout callout,
+            float age,
+            float chipLifetime,
+            Vector3[] positions,
+            Color[] colors,
+            bool[] linger,
+            int start,
+            int max)
+        {
+            if (positions == null || colors == null || start >= max)
+                return 0;
+            if (!LocalViewerCanSeePaths(callout.NetworkId))
+                return 0;
+
+            // --- Lifetime ---
+            // Same window as the path stroke. World rings die at 4s; these dest
+            // icons ride the commander ghost so the map still names the target.
+            float lingerSeconds = ShouldLingerCommanderPaths(in callout)
+                ? CommanderPathLingerSeconds
+                : 0f;
+            if (!TryResolvePathPresentation(
+                    age, chipLifetime, lingerSeconds,
+                    out _, out float lineAlpha, out _))
+                return 0;
+
+            ParseWords(in callout, out ParsedWords words);
+            int n = BuildPaths(in callout, in words, s_PathFrom, s_PathTo, s_PathFromR, s_PathToR, MaxPaths);
+            Color fallback = ResolveActionColor(in words);
+            bool lingering = lingerSeconds > 0f && age >= chipLifetime;
+            int written = 0;
+
+            // --- Path destinations ---
+            // Word order is direction, so the target is the `to` seat (Planet in
+            // "Me Planet", You in "Me Attack You"). Shared dests write once.
+            for (int i = 0; i < n && start + written < max; i++)
+            {
+                Color painted = s_PathColor[i].a > 0.01f ? s_PathColor[i] : fallback;
+                painted.a = lineAlpha;
+                TryWriteUniqueTarget(
+                    positions, colors, linger, start, ref written, max,
+                    s_PathTo[i], painted, lingering);
+            }
+
+            if (written > 0)
+                return written;
+
+            // --- World ring, no line ---
+            // "You Asteroid" with nobody locked still plants a rock circle. The
+            // minimap should keep that mark even though BuildPaths wrote 0 segments.
+            Color worldPaint = fallback;
+            worldPaint.a = lineAlpha;
+            int worldN = s_LastNodeCount;
+            for (int i = 0; i < worldN && start + written < max; i++)
+            {
+                int hits = ExpandAnchor(in callout, in words, s_AnchorScratch[i], s_ExpandA, s_RadiusA);
+                for (int h = 0; h < hits && start + written < max; h++)
+                {
+                    TryWriteUniqueTarget(
+                        positions, colors, linger, start, ref written, max,
+                        s_ExpandA[h], worldPaint, lingering);
+                }
+            }
+
+            return written;
+        }
+
+        /// <summary>
+        /// Writes <paramref name="world"/> when no already-written dest sits on the
+        /// same XZ seat. Everyone → one planet would otherwise stack 8 icons.
+        /// </summary>
+        static void TryWriteUniqueTarget(
+            Vector3[] positions,
+            Color[] colors,
+            bool[] linger,
+            int start,
+            ref int written,
+            int max,
+            Vector3 world,
+            Color color,
+            bool lingering)
+        {
+            if (start + written >= max)
+                return;
+
+            const float sameSq = 3f * 3f;
+            for (int i = 0; i < written; i++)
+            {
+                Vector3 delta = positions[start + i] - world;
+                delta.y = 0f;
+                if (delta.sqrMagnitude <= sameSq)
+                    return;
+            }
+
+            int slot = start + written;
+            positions[slot] = world;
+            colors[slot] = color;
+            if (linger != null)
+                linger[slot] = lingering;
+            written++;
         }
 
         /// <summary>1-based team rank of the speaker, or 0 when unknown.</summary>
@@ -1029,8 +1181,9 @@ namespace TitanOrbit.Game
             }
 
             // Lone world noun still gets Me → target so a solo "Moon" reads.
-            // [TITAN-ORBIT] Empty You / Us is a real choice: "You Asteroid" or
-            // "Us Asteroid" with no locked hull must not grow a speaker line.
+            // [TITAN-ORBIT] Empty You is a real choice: "You Asteroid" with no
+            // locked hull must not grow a speaker line. Us includes the speaker,
+            // so NamedShipSourceIsEmpty is false whenever Me is live.
             if (written == 0
                 && !NamedShipSourceIsEmpty(in callout, in words)
                 && TryLiveMe(in callout, out Vector3 speaker))
@@ -1119,8 +1272,8 @@ namespace TitanOrbit.Game
         /// <summary>
         /// Drops nouns that have no live target. A lone world noun (or a chain with
         /// no speaker word) prepends Me — "Moon" is Me → friendly moon.
-        /// Empty You / Us is the exception: the word stays a missing source, so we
-        /// do not rewrite it as the speaker.
+        /// Empty You is the exception: the word stays a missing source, so we
+        /// do not rewrite it as the speaker. Us already includes Me.
         /// </summary>
         static int CompactAnchors(
             in ShipCommsInbox.Callout callout,
@@ -1144,7 +1297,7 @@ namespace TitanOrbit.Game
             }
 
             // --- Classify survivors ---
-            // hasShipSrc is a live You / Us / Everyone seat. Empty You / Us was
+            // hasShipSrc is a live You / Us / Everyone seat. Empty You was
             // already dropped above, so it does not count as a source here.
             bool hasMe = false;
             bool hasShipSrc = false;
@@ -1161,8 +1314,8 @@ namespace TitanOrbit.Game
             }
 
             // --- Optional Me prefix ---
-            // "Asteroid" alone still reads as Me → rock. "You Asteroid" / "Us
-            // Asteroid" with no locked hull already named a source — leave Me out.
+            // "Asteroid" alone still reads as Me → rock. "You Asteroid" with no
+            // locked hull already named a source — leave Me out. Us keeps Me.
             if (!hasMe
                 && hasWorld
                 && !hasShipSrc
@@ -1222,9 +1375,9 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// True when the sentence named You or Us and that seat has no other hull.
-        /// [TITAN-ORBIT] Empty You / Us must not become Me — the player asked for
-        /// another ship and got none, so the path has no source.
+        /// True when the sentence named You or Us and that seat has no hull.
+        /// [TITAN-ORBIT] Empty You must not become Me — the player asked for
+        /// another ship and got none, so the path has no source. Us includes Me.
         /// </summary>
         static bool NamedShipSourceIsEmpty(in ShipCommsInbox.Callout callout, in ParsedWords words)
         {
@@ -1246,12 +1399,21 @@ namespace TitanOrbit.Game
 
         /// <summary>
         /// True when the sentence named Us / Escort and no hull was locked.
-        /// Us never counts the speaker; Escort may, so any positive seat counts.
+        /// Us always includes the speaker, so a live Me pose fills the word even
+        /// when nobody else is nearby. Escort may include the speaker too, so any
+        /// positive seat counts.
         /// </summary>
         static bool UsSourceIsEmpty(in ShipCommsInbox.Callout callout, in ParsedWords words)
         {
             if (!words.HasUs && !words.HasEscort)
                 return false;
+
+            // --- Us is "we" ---
+            // [TITAN-ORBIT] Clicking Us targets this hull first. A missing nearby
+            // squad must not drop the speaker the way empty You drops its seat.
+            if (words.HasUs && TryLiveMe(in callout, out _))
+                return false;
+
             if (words.HasEscort && callout.GroupCount > 0)
                 return false;
             for (int i = 0; i < MaxUsLocks; i++)
@@ -1393,14 +1555,33 @@ namespace TitanOrbit.Game
             return new Vector3(callout.MeX, 0f, callout.MeZ);
         }
 
+        /// <summary>
+        /// Live Us seats: speaker first, then the frozen Us0–Us3 friendlies.
+        /// Pose follows each proxy. Identity stays the send-time locks so every
+        /// viewer draws the same "we" even if someone later flies out of range.
+        /// </summary>
         static int ReadLiveUs(in ShipCommsInbox.Callout callout, Vector3[] dst, float[] radii)
         {
             int written = 0;
-            int cap = dst != null ? Mathf.Min(MaxUsLocks, dst.Length) : 0;
-            for (int i = 0; i < cap; i++)
+            int cap = dst != null ? Mathf.Min(MaxUsLocks + 1, dst.Length) : 0;
+
+            // --- Speaker is always Us ---
+            // Wire slots hold the other hulls only. Remotes still know the speaker
+            // from NetworkId, so we prepend that pose here.
+            if (cap > 0 && TryLiveMe(in callout, out Vector3 me))
+            {
+                dst[written] = me;
+                if (written < s_IdScratch.Length)
+                    s_IdScratch[written] = callout.NetworkId;
+                if (radii != null)
+                    radii[written] = HullRadius(callout.NetworkId);
+                written++;
+            }
+
+            for (int i = 0; i < MaxUsLocks && written < cap; i++)
             {
                 int id = GetUsId(in callout, i);
-                if (id <= 0 || !TryHullPos(id, out dst[written]))
+                if (id <= 0 || id == callout.NetworkId || !TryHullPos(id, out dst[written]))
                     continue;
                 if (written < s_IdScratch.Length)
                     s_IdScratch[written] = id;
@@ -1672,8 +1853,9 @@ namespace TitanOrbit.Game
         {
             Color c = color;
             c.a = alpha * 0.85f;
-            if (TryLiveMe(in callout, out Vector3 me)
-                && (words.HasMe || SpeakerOnPath(me, pathCount)))
+            bool drewSpeaker = TryLiveMe(in callout, out Vector3 me)
+                && (words.HasMe || SpeakerOnPath(me, pathCount));
+            if (drewSpeaker)
             {
                 DrawHollowRing(Lift(me), HullRadius(callout.NetworkId), c, callout.NetworkId, RingThicknessPixels);
             }
@@ -1691,6 +1873,10 @@ namespace TitanOrbit.Game
             for (int i = 0; i < group; i++)
             {
                 int owner = i < s_IdScratch.Length ? s_IdScratch[i] : 0;
+                // ReadLiveUs prepends the speaker. Skip a second ring when Me
+                // or a path endpoint already marked that hull.
+                if (drewSpeaker && owner == callout.NetworkId)
+                    continue;
                 DrawHollowRing(Lift(s_ExpandA[i]), s_RadiusA[i], c, owner > 0 ? owner : callout.NetworkId, RingThicknessPixels);
             }
 
@@ -1750,6 +1936,63 @@ namespace TitanOrbit.Game
             return ShipWeaponProxyRegistry.CollectClosestHulls(
                 aim, range, exclude, team, teammatesOnly, enemiesOnly, dst, max,
                 troopCarriersOnly);
+        }
+
+        /// <summary>
+        /// Fills speaker first, then nearest teammates inside
+        /// <see cref="YouSelectRange"/> of that hull. Compose preview and send
+        /// snapshot share this so the rings the player saw match the sent path.
+        /// </summary>
+        /// <param name="speakerId">Local / callout NetworkId. Always written first when positive.</param>
+        /// <param name="speakerTeam">Presentation team used to keep Us on friendlies.</param>
+        /// <param name="speakerPos">Live Me pose, or zero when the proxy is gone.</param>
+        /// <param name="aimFallback">Play-plane aim used only when Me XZ is missing.</param>
+        /// <param name="dst">Caller buffer. Must not be <see cref="s_IdScratch"/>.</param>
+        /// <param name="max">Cap including the speaker seat.</param>
+        /// <returns>How many ids were written (at least 1 when speakerId is set).</returns>
+        public static int CollectUsTargets(
+            int speakerId,
+            TeamId speakerTeam,
+            Vector3 speakerPos,
+            Vector3 aimFallback,
+            int[] dst,
+            int max)
+        {
+            if (dst == null || max <= 0)
+                return 0;
+
+            int cap = Mathf.Min(max, dst.Length);
+            int written = 0;
+
+            // --- Speaker ---
+            // [TITAN-ORBIT] Us is "we". This hull is a target even when the
+            // circle around it is empty.
+            if (speakerId > 0 && written < cap)
+                dst[written++] = speakerId;
+
+            // --- Nearby friendlies ---
+            // Origin is the speaker. Aim is only used when we have no pose
+            // (despawned proxy, or a send that ran before the visualizer spawned).
+            Vector3 origin = speakerPos;
+            if (origin.x == 0f && origin.z == 0f && !TryHullPos(speakerId, out origin))
+                origin = aimFallback;
+
+            int othersCap = cap - written;
+            if (othersCap <= 0)
+                return written;
+
+            int n = CollectClosest(
+                origin, YouSelectRange, speakerId, speakerTeam,
+                teammatesOnly: true, enemiesOnly: false, s_IdScratch, othersCap);
+            for (int i = 0; i < n && written < cap; i++)
+            {
+                int id = s_IdScratch[i];
+                if (id <= 0 || id == speakerId)
+                    continue;
+                dst[written++] = id;
+            }
+
+            return written;
         }
 
         static bool TryHullPos(int networkId, out Vector3 pos)

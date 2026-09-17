@@ -100,8 +100,12 @@ namespace TitanOrbit.UI
         static readonly Color CommanderChannelColor = TeamCommanderRules.Gold;
         /// <summary>Near-void plate so a locked command tile does not read as a live chip.</summary>
         static readonly Color CommanderLockedFill = new Color(0.008f, 0.008f, 0.012f, 0.92f);
-        /// <summary>Faded brass for the LOCK stamp — readable, not a gold “selected” glow.</summary>
-        static readonly Color CommanderLockedStamp = new Color(0.42f, 0.34f, 0.18f, 0.70f);
+        /// <summary>
+        /// Bright command brass for the LOCK stamp. Close to
+        /// <see cref="TeamCommanderRules.Gold"/> so gated tiles read at a glance,
+        /// but not the live selected outline (that glow is still off while locked).
+        /// </summary>
+        static readonly Color CommanderLockedStamp = new Color(0.94f, 0.80f, 0.38f, 0.98f);
         /// <summary>Word under LOCK — low contrast so it cannot be mistaken for a pick.</summary>
         static readonly Color CommanderLockedWord = new Color(0.28f, 0.30f, 0.34f, 0.38f);
         /// <summary>Veil over a whole locked group so one ad reads as one lock, not a stamp per chip.</summary>
@@ -553,6 +557,7 @@ namespace TitanOrbit.UI
                 {
                     ShipCommsClientState.ClearPendingWaypoint();
                     ShipCommsClientState.ClearPendingYou();
+                    ShipCommsClientState.ClearPendingUs();
                 }
             }
 
@@ -577,6 +582,7 @@ namespace TitanOrbit.UI
                 PaintSequence();
                 ShipCommsClientState.ClearPendingWaypoint();
                 ShipCommsClientState.ClearPendingYou();
+                ShipCommsClientState.ClearPendingUs();
                 HUDController.SetCommsMatrixObscuresHud(true);
                 DockMinimap();
             }
@@ -658,6 +664,7 @@ namespace TitanOrbit.UI
 
             ShipCommsClientState.ClearPendingWaypoint();
             ShipCommsClientState.ClearPendingYou();
+            ShipCommsClientState.ClearPendingUs();
         }
 
         /// <summary>
@@ -681,6 +688,8 @@ namespace TitanOrbit.UI
                 _sequence.RemoveAt(existing);
                 if (!SequenceHasYou())
                     ShipCommsClientState.ClearPendingYou();
+                if (!SequenceHasUs())
+                    ShipCommsClientState.ClearPendingUs();
                 if (!SequenceHasHere())
                     ShipCommsClientState.ClearPendingWaypoint();
                 PaintSequence();
@@ -692,6 +701,7 @@ namespace TitanOrbit.UI
 
             _sequence.Add(index);
             TryLockYouOnClick(index);
+            TryLockUsOnClick(index);
             PaintSequence();
         }
 
@@ -720,7 +730,27 @@ namespace TitanOrbit.UI
                 ShipCommsClientState.ClearPendingYou();
         }
 
+        /// <summary>
+        /// Rings the speaker plus nearby friendlies when the player clicks "Us".
+        /// [TITAN-ORBIT] Us always includes this hull. Other seats are teammates
+        /// inside <see cref="ShipCommsCalloutGraphics.YouSelectRange"/> of Me —
+        /// not the play-plane aim used by You.
+        /// </summary>
+        void TryLockUsOnClick(byte index)
+        {
+            var catalog = ShipCommsKeywordCatalog.LoadDefault();
+            if (!catalog.TryGetLabel(index, out string label)
+                || !string.Equals(label, "Us", System.StringComparison.OrdinalIgnoreCase))
+                return;
+
+            // Compose can open only while this machine has a local ship, so Me
+            // is always a legal Us seat even when nobody else is nearby.
+            ShipCommsClientState.SetPendingUs();
+        }
+
         bool SequenceHasYou() => SequenceHasLabel("You");
+
+        bool SequenceHasUs() => SequenceHasLabel("Us");
 
         bool SequenceHasHere() => SequenceHasLabel("Here");
 
@@ -781,6 +811,8 @@ namespace TitanOrbit.UI
             _sequence.RemoveRange(slot, _sequence.Count - slot);
             if (!SequenceHasYou())
                 ShipCommsClientState.ClearPendingYou();
+            if (!SequenceHasUs())
+                ShipCommsClientState.ClearPendingUs();
             if (!SequenceHasHere())
                 ShipCommsClientState.ClearPendingWaypoint();
             PaintSequence();
@@ -834,6 +866,10 @@ namespace TitanOrbit.UI
                 ShipCommsClientState.ClearPendingWaypoint();
 
             ShipCommsClientState.ClearPendingYou();
+            if (SequenceHasUs())
+                ShipCommsClientState.SetPendingUs();
+            else
+                ShipCommsClientState.ClearPendingUs();
             ShipCommsClientState.ClearLastPlayAim();
 
             // Recent rows that used command words snap back to the Commander channel
@@ -1879,7 +1915,7 @@ namespace TitanOrbit.UI
 
             // Hidden until the command deck is locked so a live CMDR tile does not look gated.
             var lockLabel = CreateLabel(
-                fill.transform, "Lock", "LOCK", 8f, CommanderLockedStamp, TextAlignmentOptions.Center);
+                fill.transform, "Lock", "LOCK", 10f, CommanderLockedStamp, TextAlignmentOptions.Center);
             Stretch(lockLabel.rectTransform, 2f);
             lockLabel.characterSpacing = 1.2f;
             lockLabel.fontStyle = FontStyles.Bold;

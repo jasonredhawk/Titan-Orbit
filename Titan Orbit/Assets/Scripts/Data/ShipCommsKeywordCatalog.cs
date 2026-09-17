@@ -107,8 +107,8 @@ namespace TitanOrbit.Data
         /// clients but the compose panel hides it; use "Mining" under Tactical.
         /// Indices 47–48 were Scout/Rally and now read Transport/Deposit. Subject
         /// Transport (34) and Dock (38) stay on the wire but are hidden from the matrix.
-        /// Index 19 shipped as "Them" and now reads "Us" (Subject — friendlies in
-        /// range of the speaker). Index 20 shipped as "Us" and now reads "Escort"
+        /// Index 19 shipped as "Them" and now reads "Us" (Subject — the speaker
+        /// plus friendlies in range of that hull). Index 20 shipped as "Us" and now reads "Escort"
         /// under <see cref="ShipCommsKeywordCategory.Commander"/> so the matrix
         /// has one Us. "Everyone" (57) stays Commander. Indices 58–65 are commander
         /// verbs. 66–67 (Mines / Rocket) fill the SUBJECT 5-wide grid.
@@ -355,7 +355,7 @@ namespace TitanOrbit.Data
         /// True when this row belongs on the COMMANDER banner. Category is the
         /// source of truth; the label fallback keeps "Escort" / "Everyone" on the
         /// command deck if an older Resources asset still tags them as Subject.
-        /// "Us" is a Subject word (friendlies near the speaker) — not commander.
+        /// "Us" is a Subject word (speaker plus friendlies near that hull) — not commander.
         /// </summary>
         /// <param name="word">Catalog row (wire index unchanged).</param>
         public static bool IsCommanderWord(in ShipCommsKeyword word)

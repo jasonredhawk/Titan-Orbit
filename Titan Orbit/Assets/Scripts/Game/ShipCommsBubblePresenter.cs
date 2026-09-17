@@ -32,6 +32,7 @@ namespace TitanOrbit.Game
     /// speaker's team color ties the chip row back to the hull.
     /// Commander-keyword paths keep drawing for 10s after the 4s chips fade, thinner
     /// and partly transparent so the order stays visible without blocking the fight.
+    /// Minimap dest icons use the same window so the target stays on the radar disc.
     /// Borders are a sliced AA frame Image — not UGUI <c>Outline</c>, which crawls while the
     /// ship flies. Execution order 67012: after <see cref="EcsWorldVisualizer"/> and nameplates.
     /// </summary>
@@ -240,6 +241,42 @@ namespace TitanOrbit.Game
                     to,
                     colors,
                     ranks,
+                    linger,
+                    written,
+                    max);
+            }
+
+            return written;
+        }
+
+        /// <summary>
+        /// Copies unique comms destinations (world XZ) for the minimap target icon.
+        /// Same lifetime as <see cref="CopyLivePathSegments"/> — 4s chips plus the
+        /// quieter commander linger — but it does not blink off with the travel pulse.
+        /// No alloc; walks the live speaker bubbles only (echoes have no path).
+        /// </summary>
+        /// <param name="linger">Optional per-slot flag. True = thinner / quieter chrome.</param>
+        public static int CopyLivePathTargets(
+            Vector3[] positions, Color[] colors, bool[] linger, int max)
+        {
+            if (s_Instance == null || positions == null || colors == null || max <= 0)
+                return 0;
+
+            int written = 0;
+            foreach (var pair in s_Instance._live)
+            {
+                Bubble bubble = pair.Value;
+                if (bubble == null || written >= max)
+                    break;
+                if (bubble.Age >= ResolveExpireSeconds(bubble))
+                    continue;
+
+                written += ShipCommsCalloutGraphics.CopyVisibleTargets(
+                    in bubble.Callout,
+                    bubble.Age,
+                    LifetimeSeconds,
+                    positions,
+                    colors,
                     linger,
                     written,
                     max);
@@ -621,7 +658,8 @@ namespace TitanOrbit.Game
 
             bool pendingPing = ShipCommsClientState.IsOpen && ShipCommsClientState.HasPendingWaypoint;
             bool pendingYou = ShipCommsClientState.IsOpen && ShipCommsClientState.HasPendingYou;
-            if (_live.Count <= 0 && _echo.Count <= 0 && !pendingPing && !pendingYou)
+            bool pendingUs = ShipCommsClientState.IsOpen && ShipCommsClientState.HasPendingUs;
+            if (_live.Count <= 0 && _echo.Count <= 0 && !pendingPing && !pendingYou && !pendingUs)
                 return;
 
             using (Draw.Command(cam))
@@ -645,6 +683,8 @@ namespace TitanOrbit.Game
 
                 if (pendingYou)
                     ShipCommsCalloutGraphics.DrawPendingYou(1f);
+                if (pendingUs)
+                    ShipCommsCalloutGraphics.DrawPendingUs(1f);
             }
         }
 

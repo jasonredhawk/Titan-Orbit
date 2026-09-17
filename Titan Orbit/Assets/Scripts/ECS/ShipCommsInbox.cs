@@ -71,16 +71,16 @@ namespace TitanOrbit.ECS
             /// <summary>1 when the sentence fans out to every teammate (Everyone / Team).</summary>
             public byte Everyone;
 
-            /// <summary>Closest-in-range ships locked by "Us".</summary>
+            /// <summary>Nearby teammate locked by "Us" (speaker is implied). 0 when unused.</summary>
             public int Us0;
 
-            /// <summary>Second "Us" ship.</summary>
+            /// <summary>Second nearby "Us" teammate.</summary>
             public int Us1;
 
-            /// <summary>Third "Us" ship.</summary>
+            /// <summary>Third nearby "Us" teammate.</summary>
             public int Us2;
 
-            /// <summary>Fourth "Us" ship.</summary>
+            /// <summary>Fourth nearby "Us" teammate.</summary>
             public int Us3;
 
             /// <summary>Speaker XZ fallback if the live hull is gone.</summary>

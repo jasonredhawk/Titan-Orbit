@@ -33,6 +33,8 @@ namespace TitanOrbit.UI
     /// <see cref="MinimapPlanetHoverTip"/>. Team Attack / Defend orders live in the
     /// <see cref="ShipCommsPanel"/> Comms Matrix — this map no longer pops those buttons.
     /// Clicks still pick a respawn planet (death overlay) or plant a Here ping (comms dock).
+    /// Live comms sentences keep a dest bullseye on this disc for the message (and
+    /// commander linger), clamped to the rim when the world point sits outside radar.
     /// Client presentation only — reads <see cref="MinimapBlipAnchor"/> caches, never map-body ECS gathers.
     /// </summary>
     public class MinimapController : MonoBehaviour
@@ -104,6 +106,7 @@ namespace TitanOrbit.UI
         Transform _commsDockRestoreParent;
         int _commsDockRestoreSibling;
         RectTransform _commsPingRt;
+        static Sprite s_CommsBullseyeSprite;
         static readonly Color CommsPingColor = new Color(0.35f, 0.72f, 0.95f, 0.95f);
         const float CommsPingSize = 16f;
         const int MaxCommsMapLines = 24;
@@ -112,6 +115,9 @@ namespace TitanOrbit.UI
         static readonly Color[] s_CommsColors = new Color[MaxCommsMapLines];
         static readonly int[] s_CommsRanks = new int[MaxCommsMapLines];
         static readonly bool[] s_CommsLinger = new bool[MaxCommsMapLines];
+        static readonly Vector3[] s_CommsTargets = new Vector3[MaxCommsMapLines];
+        static readonly Color[] s_CommsTargetColors = new Color[MaxCommsMapLines];
+        static readonly bool[] s_CommsTargetLinger = new bool[MaxCommsMapLines];
 
         struct CommsMapLine
         {
@@ -120,6 +126,7 @@ namespace TitanOrbit.UI
         }
 
         readonly List<CommsMapLine> _commsPathLines = new List<CommsMapLine>(8);
+        readonly List<Image> _commsTargetIcons = new List<Image>(8);
 
         /// <summary>Unscaled time of the last respawn RPC so a double-click cannot spam the server.</summary>
         float _lastRespawnRequestTime = -10f;
@@ -622,7 +629,7 @@ namespace TitanOrbit.UI
             go.transform.SetParent(minimapContent, false);
             var img = go.AddComponent<Image>();
             img.raycastTarget = false;
-            img.sprite = CreateBullseyeSprite(32);
+            img.sprite = GetCommsBullseyeSprite();
             img.color = CommsPingColor;
 
             _commsPingRt = go.GetComponent<RectTransform>();
@@ -669,67 +676,210 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// Projects live world comms lines onto the map (HUD circle and comms dock).
-        /// Uses shortest-path offsets so a wrap does not stretch across the disc.
-        /// Commander linger copies the same thinner, quieter stroke as the world ghost.
+        /// Projects live world comms lines and dest icons onto the map (HUD circle
+        /// and comms dock). Uses shortest-path offsets so a wrap does not stretch
+        /// across the disc. Commander linger copies the same thinner, quieter stroke
+        /// as the world ghost. Dest bullseyes stay for the full message — including
+        /// that linger — and clamp to the rim when the world point is off-radar.
         /// </summary>
+        /// <param name="playerPos">Local ship world pose; map center.</param>
         void UpdateCommsPathLines(Vector3 playerPos)
         {
             if (minimapContent == null || displaySize < 8f || minimapRadius < 0.01f)
             {
                 HideCommsPathLines();
+                HideCommsTargetIcons();
                 return;
             }
 
+            // --- Lines ---
+            // Travel pulse can write 0 this frame (the "off" gap). Dest icons
+            // still update so the target does not blink with the stroke.
             int count = ShipCommsBubblePresenter.CopyLivePathSegments(
                 s_CommsFrom, s_CommsTo, s_CommsColors, s_CommsRanks, MaxCommsMapLines, s_CommsLinger);
             if (count <= 0)
             {
                 HideCommsPathLines();
+            }
+            else
+            {
+                float half = displaySize * 0.5f;
+                float invR = 1f / minimapRadius;
+                float inset = CommsMapDiscInset(half);
+                for (int i = 0; i < count; i++)
+                {
+                    CommsMapLine line = EnsureCommsPathLine(i);
+                    GetToroidalDelta(playerPos, s_CommsFrom[i], out float fx, out float fz);
+                    GetToroidalDelta(s_CommsFrom[i], s_CommsTo[i], out float ox, out float oz);
+                    Vector2 a = ClampToMinimapDisc(new Vector2(fx * invR * half, fz * invR * half), half, inset);
+                    Vector2 b = ClampToMinimapDisc(new Vector2((fx + ox) * invR * half, (fz + oz) * invR * half), half, inset);
+                    Vector2 delta = b - a;
+                    float len = delta.magnitude;
+                    if (len < 1.5f)
+                    {
+                        HideCommsMapLine(line);
+                        continue;
+                    }
+
+                    ShipCommsCalloutGraphics.ResolveLineStrokeForRank(
+                        s_CommsRanks[i], forMinimap: true,
+                        out float corePx, out float outlinePx, out Color outlineColor);
+
+                    Vector2 mid = (a + b) * 0.5f;
+                    float angle = Mathf.Atan2(delta.y, delta.x) * Mathf.Rad2Deg;
+                    Color core = s_CommsColors[i];
+                    // World DrawIntent already wrote linger alpha onto the color. Live
+                    // paths still get the usual near-solid map stroke.
+                    if (s_CommsLinger[i])
+                        ShipCommsCalloutGraphics.ApplyLingerStroke(ref corePx, ref outlinePx);
+                    else
+                        core.a = 0.92f;
+                    if (outlinePx > corePx && line.Outline != null)
+                        PlaceCommsMapStroke(line.Outline, mid, len, outlinePx, angle, outlineColor, asLast: false);
+                    else if (line.Outline != null && line.Outline.gameObject.activeSelf)
+                        line.Outline.gameObject.SetActive(false);
+                    PlaceCommsMapStroke(line.Core, mid, len, corePx, angle, core, asLast: true);
+                    if (line.Outline != null && line.Outline.gameObject.activeSelf && line.Core != null)
+                        line.Outline.transform.SetSiblingIndex(line.Core.transform.GetSiblingIndex());
+                }
+
+                for (int i = count; i < _commsPathLines.Count; i++)
+                    HideCommsMapLine(_commsPathLines[i]);
+            }
+
+            // --- Dest icons ---
+            // [TITAN-ORBIT] Compose-time Here pings already have UpdateCommsPingMarker.
+            // These icons cover every sentence dest (planet, You, rock, Here) after send.
+            int targets = ShipCommsBubblePresenter.CopyLivePathTargets(
+                s_CommsTargets, s_CommsTargetColors, s_CommsTargetLinger, MaxCommsMapLines);
+            UpdateCommsTargetIcons(playerPos, targets);
+        }
+
+        /// <summary>
+        /// Places pooled bullseyes on each live comms dest. Off-radar points pin to
+        /// the rim so the target stays on this disc for the whole message.
+        /// </summary>
+        /// <param name="playerPos">Local ship world pose; map center.</param>
+        /// <param name="count">How many dests <see cref="ShipCommsBubblePresenter.CopyLivePathTargets"/> wrote.</param>
+        void UpdateCommsTargetIcons(Vector3 playerPos, int count)
+        {
+            if (count <= 0)
+            {
+                HideCommsTargetIcons();
                 return;
             }
 
             float half = displaySize * 0.5f;
             float invR = 1f / minimapRadius;
+            float inset = CommsMapDiscInset(half);
             for (int i = 0; i < count; i++)
             {
-                CommsMapLine line = EnsureCommsPathLine(i);
-                GetToroidalDelta(playerPos, s_CommsFrom[i], out float fx, out float fz);
-                GetToroidalDelta(s_CommsFrom[i], s_CommsTo[i], out float ox, out float oz);
-                Vector2 a = new Vector2(fx * invR * half, fz * invR * half);
-                Vector2 b = new Vector2((fx + ox) * invR * half, (fz + oz) * invR * half);
-                Vector2 delta = b - a;
-                float len = delta.magnitude;
-                if (len < 1.5f)
-                {
-                    HideCommsMapLine(line);
+                Image img = EnsureCommsTargetIcon(i);
+                if (img == null)
                     continue;
-                }
 
-                ShipCommsCalloutGraphics.ResolveLineStrokeForRank(
-                    s_CommsRanks[i], forMinimap: true,
-                    out float corePx, out float outlinePx, out Color outlineColor);
+                GetToroidalDelta(playerPos, s_CommsTargets[i], out float dx, out float dz);
+                Vector2 p = ClampToMinimapDisc(new Vector2(dx * invR * half, dz * invR * half), half, inset);
+                RectTransform rt = img.rectTransform;
+                rt.anchoredPosition = p;
+                rt.sizeDelta = new Vector2(CommsPingSize, CommsPingSize);
 
-                Vector2 mid = (a + b) * 0.5f;
-                float angle = Mathf.Atan2(delta.y, delta.x) * Mathf.Rad2Deg;
-                Color core = s_CommsColors[i];
-                // World DrawIntent already wrote linger alpha onto the color. Live
-                // paths still get the usual near-solid map stroke.
-                if (s_CommsLinger[i])
-                    ShipCommsCalloutGraphics.ApplyLingerStroke(ref corePx, ref outlinePx);
-                else
-                    core.a = 0.92f;
-                if (outlinePx > corePx && line.Outline != null)
-                    PlaceCommsMapStroke(line.Outline, mid, len, outlinePx, angle, outlineColor, asLast: false);
-                else if (line.Outline != null && line.Outline.gameObject.activeSelf)
-                    line.Outline.gameObject.SetActive(false);
-                PlaceCommsMapStroke(line.Core, mid, len, corePx, angle, core, asLast: true);
-                if (line.Outline != null && line.Outline.gameObject.activeSelf && line.Core != null)
-                    line.Outline.transform.SetSiblingIndex(line.Core.transform.GetSiblingIndex());
+                Color c = s_CommsTargetColors[i];
+                if (s_CommsTargetLinger[i])
+                    c.a = Mathf.Clamp(c.a, 0.2f, ShipCommsCalloutGraphics.PathLineLingerAlpha);
+                else if (c.a < 0.35f)
+                    c.a = 0.95f;
+                img.color = c;
+
+                // Live chips pulse; commander ghost stays still so it does not shout.
+                float pulse = s_CommsTargetLinger[i]
+                    ? 1f
+                    : 1f + 0.12f * Mathf.Sin(Time.unscaledTime * 8f);
+                rt.localScale = new Vector3(pulse, pulse, 1f);
+
+                if (!img.gameObject.activeSelf)
+                    img.gameObject.SetActive(true);
+                rt.SetAsLastSibling();
             }
 
-            for (int i = count; i < _commsPathLines.Count; i++)
-                HideCommsMapLine(_commsPathLines[i]);
+            for (int i = count; i < _commsTargetIcons.Count; i++)
+            {
+                Image extra = _commsTargetIcons[i];
+                if (extra != null && extra.gameObject.activeSelf)
+                    extra.gameObject.SetActive(false);
+            }
+        }
+
+        /// <summary>
+        /// Recycles a bullseye Image under <see cref="minimapContent"/>. Same sprite
+        /// as the compose Here ping so click-marks and live dests read as one language.
+        /// </summary>
+        /// <param name="index">Slot in the dest list this frame.</param>
+        Image EnsureCommsTargetIcon(int index)
+        {
+            while (_commsTargetIcons.Count <= index)
+            {
+                if (minimapContent == null)
+                    return null;
+
+                var go = new GameObject("CommsTarget");
+                go.transform.SetParent(minimapContent, false);
+                var img = go.AddComponent<Image>();
+                img.raycastTarget = false;
+                img.sprite = GetCommsBullseyeSprite();
+                img.color = CommsPingColor;
+                var rt = go.GetComponent<RectTransform>();
+                rt.sizeDelta = new Vector2(CommsPingSize, CommsPingSize);
+                rt.anchorMin = new Vector2(0.5f, 0.5f);
+                rt.anchorMax = new Vector2(0.5f, 0.5f);
+                rt.pivot = new Vector2(0.5f, 0.5f);
+                go.SetActive(false);
+                _commsTargetIcons.Add(img);
+            }
+
+            return _commsTargetIcons[index];
+        }
+
+        /// <summary>Hides every pooled dest icon. Called when no comms path is live.</summary>
+        void HideCommsTargetIcons()
+        {
+            for (int i = 0; i < _commsTargetIcons.Count; i++)
+            {
+                Image img = _commsTargetIcons[i];
+                if (img != null && img.gameObject.activeSelf)
+                    img.gameObject.SetActive(false);
+            }
+        }
+
+        /// <summary>
+        /// How far inside the circular mask a dest icon must sit so the bullseye
+        /// is not half-clipped. Full-map / expanded views still clamp — far dests
+        /// stay on the rim instead of vanishing past the circle.
+        /// </summary>
+        /// <param name="half">Half the laid-out square in UI pixels.</param>
+        static float CommsMapDiscInset(float half)
+        {
+            if (half < 8f)
+                return 0.88f;
+            float inset = 1f - (CommsPingSize * 0.55f / half);
+            return Mathf.Clamp(inset, 0.82f, 0.96f);
+        }
+
+        /// <summary>
+        /// Pins a map-space point to the radar disc. [TITAN-ORBIT] Compact radar
+        /// only shows a local radius — a planet across the torus would otherwise
+        /// leave the dest icon off the mask. Rim clamp keeps the target readable.
+        /// </summary>
+        /// <param name="p">Center-relative UI pixels.</param>
+        /// <param name="half">Half the laid-out square in UI pixels.</param>
+        /// <param name="inset">0–1 fraction of <paramref name="half"/> used as the rim.</param>
+        static Vector2 ClampToMinimapDisc(Vector2 p, float half, float inset)
+        {
+            float max = half * inset;
+            float magSq = p.sqrMagnitude;
+            if (magSq <= max * max || magSq < 0.0001f)
+                return p;
+            return p * (max / Mathf.Sqrt(magSq));
         }
 
         CommsMapLine EnsureCommsPathLine(int index)
@@ -773,7 +923,10 @@ namespace TitanOrbit.UI
             rt.anchoredPosition = mid;
             rt.sizeDelta = new Vector2(length, Mathf.Max(1.6f, thickness));
             rt.localRotation = Quaternion.Euler(0f, 0f, angle);
-            color.a = 1f;
+            // Keep the caller's alpha (live ~0.92 / linger ~0.38). Forcing 1 made
+            // commander ghosts as loud as the 4s stroke.
+            if (color.a < 0.01f)
+                color.a = 0.92f;
             img.color = color;
             if (!img.gameObject.activeSelf)
                 img.gameObject.SetActive(true);
@@ -4127,12 +4280,24 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// Builds a white ring-and-dot stamp for the comms Here ping on the docked map.
-        /// Tint comes from <see cref="Image.color"/> on the ping Image.
+        /// Shared ring-and-dot stamp for the compose Here ping and live dest icons.
+        /// Built once; tint comes from each Image's color.
+        /// </summary>
+        static Sprite GetCommsBullseyeSprite()
+        {
+            if (s_CommsBullseyeSprite == null)
+                s_CommsBullseyeSprite = CreateBullseyeSprite(32);
+            return s_CommsBullseyeSprite;
+        }
+
+        /// <summary>
+        /// Builds a white ring-and-dot stamp for comms dest marks on the map.
+        /// Tint comes from <see cref="Image.color"/> on the ping / dest Image.
+        /// One-shot at first use — <see cref="GetCommsBullseyeSprite"/> caches it.
         /// </summary>
         /// <param name="textureSize">Square pixel size of the generated sprite.</param>
-        /// <returns>New Sprite (caller owns it; created once per ping Image).</returns>
-        private Sprite CreateBullseyeSprite(int textureSize)
+        /// <returns>New Sprite (cached by <see cref="GetCommsBullseyeSprite"/>).</returns>
+        private static Sprite CreateBullseyeSprite(int textureSize)
         {
             // --- Stamp a concentric target ---
             Texture2D texture = new Texture2D(textureSize, textureSize, TextureFormat.RGBA32, false);
