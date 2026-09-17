@@ -41,7 +41,10 @@ namespace TitanOrbit.ECS
             /// <summary>Fifth keyword index. Ignored when <see cref="Count"/> is under 5.</summary>
             public byte K4;
 
-            /// <summary>1 when the server scoped this callout to the speaker's team.</summary>
+            /// <summary>
+            /// Audience the server accepted: 0 = All, 1 = Team, 2 = Commander.
+            /// Presentation-only here — delivery already happened on the server.
+            /// </summary>
             public byte TeamOnly;
 
             /// <summary>1 when <see cref="WaypointX"/> / <see cref="WaypointZ"/> is valid.</summary>

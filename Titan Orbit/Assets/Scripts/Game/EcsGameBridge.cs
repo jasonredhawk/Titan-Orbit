@@ -2367,9 +2367,16 @@ namespace TitanOrbit.Game
 
         /// <summary>
         /// [TITAN-ORBIT] Bootstrap default when <see cref="TeamStateSingleton.MaxPlayersPerTeam"/>
-        /// is missing on the client (that field is not a GhostField).
+        /// is missing on the client (that field is not a GhostField). Prefer the live
+        /// <see cref="MapGenerationSettings"/> asset so Join Team matches the server cap.
         /// </summary>
-        const int DefaultMaxPlayersPerTeam = 20;
+        static int ResolveDefaultMaxPlayersPerTeam()
+        {
+            var settings = MapGenerationSettingsCache.Settings;
+            if (settings != null && settings.maxPlayersPerTeam > 0)
+                return settings.maxPlayersPerTeam;
+            return MapGenerationSettings.DefaultMaxPlayersPerTeam;
+        }
 
         /// <summary>Per-slot StringBuilders reused across Join Team refreshes (TeamA…E).</summary>
         static readonly System.Text.StringBuilder[] s_JoinTeamLabelBuilders =
@@ -2423,11 +2430,11 @@ namespace TitanOrbit.Game
 
             // --- Roster cap + singleton counts ---
             // [NETCODE] TeamACount… are GhostFields when the singleton replicates; MaxPlayersPerTeam
-            // is server-local — Local Host reads it; dedicated clients fall back to the bootstrap default.
+            // is server-local — Local Host reads it; dedicated clients use MapGenerationSettings.
             var teamState = GetTeamState();
             int maxPlayers = teamState.MaxPlayersPerTeam > 0
                 ? teamState.MaxPlayersPerTeam
-                : DefaultMaxPlayersPerTeam;
+                : ResolveDefaultMaxPlayersPerTeam();
 
             for (int i = 0; i < slots; i++)
             {

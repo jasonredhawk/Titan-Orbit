@@ -288,7 +288,7 @@ namespace TitanOrbit.Data
         /// Looks up the VFX-bank category name for <paramref name="bankIndex"/>.
         /// Cached <see cref="BulletVfxBank.LoadDefault"/> — safe to call from UI refresh, not a hot sim tick.
         /// </summary>
-        static string FormatBankCategoryName(int bankIndex)
+        public static string FormatBankCategoryName(int bankIndex)
         {
             var bank = BulletVfxBank.LoadDefault();
             if (bank == null || !bank.TryGetCategoryName(bankIndex, out string name))

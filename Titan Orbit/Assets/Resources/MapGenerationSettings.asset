@@ -17,13 +17,14 @@ MonoBehaviour:
   maxMapSize: 555
   minTeamsPerMatch: 5
   maxTeamsPerMatch: 5
+  maxPlayersPerTeam: 12
   homePlanetSize: 20
   homePlanetLevel: 3
   homePlanetDistance: 80
   minHomePlanetPairSeparation: 90
   clearanceRadiusAroundHomePlanet: 40
-  minNeutralPlanets: 20
-  maxNeutralPlanets: 20
+  minNeutralPlanets: 12
+  maxNeutralPlanets: 12
   startingOwnedNeutralPlanetsPerTeam: 3
   startingRandomDefenseTurretsMax: 6
   minPlanetSize: 9
@@ -32,10 +33,10 @@ MonoBehaviour:
   minNeutralStartingLevel: 1
   maxNeutralStartingLevel: 6
   planetRingPlacementMargin: 3
-  asteroidsAtMinMapSize: 333
-  asteroidsAtMaxMapSize: 333
+  asteroidsAtMinMapSize: 555
+  asteroidsAtMaxMapSize: 555
   minAsteroidClusters: 8
   maxAsteroidClusters: 35
   minAsteroidGemValue: 1
-  maxAsteroidGemValue: 70
+  maxAsteroidGemValue: 100
   minAsteroidSpacing: 1.5

@@ -434,8 +434,8 @@ namespace TitanOrbit.Data
         }
 
         /// <summary>
-        /// Drops live-sum, regular-family max, MEGA max, and RANK 1 leader caches after
-        /// an editor rebake or catalog rebuild.
+        /// Drops live-sum, regular-family max, MEGA max, RANK 1 leader, and weapon-roster
+        /// caches after an editor rebake or catalog rebuild.
         /// </summary>
         public static void InvalidateCache()
         {
@@ -446,6 +446,8 @@ namespace TitanOrbit.Data
             s_cachedRegularLeaders = null;
             s_cachedMegaLeaders = null;
             s_liveCache.Clear();
+            // Weapon-roster cache walks the same prefabs / catalog rows.
+            ShipWeaponLoadout.InvalidateCache();
         }
 
         /// <summary>

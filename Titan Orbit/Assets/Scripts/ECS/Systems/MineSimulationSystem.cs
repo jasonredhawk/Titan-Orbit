@@ -14,9 +14,9 @@ namespace TitanOrbit.ECS
     /// <summary>
     /// Server-authoritative mine detonation. Each live <see cref="DeployedMineElement"/> sits
     /// still until an enemy ship or enemy moon (shield shell, or surface if the shield is down)
-    /// overlaps it, or until <see cref="DeployedMineElement.ExpireTime"/> — then it explodes
-    /// with the same damage + concussive blast. Hull absorbs first; leftover damage
-    /// expels cargo 1:1. Death still requires hull and gems both empty.
+    /// overlaps it (health → 0), or until fuse HP from <see cref="DeployedMineElement.ExpireTime"/>
+    /// hits 0 — then it explodes with the same damage + concussive blast. Hull absorbs first;
+    /// leftover damage expels cargo 1:1. Death still requires hull and gems both empty.
     /// <para>
     /// [TITAN-ORBIT] All range tests use <see cref="ToroidalMapEcs.ToroidalDistance"/> /
     /// <see cref="PlanetOrbitMath.GetMoonWorldPositionNear"/>. Friendly ships and friendly moons
@@ -36,7 +36,7 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// Walk every ship's mine buffer. Contact or timeout → damage, splash, RPC, remove.
+        /// Walk every ship's mine buffer. Contact or fuse HP 0 → damage, splash, RPC, remove.
         /// </summary>
         public void OnUpdate(ref SystemState state)
         {
@@ -72,22 +72,25 @@ namespace TitanOrbit.ECS
                 for (int i = mines.Length - 1; i >= 0; i--)
                 {
                     var mine = mines[i];
-                    bool timedOut = serverElapsed >= mine.ExpireTime - 0.0001;
+                    // Fuse clock = NetworkTime (same as PlaceTime/ExpireTime). World.Time is for vitals.
+                    bool fuseExpired = MineHealthMath.IsFuseExpired(
+                        mine.PlaceTime, mine.ExpireTime, moonElapsed);
                     Entity contactShip = Entity.Null;
                     Entity contactPlanet = Entity.Null;
 
-                    if (!timedOut)
+                    if (!fuseExpired)
                     {
                         if (TryFindEnemyShipContact(
-                                state.EntityManager, in mine, serverElapsed, mapW, mapH, out contactShip))
+                                state.EntityManager, in mine, entity, moonElapsed, mapW, mapH,
+                                out contactShip))
                         {
-                            // Contact ship found — explode below.
+                            // Contact ship found — health 0, explode below.
                         }
                         else if (TryFindEnemyMoonContact(
                                      state.EntityManager, in mine, moonElapsed, mapW, mapH,
                                      out contactPlanet))
                         {
-                            // Contact moon found — explode below.
+                            // Contact moon found — health 0, explode below.
                         }
                         else
                         {
@@ -98,7 +101,7 @@ namespace TitanOrbit.ECS
                     ExplodeMine(
                         state.EntityManager, ref ecb, in mine,
                         contactShip, contactPlanet,
-                        gemPrefab, serverElapsed, mapW, mapH);
+                        gemPrefab, serverElapsed, moonElapsed, mapW, mapH);
 
                     mines = state.EntityManager.GetBuffer<DeployedMineElement>(entity);
                     if (i < mines.Length)
@@ -117,6 +120,7 @@ namespace TitanOrbit.ECS
         static bool TryFindEnemyShipContact(
             EntityManager em,
             in DeployedMineElement mine,
+            Entity ownerShip,
             double serverElapsed,
             float mapW,
             float mapH,
@@ -141,6 +145,9 @@ namespace TitanOrbit.ECS
             for (int i = 0; i < entities.Length; i++)
             {
                 if (states[i].IsDead || states[i].AwaitingTeamSelection)
+                    continue;
+                // Always skip the hull that dropped this mine (same entity as the buffer).
+                if (!selfHarm && ownerShip != Entity.Null && entities[i] == ownerShip)
                     continue;
                 if (!selfHarm)
                 {
@@ -240,13 +247,14 @@ namespace TitanOrbit.ECS
             Entity contactPlanet,
             Entity gemPrefab,
             double serverElapsed,
+            double fuseElapsed,
             float mapW,
             float mapH)
         {
             float3 hitPoint = mine.Position;
             hitPoint.y = 0f;
             var attackerTeam = (TeamId)mine.OwnerTeam;
-            bool selfHarm = TitanOrbitDebugFlags.IsSelfHarmArmed(mine.PlaceTime, serverElapsed);
+            bool selfHarm = TitanOrbitDebugFlags.IsSelfHarmArmed(mine.PlaceTime, fuseElapsed);
 
             // --- Contact ship (full center damage + push) ---
             if (contactShip != Entity.Null && em.HasComponent<ShipState>(contactShip))

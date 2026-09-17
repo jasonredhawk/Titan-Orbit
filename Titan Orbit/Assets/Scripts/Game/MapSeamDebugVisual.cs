@@ -17,7 +17,7 @@ namespace TitanOrbit.Game
         const float LineY = 0.35f;
 
         /// <summary>Screen-pixel thickness so the seam stays readable at any camera height.</summary>
-        const float LineThicknessPixels = 2.75f;
+        const float LineThicknessPixels = 1.35f;
 
         /// <summary>Cyan — pops against dark space and team territory tints.</summary>
         static readonly Color SeamColor = new Color(0.15f, 0.95f, 1f, 0.92f);

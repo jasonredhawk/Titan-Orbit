@@ -170,6 +170,12 @@ namespace TitanOrbit.Game
         /// </summary>
         public TeamId PresentationTeam { get; private set; }
 
+        /// <summary>
+        /// Troops aboard from the last nameplate paint (<c>ShipState.CurrentPeople</c>).
+        /// Comms "Escort" reads this so it does not gather ECS ship entities.
+        /// </summary>
+        public int PresentationPeople { get; private set; }
+
         // --- Hierarchy (world-space root — not a child of the yawing hull) ---
 
         Transform _labelRoot;
@@ -349,6 +355,7 @@ namespace TitanOrbit.Game
             if (networkId > 0)
                 _networkId = networkId;
             PresentationTeam = team;
+            PresentationPeople = currentPeople;
             _isMega = isMega;
             EnsureHierarchy();
             if (!_ready || _labelRoot == null)
@@ -1603,9 +1610,9 @@ namespace TitanOrbit.Game
     /// </summary>
     public static class ShipMatchScoreLogic
     {
-        public const int PointsPerKill = 100;
-        public const int PointsPerGem = 2;
-        public const int PointsPerPerson = 5;
+        public const int PointsPerKill = TeamCommanderRules.PointsPerKill;
+        public const int PointsPerGem = TeamCommanderRules.PointsPerGem;
+        public const int PointsPerPerson = TeamCommanderRules.PointsPerPerson;
 
         /// <summary>Last <see cref="ComputeTeamRanks"/> snapshot (owner NetworkId → 1-based rank).</summary>
         static readonly Dictionary<int, int> s_RankByNetworkId = new Dictionary<int, int>(32);
@@ -1613,9 +1620,26 @@ namespace TitanOrbit.Game
         /// <summary>Combined score from ghosted match-long stats.</summary>
         public static int ComputeCombinedScore(int kills, int gemsDeposited, int peopleDelivered)
         {
-            return kills * PointsPerKill
-                   + gemsDeposited * PointsPerGem
-                   + peopleDelivered * PointsPerPerson;
+            return TeamCommanderRules.CombinedScore(kills, gemsDeposited, peopleDelivered);
+        }
+
+        /// <summary>
+        /// True when this 1-based team rank is a command-deck seat (top three).
+        /// </summary>
+        /// <param name="rank">1 = highest combined score on that team.</param>
+        public static bool IsCommanderRank(int rank)
+        {
+            return TeamCommanderRules.IsCommanderRank(rank);
+        }
+
+        /// <summary>
+        /// True when the last nameplate rank flush listed <paramref name="networkId"/>
+        /// in the top three on their team. Missing owners are not commanders.
+        /// </summary>
+        /// <param name="networkId">GhostOwner.NetworkId to test.</param>
+        public static bool IsCommander(int networkId)
+        {
+            return TryGetTeamRank(networkId, out int rank) && IsCommanderRank(rank);
         }
 
         /// <summary>

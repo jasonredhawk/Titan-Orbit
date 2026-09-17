@@ -35,7 +35,7 @@ namespace TitanOrbit.ECS
             state.EntityManager.SetComponentData(entity, new TeamStateSingleton
             {
                 ActiveTeamCount = 0,
-                MaxPlayersPerTeam = 20,
+                MaxPlayersPerTeam = ResolveMaxPlayersPerTeam(),
             });
             state.EntityManager.SetComponentData(entity, new MatchStateSingleton());
             // [TITAN-ORBIT] Size stays 0 until map generation rolls a real period — never invent 1000×1000.
@@ -47,6 +47,18 @@ namespace TitanOrbit.ECS
             state.EntityManager.AddBuffer<MapLayoutEntryElement>(entity);
             // [NETCODE] Server roster only — not a ghost. Clients get names via PlayerNameAnnounceRpc.
             state.EntityManager.AddBuffer<PlayerNameElement>(entity);
+        }
+
+        /// <summary>
+        /// Reads the per-team roster cap from <see cref="MapGenerationSettingsCache"/>
+        /// (Resources asset). Falls back to <see cref="MapGenerationSettings.DefaultMaxPlayersPerTeam"/>.
+        /// </summary>
+        static int ResolveMaxPlayersPerTeam()
+        {
+            var settings = MapGenerationSettingsCache.Settings;
+            if (settings != null && settings.maxPlayersPerTeam > 0)
+                return settings.maxPlayersPerTeam;
+            return MapGenerationSettings.DefaultMaxPlayersPerTeam;
         }
 
         public void OnUpdate(ref SystemState state) { }
@@ -225,6 +237,7 @@ namespace TitanOrbit.ECS
             UnityEngine.Debug.Log(
                 $"[MapGeneration] Using settings from {DescribeConfigSource()}. " +
                 $"Map {_config.MinMapSize:F0}-{_config.MaxMapSize:F0}, teams {_config.MinTeamsPerMatch}-{_config.MaxTeamsPerMatch}, " +
+                $"maxPlayersPerTeam {_config.MaxPlayersPerTeam}, " +
                 $"neutrals {_config.MinNeutralPlanets}-{_config.MaxNeutralPlanets}, " +
                 $"startingOwnedNeutralsPerTeam {_config.StartingOwnedNeutralPlanetsPerTeam}, " +
                 $"startingRandomDefenseTurretsMax {_config.StartingRandomDefenseTurretsMax}, " +
@@ -256,6 +269,7 @@ namespace TitanOrbit.ECS
 
             var teamState = SystemAPI.GetSingletonRW<TeamStateSingleton>();
             teamState.ValueRW.ActiveTeamCount = _rolled.TeamCount;
+            teamState.ValueRW.MaxPlayersPerTeam = math.max(1, _config.MaxPlayersPerTeam);
             teamState.ValueRW.TeamACount = 0;
             teamState.ValueRW.TeamBCount = 0;
             teamState.ValueRW.TeamCCount = 0;

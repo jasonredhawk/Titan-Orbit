@@ -20,8 +20,8 @@ MonoBehaviour:
     bulletPrefabIndex: -1
     stats:
       firePower: 15
-      bulletSpeed: 14
-      bulletRange: 25
+      bulletSpeed: 10
+      bulletRange: 20
       fireRate: 2
       rammingPower: 0
       healthCap: 0
@@ -40,8 +40,8 @@ MonoBehaviour:
     bulletPrefabIndex: -1
     stats:
       firePower: 15
-      bulletSpeed: 14
-      bulletRange: 25
+      bulletSpeed: 10
+      bulletRange: 20
       fireRate: 2
       rammingPower: 0
       healthCap: 0
@@ -60,8 +60,8 @@ MonoBehaviour:
     bulletPrefabIndex: -1
     stats:
       firePower: 15
-      bulletSpeed: 14
-      bulletRange: 25
+      bulletSpeed: 10
+      bulletRange: 20
       fireRate: 2
       rammingPower: 0
       healthCap: 0
@@ -80,8 +80,8 @@ MonoBehaviour:
     bulletPrefabIndex: -1
     stats:
       firePower: 15
-      bulletSpeed: 14
-      bulletRange: 25
+      bulletSpeed: 10
+      bulletRange: 20
       fireRate: 2
       rammingPower: 0
       healthCap: 0
@@ -100,8 +100,28 @@ MonoBehaviour:
     bulletPrefabIndex: -1
     stats:
       firePower: 15
-      bulletSpeed: 14
-      bulletRange: 25
+      bulletSpeed: 10
+      bulletRange: 20
+      fireRate: 2
+      rammingPower: 0
+      healthCap: 0
+      healthRegen: 0
+      energyCap: 12
+      energyRegen: 0
+      moveSpeed: 0
+      accelerationCap: 0
+      turnSpeed: 0
+      weaponRotationSpeed: 90
+      maxPeople: 0
+  - displayName: Turret
+    partType: Weapon Bullet
+    isWeapon: 1
+    isLaser: 0
+    bulletPrefabIndex: -1
+    stats:
+      firePower: 15
+      bulletSpeed: 10
+      bulletRange: 20
       fireRate: 2
       rammingPower: 0
       healthCap: 0
@@ -121,7 +141,7 @@ MonoBehaviour:
     stats:
       firePower: 50
       bulletSpeed: 12
-      bulletRange: 15
+      bulletRange: 12
       fireRate: 0.5
       rammingPower: 0
       healthCap: 0
@@ -141,7 +161,7 @@ MonoBehaviour:
     stats:
       firePower: 50
       bulletSpeed: 12
-      bulletRange: 15
+      bulletRange: 12
       fireRate: 0.5
       rammingPower: 0
       healthCap: 0
@@ -202,7 +222,7 @@ MonoBehaviour:
       firePower: 100
       bulletSpeed: 28
       bulletRange: 40
-      fireRate: 0.2
+      fireRate: 0.5
       rammingPower: 0
       healthCap: 0
       healthRegen: 0
@@ -224,10 +244,10 @@ MonoBehaviour:
       bulletRange: 0
       fireRate: 0
       rammingPower: 4
-      healthCap: 100
-      healthRegen: 1
-      energyCap: 100
-      energyRegen: 2
+      healthCap: 200
+      healthRegen: 4
+      energyCap: 200
+      energyRegen: 1
       moveSpeed: 0
       accelerationCap: 0
       turnSpeed: 0
@@ -244,10 +264,10 @@ MonoBehaviour:
       bulletRange: 0
       fireRate: 0
       rammingPower: 4
-      healthCap: 100
-      healthRegen: 1
-      energyCap: 100
-      energyRegen: 2
+      healthCap: 200
+      healthRegen: 4
+      energyCap: 200
+      energyRegen: 1
       moveSpeed: 0
       accelerationCap: 0
       turnSpeed: 0
@@ -266,8 +286,8 @@ MonoBehaviour:
       rammingPower: 0
       healthCap: 20
       healthRegen: 0.3
-      energyCap: 140
-      energyRegen: 5
+      energyCap: 100
+      energyRegen: 4
       moveSpeed: 6
       accelerationCap: 4
       turnSpeed: 0
@@ -286,8 +306,8 @@ MonoBehaviour:
       rammingPower: 0
       healthCap: 20
       healthRegen: 0.3
-      energyCap: 140
-      energyRegen: 5
+      energyCap: 100
+      energyRegen: 4
       moveSpeed: 6
       accelerationCap: 4
       turnSpeed: 0
@@ -306,8 +326,8 @@ MonoBehaviour:
       rammingPower: 0
       healthCap: 20
       healthRegen: 0.3
-      energyCap: 140
-      energyRegen: 5
+      energyCap: 100
+      energyRegen: 4
       moveSpeed: 6
       accelerationCap: 4
       turnSpeed: 0
@@ -324,10 +344,10 @@ MonoBehaviour:
       bulletRange: 0
       fireRate: 0
       rammingPower: 1.2
-      healthCap: 30
-      healthRegen: 0.5
-      energyCap: 0
-      energyRegen: 0
+      healthCap: 40
+      healthRegen: 2
+      energyCap: 20
+      energyRegen: 0.1
       moveSpeed: 0
       accelerationCap: 0
       turnSpeed: 0
@@ -344,10 +364,10 @@ MonoBehaviour:
       bulletRange: 0
       fireRate: 0
       rammingPower: 1.2
-      healthCap: 30
-      healthRegen: 0.5
-      energyCap: 0
-      energyRegen: 0
+      healthCap: 40
+      healthRegen: 2
+      energyCap: 20
+      energyRegen: 0.1
       moveSpeed: 0
       accelerationCap: 0
       turnSpeed: 0
@@ -364,10 +384,10 @@ MonoBehaviour:
       bulletRange: 0
       fireRate: 0
       rammingPower: 1.2
-      healthCap: 30
-      healthRegen: 0.5
-      energyCap: 0
-      energyRegen: 0
+      healthCap: 40
+      healthRegen: 2
+      energyCap: 20
+      energyRegen: 0.1
       moveSpeed: 0
       accelerationCap: 0
       turnSpeed: 0
@@ -384,10 +404,10 @@ MonoBehaviour:
       bulletRange: 0
       fireRate: 0
       rammingPower: 1.2
-      healthCap: 30
-      healthRegen: 0.5
-      energyCap: 0
-      energyRegen: 0
+      healthCap: 40
+      healthRegen: 2
+      energyCap: 20
+      energyRegen: 0.1
       moveSpeed: 0
       accelerationCap: 0
       turnSpeed: 0
@@ -404,10 +424,10 @@ MonoBehaviour:
       bulletRange: 0
       fireRate: 0
       rammingPower: 1.2
-      healthCap: 30
-      healthRegen: 0.5
-      energyCap: 0
-      energyRegen: 0
+      healthCap: 40
+      healthRegen: 2
+      energyCap: 20
+      energyRegen: 0.1
       moveSpeed: 0
       accelerationCap: 0
       turnSpeed: 0
@@ -424,10 +444,10 @@ MonoBehaviour:
       bulletRange: 0
       fireRate: 0
       rammingPower: 1.2
-      healthCap: 30
-      healthRegen: 0.5
-      energyCap: 0
-      energyRegen: 0
+      healthCap: 40
+      healthRegen: 2
+      energyCap: 20
+      energyRegen: 0.1
       moveSpeed: 0
       accelerationCap: 0
       turnSpeed: 0
@@ -444,10 +464,10 @@ MonoBehaviour:
       bulletRange: 0
       fireRate: 0
       rammingPower: 1.2
-      healthCap: 30
-      healthRegen: 0.5
-      energyCap: 0
-      energyRegen: 0
+      healthCap: 40
+      healthRegen: 2
+      energyCap: 20
+      energyRegen: 0.1
       moveSpeed: 0
       accelerationCap: 0
       turnSpeed: 0
@@ -464,10 +484,10 @@ MonoBehaviour:
       bulletRange: 0
       fireRate: 0
       rammingPower: 1.2
-      healthCap: 30
-      healthRegen: 0.5
-      energyCap: 0
-      energyRegen: 0
+      healthCap: 40
+      healthRegen: 2
+      energyCap: 20
+      energyRegen: 0.1
       moveSpeed: 0
       accelerationCap: 0
       turnSpeed: 0
@@ -484,10 +504,10 @@ MonoBehaviour:
       bulletRange: 0
       fireRate: 0
       rammingPower: 1.2
-      healthCap: 30
-      healthRegen: 0.5
-      energyCap: 0
-      energyRegen: 0
+      healthCap: 40
+      healthRegen: 2
+      energyCap: 20
+      energyRegen: 0.1
       moveSpeed: 0
       accelerationCap: 0
       turnSpeed: 0
@@ -504,10 +524,10 @@ MonoBehaviour:
       bulletRange: 0
       fireRate: 0
       rammingPower: 1.2
-      healthCap: 30
-      healthRegen: 0.5
-      energyCap: 0
-      energyRegen: 0
+      healthCap: 40
+      healthRegen: 2
+      energyCap: 20
+      energyRegen: 0.1
       moveSpeed: 0
       accelerationCap: 0
       turnSpeed: 0
@@ -524,10 +544,10 @@ MonoBehaviour:
       bulletRange: 0
       fireRate: 0
       rammingPower: 1.2
-      healthCap: 30
-      healthRegen: 0.5
-      energyCap: 0
-      energyRegen: 0
+      healthCap: 40
+      healthRegen: 2
+      energyCap: 20
+      energyRegen: 0.1
       moveSpeed: 0
       accelerationCap: 0
       turnSpeed: 0
@@ -544,10 +564,10 @@ MonoBehaviour:
       bulletRange: 0
       fireRate: 0
       rammingPower: 1.2
-      healthCap: 30
-      healthRegen: 0.5
-      energyCap: 0
-      energyRegen: 0
+      healthCap: 40
+      healthRegen: 2
+      energyCap: 20
+      energyRegen: 0.1
       moveSpeed: 0
       accelerationCap: 0
       turnSpeed: 0
@@ -564,10 +584,10 @@ MonoBehaviour:
       bulletRange: 0
       fireRate: 0
       rammingPower: 1.2
-      healthCap: 30
-      healthRegen: 0.5
-      energyCap: 0
-      energyRegen: 0
+      healthCap: 40
+      healthRegen: 2
+      energyCap: 20
+      energyRegen: 0.1
       moveSpeed: 0
       accelerationCap: 0
       turnSpeed: 0
@@ -584,10 +604,10 @@ MonoBehaviour:
       bulletRange: 0
       fireRate: 0
       rammingPower: 1.2
-      healthCap: 30
-      healthRegen: 0.5
-      energyCap: 0
-      energyRegen: 0
+      healthCap: 40
+      healthRegen: 2
+      energyCap: 20
+      energyRegen: 0.1
       moveSpeed: 0
       accelerationCap: 0
       turnSpeed: 0
@@ -604,10 +624,10 @@ MonoBehaviour:
       bulletRange: 0
       fireRate: 0
       rammingPower: 1.2
-      healthCap: 30
-      healthRegen: 0.5
-      energyCap: 0
-      energyRegen: 0
+      healthCap: 40
+      healthRegen: 2
+      energyCap: 20
+      energyRegen: 0.1
       moveSpeed: 0
       accelerationCap: 0
       turnSpeed: 0
@@ -624,10 +644,10 @@ MonoBehaviour:
       bulletRange: 0
       fireRate: 0
       rammingPower: 1.2
-      healthCap: 30
-      healthRegen: 0.5
-      energyCap: 0
-      energyRegen: 0
+      healthCap: 40
+      healthRegen: 2
+      energyCap: 20
+      energyRegen: 0.1
       moveSpeed: 0
       accelerationCap: 0
       turnSpeed: 0
@@ -644,10 +664,10 @@ MonoBehaviour:
       bulletRange: 0
       fireRate: 0
       rammingPower: 1.2
-      healthCap: 30
-      healthRegen: 0.5
-      energyCap: 0
-      energyRegen: 0
+      healthCap: 40
+      healthRegen: 2
+      energyCap: 20
+      energyRegen: 0.1
       moveSpeed: 0
       accelerationCap: 0
       turnSpeed: 0
@@ -664,10 +684,10 @@ MonoBehaviour:
       bulletRange: 0
       fireRate: 0
       rammingPower: 1.2
-      healthCap: 30
-      healthRegen: 0.5
-      energyCap: 0
-      energyRegen: 0
+      healthCap: 40
+      healthRegen: 2
+      energyCap: 20
+      energyRegen: 0.1
       moveSpeed: 0
       accelerationCap: 0
       turnSpeed: 0
@@ -684,10 +704,10 @@ MonoBehaviour:
       bulletRange: 0
       fireRate: 0
       rammingPower: 1.2
-      healthCap: 30
-      healthRegen: 0.5
-      energyCap: 0
-      energyRegen: 0
+      healthCap: 40
+      healthRegen: 2
+      energyCap: 20
+      energyRegen: 0.1
       moveSpeed: 0
       accelerationCap: 0
       turnSpeed: 0
@@ -704,10 +724,10 @@ MonoBehaviour:
       bulletRange: 0
       fireRate: 0
       rammingPower: 1.2
-      healthCap: 30
-      healthRegen: 0.5
-      energyCap: 0
-      energyRegen: 0
+      healthCap: 40
+      healthRegen: 2
+      energyCap: 20
+      energyRegen: 0.1
       moveSpeed: 0
       accelerationCap: 0
       turnSpeed: 0
@@ -724,10 +744,10 @@ MonoBehaviour:
       bulletRange: 0
       fireRate: 0
       rammingPower: 1.2
-      healthCap: 30
-      healthRegen: 0.5
-      energyCap: 0
-      energyRegen: 0
+      healthCap: 40
+      healthRegen: 2
+      energyCap: 20
+      energyRegen: 0.1
       moveSpeed: 0
       accelerationCap: 0
       turnSpeed: 0
@@ -744,10 +764,10 @@ MonoBehaviour:
       bulletRange: 0
       fireRate: 0
       rammingPower: 1.2
-      healthCap: 30
-      healthRegen: 0.5
-      energyCap: 0
-      energyRegen: 0
+      healthCap: 40
+      healthRegen: 2
+      energyCap: 20
+      energyRegen: 0.1
       moveSpeed: 0
       accelerationCap: 0
       turnSpeed: 0
@@ -764,10 +784,10 @@ MonoBehaviour:
       bulletRange: 0
       fireRate: 0
       rammingPower: 1.2
-      healthCap: 30
-      healthRegen: 0.5
-      energyCap: 0
-      energyRegen: 0
+      healthCap: 40
+      healthRegen: 2
+      energyCap: 20
+      energyRegen: 0.1
       moveSpeed: 0
       accelerationCap: 0
       turnSpeed: 0
@@ -784,10 +804,10 @@ MonoBehaviour:
       bulletRange: 0
       fireRate: 0
       rammingPower: 1.2
-      healthCap: 30
-      healthRegen: 0.5
-      energyCap: 0
-      energyRegen: 0
+      healthCap: 40
+      healthRegen: 2
+      energyCap: 20
+      energyRegen: 0.1
       moveSpeed: 0
       accelerationCap: 0
       turnSpeed: 0
@@ -804,10 +824,10 @@ MonoBehaviour:
       bulletRange: 0
       fireRate: 0
       rammingPower: 1.2
-      healthCap: 30
-      healthRegen: 0.5
-      energyCap: 0
-      energyRegen: 0
+      healthCap: 40
+      healthRegen: 2
+      energyCap: 20
+      energyRegen: 0.1
       moveSpeed: 0
       accelerationCap: 0
       turnSpeed: 0
@@ -824,10 +844,10 @@ MonoBehaviour:
       bulletRange: 0
       fireRate: 0
       rammingPower: 1.2
-      healthCap: 30
-      healthRegen: 0.5
-      energyCap: 0
-      energyRegen: 0
+      healthCap: 40
+      healthRegen: 2
+      energyCap: 20
+      energyRegen: 0.1
       moveSpeed: 0
       accelerationCap: 0
       turnSpeed: 0
@@ -844,10 +864,10 @@ MonoBehaviour:
       bulletRange: 0
       fireRate: 0
       rammingPower: 1.2
-      healthCap: 30
-      healthRegen: 0.5
-      energyCap: 0
-      energyRegen: 0
+      healthCap: 40
+      healthRegen: 2
+      energyCap: 20
+      energyRegen: 0.1
       moveSpeed: 0
       accelerationCap: 0
       turnSpeed: 0
@@ -864,10 +884,10 @@ MonoBehaviour:
       bulletRange: 0
       fireRate: 0
       rammingPower: 1.2
-      healthCap: 30
-      healthRegen: 0.5
-      energyCap: 0
-      energyRegen: 0
+      healthCap: 40
+      healthRegen: 2
+      energyCap: 20
+      energyRegen: 0.1
       moveSpeed: 0
       accelerationCap: 0
       turnSpeed: 0
@@ -884,10 +904,10 @@ MonoBehaviour:
       bulletRange: 0
       fireRate: 0
       rammingPower: 1.2
-      healthCap: 30
-      healthRegen: 0.5
-      energyCap: 0
-      energyRegen: 0
+      healthCap: 40
+      healthRegen: 2
+      energyCap: 20
+      energyRegen: 0.1
       moveSpeed: 0
       accelerationCap: 0
       turnSpeed: 0
@@ -904,10 +924,10 @@ MonoBehaviour:
       bulletRange: 0
       fireRate: 0
       rammingPower: 1.2
-      healthCap: 30
-      healthRegen: 0.5
-      energyCap: 0
-      energyRegen: 0
+      healthCap: 40
+      healthRegen: 2
+      energyCap: 20
+      energyRegen: 0.1
       moveSpeed: 0
       accelerationCap: 0
       turnSpeed: 0
@@ -924,10 +944,10 @@ MonoBehaviour:
       bulletRange: 0
       fireRate: 0
       rammingPower: 1.2
-      healthCap: 30
-      healthRegen: 0.5
-      energyCap: 0
-      energyRegen: 0
+      healthCap: 40
+      healthRegen: 2
+      energyCap: 20
+      energyRegen: 0.1
       moveSpeed: 0
       accelerationCap: 0
       turnSpeed: 0
@@ -944,10 +964,10 @@ MonoBehaviour:
       bulletRange: 0
       fireRate: 0
       rammingPower: 1.2
-      healthCap: 30
-      healthRegen: 0.5
-      energyCap: 0
-      energyRegen: 0
+      healthCap: 40
+      healthRegen: 2
+      energyCap: 20
+      energyRegen: 0.1
       moveSpeed: 0
       accelerationCap: 0
       turnSpeed: 0
@@ -964,10 +984,10 @@ MonoBehaviour:
       bulletRange: 0
       fireRate: 0
       rammingPower: 1.2
-      healthCap: 30
-      healthRegen: 0.5
-      energyCap: 0
-      energyRegen: 0
+      healthCap: 40
+      healthRegen: 2
+      energyCap: 20
+      energyRegen: 0.1
       moveSpeed: 0
       accelerationCap: 0
       turnSpeed: 0
@@ -984,10 +1004,10 @@ MonoBehaviour:
       bulletRange: 0
       fireRate: 0
       rammingPower: 1.2
-      healthCap: 30
-      healthRegen: 0.5
-      energyCap: 0
-      energyRegen: 0
+      healthCap: 40
+      healthRegen: 2
+      energyCap: 20
+      energyRegen: 0.1
       moveSpeed: 0
       accelerationCap: 0
       turnSpeed: 0
@@ -1004,10 +1024,10 @@ MonoBehaviour:
       bulletRange: 0
       fireRate: 0
       rammingPower: 1.2
-      healthCap: 30
-      healthRegen: 0.5
-      energyCap: 0
-      energyRegen: 0
+      healthCap: 40
+      healthRegen: 2
+      energyCap: 20
+      energyRegen: 0.1
       moveSpeed: 0
       accelerationCap: 0
       turnSpeed: 0
@@ -1024,10 +1044,10 @@ MonoBehaviour:
       bulletRange: 0
       fireRate: 0
       rammingPower: 1.2
-      healthCap: 30
-      healthRegen: 0.5
-      energyCap: 0
-      energyRegen: 0
+      healthCap: 40
+      healthRegen: 2
+      energyCap: 20
+      energyRegen: 0.1
       moveSpeed: 0
       accelerationCap: 0
       turnSpeed: 0
@@ -1046,8 +1066,8 @@ MonoBehaviour:
       rammingPower: 0
       healthCap: 16
       healthRegen: 0.1
-      energyCap: 0
-      energyRegen: 0
+      energyCap: 10
+      energyRegen: 0.2
       moveSpeed: 0
       accelerationCap: 0
       turnSpeed: 1
@@ -1066,8 +1086,8 @@ MonoBehaviour:
       rammingPower: 0
       healthCap: 16
       healthRegen: 0.1
-      energyCap: 0
-      energyRegen: 0
+      energyCap: 10
+      energyRegen: 0.2
       moveSpeed: 0
       accelerationCap: 0
       turnSpeed: 1
@@ -1086,11 +1106,11 @@ MonoBehaviour:
       rammingPower: 0
       healthCap: 12
       healthRegen: 0.1
-      energyCap: 0
-      energyRegen: 0
+      energyCap: 30
+      energyRegen: 0.2
       moveSpeed: 3
       accelerationCap: 2
-      turnSpeed: 0.5
+      turnSpeed: 1
       weaponRotationSpeed: 0
       maxPeople: 0
   - displayName: GalacticLeopard_Parts_Thruster
@@ -1106,11 +1126,11 @@ MonoBehaviour:
       rammingPower: 0
       healthCap: 12
       healthRegen: 0.1
-      energyCap: 0
-      energyRegen: 0
+      energyCap: 30
+      energyRegen: 0.2
       moveSpeed: 3
       accelerationCap: 2
-      turnSpeed: 0.5
+      turnSpeed: 1
       weaponRotationSpeed: 0
       maxPeople: 0
   - displayName: GalacticOkamoto_Thruster
@@ -1126,11 +1146,11 @@ MonoBehaviour:
       rammingPower: 0
       healthCap: 12
       healthRegen: 0.1
-      energyCap: 0
-      energyRegen: 0
+      energyCap: 30
+      energyRegen: 0.2
       moveSpeed: 3
       accelerationCap: 2
-      turnSpeed: 0.5
+      turnSpeed: 1
       weaponRotationSpeed: 0
       maxPeople: 0
   - displayName: CraizanStar_Wing
@@ -1145,12 +1165,12 @@ MonoBehaviour:
       fireRate: 0
       rammingPower: 0
       healthCap: 36
-      healthRegen: 0.4
-      energyCap: 0
-      energyRegen: 0
+      healthRegen: 2
+      energyCap: 10
+      energyRegen: 0.1
       moveSpeed: 0
       accelerationCap: 0
-      turnSpeed: 0
+      turnSpeed: 0.5
       weaponRotationSpeed: 0
       maxPeople: 20
   - displayName: CraizanStar_Wing2
@@ -1165,12 +1185,12 @@ MonoBehaviour:
       fireRate: 0
       rammingPower: 0
       healthCap: 36
-      healthRegen: 0.4
-      energyCap: 0
-      energyRegen: 0
+      healthRegen: 2
+      energyCap: 10
+      energyRegen: 0.1
       moveSpeed: 0
       accelerationCap: 0
-      turnSpeed: 0
+      turnSpeed: 0.5
       weaponRotationSpeed: 0
       maxPeople: 20
   - displayName: CraizanStar_Wing3
@@ -1185,12 +1205,12 @@ MonoBehaviour:
       fireRate: 0
       rammingPower: 0
       healthCap: 36
-      healthRegen: 0.4
-      energyCap: 0
-      energyRegen: 0
+      healthRegen: 2
+      energyCap: 10
+      energyRegen: 0.1
       moveSpeed: 0
       accelerationCap: 0
-      turnSpeed: 0
+      turnSpeed: 0.5
       weaponRotationSpeed: 0
       maxPeople: 20
   - displayName: GalacticLeopard_Main_Wing
@@ -1205,12 +1225,12 @@ MonoBehaviour:
       fireRate: 0
       rammingPower: 0
       healthCap: 36
-      healthRegen: 0.4
-      energyCap: 0
-      energyRegen: 0
+      healthRegen: 2
+      energyCap: 10
+      energyRegen: 0.1
       moveSpeed: 0
       accelerationCap: 0
-      turnSpeed: 0
+      turnSpeed: 0.5
       weaponRotationSpeed: 0
       maxPeople: 20
   - displayName: GalacticOkamoto_Wing
@@ -1225,12 +1245,12 @@ MonoBehaviour:
       fireRate: 0
       rammingPower: 0
       healthCap: 36
-      healthRegen: 0.4
-      energyCap: 0
-      energyRegen: 0
+      healthRegen: 2
+      energyCap: 10
+      energyRegen: 0.1
       moveSpeed: 0
       accelerationCap: 0
-      turnSpeed: 0
+      turnSpeed: 0.5
       weaponRotationSpeed: 0
       maxPeople: 20
   entries:
@@ -1284,20 +1304,20 @@ MonoBehaviour:
       count: 4
     summedStats:
       firePower: 195
-      bulletSpeed: 14
+      bulletSpeed: 10
       bulletRange: 25
       fireRate: 9.75
       rammingPower: 42.000015
-      healthCap: 1290
-      healthRegen: 20.099998
-      energyCap: 161
-      energyRegen: 0
+      healthCap: 1640
+      healthRegen: 82.2
+      energyCap: 981
+      energyRegen: 4.4999986
       moveSpeed: 3.06
       accelerationCap: 4
-      turnSpeed: 1
+      turnSpeed: 5
       weaponRotationSpeed: 90
       maxPeople: 120
-    hasMissingStats: 1
+    hasMissingStats: 0
   - catalogIndex: 1
     visualFamily: 0
     displayName: Kilnstar
@@ -1340,20 +1360,20 @@ MonoBehaviour:
       count: 2
     summedStats:
       firePower: 120
-      bulletSpeed: 14
+      bulletSpeed: 10
       bulletRange: 25
       fireRate: 9.5
       rammingPower: 22.800003
-      healthCap: 666
-      healthRegen: 10.5
-      energyCap: 98
-      energyRegen: 0
+      healthCap: 856
+      healthRegen: 42.199997
+      energyCap: 558
+      energyRegen: 2.5000002
       moveSpeed: 3.06
       accelerationCap: 4
-      turnSpeed: 1
+      turnSpeed: 3
       weaponRotationSpeed: 90
       maxPeople: 40
-    hasMissingStats: 1
+    hasMissingStats: 0
   - catalogIndex: 2
     visualFamily: 0
     displayName: Lashstar
@@ -1398,20 +1418,20 @@ MonoBehaviour:
       count: 2
     summedStats:
       firePower: 90
-      bulletSpeed: 14
+      bulletSpeed: 10
       bulletRange: 25
       fireRate: 5.5
       rammingPower: 31.200008
-      healthCap: 1008
-      healthRegen: 15.499998
-      energyCap: 74
-      energyRegen: 0
+      healthCap: 1268
+      healthRegen: 64.1
+      energyCap: 684
+      energyRegen: 3.3999991
       moveSpeed: 3
       accelerationCap: 2
-      turnSpeed: 0.5
+      turnSpeed: 4
       weaponRotationSpeed: 90
       maxPeople: 120
-    hasMissingStats: 1
+    hasMissingStats: 0
   - catalogIndex: 3
     visualFamily: 0
     displayName: Moltenvault
@@ -1454,20 +1474,20 @@ MonoBehaviour:
       count: 2
     summedStats:
       firePower: 120
-      bulletSpeed: 14
+      bulletSpeed: 10
       bulletRange: 25
       fireRate: 6.25
       rammingPower: 19.2
-      healthCap: 660
-      healthRegen: 9.9
-      energyCap: 99
-      energyRegen: 0
+      healthCap: 820
+      healthRegen: 40.299995
+      energyCap: 549
+      energyRegen: 2.6
       moveSpeed: 3.12
       accelerationCap: 6
-      turnSpeed: 1.5
+      turnSpeed: 5
       weaponRotationSpeed: 90
       maxPeople: 80
-    hasMissingStats: 1
+    hasMissingStats: 0
   - catalogIndex: 4
     visualFamily: 0
     displayName: Pyrecrown
@@ -1506,20 +1526,20 @@ MonoBehaviour:
       count: 2
     summedStats:
       firePower: 60
-      bulletSpeed: 14
-      bulletRange: 25
+      bulletSpeed: 10
+      bulletRange: 20
       fireRate: 8
       rammingPower: 8.4
-      healthCap: 366
-      healthRegen: 5.2000003
-      energyCap: 48
-      energyRegen: 0
+      healthCap: 436
+      healthRegen: 22.1
+      energyCap: 258
+      energyRegen: 1.3000001
       moveSpeed: 3
       accelerationCap: 2
-      turnSpeed: 0.5
+      turnSpeed: 3
       weaponRotationSpeed: 90
       maxPeople: 80
-    hasMissingStats: 1
+    hasMissingStats: 0
   - catalogIndex: 5
     visualFamily: 0
     displayName: Scorchspire
@@ -1562,20 +1582,20 @@ MonoBehaviour:
       count: 1
     summedStats:
       firePower: 90
-      bulletSpeed: 14
+      bulletSpeed: 10
       bulletRange: 25
       fireRate: 5.5
       rammingPower: 43.200016
-      healthCap: 1212
-      healthRegen: 19.4
-      energyCap: 74
-      energyRegen: 0
+      healthCap: 1572
+      healthRegen: 78.2
+      energyCap: 884
+      energyRegen: 4.2999988
       moveSpeed: 3.06
       accelerationCap: 4
-      turnSpeed: 1
+      turnSpeed: 3.5
       weaponRotationSpeed: 90
       maxPeople: 60
-    hasMissingStats: 1
+    hasMissingStats: 0
   - catalogIndex: 6
     visualFamily: 0
     displayName: Slagorbit
@@ -1618,20 +1638,20 @@ MonoBehaviour:
       count: 2
     summedStats:
       firePower: 150
-      bulletSpeed: 14
+      bulletSpeed: 10
       bulletRange: 25
       fireRate: 7
       rammingPower: 21.600002
-      healthCap: 780
-      healthRegen: 11.599998
-      energyCap: 124
-      energyRegen: 0
+      healthCap: 960
+      healthRegen: 48.199997
+      energyCap: 604
+      energyRegen: 2.7999997
       moveSpeed: 3.06
       accelerationCap: 4
-      turnSpeed: 1
+      turnSpeed: 5
       weaponRotationSpeed: 90
       maxPeople: 120
-    hasMissingStats: 1
+    hasMissingStats: 0
   - catalogIndex: 7
     visualFamily: 0
     displayName: Sunkiln
@@ -1674,20 +1694,20 @@ MonoBehaviour:
       count: 4
     summedStats:
       firePower: 165
-      bulletSpeed: 14
+      bulletSpeed: 10
       bulletRange: 25
       fireRate: 9
       rammingPower: 60.000027
-      healthCap: 1680
-      healthRegen: 26.9
-      energyCap: 136
-      energyRegen: 0
+      healthCap: 2180
+      healthRegen: 108.299995
+      energyCap: 1266
+      energyRegen: 5.999997
       moveSpeed: 3.12
       accelerationCap: 6
-      turnSpeed: 1.5
+      turnSpeed: 5
       weaponRotationSpeed: 90
       maxPeople: 80
-    hasMissingStats: 1
+    hasMissingStats: 0
   - catalogIndex: 8
     visualFamily: 0
     displayName: Torchvault
@@ -1726,20 +1746,20 @@ MonoBehaviour:
       count: 2
     summedStats:
       firePower: 150
-      bulletSpeed: 14
+      bulletSpeed: 10
       bulletRange: 25
       fireRate: 7
       rammingPower: 4.8
-      healthCap: 228
-      healthRegen: 3.1
-      energyCap: 124
-      energyRegen: 0
+      healthCap: 268
+      healthRegen: 12.300001
+      energyCap: 314
+      energyRegen: 1.2
       moveSpeed: 3.12
       accelerationCap: 6
-      turnSpeed: 1.5
+      turnSpeed: 4
       weaponRotationSpeed: 90
       maxPeople: 40
-    hasMissingStats: 1
+    hasMissingStats: 0
   - catalogIndex: 9
     visualFamily: 0
     displayName: Brandspire
@@ -1777,25 +1797,25 @@ MonoBehaviour:
     - displayName: CraizanStar_Thruster
       count: 1
     - displayName: CraizanStar_TurretBarrel
-      count: 17
+      count: 5
     - displayName: CraizanStar_Wing2
       count: 12
     summedStats:
-      firePower: 315
-      bulletSpeed: 14
+      firePower: 135
+      bulletSpeed: 10
       bulletRange: 25
-      fireRate: 35.5
+      fireRate: 11.5
       rammingPower: 19.2
-      healthCap: 924
-      healthRegen: 12.899996
-      energyCap: 254
-      energyRegen: 0
+      healthCap: 1084
+      healthRegen: 56.1
+      energyCap: 580
+      energyRegen: 2.9999993
       moveSpeed: 3
       accelerationCap: 2
-      turnSpeed: 0.5
+      turnSpeed: 7
       weaponRotationSpeed: 90
       maxPeople: 240
-    hasMissingStats: 1
+    hasMissingStats: 0
   - catalogIndex: 10
     visualFamily: 0
     displayName: Wickorbit
@@ -1838,20 +1858,20 @@ MonoBehaviour:
       count: 8
     summedStats:
       firePower: 150
-      bulletSpeed: 14
+      bulletSpeed: 10
       bulletRange: 25
       fireRate: 13.5
       rammingPower: 20.400002
-      healthCap: 894
-      healthRegen: 12.699997
-      energyCap: 122
-      energyRegen: 0
+      healthCap: 1064
+      healthRegen: 54.199997
+      energyCap: 622
+      energyRegen: 3.0999994
       moveSpeed: 3.06
       accelerationCap: 4
-      turnSpeed: 1
+      turnSpeed: 7
       weaponRotationSpeed: 90
       maxPeople: 200
-    hasMissingStats: 1
+    hasMissingStats: 0
   - catalogIndex: 11
     visualFamily: 0
     displayName: Forgecrown
@@ -1896,20 +1916,20 @@ MonoBehaviour:
       count: 4
     summedStats:
       firePower: 60
-      bulletSpeed: 14
+      bulletSpeed: 10
       bulletRange: 25
       fireRate: 4.75
       rammingPower: 8.4
-      healthCap: 450
-      healthRegen: 6.1000004
-      energyCap: 49
-      energyRegen: 0
+      healthCap: 520
+      healthRegen: 26.2
+      energyCap: 309
+      energyRegen: 1.7000002
       moveSpeed: 3.06
       accelerationCap: 4
-      turnSpeed: 1
+      turnSpeed: 5
       weaponRotationSpeed: 90
       maxPeople: 120
-    hasMissingStats: 1
+    hasMissingStats: 0
   - catalogIndex: 12
     visualFamily: 0
     displayName: Flarekiln
@@ -1952,20 +1972,20 @@ MonoBehaviour:
       count: 2
     summedStats:
       firePower: 210
-      bulletSpeed: 14
+      bulletSpeed: 10
       bulletRange: 25
       fireRate: 11.75
       rammingPower: 26.400005
-      healthCap: 1044
-      healthRegen: 15.199997
-      energyCap: 173
-      energyRegen: 0
+      healthCap: 1264
+      healthRegen: 64.2
+      energyCap: 773
+      energyRegen: 3.5999992
       moveSpeed: 3.06
       accelerationCap: 4
-      turnSpeed: 1
+      turnSpeed: 7
       weaponRotationSpeed: 90
       maxPeople: 200
-    hasMissingStats: 1
+    hasMissingStats: 0
   - catalogIndex: 13
     visualFamily: 0
     displayName: Ashspire
@@ -2010,20 +2030,20 @@ MonoBehaviour:
       count: 2
     summedStats:
       firePower: 90
-      bulletSpeed: 14
+      bulletSpeed: 10
       bulletRange: 25
       fireRate: 5.5
       rammingPower: 54.000023
-      healthCap: 1686
-      healthRegen: 26.099998
-      energyCap: 74
-      energyRegen: 0
+      healthCap: 2136
+      healthRegen: 106.399994
+      energyCap: 1174
+      energyRegen: 6.099997
       moveSpeed: 3.18
       accelerationCap: 8
-      turnSpeed: 2
+      turnSpeed: 8
       weaponRotationSpeed: 90
       maxPeople: 160
-    hasMissingStats: 1
+    hasMissingStats: 0
   - catalogIndex: 14
     visualFamily: 0
     displayName: Brandorbit
@@ -2068,20 +2088,20 @@ MonoBehaviour:
       count: 2
     summedStats:
       firePower: 135
-      bulletSpeed: 14
+      bulletSpeed: 10
       bulletRange: 25
       fireRate: 8.25
       rammingPower: 20.400002
-      healthCap: 606
-      healthRegen: 9.5
-      energyCap: 111
-      energyRegen: 0
+      healthCap: 776
+      healthRegen: 38.199997
+      energyCap: 531
+      energyRegen: 2.3000002
       moveSpeed: 3.06
       accelerationCap: 4
-      turnSpeed: 1
+      turnSpeed: 3
       weaponRotationSpeed: 90
       maxPeople: 40
-    hasMissingStats: 1
+    hasMissingStats: 0
   - catalogIndex: 15
     visualFamily: 0
     displayName: Cindervault
@@ -2126,20 +2146,20 @@ MonoBehaviour:
       count: 2
     summedStats:
       firePower: 120
-      bulletSpeed: 14
+      bulletSpeed: 10
       bulletRange: 25
       fireRate: 9.5
       rammingPower: 24.000004
-      healthCap: 876
-      healthRegen: 12.9
-      energyCap: 98
-      energyRegen: 0
+      healthCap: 1076
+      healthRegen: 52.499992
+      energyCap: 708
+      energyRegen: 3.6
       moveSpeed: 3.24
       accelerationCap: 10
-      turnSpeed: 2.5
+      turnSpeed: 8
       weaponRotationSpeed: 90
       maxPeople: 120
-    hasMissingStats: 1
+    hasMissingStats: 0
   - catalogIndex: 16
     visualFamily: 0
     displayName: Emberforge
@@ -2182,20 +2202,20 @@ MonoBehaviour:
       count: 2
     summedStats:
       firePower: 90
-      bulletSpeed: 14
+      bulletSpeed: 10
       bulletRange: 25
       fireRate: 5.5
       rammingPower: 22.800003
-      healthCap: 810
-      healthRegen: 12.099998
-      energyCap: 74
-      energyRegen: 0
+      healthCap: 1000
+      healthRegen: 50.199997
+      energyCap: 574
+      energyRegen: 2.8999999
       moveSpeed: 3.06
       accelerationCap: 4
-      turnSpeed: 1
+      turnSpeed: 5
       weaponRotationSpeed: 90
       maxPeople: 120
-    hasMissingStats: 1
+    hasMissingStats: 0
   - catalogIndex: 17
     visualFamily: 0
     displayName: Firekiln
@@ -2240,20 +2260,20 @@ MonoBehaviour:
       count: 2
     summedStats:
       firePower: 150
-      bulletSpeed: 14
+      bulletSpeed: 10
       bulletRange: 25
       fireRate: 7
       rammingPower: 50.40002
-      healthCap: 1356
-      healthRegen: 22
-      energyCap: 124
-      energyRegen: 0
+      healthCap: 1776
+      healthRegen: 88.2
+      energyCap: 1044
+      energyRegen: 4.799998
       moveSpeed: 3.06
       accelerationCap: 4
-      turnSpeed: 1
+      turnSpeed: 3
       weaponRotationSpeed: 90
       maxPeople: 40
-    hasMissingStats: 1
+    hasMissingStats: 0
   - catalogIndex: 18
     visualFamily: 0
     displayName: Glowkiln
@@ -2298,20 +2318,20 @@ MonoBehaviour:
       count: 2
     summedStats:
       firePower: 150
-      bulletSpeed: 14
+      bulletSpeed: 10
       bulletRange: 25
       fireRate: 13.5
       rammingPower: 38.400013
-      healthCap: 1404
-      healthRegen: 20.899996
-      energyCap: 122
-      energyRegen: 0
+      healthCap: 1724
+      healthRegen: 88.1
+      energyCap: 912
+      energyRegen: 4.599998
       moveSpeed: 3
       accelerationCap: 2
-      turnSpeed: 0.5
+      turnSpeed: 7
       weaponRotationSpeed: 90
       maxPeople: 240
-    hasMissingStats: 1
+    hasMissingStats: 0
   - catalogIndex: 19
     visualFamily: 0
     displayName: Heatspire
@@ -2356,20 +2376,20 @@ MonoBehaviour:
       count: 4
     summedStats:
       firePower: 150
-      bulletSpeed: 14
+      bulletSpeed: 10
       bulletRange: 25
       fireRate: 10.25
       rammingPower: 32.40001
-      healthCap: 990
-      healthRegen: 15.4
-      energyCap: 123
-      energyRegen: 0
+      healthCap: 1260
+      healthRegen: 62.299995
+      energyCap: 793
+      energyRegen: 3.6999993
       moveSpeed: 3.12
       accelerationCap: 6
-      turnSpeed: 1.5
+      turnSpeed: 5
       weaponRotationSpeed: 90
       maxPeople: 80
-    hasMissingStats: 1
+    hasMissingStats: 0
   - catalogIndex: 20
     visualFamily: 1
     displayName: Spothunt
@@ -2435,16 +2455,16 @@ MonoBehaviour:
     summedStats:
       firePower: 100
       bulletSpeed: 12
-      bulletRange: 15
+      bulletRange: 12
       fireRate: 1
       rammingPower: 42.80001
-      healthCap: 1226
-      healthRegen: 18.100002
-      energyCap: 420
-      energyRegen: 9
+      healthCap: 1716
+      healthRegen: 70.799995
+      energyCap: 1310
+      energyRegen: 10.100002
       moveSpeed: 6
       accelerationCap: 8
-      turnSpeed: 3
+      turnSpeed: 6
       weaponRotationSpeed: 90
       maxPeople: 240
     hasMissingStats: 0
@@ -2506,17 +2526,17 @@ MonoBehaviour:
       count: 1
     summedStats:
       firePower: 230
-      bulletSpeed: 14
-      bulletRange: 25
+      bulletSpeed: 12
+      bulletRange: 20
       fireRate: 6
       rammingPower: 36.800007
-      healthCap: 1044
-      healthRegen: 15.5
-      energyCap: 664
-      energyRegen: 14
+      healthCap: 1484
+      healthRegen: 60.699997
+      energyCap: 1314
+      energyRegen: 12.800009
       moveSpeed: 6.12
       accelerationCap: 2
-      turnSpeed: 0.5
+      turnSpeed: 2
       weaponRotationSpeed: 90
       maxPeople: 240
     hasMissingStats: 0
@@ -2575,16 +2595,16 @@ MonoBehaviour:
     summedStats:
       firePower: 200
       bulletSpeed: 12
-      bulletRange: 15
+      bulletRange: 12
       fireRate: 2
       rammingPower: 60.800022
-      healthCap: 1668
-      healthRegen: 25.900002
-      energyCap: 1060
-      energyRegen: 29
+      healthCap: 2308
+      healthRegen: 97.899994
+      energyCap: 2060
+      energyRegen: 27.200016
       moveSpeed: 6.48
       accelerationCap: 8
-      turnSpeed: 2
+      turnSpeed: 4
       weaponRotationSpeed: 90
       maxPeople: 200
     hasMissingStats: 0
@@ -2636,17 +2656,17 @@ MonoBehaviour:
       count: 1
     summedStats:
       firePower: 30
-      bulletSpeed: 14
-      bulletRange: 25
+      bulletSpeed: 10
+      bulletRange: 20
       fireRate: 4
       rammingPower: 45.200005
-      healthCap: 1154
-      healthRegen: 15.700001
-      energyCap: 524
-      energyRegen: 10
+      healthCap: 1864
+      healthRegen: 62.199997
+      energyCap: 1504
+      energyRegen: 7.499999
       moveSpeed: 3.06
       accelerationCap: 4
-      turnSpeed: 1
+      turnSpeed: 2
       weaponRotationSpeed: 90
       maxPeople: 500
     hasMissingStats: 0
@@ -2710,17 +2730,17 @@ MonoBehaviour:
       count: 1
     summedStats:
       firePower: 130
-      bulletSpeed: 14
-      bulletRange: 25
+      bulletSpeed: 12
+      bulletRange: 20
       fireRate: 5
       rammingPower: 42.80001
-      healthCap: 1258
-      healthRegen: 18.599998
-      energyCap: 444
-      energyRegen: 9
+      healthCap: 1748
+      healthRegen: 74.5
+      energyCap: 1284
+      energyRegen: 9.700003
       moveSpeed: 6
       accelerationCap: 4
-      turnSpeed: 1
+      turnSpeed: 4
       weaponRotationSpeed: 90
       maxPeople: 280
     hasMissingStats: 0
@@ -2784,17 +2804,17 @@ MonoBehaviour:
       count: 1
     summedStats:
       firePower: 180
-      bulletSpeed: 14
-      bulletRange: 25
+      bulletSpeed: 12
+      bulletRange: 20
       fireRate: 5.5
       rammingPower: 39.20001
-      healthCap: 1040
-      healthRegen: 15.6
-      energyCap: 484
-      energyRegen: 9
+      healthCap: 1500
+      healthRegen: 60.6
+      energyCap: 1234
+      energyRegen: 9.200001
       moveSpeed: 6
       accelerationCap: 4
-      turnSpeed: 2
+      turnSpeed: 3
       weaponRotationSpeed: 90
       maxPeople: 200
     hasMissingStats: 0
@@ -2857,16 +2877,16 @@ MonoBehaviour:
     summedStats:
       firePower: 200
       bulletSpeed: 12
-      bulletRange: 15
+      bulletRange: 12
       fireRate: 2
       rammingPower: 53.600018
-      healthCap: 1404
-      healthRegen: 21.800001
-      energyCap: 640
-      energyRegen: 14
+      healthCap: 1984
+      healthRegen: 84.799995
+      energyCap: 1580
+      energyRegen: 14.200013
       moveSpeed: 6.12
       accelerationCap: 4
-      turnSpeed: 1
+      turnSpeed: 2
       weaponRotationSpeed: 90
       maxPeople: 200
     hasMissingStats: 0
@@ -2925,16 +2945,16 @@ MonoBehaviour:
     summedStats:
       firePower: 200
       bulletSpeed: 12
-      bulletRange: 15
+      bulletRange: 12
       fireRate: 2
       rammingPower: 81.19998
-      healthCap: 2110
-      healthRegen: 33.300003
-      energyCap: 500
-      energyRegen: 9
+      healthCap: 2920
+      healthRegen: 130.79999
+      energyCap: 2030
+      energyRegen: 13.100009
       moveSpeed: 6
       accelerationCap: 10
-      turnSpeed: 2.5
+      turnSpeed: 5
       weaponRotationSpeed: 90
       maxPeople: 200
     hasMissingStats: 0
@@ -2995,16 +3015,16 @@ MonoBehaviour:
     summedStats:
       firePower: 150
       bulletSpeed: 12
-      bulletRange: 15
+      bulletRange: 12
       fireRate: 1.5
       rammingPower: 42.80001
-      healthCap: 1202
-      healthRegen: 18.100002
-      energyCap: 880
-      energyRegen: 24
+      healthCap: 1692
+      healthRegen: 67.6
+      energyCap: 1600
+      energyRegen: 21.700012
       moveSpeed: 6.36
       accelerationCap: 6
-      turnSpeed: 2.5
+      turnSpeed: 4
       weaponRotationSpeed: 90
       maxPeople: 200
     hasMissingStats: 0
@@ -3060,17 +3080,17 @@ MonoBehaviour:
       count: 1
     summedStats:
       firePower: 90
-      bulletSpeed: 14
-      bulletRange: 25
+      bulletSpeed: 10
+      bulletRange: 20
       fireRate: 12
       rammingPower: 64.400024
-      healthCap: 1654
-      healthRegen: 26
-      energyCap: 412
-      energyRegen: 9
+      healthCap: 2324
+      healthRegen: 102.5
+      energyCap: 1572
+      energyRegen: 11.100008
       moveSpeed: 6
       accelerationCap: 4
-      turnSpeed: 1
+      turnSpeed: 2
       weaponRotationSpeed: 90
       maxPeople: 200
     hasMissingStats: 0
@@ -3129,16 +3149,16 @@ MonoBehaviour:
     summedStats:
       firePower: 150
       bulletSpeed: 12
-      bulletRange: 15
+      bulletRange: 12
       fireRate: 1.5
       rammingPower: 29.600008
-      healthCap: 812
-      healthRegen: 11.700001
-      energyCap: 460
-      energyRegen: 9
+      healthCap: 1192
+      healthRegen: 44.699997
+      energyCap: 1080
+      energyRegen: 8.6
       moveSpeed: 6
       accelerationCap: 6
-      turnSpeed: 2.5
+      turnSpeed: 4
       weaponRotationSpeed: 90
       maxPeople: 200
     hasMissingStats: 0
@@ -3203,16 +3223,16 @@ MonoBehaviour:
     summedStats:
       firePower: 100
       bulletSpeed: 12
-      bulletRange: 15
+      bulletRange: 12
       fireRate: 1
       rammingPower: 46.400017
-      healthCap: 1340
-      healthRegen: 19.800003
-      energyCap: 420
-      energyRegen: 9
+      healthCap: 1860
+      healthRegen: 76.99999
+      energyCap: 1430
+      energyRegen: 10.800003
       moveSpeed: 6
       accelerationCap: 12
-      turnSpeed: 4
+      turnSpeed: 8
       weaponRotationSpeed: 90
       maxPeople: 240
     hasMissingStats: 0
@@ -3277,16 +3297,16 @@ MonoBehaviour:
     summedStats:
       firePower: 300
       bulletSpeed: 12
-      bulletRange: 15
+      bulletRange: 12
       fireRate: 3
       rammingPower: 47.600014
-      healthCap: 1250
-      healthRegen: 19.1
-      energyCap: 580
-      energyRegen: 9
+      healthCap: 1780
+      healthRegen: 74.6
+      energyCap: 1470
+      energyRegen: 9.900003
       moveSpeed: 6
       accelerationCap: 4
-      turnSpeed: 2
+      turnSpeed: 3
       weaponRotationSpeed: 90
       maxPeople: 200
     hasMissingStats: 0
@@ -3358,13 +3378,13 @@ MonoBehaviour:
       bulletRange: 25
       fireRate: 3
       rammingPower: 40.40001
-      healthCap: 1314
-      healthRegen: 18.900002
-      energyCap: 860
-      energyRegen: 24
+      healthCap: 1784
+      healthRegen: 71.799995
+      energyCap: 1620
+      energyRegen: 22.300014
       moveSpeed: 6.36
       accelerationCap: 8
-      turnSpeed: 4
+      turnSpeed: 8
       weaponRotationSpeed: 90
       maxPeople: 280
     hasMissingStats: 0
@@ -3430,15 +3450,15 @@ MonoBehaviour:
       firePower: 200
       bulletSpeed: 28
       bulletRange: 40
-      fireRate: 0.4
+      fireRate: 1
       rammingPower: 48.00001
-      healthCap: 1280
-      healthRegen: 18.900002
-      energyCap: 750
-      energyRegen: 16
+      healthCap: 1880
+      healthRegen: 72.899994
+      energyCap: 1640
+      energyRegen: 14.60001
       moveSpeed: 6.12
       accelerationCap: 4
-      turnSpeed: 2
+      turnSpeed: 3
       weaponRotationSpeed: 90
       maxPeople: 300
     hasMissingStats: 0
@@ -3510,13 +3530,13 @@ MonoBehaviour:
       bulletRange: 25
       fireRate: 1.75
       rammingPower: 47.20001
-      healthCap: 1376
-      healthRegen: 19.200003
-      energyCap: 925
-      energyRegen: 23
+      healthCap: 2036
+      healthRegen: 73.399994
+      energyCap: 1875
+      energyRegen: 19.80001
       moveSpeed: 6.24
       accelerationCap: 8
-      turnSpeed: 3
+      turnSpeed: 6
       weaponRotationSpeed: 90
       maxPeople: 440
     hasMissingStats: 0
@@ -3582,13 +3602,13 @@ MonoBehaviour:
       bulletRange: 25
       fireRate: 1.5
       rammingPower: 40.40001
-      healthCap: 1114
-      healthRegen: 16.600002
-      energyCap: 530
-      energyRegen: 14
+      healthCap: 1584
+      healthRegen: 63.099995
+      energyCap: 1320
+      energyRegen: 13.700007
       moveSpeed: 6.12
       accelerationCap: 8
-      turnSpeed: 3
+      turnSpeed: 5
       weaponRotationSpeed: 90
       maxPeople: 200
     hasMissingStats: 0
@@ -3656,15 +3676,15 @@ MonoBehaviour:
       firePower: 460
       bulletSpeed: 28
       bulletRange: 40
-      fireRate: 2.3
+      fireRate: 3.5
       rammingPower: 56.800022
-      healthCap: 1500
-      healthRegen: 23.900002
-      energyCap: 630
-      energyRegen: 7
+      healthCap: 2040
+      healthRegen: 94.5
+      energyCap: 1640
+      energyRegen: 9.900004
       moveSpeed: 6
       accelerationCap: 4
-      turnSpeed: 1
+      turnSpeed: 2.5
       weaponRotationSpeed: 90
       maxPeople: 120
     hasMissingStats: 0
@@ -3726,15 +3746,15 @@ MonoBehaviour:
       firePower: 200
       bulletSpeed: 28
       bulletRange: 40
-      fireRate: 0.4
+      fireRate: 1
       rammingPower: 32.40001
-      healthCap: 926
-      healthRegen: 14.8
-      energyCap: 310
-      energyRegen: 5
+      healthCap: 1196
+      healthRegen: 58.499996
+      energyCap: 890
+      energyRegen: 7.2999983
       moveSpeed: 6
       accelerationCap: 4
-      turnSpeed: 1
+      turnSpeed: 3
       weaponRotationSpeed: 90
       maxPeople: 40
     hasMissingStats: 0
@@ -3810,17 +3830,17 @@ MonoBehaviour:
       count: 1
     summedStats:
       firePower: 515
-      bulletSpeed: 14
+      bulletSpeed: 12
       bulletRange: 25
       fireRate: 19
       rammingPower: 89.59996
-      healthCap: 2408
-      healthRegen: 37.800003
-      energyCap: 894
-      energyRegen: 14
+      healthCap: 3288
+      healthRegen: 149
+      energyCap: 2474
+      energyRegen: 17.800024
       moveSpeed: 6.12
       accelerationCap: 4
-      turnSpeed: 3
+      turnSpeed: 5
       weaponRotationSpeed: 90
       maxPeople: 240
     hasMissingStats: 0
@@ -3884,17 +3904,17 @@ MonoBehaviour:
       count: 1
     summedStats:
       firePower: 60
-      bulletSpeed: 14
-      bulletRange: 25
+      bulletSpeed: 10
+      bulletRange: 20
       fireRate: 8
       rammingPower: 53.600018
-      healthCap: 1396
-      healthRegen: 21.6
-      energyCap: 388
-      energyRegen: 9
+      healthCap: 1976
+      healthRegen: 84.6
+      energyCap: 1398
+      energyRegen: 10.400001
       moveSpeed: 6
       accelerationCap: 6
-      turnSpeed: 1.5
+      turnSpeed: 3
       weaponRotationSpeed: 90
       maxPeople: 200
     hasMissingStats: 0
@@ -3964,13 +3984,13 @@ MonoBehaviour:
       bulletRange: 25
       fireRate: 2.25
       rammingPower: 26.800005
-      healthCap: 730
-      healthRegen: 11.099999
-      energyCap: 315
-      energyRegen: 7
+      healthCap: 1020
+      healthRegen: 42.600002
+      energyCap: 825
+      energyRegen: 7.499998
       moveSpeed: 6
       accelerationCap: 4
-      turnSpeed: 2
+      turnSpeed: 3
       weaponRotationSpeed: 90
       maxPeople: 100
     hasMissingStats: 0
@@ -4035,16 +4055,16 @@ MonoBehaviour:
     summedStats:
       firePower: 100
       bulletSpeed: 12
-      bulletRange: 15
+      bulletRange: 12
       fireRate: 1
       rammingPower: 72.8
-      healthCap: 1956
-      healthRegen: 30.600002
-      energyCap: 560
-      energyRegen: 14
+      healthCap: 2696
+      healthRegen: 120.799995
+      energyCap: 1840
+      energyRegen: 16.000017
       moveSpeed: 6.12
       accelerationCap: 4
-      turnSpeed: 1
+      turnSpeed: 3
       weaponRotationSpeed: 90
       maxPeople: 240
     hasMissingStats: 0
@@ -4108,17 +4128,17 @@ MonoBehaviour:
       count: 1
     summedStats:
       firePower: 60
-      bulletSpeed: 14
-      bulletRange: 25
+      bulletSpeed: 10
+      bulletRange: 20
       fireRate: 8
       rammingPower: 64.80002
-      healthCap: 1788
-      healthRegen: 26.900002
-      energyCap: 908
-      energyRegen: 26
+      healthCap: 2528
+      healthRegen: 101.899994
+      energyCap: 2118
+      energyRegen: 24.80002
       moveSpeed: 6.36
       accelerationCap: 12
-      turnSpeed: 4
+      turnSpeed: 7
       weaponRotationSpeed: 90
       maxPeople: 300
     hasMissingStats: 0
@@ -4194,15 +4214,15 @@ MonoBehaviour:
       firePower: 320
       bulletSpeed: 28
       bulletRange: 40
-      fireRate: 3.4
+      fireRate: 4
       rammingPower: 108.3999
-      healthCap: 3082
-      healthRegen: 46.499992
-      energyCap: 1230
-      energyRegen: 28
+      healthCap: 4252
+      healthRegen: 182.00002
+      energyCap: 3220
+      energyRegen: 29.800034
       moveSpeed: 6.36
       accelerationCap: 8
-      turnSpeed: 6
+      turnSpeed: 10.5
       weaponRotationSpeed: 90
       maxPeople: 500
     hasMissingStats: 0
@@ -4256,17 +4276,17 @@ MonoBehaviour:
       count: 1
     summedStats:
       firePower: 15
-      bulletSpeed: 14
-      bulletRange: 25
+      bulletSpeed: 10
+      bulletRange: 20
       fireRate: 2
       rammingPower: 11.999999
-      healthCap: 528
-      healthRegen: 7.5
-      energyCap: 292
-      energyRegen: 10
+      healthCap: 628
+      healthRegen: 28.900002
+      energyCap: 502
+      energyRegen: 10.000004
       moveSpeed: 6.12
       accelerationCap: 2
-      turnSpeed: 2.5
+      turnSpeed: 5
       weaponRotationSpeed: 90
       maxPeople: 80
     hasMissingStats: 0
@@ -4332,15 +4352,15 @@ MonoBehaviour:
       firePower: 130
       bulletSpeed: 28
       bulletRange: 40
-      fireRate: 0.95
+      fireRate: 1.25
       rammingPower: 30.400005
-      healthCap: 828
-      healthRegen: 12.8
-      energyCap: 350
-      energyRegen: 7
+      healthCap: 1148
+      healthRegen: 50.399998
+      energyCap: 890
+      energyRegen: 7.499999
       moveSpeed: 6
       accelerationCap: 2
-      turnSpeed: 0.5
+      turnSpeed: 1.5
       weaponRotationSpeed: 90
       maxPeople: 120
     hasMissingStats: 0
@@ -4386,14 +4406,14 @@ MonoBehaviour:
       count: 1
     summedStats:
       firePower: 120
-      bulletSpeed: 14
-      bulletRange: 25
+      bulletSpeed: 10
+      bulletRange: 20
       fireRate: 16
       rammingPower: 64.800026
-      healthCap: 1620
-      healthRegen: 27
-      energyCap: 96
-      energyRegen: 0
+      healthCap: 2160
+      healthRegen: 108
+      energyCap: 1176
+      energyRegen: 5.399997
       moveSpeed: 0
       accelerationCap: 0
       turnSpeed: 0
@@ -4452,17 +4472,17 @@ MonoBehaviour:
       count: 1
     summedStats:
       firePower: 15
-      bulletSpeed: 14
-      bulletRange: 25
+      bulletSpeed: 10
+      bulletRange: 20
       fireRate: 2
       rammingPower: 21.600002
-      healthCap: 552
-      healthRegen: 9.1
-      energyCap: 12
-      energyRegen: 0
+      healthCap: 732
+      healthRegen: 36.1
+      energyCap: 402
+      energyRegen: 2.0000002
       moveSpeed: 3
       accelerationCap: 2
-      turnSpeed: 0.5
+      turnSpeed: 1
       weaponRotationSpeed: 90
       maxPeople: 0
     hasMissingStats: 1
@@ -4524,15 +4544,15 @@ MonoBehaviour:
       firePower: 230
       bulletSpeed: 28
       bulletRange: 40
-      fireRate: 1.15
+      fireRate: 1.75
       rammingPower: 42.000015
-      healthCap: 1142
-      healthRegen: 18.800001
-      energyCap: 755
-      energyRegen: 20
+      healthCap: 1492
+      healthRegen: 71.299995
+      energyCap: 1325
+      energyRegen: 19.700008
       moveSpeed: 6.36
       accelerationCap: 2
-      turnSpeed: 0.5
+      turnSpeed: 1
       weaponRotationSpeed: 90
       maxPeople: 0
     hasMissingStats: 1
@@ -4592,17 +4612,17 @@ MonoBehaviour:
       count: 1
     summedStats:
       firePower: 75
-      bulletSpeed: 14
-      bulletRange: 25
+      bulletSpeed: 10
+      bulletRange: 20
       fireRate: 10
       rammingPower: 37.200012
-      healthCap: 1230
-      healthRegen: 18.700003
-      energyCap: 200
-      energyRegen: 5
+      healthCap: 1540
+      healthRegen: 74.799995
+      energyCap: 970
+      energyRegen: 8.699999
       moveSpeed: 6
       accelerationCap: 8
-      turnSpeed: 3
+      turnSpeed: 8
       weaponRotationSpeed: 90
       maxPeople: 120
     hasMissingStats: 0
@@ -4664,20 +4684,20 @@ MonoBehaviour:
       count: 1
     summedStats:
       firePower: 45
-      bulletSpeed: 14
-      bulletRange: 25
+      bulletSpeed: 10
+      bulletRange: 20
       fireRate: 6
       rammingPower: 52.400017
-      healthCap: 1422
-      healthRegen: 21.900002
-      energyCap: 516
-      energyRegen: 14
+      healthCap: 1992
+      healthRegen: 86.6
+      energyCap: 1396
+      energyRegen: 13.900011
       moveSpeed: 6.12
       accelerationCap: 8
-      turnSpeed: 0
+      turnSpeed: 1
       weaponRotationSpeed: 90
       maxPeople: 240
-    hasMissingStats: 1
+    hasMissingStats: 0
   - catalogIndex: 52
     visualFamily: 1
     displayName: Mossorbit
@@ -4742,17 +4762,17 @@ MonoBehaviour:
       count: 1
     summedStats:
       firePower: 60
-      bulletSpeed: 14
-      bulletRange: 25
+      bulletSpeed: 10
+      bulletRange: 20
       fireRate: 8
       rammingPower: 57.20002
-      healthCap: 1714
-      healthRegen: 25.500004
-      energyCap: 808
-      energyRegen: 24
+      healthCap: 2324
+      healthRegen: 96.19998
+      energyCap: 1928
+      energyRegen: 24.300018
       moveSpeed: 6.36
       accelerationCap: 14
-      turnSpeed: 6.5
+      turnSpeed: 11
       weaponRotationSpeed: 90
       maxPeople: 240
     hasMissingStats: 0
@@ -4819,16 +4839,16 @@ MonoBehaviour:
     summedStats:
       firePower: 100
       bulletSpeed: 12
-      bulletRange: 15
+      bulletRange: 12
       fireRate: 1
       rammingPower: 46.400013
-      healthCap: 1316
-      healthRegen: 19.600002
-      energyCap: 420
-      energyRegen: 9
+      healthCap: 1836
+      healthRegen: 76.799995
+      energyCap: 1370
+      energyRegen: 10.400003
       moveSpeed: 6
       accelerationCap: 8
-      turnSpeed: 3
+      turnSpeed: 6
       weaponRotationSpeed: 90
       maxPeople: 240
     hasMissingStats: 0
@@ -4900,17 +4920,17 @@ MonoBehaviour:
       count: 1
     summedStats:
       firePower: 90
-      bulletSpeed: 14
-      bulletRange: 25
+      bulletSpeed: 10
+      bulletRange: 20
       fireRate: 12
       rammingPower: 52.800022
-      healthCap: 1488
-      healthRegen: 23.800001
-      energyCap: 352
-      energyRegen: 10
+      healthCap: 1928
+      healthRegen: 93
+      energyCap: 1252
+      energyRegen: 13.400015
       moveSpeed: 6.12
       accelerationCap: 4
-      turnSpeed: 3
+      turnSpeed: 5
       weaponRotationSpeed: 90
       maxPeople: 40
     hasMissingStats: 0
@@ -4968,17 +4988,17 @@ MonoBehaviour:
       count: 1
     summedStats:
       firePower: 30
-      bulletSpeed: 14
-      bulletRange: 25
+      bulletSpeed: 10
+      bulletRange: 20
       fireRate: 4
       rammingPower: 32.40001
-      healthCap: 950
-      healthRegen: 15.000002
-      energyCap: 164
-      energyRegen: 5
+      healthCap: 1220
+      healthRegen: 58.699993
+      energyCap: 804
+      energyRegen: 7.699997
       moveSpeed: 6
       accelerationCap: 8
-      turnSpeed: 2
+      turnSpeed: 5
       weaponRotationSpeed: 90
       maxPeople: 40
     hasMissingStats: 0
@@ -5050,13 +5070,13 @@ MonoBehaviour:
       bulletRange: 25
       fireRate: 2.25
       rammingPower: 107.59994
-      healthCap: 2858
-      healthRegen: 45.299995
-      energyCap: 415
-      energyRegen: 9
+      healthCap: 3888
+      healthRegen: 180.6
+      energyCap: 2335
+      energyRegen: 15.200015
       moveSpeed: 6
       accelerationCap: 4
-      turnSpeed: 2
+      turnSpeed: 4.5
       weaponRotationSpeed: 90
       maxPeople: 260
     hasMissingStats: 0
@@ -5116,17 +5136,17 @@ MonoBehaviour:
       count: 1
     summedStats:
       firePower: 120
-      bulletSpeed: 14
-      bulletRange: 25
+      bulletSpeed: 10
+      bulletRange: 20
       fireRate: 16
       rammingPower: 70.40002
-      healthCap: 1900
-      healthRegen: 29.5
-      energyCap: 436
-      energyRegen: 9
+      healthCap: 2620
+      healthRegen: 116.7
+      energyCap: 1776
+      energyRegen: 12.200003
       moveSpeed: 6
       accelerationCap: 8
-      turnSpeed: 2
+      turnSpeed: 5
       weaponRotationSpeed: 90
       maxPeople: 240
     hasMissingStats: 0
@@ -5186,17 +5206,17 @@ MonoBehaviour:
       count: 1
     summedStats:
       firePower: 60
-      bulletSpeed: 14
-      bulletRange: 25
+      bulletSpeed: 10
+      bulletRange: 20
       fireRate: 8
       rammingPower: 32.000004
-      healthCap: 952
-      healthRegen: 13.600002
-      energyCap: 388
-      energyRegen: 9
+      healthCap: 1352
+      healthRegen: 52.79999
+      energyCap: 1118
+      energyRegen: 9.199998
       moveSpeed: 6
       accelerationCap: 10
-      turnSpeed: 2.5
+      turnSpeed: 6
       weaponRotationSpeed: 90
       maxPeople: 240
     hasMissingStats: 0
@@ -5248,20 +5268,20 @@ MonoBehaviour:
       count: 1
     summedStats:
       firePower: 60
-      bulletSpeed: 14
-      bulletRange: 25
+      bulletSpeed: 10
+      bulletRange: 20
       fireRate: 8
       rammingPower: 25.200005
-      healthCap: 726
-      healthRegen: 11.500001
-      energyCap: 48
-      energyRegen: 0
+      healthCap: 936
+      healthRegen: 46.199997
+      energyCap: 548
+      energyRegen: 2.7
       moveSpeed: 3.06
       accelerationCap: 4
-      turnSpeed: 1
+      turnSpeed: 3
       weaponRotationSpeed: 90
       maxPeople: 40
-    hasMissingStats: 1
+    hasMissingStats: 0
   - catalogIndex: 60
     visualFamily: 2
     displayName: Kintsugi
@@ -5318,17 +5338,17 @@ MonoBehaviour:
       count: 7
     summedStats:
       firePower: 45
-      bulletSpeed: 14
-      bulletRange: 25
+      bulletSpeed: 10
+      bulletRange: 20
       fireRate: 6
       rammingPower: 47.600018
-      healthCap: 1550
-      healthRegen: 22.699999
-      energyCap: 796
-      energyRegen: 24
+      healthCap: 2080
+      healthRegen: 89.399994
+      energyCap: 1606
+      energyRegen: 22.400013
       moveSpeed: 6.36
       accelerationCap: 2
-      turnSpeed: 1.5
+      turnSpeed: 5.5
       weaponRotationSpeed: 90
       maxPeople: 340
     hasMissingStats: 0
@@ -5382,17 +5402,17 @@ MonoBehaviour:
       count: 3
     summedStats:
       firePower: 130
-      bulletSpeed: 14
-      bulletRange: 25
+      bulletSpeed: 12
+      bulletRange: 20
       fireRate: 5
       rammingPower: 25.600002
-      healthCap: 884
-      healthRegen: 12.800001
-      energyCap: 764
-      energyRegen: 22
+      healthCap: 1164
+      healthRegen: 47.59999
+      energyCap: 1174
+      energyRegen: 19.900005
       moveSpeed: 6.36
       accelerationCap: 4
-      turnSpeed: 3
+      turnSpeed: 5.5
       weaponRotationSpeed: 90
       maxPeople: 160
     hasMissingStats: 0
@@ -5452,17 +5472,17 @@ MonoBehaviour:
       count: 6
     summedStats:
       firePower: 60
-      bulletSpeed: 14
-      bulletRange: 25
+      bulletSpeed: 10
+      bulletRange: 20
       fireRate: 8
       rammingPower: 56.800022
-      healthCap: 1760
-      healthRegen: 26.899996
-      energyCap: 708
-      energyRegen: 22
+      healthCap: 2300
+      healthRegen: 105.50001
+      energyCap: 1638
+      energyRegen: 22.60001
       moveSpeed: 6.36
       accelerationCap: 2
-      turnSpeed: 2.5
+      turnSpeed: 6
       weaponRotationSpeed: 90
       maxPeople: 220
     hasMissingStats: 0
@@ -5520,17 +5540,17 @@ MonoBehaviour:
       count: 3
     summedStats:
       firePower: 30
-      bulletSpeed: 14
-      bulletRange: 25
+      bulletSpeed: 10
+      bulletRange: 20
       fireRate: 4
       rammingPower: 29.200006
-      healthCap: 918
-      healthRegen: 13.6
-      energyCap: 404
-      energyRegen: 12
+      healthCap: 1228
+      healthRegen: 52.9
+      energyCap: 944
+      energyRegen: 12.000007
       moveSpeed: 6.12
       accelerationCap: 4
-      turnSpeed: 2
+      turnSpeed: 4.5
       weaponRotationSpeed: 90
       maxPeople: 160
     hasMissingStats: 0
@@ -5582,17 +5602,17 @@ MonoBehaviour:
       count: 1
     summedStats:
       firePower: 30
-      bulletSpeed: 14
-      bulletRange: 25
+      bulletSpeed: 10
+      bulletRange: 20
       fireRate: 4
       rammingPower: 20.800001
-      healthCap: 624
-      healthRegen: 9.200001
-      energyCap: 404
-      energyRegen: 12
+      healthCap: 864
+      healthRegen: 34.799995
+      energyCap: 754
+      energyRegen: 10.900002
       moveSpeed: 6.12
       accelerationCap: 2
-      turnSpeed: 1.5
+      turnSpeed: 2.5
       weaponRotationSpeed: 90
       maxPeople: 120
     hasMissingStats: 0
@@ -5646,14 +5666,14 @@ MonoBehaviour:
       count: 2
     summedStats:
       firePower: 30
-      bulletSpeed: 14
-      bulletRange: 25
+      bulletSpeed: 10
+      bulletRange: 20
       fireRate: 4
       rammingPower: 29.600008
-      healthCap: 812
-      healthRegen: 11.8
-      energyCap: 504
-      energyRegen: 14
+      healthCap: 1192
+      healthRegen: 44.8
+      energyCap: 1004
+      energyRegen: 12.200005
       moveSpeed: 6.12
       accelerationCap: 8
       turnSpeed: 2
@@ -5716,17 +5736,17 @@ MonoBehaviour:
       count: 2
     summedStats:
       firePower: 105
-      bulletSpeed: 14
-      bulletRange: 25
+      bulletSpeed: 10
+      bulletRange: 20
       fireRate: 14
       rammingPower: 55.60002
-      healthCap: 1626
-      healthRegen: 25.100002
-      energyCap: 744
-      energyRegen: 22
+      healthCap: 2156
+      healthRegen: 95.79999
+      energyCap: 1684
+      energyRegen: 22.70002
       moveSpeed: 6.36
       accelerationCap: 6
-      turnSpeed: 4.5
+      turnSpeed: 7
       weaponRotationSpeed: 90
       maxPeople: 140
     hasMissingStats: 0
@@ -5776,20 +5796,20 @@ MonoBehaviour:
       count: 3
     summedStats:
       firePower: 45
-      bulletSpeed: 14
-      bulletRange: 25
+      bulletSpeed: 10
+      bulletRange: 20
       fireRate: 6
       rammingPower: 33.20001
-      healthCap: 978
-      healthRegen: 14.3
-      energyCap: 516
-      energyRegen: 14
+      healthCap: 1388
+      healthRegen: 56.6
+      energyCap: 1086
+      energyRegen: 12.400007
       moveSpeed: 6.12
       accelerationCap: 8
-      turnSpeed: 0
+      turnSpeed: 1.5
       weaponRotationSpeed: 90
       maxPeople: 260
-    hasMissingStats: 1
+    hasMissingStats: 0
   - catalogIndex: 68
     visualFamily: 2
     displayName: Fanstar
@@ -5846,17 +5866,17 @@ MonoBehaviour:
       count: 1
     summedStats:
       firePower: 60
-      bulletSpeed: 14
-      bulletRange: 25
+      bulletSpeed: 10
+      bulletRange: 20
       fireRate: 8
       rammingPower: 44.800014
-      healthCap: 1224
-      healthRegen: 19.2
-      energyCap: 428
-      energyRegen: 12
+      healthCap: 1664
+      healthRegen: 74.799995
+      energyCap: 1178
+      energyRegen: 12.90001
       moveSpeed: 6.12
       accelerationCap: 2
-      turnSpeed: 1.5
+      turnSpeed: 2.5
       weaponRotationSpeed: 90
       maxPeople: 120
     hasMissingStats: 0
@@ -5916,17 +5936,17 @@ MonoBehaviour:
       count: 2
     summedStats:
       firePower: 120
-      bulletSpeed: 14
-      bulletRange: 25
+      bulletSpeed: 10
+      bulletRange: 20
       fireRate: 16
       rammingPower: 68.000015
-      healthCap: 1908
-      healthRegen: 29.400002
-      energyCap: 856
-      energyRegen: 24
+      healthCap: 2608
+      healthRegen: 113.59999
+      energyCap: 1996
+      energyRegen: 24.000021
       moveSpeed: 6.36
       accelerationCap: 4
-      turnSpeed: 3
+      turnSpeed: 5
       weaponRotationSpeed: 90
       maxPeople: 240
     hasMissingStats: 0
@@ -5982,17 +6002,17 @@ MonoBehaviour:
       count: 2
     summedStats:
       firePower: 45
-      bulletSpeed: 14
-      bulletRange: 25
+      bulletSpeed: 10
+      bulletRange: 20
       fireRate: 6
       rammingPower: 31.600008
-      healthCap: 958
-      healthRegen: 14.599999
-      energyCap: 696
-      energyRegen: 22
+      healthCap: 1288
+      healthRegen: 55.300003
+      energyCap: 1126
+      energyRegen: 19.700008
       moveSpeed: 6.36
       accelerationCap: 16
-      turnSpeed: 1
+      turnSpeed: 2
       weaponRotationSpeed: 90
       maxPeople: 140
     hasMissingStats: 0
@@ -6048,17 +6068,17 @@ MonoBehaviour:
       count: 5
     summedStats:
       firePower: 90
-      bulletSpeed: 14
-      bulletRange: 25
+      bulletSpeed: 10
+      bulletRange: 20
       fireRate: 12
       rammingPower: 58.000023
-      healthCap: 1714
-      healthRegen: 26.4
-      energyCap: 452
-      energyRegen: 12
+      healthCap: 2264
+      healthRegen: 104.899994
+      energyCap: 1472
+      energyRegen: 14.600013
       moveSpeed: 6.12
       accelerationCap: 2
-      turnSpeed: 2.5
+      turnSpeed: 5.5
       weaponRotationSpeed: 90
       maxPeople: 200
     hasMissingStats: 0
@@ -6112,17 +6132,17 @@ MonoBehaviour:
       count: 4
     summedStats:
       firePower: 60
-      bulletSpeed: 14
-      bulletRange: 25
+      bulletSpeed: 10
+      bulletRange: 20
       fireRate: 8
       rammingPower: 36.40001
-      healthCap: 1030
-      healthRegen: 16
-      energyCap: 708
-      energyRegen: 22
+      healthCap: 1400
+      healthRegen: 59.5
+      energyCap: 1258
+      energyRegen: 20.30001
       moveSpeed: 6.36
       accelerationCap: 4
-      turnSpeed: 2
+      turnSpeed: 3
       weaponRotationSpeed: 90
       maxPeople: 100
     hasMissingStats: 0
@@ -6184,17 +6204,17 @@ MonoBehaviour:
       count: 9
     summedStats:
       firePower: 60
-      bulletSpeed: 14
-      bulletRange: 25
+      bulletSpeed: 10
+      bulletRange: 20
       fireRate: 8
       rammingPower: 62.000023
-      healthCap: 2062
-      healthRegen: 30.4
-      energyCap: 1088
-      energyRegen: 34
+      healthCap: 2712
+      healthRegen: 118.29999
+      energyCap: 2148
+      energyRegen: 32.400013
       moveSpeed: 6.6
       accelerationCap: 6
-      turnSpeed: 3.5
+      turnSpeed: 9.5
       weaponRotationSpeed: 90
       maxPeople: 380
     hasMissingStats: 0
@@ -6248,17 +6268,17 @@ MonoBehaviour:
       count: 5
     summedStats:
       firePower: 45
-      bulletSpeed: 14
-      bulletRange: 25
+      bulletSpeed: 10
+      bulletRange: 20
       fireRate: 6
       rammingPower: 34.000008
-      healthCap: 1122
-      healthRegen: 16.5
-      energyCap: 416
-      energyRegen: 12
+      healthCap: 1472
+      healthRegen: 64.99999
+      energyCap: 1086
+      energyRegen: 12.800004
       moveSpeed: 6.12
       accelerationCap: 6
-      turnSpeed: 2.5
+      turnSpeed: 6.5
       weaponRotationSpeed: 90
       maxPeople: 200
     hasMissingStats: 0
@@ -6318,17 +6338,17 @@ MonoBehaviour:
       count: 9
     summedStats:
       firePower: 45
-      bulletSpeed: 14
-      bulletRange: 25
+      bulletSpeed: 10
+      bulletRange: 20
       fireRate: 6
       rammingPower: 47.200016
-      healthCap: 1584
-      healthRegen: 23.499998
-      energyCap: 416
-      energyRegen: 12
+      healthCap: 2044
+      healthRegen: 94.899994
+      energyCap: 1316
+      energyRegen: 14.100006
       moveSpeed: 6.12
       accelerationCap: 4
-      turnSpeed: 2
+      turnSpeed: 7.5
       weaponRotationSpeed: 90
       maxPeople: 280
     hasMissingStats: 0
@@ -6384,17 +6404,17 @@ MonoBehaviour:
       count: 3
     summedStats:
       firePower: 45
-      bulletSpeed: 14
-      bulletRange: 25
+      bulletSpeed: 10
+      bulletRange: 20
       fireRate: 6
       rammingPower: 42.00001
-      healthCap: 1350
-      healthRegen: 19.000002
-      energyCap: 1176
-      energyRegen: 36
+      healthCap: 1900
+      healthRegen: 70.29999
+      energyCap: 1856
+      energyRegen: 30.80001
       moveSpeed: 6.6
       accelerationCap: 4
-      turnSpeed: 4
+      turnSpeed: 6.5
       weaponRotationSpeed: 90
       maxPeople: 360
     hasMissingStats: 0
@@ -6454,13 +6474,13 @@ MonoBehaviour:
       bulletRange: 0
       fireRate: 0
       rammingPower: 14.799999
-      healthCap: 522
-      healthRegen: 7.2
-      energyCap: 380
-      energyRegen: 12
+      healthCap: 712
+      healthRegen: 26.900002
+      energyCap: 670
+      energyRegen: 10.700002
       moveSpeed: 6.12
       accelerationCap: 4
-      turnSpeed: 2
+      turnSpeed: 4
       weaponRotationSpeed: 0
       maxPeople: 140
     hasMissingStats: 1
@@ -6522,17 +6542,17 @@ MonoBehaviour:
       count: 4
     summedStats:
       firePower: 60
-      bulletSpeed: 14
-      bulletRange: 25
+      bulletSpeed: 10
+      bulletRange: 20
       fireRate: 8
       rammingPower: 54.000015
-      healthCap: 1562
-      healthRegen: 22.9
-      energyCap: 628
-      energyRegen: 16
+      healthCap: 2212
+      healthRegen: 90.799995
+      energyCap: 1628
+      energyRegen: 15.300011
       moveSpeed: 6.12
       accelerationCap: 2
-      turnSpeed: 1.5
+      turnSpeed: 4
       weaponRotationSpeed: 90
       maxPeople: 380
     hasMissingStats: 0
@@ -6590,17 +6610,17 @@ MonoBehaviour:
       count: 6
     summedStats:
       firePower: 60
-      bulletSpeed: 14
-      bulletRange: 25
+      bulletSpeed: 10
+      bulletRange: 20
       fireRate: 8
       rammingPower: 35.20001
-      healthCap: 1164
-      healthRegen: 17.199999
-      energyCap: 428
-      energyRegen: 12
+      healthCap: 1524
+      healthRegen: 68.8
+      energyCap: 1068
+      energyRegen: 12.60001
       moveSpeed: 6.12
       accelerationCap: 2
-      turnSpeed: 1.5
+      turnSpeed: 5
       weaponRotationSpeed: 90
       maxPeople: 220
     hasMissingStats: 0
@@ -6662,17 +6682,17 @@ MonoBehaviour:
       count: 2
     summedStats:
       firePower: 90
-      bulletSpeed: 14
-      bulletRange: 25
+      bulletSpeed: 10
+      bulletRange: 20
       fireRate: 12
       rammingPower: 71.600006
-      healthCap: 1974
-      healthRegen: 30.400002
-      energyCap: 552
-      energyRegen: 14
+      healthCap: 2704
+      healthRegen: 119.09999
+      energyCap: 1842
+      energyRegen: 16.500011
       moveSpeed: 6.12
       accelerationCap: 4
-      turnSpeed: 4
+      turnSpeed: 6
       weaponRotationSpeed: 90
       maxPeople: 240
     hasMissingStats: 0
@@ -6726,13 +6746,13 @@ MonoBehaviour:
       bulletRange: 0
       fireRate: 0
       rammingPower: 18.800001
-      healthCap: 634
-      healthRegen: 8.4
-      energyCap: 480
-      energyRegen: 14
+      healthCap: 924
+      healthRegen: 32.699997
+      energyCap: 820
+      energyRegen: 11.4000025
       moveSpeed: 6.12
       accelerationCap: 8
-      turnSpeed: 1
+      turnSpeed: 2.5
       weaponRotationSpeed: 0
       maxPeople: 260
     hasMissingStats: 1
@@ -6792,17 +6812,17 @@ MonoBehaviour:
       count: 5
     summedStats:
       firePower: 30
-      bulletSpeed: 14
-      bulletRange: 25
+      bulletSpeed: 10
+      bulletRange: 20
       fireRate: 4
       rammingPower: 32.800007
-      healthCap: 1068
-      healthRegen: 15.799999
-      energyCap: 404
-      energyRegen: 12
+      healthCap: 1408
+      healthRegen: 62.799995
+      energyCap: 994
+      energyRegen: 12.300008
       moveSpeed: 6.12
       accelerationCap: 2
-      turnSpeed: 1.5
+      turnSpeed: 4.5
       weaponRotationSpeed: 90
       maxPeople: 200
     hasMissingStats: 0
@@ -6860,13 +6880,13 @@ MonoBehaviour:
       bulletRange: 0
       fireRate: 0
       rammingPower: 31.600006
-      healthCap: 990
-      healthRegen: 14.799999
-      energyCap: 380
-      energyRegen: 12
+      healthCap: 1320
+      healthRegen: 58.699997
+      energyCap: 910
+      energyRegen: 11.900004
       moveSpeed: 6.12
       accelerationCap: 8
-      turnSpeed: 1
+      turnSpeed: 3
       weaponRotationSpeed: 0
       maxPeople: 180
     hasMissingStats: 1
@@ -6924,17 +6944,17 @@ MonoBehaviour:
       count: 5
     summedStats:
       firePower: 60
-      bulletSpeed: 14
-      bulletRange: 25
+      bulletSpeed: 10
+      bulletRange: 20
       fireRate: 8
       rammingPower: 53.600018
-      healthCap: 1616
-      healthRegen: 24.3
-      energyCap: 808
-      energyRegen: 24
+      healthCap: 2196
+      healthRegen: 95.299995
+      energyCap: 1668
+      energyRegen: 22.500013
       moveSpeed: 6.36
       accelerationCap: 16
-      turnSpeed: 1
+      turnSpeed: 3.5
       weaponRotationSpeed: 90
       maxPeople: 300
     hasMissingStats: 0
@@ -6994,17 +7014,17 @@ MonoBehaviour:
       count: 9
     summedStats:
       firePower: 45
-      bulletSpeed: 14
-      bulletRange: 25
+      bulletSpeed: 10
+      bulletRange: 20
       fireRate: 6
       rammingPower: 41.200012
-      healthCap: 1422
-      healthRegen: 20.899998
-      energyCap: 416
-      energyRegen: 12
+      healthCap: 1832
+      healthRegen: 84.799995
+      energyCap: 1186
+      energyRegen: 13.400011
       moveSpeed: 6.12
       accelerationCap: 2
-      turnSpeed: 1.5
+      turnSpeed: 6.5
       weaponRotationSpeed: 90
       maxPeople: 280
     hasMissingStats: 0
@@ -7062,17 +7082,17 @@ MonoBehaviour:
       count: 4
     summedStats:
       firePower: 30
-      bulletSpeed: 14
-      bulletRange: 25
+      bulletSpeed: 10
+      bulletRange: 20
       fireRate: 4
       rammingPower: 36.80001
-      healthCap: 1116
-      healthRegen: 16.3
-      energyCap: 504
-      energyRegen: 14
+      healthCap: 1556
+      healthRegen: 64.7
+      energyCap: 1174
+      energyRegen: 13.000009
       moveSpeed: 6.12
       accelerationCap: 2
-      turnSpeed: 0.5
+      turnSpeed: 3
       weaponRotationSpeed: 90
       maxPeople: 280
     hasMissingStats: 0
@@ -7126,17 +7146,17 @@ MonoBehaviour:
       count: 4
     summedStats:
       firePower: 90
-      bulletSpeed: 14
-      bulletRange: 25
+      bulletSpeed: 10
+      bulletRange: 20
       fireRate: 12
       rammingPower: 60.800022
-      healthCap: 1720
-      healthRegen: 26.3
-      energyCap: 552
-      energyRegen: 14
+      healthCap: 2360
+      healthRegen: 104.7
+      energyCap: 1602
+      energyRegen: 15.000012
       moveSpeed: 6.12
       accelerationCap: 8
-      turnSpeed: 1
+      turnSpeed: 3
       weaponRotationSpeed: 90
       maxPeople: 280
     hasMissingStats: 0
@@ -7185,16 +7205,16 @@ MonoBehaviour:
     summedStats:
       firePower: 300
       bulletSpeed: 12
-      bulletRange: 15
+      bulletRange: 12
       fireRate: 3
       rammingPower: 13.599999
-      healthCap: 456
-      healthRegen: 6.1
-      energyCap: 340
-      energyRegen: 2
+      healthCap: 636
+      healthRegen: 24.300001
+      energyCap: 670
+      energyRegen: 2.6
       moveSpeed: 3
       accelerationCap: 2
-      turnSpeed: 2.5
+      turnSpeed: 4
       weaponRotationSpeed: 90
       maxPeople: 140
     hasMissingStats: 0
@@ -7248,20 +7268,1432 @@ MonoBehaviour:
       count: 5
     summedStats:
       firePower: 30
-      bulletSpeed: 14
-      bulletRange: 25
+      bulletSpeed: 10
+      bulletRange: 20
       fireRate: 4
       rammingPower: 30.400007
-      healthCap: 1012
-      healthRegen: 14.799999
-      energyCap: 404
-      energyRegen: 12
+      healthCap: 1332
+      healthRegen: 58.799995
+      energyCap: 934
+      energyRegen: 12.100006
       moveSpeed: 6.12
       accelerationCap: 8
-      turnSpeed: 2
+      turnSpeed: 4.5
       weaponRotationSpeed: 90
       maxPeople: 200
     hasMissingStats: 0
+  - catalogIndex: 90
+    visualFamily: 1
+    displayName: Shadeclaw
+    prefab: {fileID: 3099414079942506098, guid: 53248dfb1fae21147bd2b542c56a645e, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: c47cd9b3212463641bc3dc13bb58d481, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: TeamA
+      team: 1
+      sprite: {fileID: 21300000, guid: c47cd9b3212463641bc3dc13bb58d481, type: 3}
+    - variantName: TeamB
+      team: 2
+      sprite: {fileID: 21300000, guid: 711d001090fbba44183d40b99dbe01d6, type: 3}
+    - variantName: TeamC
+      team: 3
+      sprite: {fileID: 21300000, guid: fd025b5f6d8f0c74ab67eff60650bd7c, type: 3}
+    - variantName: TeamD
+      team: 4
+      sprite: {fileID: 21300000, guid: a539ce3b19bbda1478e35299b1a66123, type: 3}
+    - variantName: TeamE
+      team: 5
+      sprite: {fileID: 21300000, guid: fac19fc886c4f29458ac4303d666d332, type: 3}
+    componentCounts:
+    - displayName: GalacticLeopard_Main_Arch
+      count: 4
+    - displayName: GalacticLeopard_Main_Core
+      count: 2
+    - displayName: GalacticLeopard_Main_Engine
+      count: 6
+    - displayName: GalacticLeopard_Main_Forepart
+      count: 4
+    - displayName: GalacticLeopard_Main_Hold
+      count: 1
+    - displayName: GalacticLeopard_Main_Storage
+      count: 5
+    - displayName: GalacticLeopard_Main_Tail
+      count: 4
+    - displayName: GalacticLeopard_Main_Wing
+      count: 6
+    - displayName: GalacticLeopard_Parts_Bend
+      count: 6
+    - displayName: GalacticLeopard_Parts_Box
+      count: 7
+    - displayName: GalacticLeopard_Parts_Bridge
+      count: 1
+    - displayName: GalacticLeopard_Parts_Cargo
+      count: 6
+    - displayName: GalacticLeopard_Parts_Cockpit
+      count: 2
+    - displayName: GalacticLeopard_Parts_ControlRoom
+      count: 3
+    - displayName: GalacticLeopard_Parts_Cylinder
+      count: 21
+    - displayName: GalacticLeopard_Parts_Fork
+      count: 2
+    - displayName: GalacticLeopard_Parts_Silo
+      count: 31
+    - displayName: GalacticLeopard_Parts_Thruster
+      count: 3
+    - displayName: GalacticLeopard_Parts_Turret_Sniper
+      count: 7
+    - displayName: Main
+      count: 1
+    - displayName: Parts
+      count: 1
+    summedStats:
+      firePower: 700
+      bulletSpeed: 28
+      bulletRange: 40
+      fireRate: 3.5
+      rammingPower: 121.99988
+      healthCap: 4636
+      healthRegen: 212.50002
+      energyCap: 3685
+      energyRegen: 37.499947
+      moveSpeed: 6.6
+      accelerationCap: 6
+      turnSpeed: 10
+      weaponRotationSpeed: 90
+      maxPeople: 320
+    hasMissingStats: 0
+  - catalogIndex: 91
+    visualFamily: 1
+    displayName: Driftpelt
+    prefab: {fileID: 7317322530594579453, guid: ed2239cc3c2d3284e9ac5ea788480add, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: ac2bd5b0b56dd6b44be9372a7ef3de87, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: TeamA
+      team: 1
+      sprite: {fileID: 21300000, guid: ac2bd5b0b56dd6b44be9372a7ef3de87, type: 3}
+    - variantName: TeamB
+      team: 2
+      sprite: {fileID: 21300000, guid: 6aedcdb551b2c9041a743ca2ea92dc61, type: 3}
+    - variantName: TeamC
+      team: 3
+      sprite: {fileID: 21300000, guid: a9564a0f67f714a42bcf30759aed8c8e, type: 3}
+    - variantName: TeamD
+      team: 4
+      sprite: {fileID: 21300000, guid: a90591c5765ec9c448a83889d701fd55, type: 3}
+    - variantName: TeamE
+      team: 5
+      sprite: {fileID: 21300000, guid: 9e2791b58925d0a41ac5a79d9ac70f83, type: 3}
+    componentCounts:
+    - displayName: GalacticLeopard_Main_Arch
+      count: 3
+    - displayName: GalacticLeopard_Main_Core
+      count: 3
+    - displayName: GalacticLeopard_Main_Engine
+      count: 5
+    - displayName: GalacticLeopard_Main_Forepart
+      count: 2
+    - displayName: GalacticLeopard_Main_Storage
+      count: 3
+    - displayName: GalacticLeopard_Main_Tail
+      count: 3
+    - displayName: GalacticLeopard_Main_Wing
+      count: 2
+    - displayName: GalacticLeopard_Parts_Box
+      count: 3
+    - displayName: GalacticLeopard_Parts_Cockpit
+      count: 3
+    - displayName: GalacticLeopard_Parts_ControlRoom
+      count: 3
+    - displayName: GalacticLeopard_Parts_Cylinder
+      count: 3
+    - displayName: GalacticLeopard_Parts_Fender
+      count: 3
+    - displayName: GalacticLeopard_Parts_Fork
+      count: 3
+    - displayName: GalacticLeopard_Parts_Silo
+      count: 4
+    - displayName: GalacticLeopard_Parts_Thruster
+      count: 3
+    - displayName: GalacticLeopard_Parts_Turret_Dual
+      count: 3
+    - displayName: Main
+      count: 1
+    - displayName: Parts
+      count: 1
+    summedStats:
+      firePower: 150
+      bulletSpeed: 12
+      bulletRange: 12
+      fireRate: 1.5
+      rammingPower: 50.400013
+      healthCap: 2136
+      healthRegen: 82.1
+      energyCap: 2000
+      energyRegen: 27.600016
+      moveSpeed: 6.48
+      accelerationCap: 6
+      turnSpeed: 7
+      weaponRotationSpeed: 90
+      maxPeople: 340
+    hasMissingStats: 0
+  - catalogIndex: 92
+    visualFamily: 1
+    displayName: Gleamfang
+    prefab: {fileID: 4407035439459463263, guid: 370a8791fc3469141846368cf65f9291, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 0613c406b6ece4f46a080bd996365c27, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: TeamA
+      team: 1
+      sprite: {fileID: 21300000, guid: 0613c406b6ece4f46a080bd996365c27, type: 3}
+    - variantName: TeamB
+      team: 2
+      sprite: {fileID: 21300000, guid: 27c5a13ad88950a408e1f3113667113d, type: 3}
+    - variantName: TeamC
+      team: 3
+      sprite: {fileID: 21300000, guid: 982460ef376c27f4cbfe96658d7be65b, type: 3}
+    - variantName: TeamD
+      team: 4
+      sprite: {fileID: 21300000, guid: d57fea27182d9224a846d80caae5b864, type: 3}
+    - variantName: TeamE
+      team: 5
+      sprite: {fileID: 21300000, guid: b44804f1c4ad7a942a2ab58a68018889, type: 3}
+    componentCounts:
+    - displayName: GalacticLeopard_Main_Arch
+      count: 6
+    - displayName: GalacticLeopard_Main_Core
+      count: 2
+    - displayName: GalacticLeopard_Main_Engine
+      count: 4
+    - displayName: GalacticLeopard_Main_Forepart
+      count: 2
+    - displayName: GalacticLeopard_Main_Hold
+      count: 5
+    - displayName: GalacticLeopard_Main_Storage
+      count: 3
+    - displayName: GalacticLeopard_Main_Tail
+      count: 4
+    - displayName: GalacticLeopard_Main_Wing
+      count: 4
+    - displayName: GalacticLeopard_Parts_Bend
+      count: 1
+    - displayName: GalacticLeopard_Parts_Box
+      count: 7
+    - displayName: GalacticLeopard_Parts_Bridge
+      count: 2
+    - displayName: GalacticLeopard_Parts_Cargo
+      count: 6
+    - displayName: GalacticLeopard_Parts_Cockpit
+      count: 3
+    - displayName: GalacticLeopard_Parts_ControlRoom
+      count: 5
+    - displayName: GalacticLeopard_Parts_Cylinder
+      count: 7
+    - displayName: GalacticLeopard_Parts_Fender
+      count: 8
+    - displayName: GalacticLeopard_Parts_Fork
+      count: 1
+    - displayName: GalacticLeopard_Parts_Silo
+      count: 4
+    - displayName: GalacticLeopard_Parts_Thruster
+      count: 1
+    - displayName: GalacticLeopard_Parts_Turret_Dual
+      count: 7
+    - displayName: Main
+      count: 1
+    - displayName: Parts
+      count: 1
+    summedStats:
+      firePower: 350
+      bulletSpeed: 12
+      bulletRange: 12
+      fireRate: 3.5
+      rammingPower: 85.19997
+      healthCap: 3340
+      healthRegen: 143.69998
+      energyCap: 2610
+      energyRegen: 26.500025
+      moveSpeed: 6.36
+      accelerationCap: 2
+      turnSpeed: 7
+      weaponRotationSpeed: 90
+      maxPeople: 380
+    hasMissingStats: 0
+  - catalogIndex: 93
+    visualFamily: 1
+    displayName: Duskhide
+    prefab: {fileID: 5373316751953531498, guid: 9ef4126360cc7c44c8e960631c1c30f6, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 5bd63e4016fbd6f4695b72a08c6ef3ba, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: TeamA
+      team: 1
+      sprite: {fileID: 21300000, guid: 5bd63e4016fbd6f4695b72a08c6ef3ba, type: 3}
+    - variantName: TeamB
+      team: 2
+      sprite: {fileID: 21300000, guid: b20026aef8d02334cb843a3f8bcfd51a, type: 3}
+    - variantName: TeamC
+      team: 3
+      sprite: {fileID: 21300000, guid: ad288562636f57a4c9018873f96e4b15, type: 3}
+    - variantName: TeamD
+      team: 4
+      sprite: {fileID: 21300000, guid: aab69fbe2b66c584f8fe14555fb83651, type: 3}
+    - variantName: TeamE
+      team: 5
+      sprite: {fileID: 21300000, guid: 539d913edfcc2ea429fe384abb8ca509, type: 3}
+    componentCounts:
+    - displayName: GalacticLeopard_Main_Arch
+      count: 4
+    - displayName: GalacticLeopard_Main_Engine
+      count: 2
+    - displayName: GalacticLeopard_Main_Forepart
+      count: 4
+    - displayName: GalacticLeopard_Main_Hold
+      count: 3
+    - displayName: GalacticLeopard_Main_Storage
+      count: 1
+    - displayName: GalacticLeopard_Main_Tail
+      count: 1
+    - displayName: GalacticLeopard_Parts_Bend
+      count: 1
+    - displayName: GalacticLeopard_Parts_Box
+      count: 2
+    - displayName: GalacticLeopard_Parts_Bridge
+      count: 1
+    - displayName: GalacticLeopard_Parts_Cargo
+      count: 3
+    - displayName: GalacticLeopard_Parts_Cockpit
+      count: 1
+    - displayName: GalacticLeopard_Parts_ControlRoom
+      count: 1
+    - displayName: GalacticLeopard_Parts_Cylinder
+      count: 5
+    - displayName: GalacticLeopard_Parts_Fender
+      count: 1
+    - displayName: GalacticLeopard_Parts_Fork
+      count: 1
+    - displayName: GalacticLeopard_Parts_Silo
+      count: 6
+    - displayName: GalacticLeopard_Parts_Thruster
+      count: 1
+    - displayName: GalacticLeopard_Parts_Turret_Dual
+      count: 2
+    - displayName: Main
+      count: 1
+    - displayName: Parts
+      count: 1
+    summedStats:
+      firePower: 100
+      bulletSpeed: 12
+      bulletRange: 12
+      fireRate: 1
+      rammingPower: 46.000015
+      healthCap: 1668
+      healthRegen: 74.799995
+      energyCap: 1220
+      energyRegen: 12.900011
+      moveSpeed: 6.12
+      accelerationCap: 2
+      turnSpeed: 2
+      weaponRotationSpeed: 90
+      maxPeople: 100
+    hasMissingStats: 0
+  - catalogIndex: 94
+    visualFamily: 1
+    displayName: Prowlorbit
+    prefab: {fileID: 5381268603517648316, guid: 10ab4689acbe5e249b6ed78698ea036c, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: e6eaa8fa45399a94b8070fcab346d827, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: TeamA
+      team: 1
+      sprite: {fileID: 21300000, guid: e6eaa8fa45399a94b8070fcab346d827, type: 3}
+    - variantName: TeamB
+      team: 2
+      sprite: {fileID: 21300000, guid: 60a5779e39f0c444b97fd397a97b0f21, type: 3}
+    - variantName: TeamC
+      team: 3
+      sprite: {fileID: 21300000, guid: 5a65b5fe711b08e459313d790d7f9bb2, type: 3}
+    - variantName: TeamD
+      team: 4
+      sprite: {fileID: 21300000, guid: 01e225f199ab128448e786141f7003bb, type: 3}
+    - variantName: TeamE
+      team: 5
+      sprite: {fileID: 21300000, guid: fa805dbd6bf35e64b9e3d97e7ab4b5b5, type: 3}
+    componentCounts:
+    - displayName: GalacticLeopard_Main_Arch
+      count: 4
+    - displayName: GalacticLeopard_Main_Core
+      count: 1
+    - displayName: GalacticLeopard_Main_Engine
+      count: 4
+    - displayName: GalacticLeopard_Main_Forepart
+      count: 1
+    - displayName: GalacticLeopard_Main_Storage
+      count: 4
+    - displayName: GalacticLeopard_Main_Tail
+      count: 4
+    - displayName: GalacticLeopard_Main_Wing
+      count: 3
+    - displayName: GalacticLeopard_Parts_Box
+      count: 2
+    - displayName: GalacticLeopard_Parts_Cargo
+      count: 2
+    - displayName: GalacticLeopard_Parts_Cockpit
+      count: 1
+    - displayName: GalacticLeopard_Parts_ControlRoom
+      count: 2
+    - displayName: GalacticLeopard_Parts_Cylinder
+      count: 2
+    - displayName: GalacticLeopard_Parts_Fender
+      count: 2
+    - displayName: GalacticLeopard_Parts_Fork
+      count: 1
+    - displayName: GalacticLeopard_Parts_Silo
+      count: 3
+    - displayName: GalacticLeopard_Parts_Thruster
+      count: 2
+    - displayName: GalacticLeopard_Parts_Turret_Dual
+      count: 2
+    - displayName: Main
+      count: 1
+    - displayName: Parts
+      count: 1
+    summedStats:
+      firePower: 100
+      bulletSpeed: 12
+      bulletRange: 12
+      fireRate: 1
+      rammingPower: 35.20001
+      healthCap: 1516
+      healthRegen: 63.8
+      energyCap: 1330
+      energyRegen: 21.100014
+      moveSpeed: 6.36
+      accelerationCap: 4
+      turnSpeed: 7.5
+      weaponRotationSpeed: 90
+      maxPeople: 160
+    hasMissingStats: 0
+  - catalogIndex: 95
+    visualFamily: 1
+    displayName: Moonspot
+    prefab: {fileID: 7170296188990944410, guid: 741a4ad0c110e5840b39f35f2ac61787, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 8b87c8cc64f828246a4082772090b63a, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: TeamA
+      team: 1
+      sprite: {fileID: 21300000, guid: 8b87c8cc64f828246a4082772090b63a, type: 3}
+    - variantName: TeamB
+      team: 2
+      sprite: {fileID: 21300000, guid: 0d1717693904bd544988621f9d29076d, type: 3}
+    - variantName: TeamC
+      team: 3
+      sprite: {fileID: 21300000, guid: 2383bccf8f054be47939994993ead6da, type: 3}
+    - variantName: TeamD
+      team: 4
+      sprite: {fileID: 21300000, guid: bee08f2eb25e09c488d602b8b370c74b, type: 3}
+    - variantName: TeamE
+      team: 5
+      sprite: {fileID: 21300000, guid: 90d3d747a06225e45864c0312f560b23, type: 3}
+    componentCounts:
+    - displayName: GalacticLeopard_Main_Arch
+      count: 2
+    - displayName: GalacticLeopard_Main_Engine
+      count: 2
+    - displayName: GalacticLeopard_Main_Forepart
+      count: 2
+    - displayName: GalacticLeopard_Main_Storage
+      count: 2
+    - displayName: GalacticLeopard_Main_Tail
+      count: 3
+    - displayName: GalacticLeopard_Main_Wing
+      count: 6
+    - displayName: GalacticLeopard_Parts_Box
+      count: 2
+    - displayName: GalacticLeopard_Parts_Bridge
+      count: 1
+    - displayName: GalacticLeopard_Parts_Cockpit
+      count: 2
+    - displayName: GalacticLeopard_Parts_ControlRoom
+      count: 1
+    - displayName: GalacticLeopard_Parts_Cylinder
+      count: 6
+    - displayName: GalacticLeopard_Parts_Fender
+      count: 2
+    - displayName: GalacticLeopard_Parts_Fork
+      count: 2
+    - displayName: GalacticLeopard_Parts_Silo
+      count: 8
+    - displayName: GalacticLeopard_Parts_Thruster
+      count: 1
+    - displayName: GalacticLeopard_Parts_Turret_Sniper
+      count: 2
+    - displayName: Main
+      count: 1
+    - displayName: Parts
+      count: 1
+    summedStats:
+      firePower: 200
+      bulletSpeed: 28
+      bulletRange: 40
+      fireRate: 1
+      rammingPower: 44.000015
+      healthCap: 1916
+      healthRegen: 81
+      energyCap: 1490
+      energyRegen: 14.400012
+      moveSpeed: 6.12
+      accelerationCap: 2
+      turnSpeed: 7
+      weaponRotationSpeed: 90
+      maxPeople: 320
+    hasMissingStats: 0
+  - catalogIndex: 96
+    visualFamily: 1
+    displayName: Palehide
+    prefab: {fileID: 2066127439885157544, guid: 9baf6910582b4f846a7ca87733b4846c, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 1bc322336a0b46a42bc6ac901deda606, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: TeamA
+      team: 1
+      sprite: {fileID: 21300000, guid: 1bc322336a0b46a42bc6ac901deda606, type: 3}
+    - variantName: TeamB
+      team: 2
+      sprite: {fileID: 21300000, guid: fa3482a0ff199264586276c4b4e7f39d, type: 3}
+    - variantName: TeamC
+      team: 3
+      sprite: {fileID: 21300000, guid: d976467b3231c0d40b1a22853ceb0e01, type: 3}
+    - variantName: TeamD
+      team: 4
+      sprite: {fileID: 21300000, guid: 0d5745950fba113459320aaf5a3e317b, type: 3}
+    - variantName: TeamE
+      team: 5
+      sprite: {fileID: 21300000, guid: e424d1e834bb3c64bbf13ad71e6a096c, type: 3}
+    componentCounts:
+    - displayName: GalacticLeopard_Main_Arch
+      count: 2
+    - displayName: GalacticLeopard_Main_Core
+      count: 2
+    - displayName: GalacticLeopard_Main_Engine
+      count: 1
+    - displayName: GalacticLeopard_Main_Forepart
+      count: 2
+    - displayName: GalacticLeopard_Main_Storage
+      count: 1
+    - displayName: GalacticLeopard_Main_Tail
+      count: 1
+    - displayName: GalacticLeopard_Main_Wing
+      count: 2
+    - displayName: GalacticLeopard_Parts_Bridge
+      count: 1
+    - displayName: GalacticLeopard_Parts_Cockpit
+      count: 2
+    - displayName: GalacticLeopard_Parts_ControlRoom
+      count: 1
+    - displayName: GalacticLeopard_Parts_Fender
+      count: 2
+    - displayName: GalacticLeopard_Parts_Fork
+      count: 3
+    - displayName: GalacticLeopard_Parts_Thruster
+      count: 5
+    - displayName: Main
+      count: 1
+    - displayName: Parts
+      count: 1
+    summedStats:
+      firePower: 0
+      bulletSpeed: 0
+      bulletRange: 0
+      fireRate: 0
+      rammingPower: 27.200005
+      healthCap: 1208
+      healthRegen: 44.899994
+      energyCap: 1000
+      energyRegen: 8.999998
+      moveSpeed: 6
+      accelerationCap: 10
+      turnSpeed: 7
+      weaponRotationSpeed: 0
+      maxPeople: 240
+    hasMissingStats: 1
+  - catalogIndex: 97
+    visualFamily: 1
+    displayName: Leapstar
+    prefab: {fileID: 137610036757605797, guid: f1d67a96ea44d1440b0f65f46ca811e5, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: e36744743a3c61f428554d86207af2d6, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: TeamA
+      team: 1
+      sprite: {fileID: 21300000, guid: e36744743a3c61f428554d86207af2d6, type: 3}
+    - variantName: TeamB
+      team: 2
+      sprite: {fileID: 21300000, guid: 029de99b8a446814092194247884a925, type: 3}
+    - variantName: TeamC
+      team: 3
+      sprite: {fileID: 21300000, guid: 5ff3e5594b071994499679a0b92d16b3, type: 3}
+    - variantName: TeamD
+      team: 4
+      sprite: {fileID: 21300000, guid: 4d0151a1be73f434c91a75c5ce11ed5a, type: 3}
+    - variantName: TeamE
+      team: 5
+      sprite: {fileID: 21300000, guid: 574761882a995ce46b8efecb56218c80, type: 3}
+    componentCounts:
+    - displayName: GalacticLeopard_Main_Arch
+      count: 4
+    - displayName: GalacticLeopard_Main_Engine
+      count: 3
+    - displayName: GalacticLeopard_Main_Forepart
+      count: 2
+    - displayName: GalacticLeopard_Main_Hold
+      count: 1
+    - displayName: GalacticLeopard_Main_Storage
+      count: 2
+    - displayName: GalacticLeopard_Main_Tail
+      count: 2
+    - displayName: GalacticLeopard_Main_Wing
+      count: 2
+    - displayName: GalacticLeopard_Parts_Bend
+      count: 2
+    - displayName: GalacticLeopard_Parts_Box
+      count: 2
+    - displayName: GalacticLeopard_Parts_Cargo
+      count: 1
+    - displayName: GalacticLeopard_Parts_ControlRoom
+      count: 1
+    - displayName: GalacticLeopard_Parts_Cylinder
+      count: 2
+    - displayName: GalacticLeopard_Parts_Fender
+      count: 6
+    - displayName: GalacticLeopard_Parts_Fork
+      count: 3
+    - displayName: GalacticLeopard_Parts_Silo
+      count: 3
+    - displayName: GalacticLeopard_Parts_Thruster
+      count: 2
+    - displayName: GalacticLeopard_Parts_Turret_Dual
+      count: 2
+    - displayName: Main
+      count: 1
+    - displayName: Parts
+      count: 1
+    summedStats:
+      firePower: 100
+      bulletSpeed: 12
+      bulletRange: 12
+      fireRate: 1
+      rammingPower: 37.200012
+      healthCap: 1428
+      healthRegen: 67.3
+      energyCap: 1100
+      energyRegen: 16.10001
+      moveSpeed: 6.24
+      accelerationCap: 4
+      turnSpeed: 5
+      weaponRotationSpeed: 90
+      maxPeople: 40
+    hasMissingStats: 0
+  - catalogIndex: 98
+    visualFamily: 1
+    displayName: Onyxspot
+    prefab: {fileID: 1451204807447383855, guid: 67fa0dbe1eb5fda4d92d1749234fb20c, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 8d728c9ca35e14d4ebf5462bbc3cadc4, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: TeamA
+      team: 1
+      sprite: {fileID: 21300000, guid: 8d728c9ca35e14d4ebf5462bbc3cadc4, type: 3}
+    - variantName: TeamB
+      team: 2
+      sprite: {fileID: 21300000, guid: cdd83d9ab0b98e94598e23c6feb5a215, type: 3}
+    - variantName: TeamC
+      team: 3
+      sprite: {fileID: 21300000, guid: 354d291e5db88f441a0a62aeeb7d2a22, type: 3}
+    - variantName: TeamD
+      team: 4
+      sprite: {fileID: 21300000, guid: c79982b3645ebf74d8d944cde0eac297, type: 3}
+    - variantName: TeamE
+      team: 5
+      sprite: {fileID: 21300000, guid: 19c05d7850b4fb94ebad537ebdcc6e5f, type: 3}
+    componentCounts:
+    - displayName: GalacticLeopard_Main_Core
+      count: 2
+    - displayName: GalacticLeopard_Main_Engine
+      count: 2
+    - displayName: GalacticLeopard_Main_Hold
+      count: 4
+    - displayName: GalacticLeopard_Main_Storage
+      count: 2
+    - displayName: GalacticLeopard_Main_Tail
+      count: 2
+    - displayName: GalacticLeopard_Parts_Bend
+      count: 2
+    - displayName: GalacticLeopard_Parts_Cargo
+      count: 12
+    - displayName: GalacticLeopard_Parts_Cockpit
+      count: 1
+    - displayName: GalacticLeopard_Parts_Fender
+      count: 2
+    - displayName: GalacticLeopard_Parts_Fork
+      count: 2
+    - displayName: GalacticLeopard_Parts_Silo
+      count: 3
+    - displayName: GalacticLeopard_Parts_Thruster
+      count: 2
+    - displayName: Main
+      count: 1
+    - displayName: Parts
+      count: 1
+    summedStats:
+      firePower: 0
+      bulletSpeed: 0
+      bulletRange: 0
+      fireRate: 0
+      rammingPower: 41.200012
+      healthCap: 1536
+      healthRegen: 67
+      energyCap: 1100
+      energyRegen: 12.90001
+      moveSpeed: 6.12
+      accelerationCap: 4
+      turnSpeed: 4
+      weaponRotationSpeed: 0
+      maxPeople: 100
+    hasMissingStats: 1
+  - catalogIndex: 99
+    visualFamily: 1
+    displayName: Rosette
+    prefab: {fileID: 6633284759033949866, guid: f967c244b55981349952393f69fcfd92, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 862e4db26b9f29348a869c0b9e5df3bf, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: TeamA
+      team: 1
+      sprite: {fileID: 21300000, guid: 862e4db26b9f29348a869c0b9e5df3bf, type: 3}
+    - variantName: TeamB
+      team: 2
+      sprite: {fileID: 21300000, guid: 89056781262e98a49811dd45ec090488, type: 3}
+    - variantName: TeamC
+      team: 3
+      sprite: {fileID: 21300000, guid: 2e74c6f7cf404d24a968ea5172803b68, type: 3}
+    - variantName: TeamD
+      team: 4
+      sprite: {fileID: 21300000, guid: 8d91fd52575262142b9ffb6c40f90b47, type: 3}
+    - variantName: TeamE
+      team: 5
+      sprite: {fileID: 21300000, guid: 45ddad8e0d12e0642b177f7dadb21650, type: 3}
+    componentCounts:
+    - displayName: GalacticLeopard_Main_Arch
+      count: 1
+    - displayName: GalacticLeopard_Main_Core
+      count: 1
+    - displayName: GalacticLeopard_Main_Engine
+      count: 1
+    - displayName: GalacticLeopard_Main_Storage
+      count: 1
+    - displayName: GalacticLeopard_Main_Tail
+      count: 1
+    - displayName: GalacticLeopard_Main_Wing
+      count: 3
+    - displayName: GalacticLeopard_Parts_Box
+      count: 1
+    - displayName: GalacticLeopard_Parts_ControlRoom
+      count: 1
+    - displayName: GalacticLeopard_Parts_Cylinder
+      count: 1
+    - displayName: GalacticLeopard_Parts_Fender
+      count: 2
+    - displayName: GalacticLeopard_Parts_Fork
+      count: 2
+    - displayName: GalacticLeopard_Parts_Silo
+      count: 3
+    - displayName: GalacticLeopard_Parts_Thruster
+      count: 2
+    - displayName: GalacticLeopard_Parts_Turret_Dual
+      count: 1
+    - displayName: Main
+      count: 1
+    - displayName: Parts
+      count: 1
+    summedStats:
+      firePower: 50
+      bulletSpeed: 12
+      bulletRange: 12
+      fireRate: 0.5
+      rammingPower: 18
+      healthCap: 768
+      healthRegen: 36.6
+      energyCap: 540
+      energyRegen: 6.399998
+      moveSpeed: 6
+      accelerationCap: 4
+      turnSpeed: 4.5
+      weaponRotationSpeed: 90
+      maxPeople: 60
+    hasMissingStats: 0
+  - catalogIndex: 100
+    visualFamily: 2
+    displayName: Shoji
+    prefab: {fileID: 2554439808026637239, guid: 0ea193f6d3013c54ab951e9932bee984, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: ca64c35d12542a04698eb17f8934dd60, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: TeamA
+      team: 1
+      sprite: {fileID: 21300000, guid: ca64c35d12542a04698eb17f8934dd60, type: 3}
+    - variantName: TeamB
+      team: 2
+      sprite: {fileID: 21300000, guid: dd6d4b93501e179438c8691cf5f1fca5, type: 3}
+    - variantName: TeamC
+      team: 3
+      sprite: {fileID: 21300000, guid: 990b2aefef5428349a4cf7a1bfc619b0, type: 3}
+    - variantName: TeamD
+      team: 4
+      sprite: {fileID: 21300000, guid: 59b5b2475caeee1429c413c16ed634b8, type: 3}
+    - variantName: TeamE
+      team: 5
+      sprite: {fileID: 21300000, guid: 66ec3c1abe110a9468c47e11f1c323f0, type: 3}
+    componentCounts:
+    - displayName: GalacticOkamoto_Body
+      count: 5
+    - displayName: GalacticOkamoto_Capsule
+      count: 10
+    - displayName: GalacticOkamoto_Cockpit
+      count: 1
+    - displayName: GalacticOkamoto_Cylinder
+      count: 18
+    - displayName: GalacticOkamoto_Engine
+      count: 2
+    - displayName: GalacticOkamoto_Engine_Mirrored
+      count: 2
+    - displayName: GalacticOkamoto_Fusiform
+      count: 2
+    - displayName: GalacticOkamoto_Head
+      count: 2
+    - displayName: GalacticOkamoto_Hemisphere
+      count: 1
+    - displayName: GalacticOkamoto_Nozzle
+      count: 2
+    - displayName: GalacticOkamoto_Nozzle_Mirrored
+      count: 2
+    - displayName: GalacticOkamoto_Tail
+      count: 1
+    - displayName: GalacticOkamoto_Thruster
+      count: 2
+    - displayName: GalacticOkamoto_Turret1
+      count: 1
+    - displayName: GalacticOkamoto_Turret3
+      count: 2
+    - displayName: GalacticOkamoto_Wing
+      count: 10
+    summedStats:
+      firePower: 45
+      bulletSpeed: 10
+      bulletRange: 20
+      fireRate: 6
+      rammingPower: 54.40002
+      healthCap: 2360
+      healthRegen: 109.49999
+      energyCap: 1646
+      energyRegen: 22.800016
+      moveSpeed: 6.36
+      accelerationCap: 4
+      turnSpeed: 8
+      weaponRotationSpeed: 90
+      maxPeople: 300
+    hasMissingStats: 0
+  - catalogIndex: 101
+    visualFamily: 2
+    displayName: Enso
+    prefab: {fileID: 1151162213683622468, guid: 9f25d12209d7fb34bab24891544561be, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: f6ec05bbdbde3734bb4de2480b0dbe8c, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: TeamA
+      team: 1
+      sprite: {fileID: 21300000, guid: f6ec05bbdbde3734bb4de2480b0dbe8c, type: 3}
+    - variantName: TeamB
+      team: 2
+      sprite: {fileID: 21300000, guid: faa3868ce284493428e89f35da9d8f1c, type: 3}
+    - variantName: TeamC
+      team: 3
+      sprite: {fileID: 21300000, guid: ed2cb3531d803c14e8d197c59566cd36, type: 3}
+    - variantName: TeamD
+      team: 4
+      sprite: {fileID: 21300000, guid: ae624afe39f7f2f4080606245059f1ea, type: 3}
+    - variantName: TeamE
+      team: 5
+      sprite: {fileID: 21300000, guid: 811514dd966e788418819ccfc9a1e45d, type: 3}
+    componentCounts:
+    - displayName: GalacticOkamoto_Body
+      count: 3
+    - displayName: GalacticOkamoto_Capsule
+      count: 10
+    - displayName: GalacticOkamoto_Cockpit
+      count: 1
+    - displayName: GalacticOkamoto_Cylinder
+      count: 16
+    - displayName: GalacticOkamoto_Engine
+      count: 1
+    - displayName: GalacticOkamoto_Engine_Mirrored
+      count: 1
+    - displayName: GalacticOkamoto_Fusiform
+      count: 2
+    - displayName: GalacticOkamoto_Hemisphere
+      count: 1
+    - displayName: GalacticOkamoto_Nozzle
+      count: 1
+    - displayName: GalacticOkamoto_Nozzle_Mirrored
+      count: 1
+    - displayName: GalacticOkamoto_Tail
+      count: 2
+    - displayName: GalacticOkamoto_Thruster
+      count: 6
+    - displayName: GalacticOkamoto_Turret1
+      count: 4
+    - displayName: GalacticOkamoto_Wing
+      count: 6
+    summedStats:
+      firePower: 60
+      bulletSpeed: 10
+      bulletRange: 20
+      fireRate: 8
+      rammingPower: 44.800014
+      healthCap: 1920
+      healthRegen: 85.39999
+      energyCap: 1388
+      energyRegen: 14.600009
+      moveSpeed: 6.12
+      accelerationCap: 12
+      turnSpeed: 11
+      weaponRotationSpeed: 90
+      maxPeople: 220
+    hasMissingStats: 0
+  - catalogIndex: 102
+    visualFamily: 2
+    displayName: Shibori
+    prefab: {fileID: 7816078570592362328, guid: 7e3423ba09d8a4042a9e42b7c038a5a5, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 1f254640f8f322146b36a06d84c41864, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: TeamA
+      team: 1
+      sprite: {fileID: 21300000, guid: 1f254640f8f322146b36a06d84c41864, type: 3}
+    - variantName: TeamB
+      team: 2
+      sprite: {fileID: 21300000, guid: 0c89471ad26f6df40ba3e032d56ddf93, type: 3}
+    - variantName: TeamC
+      team: 3
+      sprite: {fileID: 21300000, guid: 2fa0b6e4abe09b143863b2593de9f670, type: 3}
+    - variantName: TeamD
+      team: 4
+      sprite: {fileID: 21300000, guid: 13266252d3e8e954ca3c64dfef3a88eb, type: 3}
+    - variantName: TeamE
+      team: 5
+      sprite: {fileID: 21300000, guid: 2f107fb632cf71f43bf6cfeb960278cb, type: 3}
+    componentCounts:
+    - displayName: GalacticOkamoto_Capsule
+      count: 5
+    - displayName: GalacticOkamoto_Cockpit
+      count: 1
+    - displayName: GalacticOkamoto_Engine
+      count: 1
+    - displayName: GalacticOkamoto_Engine_Mirrored
+      count: 1
+    - displayName: GalacticOkamoto_Fusiform
+      count: 2
+    - displayName: GalacticOkamoto_Head
+      count: 1
+    - displayName: GalacticOkamoto_Hemisphere
+      count: 4
+    - displayName: GalacticOkamoto_Nozzle
+      count: 1
+    - displayName: GalacticOkamoto_Nozzle_Mirrored
+      count: 1
+    - displayName: GalacticOkamoto_Tail
+      count: 1
+    - displayName: GalacticOkamoto_Wing
+      count: 2
+    summedStats:
+      firePower: 0
+      bulletSpeed: 0
+      bulletRange: 0
+      fireRate: 0
+      rammingPower: 20.800001
+      healthCap: 888
+      healthRegen: 36.699997
+      energyCap: 710
+      energyRegen: 10.800004
+      moveSpeed: 6.12
+      accelerationCap: 8
+      turnSpeed: 2
+      weaponRotationSpeed: 0
+      maxPeople: 140
+    hasMissingStats: 1
+  - catalogIndex: 103
+    visualFamily: 2
+    displayName: Sakuraorbit
+    prefab: {fileID: 5374823777005985154, guid: a9abe9eefeec4254cbadc6b0bbfa547f, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: dbaacd6b758fe2844ae93938eb7b6bbe, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: TeamA
+      team: 1
+      sprite: {fileID: 21300000, guid: dbaacd6b758fe2844ae93938eb7b6bbe, type: 3}
+    - variantName: TeamB
+      team: 2
+      sprite: {fileID: 21300000, guid: 74826f729b4095444ab8a98fac44ae3a, type: 3}
+    - variantName: TeamC
+      team: 3
+      sprite: {fileID: 21300000, guid: cbfacd35578088644aa9b8759fd75dcf, type: 3}
+    - variantName: TeamD
+      team: 4
+      sprite: {fileID: 21300000, guid: bfe59ffa10eaa174c8ad6d14b660411d, type: 3}
+    - variantName: TeamE
+      team: 5
+      sprite: {fileID: 21300000, guid: 4572922326eaab04381e5a5b3aa75840, type: 3}
+    componentCounts:
+    - displayName: GalacticOkamoto_Body
+      count: 1
+    - displayName: GalacticOkamoto_Capsule
+      count: 2
+    - displayName: GalacticOkamoto_Cockpit
+      count: 1
+    - displayName: GalacticOkamoto_Cylinder
+      count: 7
+    - displayName: GalacticOkamoto_Engine
+      count: 1
+    - displayName: GalacticOkamoto_Fusiform
+      count: 1
+    - displayName: GalacticOkamoto_Head
+      count: 2
+    - displayName: GalacticOkamoto_Hemisphere
+      count: 1
+    - displayName: GalacticOkamoto_Nozzle
+      count: 1
+    - displayName: GalacticOkamoto_Tail
+      count: 1
+    - displayName: GalacticOkamoto_Thruster
+      count: 1
+    - displayName: GalacticOkamoto_Turret3
+      count: 1
+    - displayName: GalacticOkamoto_Wing
+      count: 2
+    summedStats:
+      firePower: 15
+      bulletSpeed: 10
+      bulletRange: 20
+      fireRate: 2
+      rammingPower: 22.000002
+      healthCap: 920
+      healthRegen: 38.5
+      energyCap: 672
+      energyRegen: 7.0999985
+      moveSpeed: 6
+      accelerationCap: 2
+      turnSpeed: 3
+      weaponRotationSpeed: 90
+      maxPeople: 140
+    hasMissingStats: 0
+  - catalogIndex: 104
+    visualFamily: 2
+    displayName: Bambooorbit
+    prefab: {fileID: 8949564330564087906, guid: f541b7e047b2de646ad387f818523d65, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 2367641f6d2c42b4793b5bbd4ddad6fe, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: TeamA
+      team: 1
+      sprite: {fileID: 21300000, guid: 2367641f6d2c42b4793b5bbd4ddad6fe, type: 3}
+    - variantName: TeamB
+      team: 2
+      sprite: {fileID: 21300000, guid: bc5022c9071be2b4c98662c3f9e47b8b, type: 3}
+    - variantName: TeamC
+      team: 3
+      sprite: {fileID: 21300000, guid: e94bba6b7597fe24ab1603ef3626e872, type: 3}
+    - variantName: TeamD
+      team: 4
+      sprite: {fileID: 21300000, guid: 57cc06705a5952c4eb86c78982bc8a32, type: 3}
+    - variantName: TeamE
+      team: 5
+      sprite: {fileID: 21300000, guid: f663e558263dc024faafe1c75988ba52, type: 3}
+    componentCounts:
+    - displayName: GalacticOkamoto_Body
+      count: 6
+    - displayName: GalacticOkamoto_Capsule
+      count: 7
+    - displayName: GalacticOkamoto_Cockpit
+      count: 1
+    - displayName: GalacticOkamoto_Cylinder
+      count: 12
+    - displayName: GalacticOkamoto_Engine
+      count: 2
+    - displayName: GalacticOkamoto_Engine_Mirrored
+      count: 2
+    - displayName: GalacticOkamoto_Fusiform
+      count: 1
+    - displayName: GalacticOkamoto_Head
+      count: 3
+    - displayName: GalacticOkamoto_Hemisphere
+      count: 3
+    - displayName: GalacticOkamoto_Nozzle
+      count: 2
+    - displayName: GalacticOkamoto_Nozzle_Mirrored
+      count: 2
+    - displayName: GalacticOkamoto_Tail
+      count: 3
+    - displayName: GalacticOkamoto_Thruster
+      count: 4
+    - displayName: GalacticOkamoto_Turret1
+      count: 3
+    - displayName: GalacticOkamoto_Wing
+      count: 9
+    summedStats:
+      firePower: 45
+      bulletSpeed: 10
+      bulletRange: 20
+      fireRate: 6
+      rammingPower: 47.200016
+      healthCap: 2140
+      healthRegen: 95.89999
+      energyCap: 1596
+      energyRegen: 22.900017
+      moveSpeed: 6.36
+      accelerationCap: 8
+      turnSpeed: 11.5
+      weaponRotationSpeed: 90
+      maxPeople: 280
+    hasMissingStats: 0
+  - catalogIndex: 105
+    visualFamily: 2
+    displayName: Craneorbit
+    prefab: {fileID: 8468439642275794251, guid: 49e8c1846c522744b9d1d5db128c578c, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: aa4627112cbaadb448cc7e8055947f2c, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: TeamA
+      team: 1
+      sprite: {fileID: 21300000, guid: aa4627112cbaadb448cc7e8055947f2c, type: 3}
+    - variantName: TeamB
+      team: 2
+      sprite: {fileID: 21300000, guid: 669355904afb09f4dbe9857efabab91d, type: 3}
+    - variantName: TeamC
+      team: 3
+      sprite: {fileID: 21300000, guid: fd1333c9cf6572445b0fe437b5f2571d, type: 3}
+    - variantName: TeamD
+      team: 4
+      sprite: {fileID: 21300000, guid: f6f3f9677bed4144985442e46908d07b, type: 3}
+    - variantName: TeamE
+      team: 5
+      sprite: {fileID: 21300000, guid: 9951d58740bb1574aaca9a16e3b266ce, type: 3}
+    componentCounts:
+    - displayName: GalacticOkamoto_Body
+      count: 2
+    - displayName: GalacticOkamoto_Bridge
+      count: 3
+    - displayName: GalacticOkamoto_Capsule
+      count: 2
+    - displayName: GalacticOkamoto_Cockpit
+      count: 5
+    - displayName: GalacticOkamoto_Cylinder
+      count: 18
+    - displayName: GalacticOkamoto_Engine
+      count: 1
+    - displayName: GalacticOkamoto_Engine_Mirrored
+      count: 1
+    - displayName: GalacticOkamoto_Fusiform
+      count: 4
+    - displayName: GalacticOkamoto_Head
+      count: 2
+    - displayName: GalacticOkamoto_Hemisphere
+      count: 4
+    - displayName: GalacticOkamoto_Nozzle
+      count: 1
+    - displayName: GalacticOkamoto_Nozzle_Mirrored
+      count: 1
+    - displayName: GalacticOkamoto_Tail
+      count: 2
+    - displayName: GalacticOkamoto_Thruster
+      count: 2
+    - displayName: GalacticOkamoto_Wing
+      count: 2
+    - displayName: Turret
+      count: 1
+    summedStats:
+      firePower: 15
+      bulletSpeed: 10
+      bulletRange: 20
+      fireRate: 2
+      rammingPower: 64.40002
+      healthCap: 2648
+      healthRegen: 98.99999
+      energyCap: 2052
+      energyRegen: 17.70001
+      moveSpeed: 6.12
+      accelerationCap: 4
+      turnSpeed: 5
+      weaponRotationSpeed: 90
+      maxPeople: 540
+    hasMissingStats: 0
+  - catalogIndex: 106
+    visualFamily: 2
+    displayName: Foggarden
+    prefab: {fileID: 8666315719503967859, guid: 839a75cb59b1163419d6feb7e3862bb8, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: ef8e5219c5a903d43857e03c9e01cc18, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: TeamA
+      team: 1
+      sprite: {fileID: 21300000, guid: ef8e5219c5a903d43857e03c9e01cc18, type: 3}
+    - variantName: TeamB
+      team: 2
+      sprite: {fileID: 21300000, guid: 7c3901815089f994497382944a96c1bc, type: 3}
+    - variantName: TeamC
+      team: 3
+      sprite: {fileID: 21300000, guid: bf1179925f8f18c4da31c56ac2d12f09, type: 3}
+    - variantName: TeamD
+      team: 4
+      sprite: {fileID: 21300000, guid: 16ed9f5a96d76704bb8b826f7886f902, type: 3}
+    - variantName: TeamE
+      team: 5
+      sprite: {fileID: 21300000, guid: 9f2d456bfc40ff64cb4ced16f9c903cf, type: 3}
+    componentCounts:
+    - displayName: GalacticOkamoto_Body
+      count: 2
+    - displayName: GalacticOkamoto_Capsule
+      count: 12
+    - displayName: GalacticOkamoto_Cockpit
+      count: 1
+    - displayName: GalacticOkamoto_Cylinder
+      count: 12
+    - displayName: GalacticOkamoto_Engine
+      count: 1
+    - displayName: GalacticOkamoto_Engine_Mirrored
+      count: 1
+    - displayName: GalacticOkamoto_Fusiform
+      count: 4
+    - displayName: GalacticOkamoto_Head
+      count: 3
+    - displayName: GalacticOkamoto_Hemisphere
+      count: 10
+    - displayName: GalacticOkamoto_Nozzle
+      count: 1
+    - displayName: GalacticOkamoto_Nozzle_Mirrored
+      count: 1
+    - displayName: GalacticOkamoto_Tail
+      count: 3
+    - displayName: GalacticOkamoto_Wing
+      count: 10
+    - displayName: Turret
+      count: 1
+    summedStats:
+      firePower: 15
+      bulletSpeed: 10
+      bulletRange: 20
+      fireRate: 2
+      rammingPower: 58.000023
+      healthCap: 2448
+      healthRegen: 114.899994
+      energyCap: 1442
+      energyRegen: 15.100015
+      moveSpeed: 6.12
+      accelerationCap: 8
+      turnSpeed: 8
+      weaponRotationSpeed: 90
+      maxPeople: 300
+    hasMissingStats: 0
+  - catalogIndex: 107
+    visualFamily: 2
+    displayName: Plumgate
+    prefab: {fileID: 7400593551863527997, guid: 8f4db39e50eefee43a4787b7dac94781, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 6ec16f6f8f4052248938c4a42a5e8d87, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: TeamA
+      team: 1
+      sprite: {fileID: 21300000, guid: 6ec16f6f8f4052248938c4a42a5e8d87, type: 3}
+    - variantName: TeamB
+      team: 2
+      sprite: {fileID: 21300000, guid: dd76d7d6db97c68418b8c34a8043292b, type: 3}
+    - variantName: TeamC
+      team: 3
+      sprite: {fileID: 21300000, guid: 43dfa84542298e94da77ec427a6c5078, type: 3}
+    - variantName: TeamD
+      team: 4
+      sprite: {fileID: 21300000, guid: 80f519fca1531314d8cbcc0e8ac302d8, type: 3}
+    - variantName: TeamE
+      team: 5
+      sprite: {fileID: 21300000, guid: 221fa87bcce20b64a994db6e60dcf9f7, type: 3}
+    componentCounts:
+    - displayName: GalacticOkamoto_Body
+      count: 1
+    - displayName: GalacticOkamoto_Bridge
+      count: 1
+    - displayName: GalacticOkamoto_Capsule
+      count: 4
+    - displayName: GalacticOkamoto_Cockpit
+      count: 2
+    - displayName: GalacticOkamoto_Cylinder
+      count: 4
+    - displayName: GalacticOkamoto_Engine
+      count: 1
+    - displayName: GalacticOkamoto_Engine_Mirrored
+      count: 1
+    - displayName: GalacticOkamoto_Fusiform
+      count: 1
+    - displayName: GalacticOkamoto_Head
+      count: 1
+    - displayName: GalacticOkamoto_Hemisphere
+      count: 2
+    - displayName: GalacticOkamoto_Nozzle
+      count: 1
+    - displayName: GalacticOkamoto_Nozzle_Mirrored
+      count: 1
+    - displayName: GalacticOkamoto_Tail
+      count: 1
+    - displayName: GalacticOkamoto_Thruster
+      count: 1
+    - displayName: GalacticOkamoto_Wing
+      count: 7
+    - displayName: Turret
+      count: 1
+    summedStats:
+      firePower: 15
+      bulletSpeed: 10
+      bulletRange: 20
+      fireRate: 2
+      rammingPower: 27.200006
+      healthCap: 1360
+      healthRegen: 54.799995
+      energyCap: 1042
+      energyRegen: 12.7000065
+      moveSpeed: 6.12
+      accelerationCap: 2
+      turnSpeed: 5.5
+      weaponRotationSpeed: 90
+      maxPeople: 340
+    hasMissingStats: 0
+  - catalogIndex: 108
+    visualFamily: 2
+    displayName: Silkfold
+    prefab: {fileID: 7272702593414200996, guid: ec2450d616c723b419acb27ad7143f90, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 800ff6fcea1b4b0469486b0e51c14b7e, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: TeamA
+      team: 1
+      sprite: {fileID: 21300000, guid: 800ff6fcea1b4b0469486b0e51c14b7e, type: 3}
+    - variantName: TeamB
+      team: 2
+      sprite: {fileID: 21300000, guid: ea7373f7cb8333440bda3def97a15e51, type: 3}
+    - variantName: TeamC
+      team: 3
+      sprite: {fileID: 21300000, guid: 0740735b05a5c7f4b85aebfa8c40e082, type: 3}
+    - variantName: TeamD
+      team: 4
+      sprite: {fileID: 21300000, guid: 50cad70e7029ff24c8cb4ceef0f8dc36, type: 3}
+    - variantName: TeamE
+      team: 5
+      sprite: {fileID: 21300000, guid: b3c33d27b6c95e54b8403408000701e3, type: 3}
+    componentCounts:
+    - displayName: GalacticOkamoto_Body
+      count: 2
+    - displayName: GalacticOkamoto_Bridge
+      count: 1
+    - displayName: GalacticOkamoto_Capsule
+      count: 8
+    - displayName: GalacticOkamoto_Cockpit
+      count: 2
+    - displayName: GalacticOkamoto_Cylinder
+      count: 8
+    - displayName: GalacticOkamoto_Engine
+      count: 1
+    - displayName: GalacticOkamoto_Engine_Mirrored
+      count: 1
+    - displayName: GalacticOkamoto_Fusiform
+      count: 4
+    - displayName: GalacticOkamoto_Head
+      count: 1
+    - displayName: GalacticOkamoto_Hemisphere
+      count: 2
+    - displayName: GalacticOkamoto_Nozzle
+      count: 1
+    - displayName: GalacticOkamoto_Nozzle_Mirrored
+      count: 1
+    - displayName: GalacticOkamoto_Tail
+      count: 1
+    - displayName: GalacticOkamoto_Thruster
+      count: 1
+    - displayName: GalacticOkamoto_Turret1
+      count: 2
+    - displayName: GalacticOkamoto_Wing
+      count: 9
+    summedStats:
+      firePower: 30
+      bulletSpeed: 10
+      bulletRange: 20
+      fireRate: 4
+      rammingPower: 41.60001
+      healthCap: 1912
+      healthRegen: 82.799995
+      energyCap: 1314
+      energyRegen: 14.10001
+      moveSpeed: 6.12
+      accelerationCap: 2
+      turnSpeed: 6.5
+      weaponRotationSpeed: 90
+      maxPeople: 380
+    hasMissingStats: 0
+  - catalogIndex: 109
+    visualFamily: 2
+    displayName: Ikebana
+    prefab: {fileID: 3071532628340817069, guid: 623f354b9fcaa2044852559a557f1168, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 12ec3544fc731e247a6a6f3b598ba135, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: TeamA
+      team: 1
+      sprite: {fileID: 21300000, guid: 12ec3544fc731e247a6a6f3b598ba135, type: 3}
+    - variantName: TeamB
+      team: 2
+      sprite: {fileID: 21300000, guid: 0a9d455c994cd594598a9b9da2d5183f, type: 3}
+    - variantName: TeamC
+      team: 3
+      sprite: {fileID: 21300000, guid: f278719caae5348449c286a888d344e2, type: 3}
+    - variantName: TeamD
+      team: 4
+      sprite: {fileID: 21300000, guid: ff3d4b4268032764e804fece93c04709, type: 3}
+    - variantName: TeamE
+      team: 5
+      sprite: {fileID: 21300000, guid: 32f01a3027ea16548b1cacc8b783737b, type: 3}
+    componentCounts:
+    - displayName: GalacticOkamoto_Body
+      count: 3
+    - displayName: GalacticOkamoto_Capsule
+      count: 5
+    - displayName: GalacticOkamoto_Cockpit
+      count: 1
+    - displayName: GalacticOkamoto_Engine
+      count: 1
+    - displayName: GalacticOkamoto_Engine_Mirrored
+      count: 1
+    - displayName: GalacticOkamoto_Fusiform
+      count: 1
+    - displayName: GalacticOkamoto_Head
+      count: 1
+    - displayName: GalacticOkamoto_Hemisphere
+      count: 2
+    - displayName: GalacticOkamoto_Nozzle
+      count: 1
+    - displayName: GalacticOkamoto_Nozzle_Mirrored
+      count: 1
+    - displayName: GalacticOkamoto_Tail
+      count: 4
+    - displayName: GalacticOkamoto_Thruster
+      count: 1
+    - displayName: GalacticOkamoto_Wing
+      count: 7
+    summedStats:
+      firePower: 0
+      bulletSpeed: 0
+      bulletRange: 0
+      fireRate: 0
+      rammingPower: 20.800001
+      healthCap: 1128
+      healthRegen: 47.09999
+      energyCap: 820
+      energyRegen: 12.100004
+      moveSpeed: 6.12
+      accelerationCap: 2
+      turnSpeed: 8.5
+      weaponRotationSpeed: 0
+      maxPeople: 240
+    hasMissingStats: 1
   purchaseGemCost: 1200
   asteroidPlowDamageMultiplier: 1
   asteroidPlowImpactVisualScale: 1
@@ -7350,8 +8782,8 @@ MonoBehaviour:
   menuPreviewBackgroundColor: {r: 0, g: 0, b: 0, a: 1}
   weaponBulletStats:
     firePower: 15
-    bulletSpeed: 14
-    bulletRange: 25
+    bulletSpeed: 10
+    bulletRange: 20
     fireRate: 2
     rammingPower: 0
     healthCap: 0
@@ -7366,7 +8798,7 @@ MonoBehaviour:
   weaponCannonStats:
     firePower: 50
     bulletSpeed: 12
-    bulletRange: 15
+    bulletRange: 12
     fireRate: 0.5
     rammingPower: 0
     healthCap: 0
@@ -7397,7 +8829,7 @@ MonoBehaviour:
     firePower: 100
     bulletSpeed: 28
     bulletRange: 40
-    fireRate: 0.2
+    fireRate: 0.5
     rammingPower: 0
     healthCap: 0
     healthRegen: 0
@@ -7411,17 +8843,17 @@ MonoBehaviour:
   weaponBulletBankIndex: -1
   weaponCannonBankIndex: 0
   weaponMissileBankIndex: -1
-  weaponSniperBankIndex: -1
+  weaponSniperBankIndex: 14
   cockpitStats:
     firePower: 0
     bulletSpeed: 0
     bulletRange: 0
     fireRate: 0
     rammingPower: 4
-    healthCap: 100
-    healthRegen: 1
-    energyCap: 100
-    energyRegen: 2
+    healthCap: 200
+    healthRegen: 4
+    energyCap: 200
+    energyRegen: 1
     moveSpeed: 0
     accelerationCap: 0
     turnSpeed: 0
@@ -7434,12 +8866,12 @@ MonoBehaviour:
     fireRate: 0
     rammingPower: 0
     healthCap: 36
-    healthRegen: 0.4
-    energyCap: 0
-    energyRegen: 0
+    healthRegen: 2
+    energyCap: 10
+    energyRegen: 0.1
     moveSpeed: 0
     accelerationCap: 0
-    turnSpeed: 0
+    turnSpeed: 0.5
     weaponRotationSpeed: 0
     maxPeople: 20
   engineStats:
@@ -7450,8 +8882,8 @@ MonoBehaviour:
     rammingPower: 0
     healthCap: 20
     healthRegen: 0.3
-    energyCap: 140
-    energyRegen: 5
+    energyCap: 100
+    energyRegen: 4
     moveSpeed: 6
     accelerationCap: 4
     turnSpeed: 0
@@ -7465,11 +8897,11 @@ MonoBehaviour:
     rammingPower: 0
     healthCap: 12
     healthRegen: 0.1
-    energyCap: 0
-    energyRegen: 0
+    energyCap: 30
+    energyRegen: 0.2
     moveSpeed: 3
     accelerationCap: 2
-    turnSpeed: 0.5
+    turnSpeed: 1
     weaponRotationSpeed: 0
     maxPeople: 0
   tailStats:
@@ -7480,8 +8912,8 @@ MonoBehaviour:
     rammingPower: 0
     healthCap: 16
     healthRegen: 0.1
-    energyCap: 0
-    energyRegen: 0
+    energyCap: 10
+    energyRegen: 0.2
     moveSpeed: 0
     accelerationCap: 0
     turnSpeed: 1
@@ -7493,10 +8925,10 @@ MonoBehaviour:
     bulletRange: 0
     fireRate: 0
     rammingPower: 1.2
-    healthCap: 30
-    healthRegen: 0.5
-    energyCap: 0
-    energyRegen: 0
+    healthCap: 40
+    healthRegen: 2
+    energyCap: 20
+    energyRegen: 0.1
     moveSpeed: 0
     accelerationCap: 0
     turnSpeed: 0

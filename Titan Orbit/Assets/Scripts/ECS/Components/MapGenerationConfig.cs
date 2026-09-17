@@ -26,6 +26,9 @@ namespace TitanOrbit.ECS
         /// <summary>Maximum teams spawned for this match (2–5).</summary>
         public int MaxTeamsPerMatch;
 
+        /// <summary>Hard cap on players who can join each team.</summary>
+        public int MaxPlayersPerTeam;
+
         /// <summary>Collider/visual radius for home planet bodies.</summary>
         public float HomePlanetSize;
 

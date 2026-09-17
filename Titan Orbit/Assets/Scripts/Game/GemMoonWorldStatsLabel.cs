@@ -10,9 +10,9 @@ using UnityEngine.Rendering;
 namespace TitanOrbit.Game
 {
     /// <summary>
-    /// World-space label above the orbiting gem moon: ship family name, that family's default
-    /// bullet type, then gem bank and matrix shield counts. Family / gun strings match
-    /// <see cref="PlanetWorldStatsLabel"/> (same planet <see cref="PlanetState"/> + config).
+    /// World-space label above the orbiting gem moon: parent planet's proper world name, that
+    /// family's default bullet type, then gem bank and matrix shield counts. World / gun strings
+    /// match <see cref="PlanetWorldStatsLabel"/> (same planet <see cref="PlanetState"/> + config).
     /// Client presentation only. During idle theatrical camera,
     /// <see cref="TitanOrbit.UI.TheatricalWorldSpaceLabelRotation"/> billboards this stack
     /// toward the lens so gem/shield counts stay readable.
@@ -27,11 +27,11 @@ namespace TitanOrbit.Game
         const int IconSortingOrder = 5000;
         /// <summary>Fallback moon label scale before planet size is known (unit-scale roots).</summary>
         const float LabelWorldScaleFallback = 0.24f;
-        /// <summary>Gem / shield current count — smaller than the old 33 so family + gun still fit.</summary>
+        /// <summary>Gem / shield current count — smaller than the old 33 so world name + gun still fit.</summary>
         const float CurrentFontSize = 24f;
         /// <summary>Gem / shield capacity line under current (same 21/33 ratio as before).</summary>
         const float MaxFontSize = CurrentFontSize * (21f / 33f);
-        /// <summary>Ship family title — same local size as the planet label title.</summary>
+        /// <summary>World-name title — same local size as the planet label title.</summary>
         const float TitleFontSize = 21f;
         /// <summary>Family gun type under the name — same 62% subtitle as the planet label.</summary>
         const float BulletTypeFontSize = TitleFontSize * 0.62f;
@@ -343,7 +343,7 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Centers family name, smaller bullet-type subtitle, then gem and shield rows.
+        /// Centers world name, smaller bullet-type subtitle, then gem and shield rows.
         /// </summary>
         void LayoutLabelBlock(bool showTitle, bool showBulletType)
         {
@@ -474,8 +474,13 @@ namespace TitanOrbit.Game
             }
         }
 
-        static string ResolveShipFamilyTitle(in PlanetState state)
+        /// <summary>
+        /// Resolves the parent planet's proper world name (not the ship family).
+        /// Same string the planet world label and minimap hover tip show.
+        /// </summary>
+        static string ResolvePlanetTitle(in PlanetState state)
         {
+            // --- Same catalog as the planet label ---
             var config = ShipFamilyConfig;
             if (config == null)
                 return string.Empty;
@@ -500,7 +505,7 @@ namespace TitanOrbit.Game
 
         void LateUpdate()
         {
-            // Dirty Refresh skips ApplyLayout when gem/shield/family text is unchanged.
+            // Dirty Refresh skips ApplyLayout when gem/shield/world-name text is unchanged.
             if (Refresh())
                 ApplyLayout();
 
@@ -547,7 +552,7 @@ namespace TitanOrbit.Game
         /// <summary>
         /// Updates family / gun / gem / shield TMP only when values change.
         /// [TITAN-ORBIT] Per-frame ParseHexColor + .text on every moon was ~1.4ms (Profiler 41220).
-        /// Family title is resolved only when id / config / home / team is dirty (same as planet).
+        /// World name is resolved only when id / config / home / team is dirty (same as planet).
         /// </summary>
         /// <returns>True when layout should run.</returns>
         bool Refresh()
@@ -582,8 +587,8 @@ namespace TitanOrbit.Game
                 currentShield = maxShield;
             }
 
-            // --- Dirty check BEFORE ResolveShipFamilyTitle ---
-            // [TITAN-ORBIT] Resolve used Trim()/SplitCamelCase every LateUpdate × N moons.
+            // --- Dirty check BEFORE ResolvePlanetTitle ---
+            // [TITAN-ORBIT] World name is stable for the match (PlanetId + optional family override).
             if (_hasCachedPaint &&
                 _cachedCurrentGems == currentGems &&
                 _cachedMaxGems == maxGems &&
@@ -596,23 +601,23 @@ namespace TitanOrbit.Game
                 return false;
             }
 
-            bool familyDirty = !_hasCachedPaint ||
+            bool titleDirty = !_hasCachedPaint ||
                                _cachedFamilyConfigIndex != state.ShipFamilyConfigIndex ||
                                _cachedIsHomePlanet != state.IsHomePlanet;
-            string familyTitle;
+            string planetTitle;
             string bulletType;
-            if (familyDirty)
+            if (titleDirty)
             {
-                familyTitle = ResolveShipFamilyTitle(state);
+                planetTitle = ResolvePlanetTitle(state);
                 bulletType = ResolveShipFamilyBulletType(state);
             }
             else
             {
-                familyTitle = _cachedTitle;
+                planetTitle = _cachedTitle;
                 bulletType = _cachedBulletType;
             }
 
-            bool hasTitle = !string.IsNullOrEmpty(familyTitle);
+            bool hasTitle = !string.IsNullOrEmpty(planetTitle);
             bool hasBulletType = hasTitle && !string.IsNullOrEmpty(bulletType);
 
             _hasCachedPaint = true;
@@ -623,13 +628,13 @@ namespace TitanOrbit.Game
             _cachedFamilyConfigIndex = state.ShipFamilyConfigIndex;
             _cachedIsHomePlanet = state.IsHomePlanet;
             _cachedTeam = state.Ownership;
-            _cachedTitle = familyTitle;
+            _cachedTitle = planetTitle;
             _cachedBulletType = bulletType;
 
             Color teamColor = state.Ownership.ToColor();
 
             _titleText.gameObject.SetActive(hasTitle);
-            _titleText.text = hasTitle ? familyTitle : string.Empty;
+            _titleText.text = hasTitle ? planetTitle : string.Empty;
             _titleText.color = teamColor;
 
             _bulletTypeText.gameObject.SetActive(hasBulletType);

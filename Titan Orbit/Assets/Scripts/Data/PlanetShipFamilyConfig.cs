@@ -9,9 +9,11 @@ namespace TitanOrbit.Data
     /// ScriptableObject mapping each planet to a <see cref="ShipFamilyDefinition"/> and optional planet skin.
     /// Home planet (id 0) always resolves to AstroEagle; neutrals / captured planets use indices 1–11 rolled
     /// at spawn into <c>PlanetState.ShipFamilyConfigIndex</c>. Prefabs, chassis ids, unlock tiers, and gem
-    /// costs come from each family's <c>upgradeTree</c>. <see cref="ShipFamilyEntry.planetMaterial"/> ties
-    /// that family to a recognizable CW PLANETS surface so players can spot the ship tree from the planet
-    /// look even when neutral placement is randomized. Paired with <see cref="PlanetShipFamilyAssignment"/>.
+    /// costs come from each family's <c>upgradeTree</c>. World labels use
+    /// <see cref="GetPlanetDisplayName"/> (proper place names via <see cref="PlanetDisplayNames"/>,
+    /// or a filled <see cref="ShipFamilyEntry.planetName"/>). <see cref="ShipFamilyEntry.planetMaterial"/>
+    /// ties that family to a recognizable CW PLANETS surface so players can spot the ship tree from the
+    /// planet look even when neutral placement is randomized. Paired with <see cref="PlanetShipFamilyAssignment"/>.
     /// </summary>
     [CreateAssetMenu(fileName = "PlanetShipFamilyConfig", menuName = "Titan Orbit/Planet Ship Family Config")]
     public class PlanetShipFamilyConfig : ScriptableObject
@@ -31,6 +33,12 @@ namespace TitanOrbit.Data
 
             [Tooltip("Optional display name; when empty, familyId from shipFamilyDefinition is used.")]
             public string familyName;
+
+            [Tooltip(
+                "Optional proper world name for planets that roll this family. When empty, " +
+                "GetPlanetDisplayName uses PlanetDisplayNames (unique per PlanetId). " +
+                "Does not replace familyName on ships or upgrade trees.")]
+            public string planetName;
 
             [Tooltip(
                 "Neutral / captured planet surface material for this family. Homes ignore this and use " +
@@ -132,6 +140,21 @@ namespace TitanOrbit.Data
         public string GetFamilyDisplayName(int configIndex)
         {
             return FormatFamilyDisplayName(GetFamilyByConfigIndex(configIndex));
+        }
+
+        /// <summary>
+        /// Player-facing ship family for a planet (Astro Eagle, Cosmic Shark, …).
+        /// Same resolve path as <see cref="GetPlanetDisplayName"/>: homes force the home family,
+        /// neutrals use the ghosted <c>ShipFamilyConfigIndex</c>. Used by the minimap hover tip
+        /// under the proper world name.
+        /// </summary>
+        /// <param name="planetId">Stable planet id (homes = team id, neutrals ≥ 100).</param>
+        /// <param name="isHomePlanet">True for team home worlds — forces the home family.</param>
+        /// <param name="shipFamilyConfigIndex">Ghosted <c>PlanetState.ShipFamilyConfigIndex</c> (−1 = infer).</param>
+        /// <returns>Display name, or empty when the family row is missing.</returns>
+        public string GetFamilyDisplayName(int planetId, bool isHomePlanet, int shipFamilyConfigIndex = -1)
+        {
+            return FormatFamilyDisplayName(GetFamilyForPlanet(planetId, isHomePlanet, shipFamilyConfigIndex));
         }
 
         /// <summary>
@@ -296,9 +319,9 @@ namespace TitanOrbit.Data
         }
 
         /// <summary>
-        /// World-space / minimap planet label from this planet's family.
-        /// Prefers designer <see cref="ShipFamilyEntry.familyName"/>, then camel-splits <c>familyId</c>
-        /// (AstroEagle → "Astro Eagle"). Same string the world label and minimap hover tip show.
+        /// World-space / minimap planet label. Same string as
+        /// <see cref="GetPlanetDisplayName"/> with home/family inferred from id only.
+        /// Prefer the overload that passes <c>IsHomePlanet</c> and <c>ShipFamilyConfigIndex</c>.
         /// </summary>
         /// <param name="planetId">Stable <c>PlanetState.PlanetId</c>.</param>
         public string GetPlanetDisplayNameFromFamilyId(int planetId) =>
@@ -306,7 +329,7 @@ namespace TitanOrbit.Data
 
         /// <summary>
         /// Default gun type for this planet's family (Fireballs, Rift, …).
-        /// World planet labels show this under the family name. Empty when the family or bank is missing.
+        /// World planet labels show this under the proper world name. Empty when the family or bank is missing.
         /// </summary>
         /// <param name="planetId">Stable <c>PlanetState.PlanetId</c>.</param>
         /// <param name="isHomePlanet">True for team home worlds — forces config index 0.</param>
@@ -320,29 +343,29 @@ namespace TitanOrbit.Data
         }
 
         /// <summary>
-        /// Resolves the player-facing planet name using home flag + ghosted family index.
-        /// Homes always use the AstroEagle slot; neutrals use the index rolled at spawn.
+        /// Resolves the player-facing planet name. Planets are places — this is a proper world
+        /// name, not the ship family (Astro Eagle stays on hulls and the upgrade tree).
+        /// <para>
+        /// Designer <see cref="ShipFamilyEntry.planetName"/> on the family row wins when set.
+        /// Otherwise <see cref="PlanetDisplayNames"/> picks a stable name from
+        /// <paramref name="planetId"/> (homes by team, neutrals from id 100 upward).
+        /// </para>
         /// </summary>
-        /// <param name="planetId">Stable planet id (homes are 0).</param>
-        /// <param name="isHomePlanet">True for team home worlds — forces config index 0.</param>
-        /// <param name="shipFamilyConfigIndex">Ghosted <c>PlanetState.ShipFamilyConfigIndex</c> (−1 = infer).</param>
-        /// <returns>Display name, or empty when the config list has no family for this planet.</returns>
+        /// <param name="planetId">Stable planet id (homes = team id, neutrals ≥ 100).</param>
+        /// <param name="isHomePlanet">True for team home worlds — uses the capital-name list.</param>
+        /// <param name="shipFamilyConfigIndex">Ghosted <c>PlanetState.ShipFamilyConfigIndex</c> (−1 = infer). Used only for a filled <c>planetName</c> override.</param>
+        /// <returns>Display name, or empty when both the override and the catalog miss.</returns>
         public string GetPlanetDisplayName(int planetId, bool isHomePlanet, int shipFamilyConfigIndex = -1)
         {
-            // --- Resolve family entry ---
+            // --- Optional designer world name on this family row ---
+            // [TITAN-ORBIT] familyName is the ship tree label. planetName is the place name.
+            // Leaving planetName blank (the default) keeps every body unique via PlanetId.
             ShipFamilyEntry entry = GetFamilyForPlanet(planetId, isHomePlanet, shipFamilyConfigIndex);
-            if (entry == null)
-                return string.Empty;
+            if (entry != null && !string.IsNullOrWhiteSpace(entry.planetName))
+                return entry.planetName.Trim();
 
-            // Designer override wins (Inspector "familyName" on the config row).
-            if (!string.IsNullOrWhiteSpace(entry.familyName))
-                return entry.familyName.Trim();
-
-            // Fallback: split the ScriptableObject familyId so AstroEagle reads as "Astro Eagle".
-            string familyId = entry.shipFamilyDefinition != null ? entry.shipFamilyDefinition.familyId : null;
-            if (string.IsNullOrWhiteSpace(familyId))
-                return string.Empty;
-            return Core.DisplayNameFormatting.SplitCamelCase(familyId.Trim());
+            // --- Unique catalog name ---
+            return PlanetDisplayNames.Resolve(planetId, isHomePlanet);
         }
 
         /// <summary>

@@ -34,7 +34,10 @@ namespace TitanOrbit.ECS
         /// <summary>[TITAN-ORBIT] Bitmask of teams eliminated from the match (no home planet left).</summary>
         [GhostField] public int EliminatedTeamsMask;
 
-        /// <summary>[TITAN-ORBIT] Server cap per team from bootstrap config (not ghost-serialized default).</summary>
+        /// <summary>
+        /// [TITAN-ORBIT] Server cap per team from <see cref="TitanOrbit.Data.MapGenerationSettings.maxPlayersPerTeam"/>
+        /// (not a GhostField — dedicated clients read the same Resources asset).
+        /// </summary>
         public int MaxPlayersPerTeam;
     }
 

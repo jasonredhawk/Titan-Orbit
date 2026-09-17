@@ -29,9 +29,11 @@ namespace TitanOrbit.UI
     /// the world orbit fill (idle white, or locked-in ship teams cycling ~1s each).
     /// Collapsed world radius scales with ship-level camera zoom (<see cref="CameraFollowEcs.CurrentHeightZoomFactor"/>)
     /// so the circle shows proportionally more map as the gameplay camera rises. Expanded mode still fits the full torus.
-    /// Hovering a planet disc (or its off-screen edge arrow) shows the family name via
-    /// <see cref="MinimapPlanetHoverTip"/>. Client presentation only — reads
-    /// <see cref="MinimapBlipAnchor"/> caches, never map-body ECS gathers.
+    /// Hovering a planet disc (or its off-screen edge arrow) shows the proper world name via
+    /// <see cref="MinimapPlanetHoverTip"/>. Team Attack / Defend orders live in the
+    /// <see cref="ShipCommsPanel"/> Comms Matrix — this map no longer pops those buttons.
+    /// Clicks still pick a respawn planet (death overlay) or plant a Here ping (comms dock).
+    /// Client presentation only — reads <see cref="MinimapBlipAnchor"/> caches, never map-body ECS gathers.
     /// </summary>
     public class MinimapController : MonoBehaviour
     {
@@ -65,7 +67,6 @@ namespace TitanOrbit.UI
         [Tooltip("World-space radius when expanded. Leave at 0 to auto-fit the full toroidal map.")]
         [SerializeField] private float fullMapRadius = 0f;
         [SerializeField] private float expandedMapFitPadding = 1.03f;
-        [SerializeField] private float markerHeight = 1f; // Height above ground for markers
 
         [Header("Map size label")]
         [Tooltip("Optional; if null, a label is created on Start. Shows ToroidalMap width x height.")]
@@ -165,9 +166,6 @@ namespace TitanOrbit.UI
         }
 
         private readonly List<NonMinimapUiRestoreState> _nonMinimapUiRestore = new List<NonMinimapUiRestoreState>(24);
-        
-        // Marker system
-        private MarkerPlacementMenu markerMenu;
 
         [Header("Entity Prefabs")]
         [SerializeField] private GameObject playerBlipPrefab;
@@ -192,7 +190,6 @@ namespace TitanOrbit.UI
         private Dictionary<Transform, RectTransform> blips = new Dictionary<Transform, RectTransform>();
         private Dictionary<Transform, Image> blipImages = new Dictionary<Transform, Image>();
         private Dictionary<Transform, BlipType> blipTypes = new Dictionary<Transform, BlipType>();
-        private Dictionary<Transform, float> bullseyePulseTime = new Dictionary<Transform, float>(); // Track pulse animation time for bullseye blips
 
         // --- Top-of-team role dots on ship Cross blips (anchor stats only — no ECS walks) ---
         /// <summary>Child root under each ship blip for 0–3 small role circles.</summary>
@@ -228,10 +225,7 @@ namespace TitanOrbit.UI
         private Dictionary<Transform, RectTransform> edgeMarkers = new Dictionary<Transform, RectTransform>();
         private Dictionary<Transform, Image> edgeMarkerImages = new Dictionary<Transform, Image>();
         private Dictionary<Transform, bool> edgeMarkerIsHomePlanet = new Dictionary<Transform, bool>();
-        
-        // Edge markers for attack/defend markers outside visible area
-        private Dictionary<Transform, RectTransform> markerEdgeMarkers = new Dictionary<Transform, RectTransform>();
-        private Dictionary<Transform, Image> markerEdgeMarkerImages = new Dictionary<Transform, Image>();
+
         private float lastEntityCacheRefreshTime = -999f;
         /// <summary>
         /// Next Unity frame we may <see cref="RefreshEntityCache"/> while the local ship
@@ -255,7 +249,6 @@ namespace TitanOrbit.UI
         private int skippedNullPlanets = 0;
         private int skippedNullHomePlanets = 0;
         private int skippedNullAsteroids = 0;
-        private int skippedNullMarkers = 0;
         private const int MaxAsteroidBlips = 80;
 
         /// <summary>Planet / home blips created per join-warmup tick (TMP + orbit ring).</summary>
@@ -269,7 +262,6 @@ namespace TitanOrbit.UI
 
         private readonly List<Transform> blipsToRemove = new List<Transform>();
         private readonly List<Transform> edgeMarkersToRemoveList = new List<Transform>();
-        private readonly List<Transform> markerEdgeMarkersToRemoveList = new List<Transform>();
 
         /// <summary>Destroyed asteroids despawn (transform gone); we keep a faded blip at last known position until a new asteroid spawns there (then full-color blip again).</summary>
         private const float DeadAsteroidBlipAlpha = 0.2f;
@@ -312,7 +304,7 @@ namespace TitanOrbit.UI
             MegaTriangle,     // MEGA outline — team-color stroke, hollow until troops load
             MegaTriangleFill, // MEGA troop fill stamp — inset solid, yellow via Image.color
             Irregular,   // Asteroids
-            Bullseye,    // Markers (attack/defend)
+            Bullseye,    // Legacy sprite id — comms Here ping uses CreateBullseyeSprite
             Ring         // Thin annulus — planet moon-orbit path on the minimap
         }
 
@@ -629,7 +621,7 @@ namespace TitanOrbit.UI
             go.transform.SetParent(minimapContent, false);
             var img = go.AddComponent<Image>();
             img.raycastTarget = false;
-            img.sprite = CreateBullseyeSprite(false, 32);
+            img.sprite = CreateBullseyeSprite(32);
             img.color = CommsPingColor;
 
             _commsPingRt = go.GetComponent<RectTransform>();
@@ -932,10 +924,7 @@ namespace TitanOrbit.UI
             SetupExpandButton();
 
             SetupMapSizeLabel();
-            
-            // Setup marker placement menu
-            SetupMarkerMenu();
-            
+
             // Store original minimap position and size for collapse
             StoreOriginalMinimapState();
 
@@ -998,218 +987,6 @@ namespace TitanOrbit.UI
             }
         }
         
-        private void SetupMarkerMenu()
-        {
-            // Create marker menu UI
-            Canvas canvas = GetComponentInParent<Canvas>();
-            if (canvas == null) return;
-            
-            GameObject menuObj = new GameObject("MarkerPlacementMenu");
-            menuObj.transform.SetParent(canvas.transform, false);
-            
-            RectTransform menuRect = menuObj.AddComponent<RectTransform>();
-            menuRect.sizeDelta = new Vector2(120, 80);
-            menuRect.anchorMin = new Vector2(0.5f, 0.5f);
-            menuRect.anchorMax = new Vector2(0.5f, 0.5f);
-            menuRect.pivot = new Vector2(0.5f, 0.5f);
-            
-            // Background
-            Image bgImage = menuObj.AddComponent<Image>();
-            bgImage.color = new Color(0.15f, 0.15f, 0.2f, 0.95f);
-            Sprite bgSprite = CreateRoundedRectSprite(120, 80);
-            bgImage.sprite = bgSprite;
-            bgImage.type = Image.Type.Simple; // Changed from Sliced to Simple for better rendering
-            
-            // Add border
-            GameObject borderObj = new GameObject("Border");
-            borderObj.transform.SetParent(menuObj.transform, false);
-            RectTransform borderRect = borderObj.AddComponent<RectTransform>();
-            borderRect.anchorMin = Vector2.zero;
-            borderRect.anchorMax = Vector2.one;
-            borderRect.offsetMin = Vector2.zero;
-            borderRect.offsetMax = Vector2.zero;
-            Image borderImage = borderObj.AddComponent<Image>();
-            borderImage.color = new Color(0.4f, 0.4f, 0.5f, 1f);
-            Sprite borderSprite = CreateRoundedBorderSprite(120, 80);
-            borderImage.sprite = borderSprite;
-            borderImage.type = Image.Type.Sliced;
-            borderRect.SetAsFirstSibling();
-            
-            // Attack button
-            GameObject attackBtnObj = CreateMarkerButton("AttackButton", "ATTACK", new Color(0.8f, 0.2f, 0.2f, 1f));
-            attackBtnObj.transform.SetParent(menuObj.transform, false);
-            RectTransform attackRect = attackBtnObj.GetComponent<RectTransform>();
-            attackRect.anchorMin = new Vector2(0.5f, 0.5f);
-            attackRect.anchorMax = new Vector2(0.5f, 0.5f);
-            attackRect.pivot = new Vector2(0.5f, 0.5f);
-            attackRect.anchoredPosition = new Vector2(0, 15);
-            attackRect.sizeDelta = new Vector2(100, 30);
-            
-            // Defend button
-            GameObject defendBtnObj = CreateMarkerButton("DefendButton", "DEFEND", new Color(0.2f, 0.8f, 0.2f, 1f));
-            defendBtnObj.transform.SetParent(menuObj.transform, false);
-            RectTransform defendRect = defendBtnObj.GetComponent<RectTransform>();
-            defendRect.anchorMin = new Vector2(0.5f, 0.5f);
-            defendRect.anchorMax = new Vector2(0.5f, 0.5f);
-            defendRect.pivot = new Vector2(0.5f, 0.5f);
-            defendRect.anchoredPosition = new Vector2(0, -15);
-            defendRect.sizeDelta = new Vector2(100, 30);
-            
-            // Add MarkerPlacementMenu component
-            markerMenu = menuObj.AddComponent<MarkerPlacementMenu>();
-            
-            // Set references directly
-            markerMenu.attackButton = attackBtnObj.GetComponent<Button>();
-            markerMenu.defendButton = defendBtnObj.GetComponent<Button>();
-            markerMenu.menuRect = menuRect;
-            markerMenu.backgroundImage = bgImage;
-        }
-        
-        private GameObject CreateMarkerButton(string name, string label, Color color)
-        {
-            GameObject btnObj = new GameObject(name);
-            
-            Image btnImage = btnObj.AddComponent<Image>();
-            btnImage.color = color;
-            Sprite btnSprite = CreateRoundedRectSprite(100, 30);
-            btnImage.sprite = btnSprite;
-            btnImage.type = Image.Type.Simple; // Changed from Sliced to Simple for better rendering
-            
-            Button button = btnObj.AddComponent<Button>();
-            var colors = button.colors;
-            colors.normalColor = color;
-            colors.highlightedColor = new Color(Mathf.Min(color.r * 1.2f, 1f), Mathf.Min(color.g * 1.2f, 1f), Mathf.Min(color.b * 1.2f, 1f), 1f);
-            colors.pressedColor = new Color(color.r * 0.8f, color.g * 0.8f, color.b * 0.8f, 1f);
-            button.colors = colors;
-            
-            // Label text
-            GameObject textObj = new GameObject("Label");
-            textObj.transform.SetParent(btnObj.transform, false);
-            TextMeshProUGUI text = textObj.AddComponent<TextMeshProUGUI>();
-            text.text = label;
-            text.fontSize = 14;
-            text.alignment = TextAlignmentOptions.Center;
-            text.color = Color.white;
-            text.raycastTarget = false; // Don't block clicks on text
-            RectTransform textRect = textObj.GetComponent<RectTransform>();
-            textRect.anchorMin = Vector2.zero;
-            textRect.anchorMax = Vector2.one;
-            textRect.offsetMin = Vector2.zero;
-            textRect.offsetMax = Vector2.zero;
-            
-            return btnObj;
-        }
-        
-        private Sprite CreateRoundedRectSprite(int width, int height)
-        {
-            Texture2D texture = new Texture2D(width, height, TextureFormat.RGBA32, false);
-            texture.filterMode = FilterMode.Bilinear;
-            
-            Color[] pixels = new Color[width * height];
-            float cornerRadius = Mathf.Min(width, height) * 0.2f;
-            
-            for (int y = 0; y < height; y++)
-            {
-                for (int x = 0; x < width; x++)
-                {
-                    bool isInside = true;
-                    
-                    // Check corners
-                    float distFromCorner = 0f;
-                    
-                    // Top-left corner
-                    if (x < cornerRadius && y > height - cornerRadius)
-                    {
-                        distFromCorner = Mathf.Sqrt((x - cornerRadius) * (x - cornerRadius) + 
-                                                   (y - (height - cornerRadius)) * (y - (height - cornerRadius)));
-                        if (distFromCorner > cornerRadius) isInside = false;
-                    }
-                    // Top-right corner
-                    else if (x > width - cornerRadius && y > height - cornerRadius)
-                    {
-                        distFromCorner = Mathf.Sqrt((x - (width - cornerRadius)) * (x - (width - cornerRadius)) + 
-                                                   (y - (height - cornerRadius)) * (y - (height - cornerRadius)));
-                        if (distFromCorner > cornerRadius) isInside = false;
-                    }
-                    // Bottom-left corner
-                    else if (x < cornerRadius && y < cornerRadius)
-                    {
-                        distFromCorner = Mathf.Sqrt((x - cornerRadius) * (x - cornerRadius) + 
-                                                   (y - cornerRadius) * (y - cornerRadius));
-                        if (distFromCorner > cornerRadius) isInside = false;
-                    }
-                    // Bottom-right corner
-                    else if (x > width - cornerRadius && y < cornerRadius)
-                    {
-                        distFromCorner = Mathf.Sqrt((x - (width - cornerRadius)) * (x - (width - cornerRadius)) + 
-                                                   (y - cornerRadius) * (y - cornerRadius));
-                        if (distFromCorner > cornerRadius) isInside = false;
-                    }
-                    
-                    pixels[y * width + x] = isInside ? Color.white : Color.clear;
-                }
-            }
-            
-            texture.SetPixels(pixels);
-            texture.Apply();
-            
-            Sprite sprite = Sprite.Create(texture, new Rect(0, 0, width, height), new Vector2(0.5f, 0.5f), 100f);
-            sprite.name = "RoundedRect";
-            return sprite;
-        }
-        
-        private Sprite CreateRoundedBorderSprite(int width, int height)
-        {
-            Texture2D texture = new Texture2D(width, height, TextureFormat.RGBA32, false);
-            texture.filterMode = FilterMode.Bilinear;
-            
-            Color[] pixels = new Color[width * height];
-            float cornerRadius = Mathf.Min(width, height) * 0.2f;
-            float borderWidth = 2f;
-            
-            for (int y = 0; y < height; y++)
-            {
-                for (int x = 0; x < width; x++)
-                {
-                    bool isInside = false;
-                    
-                    // Create border by checking distance from edges
-                    float minDist = Mathf.Min(x, width - x, y, height - y);
-                    
-                    // Handle rounded corners
-                    float distFromCorner = float.MaxValue;
-                    
-                    // Top-left
-                    if (x < cornerRadius && y > height - cornerRadius)
-                        distFromCorner = Mathf.Sqrt((x - cornerRadius) * (x - cornerRadius) + (y - (height - cornerRadius)) * (y - (height - cornerRadius)));
-                    // Top-right
-                    else if (x > width - cornerRadius && y > height - cornerRadius)
-                        distFromCorner = Mathf.Sqrt((x - (width - cornerRadius)) * (x - (width - cornerRadius)) + (y - (height - cornerRadius)) * (y - (height - cornerRadius)));
-                    // Bottom-left
-                    else if (x < cornerRadius && y < cornerRadius)
-                        distFromCorner = Mathf.Sqrt((x - cornerRadius) * (x - cornerRadius) + (y - cornerRadius) * (y - cornerRadius));
-                    // Bottom-right
-                    else if (x > width - cornerRadius && y < cornerRadius)
-                        distFromCorner = Mathf.Sqrt((x - (width - cornerRadius)) * (x - (width - cornerRadius)) + (y - cornerRadius) * (y - cornerRadius));
-                    
-                    if (distFromCorner < float.MaxValue)
-                    {
-                        minDist = Mathf.Min(minDist, distFromCorner);
-                    }
-                    
-                    isInside = minDist < borderWidth;
-                    
-                    pixels[y * width + x] = isInside ? Color.white : Color.clear;
-                }
-            }
-            
-            texture.SetPixels(pixels);
-            texture.Apply();
-            
-            Sprite sprite = Sprite.Create(texture, new Rect(0, 0, width, height), new Vector2(0.5f, 0.5f), 100f);
-            sprite.name = "RoundedBorder";
-            return sprite;
-        }
         
         private void StoreOriginalMinimapState()
         {
@@ -1734,7 +1511,7 @@ namespace TitanOrbit.UI
                     }
                 }
                 
-                // Keep raycastTarget enabled so clicks are detected for marker placement
+                // Keep raycastTarget enabled so death-picker / comms Here pings still hit this disc.
                 Image minimapBg = GetComponent<Image>();
                 if (minimapBg != null)
                 {
@@ -1794,9 +1571,6 @@ namespace TitanOrbit.UI
                         Transform sibling = parent.GetChild(i);
                         if (sibling == t)
                             continue;
-                        // Marker popup is a canvas sibling so clicks on the expanded map can still place pins.
-                        if (sibling.GetComponent<MarkerPlacementMenu>() != null)
-                            continue;
                         PushCanvasGroupHide(sibling.gameObject);
                     }
 
@@ -1835,8 +1609,6 @@ namespace TitanOrbit.UI
                 (canvas == minimapCanvas || canvas.transform.IsChildOf(minimapCanvas.transform)))
                 return true;
             if (canvas.transform.IsChildOf(transform) || canvas.GetComponentInParent<MinimapController>() != null)
-                return true;
-            if (canvas.GetComponentInParent<MarkerPlacementMenu>() != null)
                 return true;
             if (canvas.GetComponentInParent<InGameEscapeMenuController>() != null)
                 return true;
@@ -2304,18 +2076,21 @@ namespace TitanOrbit.UI
             // Run every frame so blip motion stays smooth; heavy work inside UpdateBlips is throttled separately.
             UpdateBlips();
             
-            // Handle minimap clicks for markers
+            // Death-planet pick + comms Here ping only — Attack/Defend lives in Comms Matrix.
             HandleMinimapClicks();
         }
         
+        /// <summary>
+        /// Click routing for the collapsed and expanded map. Attack / Defend pins used to
+        /// pop a two-button menu here; <see cref="ShipCommsPanel"/> Comms Matrix owns those
+        /// orders now. This method only handles death-planet pick and comms Here pings.
+        /// </summary>
         private void HandleMinimapClicks()
         {
-            // Marker menu is unused in the ECS build — death planet pick must still run.
-            if (markerMenu == null && !_respawnSelectLocked && !_commsDocked)
-            {
-                Debug.LogWarning("HandleMinimapClicks: markerMenu is null!");
+            // --- Click routing ---
+            // [TITAN-ORBIT] Normal radar clicks do nothing. Comms Matrix replaced Attack/Defend.
+            if (!_respawnSelectLocked && !_commsDocked)
                 return;
-            }
             
             // Check for clicks/touches using new Input System
             bool clicked = false;
@@ -2435,18 +2210,18 @@ namespace TitanOrbit.UI
                     {
                         Debug.Log("Click is within minimap bounds!");
                         
-                        // Check if we're clicking on the button (don't show menu)
+                        // Expand / collapse is its own Button — skip so we do not steal that click.
                         if (expandButton != null)
                         {
                             RectTransform buttonRect = expandButton.GetComponent<RectTransform>();
                             if (RectTransformUtility.RectangleContainsScreenPoint(buttonRect, clickPos, uiCamera))
                             {
                                 Debug.Log("Click is on expand button, ignoring");
-                                return; // Don't show menu if clicking button
+                                return;
                             }
                         }
 
-                        // Death picker: click a friendly planet instead of the unused marker menu.
+                        // Death picker: click a friendly planet to request respawn there.
                         if (_respawnSelectLocked)
                         {
                             TryHandleRespawnPlanetClick(clickPos);
@@ -2454,54 +2229,30 @@ namespace TitanOrbit.UI
                         }
 
                         // Comms dock: click plants a world ping for the next send.
+                        // A planet disc locks that world's name onto the Here chip.
                         if (_commsDocked)
                         {
+                            if (TryFindPlanetBlipAtScreen(clickPos, out MinimapBlipAnchor planet)
+                                && planet != null
+                                && planet.PlanetId > 0)
+                            {
+                                Vector3 planetWorld = planet.transform.position;
+                                planetWorld.y = 0f;
+                                ShipCommsClientState.SetPendingWaypoint(
+                                    planetWorld,
+                                    planet.PlanetId,
+                                    planet.IsHomePlanet,
+                                    planet.ShipFamilyConfigIndex);
+                                UpdateCommsPingMarker(PlayerPosition);
+                                return;
+                            }
+
                             if (TryMinimapLocalToWorld(centerRelativePoint, out Vector3 world))
                             {
                                 ShipCommsClientState.SetPendingWaypoint(world);
                                 UpdateCommsPingMarker(PlayerPosition);
                             }
-                            return;
                         }
-                        
-                        // Don't show menu if clicking on the menu itself
-                        if (markerMenu != null && markerMenu.gameObject.activeSelf && markerMenu.menuRect != null)
-                        {
-                            bool clickedOnMenu = false;
-                            if (canvas.renderMode == RenderMode.ScreenSpaceOverlay)
-                            {
-                                // For overlay, check world corners
-                                Vector3[] menuCorners = new Vector3[4];
-                                markerMenu.menuRect.GetWorldCorners(menuCorners);
-                                if (clickPos.x >= menuCorners[0].x && clickPos.x <= menuCorners[2].x &&
-                                    clickPos.y >= menuCorners[0].y && clickPos.y <= menuCorners[2].y)
-                                {
-                                    clickedOnMenu = true;
-                                }
-                            }
-                            else
-                            {
-                                clickedOnMenu = RectTransformUtility.RectangleContainsScreenPoint(markerMenu.menuRect, clickPos, uiCamera);
-                            }
-                            
-                            if (clickedOnMenu)
-                            {
-                                Debug.Log("Click is on menu itself, ignoring");
-                                return; // Menu will handle its own clicks
-                            }
-                        }
-                        
-                        // Store the click position for marker placement
-                        Vector2 storedClickPos = clickPos;
-                        Vector2 storedLocalPoint = centerRelativePoint; // Use center-relative point for marker placement
-                        
-                        // Show marker placement menu at click position
-                        Debug.Log($"Showing marker menu at screen pos: {storedClickPos}, center-relative point: {storedLocalPoint}");
-                        markerMenu.Show(storedClickPos, (markerType) => {
-                            Debug.Log($"Marker menu callback invoked with type: {markerType}");
-                            // Use stored center-relative point for accurate marker placement
-                            PlaceMarker(storedLocalPoint, markerType);
-                        });
                     }
                     else
                     {
@@ -2510,15 +2261,9 @@ namespace TitanOrbit.UI
                 }
                 else
                 {
-                    Debug.LogError($"Completely failed to convert screen point! Cannot show menu.");
+                    Debug.LogError("Completely failed to convert screen point.");
                 }
             }
-        }
-        
-        private void PlaceMarker(Vector2 minimapLocalPos, MinimapMarkerKind markerType)
-        {
-            // Attack/defend markers are not wired to NetCode for Entities yet.
-            Debug.Log($"Minimap marker placement ({markerType}) is not available in the ECS build yet.");
         }
 
         /// <summary>
@@ -2554,6 +2299,48 @@ namespace TitanOrbit.UI
             ConsiderPlanetList(cachedPlanets, clickPos, team, ref best, ref planetId);
             ConsiderPlanetList(cachedHomePlanets, clickPos, team, ref best, ref planetId);
             return planetId > 0;
+        }
+
+        /// <summary>
+        /// Closest planet or home disc under the comms-map click. Any team — Here
+        /// names the world, not only a friendly capital.
+        /// </summary>
+        bool TryFindPlanetBlipAtScreen(Vector2 clickPos, out MinimapBlipAnchor planet)
+        {
+            planet = null;
+            float best = float.MaxValue;
+            ConsiderAnyPlanetList(cachedPlanets, clickPos, ref best, ref planet);
+            ConsiderAnyPlanetList(cachedHomePlanets, clickPos, ref best, ref planet);
+            return planet != null && planet.PlanetId > 0;
+        }
+
+        /// <summary>Walks one cached planet list and keeps the nearest disc under the click.</summary>
+        void ConsiderAnyPlanetList(
+            MinimapBlipAnchor[] list,
+            Vector2 clickPos,
+            ref float best,
+            ref MinimapBlipAnchor planet)
+        {
+            if (list == null)
+                return;
+
+            for (int i = 0; i < list.Length; i++)
+            {
+                MinimapBlipAnchor p = list[i];
+                if (p == null || p.PlanetId <= 0)
+                    continue;
+                if (!blips.TryGetValue(p.transform, out RectTransform rt) || rt == null || !rt.gameObject.activeInHierarchy)
+                    continue;
+
+                Vector2 blipScreen = rt.position;
+                float dist = Vector2.Distance(clickPos, blipScreen);
+                float hitR = Mathf.Max(MinimapPlanetHoverTip.MinHitSize, rt.sizeDelta.x * 0.55f + 10f);
+                if (dist > hitR || dist >= best)
+                    continue;
+
+                best = dist;
+                planet = p;
+            }
         }
 
         /// <summary>Walks one cached planet list and keeps the nearest friendly hit.</summary>
@@ -2672,7 +2459,6 @@ namespace TitanOrbit.UI
                 blips.Remove(t);
                 blipImages.Remove(t);
                 blipTypes.Remove(t);
-                bullseyePulseTime.Remove(t); // Clean up pulse time tracking
                 planetBlipLayoutState.Remove(t);
                 _shipRoleDotRoots.Remove(t);
                 _shipRoleDotMask.Remove(t);
@@ -2699,21 +2485,6 @@ namespace TitanOrbit.UI
                 edgeMarkers.Remove(t);
                 edgeMarkerImages.Remove(t);
                 edgeMarkerIsHomePlanet.Remove(t);
-            }
-            
-            markerEdgeMarkersToRemoveList.Clear();
-            foreach (var kv in markerEdgeMarkers)
-            {
-                if (kv.Key == null || !kv.Key.gameObject.activeInHierarchy)
-                {
-                    markerEdgeMarkersToRemoveList.Add(kv.Key);
-                }
-            }
-            foreach (var t in markerEdgeMarkersToRemoveList)
-            {
-                if (markerEdgeMarkers.TryGetValue(t, out var rt) && rt != null) Destroy(rt.gameObject);
-                markerEdgeMarkers.Remove(t);
-                markerEdgeMarkerImages.Remove(t);
             }
 
             // --- Top-of-team leaders (O(ships)) before drawing role dots ---
@@ -3503,7 +3274,7 @@ namespace TitanOrbit.UI
             tmp.raycastTarget = false;
             ApplyPlanetPopulationTextLayout(tmp, size);
 
-            // Invisible pad so the player can hover the disc and read the planet family name.
+            // Invisible pad so the player can hover the disc and read the planet world name.
             MinimapPlanetHoverTip.AttachToPlanetBlip(rt, p, size);
 
             return rt;
@@ -4347,86 +4118,23 @@ namespace TitanOrbit.UI
                 }
             }
         }
-        
-        private void UpdateMarkerEdgeMarker(Transform markerTransform, float dx, float dz, float distance, Color markerColor, MinimapMarkerKind markerType)
+
+        /// <summary>
+        /// Builds a white ring-and-dot stamp for the comms Here ping on the docked map.
+        /// Tint comes from <see cref="Image.color"/> on the ping Image.
+        /// </summary>
+        /// <param name="textureSize">Square pixel size of the generated sprite.</param>
+        /// <returns>New Sprite (caller owns it; created once per ping Image).</returns>
+        private Sprite CreateBullseyeSprite(int textureSize)
         {
-            if (edgeMarkerContainer == null) return;
-            
-            float currentRadius = minimapRadius;
-            
-            // Calculate angle and position on edge
-            float angle = Mathf.Atan2(dz, dx);
-            float radius = displaySize / 2f;
-            
-            // Position on the edge of the circular minimap
-            float edgeX = Mathf.Cos(angle) * radius;
-            float edgeZ = Mathf.Sin(angle) * radius;
-            
-            // Calculate marker size based on distance (closer = bigger, farther = smaller)
-            // Distance ranges from currentRadius to maxPlanetDistance
-            float normalizedDistance = Mathf.Clamp01((distance - currentRadius) / (maxPlanetDistance - currentRadius));
-            float markerSize = Mathf.Lerp(edgeMarkerMaxSize, edgeMarkerMinSize, normalizedDistance);
-            
-            // Create or update edge marker
-            if (!markerEdgeMarkers.ContainsKey(markerTransform))
-            {
-                CreateMarkerEdgeMarker(markerTransform, edgeX, edgeZ, angle, markerColor, markerType, markerSize);
-            }
-            else
-            {
-                RectTransform markerRect = markerEdgeMarkers[markerTransform];
-                if (markerRect != null)
-                {
-                    markerRect.gameObject.SetActive(true);
-                    markerRect.anchoredPosition = new Vector2(edgeX, edgeZ);
-                    markerRect.localEulerAngles = new Vector3(0, 0, angle * Mathf.Rad2Deg);
-                    markerRect.sizeDelta = new Vector2(markerSize, markerSize);
-                    
-                    // Update color
-                    if (markerEdgeMarkerImages.TryGetValue(markerTransform, out var img) && img != null)
-                    {
-                        img.color = markerColor;
-                    }
-                }
-            }
-        }
-        
-        private void CreateMarkerEdgeMarker(Transform markerTransform, float x, float z, float angle, Color color, MinimapMarkerKind markerType, float size)
-        {
-            GameObject markerObj = new GameObject(markerType == MinimapMarkerKind.Defend ? "DefendMarkerEdge" : "AttackMarkerEdge");
-            markerObj.transform.SetParent(edgeMarkerContainer, false);
-            
-            Image img = markerObj.AddComponent<Image>();
-            img.color = color;
-            img.raycastTarget = false; // Don't block clicks
-            
-            // Create bullseye sprite for attack/defend markers
-            Sprite markerSprite = CreateBullseyeSprite(markerType == MinimapMarkerKind.Defend, (int)edgeMarkerSize);
-            img.sprite = markerSprite;
-            
-            RectTransform rt = markerObj.GetComponent<RectTransform>();
-            rt.sizeDelta = new Vector2(size, size);
-            rt.anchorMin = new Vector2(0.5f, 0.5f);
-            rt.anchorMax = new Vector2(0.5f, 0.5f);
-            rt.pivot = new Vector2(0.5f, 0.5f);
-            rt.anchoredPosition = new Vector2(x, z);
-            rt.localEulerAngles = new Vector3(0, 0, angle * Mathf.Rad2Deg);
-            
-            markerEdgeMarkers[markerTransform] = rt;
-            markerEdgeMarkerImages[markerTransform] = img;
-        }
-        
-        private Sprite CreateBullseyeSprite(bool isDefend, int textureSize)
-        {
+            // --- Stamp a concentric target ---
             Texture2D texture = new Texture2D(textureSize, textureSize, TextureFormat.RGBA32, false);
             texture.filterMode = FilterMode.Bilinear;
-            
+
             Color[] pixels = new Color[textureSize * textureSize];
             float centerX = textureSize / 2f;
             float centerY = textureSize / 2f;
-            
-            // Use same bullseye/target shape for both attack and defend
-            // Color will differentiate them (red for attack, green for defend)
+
             for (int y = 0; y < textureSize; y++)
             {
                 for (int x = 0; x < textureSize; x++)
@@ -4434,30 +4142,30 @@ namespace TitanOrbit.UI
                     float dx = x - centerX;
                     float dy = y - centerY;
                     float dist = Mathf.Sqrt(dx * dx + dy * dy);
-                    
+
                     bool isInside = false;
-                    
-                    // Bullseye/target shape - concentric circles
+
+                    // Outer ring, gap, then filled inner disc.
                     float outerRadius = textureSize * 0.45f;
                     float middleRadius = textureSize * 0.3f;
                     float innerRadius = textureSize * 0.15f;
-                    
+
                     if (dist <= outerRadius && dist > middleRadius)
-                        isInside = true; // Outer ring
+                        isInside = true;
                     else if (dist <= middleRadius && dist > innerRadius)
-                        isInside = false; // Gap
+                        isInside = false;
                     else if (dist <= innerRadius)
-                        isInside = true; // Inner circle
-                    
+                        isInside = true;
+
                     pixels[y * textureSize + x] = isInside ? Color.white : Color.clear;
                 }
             }
-            
+
             texture.SetPixels(pixels);
             texture.Apply();
-            
+
             Sprite sprite = Sprite.Create(texture, new Rect(0, 0, textureSize, textureSize), new Vector2(0.5f, 0.5f), 100f);
-            sprite.name = isDefend ? "DefendBullseye" : "AttackBullseye";
+            sprite.name = "CommsPingBullseye";
             return sprite;
         }
         
@@ -4472,7 +4180,7 @@ namespace TitanOrbit.UI
             
             Image img = markerObj.AddComponent<Image>();
             img.color = color;
-            // Hover tip needs raycasts; marker placement still uses Input System bounds, not this Image.
+            // Hover tip needs raycasts; death-picker / comms clicks use Input System bounds, not this Image.
             img.raycastTarget = true;
             
             // Create arrow/pointer sprite (use base size for sprite quality, but scale the rect transform)
@@ -4487,7 +4195,7 @@ namespace TitanOrbit.UI
             rt.anchoredPosition = new Vector2(x, z);
             rt.localEulerAngles = new Vector3(0, 0, angle * Mathf.Rad2Deg);
 
-            // Same family name as the on-map planet disc (off-screen arrows are still that planet).
+            // Same world name as the on-map planet disc (off-screen arrows are still that planet).
             var planetAnchor = planetTransform.GetComponent<MinimapBlipAnchor>();
             if (planetAnchor != null)
                 MinimapPlanetHoverTip.AttachToEdgeMarker(markerObj, planetAnchor);

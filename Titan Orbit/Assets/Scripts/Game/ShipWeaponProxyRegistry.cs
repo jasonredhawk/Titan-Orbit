@@ -125,8 +125,8 @@ namespace TitanOrbit.Game
 
         /// <summary>
         /// Closest hulls to <paramref name="aim"/> within <paramref name="maxRange"/>,
-        /// nearest first. Optional same-team / other-team filter. One-shot comms resolve.
-        /// Map size from <see cref="ToroidalMap"/>.
+        /// nearest first. Optional same-team / other-team / troop-carrier filter.
+        /// One-shot comms resolve. Map size from <see cref="ToroidalMap"/>.
         /// </summary>
         public static int CollectClosestHulls(
             Vector3 aim,
@@ -136,7 +136,8 @@ namespace TitanOrbit.Game
             bool teammatesOnly,
             bool enemiesOnly,
             int[] ids,
-            int max)
+            int max,
+            bool troopCarriersOnly = false)
         {
             if (ids == null || max <= 0)
                 return 0;
@@ -155,6 +156,8 @@ namespace TitanOrbit.Game
                 if (teammatesOnly && (speakerTeam == TeamId.None || team != speakerTeam))
                     continue;
                 if (enemiesOnly && (team == TeamId.None || team == speakerTeam))
+                    continue;
+                if (troopCarriersOnly && ReadPresentationPeople(kv.Value) <= 0)
                     continue;
 
                 float d = ToroidalMap.ToroidalDistance(aim, kv.Value.position);
@@ -223,6 +226,19 @@ namespace TitanOrbit.Game
 
             var plate = hull.GetComponent<ShipWorldNameplate>();
             return plate != null ? plate.PresentationTeam : TeamId.None;
+        }
+
+        /// <summary>
+        /// Troops aboard from the last nameplate paint, or 0 when unknown.
+        /// [HYBRID] Presentation cache — not an ECS <c>ShipState</c> gather.
+        /// </summary>
+        public static int ReadPresentationPeople(Transform hull)
+        {
+            if (hull == null)
+                return 0;
+
+            var plate = hull.GetComponent<ShipWorldNameplate>();
+            return plate != null ? plate.PresentationPeople : 0;
         }
 
         /// <summary>Returns the registered hull root for a ship network id, or false when unknown.</summary>

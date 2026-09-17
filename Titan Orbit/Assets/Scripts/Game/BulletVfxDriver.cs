@@ -399,7 +399,7 @@ namespace TitanOrbit.Game
                         continue;
                     }
 
-                    if (t.RemainingLifetime <= 0f || t.Traveled >= math.max(0.5f, t.MaxDistance))
+                    if (t.RemainingLifetime <= 0f || BulletFlight.IsRangeExpired(t.Traveled, t.MaxDistance))
                     {
                         DestroyTracerGo(t);
                         RemoveAtSwap(i);
@@ -605,7 +605,7 @@ namespace TitanOrbit.Game
                     ? ToroidalMapEcs.Wrap(nextPos)
                     : nextPos;
 
-                if (t.RemainingLifetime <= 0f || t.Traveled >= math.max(0.5f, t.MaxDistance))
+                if (t.RemainingLifetime <= 0f || BulletFlight.IsRangeExpired(t.Traveled, t.MaxDistance))
                 {
                     displayLogical = t.LogicalPos;
                     displayVel = t.Velocity;

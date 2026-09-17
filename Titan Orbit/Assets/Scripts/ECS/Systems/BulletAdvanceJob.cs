@@ -70,8 +70,7 @@ namespace TitanOrbit.ECS
                 StepTo[i] = end;
 
                 bool lifetimeExpired = b.Lifetime > 0f && (b.Age + Dt) >= b.Lifetime;
-                bool rangeExpired = remainingRange <= 1e-5f ||
-                                    (b.Traveled + stepDistance) >= b.MaxDistance - 1e-4f;
+                bool rangeExpired = BulletFlight.IsRangeExpired(b.Traveled + stepDistance, b.MaxDistance);
 
                 Hash.GatherAlongSegment(start, end, Nearby, Seen);
 

@@ -89,8 +89,10 @@ namespace TitanOrbit.Data
     /// Regular families (AstroEagle, …) do not own these numbers — MEGAs are static
     /// (<see cref="MegaShipPartStats"/> has no Extra Level fields) and are not bottom-bar upgradable.
     /// <para>
-    /// [UNITY] Loaded from <c>Resources/MegaShipCatalog</c>. Editor menu
-    /// <c>Titan Orbit / Titan Ships / Rebuild Catalog From Folders</c> fills the hull list.
+    /// [UNITY] Loaded from <c>Resources/MegaShipCatalog</c>. Inspector
+    /// <c>Refresh Hull Pool From Folders</c> (or menu
+    /// <c>Titan Orbit / Titan Ships / Refresh Hull Pool From Folders</c>) appends new
+    /// prefabs. <c>Rebuild Catalog From Folders</c> recreates the sorted, re-indexed list.
     /// </para>
     /// </summary>
     [CreateAssetMenu(fileName = "MegaShipCatalog", menuName = "Titan Orbit/Titan Ship Catalog")]

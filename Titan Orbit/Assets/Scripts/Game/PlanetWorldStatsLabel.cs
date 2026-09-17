@@ -10,9 +10,9 @@ using UnityEngine.Rendering;
 namespace TitanOrbit.Game
 {
     /// <summary>
-    /// World-space label floating above a planet body: ship family name (title), that family's
-    /// default bullet type in a smaller line, optional capture-contributor name, plus population.
-    /// Layout reads top-to-bottom as family title, bullet type, a small "Captured by" caption, the
+    /// World-space label floating above a planet body: proper world name (title), that planet's
+    /// family default bullet type in a smaller line, optional capture-contributor name, plus population.
+    /// Layout reads top-to-bottom as world name, bullet type, a small "Captured by" caption, the
     /// player who delivered the most troops during capture, then <b>current people</b>,
     /// then the population <b>capacity</b>
     /// (base size/level max, and when territory triangles apply, <c>base + bonus</c>).
@@ -59,22 +59,22 @@ namespace TitanOrbit.Game
         /// <summary>Smaller font for the capacity line under current (base, or base + bonus).</summary>
         const float MaxFontSize = CurrentFontSize * (21f / 33f);
 
-        /// <summary>Ship family title uses the same size as the capacity line.</summary>
+        /// <summary>World-name title uses the same size as the capacity line.</summary>
         const float TitleFontSize = MaxFontSize;
 
         /// <summary>Family gun type under the planet name — smaller subtitle, still readable in orbit.</summary>
         const float BulletTypeFontSize = TitleFontSize * 0.62f;
 
-        /// <summary>Player name on the capture credit — smaller than the family title.</summary>
+        /// <summary>Player name on the capture credit — smaller than the world-name title.</summary>
         const float ContributorNameFontSize = TitleFontSize * 0.55f;
 
         /// <summary>"Captured by" caption — smaller than the player name underneath.</summary>
         const float CapturedByFontSize = ContributorNameFontSize * 0.7f;
 
-        /// <summary>Local-space gap between family title and the population stack.</summary>
+        /// <summary>Local-space gap between world-name title and the population stack.</summary>
         const float TitleGapLocal = 2f;
 
-        /// <summary>Tight gap between the family name and the bullet-type subtitle.</summary>
+        /// <summary>Tight gap between the world name and the bullet-type subtitle.</summary>
         const float TitleToBulletTypeGapLocal = 0.28f;
 
         /// <summary>Local-space gap around the capture-contributor line.</summary>
@@ -95,7 +95,7 @@ namespace TitanOrbit.Game
         /// <summary>TMP face dilate paired with outline so glyphs stay solid.</summary>
         const float FaceDilate = 0.12f;
 
-        /// <summary>Bullet-type subtitle is a bit dimmer than the family name above it.</summary>
+        /// <summary>Bullet-type subtitle is a bit dimmer than the world name above it.</summary>
         const float BulletTypeAlpha = 0.72f;
 
         /// <summary>Capacity-line alpha vs full team color (current stays opaque).</summary>
@@ -489,10 +489,10 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Centers family name, smaller bullet-type subtitle, capture credit, and population
+        /// Centers world name, smaller bullet-type subtitle, capture credit, and population
         /// as one vertical block on the planet label.
         /// </summary>
-        /// <param name="showTitle">False when this planet has no ship family name.</param>
+        /// <param name="showTitle">False when this planet has no world name.</param>
         /// <param name="showBulletType">False when the family has no named gun bank.</param>
         /// <param name="showContributor">False when this planet has no capture contributor.</param>
         void LayoutLabelBlock(bool showTitle, bool showBulletType, bool showContributor)
@@ -527,7 +527,7 @@ namespace TitanOrbit.Game
             }
 
             // --- Stack heights ---
-            // Name block = family title + optional gun-type subtitle. Credit sits under that.
+            // Name block = world name + optional gun-type subtitle. Credit sits under that.
             bool hasNameBlock = showTitle || showBulletType;
             bool hasHeader = hasNameBlock || showContributor;
             float titleTypeGap = showTitle && showBulletType ? TitleToBulletTypeGapLocal : 0f;
@@ -640,7 +640,7 @@ namespace TitanOrbit.Game
             return color;
         }
 
-        /// <summary>Lazy-loads the ship-family ScriptableObject used for planet title names.</summary>
+        /// <summary>Lazy-loads the config that maps planet id → proper world name + gun type.</summary>
         static PlanetShipFamilyConfig ShipFamilyConfig
         {
             get
@@ -654,10 +654,10 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Resolves the display title for this planet's ship family (designer name or camel-split id).
+        /// Resolves the proper world name for this planet (not the ship family).
         /// Same helper the minimap hover tip uses so both surfaces stay in sync.
         /// </summary>
-        static string ResolveShipFamilyTitle(in PlanetState state)
+        static string ResolvePlanetTitle(in PlanetState state)
         {
             // --- Resolve value ---
             var config = ShipFamilyConfig;
@@ -770,7 +770,7 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Pulls planet state + triangle bonus, then writes family name, bullet type,
+        /// Pulls planet state + triangle bonus, then writes world name, bullet type,
         /// capture credit, and population when dirty.
         /// </summary>
         /// <returns>True when TMP / layout need ApplyLayout.</returns>
@@ -829,9 +829,9 @@ namespace TitanOrbit.Game
 
             bool hasContributor = !string.IsNullOrEmpty(contributorName);
 
-            // --- Dirty check BEFORE ResolveShipFamilyTitle ---
-            // [TITAN-ORBIT] Resolve used Trim()/SplitCamelCase every LateUpdate × N planets → ~15KB GC
-            // (Profiler frame 5199). Family title only depends on id/config/home — not live population.
+            // --- Dirty check BEFORE ResolvePlanetTitle ---
+            // [TITAN-ORBIT] Title only depends on planet id / home / optional family override —
+            // not live population. Skip the catalog lookup when nothing name-related changed.
             if (_hasCachedPaint &&
                 _cachedPopulation == state.Population &&
                 _cachedBaseMax == baseMax &&
@@ -845,9 +845,9 @@ namespace TitanOrbit.Game
                 return false;
             }
 
-            string familyTitle = ResolveShipFamilyTitle(state);
+            string planetTitle = ResolvePlanetTitle(state);
             string bulletType = ResolveShipFamilyBulletType(state);
-            bool hasTitle = !string.IsNullOrEmpty(familyTitle);
+            bool hasTitle = !string.IsNullOrEmpty(planetTitle);
             bool hasBulletType = hasTitle && !string.IsNullOrEmpty(bulletType);
 
             _hasCachedPaint = true;
@@ -858,17 +858,17 @@ namespace TitanOrbit.Game
             _cachedFamilyConfigIndex = state.ShipFamilyConfigIndex;
             _cachedIsHomePlanet = state.IsHomePlanet;
             _cachedContributorNetworkId = contributorId;
-            _cachedTitle = familyTitle;
+            _cachedTitle = planetTitle;
             _cachedBulletType = bulletType;
             _cachedContributorName = contributorName;
 
             Color teamColor = state.Ownership.ToColor();
 
             _titleText.gameObject.SetActive(hasTitle);
-            _titleText.text = hasTitle ? familyTitle : string.Empty;
+            _titleText.text = hasTitle ? planetTitle : string.Empty;
             _titleText.color = teamColor;
 
-            // Subtitle under the family name — same bank that family fires as its default gun.
+            // Subtitle under the world name — same bank that family fires as its default gun.
             _bulletTypeText.gameObject.SetActive(hasBulletType);
             _bulletTypeText.text = hasBulletType ? bulletType : string.Empty;
             _bulletTypeText.color = WithAlpha(teamColor, BulletTypeAlpha);

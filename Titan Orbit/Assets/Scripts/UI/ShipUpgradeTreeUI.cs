@@ -22,14 +22,14 @@ namespace TitanOrbit.UI
         public const string PanelDefaultSubtitle = "Green: your path. Cyan: available next hulls. Dim: other routes. Your ship is in the left panel.";
 
         private const float CanvasInnerMargin = 8f;
-        private const float MoonNodeHeight = 100f;
+        private const float MoonNodeHeight = 124f;
         private const float MoonMinNodeWidth = 74f;
         private const float MoonMegaScale = 1.5f;
         private const float MoonLevelColGap = 20f;
         private const float MoonBranchGapY = 10f;
         private const float LayoutWidthBucketPixels = 32f;
         private const float MoonChromeHeightHint = 28f;
-        private const float VerticalNodeHeight = 188f;
+        private const float VerticalNodeHeight = 216f;
         private const float VerticalLevelSpacing = VerticalNodeHeight + 44f;
         private const float VerticalColGap = 6f;
         private static readonly Color ConnectorDim = new Color(0.28f, 0.42f, 0.62f, 0.40f);
@@ -388,6 +388,13 @@ namespace TitanOrbit.UI
                         shipName = $"Branch {b + 1}";
                     node.SetShipName(shipName);
                     node.SetFamilyName(FamilyStatHudCopy.FormatFamilyDisplayName(family));
+                    // Editor preview: same FIREBALLS / LASER roster the moon dock paints.
+                    if (tier != null && !string.IsNullOrEmpty(tier.chassisId))
+                        node.ApplyWeaponLoadoutFromChassis(tier.chassisId);
+                    else if (tier != null)
+                        node.SetWeaponLoadout(ShipWeaponLoadout.CountFromPrefab(tier.prefab, family));
+                    else
+                        node.SetWeaponLoadout(default);
                     if (mega)
                         node.ApplyMegaShipCardStyle(false, false, false, false);
                     else
@@ -831,8 +838,8 @@ namespace TitanOrbit.UI
             nodeW = Mathf.Round(Mathf.Max(MoonMinNodeWidth, nodeW));
             canvasW = availableW;
 
-            // Halfway between the old compact cards (~prefab 100px) and a full-row stretch.
-            // Full-row height hid ship names under the silhouette.
+            // Compact floor is tall enough for name + family + weapon roster + buy chip
+            // above the power bar. Do not stretch to a full column — that hid ship names.
             float compactH = nodePrefab != null ? nodePrefab.LayoutHeight : MoonNodeHeight;
             compactH = Mathf.Max(MoonNodeHeight, compactH);
             int maxStack = 1;
@@ -842,7 +849,7 @@ namespace TitanOrbit.UI
             float maxCanvasH = Mathf.Max(160f, containerH - 4f);
             float targetStackH = Mathf.Max(72f, maxCanvasH - margin * 2f);
             float fillH = (targetStackH - (maxStack - 1) * gapY) / maxStack;
-            nodeH = Mathf.Max(72f, Mathf.Round(Mathf.Lerp(compactH, fillH, 0.5f) * 0.8f));
+            nodeH = Mathf.Max(MoonNodeHeight, Mathf.Round(Mathf.Lerp(compactH, fillH, 0.5f) * 0.88f));
 
             float maxColStackH = ComputeMaxColumnStackHeight(nodeH);
             canvasH = margin * 2f + maxColStackH;

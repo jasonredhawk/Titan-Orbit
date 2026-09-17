@@ -818,8 +818,10 @@ namespace TitanOrbit.ECS
         public byte K4;
 
         /// <summary>
-        /// 1 = teammates only, 0 = every client. The server re-reads the speaker's
-        /// <c>ShipState.Team</c> — this flag is a request, not a team id the client can spoof.
+        /// Audience request: 0 = All, 1 = Team, 2 = Commander. The server re-reads the
+        /// speaker's <c>ShipState.Team</c> and commander rank — this byte is a request,
+        /// not a team id or rank the client can spoof. Field name stayed <c>TeamOnly</c>
+        /// so older clients still deserialize the same RPC layout.
         /// </summary>
         public byte TeamOnly;
 
@@ -904,8 +906,9 @@ namespace TitanOrbit.ECS
         public byte K4;
 
         /// <summary>
-        /// 1 when the server scoped this callout to the speaker's team. Clients use it
-        /// for chip chrome (TEAM vs ALL), not for filtering — enemies never receive the RPC.
+        /// Audience the server accepted: 0 = All, 1 = Team, 2 = Commander. Clients use
+        /// it for chip chrome (white / team color / command gold), not for filtering —
+        /// enemies never receive the RPC.
         /// </summary>
         public byte TeamOnly;
 

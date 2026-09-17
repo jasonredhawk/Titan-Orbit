@@ -16,6 +16,7 @@ namespace TitanOrbit.Data
     /// <c>visualScale × explosionVfxScale × explosionGlobalScale</c> — applied
     /// directly, not through the bullet-bank 0.25 global multiplier.
     /// </para>
+    /// Fuse HP (<see cref="DefaultMaxHealth"/>) drains over lifetime; contact zeros it.
     /// Paired with <c>ShipMineDeploySystem</c> (server place) and <c>MineSimulationSystem</c> (detonate).
     /// </summary>
     [CreateAssetMenu(
@@ -38,6 +39,12 @@ namespace TitanOrbit.Data
 
         /// <summary>[TITAN-ORBIT] Seconds a mine sits in space before it self-destructs (5 minutes).</summary>
         public const float DefaultLifetimeSeconds = 300f;
+
+        /// <summary>
+        /// Display-scale fuse HP. Countdown drains this over <see cref="LevelStats.lifetime"/>;
+        /// contact zeros it. Not shootable — 100 is a smooth bar, not combat HP.
+        /// </summary>
+        public const int DefaultMaxHealth = 100;
 
         /// <summary>Short gap between E taps when a row leaves deployCooldown at 0.</summary>
         public const float DefaultDeployCooldownSeconds = 0.35f;
@@ -84,6 +91,9 @@ namespace TitanOrbit.Data
 
             [Tooltip("Seconds after a place before the next mine may drop.")]
             public float deployCooldown;
+
+            [Tooltip("Fuse HP stamped at deploy. 0 = 100. Countdown drains this over lifetime.")]
+            public int maxHealth;
         }
 
         [Tooltip("Per-level rows. Missing or short arrays fall back to baked defaults.")]
@@ -221,6 +231,7 @@ namespace TitanOrbit.Data
             if (row.blastForce <= 0.01f) row.blastForce = DefaultBlastForce;
             if (row.explosionVfxScale <= 0.01f) row.explosionVfxScale = DefaultExplosionVfxScale;
             if (row.deployCooldown <= 0.01f) row.deployCooldown = DefaultDeployCooldownSeconds;
+            if (row.maxHealth < 1) row.maxHealth = DefaultMaxHealth;
             // visualScale 0 = MineShotMath derives size from damage vs L1 (do not force 1).
             return row;
         }

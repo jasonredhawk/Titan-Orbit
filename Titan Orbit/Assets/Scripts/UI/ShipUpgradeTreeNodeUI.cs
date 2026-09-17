@@ -1,3 +1,4 @@
+using System;
 using TMPro;
 using TitanOrbit.Core;
 using TitanOrbit.Data;
@@ -8,26 +9,31 @@ namespace TitanOrbit.UI
 {
     /// <summary>
     /// Single ship node widget in the upgrade tree prefab. Displays level, hull name, family name,
-    /// price, preview sprite, and ten-segment power bar. Population and click handlers are driven by
+    /// weapon roster (gun / laser / missile / sniper counts), price, preview sprite, and
+    /// ten-segment power bar. Population and click handlers are driven by
     /// <see cref="ShipUpgradeTreeUI"/> and <see cref="OrbitStationUI"/>; this class owns layout
     /// scaling and price-button chrome.
-    /// The family line sits under the hull name and just above the buy chip
-    /// (CosmicShark → Cosmic Shark, smaller than the ship name).
+    /// The family line sits under the hull name; the weapon roster sits under the family
+    /// and just above the buy chip (CosmicShark → Cosmic Shark, smaller than the ship name).
     /// Level-7 Titan cards use a separate bronze-void fill, gold frame, and "TITAN SHIP" caption
     /// so they read as boss hulls next to the navy L1–L6 family cards.
+    /// <see cref="SetPreview"/> and <see cref="ApplyPowerBreakdown"/> skip redundant canvas
+    /// work when the screenshot / chassis did not change — landing used to hitch by
+    /// rewriting every card.
     /// </summary>
     public class ShipUpgradeTreeNodeUI : MonoBehaviour
     {
         /// <summary>Equal left/right inset used by tree cards and the power-bar track width.</summary>
         public const float TreeCardEdgePad = 6f;
 
-        /// <summary>Reference metrics from <see cref="Editor.CreateShipUpgradeTreePrefab"/> node template (120├ù100).</summary>
+        /// <summary>Reference metrics from <see cref="Editor.CreateShipUpgradeTreePrefab"/> node template (120×124).</summary>
         private static class RefLayout
         {
             /// <summary>Same inset on every side so the power bar and preview share one margin.</summary>
             public const float CardPad = TreeCardEdgePad;
             public const float RootSpacing = 4f;
-            public const float ContentMinHeight = 72f;
+            /// <summary>Room for name + family + a few weapon lines above the reserved buy chip.</summary>
+            public const float ContentMinHeight = 92f;
             public const float LeftSpacing = 2f;
             public const float LeftMinWidth = 40f;
             public const float LevelFontSize = 13f;
@@ -40,6 +46,9 @@ namespace TitanOrbit.UI
             public const float FamilyFontSize = 8f;
             public const float FamilyHeight = 12f;
             public const float FamilyMinHeight = 11f;
+            /// <summary>Weapon roster under the family — compact telemetry (FIREBALLS ×4).</summary>
+            public const float WeaponLoadoutFontSize = 7f;
+            public const float WeaponLoadoutLineHeight = 10f;
             /// <summary>TITAN SHIP overlay — 2pt above the ship name so it reads as the card rank.</summary>
             public const float MegaCaptionFontExtra = 2f;
             /// <summary>Tight tray inset — a few pixels so lanes sit inside the dark well.</summary>
@@ -62,7 +71,7 @@ namespace TitanOrbit.UI
         [Tooltip("Reference width for prefab authoring. Runtime nodes scale uniformly to fill the tree row.")]
         [SerializeField] private float layoutWidth = 120f;
         [Tooltip("Reference height; runtime height scales with width using this aspect ratio.")]
-        [SerializeField] private float layoutHeight = 100f;
+        [SerializeField] private float layoutHeight = 124f;
 
         [SerializeField] private Button button;
         [SerializeField] private Button priceButton;
@@ -76,6 +85,16 @@ namespace TitanOrbit.UI
         [SerializeField] private TextMeshProUGUI priceText;
         [SerializeField] private Image previewImage;
         [SerializeField] private ShipUpgradeTreePowerBarUI powerBar;
+        /// <summary>
+        /// Last sprite written to <see cref="previewImage"/>. Assigning the same
+        /// screenshot again dirties the UGUI canvas and can re-upload the texture.
+        /// </summary>
+        Sprite _appliedPreview;
+        /// <summary>
+        /// Chassis id last sent to the power bar. Same hull on a later refresh
+        /// still updates fill amounts, but skips a layout ForceRebuild.
+        /// </summary>
+        string _appliedPowerChassisId;
         [SerializeField] private bool moonHorizontalLayout;
 
         public int Level { get; private set; }
@@ -125,6 +144,11 @@ namespace TitanOrbit.UI
         private LayoutElement _levelLe;
         private LayoutElement _nameLe;
         private LayoutElement _familyLe;
+        /// <summary>Runtime weapon-roster line under the family (not on the older prefab).</summary>
+        private TextMeshProUGUI _weaponLoadoutText;
+        private LayoutElement _weaponLoadoutLe;
+        private ShipWeaponLoadoutCounts _lastWeaponLoadout;
+        private bool _hasWeaponLoadout;
         private LayoutElement _priceLe;
         private Image _priceButtonImage;
         private Image _priceButtonBorder;
@@ -305,8 +329,9 @@ namespace TitanOrbit.UI
                 shipNameText.margin = new Vector4(8f, 1f, 8f, 1f);
             }
 
-            // Hero card has no buy chip — hide the family line so it does not float on the art.
+            // Hero card has no buy chip — hide the family / loadout lines so they do not float on the art.
             HideFamilyNameLabel();
+            HideWeaponLoadoutLabel();
 
             if (_nameLe != null)
             {
@@ -559,9 +584,9 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// Tree card body: Level on top of the left column, name + buy chip centered
-        /// in the remaining left space. The caption overlay is not used — it stole
-        /// height from the silhouette.
+        /// Tree card body: Level, then LeftMiddle (name / family / weapons), then the
+        /// buy chip as a reserved LeftColumn footer so the roster cannot push it onto
+        /// the power bar. The caption overlay is not used — it stole height from the silhouette.
         /// </summary>
         void EnsureTreeCardBodyLayout()
         {
@@ -586,7 +611,7 @@ namespace TitanOrbit.UI
                 middle = go.transform;
                 _leftMiddleVlg = go.AddComponent<VerticalLayoutGroup>();
                 _leftMiddleVlg.spacing = 2f;
-                _leftMiddleVlg.childAlignment = TextAnchor.MiddleLeft;
+                _leftMiddleVlg.childAlignment = TextAnchor.UpperLeft;
                 _leftMiddleVlg.childControlWidth = true;
                 _leftMiddleVlg.childControlHeight = true;
                 _leftMiddleVlg.childForceExpandWidth = true;
@@ -604,27 +629,54 @@ namespace TitanOrbit.UI
                     _leftMiddleLe = middle.GetComponent<LayoutElement>();
             }
 
+            if (_leftMiddleVlg != null)
+                _leftMiddleVlg.childAlignment = TextAnchor.UpperLeft;
+            if (_leftMiddleLe != null)
+            {
+                _leftMiddleLe.flexibleHeight = 1f;
+                _leftMiddleLe.minHeight = 0f;
+            }
+
+            // Weapons that do not fit clip inside LeftMiddle instead of drawing over the chip.
+            var middleMask = middle.GetComponent<RectMask2D>();
+            if (middleMask == null)
+                middle.gameObject.AddComponent<RectMask2D>();
+
             if (shipNameText != null && shipNameText.transform.parent != middle)
                 shipNameText.transform.SetParent(middle, false);
 
-            // Family sits under the hull name and just above the buy chip.
+            // Family + roster stay in LeftMiddle. Buy chip is a LeftColumn sibling under that block.
             EnsureFamilyNameLabel();
             if (familyNameText != null && familyNameText.transform.parent != middle)
                 familyNameText.transform.SetParent(middle, false);
 
+            EnsureWeaponLoadoutLabel();
+            if (_weaponLoadoutText != null && _weaponLoadoutText.transform.parent != middle)
+                _weaponLoadoutText.transform.SetParent(middle, false);
+
             Transform priceRoot = ResolvePriceRootTransform();
-            if (priceRoot != null && priceRoot.parent != middle)
-                priceRoot.SetParent(middle, false);
+            if (priceRoot != null && priceRoot.parent != leftCol)
+                priceRoot.SetParent(leftCol, false);
 
             if (levelText != null)
                 levelText.transform.SetAsFirstSibling();
             if (shipNameText != null)
                 shipNameText.transform.SetAsFirstSibling();
+            int next = 0;
+            if (shipNameText != null)
+                next = 1;
             if (familyNameText != null)
-                familyNameText.transform.SetSiblingIndex(shipNameText != null ? 1 : 0);
+            {
+                familyNameText.transform.SetSiblingIndex(next);
+                next++;
+            }
+            if (_weaponLoadoutText != null)
+                _weaponLoadoutText.transform.SetSiblingIndex(next);
+
+            // LeftColumn: Level, LeftMiddle (flex), Price (fixed footer above the power bar).
+            middle.SetSiblingIndex(levelText != null ? 1 : 0);
             if (priceRoot != null)
                 priceRoot.SetAsLastSibling();
-            middle.SetAsLastSibling();
         }
 
         /// <summary>
@@ -695,6 +747,97 @@ namespace TitanOrbit.UI
             }
         }
 
+        /// <summary>
+        /// Builds or finds the weapon-roster TMP under LeftMiddle. Older ShipUpgradeTreeNode
+        /// prefabs have no child for this — runtime cards create one, same as FamilyName.
+        /// Sidebar hero hides it (that card is silhouette + hull name only).
+        /// </summary>
+        void EnsureWeaponLoadoutLabel()
+        {
+            if (_sidebarHeroLayout)
+            {
+                HideWeaponLoadoutLabel();
+                return;
+            }
+
+            Transform middle = transform.Find("ContentRow/LeftColumn/LeftMiddle");
+            if (middle == null)
+                return;
+
+            if (_weaponLoadoutText == null)
+            {
+                Transform existing = middle.Find("WeaponLoadout");
+                if (existing != null)
+                    _weaponLoadoutText = existing.GetComponent<TextMeshProUGUI>();
+            }
+
+            if (_weaponLoadoutText == null)
+            {
+                // [UNITY] Runtime widget — prefab assets cannot SetParent, but scene instances can.
+                var go = new GameObject("WeaponLoadout", typeof(RectTransform));
+                go.transform.SetParent(middle, false);
+                _weaponLoadoutText = go.AddComponent<TextMeshProUGUI>();
+                _weaponLoadoutText.raycastTarget = false;
+                _weaponLoadoutText.fontStyle = FontStyles.Bold;
+                _weaponLoadoutText.color = FamilyCaptionColor;
+                _weaponLoadoutText.alignment = TextAlignmentOptions.Left;
+                _weaponLoadoutText.enableWordWrapping = false;
+                _weaponLoadoutText.overflowMode = TextOverflowModes.Overflow;
+                _weaponLoadoutText.maxVisibleLines = 4;
+                if (shipNameText != null && shipNameText.font != null)
+                    _weaponLoadoutText.font = shipNameText.font;
+                else if (TMP_Settings.defaultFontAsset != null)
+                    _weaponLoadoutText.font = TMP_Settings.defaultFontAsset;
+            }
+
+            if (_weaponLoadoutLe == null)
+                _weaponLoadoutLe = _weaponLoadoutText.GetComponent<LayoutElement>();
+            if (_weaponLoadoutLe == null)
+                _weaponLoadoutLe = _weaponLoadoutText.gameObject.AddComponent<LayoutElement>();
+            _weaponLoadoutLe.flexibleHeight = 0f;
+            _weaponLoadoutLe.flexibleWidth = 1f;
+        }
+
+        /// <summary>Collapses the weapon roster so family / hero cards do not keep leftover FIREBALLS ×N text.</summary>
+        void HideWeaponLoadoutLabel()
+        {
+            _hasWeaponLoadout = false;
+            _lastWeaponLoadout = default;
+            if (_weaponLoadoutText != null)
+            {
+                _weaponLoadoutText.text = string.Empty;
+                _weaponLoadoutText.gameObject.SetActive(false);
+            }
+            if (_weaponLoadoutLe == null && _weaponLoadoutText != null)
+                _weaponLoadoutLe = _weaponLoadoutText.GetComponent<LayoutElement>();
+            if (_weaponLoadoutLe != null)
+            {
+                _weaponLoadoutLe.ignoreLayout = true;
+                _weaponLoadoutLe.preferredHeight = 0f;
+                _weaponLoadoutLe.minHeight = 0f;
+            }
+        }
+
+        /// <summary>
+        /// Uppercase telemetry color: gold on Titan cards, ice-blue on family cards,
+        /// slate when a unique MEGA is already claimed.
+        /// </summary>
+        void ApplyWeaponLoadoutTextSettings(bool occupied)
+        {
+            if (_weaponLoadoutText == null || _sidebarHeroLayout)
+                return;
+
+            _weaponLoadoutText.enableWordWrapping = false;
+            _weaponLoadoutText.overflowMode = TextOverflowModes.Overflow;
+            _weaponLoadoutText.maxVisibleLines = 4;
+            _weaponLoadoutText.alignment = TextAlignmentOptions.Left;
+            _weaponLoadoutText.fontStyle = FontStyles.Bold;
+            if (_megaCardChromeActive)
+                _weaponLoadoutText.color = occupied ? MegaFamilyOccupiedColor : MegaFamilyCaptionColor;
+            else
+                _weaponLoadoutText.color = FamilyCaptionColor;
+        }
+
         /// <summary>Puts Lv N / TITAN SHIP back in the left-column stack (not a card overlay).</summary>
         void RestoreInFlowLevelLabel()
         {
@@ -743,6 +886,8 @@ namespace TitanOrbit.UI
                 _nameLe = shipNameText.GetComponent<LayoutElement>();
             if (familyNameText != null)
                 _familyLe = familyNameText.GetComponent<LayoutElement>();
+            if (_weaponLoadoutText != null)
+                _weaponLoadoutLe = _weaponLoadoutText.GetComponent<LayoutElement>();
             EnsurePriceButton();
             if (priceButton != null)
                 _priceLe = priceButton.GetComponent<LayoutElement>();
@@ -846,7 +991,7 @@ namespace TitanOrbit.UI
             else
                 EnsureTreeCardBodyLayout();
 
-            // Uniform scale from the 120×100 prefab reference. Tree nodes use this fully;
+            // Uniform scale from the 120×124 prefab reference. Tree nodes use this fully;
             // sidebar hero clamps text/chrome so the stats bar still fits.
             float wScale = width / layoutWidth;
             float hScale = height / layoutHeight;
@@ -954,7 +1099,7 @@ namespace TitanOrbit.UI
                 _leftMiddleLe.minHeight = 0f;
             }
             if (_leftMiddleVlg != null && !_sidebarHeroLayout)
-                _leftMiddleVlg.childAlignment = TextAnchor.MiddleLeft;
+                _leftMiddleVlg.childAlignment = TextAnchor.UpperLeft;
 
             if (_sidebarHeroLayout)
             {
@@ -998,9 +1143,40 @@ namespace TitanOrbit.UI
                 if (_familyLe != null)
                     _familyLe.minHeight = ScalePx(RefLayout.FamilyMinHeight, heroHScale);
 
+                EnsureWeaponLoadoutLabel();
+                int loadoutLines = _hasWeaponLoadout
+                    ? Mathf.Max(1, _lastWeaponLoadout.VisibleLineCount)
+                    : 0;
+                float loadoutH = loadoutLines * RefLayout.WeaponLoadoutLineHeight;
+                ApplyTextScale(
+                    _weaponLoadoutText,
+                    _weaponLoadoutLe,
+                    RefLayout.WeaponLoadoutFontSize,
+                    loadoutH > 0.5f ? loadoutH : RefLayout.WeaponLoadoutLineHeight,
+                    heroFontScale,
+                    heroHScale);
+                if (_weaponLoadoutLe != null && _hasWeaponLoadout)
+                {
+                    float h = ScalePx(loadoutH, heroHScale);
+                    _weaponLoadoutLe.preferredHeight = h;
+                    _weaponLoadoutLe.minHeight = h;
+                    _weaponLoadoutLe.ignoreLayout = false;
+                }
+                else if (_weaponLoadoutLe != null)
+                {
+                    _weaponLoadoutLe.ignoreLayout = true;
+                    _weaponLoadoutLe.preferredHeight = 0f;
+                    _weaponLoadoutLe.minHeight = 0f;
+                }
+
                 ApplyTextScale(priceText, _priceLe, RefLayout.PriceFontSize, RefLayout.PriceHeight, heroFontScale, heroHScale);
                 if (_priceLe != null)
+                {
                     _priceLe.minWidth = ScalePx(RefLayout.PriceMinWidth, wScale);
+                    _priceLe.flexibleHeight = 0f;
+                    _priceLe.ignoreLayout = false;
+                    _priceLe.layoutPriority = 10;
+                }
 
                 if (_megaCaptionLabel != null)
                     _megaCaptionLabel.gameObject.SetActive(false);
@@ -1195,7 +1371,9 @@ namespace TitanOrbit.UI
             in ShipPowerBarStatMaxes globalMaxes,
             string chassisId = null)
         {
-            // --- Apply changes ---
+            // --- Apply fill amounts ---
+            // Called from Orbit Menu tree paint. Landing used to ForceRebuild every
+            // card even when the hull screenshot had not changed — that is a hitch.
             if (powerBar == null)
                 return;
 
@@ -1214,7 +1392,13 @@ namespace TitanOrbit.UI
                 _powerBarLe.preferredWidth = -1f;
                 _powerBarLe.flexibleWidth = 1f;
             }
-            if (_powerBarTrack != null)
+
+            // [UNITY] ForceRebuildLayoutImmediate walks the whole card. Skip when this
+            // node is still the same chassis — fill amounts already updated above.
+            bool sameChassis = !string.IsNullOrEmpty(chassisId)
+                && string.Equals(chassisId, _appliedPowerChassisId, StringComparison.Ordinal);
+            _appliedPowerChassisId = chassisId ?? string.Empty;
+            if (!sameChassis && _powerBarTrack != null)
                 LayoutRebuilder.ForceRebuildLayoutImmediate(_powerBarTrack);
         }
 
@@ -1431,9 +1615,9 @@ namespace TitanOrbit.UI
             if (priceRoot.TryGetComponent(out Image legacyRootImage))
             {
                 if (Application.isPlaying)
-                    Object.Destroy(legacyRootImage);
+                    UnityEngine.Object.Destroy(legacyRootImage);
                 else
-                    Object.DestroyImmediate(legacyRootImage);
+                    UnityEngine.Object.DestroyImmediate(legacyRootImage);
             }
 
             const string backgroundName = "Background";
@@ -1603,7 +1787,7 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// Writes the family line under the hull name and just above the buy chip.
+        /// Writes the family line under the hull name (weapon roster sits below it).
         /// CamelCase ids are split (ForceBadger → Force Badger). Empty text hides the row
         /// so leftover labels do not linger on unassigned slots. Sidebar hero ignores this.
         /// </summary>
@@ -1637,6 +1821,61 @@ namespace TitanOrbit.UI
 
             ApplyTreeFamilyTextSettings();
         }
+
+        /// <summary>
+        /// Writes the bullet-type / laser / missile / sniper roster under the family line.
+        /// Empty counts hide the row. Sidebar hero ignores this — that card is art only.
+        /// </summary>
+        /// <param name="counts">Counted barrels for this chassis. Default hides the row.</param>
+        public void SetWeaponLoadout(in ShipWeaponLoadoutCounts counts)
+        {
+            // --- Weapon roster ---
+            if (_sidebarHeroLayout || IsCurrentShipDisplay)
+            {
+                HideWeaponLoadoutLabel();
+                return;
+            }
+
+            if (!counts.HasAny)
+            {
+                HideWeaponLoadoutLabel();
+                return;
+            }
+
+            if (_hasWeaponLoadout && _lastWeaponLoadout.Equals(counts) && _weaponLoadoutText != null
+                && _weaponLoadoutText.gameObject.activeSelf)
+                return;
+
+            EnsureWeaponLoadoutLabel();
+            if (_weaponLoadoutText == null)
+                return;
+
+            _lastWeaponLoadout = counts;
+            _hasWeaponLoadout = true;
+            _weaponLoadoutText.text = ShipWeaponLoadout.FormatTelemetry(in counts);
+            _weaponLoadoutText.gameObject.SetActive(true);
+            if (_weaponLoadoutLe != null)
+            {
+                _weaponLoadoutLe.ignoreLayout = false;
+                float h = Mathf.Max(8f, counts.VisibleLineCount * RefLayout.WeaponLoadoutLineHeight);
+                _weaponLoadoutLe.preferredHeight = h;
+                _weaponLoadoutLe.minHeight = h;
+            }
+
+            ApplyWeaponLoadoutTextSettings(occupied: false);
+        }
+
+        /// <summary>
+        /// Looks up the chassis in the MEGA catalog or family prefab list and paints
+        /// <see cref="SetWeaponLoadout"/>. Call after <see cref="SetFamilyName"/> so
+        /// LeftMiddle already exists.
+        /// </summary>
+        /// <param name="chassisId">Tree-slot chassis id (<c>AstroEagle_03</c>, <c>MEGA_007</c>).</param>
+        public void ApplyWeaponLoadoutFromChassis(string chassisId)
+        {
+            SetWeaponLoadout(ShipWeaponLoadout.ForChassisId(chassisId));
+        }
+
         public void SetPrice(string text)
         {
             // --- SetPrice ---
@@ -1713,10 +1952,22 @@ namespace TitanOrbit.UI
                 priceText.color = PriceOwnedText;
         }
 
+        /// <summary>
+        /// Writes the hull screenshot onto this card. No-ops when the sprite is
+        /// already assigned so a later tree refresh does not dirty the canvas.
+        /// </summary>
+        /// <param name="sprite">Theatrical menu preview, or null for an empty dark plate.</param>
         public void SetPreview(Sprite sprite)
         {
-            // --- SetPreview ---
-            if (previewImage == null) return;
+            // --- Assign screenshot ---
+            // [UNITY] Image.sprite = x marks the Graphic dirty even when x is already
+            // there. Twenty-four dirty cards on land was the Orbit Menu hitch.
+            if (previewImage == null)
+                return;
+            if (_appliedPreview == sprite && previewImage.sprite == sprite)
+                return;
+
+            _appliedPreview = sprite;
             previewImage.sprite = sprite;
             previewImage.preserveAspect = sprite != null;
             previewImage.color = sprite != null ? Color.white : new Color(0.07f, 0.09f, 0.12f, 0.95f);
@@ -1820,6 +2071,7 @@ namespace TitanOrbit.UI
                 familyNameText.color = occupied ? MegaFamilyOccupiedColor : MegaFamilyCaptionColor;
             ApplyTreeTitleTextSettings();
             ApplyTreeFamilyTextSettings();
+            ApplyWeaponLoadoutTextSettings(occupied);
 
             if (priceButton != null)
                 SetPriceButtonStyle(priceButton.interactable);
@@ -1852,6 +2104,8 @@ namespace TitanOrbit.UI
                 familyNameText.color = _cachedFamilyColor;
             else if (familyNameText != null)
                 familyNameText.color = FamilyCaptionColor;
+
+            ApplyWeaponLoadoutTextSettings(occupied: false);
         }
 
         /// <summary>

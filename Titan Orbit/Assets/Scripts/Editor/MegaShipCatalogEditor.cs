@@ -95,6 +95,26 @@ namespace TitanOrbit.Editor
 
             EditorGUILayout.Space(8);
             EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+            EditorGUILayout.LabelField("Hull pool", EditorStyles.boldLabel);
+            EditorGUILayout.HelpBox(
+                "Refresh Hull Pool From Folders scans Prefabs/MEGA_Ships (CraizanStar, GalacticLeopard, " +
+                "GalacticOkamoto) and appends prefabs that are not already in Entries. " +
+                "Existing rows keep their catalogIndex (MEGA_###), display names, and menu previews. " +
+                "It then refreshes Unique Components and every hull's summed stats, keeping hand-edited " +
+                "component numbers. Use Titan Orbit → Titan Ships → Rebuild Catalog From Folders only when " +
+                "you want a full resorted, re-indexed list.",
+                MessageType.Info);
+
+            if (GUILayout.Button("Refresh Hull Pool From Folders", GUILayout.Height(28)))
+            {
+                MegaShipCatalogEditorMenu.RefreshHullPoolFromFolders();
+                serializedObject.Update();
+            }
+
+            EditorGUILayout.EndVertical();
+
+            EditorGUILayout.Space(8);
+            EditorGUILayout.BeginVertical(EditorStyles.helpBox);
             EditorGUILayout.LabelField("Unique component library", EditorStyles.boldLabel);
             EditorGUILayout.HelpBox(
                 "Unique Components is one row per part name (Armor1, TurretBarrel, …) shared by every MEGA. " +

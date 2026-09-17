@@ -14,10 +14,15 @@ namespace TitanOrbit.Game
     /// <para>
         /// Word order is the path direction: "Me Planet" is Me → planet; "Planet Me"
         /// the other way. Consecutive nouns each get a segment ("Me Asteroid Moon"
-        /// is Me → asteroid and asteroid → moon). A lone world noun implies Me.
-        /// Team-owned nouns default to the speaker's team unless Attack / Enemy /
-        /// a color word says otherwise. Verbs tint the following segment.
-        /// Group words (Us / Everyone) fan to the next node.
+        /// is Me → asteroid and asteroid → moon). A lone world noun implies Me,
+        /// unless the sentence named You / Us and nobody was locked — then the
+        /// source stays empty and only the world ring draws ("You Asteroid" is a
+        /// rock circle). Us is friendlies inside <see cref="YouSelectRange"/> of
+        /// the speaker hull. Escort is every teammate with troops aboard inside
+        /// that range of the mouse aim. Team-owned nouns default to the speaker's
+        /// team unless Attack / Enemy / a color word says otherwise. Verbs tint
+        /// the following segment.
+        /// Group words (Us / Escort / Everyone) fan to the next node.
     /// Lines grow from source to dest and repeat so travel direction is obvious.
     /// Endpoints are hollow rings sized to each target's collider.
         /// Top-3 team rank thickens the stroke only — no medal lining.
@@ -31,6 +36,11 @@ namespace TitanOrbit.Game
         /// <summary>Wire slots <c>Us0</c>–<c>Us3</c>. Identity is locked; pose is live.</summary>
         public const int MaxUsLocks = 4;
         public const int MaxEveryone = 8;
+        /// <summary>
+        /// How many tagged hulls may receive a commander echo chip (Everyone / Us / You).
+        /// Larger than <see cref="MaxEveryone"/> line seats so a full squad still sees the order.
+        /// </summary>
+        public const int MaxTaggedPlayers = 16;
 
         /// <summary>Line grows from source to dest, then repeats so direction is readable.</summary>
         const float PathTravelOnSeconds = 0.55f;
@@ -59,6 +69,8 @@ namespace TitanOrbit.Game
 
         static readonly int[] s_IdScratch = new int[MaxEveryone];
         static readonly int[] s_AnchorScratch = new int[8];
+        static readonly int[] s_TagIdScratch = new int[MaxTaggedPlayers];
+        static readonly Vector3[] s_TagPosScratch = new Vector3[MaxTaggedPlayers];
         static readonly Vector3[] s_PosScratch = new Vector3[MaxEveryone];
         static readonly Vector3[] s_ExpandA = new Vector3[MaxEveryone];
         static readonly Vector3[] s_ExpandB = new Vector3[MaxEveryone];
@@ -80,6 +92,11 @@ namespace TitanOrbit.Game
         /// Fills sender-resolved locks on <paramref name="callout"/> from the live
         /// sentence plus the last play-plane aim. Runs on every send, including
         /// Recent reuse, so Asteroid / planet / You are chosen again.
+        /// <para>
+        /// [TITAN-ORBIT] "You" is only the hull locked when the player clicked that
+        /// tile. If nobody was under the pointer, You stays empty — we do not invent
+        /// a closest ship and we never fall back to the speaker (Me).
+        /// </para>
         /// </summary>
         public static void BindResolvedTargets(ref ShipCommsInbox.Callout callout)
         {
@@ -95,9 +112,13 @@ namespace TitanOrbit.Game
                 || words.HasPad || words.HasTurret || words.HasAsteroid || words.HasGems || words.HasHere;
 
             bool lockYou = words.HasYou || words.HasShip || words.HasAlly
-                || (words.Hostile && !hasWorldNoun && !words.HasThem && !words.HasUs && !words.HasEveryone);
+                || (words.Hostile && !hasWorldNoun && !words.HasThem && !words.HasUs
+                    && !words.HasEscort && !words.HasEveryone);
             if (lockYou)
             {
+                // --- You / ship seat ---
+                // Pending You is the click-lock from the compose matrix. The speaker
+                // can never be "You" — that word means another hull.
                 int locked = 0;
                 if (ShipCommsClientState.HasPendingYou)
                     locked = ShipCommsClientState.PendingYouNetworkId;
@@ -112,7 +133,9 @@ namespace TitanOrbit.Game
                     enemiesOnly = false;
                 }
 
-                if (locked <= 0)
+                // Ship / Ally / a bare hostile verb still pick the closest hull in range.
+                // A typed You word does not — empty means empty.
+                if (locked <= 0 && !words.HasYou)
                 {
                     int n = CollectClosest(
                         aim, YouSelectRange, callout.NetworkId, speakerTeam,
@@ -130,6 +153,7 @@ namespace TitanOrbit.Game
             if (keepMapPing)
             {
                 callout.FocusKind = ShipCommsInbox.FocusKind.MapPing;
+                BindHerePlanetName(ref callout);
             }
             else if (words.HasHere)
             {
@@ -137,6 +161,7 @@ namespace TitanOrbit.Game
                 callout.WaypointX = aim.x;
                 callout.WaypointZ = aim.z;
                 callout.FocusKind = ShipCommsInbox.FocusKind.MapPing;
+                BindHerePlanetName(ref callout);
             }
             else
             {
@@ -248,8 +273,71 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
+        /// Stamps the planet disc the player clicked so Here chips can show Helios
+        /// instead of HERE. Leaves FocusKind as a map ping so Recent still replays
+        /// the point. PlanetId 0 keeps the generic Here word.
+        /// </summary>
+        static void BindHerePlanetName(ref ShipCommsInbox.Callout callout)
+        {
+            if (ShipCommsClientState.PendingPlanetId <= 0)
+                return;
+            callout.PlanetId = ShipCommsClientState.PendingPlanetId;
+        }
+
+        /// <summary>
+        /// Replaces a Here catalog label with the locked planet's world name.
+        /// Compose uses the pending click; live bubbles use the callout PlanetId.
+        /// </summary>
+        public static bool TryResolveHereDisplayLabel(
+            string catalogLabel, int planetId, bool isHomePlanet, int familyIndex, out string display)
+        {
+            display = catalogLabel;
+            if (planetId <= 0 || !Eq(catalogLabel, "Here"))
+                return false;
+
+            var config = PlanetShipFamilyConfig.LoadDefault();
+            string name = config != null
+                ? config.GetPlanetDisplayName(planetId, isHomePlanet, familyIndex)
+                : PlanetDisplayNames.Resolve(planetId, isHomePlanet);
+            if (string.IsNullOrWhiteSpace(name))
+                return false;
+
+            display = name.Trim();
+            return true;
+        }
+
+        /// <summary>
+        /// Bubble / RPC path: infer home vs neutral from the ghosted PlanetId
+        /// (homes are team ids 1–5, neutrals start at 100).
+        /// </summary>
+        public static bool TryResolveHereDisplayLabel(
+            in ShipCommsInbox.Callout callout, string catalogLabel, out string display)
+        {
+            bool isHome = callout.PlanetId > 0
+                && callout.PlanetId < PlanetDisplayNames.NeutralPlanetIdBase;
+            return TryResolveHereDisplayLabel(catalogLabel, callout.PlanetId, isHome, -1, out display);
+        }
+
+        /// <summary>Compose-rail path: pending minimap planet click, or catalog Here.</summary>
+        public static bool TryResolvePendingHereDisplayLabel(string catalogLabel, out string display)
+        {
+            return TryResolveHereDisplayLabel(
+                catalogLabel,
+                ShipCommsClientState.PendingPlanetId,
+                ShipCommsClientState.PendingPlanetIsHome,
+                ShipCommsClientState.PendingPlanetFamilyIndex,
+                out display);
+        }
+
+        /// <summary>
         /// Locks Us network ids at send and writes XZ fallbacks if a hull later despawns.
         /// Draw follows live proxies — it does not stay on these seats.
+        /// <para>
+        /// [TITAN-ORBIT] Us is teammates inside <see cref="YouSelectRange"/> of the
+        /// speaker hull. Escort is every teammate that has troops aboard and sits
+        /// inside that same range of the play-plane mouse aim. Empty Us / Escort
+        /// stays empty (same as empty You).
+        /// </para>
         /// </summary>
         static void SnapshotFrozen(
             ref ShipCommsInbox.Callout callout,
@@ -257,7 +345,8 @@ namespace TitanOrbit.Game
             TeamId speakerTeam,
             Vector3 aim)
         {
-            if (TryHullPos(callout.NetworkId, out Vector3 me))
+            Vector3 me = default;
+            if (TryHullPos(callout.NetworkId, out me))
             {
                 callout.MeX = me.x;
                 callout.MeZ = me.z;
@@ -275,27 +364,49 @@ namespace TitanOrbit.Game
                 n = ShipWeaponProxyRegistry.CollectHullsOnTeam(
                     speakerTeam, s_IdScratch, s_PosScratch, MaxEveryone);
             }
-            else if (words.HasUs)
+            else if (words.HasEscort)
             {
-                if (callout.NetworkId > 0)
+                // --- Troop carriers around the mouse ---
+                // Exclude nobody: a loaded speaker under the pointer is still an escort.
+                // Cap at MaxEveryone (G0–G7). When You is unused we stash the aim in
+                // YouX/Z so remotes can re-collect the same circle later.
+                n = CollectClosest(
+                    aim, YouSelectRange, exclude: 0, speakerTeam,
+                    teammatesOnly: true, enemiesOnly: false, s_IdScratch, MaxEveryone,
+                    troopCarriersOnly: true);
+                for (int i = 0; i < n; i++)
                 {
-                    s_IdScratch[0] = callout.NetworkId;
-                    if (!TryHullPos(callout.NetworkId, out s_PosScratch[0]))
-                        s_PosScratch[0] = new Vector3(callout.MeX, 0f, callout.MeZ);
-                    n = 1;
+                    if (!TryHullPos(s_IdScratch[i], out s_PosScratch[i]))
+                        s_PosScratch[i] = Vector3.zero;
                 }
 
-                int extra = CollectClosest(
-                    aim, YouSelectRange, callout.NetworkId, speakerTeam,
-                    teammatesOnly: true, enemiesOnly: false, s_AnchorScratch, MaxUsLocks - n);
-                for (int i = 0; i < extra && n < MaxUsLocks; i++)
+                for (int i = 0; i < MaxUsLocks; i++)
+                    SetUsId(ref callout, i, i < n ? s_IdScratch[i] : 0);
+
+                if (callout.YouNetworkId <= 0)
                 {
-                    int id = s_AnchorScratch[i];
-                    if (id <= 0 || !TryHullPos(id, out Vector3 mate))
-                        continue;
-                    s_IdScratch[n] = id;
-                    s_PosScratch[n] = mate;
-                    n++;
+                    callout.YouX = aim.x;
+                    callout.YouZ = aim.z;
+                }
+            }
+            else if (words.HasUs)
+            {
+                // --- Friendlies around the speaker ---
+                // Origin is the speaker hull written above (Me XZ if the proxy is
+                // gone). Aim is only a last-ditch fallback when we have no pose.
+                Vector3 usOrigin = me.x != 0f || me.z != 0f
+                    ? me
+                    : new Vector3(callout.MeX, 0f, callout.MeZ);
+                if (usOrigin.x == 0f && usOrigin.z == 0f)
+                    usOrigin = aim;
+
+                n = CollectClosest(
+                    usOrigin, YouSelectRange, callout.NetworkId, speakerTeam,
+                    teammatesOnly: true, enemiesOnly: false, s_IdScratch, MaxUsLocks);
+                for (int i = 0; i < n; i++)
+                {
+                    if (!TryHullPos(s_IdScratch[i], out s_PosScratch[i]))
+                        s_PosScratch[i] = Vector3.zero;
                 }
 
                 for (int i = 0; i < MaxUsLocks; i++)
@@ -303,6 +414,7 @@ namespace TitanOrbit.Game
             }
             else if (words.HasThem)
             {
+                // Stale "Them" label only — the matrix no longer shows that chip.
                 n = CollectClosest(
                     aim, YouSelectRange, callout.NetworkId, speakerTeam,
                     teammatesOnly: false, enemiesOnly: true, s_IdScratch, MaxUsLocks);
@@ -341,6 +453,76 @@ namespace TitanOrbit.Game
                 return false;
             networkId = s_IdScratch[0];
             return networkId > 0 && networkId != excludeNetworkId;
+        }
+
+        /// <summary>
+        /// NetworkIds tagged by a commander sentence: Everyone / Team (whole squad),
+        /// Us / Them (locked seats), and You. Never includes the speaker — they already
+        /// have chips above their hull. Used by the bubble presenter to plant echo chips
+        /// under each affected ship.
+        /// </summary>
+        /// <param name="callout">Resolved RPC payload (Us / You already bound on send).</param>
+        /// <param name="dst">Caller buffer. Writes unique ids, speaker excluded.</param>
+        /// <returns>How many ids were written (0 when the sentence tags no other ship).</returns>
+        public static int CollectTaggedPlayerIds(in ShipCommsInbox.Callout callout, int[] dst)
+        {
+            if (dst == null || dst.Length == 0)
+                return 0;
+
+            ParseWords(in callout, out ParsedWords words);
+            int speaker = callout.NetworkId;
+            int n = 0;
+
+            // --- Squad words ---
+            // Everyone / Team re-collect live teammates so a late joiner still gets the echo.
+            if (words.HasEveryone || words.HasTeam)
+            {
+                TeamId team = ReadSpeakerTeam(speaker);
+                int gathered = ShipWeaponProxyRegistry.CollectHullsOnTeam(
+                    team, s_TagIdScratch, s_TagPosScratch, MaxTaggedPlayers);
+                for (int i = 0; i < gathered; i++)
+                    AddUniqueTagged(dst, ref n, s_TagIdScratch[i], speaker);
+                return n;
+            }
+
+            // --- Locked lists ---
+            // Escort re-collects live troop carriers around the stored mouse aim.
+            // Us / Them seats are frozen on send (Us0–Us3). You is a single lock.
+            if (words.HasEscort)
+            {
+                Vector3 origin = ResolveEscortAim(in callout);
+                TeamId team = ReadSpeakerTeam(speaker);
+                int gathered = CollectClosest(
+                    origin, YouSelectRange, exclude: 0, team,
+                    teammatesOnly: true, enemiesOnly: false, s_TagIdScratch, MaxTaggedPlayers,
+                    troopCarriersOnly: true);
+                for (int i = 0; i < gathered; i++)
+                    AddUniqueTagged(dst, ref n, s_TagIdScratch[i], speaker);
+            }
+            else if (words.HasUs || words.HasThem)
+            {
+                for (int i = 0; i < MaxUsLocks; i++)
+                    AddUniqueTagged(dst, ref n, GetUsId(in callout, i), speaker);
+            }
+
+            if (callout.YouNetworkId > 0)
+                AddUniqueTagged(dst, ref n, callout.YouNetworkId, speaker);
+
+            return n;
+        }
+
+        /// <summary>Appends <paramref name="id"/> when it is a real other ship not already listed.</summary>
+        static void AddUniqueTagged(int[] dst, ref int n, int id, int speaker)
+        {
+            if (id <= 0 || id == speaker || n >= dst.Length)
+                return;
+            for (int i = 0; i < n; i++)
+            {
+                if (dst[i] == id)
+                    return;
+            }
+
+            dst[n++] = id;
         }
 
         /// <summary>True when the local viewer is the speaker or on the speaker's team.</summary>
@@ -397,19 +579,23 @@ namespace TitanOrbit.Game
         {
             accent = ChipDefaultAccent;
             bool isTeam = TeamIdExtensions.TryParseColorName(label, out TeamId team);
+            bool isCommander = ShipCommsKeywordCatalog.IsCommanderLabel(label);
             bool isLine = false;
             if (isTeam)
                 accent = team.ToColor();
+            else if (isCommander)
+                accent = TeamCommanderRules.Gold;
             else if (TryActionColor(label, out Color line))
             {
                 accent = line;
                 isLine = true;
             }
 
-            Color idle = isTeam ? Color.Lerp(ChipIdleFill, accent, 0.28f) : ChipIdleFill;
-            Color picked = isTeam ? Color.Lerp(ChipSelectedFill, accent, 0.4f) : ChipSelectedFill;
+            bool wash = isTeam || isCommander;
+            Color idle = wash ? Color.Lerp(ChipIdleFill, accent, 0.28f) : ChipIdleFill;
+            Color picked = wash ? Color.Lerp(ChipSelectedFill, accent, 0.4f) : ChipSelectedFill;
             fill = selected ? picked : idle;
-            labelColor = isTeam || isLine
+            labelColor = wash || isLine
                 ? Color.Lerp(ChipLabel, accent, isLine ? 0.75f : 0.55f)
                 : ChipLabel;
         }
@@ -422,6 +608,8 @@ namespace TitanOrbit.Game
         {
             if (TeamIdExtensions.TryParseColorName(label, out TeamId team))
                 return team.ToColor();
+            if (ShipCommsKeywordCatalog.IsCommanderLabel(label))
+                return TeamCommanderRules.Gold;
             if (TryActionColor(label, out Color line))
                 return line;
             return ChipNeutralFrame;
@@ -685,8 +873,12 @@ namespace TitanOrbit.Game
                 }
             }
 
-            // Lone focus still gets Me → target so a solo "Moon" or "Mining Asteroid" reads.
-            if (written == 0 && TryLiveMe(in callout, out Vector3 speaker))
+            // Lone world noun still gets Me → target so a solo "Moon" reads.
+            // [TITAN-ORBIT] Empty You / Us is a real choice: "You Asteroid" or
+            // "Us Asteroid" with no locked hull must not grow a speaker line.
+            if (written == 0
+                && !NamedShipSourceIsEmpty(in callout, in words)
+                && TryLiveMe(in callout, out Vector3 speaker))
             {
                 Color loneColor = fallback;
                 if (nodeCount >= 1 && s_AnchorInbound[0].a > 0.01f)
@@ -772,6 +964,8 @@ namespace TitanOrbit.Game
         /// <summary>
         /// Drops nouns that have no live target. A lone world noun (or a chain with
         /// no speaker word) prepends Me — "Moon" is Me → friendly moon.
+        /// Empty You / Us is the exception: the word stays a missing source, so we
+        /// do not rewrite it as the speaker.
         /// </summary>
         static int CompactAnchors(
             in ShipCommsInbox.Callout callout,
@@ -780,6 +974,9 @@ namespace TitanOrbit.Game
             Color[] inbound,
             int n)
         {
+            // --- Drop dead nouns ---
+            // ExpandAnchor returns 0 when that seat has no live pose (You with
+            // NetworkId 0, a despawned moon, and so on). Those words leave the chain.
             int write = 0;
             for (int i = 0; i < n; i++)
             {
@@ -791,6 +988,9 @@ namespace TitanOrbit.Game
                 write++;
             }
 
+            // --- Classify survivors ---
+            // hasShipSrc is a live You / Us / Everyone seat. Empty You / Us was
+            // already dropped above, so it does not count as a source here.
             bool hasMe = false;
             bool hasShipSrc = false;
             bool hasWorld = false;
@@ -805,9 +1005,13 @@ namespace TitanOrbit.Game
                     hasWorld = true;
             }
 
+            // --- Optional Me prefix ---
+            // "Asteroid" alone still reads as Me → rock. "You Asteroid" / "Us
+            // Asteroid" with no locked hull already named a source — leave Me out.
             if (!hasMe
                 && hasWorld
                 && !hasShipSrc
+                && !NamedShipSourceIsEmpty(in callout, in words)
                 && write < dst.Length
                 && ExpandAnchor(in callout, in words, AnchorId.Me, s_ExpandA, s_RadiusA) > 0)
             {
@@ -862,6 +1066,51 @@ namespace TitanOrbit.Game
             pending = default;
         }
 
+        /// <summary>
+        /// True when the sentence named You or Us and that seat has no other hull.
+        /// [TITAN-ORBIT] Empty You / Us must not become Me — the player asked for
+        /// another ship and got none, so the path has no source.
+        /// </summary>
+        static bool NamedShipSourceIsEmpty(in ShipCommsInbox.Callout callout, in ParsedWords words)
+        {
+            return YouSourceIsEmpty(in callout, in words)
+                || UsSourceIsEmpty(in callout, in words);
+        }
+
+        /// <summary>
+        /// True when the sentence named a You-style ship (You / Ship / Ally / Enemy)
+        /// but that lock is empty or accidentally the speaker.
+        /// </summary>
+        static bool YouSourceIsEmpty(in ShipCommsInbox.Callout callout, in ParsedWords words)
+        {
+            bool namedYou = words.HasYou || words.HasShip || words.HasAlly || words.HasEnemy;
+            if (!namedYou)
+                return false;
+            return callout.YouNetworkId <= 0 || callout.YouNetworkId == callout.NetworkId;
+        }
+
+        /// <summary>
+        /// True when the sentence named Us / Escort and no hull was locked.
+        /// Us never counts the speaker; Escort may, so any positive seat counts.
+        /// </summary>
+        static bool UsSourceIsEmpty(in ShipCommsInbox.Callout callout, in ParsedWords words)
+        {
+            if (!words.HasUs && !words.HasEscort)
+                return false;
+            if (words.HasEscort && callout.GroupCount > 0)
+                return false;
+            for (int i = 0; i < MaxUsLocks; i++)
+            {
+                int id = GetUsId(in callout, i);
+                if (id <= 0)
+                    continue;
+                if (words.HasEscort || id != callout.NetworkId)
+                    return false;
+            }
+
+            return true;
+        }
+
         static bool IsWorldAnchor(int id)
         {
             return id == AnchorId.Here || id == AnchorId.Asteroid || id == AnchorId.Gems
@@ -898,7 +1147,9 @@ namespace TitanOrbit.Game
                     radii[0] = HullRadius(callout.YouNetworkId);
                     return 1;
                 case AnchorId.Us:
-                    return ReadLiveUs(in callout, dst, radii);
+                    return words.HasEscort
+                        ? ReadLiveEscort(in callout, dst, radii)
+                        : ReadLiveUs(in callout, dst, radii);
                 case AnchorId.Everyone:
                     return ReadLiveEveryone(in callout, dst, radii);
                 case AnchorId.Here:
@@ -938,6 +1189,53 @@ namespace TitanOrbit.Game
                 return true;
             pos = new Vector3(callout.YouX, 0f, callout.YouZ);
             return pos.x != 0f || pos.z != 0f;
+        }
+
+        /// <summary>
+        /// Live troop-carrying teammates inside <see cref="YouSelectRange"/> of the
+        /// stored mouse aim. Falls back to locked Us seats when You was also bound
+        /// (YouX/Z is that hull, not the pointer).
+        /// </summary>
+        static int ReadLiveEscort(in ShipCommsInbox.Callout callout, Vector3[] dst, float[] radii)
+        {
+            if (dst == null)
+                return 0;
+            if (callout.YouNetworkId > 0)
+                return ReadLiveUs(in callout, dst, radii);
+
+            Vector3 origin = ResolveEscortAim(in callout);
+            TeamId team = ReadSpeakerTeam(callout.NetworkId);
+            int n = CollectClosest(
+                origin, YouSelectRange, exclude: 0, team,
+                teammatesOnly: true, enemiesOnly: false, s_IdScratch,
+                Mathf.Min(MaxEveryone, dst.Length), troopCarriersOnly: true);
+            if (n <= 0)
+                return ReadFrozenGroup(in callout, dst, radii);
+
+            for (int i = 0; i < n; i++)
+            {
+                if (!TryHullPos(s_IdScratch[i], out dst[i]))
+                    dst[i] = origin;
+                if (radii != null)
+                    radii[i] = HullRadius(s_IdScratch[i]);
+            }
+
+            return n;
+        }
+
+        /// <summary>
+        /// Mouse aim frozen on send in YouX/Z when You was unused, else the first
+        /// locked escort seat / speaker hull.
+        /// </summary>
+        static Vector3 ResolveEscortAim(in ShipCommsInbox.Callout callout)
+        {
+            if (callout.YouNetworkId <= 0 && (callout.YouX != 0f || callout.YouZ != 0f))
+                return new Vector3(callout.YouX, 0f, callout.YouZ);
+            if (TryGetGroup(in callout, 0, out Vector3 first))
+                return first;
+            if (TryHullPos(callout.NetworkId, out Vector3 me))
+                return me;
+            return new Vector3(callout.MeX, 0f, callout.MeZ);
         }
 
         static int ReadLiveUs(in ShipCommsInbox.Callout callout, Vector3[] dst, float[] radii)
@@ -1231,6 +1529,8 @@ namespace TitanOrbit.Game
             int group = 0;
             if (words.HasEveryone || words.HasTeam)
                 group = ReadLiveEveryone(in callout, s_ExpandA, s_RadiusA);
+            else if (words.HasEscort)
+                group = ReadLiveEscort(in callout, s_ExpandA, s_RadiusA);
             else if (words.HasUs)
                 group = ReadLiveUs(in callout, s_ExpandA, s_RadiusA);
             for (int i = 0; i < group; i++)
@@ -1289,10 +1589,12 @@ namespace TitanOrbit.Game
 
         static int CollectClosest(
             Vector3 aim, float range, int exclude, TeamId team,
-            bool teammatesOnly, bool enemiesOnly, int[] dst, int max)
+            bool teammatesOnly, bool enemiesOnly, int[] dst, int max,
+            bool troopCarriersOnly = false)
         {
             return ShipWeaponProxyRegistry.CollectClosestHulls(
-                aim, range, exclude, team, teammatesOnly, enemiesOnly, dst, max);
+                aim, range, exclude, team, teammatesOnly, enemiesOnly, dst, max,
+                troopCarriersOnly);
         }
 
         static bool TryHullPos(int networkId, out Vector3 pos)
@@ -1399,6 +1701,7 @@ namespace TitanOrbit.Game
                 case WordKind.Me: words.HasMe = true; break;
                 case WordKind.You: words.HasYou = true; break;
                 case WordKind.Us: words.HasUs = true; break;
+                case WordKind.Escort: words.HasEscort = true; break;
                 case WordKind.Everyone: words.HasEveryone = true; break;
                 case WordKind.Team: words.HasTeam = true; break;
                 case WordKind.Them:
@@ -1448,6 +1751,7 @@ namespace TitanOrbit.Game
             if (Eq(label, "Me")) { kind = WordKind.Me; return; }
             if (Eq(label, "You")) { kind = WordKind.You; return; }
             if (Eq(label, "Us")) { kind = WordKind.Us; return; }
+            if (Eq(label, "Escort") || Eq(label, "Wing")) { kind = WordKind.Escort; return; }
             if (Eq(label, "Everyone")) { kind = WordKind.Everyone; return; }
             if (Eq(label, "Team")) { kind = WordKind.Team; return; }
             if (Eq(label, "Them")) { kind = WordKind.Them; return; }
@@ -1489,6 +1793,7 @@ namespace TitanOrbit.Game
                     return AnchorId.You;
                 case WordKind.Them:
                 case WordKind.Us:
+                case WordKind.Escort:
                     return AnchorId.Us;
                 case WordKind.Everyone:
                 case WordKind.Team:
@@ -1562,6 +1867,7 @@ namespace TitanOrbit.Game
             Me,
             You,
             Us,
+            Escort,
             Everyone,
             Team,
             Them,
@@ -1600,6 +1906,7 @@ namespace TitanOrbit.Game
             public bool HasMe;
             public bool HasYou;
             public bool HasUs;
+            public bool HasEscort;
             public bool HasEveryone;
             public bool HasTeam;
             public bool HasThem;

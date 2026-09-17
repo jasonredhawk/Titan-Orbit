@@ -152,6 +152,7 @@ namespace TitanOrbit.Game
                 name.Contains("FullVersionBadge") ||
                 name.Contains("PlayerBadge") ||
                 name.Contains("HealthBar") ||
+                name.Contains("MineNameplate") ||
                 name.Contains("GemsBar") ||
                 name.Contains("PeopleBar") ||
                 name.Contains("RoleRow"))

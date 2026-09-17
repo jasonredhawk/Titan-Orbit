@@ -3,9 +3,10 @@ using UnityEngine;
 namespace TitanOrbit.UI
 {
     /// <summary>
-    /// [LEGACY] Scene singleton placeholder for attack/defend minimap markers. Full marker RPC
-    /// flow is not yet ported to NetCode for Entities — <see cref="MinimapController"/> owns
-    /// most blip logic today. Retained so scenes with this component do not break on load.
+    /// [LEGACY] Scene singleton leftover from the old Attack/Defend minimap pins.
+    /// Team orders now go through <see cref="ShipCommsPanel"/> Comms Matrix.
+    /// <see cref="MinimapController"/> owns blip logic. Retained so scenes with this
+    /// component do not break on load.
     /// </summary>
     public class MinimapMarkerManager : MonoBehaviour
     {

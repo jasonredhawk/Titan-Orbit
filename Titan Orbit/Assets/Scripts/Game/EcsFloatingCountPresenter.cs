@@ -16,13 +16,18 @@ namespace TitanOrbit.Game
 {
     /// <summary>
     /// [HYBRID] Client-side floating +/- popups driven by replicated ECS state deltas
-    /// and immediate bullet-impact hooks.
+    /// and immediate combat hooks.
     /// Compares per-frame snapshots of ship gems/people/health. Asteroid bullet HitRpc floats
     /// use <see cref="TryNotifyLocalAsteroidBulletHit"/> with server <c>AsteroidHealthAfter</c>
     /// (never ghost − damage) and park on the asteroid proxy. Ship bullet HitRpc floats use
     /// <see cref="TryNotifyShipBulletHit"/> (actual hull loss, accumulated on
-    /// <see cref="FloatingCountChannel.DamageShipOrDrone"/>). <see cref="PollShips"/> /
-    /// <see cref="PollAsteroids"/> remain fallbacks for rams / mines / missed RPCs.
+    /// <see cref="FloatingCountChannel.DamageShipOrDrone"/>). Cannon lasers have no HitRpc —
+    /// <see cref="TryNotifyLaserBeamSlice"/> is the presentation hook from
+    /// <see cref="CannonLaserBeamVisual"/> (same ship / asteroid channels, optimistic HP so
+    /// <see cref="PollShips"/> / <see cref="PollAsteroids"/> do not double-count).
+    /// Asteroids are seed-hydrated — the beam must pass the clipped rock entity,
+    /// not a <c>TargetGhostId</c> (those stay 0 on map bodies).
+    /// <see cref="PollShips"/> / <see cref="PollAsteroids"/> remain fallbacks for rams / mines.
     /// Delegates display to <see cref="WorldFloatingCountManager"/>.
     /// Runs on main thread in Update.
     /// <para>
@@ -755,6 +760,95 @@ namespace TitanOrbit.Game
             return true;
         }
 
+        /// <summary>
+        /// Presentation damage for a live cannon-laser beam. Lasers never send
+        /// <c>BulletHitRpc</c> (a per-tick RPC per barrel would hitch the ~60 Hz step),
+        /// so the client beam driver reports <c>firePower × fireRate × dt</c> here.
+        /// Ships reuse <see cref="TryNotifyShipBulletHit"/> (card resist + optimistic hull).
+        /// Asteroids reuse the mining float, local shots only — same rule as bullet HitRpc.
+        /// Same-team / heal beams are ignored (heal still comes from <see cref="PollShips"/>).
+        /// </summary>
+        /// <param name="shooter">MEGA hull that owns the barrel (local-shot test).</param>
+        /// <param name="target">Clipped beam contact (ship or seed-hydrated asteroid).</param>
+        /// <param name="slice">Estimated hull damage this presentation frame.</param>
+        /// <param name="ownerTeam">Shooter team — same-team ship hits are skipped.</param>
+        /// <param name="impactDisplayPos">Beam end in display space (asteroid park).</param>
+        /// <returns>True when a ship or asteroid popup was spawned or accumulated.</returns>
+        public static bool TryNotifyLaserBeamSlice(
+            Entity shooter,
+            Entity target,
+            float slice,
+            TeamId ownerTeam,
+            Vector3 impactDisplayPos)
+        {
+            // --- Guard ---
+            // [TITAN-ORBIT] Isolation F2 — skip floats to see if Instantiates/UI drives the step.
+            if (TitanOrbitDebugFlags.IsolateDisableFloatingCounts)
+                return false;
+            if (target == Entity.Null || slice <= 0.01f)
+                return false;
+
+            var world = EcsGameBridge.GetVisualizationWorld();
+            if (world == null || !world.IsCreated)
+                return false;
+
+            var em = world.EntityManager;
+            if (!em.Exists(target))
+                return false;
+
+            // --- Ship hull (any on-screen / local victim, like HitRpc) ---
+            if (em.HasComponent<ShipState>(target))
+                return TryNotifyShipBulletHit(target, slice, ownerTeam);
+
+            // --- Asteroid mining (local shots only — same as bullet HitRpc) ---
+            // Seed-hydrated rocks never ghost Health. Subtract this slice from the
+            // presenter's tracked HP so a multi-barrel burn counts down instead of
+            // resetting to full − dt every frame.
+            if (!em.HasComponent<AsteroidState>(target))
+                return false;
+            if (!IsLocalShooter(em, shooter))
+                return false;
+            if (em.HasComponent<ShipLoadoutState>(shooter)
+                && em.GetComponentData<ShipLoadoutState>(shooter).HealingBulletsActive)
+                return false;
+
+            var presenter = Active;
+            if (presenter == null)
+                return false;
+
+            var rock = em.GetComponentData<AsteroidState>(target);
+            if (rock.IsDestroyed || rock.Health <= 0.01f)
+                return false;
+
+            float tracked = presenter.PeekTrackedAsteroidHealth(target, rock.Health);
+            if (tracked <= 0.01f)
+                return false;
+
+            float remaining = math.max(0f, tracked - slice);
+            return TryNotifyLocalAsteroidBulletHit(
+                target,
+                slice,
+                ownerTeam,
+                authoritativeRemainingHealth: remaining,
+                impactWorldPosition: impactDisplayPos);
+        }
+
+        /// <summary>
+        /// True when <paramref name="shooter"/> is this client's ship (GhostOwner NetworkId).
+        /// Asteroid mining floats stay local-shot only so a remote Titan does not spam rocks.
+        /// </summary>
+        static bool IsLocalShooter(EntityManager em, Entity shooter)
+        {
+            if (shooter == Entity.Null || !em.Exists(shooter))
+                return false;
+            if (em.HasComponent<LocalPlayerShipTag>(shooter))
+                return true;
+            if (!em.HasComponent<GhostOwner>(shooter))
+                return false;
+            int localId = EcsGameBridge.GetLocalNetworkId();
+            return localId > 0 && em.GetComponentData<GhostOwner>(shooter).NetworkId == localId;
+        }
+
         static void TryShowShipRemainingHealth(int networkId, Transform anchor, float remainingHealth)
         {
             var manager = WorldFloatingCountManager.Instance;
@@ -778,6 +872,22 @@ namespace TitanOrbit.Game
                 _shipOptimisticHealth.TryGetValue(networkId, out float optimistic))
                 return math.min(optimistic, fallbackHealth);
             return fallbackHealth;
+        }
+
+        /// <summary>
+        /// Last laser / HitRpc remaining HP for this rock. Seed-hydrated
+        /// <see cref="AsteroidState.Health"/> does not fall with cannon DPS, so
+        /// the beam must count down from this value, not from the stale snapshot.
+        /// </summary>
+        float PeekTrackedAsteroidHealth(Entity asteroid, float fallbackHealth)
+        {
+            if (!_asteroidHealth.TryGetValue(asteroid, out float tracked))
+                return fallbackHealth;
+
+            bool holdOptimistic =
+                _asteroidOptimisticUntil.TryGetValue(asteroid, out float until) &&
+                Time.unscaledTime < until;
+            return holdOptimistic ? math.min(tracked, fallbackHealth) : tracked;
         }
 
         bool IsShipOptimisticHoldActive(int networkId) =>

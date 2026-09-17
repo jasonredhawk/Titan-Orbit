@@ -13,7 +13,7 @@ namespace TitanOrbit.Services
     /// Remove-ads IAP owners skip the video and receive <see cref="TitanOrbitRewardedAdResult.Completed"/>.
     /// </para>
     /// Placements: <see cref="PlacementKeepLoadout"/>, <see cref="PlacementBonusSlot"/>,
-    /// and <see cref="PlacementCommsSlot"/>.
+    /// <see cref="PlacementCommsSlot"/>, and <see cref="PlacementCommsRecent"/>.
     /// </summary>
     public class TitanOrbitRewardedAds : MonoBehaviour
     {
@@ -23,8 +23,11 @@ namespace TitanOrbit.Services
         /// <summary>Orbit Menu locked +1 loadout slot placement id.</summary>
         public const string PlacementBonusSlot = "bonus_slot";
 
-        /// <summary>Comms matrix 4th / 5th keyword slot placement id.</summary>
+        /// <summary>Comms matrix 4th + 5th keyword slots (one ad unlocks both).</summary>
         public const string PlacementCommsSlot = "comms_slot";
+
+        /// <summary>Comms matrix RECENT rows past the free first three (one ad unlocks the rest).</summary>
+        public const string PlacementCommsRecent = "comms_recent";
 
         /// <summary>Singleton set in Awake so UI can call static <see cref="Show"/>.</summary>
         public static TitanOrbitRewardedAds Instance { get; private set; }

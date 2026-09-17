@@ -46,6 +46,13 @@ namespace TitanOrbit.Data
         /// paints these as their own TEAM section at the top.
         /// </summary>
         TeamColor = 4,
+
+        /// <summary>
+        /// Command-deck words (Everyone, Escort, Form Up, …). The compose panel shows these
+        /// under COMMANDER; they only send when the speaker is a top-three commander
+        /// on the Commander channel. Wire indices still work for older clients.
+        /// </summary>
+        Commander = 5,
     }
 
     /// <summary>
@@ -73,8 +80,8 @@ namespace TitanOrbit.Data
         public const string DefaultResourcesName = "ShipCommsKeywordCatalog";
 
         /// <summary>
-        /// Free sentence length (no ad). Slots 4 and 5 unlock for the rest of the match
-        /// after one rewarded ad each.
+        /// Free sentence length (no ad). Slots 4 and 5 unlock together for the rest of
+        /// the match after one rewarded ad.
         /// </summary>
         public const int DefaultSequenceLength = 3;
 
@@ -100,6 +107,11 @@ namespace TitanOrbit.Data
         /// clients but the compose panel hides it; use "Mining" under Tactical.
         /// Indices 47–48 were Scout/Rally and now read Transport/Deposit. Subject
         /// Transport (34) and Dock (38) stay on the wire but are hidden from the matrix.
+        /// Index 19 shipped as "Them" and now reads "Us" (Subject — friendlies in
+        /// range of the speaker). Index 20 shipped as "Us" and now reads "Escort"
+        /// under <see cref="ShipCommsKeywordCategory.Commander"/> so the matrix
+        /// has one Us. "Everyone" (57) stays Commander. Indices 58–65 are commander
+        /// verbs. 66–67 (Mines / Rocket) fill the SUBJECT 5-wide grid.
         /// </summary>
         public static readonly ShipCommsKeyword[] BuiltInKeywords =
         {
@@ -122,8 +134,8 @@ namespace TitanOrbit.Data
             new ShipCommsKeyword { label = "Push", category = ShipCommsKeywordCategory.Tactical },
             new ShipCommsKeyword { label = "Incoming", category = ShipCommsKeywordCategory.Tactical },
             new ShipCommsKeyword { label = "Heal", category = ShipCommsKeywordCategory.Tactical },
-            new ShipCommsKeyword { label = "Them", category = ShipCommsKeywordCategory.Subject },
             new ShipCommsKeyword { label = "Us", category = ShipCommsKeywordCategory.Subject },
+            new ShipCommsKeyword { label = "Escort", category = ShipCommsKeywordCategory.Commander },
             new ShipCommsKeyword { label = "Here", category = ShipCommsKeywordCategory.Subject },
             new ShipCommsKeyword { label = "Enemy", category = ShipCommsKeywordCategory.Subject },
             new ShipCommsKeyword { label = "Ally", category = ShipCommsKeywordCategory.Subject },
@@ -164,7 +176,23 @@ namespace TitanOrbit.Data
             new ShipCommsKeyword { label = "Nice", category = ShipCommsKeywordCategory.Social },
             new ShipCommsKeyword { label = "Wow", category = ShipCommsKeywordCategory.Social },
             new ShipCommsKeyword { label = "Later", category = ShipCommsKeywordCategory.Social },
-            new ShipCommsKeyword { label = "Everyone", category = ShipCommsKeywordCategory.Subject },
+            new ShipCommsKeyword { label = "Everyone", category = ShipCommsKeywordCategory.Commander },
+            // --- Commander verbs (append-only; indices 58+) ---
+            // [TITAN-ORBIT] Orders a top-three commander speaks to the squad. Same 5-wide
+            // row math as SUBJECT. Do not reorder — those bytes are on the wire.
+            new ShipCommsKeyword { label = "Form Up", category = ShipCommsKeywordCategory.Commander },
+            new ShipCommsKeyword { label = "Spread", category = ShipCommsKeywordCategory.Commander },
+            new ShipCommsKeyword { label = "Focus", category = ShipCommsKeywordCategory.Commander },
+            new ShipCommsKeyword { label = "Report", category = ShipCommsKeywordCategory.Commander },
+            new ShipCommsKeyword { label = "Status", category = ShipCommsKeywordCategory.Commander },
+            new ShipCommsKeyword { label = "Orders", category = ShipCommsKeywordCategory.Commander },
+            new ShipCommsKeyword { label = "Advance", category = ShipCommsKeywordCategory.Commander },
+            new ShipCommsKeyword { label = "Cover", category = ShipCommsKeywordCategory.Commander },
+            // --- Subject row fill (append-only; indices 66–67) ---
+            // [TITAN-ORBIT] SUBJECT is 5-wide. Everyone / Escort live on Commander and
+            // Mine / Transport / Dock stay hidden, which left the last row two short.
+            new ShipCommsKeyword { label = "Mines", category = ShipCommsKeywordCategory.Subject },
+            new ShipCommsKeyword { label = "Rocket", category = ShipCommsKeywordCategory.Subject },
         };
 
         /// <summary>
@@ -190,13 +218,47 @@ namespace TitanOrbit.Data
             // Stale 14-word assets from the first ship must not hide append-only rows.
             if (s_Cached != null && s_Cached.HasUsableKeywords()
                 && s_Cached.keywords.Count >= BuiltInKeywords.Length)
+            {
+                MigrateShippedLabels(s_Cached);
                 return s_Cached;
+            }
 
             // --- Hard-coded fallback ---
             // [TITAN-ORBIT] Headless GCE must still validate indices if the asset was stripped.
             s_Cached = CreateInstance<ShipCommsKeywordCatalog>();
             s_Cached.keywords = new List<ShipCommsKeyword>(BuiltInKeywords);
             return s_Cached;
+        }
+
+        /// <summary>
+        /// Rewrites shipped chip labels that kept their wire index. Index 19 was
+        /// "Them" and is now "Us"; index 20 was "Us" / "Wing" and is now "Escort". In-memory
+        /// only so a stale Resources asset cannot keep the old words after this code
+        /// ships. Bytes on the RPC do not change.
+        /// </summary>
+        static void MigrateShippedLabels(ShipCommsKeywordCatalog catalog)
+        {
+            if (catalog?.keywords == null || catalog.keywords.Count < 21)
+                return;
+
+            // --- Subject Us (was Them) ---
+            ShipCommsKeyword who = catalog.keywords[19];
+            if (string.Equals(who.label, "Them", StringComparison.OrdinalIgnoreCase))
+            {
+                who.label = "Us";
+                who.category = ShipCommsKeywordCategory.Subject;
+                catalog.keywords[19] = who;
+            }
+
+            // --- Commander Escort (was Us, then Wing) ---
+            ShipCommsKeyword escort = catalog.keywords[20];
+            if (string.Equals(escort.label, "Us", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(escort.label, "Wing", StringComparison.OrdinalIgnoreCase))
+            {
+                escort.label = "Escort";
+                escort.category = ShipCommsKeywordCategory.Commander;
+                catalog.keywords[20] = escort;
+            }
         }
 
         /// <summary>
@@ -287,6 +349,55 @@ namespace TitanOrbit.Data
 
             color = team.ToColor();
             return true;
+        }
+
+        /// <summary>
+        /// True when this row belongs on the COMMANDER banner. Category is the
+        /// source of truth; the label fallback keeps "Escort" / "Everyone" on the
+        /// command deck if an older Resources asset still tags them as Subject.
+        /// "Us" is a Subject word (friendlies near the speaker) — not commander.
+        /// </summary>
+        /// <param name="word">Catalog row (wire index unchanged).</param>
+        public static bool IsCommanderWord(in ShipCommsKeyword word)
+        {
+            if (word.category == ShipCommsKeywordCategory.Commander)
+                return true;
+            return IsCommanderLabel(word.label);
+        }
+
+        /// <summary>
+        /// True when <paramref name="index"/> is a commander-only keyword in the
+        /// effective list. The server uses this to reject spoofed command sentences.
+        /// </summary>
+        /// <param name="index">Keyword byte from the RPC payload.</param>
+        public bool IsCommanderKeyword(byte index)
+        {
+            IReadOnlyList<ShipCommsKeyword> list = GetEffectiveKeywords();
+            if (index >= list.Count)
+                return false;
+            return IsCommanderWord(list[index]);
+        }
+
+        /// <summary>
+        /// True when this chip label is a command-deck word (Everyone, Escort, Form Up, …).
+        /// Used by the compose panel and chip paint when the catalog row is not handy.
+        /// </summary>
+        /// <param name="label">Player-facing chip text.</param>
+        public static bool IsCommanderLabel(string label)
+        {
+            if (string.IsNullOrWhiteSpace(label))
+                return false;
+            return string.Equals(label, "Everyone", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(label, "Escort", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(label, "Wing", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(label, "Form Up", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(label, "Spread", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(label, "Focus", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(label, "Report", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(label, "Status", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(label, "Orders", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(label, "Advance", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(label, "Cover", StringComparison.OrdinalIgnoreCase);
         }
 
         /// <summary>

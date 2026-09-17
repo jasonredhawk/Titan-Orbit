@@ -7,6 +7,7 @@ using TitanOrbit.Generation;
 using TitanOrbit.Simulation;
 using Unity.Entities;
 using Unity.Mathematics;
+using Unity.NetCode;
 using Unity.Transforms;
 using UnityEngine;
 
@@ -16,6 +17,12 @@ namespace TitanOrbit.Game
     /// Client-only pooled Archanor <c>LaserStatic</c> beams for MEGA cannons.
     /// Stretch each live beam from the hybrid barrel to the ghosted lock
     /// (<see cref="MegaShipGunnerSlotElement"/>). Cosmetic — damage is server hitscan.
+    /// Shift mouse-aim follows the cursor, then clips to the first collider along
+    /// that segment via <see cref="BulletCosmeticHitQuery"/> (same spheres / MEGA
+    /// parts as tracers) so the line stops on the hull instead of tunneling through
+    /// to the mouse. While a lock is burning, this driver also reports <c>DPS × dt</c>
+    /// to <see cref="EcsFloatingCountPresenter"/> so laser hull / rock hits show the
+    /// same floating damage numbers as <c>BulletHitRpc</c> (lasers never send that RPC).
     /// </summary>
     [DefaultExecutionOrder(67040)]
     public sealed class CannonLaserBeamVisual : MonoBehaviour
@@ -64,8 +71,8 @@ namespace TitanOrbit.Game
         /// <summary>Keep a beam drawn across one-tick TargetDistance ghost drops.</summary>
         const float HoldSeconds = 0.22f;
 
-        /// <summary>Vendor BeamLaserStart ships at 1.3 — drop it so the loop is a hum.</summary>
-        const float HumPitch = 0.62f;
+        /// <summary>Vendor BeamLaserStart ships at 1.3 — drop it so the loop is a low hum.</summary>
+        const float HumPitch = 0.4f;
 
         /// <summary>Line + muzzle/impact FX vs the stock LaserStatic width.</summary>
         const float VisualScale = 0.5f;
@@ -157,6 +164,8 @@ namespace TitanOrbit.Game
 
             float now = Time.unscaledTime;
             MarkAllStale();
+            // Interval-gated proxy walk — same cache bullet tracers use to stop on hulls.
+            BulletCosmeticHitQuery.TryRefresh();
 
             var bindings = MegaShipWeaponVisualBinding.Live;
             if (bindings != null)
@@ -223,8 +232,8 @@ namespace TitanOrbit.Game
                     continue;
 
                 if (!TryResolveBeamEnds(
-                        em, binding, hull, mounts[m], gunners[m], m, mapW, mapH,
-                        out Vector3 muzzle, out Vector3 end))
+                        em, binding, hull, mounts[m], gunners[m], m, team, mapW, mapH,
+                        out Vector3 muzzle, out Vector3 end, out Entity beamHit))
                     continue;
 
                 var key = new BeamKey
@@ -249,7 +258,68 @@ namespace TitanOrbit.Game
                 slot.Root.transform.rotation = Quaternion.LookRotation(toEnd.normalized, Vector3.up);
                 ApplyVendorLength(slot.Vendor, toEnd.magnitude);
                 SetBeamShown(slot, true);
+
+                // --- Floating damage (same channels as BulletHitRpc) ---
+                // [TITAN-ORBIT] Hitscan has no tracer / HitRpc. Asteroids are
+                // seed-hydrated (GhostId 0), so resolve the rock from the clipped
+                // beam contact — same surface fit bullets use — not TargetGhostId.
+                TryNotifyBeamDamageFloat(
+                    binding.ShipEntity, team, mounts[m], gunners[m], end, beamHit);
             }
+        }
+
+        /// <summary>
+        /// Pushes this frame's cannon DPS onto the same floating-count path bullets use.
+        /// Lasers never send <c>BulletHitRpc</c>; the live beam is the presentation hook.
+        /// Asteroids have no <c>GhostInstance</c> — prefer the clipped contact entity.
+        /// </summary>
+        static void TryNotifyBeamDamageFloat(
+            Entity shooter,
+            TeamId ownerTeam,
+            in ShipWeaponMountElement mount,
+            in MegaShipGunnerSlotElement slot,
+            Vector3 impactDisplayPos,
+            Entity clippedHit)
+        {
+            Entity target = clippedHit;
+            if (target == Entity.Null && slot.TargetGhostId != 0)
+                MegaShipWeaponVisualTargets.TryGetEntity(slot.TargetGhostId, out target);
+            if (target == Entity.Null)
+                BulletCosmeticHitQuery.TryFindAsteroidAtImpact(impactDisplayPos, out target);
+            if (target == Entity.Null)
+                return;
+
+            // --- Slice = firePower × fireRate × dt (same DPS the server applies) ---
+            float slice = ResolveLaserSlice(in mount) * Time.deltaTime;
+            if (slice <= 0.01f)
+                return;
+
+            EcsFloatingCountPresenter.TryNotifyLaserBeamSlice(
+                shooter, target, slice, ownerTeam, impactDisplayPos);
+        }
+
+        /// <summary>
+        /// Per-barrel DPS for the float. Mount stats are written when the MEGA chassis
+        /// applies (client and server). If prediction cleared FirePower, use the catalog
+        /// cannon type-table so the number does not go silent.
+        /// </summary>
+        static float ResolveLaserSlice(in ShipWeaponMountElement mount)
+        {
+            float power = mount.FirePower;
+            float rate = mount.FireRate;
+            if (power > 0.01f && rate > 0.01f)
+                return CannonLaserMath.ComputeDps(power, rate);
+
+            var catalog = MegaShipCatalog.Load();
+            if (catalog == null)
+                return CannonLaserMath.ComputeDps(power, rate);
+
+            MegaShipPartStats stats = catalog.GetStatsForPartType(ShipFamilyPartTypes.WeaponCannon);
+            if (power <= 0.01f)
+                power = stats.firePower;
+            if (rate <= 0.01f)
+                rate = stats.fireRate;
+            return CannonLaserMath.ComputeDps(power, rate);
         }
 
         static bool TryResolveBeamEnds(
@@ -259,13 +329,16 @@ namespace TitanOrbit.Game
             in ShipWeaponMountElement mount,
             in MegaShipGunnerSlotElement slot,
             int mountIndex,
+            TeamId team,
             float mapW,
             float mapH,
             out Vector3 muzzle,
-            out Vector3 end)
+            out Vector3 end,
+            out Entity clippedHit)
         {
             muzzle = Vector3.zero;
             end = Vector3.zero;
+            clippedHit = Entity.Null;
 
             if (binding.Barrels != null
                 && mountIndex >= 0
@@ -285,55 +358,91 @@ namespace TitanOrbit.Game
 
             Vector3 rawEnd = muzzle;
             int ghostId = slot.TargetGhostId;
-            if (TryGetLocalMouseBeamEnd(em, binding, in hull, in mount, muzzle, mapW, mapH, out rawEnd))
+            if (!TryGetLocalMouseBeamEnd(em, binding, in hull, in mount, muzzle, mapW, mapH, out rawEnd))
             {
                 if (ghostId != 0
-                    && MegaShipWeaponVisualTargets.TryGetEntity(ghostId, out Entity mouseTarget)
+                    && MegaShipWeaponVisualTargets.TryGetEntity(ghostId, out Entity target)
                     && CannonLaserSurface.TryGetHitPoint(
-                        em, mouseTarget, (float3)muzzle, mapW, mapH, 0.0, out float3 mouseSurface))
+                        em, target, (float3)muzzle, mapW, mapH, 0.0, out float3 surface))
                 {
-                    Vector3 surface = (Vector3)mouseSurface;
-                    Vector3 toMouse = rawEnd - muzzle;
-                    Vector3 toSurface = surface - muzzle;
-                    toMouse.y = 0f;
-                    toSurface.y = 0f;
-                    if (toMouse.sqrMagnitude > 1e-6f
-                        && Vector3.Dot(toMouse.normalized, toSurface.normalized) > 0.7f
-                        && toSurface.sqrMagnitude <= toMouse.sqrMagnitude)
-                        rawEnd = surface;
+                    rawEnd = (Vector3)surface;
                 }
-            }
-            else if (ghostId != 0
-                && MegaShipWeaponVisualTargets.TryGetEntity(ghostId, out Entity target)
-                && CannonLaserSurface.TryGetHitPoint(
-                    em, target, (float3)muzzle, mapW, mapH, 0.0, out float3 surface))
-            {
-                rawEnd = (Vector3)surface;
-            }
-            else if (ghostId != 0
-                && MegaShipWeaponVisualTargets.TryGetDisplayPos(ghostId, muzzle, out Vector3 lockPos))
-            {
-                rawEnd = lockPos;
-            }
-            else if (!MegaShipWeaponVisualTargets.TryGetTiledPoint(
-                         slot.AimWorldX, slot.AimWorldZ, muzzle, out rawEnd))
-            {
-                float3 offset = MegaShipWeaponAim.WorldDirFromYawDeg(slot.CurrentYawDeg)
-                                * slot.TargetDistance;
-                rawEnd = muzzle + new Vector3(offset.x, 0f, offset.z);
+                else if (ghostId != 0
+                    && MegaShipWeaponVisualTargets.TryGetDisplayPos(ghostId, muzzle, out Vector3 lockPos))
+                {
+                    rawEnd = lockPos;
+                }
+                else if (!MegaShipWeaponVisualTargets.TryGetTiledPoint(
+                             slot.AimWorldX, slot.AimWorldZ, muzzle, out rawEnd))
+                {
+                    float3 offset = MegaShipWeaponAim.WorldDirFromYawDeg(slot.CurrentYawDeg)
+                                    * slot.TargetDistance;
+                    rawEnd = muzzle + new Vector3(offset.x, 0f, offset.z);
+                }
             }
 
             rawEnd.y = muzzle.y;
-            if (!ToroidalMapEcs.IsValidMapSize(mapW, mapH))
+            if (ToroidalMapEcs.IsValidMapSize(mapW, mapH))
             {
-                end = rawEnd;
-                return Vector3.Distance(muzzle, end) > 0.05f;
+                float3 tiled = ToroidalMapEcs.GetDisplayPosition(
+                    (float3)rawEnd, (float3)muzzle, mapW, mapH);
+                rawEnd = new Vector3(tiled.x, muzzle.y, tiled.z);
             }
 
-            float3 tiled = ToroidalMapEcs.GetDisplayPosition(
-                (float3)rawEnd, (float3)muzzle, mapW, mapH);
-            end = new Vector3(tiled.x, muzzle.y, tiled.z);
+            // Mouse aim used to keep the cursor length even when the ray already
+            // punched a hull / rock / pad. Clip to the first contact on this segment.
+            TryClipBeamToFirstCollider(em, binding, team, muzzle, ref rawEnd, out clippedHit);
+
+            end = rawEnd;
             return Vector3.Distance(muzzle, end) > 0.05f;
+        }
+
+        /// <summary>
+        /// Shortens <paramref name="end"/> to the nearest cosmetic collider on
+        /// muzzle → end. Skips the shooter's own hull. Heal banks still stop on allies.
+        /// Returns the hybrid-proxy entity when the clip landed (asteroid / ship).
+        /// </summary>
+        static bool TryClipBeamToFirstCollider(
+            EntityManager em,
+            MegaShipWeaponVisualBinding binding,
+            TeamId team,
+            Vector3 muzzle,
+            ref Vector3 end,
+            out Entity hitEntity)
+        {
+            hitEntity = Entity.Null;
+            if (binding == null || !em.Exists(binding.ShipEntity))
+                return false;
+
+            int ownerNet = 0;
+            if (em.HasComponent<GhostOwner>(binding.ShipEntity))
+                ownerNet = em.GetComponentData<GhostOwner>(binding.ShipEntity).NetworkId;
+
+            int bankIndex = 0;
+            if (em.HasComponent<ShipLoadoutState>(binding.ShipEntity))
+            {
+                bankIndex = BulletBankFireResolve.ResolveFireBankIndex(
+                    em.GetComponentData<ShipLoadoutState>(binding.ShipEntity));
+            }
+
+            if (!BulletCosmeticHitQuery.TryHitSegment(
+                    (float3)muzzle,
+                    (float3)end,
+                    (byte)team,
+                    ownerNet,
+                    isDisplaySpace: true,
+                    out float3 hit,
+                    out _,
+                    out hitEntity,
+                    out _,
+                    out _,
+                    damageFilter: 0,
+                    scaleMultiplier: 1f,
+                    bankIndex: bankIndex))
+                return false;
+
+            end = new Vector3(hit.x, muzzle.y, hit.z);
+            return hitEntity != Entity.Null;
         }
 
         /// <summary>

@@ -788,7 +788,7 @@ namespace TitanOrbit.Game
         static int ResolveMatchPlayerCapacity(TitanOrbitLobbyService.LobbySummary summary)
         {
             // --- Map-driven capacity ---
-            // [TITAN-ORBIT] Bootstrap sets MaxPlayersPerTeam (e.g. 20); map roll sets team count (2–5).
+            // [TITAN-ORBIT] Bootstrap sets MaxPlayersPerTeam from MapGenerationSettings; map roll sets team count (2–5).
             // Product is the real joinable roster size — not the hard server ceiling often set to 60.
             if (summary != null && summary.MapTeamCount > 0 && summary.MapMaxPlayersPerTeam > 0)
                 return summary.MapTeamCount * summary.MapMaxPlayersPerTeam;

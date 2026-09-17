@@ -24,7 +24,9 @@ namespace TitanOrbit.UI
     /// Chrome + one GEAR grid per ship family are built on the join loading screen
     /// (<see cref="TickJoinLoadWarmup"/>) so first spawn / first land do not Instantiates widgets.
     /// <see cref="TickIdleOrbitMenuCache"/> is a leftover fallback while flying if join warmup
-    /// timed out. Landing only reveals the already-built overlay. GameManager debug toggles
+    /// timed out. <see cref="TickLandedMoonTreePrepare"/> paints this moon's hull screenshots
+    /// during the 0.5s land delay so Show does not swap 24 thumbnails on the first visible frame.
+    /// Landing only reveals the already-built overlay. GameManager debug toggles
     /// (<see cref="GameManager.DebugFreeShipUpgradeTree"/>, <see cref="GameManager.DebugFreeGear"/>,
     /// <see cref="GameManager.DebugFreeCards"/>) paint Free prices and skip gem afford checks.
     /// </summary>
@@ -182,7 +184,7 @@ namespace TitanOrbit.UI
         private const int ShipTreeMaxColumns = 6;
         /// <summary>Left/right inset from canvas edge to the node layout area (matches <see cref="BuildShipUpgradeTreeVisualFull"/> margin).</summary>
         private const float ShipTreeCanvasInnerMargin = 8f;
-        private const float ShipTreeNodeHeight = 188f;
+        private const float ShipTreeNodeHeight = 216f;
         /// <summary>Vertical distance between node centers; must exceed <see cref="ShipTreeNodeHeight"/> so rows do not overlap.</summary>
         private const float ShipTreeLevelSpacing = ShipTreeNodeHeight + 44f;
         private const string ShipTreeStructureKey = "vertical_tree_prefab_v1";
@@ -229,6 +231,17 @@ namespace TitanOrbit.UI
         MoonDockWarmupPhase _moonDockWarmupPhase;
         /// <summary>True after the 24-node moon-dock ship tree has been spawned once (structure is shared across families).</summary>
         bool _moonDockTreeWarmed;
+        /// <summary>
+        /// Store planet id whose hull screenshots are currently on the shared tree.
+        /// Join warmup paints a dummy / first-known planet; land prepare overwrites this.
+        /// </summary>
+        int _landPreparePlanetId;
+        /// <summary>Next tree-node index to paint during the landing-delay stagger.</summary>
+        int _landPrepareNodeIndex;
+        /// <summary>True when every tree card (and the sidebar Your Ship hero) has this moon's screenshots.</summary>
+        bool _landPrepareComplete;
+        /// <summary>How many tree cards to screenshot-paint per landing-delay frame.</summary>
+        const int LandPrepareNodesPerTick = 6;
         /// <summary>Planet ids scratch for idle family-store caching. Filled from <see cref="EcsGameBridge.CopyKnownPlanetIds"/>.</summary>
         readonly List<int> _idlePlanetIdScratch = new List<int>(16);
         /// <summary>
@@ -7752,13 +7765,16 @@ namespace TitanOrbit.UI
                 // --- Warmed SHIPS ---
                 // Nodes already exist. RefreshStoreTabVisibility → EnsureShipsTabPopulated
                 // would call RefreshShipsTab and ForceUpdateCanvases again.
+                // Landing-delay prepare already wrote this moon's screenshots — skip a
+                // second 24-card paint on the first visible frame.
                 activeStoreTab = 1;
                 _moonDockShipTreeHorizontal = true;
                 if (shipsTabContent != null)
                     shipsTabContent.SetActive(true);
                 if (cardsTabContent != null)
                     cardsTabContent.SetActive(false);
-                RefreshShipTreeVisualStateOnly();
+                if (!IsLandedMoonTreePreparedForCurrentPlanet())
+                    RefreshShipTreeVisualStateOnly();
                 RefreshSidebar(includeStore: false);
             }
             else

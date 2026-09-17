@@ -15,7 +15,8 @@ namespace TitanOrbit.UI
     /// In-game team leaderboard in the top-right corner — same width as the minimap, height
     /// stretched down until it meets the minimap below. Press TAB to cycle Team A…E panels.
     /// <para>
-    /// Shows a player list only: role icons (top killer / miner / transporter), rank, profile
+    /// Shows a player list only: a gold Command Deck for the top three commanders, then
+    /// the crew. Role icons (top killer / miner / transporter), rank, profile
     /// badge, name, and a combined score. No per-stat K/G/P columns. Client presentation only —
     /// reads <see cref="MinimapBlipAnchor"/> caches from <see cref="MinimapEcsEntitySync"/> (no
     /// ship-entity gathers) and identity from <see cref="EcsGameBridge.RefreshPlayerDisplayNameCache"/>.
@@ -92,6 +93,8 @@ namespace TitanOrbit.UI
         readonly List<RowWidgets> _rows = new List<RowWidgets>(16);
         readonly List<MinimapBlipAnchor> _teamShips = new List<MinimapBlipAnchor>(16);
         readonly List<RowData> _sorted = new List<RowData>(16);
+        SectionBanner _commandDeckBanner;
+        SectionBanner _crewBanner;
         /// <summary>Pooled team + unowned slices for the planet-control bar.</summary>
         readonly List<PlanetBarSegment> _planetBarSegments = new List<PlanetBarSegment>(6);
 
@@ -105,7 +108,11 @@ namespace TitanOrbit.UI
         const float HeaderHeight = 24f;
         const float TopChromePad = 4f;
         const float RowHeight = 40f;
+        /// <summary>Command-deck rows sit a little taller so the gold rail and star rank read.</summary>
+        const float CommanderRowHeight = 46f;
+        const float SectionBannerHeight = 20f;
         const float RowSpacing = 3f;
+        const float CommandDeckAfterGap = 7f;
         const float ContentPadding = 4f;
         const float PanelSidePad = 6f;
         const int MaxKeepExtraRows = 4;
@@ -116,6 +123,11 @@ namespace TitanOrbit.UI
         static readonly Color BadgeKiller = new Color(0.35f, 0.55f, 1f, 1f);
         static readonly Color BadgeMiner = new Color(0.95f, 0.35f, 0.35f, 1f);
         static readonly Color BadgeTransporter = new Color(0.95f, 0.85f, 0.25f, 1f);
+        static readonly Color CommanderGold = TeamCommanderRules.Gold;
+        static readonly Color CommanderWashA = new Color(0.20f, 0.15f, 0.04f, 0.72f);
+        static readonly Color CommanderWashB = new Color(0.12f, 0.10f, 0.03f, 0.58f);
+        static readonly Color CommanderName = new Color(1f, 0.94f, 0.78f, 1f);
+        static readonly Color CrewCaption = new Color(0.62f, 0.78f, 0.95f, 0.92f);
 
         /// <summary>
         /// One colored slice of the planet-control bar (a team, or the leftover unowned worlds).
@@ -141,12 +153,25 @@ namespace TitanOrbit.UI
         {
             public GameObject Root;
             public Image Background;
+            public Image CommanderRail;
+            public Image CommanderGlow;
             public RectTransform BadgeContainer;
             public RectTransform PlayerBadgeCell;
             public Image PlayerBadgeImage;
             public TextMeshProUGUI RankText;
             public TextMeshProUGUI NameText;
             public TextMeshProUGUI ScoreText;
+        }
+
+        /// <summary>
+        /// In-list banner that splits the Command Deck from the crew. Not a player row.
+        /// </summary>
+        sealed class SectionBanner
+        {
+            public GameObject Root;
+            public Image Fill;
+            public Image Accent;
+            public TextMeshProUGUI Label;
         }
 
         /// <summary>One sorted scoreboard entry for the current refresh.</summary>
@@ -208,17 +233,22 @@ namespace TitanOrbit.UI
             {
                 RowWidgets w = _rows[i];
                 w.Root.SetActive(true);
-                w.RankText.text = "#" + (i + 1);
-                w.NameText.text = names[i];
-                w.ScoreText.text = scores[i].ToString();
-                w.Background.color = new Color(0f, 0f, 0f, i % 2 == 0 ? 0.28f : 0.18f);
-                PopulateBadges(w.BadgeContainer, i == 0, i == 1, i == 2);
+                bool commander = TeamCommanderRules.IsCommanderRank(i + 1);
+                PaintPlayerRow(
+                    w,
+                    i + 1,
+                    names[i],
+                    scores[i],
+                    commander,
+                    i == 0,
+                    i == 1,
+                    i == 2);
                 ApplyPlayerBadge(w, demoBadgeIds[i]);
             }
 
             if (_emptyText != null)
                 _emptyText.gameObject.SetActive(false);
-            LayoutRows(names.Length);
+            LayoutScoreboard(names.Length);
         }
 #endif
 
@@ -477,7 +507,7 @@ namespace TitanOrbit.UI
                     _emptyText.gameObject.SetActive(true);
                     _emptyText.text = "No players on this team.";
                 }
-                LayoutRows(0);
+                LayoutScoreboard(0);
                 return;
             }
 
@@ -536,13 +566,12 @@ namespace TitanOrbit.UI
                 RowData r = _sorted[i];
                 RowWidgets w = _rows[i];
                 w.Root.SetActive(true);
-                w.RankText.text = "#" + (i + 1);
-                w.NameText.text = r.Name;
-                w.ScoreText.text = r.Score.ToString();
-                w.Background.color = new Color(0f, 0f, 0f, i % 2 == 0 ? 0.30f : 0.18f);
-
-                PopulateBadges(
-                    w.BadgeContainer,
+                PaintPlayerRow(
+                    w,
+                    i + 1,
+                    r.Name,
+                    r.Score,
+                    TeamCommanderRules.IsCommanderRank(i + 1),
                     bestKills > 0 && r.OwnerNetworkId == bestKillerId,
                     bestGems > 0 && r.OwnerNetworkId == bestMinerId,
                     bestPeople > 0 && r.OwnerNetworkId == bestTransporterId);
@@ -552,7 +581,70 @@ namespace TitanOrbit.UI
             for (int i = _sorted.Count; i < _rows.Count; i++)
                 _rows[i].Root.SetActive(false);
 
-            LayoutRows(_sorted.Count);
+            LayoutScoreboard(_sorted.Count);
+        }
+
+        /// <summary>
+        /// Paints one scoreboard row. Command-deck seats (rank 1–3) get gold wash,
+        /// a left rail, a star rank, and a CDR pip. Crew rows stay ice-dark.
+        /// </summary>
+        static void PaintPlayerRow(
+            RowWidgets w,
+            int rank,
+            string name,
+            int score,
+            bool commander,
+            bool isKiller,
+            bool isMiner,
+            bool isTransporter)
+        {
+            if (w == null)
+                return;
+
+            if (w.RankText != null)
+            {
+                w.RankText.text = "#" + rank;
+                w.RankText.color = commander
+                    ? CommanderGold
+                    : new Color(0.85f, 0.90f, 1f);
+                w.RankText.fontStyle = commander ? FontStyles.Bold : FontStyles.Normal;
+            }
+
+            if (w.NameText != null)
+            {
+                w.NameText.text = name;
+                w.NameText.color = commander ? CommanderName : Color.white;
+            }
+
+            if (w.ScoreText != null)
+            {
+                w.ScoreText.text = score.ToString();
+                w.ScoreText.color = commander
+                    ? CommanderGold
+                    : new Color(0.95f, 0.86f, 0.55f);
+            }
+
+            if (w.Background != null)
+            {
+                if (commander)
+                    w.Background.color = rank % 2 == 1 ? CommanderWashA : CommanderWashB;
+                else
+                    w.Background.color = new Color(0f, 0f, 0f, rank % 2 == 1 ? 0.30f : 0.18f);
+            }
+
+            if (w.CommanderRail != null)
+            {
+                w.CommanderRail.enabled = commander;
+                w.CommanderRail.color = CommanderGold;
+            }
+
+            if (w.CommanderGlow != null)
+            {
+                w.CommanderGlow.enabled = commander;
+                w.CommanderGlow.color = new Color(CommanderGold.r, CommanderGold.g, CommanderGold.b, 0.18f);
+            }
+
+            PopulateBadges(w.BadgeContainer, isKiller, isMiner, isTransporter);
         }
 
         /// <summary>Grows/shrinks the row pool.</summary>
@@ -570,34 +662,99 @@ namespace TitanOrbit.UI
             }
         }
 
-        /// <summary>Stacks visible rows top-down inside the scroll content.</summary>
-        void LayoutRows(int visibleCount)
+        /// <summary>
+        /// Stacks the Command Deck banner + top-three rows, then the crew banner +
+        /// remaining rows. Banners hide when that slice is empty.
+        /// </summary>
+        void LayoutScoreboard(int visibleCount)
         {
             if (_contentRect == null || _viewportRect == null)
                 return;
 
-            float y = -ContentPadding;
+            int commanders = Mathf.Min(TeamCommanderRules.Slots, Mathf.Max(0, visibleCount));
+            int crew = Mathf.Max(0, visibleCount - commanders);
             float contentWidth = Mathf.Max(1f, _viewportRect.rect.width);
             float rowWidth = Mathf.Max(1f, contentWidth - ContentPadding * 2f);
+            float y = -ContentPadding;
 
-            for (int i = 0; i < visibleCount && i < _rows.Count; i++)
+            y = PlaceSectionBanner(_commandDeckBanner, y, rowWidth, commanders > 0, true);
+            for (int i = 0; i < commanders && i < _rows.Count; i++)
             {
-                var rowRect = _rows[i].Root.transform as RectTransform;
-                if (rowRect == null)
-                    continue;
-                rowRect.anchorMin = new Vector2(0f, 1f);
-                rowRect.anchorMax = new Vector2(0f, 1f);
-                rowRect.pivot = new Vector2(0f, 1f);
-                rowRect.anchoredPosition = new Vector2(ContentPadding, y);
-                rowRect.sizeDelta = new Vector2(rowWidth, RowHeight);
-                y -= RowHeight + RowSpacing;
+                y = PlaceScoreRow(_rows[i], y, rowWidth, CommanderRowHeight);
             }
 
-            float needed = ContentPadding * 2f;
-            if (visibleCount > 0)
-                needed += visibleCount * RowHeight + (visibleCount - 1) * RowSpacing;
+            if (commanders > 0 && crew > 0)
+                y -= CommandDeckAfterGap - RowSpacing;
+
+            y = PlaceSectionBanner(_crewBanner, y, rowWidth, crew > 0, false);
+            for (int i = commanders; i < visibleCount && i < _rows.Count; i++)
+            {
+                y = PlaceScoreRow(_rows[i], y, rowWidth, RowHeight);
+            }
+
+            float needed = ContentPadding - y + ContentPadding;
             float viewportH = Mathf.Max(1f, _viewportRect.rect.height);
             _contentRect.sizeDelta = new Vector2(contentWidth, Mathf.Max(viewportH, needed));
+        }
+
+        /// <summary>
+        /// Pins a Command Deck / CREW banner under the current cursor. Hidden banners
+        /// take no height so a solo team does not leave a dead CREW strip.
+        /// </summary>
+        static float PlaceSectionBanner(
+            SectionBanner banner,
+            float y,
+            float width,
+            bool show,
+            bool commandDeck)
+        {
+            if (banner == null || banner.Root == null)
+                return y;
+
+            banner.Root.SetActive(show);
+            if (!show)
+                return y;
+
+            var rt = banner.Root.transform as RectTransform;
+            if (rt == null)
+                return y;
+
+            rt.anchorMin = new Vector2(0f, 1f);
+            rt.anchorMax = new Vector2(0f, 1f);
+            rt.pivot = new Vector2(0f, 1f);
+            rt.anchoredPosition = new Vector2(ContentPadding, y);
+            rt.sizeDelta = new Vector2(width, SectionBannerHeight);
+
+            if (banner.Label != null)
+            {
+                banner.Label.text = commandDeck ? "COMMANDERS" : "CREW";
+                banner.Label.color = commandDeck ? CommanderGold : CrewCaption;
+            }
+
+            if (banner.Accent != null)
+                banner.Accent.color = commandDeck
+                    ? CommanderGold
+                    : new Color(0.35f, 0.72f, 0.95f, 0.85f);
+
+            return y - SectionBannerHeight - RowSpacing;
+        }
+
+        /// <summary>Pins one player row and advances the layout cursor.</summary>
+        static float PlaceScoreRow(RowWidgets row, float y, float width, float height)
+        {
+            if (row == null || row.Root == null)
+                return y;
+
+            var rowRect = row.Root.transform as RectTransform;
+            if (rowRect == null)
+                return y;
+
+            rowRect.anchorMin = new Vector2(0f, 1f);
+            rowRect.anchorMax = new Vector2(0f, 1f);
+            rowRect.pivot = new Vector2(0f, 1f);
+            rowRect.anchoredPosition = new Vector2(ContentPadding, y);
+            rowRect.sizeDelta = new Vector2(width, height);
+            return y - height - RowSpacing;
         }
 
         // =========================================================================
@@ -637,7 +794,11 @@ namespace TitanOrbit.UI
         /// Rebuilds K / G / T role icons for team leaders. Collapses width to 0 when none apply
         /// so an empty badge slot cannot leave a blank square beside the name.
         /// </summary>
-        static void PopulateBadges(RectTransform parent, bool isKiller, bool isMiner, bool isTransporter)
+        static void PopulateBadges(
+            RectTransform parent,
+            bool isKiller,
+            bool isMiner,
+            bool isTransporter)
         {
             if (parent == null)
                 return;
@@ -894,7 +1055,12 @@ namespace TitanOrbit.UI
         /// </summary>
         void EnsurePanelExists()
         {
-            if (_panelRoot != null && _titleText != null && _contentRect != null && _planetBarRoot != null)
+            if (_panelRoot != null
+                && _titleText != null
+                && _contentRect != null
+                && _planetBarRoot != null
+                && _commandDeckBanner != null
+                && _crewBanner != null)
                 return;
 
             // Clean up a half-built tree after domain reload / script recompile.
@@ -902,6 +1068,8 @@ namespace TitanOrbit.UI
             if (existing != null)
                 Destroy(existing.gameObject);
             _planetBarSegments.Clear();
+            _commandDeckBanner = null;
+            _crewBanner = null;
 
             _panelRoot = new GameObject("TeamLeaderboardPanel", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image), typeof(CanvasGroup));
             _panelRoot.transform.SetParent(transform, false);
@@ -1005,7 +1173,47 @@ namespace TitanOrbit.UI
             _scrollRect.content = _contentRect;
             _scrollRect.verticalNormalizedPosition = 1f;
 
+            _commandDeckBanner = CreateSectionBanner(_contentRect, "CommandDeckBanner");
+            _crewBanner = CreateSectionBanner(_contentRect, "CrewBanner");
+
             UpdatePanelLayoutIfNeeded();
+        }
+
+        /// <summary>
+        /// Dark-glass section rail with a thin accent stripe. Used for COMMAND DECK
+        /// (gold) and CREW (ice) so the list reads as a cockpit roster, not a table.
+        /// </summary>
+        SectionBanner CreateSectionBanner(Transform parent, string name)
+        {
+            var go = new GameObject(name, typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
+            go.transform.SetParent(parent, false);
+            var fill = go.GetComponent<Image>();
+            fill.sprite = GetWhiteSprite();
+            fill.color = new Color(0.018f, 0.028f, 0.045f, 0.96f);
+            fill.raycastTarget = false;
+
+            var accent = CreateUiImage(go.transform, "Accent", CommanderGold);
+            var accentRt = accent.rectTransform;
+            accentRt.anchorMin = new Vector2(0f, 1f);
+            accentRt.anchorMax = new Vector2(1f, 1f);
+            accentRt.pivot = new Vector2(0.5f, 1f);
+            accentRt.anchoredPosition = Vector2.zero;
+            accentRt.sizeDelta = new Vector2(-8f, 1.4f);
+
+            var label = CreateTmp(go.transform, "Label", 11f, TextAlignmentOptions.Center, CommanderGold);
+            StretchFull(label.rectTransform);
+            label.fontStyle = FontStyles.Bold;
+            label.characterSpacing = 1.6f;
+            label.text = "COMMAND DECK";
+
+            go.SetActive(false);
+            return new SectionBanner
+            {
+                Root = go,
+                Fill = fill,
+                Accent = accent,
+                Label = label,
+            };
         }
 
         /// <summary>
@@ -1019,6 +1227,25 @@ namespace TitanOrbit.UI
             bg.sprite = GetWhiteSprite();
             bg.color = new Color(0f, 0f, 0f, 0.25f);
             bg.raycastTarget = false;
+
+            // Overlay chrome — ignoreLayout so the gold rail is not a HLG cell.
+            var glow = CreateUiImage(rowGo.transform, "CommanderGlow", new Color(1f, 0.84f, 0.38f, 0.16f));
+            var glowRt = glow.rectTransform;
+            StretchFull(glowRt);
+            glowRt.offsetMin = new Vector2(4f, 1f);
+            glowRt.offsetMax = new Vector2(-1f, -1f);
+            glow.enabled = false;
+            IgnoreLayout(glow.gameObject);
+
+            var rail = CreateUiImage(rowGo.transform, "CommanderRail", CommanderGold);
+            var railRt = rail.rectTransform;
+            railRt.anchorMin = new Vector2(0f, 0f);
+            railRt.anchorMax = new Vector2(0f, 1f);
+            railRt.pivot = new Vector2(0f, 0.5f);
+            railRt.anchoredPosition = Vector2.zero;
+            railRt.sizeDelta = new Vector2(3.5f, 0f);
+            rail.enabled = false;
+            IgnoreLayout(rail.gameObject);
 
             var hlg = rowGo.AddComponent<HorizontalLayoutGroup>();
             hlg.padding = new RectOffset(6, 8, 5, 5);
@@ -1039,7 +1266,7 @@ namespace TitanOrbit.UI
             badgesLayout.childForceExpandWidth = false;
             badgesLayout.childForceExpandHeight = false;
 
-            var rank = CreateRowLabel(CreateCell(rowGo.transform, "Rank", 30f), 13, TextAlignmentOptions.Center);
+            var rank = CreateRowLabel(CreateCell(rowGo.transform, "Rank", 36f), 13, TextAlignmentOptions.Center);
             rank.color = new Color(0.85f, 0.90f, 1f);
 
             var playerBadgeCell = CreateCell(rowGo.transform, "PlayerBadge", 0f);
@@ -1062,6 +1289,8 @@ namespace TitanOrbit.UI
             {
                 Root = rowGo,
                 Background = bg,
+                CommanderRail = rail,
+                CommanderGlow = glow,
                 BadgeContainer = badges,
                 PlayerBadgeCell = playerBadgeCell,
                 PlayerBadgeImage = playerBadgeImage,
@@ -1069,6 +1298,18 @@ namespace TitanOrbit.UI
                 NameText = name,
                 ScoreText = score,
             };
+        }
+
+        /// <summary>
+        /// Marks a child so <see cref="HorizontalLayoutGroup"/> does not treat it as a cell.
+        /// Used for the gold command rail overlaid on the row.
+        /// </summary>
+        static void IgnoreLayout(GameObject go)
+        {
+            var le = go.GetComponent<LayoutElement>();
+            if (le == null)
+                le = go.AddComponent<LayoutElement>();
+            le.ignoreLayout = true;
         }
 
         /// <summary>Fixed- or flexible-width cell under a horizontal row layout.</summary>

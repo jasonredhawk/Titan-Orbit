@@ -16,6 +16,9 @@ namespace TitanOrbit.UI
     /// screen (<see cref="OrbitStationUI.TickJoinLoadWarmup"/>). This controller only
     /// ticks <see cref="OrbitStationUI.TickIdleOrbitMenuCache"/> as a leftover if that
     /// warmup timed out. Landing must not construct widgets — that made the approach hitch.
+    /// During the 0.5s cinematic delay this controller ticks
+    /// <see cref="OrbitStationUI.TickLandedMoonTreePrepare"/> so the shared upgrade tree
+    /// swaps to this moon's hull screenshots while the overlay is still hidden.
     /// <para>
     /// [TITAN-ORBIT] Deposit intent stays on while truly docked. Failed ECS reads and brief
     /// <c>LandingProgress</c> dips use hysteresis — they must not call <see cref="HideMenuImmediate"/>
@@ -82,8 +85,9 @@ namespace TitanOrbit.UI
 
         /// <summary>
         /// Each frame: while flying, cache Orbit Menus for every known planet; if the ship is
-        /// fully landed on a friendly moon (and not thrusting), open the overlay after a short
-        /// cinematic pause; otherwise hide and clear deposit intent.
+        /// fully landed on a friendly moon (and not thrusting), paint this moon's tree
+        /// screenshots during the cinematic pause, then open the overlay; otherwise hide
+        /// and clear deposit intent.
         /// </summary>
         void Update()
         {
@@ -201,11 +205,19 @@ namespace TitanOrbit.UI
                 GetOrCreateUi();
             }
 
+            int homePlanetId = ResolveHomePlanetId(ship.Team, planet, moonDock.MoonPlanetId);
+            _latchedHomePlanetId = homePlanetId;
+
+            // --- Hidden screenshot swap ---
+            // [TITAN-ORBIT] The shared 24-node tree still shows the last (or warmup)
+            // family's thumbs until we paint this moon. Do that during the delay so
+            // Show is a fade-in, not a 24-texture hitch.
+            if (!_menuVisible)
+                GetOrCreateUi().TickLandedMoonTreePrepare(moonDock.MoonPlanetId, homePlanetId);
+
             bool shouldShow = Time.time >= _landingCompleteTime + MenuDelayAfterLandingSeconds;
             if (shouldShow && !_menuVisible)
             {
-                int homePlanetId = ResolveHomePlanetId(ship.Team, planet, moonDock.MoonPlanetId);
-                _latchedHomePlanetId = homePlanetId;
                 GetOrCreateUi().ShowFromEcs(moonDock.MoonPlanetId, homePlanetId);
                 _menuVisible = true;
             }

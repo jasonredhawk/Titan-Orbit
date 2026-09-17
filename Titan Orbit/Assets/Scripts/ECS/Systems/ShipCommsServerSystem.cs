@@ -8,8 +8,8 @@ namespace TitanOrbit.ECS
 {
     /// <summary>
     /// Server: accepts <see cref="ShipCommsCommand"/>, checks the speaker has a living ship,
-    /// rate-limits the connection, then sends <see cref="ShipCommsRpc"/> to All clients or
-    /// only teammates.
+    /// rate-limits the connection, then sends <see cref="ShipCommsRpc"/> to All clients,
+    /// teammates, or teammates-as-Commander (top-three rank + command-deck words).
     /// <para>
     /// World: ServerSimulation. Group: SimulationSystemGroup. Not Burst-compiled — we load the
     /// managed <see cref="ShipCommsKeywordCatalog"/> to validate indices.
@@ -17,9 +17,10 @@ namespace TitanOrbit.ECS
     /// <para>
     /// [NETCODE] Owner comes from <see cref="ReceiveRpcCommandRequest.SourceConnection"/> →
     /// <see cref="NetworkId"/>. The command has no client-supplied id, so a player cannot put
-    /// chips above someone else's hull. <c>TeamOnly</c> is a channel request; this system
-    /// reads the speaker's <see cref="ShipState.Team"/> and targets those connections so a
-    /// client cannot leak team chat to enemies. Local Host injects the command with
+    /// chips above someone else's hull. <c>TeamOnly</c> is a channel request (All / Team /
+    /// Commander); this system reads the speaker's <see cref="ShipState.Team"/> and
+    /// commander rank and targets those connections so a client cannot leak team chat
+    /// to enemies or spoof command-deck words. Local Host injects the command with
     /// <c>ReceiveRpcCommandRequest</c> already set (see <c>ShipCommsRpcClient</c>) because
     /// client→server SendRpc can drop under Instantiates load.
     /// </para>
@@ -85,6 +86,18 @@ namespace TitanOrbit.ECS
                 if (!TryGetLivingSpeakerTeam(em, networkId, out TeamId speakerTeam))
                     continue;
 
+                // --- Commander gate ---
+                // [TITAN-ORBIT] Commander keywords and the Commander channel are for the
+                // top three scorers on the speaker's team. Rank is recomputed from ghosted
+                // match stats here — the client pill is only a request.
+                ShipCommsChannel channel = TeamCommanderRules.Sanitize(sentence.TeamOnly);
+                bool usesCommanderWords = SequenceUsesCommanderKeyword(catalog, sentence);
+                bool isCommander = SpeakerIsCommander(em, networkId, speakerTeam);
+                if (usesCommanderWords && (!isCommander || channel != ShipCommsChannel.Commander))
+                    continue;
+                if (channel == ShipCommsChannel.Commander && !isCommander)
+                    channel = ShipCommsChannel.Team;
+
                 // --- Rate limit ---
                 // [TITAN-ORBIT] Cooldown lives on the connection entity (not the ship) so a
                 // respawn cannot reset the timer by spawning a new hull. Applied only after
@@ -102,7 +115,7 @@ namespace TitanOrbit.ECS
                     ecb.AddComponent(connection, new ShipCommsCooldown { LastSendElapsed = now });
                 }
 
-                Deliver(ecb, em, networkId, speakerTeam, sentence);
+                Deliver(ecb, em, networkId, speakerTeam, sentence, channel);
             }
 
             ecb.Playback(em);
@@ -136,18 +149,114 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// All → every connected client. Team → each in-game connection whose living or
-        /// dead hull shares the speaker's <see cref="TeamId"/>. No team on the speaker
-        /// falls back to the speaker only so "TEAM" never leaks to the whole match.
+        /// True when any live keyword in <paramref name="sentence"/> is a command-deck
+        /// word (Everyone, Us, Form Up, …). Unused slots after Count are ignored.
+        /// </summary>
+        static bool SequenceUsesCommanderKeyword(
+            ShipCommsKeywordCatalog catalog,
+            in ShipCommsCommand sentence)
+        {
+            if (catalog.IsCommanderKeyword(sentence.K0))
+                return true;
+            if (sentence.Count >= 2 && catalog.IsCommanderKeyword(sentence.K1))
+                return true;
+            if (sentence.Count >= 3 && catalog.IsCommanderKeyword(sentence.K2))
+                return true;
+            if (sentence.Count >= 4 && catalog.IsCommanderKeyword(sentence.K3))
+                return true;
+            if (sentence.Count >= 5 && catalog.IsCommanderKeyword(sentence.K4))
+                return true;
+            return false;
+        }
+
+        /// <summary>
+        /// True when <paramref name="networkId"/> is among the top
+        /// <see cref="TeamCommanderRules.Slots"/> scorers on <paramref name="team"/>.
+        /// Dead hulls still count — the Command Deck matches the leaderboard, not
+        /// living-only nameplate roles. AwaitingTeamSelection is skipped (no faction).
+        /// Ships are few; this runs on a rate-limited RPC, not every tick.
+        /// </summary>
+        static bool SpeakerIsCommander(EntityManager em, int networkId, TeamId team)
+        {
+            if (networkId <= 0 || team == TeamId.None)
+                return false;
+
+            using var query = em.CreateEntityQuery(
+                typeof(ShipTag),
+                typeof(GhostOwner),
+                typeof(ShipState),
+                typeof(ShipMatchStats));
+            using var owners = query.ToComponentDataArray<GhostOwner>(Allocator.Temp);
+            using var states = query.ToComponentDataArray<ShipState>(Allocator.Temp);
+            using var stats = query.ToComponentDataArray<ShipMatchStats>(Allocator.Temp);
+
+            // Stack scratch — a team is a handful of ships, never a managed List on the RPC.
+            const int cap = 32;
+            var ids = new NativeArray<int>(cap, Allocator.Temp);
+            var scores = new NativeArray<int>(cap, Allocator.Temp);
+            int n = 0;
+            for (int i = 0; i < owners.Length && n < cap; i++)
+            {
+                if (states[i].AwaitingTeamSelection || states[i].Team != team)
+                    continue;
+                int id = owners[i].NetworkId;
+                if (id <= 0)
+                    continue;
+                ids[n] = id;
+                scores[n] = TeamCommanderRules.CombinedScore(
+                    stats[i].Kills,
+                    stats[i].GemsDeposited,
+                    stats[i].PeopleDelivered);
+                n++;
+            }
+
+            // Sort score desc, then NetworkId asc — same tie-break as the leaderboard.
+            for (int a = 1; a < n; a++)
+            {
+                int keyId = ids[a];
+                int keyScore = scores[a];
+                int b = a - 1;
+                while (b >= 0
+                    && (scores[b] < keyScore
+                        || (scores[b] == keyScore && ids[b] > keyId)))
+                {
+                    ids[b + 1] = ids[b];
+                    scores[b + 1] = scores[b];
+                    b--;
+                }
+
+                ids[b + 1] = keyId;
+                scores[b + 1] = keyScore;
+            }
+
+            int rank = 0;
+            for (int i = 0; i < n; i++)
+            {
+                if (ids[i] != networkId)
+                    continue;
+                rank = i + 1;
+                break;
+            }
+
+            ids.Dispose();
+            scores.Dispose();
+            return TeamCommanderRules.IsCommanderRank(rank);
+        }
+
+        /// <summary>
+        /// All → every connected client. Team / Commander → each in-game connection whose
+        /// living or dead hull shares the speaker's <see cref="TeamId"/>. No team on the
+        /// speaker falls back to the speaker only so "TEAM" never leaks to the whole match.
         /// </summary>
         static void Deliver(
             EntityCommandBuffer ecb,
             EntityManager em,
             int networkId,
             TeamId speakerTeam,
-            in ShipCommsCommand sentence)
+            in ShipCommsCommand sentence,
+            ShipCommsChannel channel)
         {
-            byte teamOnly = sentence.TeamOnly != 0 ? (byte)1 : (byte)0;
+            byte teamOnly = (byte)channel;
             byte hasWaypoint = sentence.HasWaypoint != 0 ? (byte)1 : (byte)0;
             float waypointX = sentence.WaypointX;
             float waypointZ = sentence.WaypointZ;
@@ -212,13 +321,13 @@ namespace TitanOrbit.ECS
                 G7X = sentence.G7X, G7Z = sentence.G7Z,
             };
 
-            if (teamOnly == 0)
+            if (!TeamCommanderRules.IsTeamScoped(channel))
             {
                 BroadcastAll(ecb, rpc);
                 return;
             }
 
-            // --- Team channel ---
+            // --- Team / Commander channel ---
             // [TITAN-ORBIT] TeamId.None is the join-team plaque. A living speaker should
             // already have a faction; if they do not, only they see the chips.
             if (speakerTeam == TeamId.None)

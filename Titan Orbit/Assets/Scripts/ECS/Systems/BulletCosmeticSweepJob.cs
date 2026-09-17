@@ -179,7 +179,7 @@ namespace TitanOrbit.ECS
                     continue;
                 }
 
-                if (lifetime <= 0f || traveled >= math.max(0.5f, req.MaxDistance))
+                if (lifetime <= 0f || BulletFlight.IsRangeExpired(traveled, req.MaxDistance))
                 {
                     Results[i] = new CosmeticSweepResult
                     {

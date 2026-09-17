@@ -13,6 +13,9 @@ namespace TitanOrbit.Data
     [CreateAssetMenu(fileName = "MapGenerationSettings", menuName = "Titan Orbit/Map Generation Settings")]
     public class MapGenerationSettings : ScriptableObject
     {
+        /// <summary>Fallback roster cap when the asset is missing or the field is unset.</summary>
+        public const int DefaultMaxPlayersPerTeam = 12;
+
         [Header("Seed")]
         [Tooltip("0 = random seed each match. Non-zero fixes the seed for reproducible maps.")]
         public int seed;
@@ -28,6 +31,9 @@ namespace TitanOrbit.Data
         public int minTeamsPerMatch = 2;
         [Tooltip("Randomized team count upper bound (inclusive). Supports 2..5 teams.")]
         public int maxTeamsPerMatch = 5;
+        [Tooltip("Hard cap on players who can join each team. Team-pick RPCs reject extras.")]
+        [Min(1)]
+        public int maxPlayersPerTeam = DefaultMaxPlayersPerTeam;
         [Tooltip("Uniform scale for spawned home planets.")]
         public float homePlanetSize = 15f;
         [Tooltip("Starting level for home planets.")]

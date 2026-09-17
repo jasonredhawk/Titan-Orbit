@@ -15,7 +15,7 @@ namespace TitanOrbit.UI
     public class MinimapSeamDebugUI : RawImage
     {
         /// <summary>Seam stroke in UI pixels.</summary>
-        const float Thickness = 2.4f;
+        const float Thickness = 1.2f;
 
         /// <summary>Cyan — matches the world seam overlay.</summary>
         static readonly Color SeamColor = new Color(0.15f, 0.95f, 1f, 0.95f);

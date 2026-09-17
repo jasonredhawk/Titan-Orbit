@@ -1,3 +1,4 @@
+using TitanOrbit.Core;
 using TitanOrbit.ECS;
 using Unity.Entities;
 using Unity.NetCode;
@@ -14,9 +15,9 @@ namespace TitanOrbit.Game
     /// as <see cref="PlayerNameRpcClient"/>. Under join load, SendRpc can vanish and the
     /// callout would never leave this machine.
     /// </para>
-    /// <c>TeamOnly</c> is a channel request (All vs teammates). The server looks up the
-    /// speaker's <c>ShipState.Team</c> and targets those connections — the client cannot
-    /// pick another team's inbox.
+    /// <c>TeamOnly</c> is a channel request (All / Team / Commander). The server looks up
+    /// the speaker's <c>ShipState.Team</c> and commander rank and targets those
+    /// connections — the client cannot pick another team's inbox or spoof command rank.
     /// The panel also paints an optimistic local bubble so the speaker does not wait on RTT.
     /// Server validation / rate-limit still decide whether everyone else sees it.
     /// </summary>
@@ -31,7 +32,8 @@ namespace TitanOrbit.Game
             if (payload.Count < 1 || payload.Count > 5)
                 return false;
 
-            byte channel = payload.TeamOnly != 0 ? (byte)1 : (byte)0;
+            // Preserve Commander (2). Collapsing to 0/1 would drop command chrome on the echo.
+            byte channel = (byte)TeamCommanderRules.Sanitize(payload.TeamOnly);
             var command = new ShipCommsCommand
             {
                 Count = payload.Count,
