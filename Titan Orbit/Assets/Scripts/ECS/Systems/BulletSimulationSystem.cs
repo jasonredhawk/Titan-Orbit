@@ -1412,13 +1412,23 @@ namespace TitanOrbit.ECS
                     if (result.AppliedHullDamage || result.GemsToExpel > 0.0001f || result.BecameDead)
                     {
                         float2 impulse = new float2(b.Velocity.x, b.Velocity.z);
+                        ShipMatchStatsLogic.ClassifyBulletSource(in b, out byte sourceKind, out int sourceGhost);
+                        float2 sourcePos = new float2(b.Position.x, b.Position.z);
+                        if (sourceKind == (byte)DeathVfxSourceKind.Turret &&
+                            math.lengthsq(b.SourceOriginXZ) > 1e-6f)
+                            sourcePos = b.SourceOriginXZ;
                         ShipMatchStatsLogic.SetLastDamager(
                             state.EntityManager,
                             bestEntity,
                             b.OwnerNetworkId,
                             (float)serverElapsed,
                             impulse,
-                            hitDamage);
+                            hitDamage,
+                            sourceEntity: default,
+                            sourceKind: sourceKind,
+                            sourceGhostId: sourceGhost,
+                            sourcePosXZ: sourcePos,
+                            hasSourcePos: true);
                     }
 
                     if (result.GemsToExpel > 0.0001f &&

@@ -328,6 +328,16 @@ namespace TitanOrbit.ECS
     }
 
     /// <summary>
+    /// [NETCODE] Client zeros one bottom-bar ability. No gem refund. Server validates in
+    /// <see cref="ShipAttributeUpgradeLogic.TryResetForNetworkId"/>.
+    /// </summary>
+    public struct ResetAttributeUpgradeCommand : IRpcCommand
+    {
+        /// <summary>[TITAN-ORBIT] Index into ship attribute upgrade table (0–9).</summary>
+        public int AttributeIndex;
+    }
+
+    /// <summary>
     /// [NETCODE] Client reconnected to a match that still has their ship — resume control without
     /// re-picking team. Handled by <see cref="RejoinShipManagementSystem"/>.
     /// </summary>

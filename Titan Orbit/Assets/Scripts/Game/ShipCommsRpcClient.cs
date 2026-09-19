@@ -15,7 +15,7 @@ namespace TitanOrbit.Game
     /// as <see cref="PlayerNameRpcClient"/>. Under join load, SendRpc can vanish and the
     /// callout would never leave this machine.
     /// </para>
-    /// <c>TeamOnly</c> is a channel request (All / Team / Commander). The server looks up
+    /// <c>TeamOnly</c> is a channel request (All / Team; Commander is a send-time upgrade). The server looks up
     /// the speaker's <c>ShipState.Team</c> and commander rank and targets those
     /// connections — the client cannot pick another team's inbox or spoof command rank.
     /// The panel also paints an optimistic local bubble so the speaker does not wait on RTT.

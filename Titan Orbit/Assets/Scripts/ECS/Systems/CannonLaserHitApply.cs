@@ -44,7 +44,8 @@ namespace TitanOrbit.ECS
             double serverElapsed,
             Entity gemPrefab,
             float gemSpawnServerTime,
-            ref float gemCarry)
+            ref float gemCarry,
+            Entity attackerEntity = default)
         {
             var result = new Result { HitPoint = muzzle };
             if (damage <= 0.0001f || target == Entity.Null || !em.Exists(target))
@@ -54,7 +55,8 @@ namespace TitanOrbit.ECS
             {
                 ApplyShip(
                     em, ecb, target, attackerTeam, attackerNetworkId, muzzle, damage, healFriendly,
-                    mapW, mapH, serverElapsed, gemPrefab, gemSpawnServerTime, ref gemCarry, ref result);
+                    mapW, mapH, serverElapsed, gemPrefab, gemSpawnServerTime, ref gemCarry, ref result,
+                    attackerEntity);
                 return result;
             }
 
@@ -93,7 +95,8 @@ namespace TitanOrbit.ECS
             Entity gemPrefab,
             float gemSpawnServerTime,
             ref float gemCarry,
-            ref Result result)
+            ref Result result,
+            Entity attackerEntity)
         {
             var ship = em.GetComponentData<ShipState>(target);
             if (ship.IsDead)
@@ -151,7 +154,9 @@ namespace TitanOrbit.ECS
             if (applied.AppliedHullDamage || applied.GemsToExpel > 0.0001f || applied.BecameDead)
             {
                 ShipMatchStatsLogic.SetLastDamager(
-                    em, target, attackerNetworkId, (float)serverElapsed);
+                    em, target, attackerNetworkId, (float)serverElapsed,
+                    sourceEntity: attackerEntity,
+                    sourceKind: (byte)DeathVfxSourceKind.Ship);
             }
 
             gemCarry += applied.GemsToExpel;

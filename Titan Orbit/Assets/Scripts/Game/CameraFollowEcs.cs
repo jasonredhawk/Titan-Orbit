@@ -1,11 +1,14 @@
+using System.Collections.Generic;
 using TitanOrbit.Core;
 using TitanOrbit.Data;
 using TitanOrbit.ECS;
 using TitanOrbit.Generation;
 using TitanOrbit.Input;
 using TitanOrbit.Shared;
+using TitanOrbit.Simulation;
 using Unity.Entities;
 using Unity.Mathematics;
+using Unity.NetCode;
 using Unity.Transforms;
 using UnityEngine;
 using UnityEngine.Serialization;
@@ -41,7 +44,12 @@ namespace TitanOrbit.Game
     /// hull turn, low drift) the camera leaves top-down follow and rides a random
     /// Catmull-Rom orbit from <see cref="CameraTheatricalOrbit"/>. Thrust exits; mouse
     /// aim does not. Never starts on a gem-moon landing. Gameplay height / look-ahead
-    /// keep ticking so exit has a live target. Client only.
+    /// keep ticking so exit has a live target.
+    /// <para>
+    /// On local death the same idle theatrical starts, with the look-at swapped from
+    /// the local hull to the last damager (enemy ship, asteroid, turret, missile
+    /// launcher, mine site). No separate death camera path. Respawn blends back.
+    /// </para>
     /// </para>
     /// </summary>
     [DefaultExecutionOrder(67001)]
@@ -126,6 +134,10 @@ namespace TitanOrbit.Game
         [Tooltip("Perspective FOV at farthest orbit (zoomed out).")]
         [Range(18f, 80f)]
         [SerializeField] float theatricalFovMax = 64f;
+
+        [Header("Death Theatrical Camera")]
+        [Tooltip("On local death, start the same theatrical orbit with the look-at on the killer.")]
+        [SerializeField] bool deathTheatricalEnabled = true;
 
         /// <summary>Gameplay follow camera — used by bullet tracers to stay readable at MEGA height.</summary>
         public static CameraFollowEcs Instance { get; private set; }
@@ -325,8 +337,17 @@ namespace TitanOrbit.Game
         /// <summary>True after the FOV SmoothDamp has a valid seed.</summary>
         bool _hasTheatricalSmoothedFov;
 
-        /// <summary>Last local <see cref="ShipState.IsDead"/> — rising edge starts theatrical immediately.</summary>
+        /// <summary>Last local <see cref="ShipState.IsDead"/> — rising edge starts death theatrical.</summary>
         bool _wasLocalShipDead;
+
+        /// <summary>True while death theatrical owns the idle orbit (killer focus).</summary>
+        bool _deathTheatricalActive;
+
+        readonly List<Entity> _deathProxyScratch = new List<Entity>(32);
+
+        bool _deathHasSource;
+        Vector3 _deathSourcePos;
+        float _deathSourceRadius;
 
         /// <summary>Last hull yaw (degrees) used to measure turn rate for the idle countdown.</summary>
         float _lastIdleShipYawDeg;
@@ -728,7 +749,7 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Idle timer, death enter, turret / moon / join-settle suppress, and exit on thrust.
+        /// Idle timer, death theatrical enter, turret / moon / join-settle suppress, and exit on thrust.
         /// Does not write the camera pose — <see cref="ApplyTheatricalOrReturnCamera"/> does that.
         /// </summary>
         /// <param name="playerThrusting">True when thrust / coasting should exit cinematic.</param>
@@ -751,14 +772,23 @@ namespace TitanOrbit.Game
             // --- Suppress: turret, moon landing, join Instantiates ---
             // [TITAN-ORBIT] Theatrical is space-idle only. Moon dock already has its
             // own camera. Join settle has no reliable idle signal (velocity reads fail).
-            bool suppress =
-                !theatricalModeEnabled ||
+            bool suppressShared =
                 isMoonDockOverride ||
                 IsLocalShipLandedOnMoon() ||
                 PlanetaryDefenseTurretClientState.IsControlling ||
                 ClientJoinSettleCache.ShouldSkipShipEntityQueries;
+            bool suppressIdle = !theatricalModeEnabled || suppressShared;
+            bool suppressDeath = !deathTheatricalEnabled || suppressShared;
 
-            if (suppress)
+            // --- Death: same theatrical, look-at is the killer ---
+            if (justDied && !suppressDeath)
+            {
+                _deathTheatricalActive = true;
+                BeginTheatricalMode(shipPos);
+                return;
+            }
+
+            if (justRespawned)
             {
                 _theatricalIdleTimer = 0f;
                 if (_theatricalModeActive)
@@ -766,14 +796,10 @@ namespace TitanOrbit.Game
                 return;
             }
 
-            // --- Death: start immediately; respawn returns to gameplay ---
-            if (justDied)
-            {
-                BeginTheatricalMode(shipPos);
+            if (_deathTheatricalActive)
                 return;
-            }
 
-            if (justRespawned)
+            if (suppressIdle)
             {
                 _theatricalIdleTimer = 0f;
                 if (_theatricalModeActive)
@@ -867,6 +893,7 @@ namespace TitanOrbit.Game
             _theatricalModeActive = false;
             _theatricalReturning = true;
             _theatricalIntroActive = false;
+            _deathTheatricalActive = false;
             _theatricalBlendElapsed = 0f;
             _hasTheatricalSmoothedLookTarget = false;
             _hasTheatricalSmoothedRotation = false;
@@ -886,6 +913,7 @@ namespace TitanOrbit.Game
             _wasLocalShipDead = false;
             _hasLastIdleShipYaw = false;
             _theatricalIntroActive = false;
+            _deathTheatricalActive = false;
         }
 
         /// <summary>
@@ -901,6 +929,7 @@ namespace TitanOrbit.Game
             _theatricalBlendStartPosition += wrapDelta;
             _theatricalPullbackPosition += wrapDelta;
             _theatricalSmoothedLookTarget += wrapDelta;
+            _deathSourcePos += wrapDelta;
         }
 
         /// <summary>
@@ -1022,6 +1051,370 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
+        /// Live pose of the last-hit ship, asteroid, or defense turret pad from visualizer
+        /// proxies (no extra map-body EntityQuery). Turret kills frame the gun, not the
+        /// planet. Mines and missing ghosts use the packed logical point. Map size from
+        /// ToroidalMapEcs.
+        /// </summary>
+        void RefreshDeathSource(World world, Entity localShip, Vector3 localShipPos)
+        {
+            _deathHasSource = false;
+            if (world == null || !world.IsCreated || localShip == Entity.Null)
+                return;
+
+            var em = world.EntityManager;
+            if (!em.Exists(localShip) || !em.HasComponent<ShipDeathVfxState>(localShip))
+                return;
+
+            var vfx = em.GetComponentData<ShipDeathVfxState>(localShip);
+            if (!vfx.HasSource)
+                return;
+
+            byte kind = vfx.SourceKind;
+            int localNet = EcsGameBridge.GetLocalNetworkId();
+            bool selfShip = (kind == (byte)DeathVfxSourceKind.Ship ||
+                             kind == (byte)DeathVfxSourceKind.Missile ||
+                             kind == 0) &&
+                            vfx.SourceNetworkId > 0 &&
+                            vfx.SourceNetworkId == localNet;
+
+            var viz = EcsWorldVisualizer.Active;
+            if (kind == (byte)DeathVfxSourceKind.Turret)
+            {
+                if (TryResolveTurretDeathFocus(em, viz, vfx, localShipPos, selfShip))
+                    return;
+                return;
+            }
+
+            Entity found = Entity.Null;
+            if (!selfShip && viz != null)
+                found = FindDeathSourceEntity(em, viz, vfx, kind);
+
+            if (found != Entity.Null && found != localShip)
+            {
+                if (TryReadDeathSourcePose(em, viz, found, localShipPos, out Vector3 livePos, out float liveRadius))
+                {
+                    _deathHasSource = true;
+                    _deathSourcePos = livePos;
+                    _deathSourceRadius = liveRadius;
+                    return;
+                }
+            }
+
+            if (vfx.SourceHasPos == 0)
+                return;
+
+            _deathHasSource = true;
+            _deathSourcePos = DeathSourceDisplayPos(
+                new float3(vfx.SourcePosX, 0f, vfx.SourcePosZ), localShipPos);
+            _deathSourceRadius = kind == (byte)DeathVfxSourceKind.Mine ? 2.4f : 3.2f;
+        }
+
+        /// <summary>
+        /// Frames the live defense gun that fired — never the owning planet's center.
+        /// Hint is the packed muzzle when present, otherwise the wreck.
+        /// </summary>
+        bool TryResolveTurretDeathFocus(
+            EntityManager em,
+            EcsWorldVisualizer viz,
+            in ShipDeathVfxState vfx,
+            Vector3 localShipPos,
+            bool selfShip)
+        {
+            Vector3 hint = localShipPos;
+            if (vfx.SourceHasPos != 0)
+                hint = DeathSourceDisplayPos(new float3(vfx.SourcePosX, 0f, vfx.SourcePosZ), localShipPos);
+
+            Entity planet = Entity.Null;
+            if (!selfShip && viz != null && !ClientJoinSettleCache.ShouldSkipMapBodyQueries)
+            {
+                viz.CopyPlanetProxyEntities(_deathProxyScratch);
+                planet = FindDeathSourceInProxies(em, viz, vfx, DeathSourceSearch.Planet);
+            }
+
+            if (TryReadLiveTurretPad(em, planet, hint, localShipPos, out Vector3 padPos, out float padRadius))
+            {
+                _deathHasSource = true;
+                _deathSourcePos = padPos;
+                _deathSourceRadius = padRadius;
+                return true;
+            }
+
+            if (vfx.SourceHasPos == 0)
+                return false;
+
+            _deathHasSource = true;
+            _deathSourcePos = hint;
+            _deathSourceRadius = 2.8f;
+            return true;
+        }
+
+        bool TryReadLiveTurretPad(
+            EntityManager em,
+            Entity planet,
+            Vector3 hint,
+            Vector3 localShipPos,
+            out Vector3 displayPos,
+            out float radius)
+        {
+            displayPos = default;
+            radius = 2.8f;
+
+            int planetId = 0;
+            if (planet != Entity.Null && em.Exists(planet) && em.HasComponent<PlanetState>(planet))
+                planetId = em.GetComponentData<PlanetState>(planet).PlanetId;
+
+            Vector3 visPos = default;
+            float visRadius = 0f;
+            if (planetId > 0 &&
+                PlanetaryDefenseVisualDriver.TryGetDefenseSlotPose(
+                    planetId, hint, turretOnly: true, out visPos, out visRadius))
+            {
+                displayPos = visPos;
+                displayPos.y = 0f;
+                radius = Mathf.Clamp(visRadius * 2.4f, 1.6f, 4.2f);
+                return true;
+            }
+
+            if (TryReadTurretPadFromPlanetSlots(em, planet, hint, localShipPos, out displayPos, out radius))
+                return true;
+
+            if (planetId <= 0 &&
+                PlanetaryDefenseVisualDriver.TryFindClosestDefenseSlot(
+                    hint, TeamId.None, turretOnly: true, out _, out visPos, out visRadius))
+            {
+                displayPos = visPos;
+                displayPos.y = 0f;
+                radius = Mathf.Clamp(visRadius * 2.4f, 1.6f, 4.2f);
+                return true;
+            }
+
+            return false;
+        }
+
+        bool TryReadTurretPadFromPlanetSlots(
+            EntityManager em,
+            Entity planet,
+            Vector3 hint,
+            Vector3 localShipPos,
+            out Vector3 displayPos,
+            out float radius)
+        {
+            displayPos = default;
+            radius = 2.8f;
+            if (planet == Entity.Null || !em.Exists(planet))
+                return false;
+            if (!em.HasComponent<PlanetState>(planet) || !em.HasComponent<LocalTransform>(planet))
+                return false;
+            if (!em.HasBuffer<PlanetaryDefenseSlotElement>(planet))
+                return false;
+
+            var planetState = em.GetComponentData<PlanetState>(planet);
+            var lt = em.GetComponentData<LocalTransform>(planet);
+            var slots = em.GetBuffer<PlanetaryDefenseSlotElement>(planet);
+            if (slots.Length == 0)
+                return false;
+
+            float3 hintLogical = new float3(hint.x, 0f, hint.z);
+            float mapW = 0f;
+            float mapH = 0f;
+            bool torus = ToroidalMapEcs.TryGetMapSize(out mapW, out mapH) &&
+                         ToroidalMapEcs.IsValidMapSize(mapW, mapH);
+
+            float best = float.MaxValue;
+            float3 bestSlot = float3.zero;
+            bool found = false;
+            float planetSize = math.max(0.25f, lt.Scale);
+            for (int i = 0; i < slots.Length; i++)
+            {
+                var slot = slots[i];
+                if (slot.TurretLevel == 0 || slot.Health <= 0f)
+                    continue;
+
+                float3 slotPos = torus
+                    ? PlanetaryDefenseMath.GetSlotWorldPositionNear(
+                        hintLogical, lt.Position, planetSize, planetState.PlanetLevel,
+                        i, slots.Length, mapW, mapH)
+                    : PlanetaryDefenseMath.GetSlotWorldPosition(
+                        lt.Position, planetSize, planetState.PlanetLevel, i, slots.Length);
+                slotPos.y = 0f;
+                float d = torus
+                    ? ToroidalMapEcs.ToroidalDistance(hintLogical, slotPos, mapW, mapH)
+                    : math.distance(hintLogical, slotPos);
+                if (d >= best)
+                    continue;
+
+                best = d;
+                bestSlot = slotPos;
+                found = true;
+            }
+
+            if (!found)
+                return false;
+
+            displayPos = DeathSourceDisplayPos(bestSlot, localShipPos);
+            radius = 2.8f;
+            return true;
+        }
+
+        static Vector3 DeathSourceDisplayPos(float3 logical, Vector3 localShipPos)
+        {
+            logical.y = 0f;
+            float3 display = logical;
+            if (ToroidalMapEcs.TryGetMapSize(out float mapW, out float mapH) &&
+                ToroidalMapEcs.IsValidMapSize(mapW, mapH))
+            {
+                float3 reference = new float3(localShipPos.x, 0f, localShipPos.z);
+                display = ToroidalMapEcs.GetDisplayPosition(logical, reference, mapW, mapH);
+            }
+
+            return new Vector3(display.x, 0f, display.z);
+        }
+
+        Entity FindDeathSourceEntity(
+            EntityManager em,
+            EcsWorldVisualizer viz,
+            ShipDeathVfxState vfx,
+            byte kind)
+        {
+            bool skipMap = ClientJoinSettleCache.ShouldSkipMapBodyQueries;
+            if (kind == (byte)DeathVfxSourceKind.Asteroid)
+            {
+                if (skipMap)
+                    return Entity.Null;
+                viz.CopyAsteroidProxyEntitiesTo(_deathProxyScratch);
+                return FindDeathSourceInProxies(em, viz, vfx, DeathSourceSearch.Asteroid);
+            }
+
+            if (kind == (byte)DeathVfxSourceKind.Turret)
+            {
+                if (skipMap)
+                    return Entity.Null;
+                viz.CopyPlanetProxyEntities(_deathProxyScratch);
+                return FindDeathSourceInProxies(em, viz, vfx, DeathSourceSearch.Planet);
+            }
+
+            if (kind == (byte)DeathVfxSourceKind.Mine)
+                return Entity.Null;
+
+            viz.CopyShipProxyEntitiesTo(_deathProxyScratch);
+            return FindDeathSourceInProxies(em, viz, vfx, DeathSourceSearch.Ship);
+        }
+
+        bool TryReadDeathSourcePose(
+            EntityManager em,
+            EcsWorldVisualizer viz,
+            Entity found,
+            Vector3 localShipPos,
+            out Vector3 displayPos,
+            out float radius)
+        {
+            displayPos = default;
+            radius = 3f;
+            float3 logical;
+            if (em.HasComponent<LocalTransform>(found))
+            {
+                var lt = em.GetComponentData<LocalTransform>(found);
+                logical = lt.Position;
+                if (em.HasComponent<AsteroidTag>(found))
+                    radius = BodyCollisionMath.GetAsteroidBodyRadiusWorld(math.max(0.01f, lt.Scale));
+                else if (em.HasComponent<PlanetState>(found) || em.HasComponent<PlanetTag>(found))
+                    radius = Mathf.Clamp(
+                        BodyCollisionMath.GetPlanetBodyRadiusWorld(math.max(0.25f, lt.Scale)) * 0.28f,
+                        4f,
+                        14f);
+                else
+                    radius = BodyCollisionMath.GetShipHullRadiusWorld(math.max(0.25f, lt.Scale));
+            }
+            else if (viz.TryGetProxy(found, out GameObject proxy) && proxy != null)
+            {
+                Vector3 p = proxy.transform.position;
+                logical = new float3(p.x, 0f, p.z);
+                radius = 1.8f;
+            }
+            else
+                return false;
+
+            logical.y = 0f;
+            float3 display = logical;
+            if (ToroidalMapEcs.TryGetMapSize(out float mapW, out float mapH) &&
+                ToroidalMapEcs.IsValidMapSize(mapW, mapH))
+            {
+                float3 reference = new float3(localShipPos.x, 0f, localShipPos.z);
+                display = ToroidalMapEcs.GetDisplayPosition(logical, reference, mapW, mapH);
+            }
+
+            displayPos = new Vector3(display.x, 0f, display.z);
+            radius = math.max(0.8f, radius);
+            return true;
+        }
+
+        enum DeathSourceSearch : byte
+        {
+            Ship = 0,
+            Asteroid = 1,
+            Planet = 2,
+        }
+
+        Entity FindDeathSourceInProxies(
+            EntityManager em,
+            EcsWorldVisualizer viz,
+            ShipDeathVfxState vfx,
+            DeathSourceSearch search)
+        {
+            for (int i = 0; i < _deathProxyScratch.Count; i++)
+            {
+                Entity e = _deathProxyScratch[i];
+                if (e == Entity.Null || !em.Exists(e))
+                    continue;
+                if (!viz.TryGetProxy(e, out GameObject proxy) || proxy == null || !proxy.activeInHierarchy)
+                    continue;
+
+                if (search == DeathSourceSearch.Asteroid)
+                {
+                    if (!em.HasComponent<AsteroidTag>(e))
+                        continue;
+                    if (em.HasComponent<AsteroidState>(e) &&
+                        !em.GetComponentData<AsteroidState>(e).IsAliveForCombat)
+                        continue;
+                    if (em.HasComponent<AsteroidClientCulledTag>(e))
+                        continue;
+                    if (vfx.SourceGhostId != 0 &&
+                        em.HasComponent<GhostInstance>(e) &&
+                        em.GetComponentData<GhostInstance>(e).ghostId == vfx.SourceGhostId)
+                        return e;
+                    continue;
+                }
+
+                if (search == DeathSourceSearch.Planet)
+                {
+                    if (!em.HasComponent<PlanetState>(e) && !em.HasComponent<PlanetTag>(e))
+                        continue;
+                    if (vfx.SourceGhostId != 0 &&
+                        em.HasComponent<GhostInstance>(e) &&
+                        em.GetComponentData<GhostInstance>(e).ghostId == vfx.SourceGhostId)
+                        return e;
+                    continue;
+                }
+
+                if (!em.HasComponent<ShipTag>(e) || !em.HasComponent<ShipState>(e))
+                    continue;
+                if (em.GetComponentData<ShipState>(e).IsDead)
+                    continue;
+                if (vfx.SourceNetworkId > 0 &&
+                    em.HasComponent<GhostOwner>(e) &&
+                    em.GetComponentData<GhostOwner>(e).NetworkId == vfx.SourceNetworkId)
+                    return e;
+                if (vfx.SourceGhostId != 0 &&
+                    em.HasComponent<GhostInstance>(e) &&
+                    em.GetComponentData<GhostInstance>(e).ghostId == vfx.SourceGhostId)
+                    return e;
+            }
+
+            return Entity.Null;
+        }
+
+        /// <summary>
         /// Opening crane: pitch only around world X (same frame as gameplay Euler(90,0,0)).
         /// No yaw, no LookAt — that pair was the wild spin on the look-down pole.
         /// When the crane finishes, the surround path starts from this already-tilted pose.
@@ -1103,7 +1496,8 @@ namespace TitanOrbit.Game
 
         /// <summary>
         /// Focus = presentation hull (plus MEGA offset already in <paramref name="shipPos"/>
-        /// via LateUpdate). Radius comes from the hull-clearance cache, not a per-frame mesh walk.
+        /// via LateUpdate). After a local death, the same framing looks at the killer.
+        /// Radius comes from the hull-clearance cache, not a per-frame mesh walk.
         /// </summary>
         void ResolveTheatricalFocus(
             Vector3 shipPos,
@@ -1120,6 +1514,23 @@ namespace TitanOrbit.Game
             RefreshTheatricalRadiusCache();
             radius = _cachedTheatricalRadius;
             focus.y += _cachedTheatricalLiftFromPivot * 0.1f;
+
+            if (!_deathTheatricalActive)
+                return;
+
+            Entity ship = Entity.Null;
+            var world = EcsGameBridge.GetVisualizationWorld();
+            if (world != null && world.IsCreated)
+                EcsGameBridge.TryGetLocalShipEntityOnWorld(world, out ship);
+
+            RefreshDeathSource(world, ship, shipPos);
+            if (!_deathHasSource)
+                return;
+
+            focus = _deathSourcePos;
+            radius = Mathf.Max(2.5f, _deathSourceRadius);
+            shipRotation = Quaternion.identity;
+            focus.y += Mathf.Max(0.08f, radius * 0.06f);
         }
 
         /// <summary>

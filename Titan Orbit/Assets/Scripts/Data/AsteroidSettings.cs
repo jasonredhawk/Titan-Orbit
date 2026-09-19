@@ -1,3 +1,4 @@
+using TitanOrbit.Core;
 using UnityEngine;
 
 namespace TitanOrbit.Data
@@ -10,7 +11,8 @@ namespace TitanOrbit.Data
     /// Loaded at play by <see cref="Game.AsteroidSettingsLoader"/> via <c>Resources.Load</c>
     /// so Editor and player builds share one file — no Data/ duplicate.
     /// <para>
-    /// Pipeline: each asteroid rolls a designer <b>Size</b> in [MinSize, MaxSize], then
+    /// Pipeline: each asteroid rolls a designer <b>Size</b> in [MinSize, MaxSize] with
+    /// <see cref="SizeSmallBias"/> (1 = even mix, 2+ = more small rocks), then
     /// HP = Size × HealthPerSize, gems = Size × GemsPerSize, and visual LocalTransform scale
     /// lerps from VisualScaleAtMinSize → VisualScaleAtMaxSize. Example: Size 50,
     /// HealthPerSize 3, GemsPerSize 0.5 → 150 HP and 25 gem capacity.
@@ -22,6 +24,8 @@ namespace TitanOrbit.Data
     /// <see cref="CollisionMassPerSize"/> is kept on the asset but does not drive rebound.
     /// Cosmetic tumble uses <see cref="MinSpinSpeed"/>–<see cref="MaxSpinSpeed"/>
     /// (<see cref="Game.AsteroidSpinVisualProxy"/>) — presentation only, not sim physics.
+    /// Death fireballs use Fire/V1: <see cref="deathExplosionVfxNeutral"/> plus team-colored
+    /// FireImpacts (client only). Blast pitch still follows visual size.
     /// </para>
     /// </summary>
     [CreateAssetMenu(
@@ -42,6 +46,13 @@ namespace TitanOrbit.Data
             "Example: MaxSize 50 with HealthPerSize 3 → largest rocks have 150 HP.")]
         [Min(0.01f)]
         public float MaxSize = 70f;
+
+        [Tooltip(
+            "How strongly map gen prefers smaller rocks. Size = lerp(Min, Max, pow(u, this)). " +
+            "1 = even mix (old uniform roll). 2 = many small, some mid, rare giants. " +
+            "4+ = almost all small. Old assets that deserialize as 0 become 2.")]
+        [Range(1f, 6f)]
+        public float SizeSmallBias = 2f;
 
         [Header("Hit points")]
         [Tooltip(
@@ -123,11 +134,50 @@ namespace TitanOrbit.Data
         [Min(0f)]
         public float MaxSpinSpeed = 50f;
 
+        [Header("Death explosion (presentation)")]
+        [Tooltip(
+            "Fire/V1 ModularFireImpact — unclaimed rocks (no territory tint). " +
+            "Client visuals only — scale and blast pitch follow the asteroid's visual size.")]
+        public GameObject deathExplosionVfxNeutral;
+
+        [Tooltip("Fire/V1 RedFireImpact — Team A (red) territory rocks.")]
+        public GameObject deathExplosionVfxRed;
+
+        [Tooltip("Fire/V1 BlueFireImpact — Team B (blue) territory rocks.")]
+        public GameObject deathExplosionVfxBlue;
+
+        [Tooltip("Fire/V1 GreenFireImpact — Team C (green) territory rocks.")]
+        public GameObject deathExplosionVfxGreen;
+
+        [Tooltip("Fire/V1 YellowFireImpact — Team D (orange) territory rocks. V1 has no orange burst.")]
+        public GameObject deathExplosionVfxYellow;
+
+        [Tooltip("Fire/V1 PurpleFireImpact — Team E (purple) territory rocks.")]
+        public GameObject deathExplosionVfxPurple;
+
+        [Tooltip(
+            "Multiplies LocalTransform scale onto the death burst so the fireball wraps the rock. " +
+            "1.15 is slightly larger than the mesh. Values below 0.05 fall back to 1.15.")]
+        public float deathExplosionScaleMultiplier = 1.15f;
+
+        [Tooltip("AudioSource pitch on the smallest rocks (VisualScaleAtMinSize). Higher = thinner blast.")]
+        [Min(0.01f)]
+        public float deathExplosionPitchAtMinSize = 1.55f;
+
+        [Tooltip("AudioSource pitch on the largest rocks (VisualScaleAtMaxSize). Lower = deeper boom.")]
+        [Min(0.01f)]
+        public float deathExplosionPitchAtMaxSize = 0.5f;
+
         /// <summary>Keeps ranges ordered and ratios non-negative after Inspector edits.</summary>
         public void ClampValues()
         {
             MinSize = Mathf.Max(0.01f, MinSize);
             MaxSize = Mathf.Max(MinSize, MaxSize);
+            // Old AsteroidSettings.asset files lack this field → Unity deserializes 0 (uniform).
+            // Treat unset as 2 so existing maps pick up the small-heavy default.
+            if (SizeSmallBias < 1f)
+                SizeSmallBias = 2f;
+            SizeSmallBias = Mathf.Clamp(SizeSmallBias, 1f, 6f);
             HealthPerSize = Mathf.Max(0.01f, HealthPerSize);
             GemsPerSize = Mathf.Max(0f, GemsPerSize);
             VisualScaleAtMinSize = Mathf.Max(0.01f, VisualScaleAtMinSize);
@@ -141,6 +191,13 @@ namespace TitanOrbit.Data
             BounceRestitution = Mathf.Clamp01(BounceRestitution);
             MinSpinSpeed = Mathf.Max(0f, MinSpinSpeed);
             MaxSpinSpeed = Mathf.Max(MinSpinSpeed, MaxSpinSpeed);
+            if (deathExplosionScaleMultiplier < 0.05f)
+                deathExplosionScaleMultiplier = 1.15f;
+            // Old assets deserialize new pitch fields as 0.
+            if (deathExplosionPitchAtMinSize < 0.05f)
+                deathExplosionPitchAtMinSize = 1.55f;
+            if (deathExplosionPitchAtMaxSize < 0.05f)
+                deathExplosionPitchAtMaxSize = 0.5f;
         }
 
         /// <summary>
@@ -179,6 +236,61 @@ namespace TitanOrbit.Data
             float span = Mathf.Max(0.001f, MaxSize - MinSize);
             float t = Mathf.Clamp01((size - MinSize) / span);
             return Mathf.Lerp(VisualScaleAtMinSize, VisualScaleAtMaxSize, t);
+        }
+
+        /// <summary>
+        /// Fire/V1 burst for this rock tint. <see cref="TeamId.None"/> is ModularFireImpact.
+        /// Missing team slots fall back to the neutral prefab.
+        /// </summary>
+        public GameObject GetDeathExplosionVfx(TeamId team)
+        {
+            GameObject picked;
+            switch (team)
+            {
+                case TeamId.TeamA:
+                    picked = deathExplosionVfxRed;
+                    break;
+                case TeamId.TeamB:
+                    picked = deathExplosionVfxBlue;
+                    break;
+                case TeamId.TeamC:
+                    picked = deathExplosionVfxGreen;
+                    break;
+                case TeamId.TeamD:
+                    picked = deathExplosionVfxYellow;
+                    break;
+                case TeamId.TeamE:
+                    picked = deathExplosionVfxPurple;
+                    break;
+                default:
+                    picked = deathExplosionVfxNeutral;
+                    break;
+            }
+
+            if (picked != null)
+                return picked;
+            return deathExplosionVfxNeutral;
+        }
+
+        /// <summary>
+        /// Death-burst world scale from the rock's uniform LocalTransform scale.
+        /// </summary>
+        public float ComputeDeathExplosionScale(float visualScale)
+        {
+            ClampValues();
+            return Mathf.Max(0.05f, visualScale * deathExplosionScaleMultiplier);
+        }
+
+        /// <summary>
+        /// Death-blast <see cref="AudioSource.pitch"/> — small rocks stay high, large rocks drop.
+        /// </summary>
+        public float ComputeDeathExplosionPitch(float visualScale)
+        {
+            ClampValues();
+            float minScale = VisualScaleAtMinSize;
+            float maxScale = Mathf.Max(minScale + 0.001f, VisualScaleAtMaxSize);
+            float t = Mathf.InverseLerp(minScale, maxScale, visualScale);
+            return Mathf.Lerp(deathExplosionPitchAtMinSize, deathExplosionPitchAtMaxSize, t);
         }
     }
 }

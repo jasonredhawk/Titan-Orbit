@@ -235,6 +235,25 @@ namespace TitanOrbit.Entities
         }
 
         /// <summary>
+        /// Stops and plays every <see cref="AudioSource"/> so PlayOnAwake (pool SetActive)
+        /// does not keep the first samples at the prefab pitch after a size retune.
+        /// </summary>
+        public static void ReplayAudioInHierarchy(GameObject root)
+        {
+            if (root == null)
+                return;
+
+            AudioSource[] sources = root.GetComponentsInChildren<AudioSource>(true);
+            for (int i = 0; i < sources.Length; i++)
+            {
+                if (sources[i] == null)
+                    continue;
+                sources[i].Stop();
+                sources[i].Play();
+            }
+        }
+
+        /// <summary>
         /// Chromatic piano pitch from Extra Level fire power.
         /// Each gun / cannon / rocket / sniper uses its authored base as the top C
         /// and walks down toward base + perExtra × max Extra Levels.
@@ -300,7 +319,8 @@ namespace TitanOrbit.Entities
             float scale,
             float duration,
             Transform attachParent = null,
-            Vector3 surfaceNormal = default)
+            Vector3 surfaceNormal = default,
+            bool replayAudio = false)
         {
             // --- SpawnImpactAt (pooled) ---
             if (prefab == null)
@@ -318,6 +338,8 @@ namespace TitanOrbit.Entities
             go.transform.SetPositionAndRotation(position, rot);
             VfxUrpCompat.ApplyImpactVisualScale(go, scale);
             SetAudioPitchInHierarchy(go, pitch);
+            if (replayAudio)
+                ReplayAudioInHierarchy(go);
             // [UNITY] PrepareVfxInstance restarts ParticleSystems — required after pool Return cleared them.
             // Cold Instantiates also pays FixAllIn1 / light strip here once (marker after).
             VfxUrpCompat.PrepareVfxInstance(go);

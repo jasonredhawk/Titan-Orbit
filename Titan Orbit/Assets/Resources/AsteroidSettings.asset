@@ -14,6 +14,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: TitanOrbit.Data::TitanOrbit.Data.AsteroidSettings
   MinSize: 1
   MaxSize: 100
+  SizeSmallBias: 2.5
   HealthPerSize: 3
   GemsPerSize: 1
   VisualScaleAtMinSize: 0.35
@@ -24,3 +25,12 @@ MonoBehaviour:
   BounceRestitution: 0.6
   MinSpinSpeed: 5
   MaxSpinSpeed: 20
+  deathExplosionVfxNeutral: {fileID: 150266, guid: 50d5804f43e7c8841ad2ee451ef0a0b8, type: 3}
+  deathExplosionVfxRed: {fileID: 135112, guid: a4d96320a546d8e45a0ed864a531d39a, type: 3}
+  deathExplosionVfxBlue: {fileID: 130090, guid: c89f79686d89e7841a3386694fb086e1, type: 3}
+  deathExplosionVfxGreen: {fileID: 177934, guid: 9a4643fef181ec64e961b4579ad24a5f, type: 3}
+  deathExplosionVfxYellow: {fileID: 198170, guid: 14e0693baa71ee8419ab0814aede54ec, type: 3}
+  deathExplosionVfxPurple: {fileID: 148778, guid: eb5fb8e17f36c8049b43a4c8ce962437, type: 3}
+  deathExplosionScaleMultiplier: 0.7
+  deathExplosionPitchAtMinSize: 1.55
+  deathExplosionPitchAtMaxSize: 0.5

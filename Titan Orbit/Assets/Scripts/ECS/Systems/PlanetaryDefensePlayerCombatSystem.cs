@@ -175,6 +175,11 @@ namespace TitanOrbit.ECS
                     ScaleMultiplier = math.max(0.1f, visualScale),
                     DamageFilter = BulletDamageFilter.ShipsAndTransports,
                     FirePowerExtraLevels = firePowerExtras,
+                    SourceGhostId = EntityManager.HasComponent<GhostInstance>(planetEntity)
+                        ? EntityManager.GetComponentData<GhostInstance>(planetEntity).ghostId
+                        : 0,
+                    SourceKind = (byte)DeathVfxSourceKind.Turret,
+                    SourceOriginXZ = new float2(muzzle.x, muzzle.z),
                 };
 
                 spawnEvents.Add(new BulletSpawnEventElement

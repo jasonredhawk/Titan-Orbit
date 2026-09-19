@@ -1,4 +1,5 @@
 using TitanOrbit.Core;
+using TitanOrbit.Data;
 using TitanOrbit.Generation;
 using TitanOrbit.Simulation;
 using Unity.Collections;
@@ -32,6 +33,12 @@ namespace TitanOrbit.ECS
             /// <summary>Rolled Size upper bound.</summary>
             public float MaxSize;
 
+            /// <summary>
+            /// Power-law Size bias. 1 = uniform, 2 = more small rocks, 4+ = almost all small.
+            /// Size = lerp(MinSize, MaxSize, pow(u, this)).
+            /// </summary>
+            public float SizeSmallBias;
+
             /// <summary>Health Cap = Size × this.</summary>
             public float HealthPerSize;
 
@@ -53,11 +60,47 @@ namespace TitanOrbit.ECS
         {
             MinSize = 1f,
             MaxSize = 70f,
+            SizeSmallBias = 2f,
             HealthPerSize = 1f,
             GemsPerSize = 1f,
             VisualScaleAtMinSize = 0.35f,
             VisualScaleAtMaxSize = 3.5f,
         };
+
+        /// <summary>
+        /// Burst-safe snapshot from <see cref="AsteroidSettings"/> after clamp.
+        /// Shared by server map gen, recipe RPC, and occupancy catch-up.
+        /// </summary>
+        public static AsteroidBodyTuning FromAsteroidSettings(AsteroidSettings settings)
+        {
+            if (settings == null)
+                return DefaultAsteroidBodyTuning;
+
+            settings.ClampValues();
+            return new AsteroidBodyTuning
+            {
+                MinSize = settings.MinSize,
+                MaxSize = settings.MaxSize,
+                SizeSmallBias = settings.SizeSmallBias,
+                HealthPerSize = settings.HealthPerSize,
+                GemsPerSize = settings.GemsPerSize,
+                VisualScaleAtMinSize = settings.VisualScaleAtMinSize,
+                VisualScaleAtMaxSize = settings.VisualScaleAtMaxSize,
+            };
+        }
+
+        /// <summary>
+        /// Rolls designer Size in [MinSize, MaxSize] with power-law small bias.
+        /// One RNG sample — same consumption as the old uniform NextFloat(lo, hi).
+        /// </summary>
+        public static float RollDesignerSize(in AsteroidBodyTuning body, ref Random rng)
+        {
+            float sizeLo = math.min(body.MinSize, body.MaxSize);
+            float sizeHi = math.max(body.MinSize, body.MaxSize);
+            float exponent = math.max(1f, body.SizeSmallBias);
+            float t = math.pow(rng.NextFloat(), exponent);
+            return math.lerp(sizeLo, sizeHi, t);
+        }
 
         /// <summary>One planet's world position and clearance ring for overlap tests during placement.</summary>
         public struct PlanetPlacement
@@ -397,7 +440,7 @@ namespace TitanOrbit.ECS
             // --- Designer Size first (drives HP, gems, and visual scale) ---
             float sizeLo = math.min(body.MinSize, body.MaxSize);
             float sizeHi = math.max(body.MinSize, body.MaxSize);
-            float size = rng.NextFloat(sizeLo, sizeHi);
+            float size = RollDesignerSize(body, ref rng);
             float sizeSpan = math.max(0.001f, sizeHi - sizeLo);
             float t = math.saturate((size - sizeLo) / sizeSpan);
 

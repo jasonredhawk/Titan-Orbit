@@ -21,8 +21,9 @@ namespace TitanOrbit.ECS
     /// <para>
     /// [NETCODE] Owner comes from <see cref="ReceiveRpcCommandRequest.SourceConnection"/> →
     /// <see cref="NetworkId"/>. The command has no client-supplied id, so a player cannot put
-    /// chips above someone else's hull. <c>TeamOnly</c> is a channel request (All / Team /
-    /// Commander); this system reads the speaker's <see cref="ShipState.Team"/> and
+    /// chips above someone else's hull. <c>TeamOnly</c> is a channel request (All / Team;
+    /// Commander is promoted when a seated commander used command-deck words);
+    /// this system reads the speaker's <see cref="ShipState.Team"/> and
     /// earned command seat and targets those connections so a client cannot leak team chat
     /// to enemies or spoof command-deck words. Local Host injects the command with
     /// <c>ReceiveRpcCommandRequest</c> already set (see <c>ShipCommsRpcClient</c>) because
@@ -99,17 +100,18 @@ namespace TitanOrbit.ECS
                     continue;
 
                 // --- Commander gate ---
-                // [TITAN-ORBIT] Commander keywords and the Commander channel are for
-                // earned category titles (living top killer / miner / troop mover).
-                // Snapshot is rebuilt first each sim tick — the client pill is only a request.
+                // [TITAN-ORBIT] Command-deck words (Everyone, Escort, Form Up, …) need an
+                // earned category title. The compose card no longer has a CMDR tab —
+                // Team + those words upgrades to gold Commander chrome. Snapshot is
+                // rebuilt first each sim tick so the client cannot spoof a seat.
                 ShipCommsChannel channel = TeamCommanderRules.Sanitize(sentence.TeamOnly);
                 bool usesCommanderWords = SequenceUsesCommanderKeyword(catalog, sentence);
                 bool isCommander = SystemAPI.TryGetSingleton<ShipCommandRoleSnapshot>(out var roles)
                     && roles.HoldsCommandSeat(speakerTeam, networkId);
-                if (usesCommanderWords && (!isCommander || channel != ShipCommsChannel.Commander))
+                if (usesCommanderWords && !isCommander)
                     continue;
-                if (channel == ShipCommsChannel.Commander && !isCommander)
-                    channel = ShipCommsChannel.Team;
+                channel = TeamCommanderRules.ResolveDeliveryChannel(
+                    channel, isCommander, usesCommanderWords);
 
                 // --- Rate limit ---
                 // [TITAN-ORBIT] Cooldown lives on the connection entity (not the ship) so a

@@ -232,17 +232,8 @@ namespace TitanOrbit.ECS
                 config = cfg;
             config.Seed = (int)seed;
 
-            var settings = AsteroidSettingsCache.ResolveOrDefault();
-            settings.ClampValues();
-            var asteroidBody = new MapGenerationLogic.AsteroidBodyTuning
-            {
-                MinSize = settings.MinSize,
-                MaxSize = settings.MaxSize,
-                HealthPerSize = settings.HealthPerSize,
-                GemsPerSize = settings.GemsPerSize,
-                VisualScaleAtMinSize = settings.VisualScaleAtMinSize,
-                VisualScaleAtMaxSize = settings.VisualScaleAtMaxSize,
-            };
+            var asteroidBody = MapGenerationLogic.FromAsteroidSettings(
+                AsteroidSettingsCache.ResolveOrDefault());
 
             MapLayoutBlueprint.Build(
                 config,

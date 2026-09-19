@@ -145,6 +145,8 @@ namespace TitanOrbit.UI
         /// overlay stays hidden. <see cref="MoonOrbitStationController"/> ticks this
         /// during the 0.5s cinematic delay so <see cref="Show"/> does not swap every
         /// hull screenshot on the first visible frame.
+        /// Same-moon re-docks skip the paint but still re-arm the backdrop once so
+        /// power-bar hover trays have real rects after <c>Hide</c> deactivated them.
         /// </summary>
         /// <param name="storePlanetId">Gem-moon planet whose family ladder fills the tree.</param>
         /// <param name="homePlanetId">Team home planet id for Bank RPCs (0 if unknown).</param>
@@ -164,7 +166,19 @@ namespace TitanOrbit.UI
                 return;
 
             if (_landPrepareComplete && _landPreparePlanetId == storePlanetId)
+            {
+                // --- Same moon as last dock ---
+                // Screenshots are already assigned, so we skip the 24-card paint.
+                // Hide() still SetActive(false) the backdrop; after a long inactive
+                // stretch those power-bar trays are 0×0. Re-arm once at alpha 0 and
+                // flush layout so the second land's hover math has real rects.
+                if (moonDockCenterBackdrop == null || !moonDockCenterBackdrop.activeSelf)
+                {
+                    ArmHiddenLandPrepareHierarchy();
+                    Canvas.ForceUpdateCanvases();
+                }
                 return;
+            }
 
             if (_landPreparePlanetId != storePlanetId)
             {

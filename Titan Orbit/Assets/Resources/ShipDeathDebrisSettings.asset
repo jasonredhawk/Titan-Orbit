@@ -1,0 +1,50 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 780cba2c1e8468a408e479f6c5a9a91a, type: 3}
+  m_Name: ShipDeathDebrisSettings
+  m_EditorClassIdentifier: TitanOrbit.Data::TitanOrbit.Data.ShipDeathDebrisSettings
+  ClusterCountMin: 3
+  ClusterCountMax: 9
+  RadialSpeed: 2.4
+  DeathIntensityMin: 0.5
+  DeathIntensityMax: 1.55
+  RadialSpeedRandomMin: 0.35
+  RadialSpeedRandomMax: 1.75
+  DirectionChaos: 0.28
+  CrashSpeed: 3.8
+  KillAimWeight: 1.25
+  BreakSpread: 0.42
+  ImpulseSpeed: 3.6
+  BlastRadiusHullMul: 1.6
+  MaxSpinDegreesPerSecond: 210
+  ClusterSpinRandomMin: 0.15
+  ClusterSpinRandomMax: 1.35
+  LinearDrag: 0.72
+  AngularDrag: 0.35
+  VisualBounce: 0.42
+  VisualHitSpin: 14
+  ExplosionVfxRed: {fileID: 169654, guid: 1dadf691cda82fa44a8a66d7dd374612, type: 3}
+  ExplosionVfxBlue: {fileID: 137586, guid: 0a73ef3872695c14c87225f786afcf7a, type: 3}
+  ExplosionVfxGreen: {fileID: 118086, guid: 0b4783e4abed86a40961a2180adca3b0, type: 3}
+  ExplosionVfxYellow: {fileID: 133064, guid: 1de8b42c6540de34fb2c324a58c34a18, type: 3}
+  ExplosionVfxPurple: {fileID: 137400, guid: ef52d43a5422dc848b423ebfc548e18b, type: 3}
+  BurstScale: 2.2
+  BurstScaleFromPower: 1.4
+  MaxSeamBursts: 6
+  SeamScaleMin: 0.08
+  SeamScaleMax: 0.18
+  SeamFirstDelayMin: 0.45
+  SeamFirstDelayMax: 1.85
+  SeamRepeatMin: 1.15
+  SeamRepeatMax: 2.55
+  SeamRepeatGrow: 1.28
+  SeamBurstDuration: 0.55

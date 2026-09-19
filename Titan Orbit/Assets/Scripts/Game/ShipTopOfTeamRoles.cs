@@ -157,7 +157,7 @@ namespace TitanOrbit.Game
 
         /// <summary>
         /// True when this owner holds at least one living title on <paramref name="team"/>.
-        /// Same rule as the Command Deck / CMDR pill — score rank alone is not enough.
+        /// Same rule as the Command Deck / Team Commander pill — score rank alone is not enough.
         /// </summary>
         public static bool HoldsCommandSeat(TeamId team, int networkId)
         {

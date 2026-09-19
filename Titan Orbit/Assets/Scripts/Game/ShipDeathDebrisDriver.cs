@@ -16,11 +16,13 @@ using UnityEngine;
 namespace TitanOrbit.Game
 {
     /// <summary>
-    /// Client-only: clones every prefab component on a dying ship and flies them as
-    /// non-interactive debris until that ship respawns. Motion is seeded from
-    /// <see cref="ShipDeathVfxState.Packed"/> so all clients match when that ghost
-    /// word has arrived; if it is still 0 we still explode with a local fallback seed
-    /// so a late Packed (common on the second death) cannot vanish the hull.
+    /// Client-only: clones prefab components on a dying ship, groups nearby ones into
+    /// 3–9 rigid chunks, and flies those chunks as non-interactive debris until respawn.
+    /// Fire/V2 one-shots retrigger at torn contacts (parts that used to touch).
+    /// Chunks bounce off ship / asteroid ghosts with toroidal sphere math (no PhysicsCollider,
+    /// nothing on the server). Motion is seeded from <see cref="ShipDeathVfxState.Packed"/>
+    /// so all clients match when that ghost word has arrived; if it is still 0 we still
+    /// explode with a local fallback seed so a late Packed cannot vanish the hull.
     /// <para>
     /// Hooked from <see cref="EcsWorldVisualizer"/> (no extra ship entity queries).
     /// The visualizer hides the live proxy only after <see cref="TryBegin"/> has a wreck.
@@ -28,19 +30,41 @@ namespace TitanOrbit.Game
     /// </summary>
     public sealed class ShipDeathDebrisDriver : MonoBehaviour
     {
-        const string FireballsV2Category = "FireballsV2";
+        const string FireV2Folder =
+            "Assets/Archanor/Sci-Fi Arsenal/Sci-Fi Effects/Prefabs/Combat/Explosions/Fire/V2/";
         const string DebrisRootName = "ShipDeathDebris";
+        const int ExplosionPrewarmCount = 8;
+        const float MinChunkRadius = 0.35f;
 
         struct Piece
         {
             public GameObject Go;
+        }
+
+        struct SeamFire
+        {
+            public int ChunkIndex;
+            public float3 LocalOffset;
+            public float NextTime;
+            public float Interval;
+            public float Scale;
+        }
+
+        struct Chunk
+        {
+            public GameObject Root;
             public float3 LogicalPos;
             public quaternion Rotation;
             public float3 Velocity;
             public float3 SpinDegPerSec;
-            public GameObject Burn;
-            public float BurnDelay;
-            public bool WillBurn;
+            public float Radius;
+        }
+
+        struct VisualBody
+        {
+            public Entity Entity;
+            public float3 LogicalPos;
+            public float Radius;
         }
 
         struct Wreck
@@ -48,19 +72,29 @@ namespace TitanOrbit.Game
             public Entity Ship;
             public uint Packed;
             public float3 CenterLogical;
+            public List<Chunk> Chunks;
             public List<Piece> Pieces;
+            public List<SeamFire> SeamFires;
             public float StartTime;
             public byte Team;
         }
 
         static ShipDeathDebrisDriver s_instance;
         static readonly List<Transform> s_partScratch = new List<Transform>(64);
+        static readonly List<float3> s_offsetScratch = new List<float3>(64);
+        static readonly List<int> s_clusterScratch = new List<int>(64);
+        static readonly List<float3> s_chunkComScratch = new List<float3>(8);
+        static readonly List<int> s_chunkSizeScratch = new List<int>(8);
+        static readonly List<int> s_chunkIndexScratch = new List<int>(8);
+        static readonly List<Entity> s_proxyScratch = new List<Entity>(64);
+        static readonly List<VisualBody> s_bodyScratch = new List<VisualBody>(64);
+        static readonly List<int> s_seamAScratch = new List<int>(8);
+        static readonly List<int> s_seamBScratch = new List<int>(8);
 
         readonly Dictionary<Entity, Wreck> _wrecks = new Dictionary<Entity, Wreck>(16);
         readonly List<Entity> _endScratch = new List<Entity>(8);
+        readonly GameObject[] _explosionByTeam = new GameObject[6];
         ShipDeathDebrisSettings _settings;
-        BulletVfxBank _bank;
-        int _fireballsIndex = -1;
         float _mapW;
         float _mapH;
 
@@ -91,9 +125,8 @@ namespace TitanOrbit.Game
 
             s_instance = this;
             _settings = ShipDeathDebrisSettings.LoadOrDefault();
-            _bank = BulletVfxBank.LoadDefault();
-            if (_bank != null)
-                _bank.TryGetCategoryIndexByName(FireballsV2Category, out _fireballsIndex);
+            ResolveExplosionPrefabs();
+            EnqueueExplosionPrewarm();
         }
 
         void OnDestroy()
@@ -215,36 +248,47 @@ namespace TitanOrbit.Game
                 Ship = ship,
                 Packed = packed,
                 CenterLogical = center,
+                Chunks = new List<Chunk>(8),
                 Pieces = new List<Piece>(s_partScratch.Count),
+                SeamFires = new List<SeamFire>(8),
                 StartTime = Time.time,
                 Team = team,
             };
 
+            CompactPartScratch();
             var collected = new HashSet<Transform>(s_partScratch);
-            var sizes = new List<float>(s_partScratch.Count);
 
+            // --- Spatial chunks ---
+            // Nearby modules share a root so they tumble as wreckage, not as a bag of
+            // equal-force parts. Cluster count and seams come from the death seed.
+            s_offsetScratch.Clear();
             for (int i = 0; i < s_partScratch.Count; i++)
             {
-                Transform src = s_partScratch[i];
-                if (src == null)
+                float3 offset = (float3)s_partScratch[i].position - center;
+                offset.y = 0f;
+                s_offsetScratch.Add(offset);
+            }
+
+            int clusterCount = ShipDeathDebrisMath.AssignSpatialClusters(
+                seed,
+                s_offsetScratch,
+                _settings.ClusterCountMin,
+                _settings.ClusterCountMax,
+                s_clusterScratch);
+
+            BuildChunkCenters(center, clusterCount);
+
+            for (int c = 0; c < clusterCount; c++)
+            {
+                if (s_chunkSizeScratch[c] <= 0)
                     continue;
 
-                GameObject clone = Instantiate(src.gameObject);
-                clone.name = src.name + "_Debris";
-                clone.SetActive(true);
-                StripCollectedDescendants(clone.transform, src, collected);
-                StripInteractive(clone);
-
-                float3 logical = src.position;
-                clone.transform.SetPositionAndRotation(src.position, src.rotation);
-                clone.transform.localScale = src.lossyScale;
-                clone.transform.SetParent(transform, true);
-
-                float3 offset = logical - center;
+                float3 com = s_chunkComScratch[c];
+                float3 offset = com - center;
                 offset.y = 0f;
-                ShipDeathDebrisMath.ComputeLaunch(
+                ShipDeathDebrisMath.ComputeClusterLaunch(
                     seed,
-                    i,
+                    c,
                     offset,
                     impulseDir,
                     power01,
@@ -254,24 +298,76 @@ namespace TitanOrbit.Game
                     out float3 velocity,
                     out float3 spin);
 
+                var root = new GameObject($"{DebrisRootName}_Chunk_{c}");
+                root.transform.SetParent(transform, false);
+                root.transform.SetPositionAndRotation(
+                    new Vector3(com.x, com.y, com.z),
+                    Quaternion.identity);
+
+                wreck.Chunks.Add(new Chunk
+                {
+                    Root = root,
+                    LogicalPos = com,
+                    Rotation = quaternion.identity,
+                    Velocity = velocity,
+                    SpinDegPerSec = spin,
+                    Radius = MinChunkRadius,
+                });
+            }
+
+            s_chunkIndexScratch.Clear();
+            int written = 0;
+            for (int c = 0; c < clusterCount; c++)
+            {
+                if (s_chunkSizeScratch[c] <= 0)
+                    s_chunkIndexScratch.Add(0);
+                else
+                    s_chunkIndexScratch.Add(written++);
+            }
+
+            for (int i = 0; i < s_partScratch.Count; i++)
+            {
+                Transform src = s_partScratch[i];
+                int cluster = i < s_clusterScratch.Count ? s_clusterScratch[i] : 0;
+                int chunkIndex = cluster >= 0 && cluster < s_chunkIndexScratch.Count
+                    ? s_chunkIndexScratch[cluster]
+                    : 0;
+                if (chunkIndex < 0 || chunkIndex >= wreck.Chunks.Count)
+                    chunkIndex = 0;
+
+                GameObject clone = Instantiate(src.gameObject);
+                clone.name = src.name + "_Debris";
+                clone.SetActive(true);
+                StripCollectedDescendants(clone.transform, src, collected);
+                StripInteractive(clone);
+
+                clone.transform.SetPositionAndRotation(src.position, src.rotation);
+                clone.transform.localScale = src.lossyScale;
+                Transform parent = wreck.Chunks.Count > 0
+                    ? wreck.Chunks[chunkIndex].Root.transform
+                    : transform;
+                clone.transform.SetParent(parent, true);
+
+                if (wreck.Chunks.Count > 0)
+                {
+                    Chunk sized = wreck.Chunks[chunkIndex];
+                    float3 com = sized.LogicalPos;
+                    float3 part = (float3)src.position;
+                    float radial = math.length(new float2(part.x - com.x, part.z - com.z));
+                    sized.Radius = math.max(sized.Radius, radial + 0.3f);
+                    wreck.Chunks[chunkIndex] = sized;
+                }
+
                 wreck.Pieces.Add(new Piece
                 {
                     Go = clone,
-                    LogicalPos = logical,
-                    Rotation = src.rotation,
-                    Velocity = velocity,
-                    SpinDegPerSec = spin,
-                    Burn = null,
-                    BurnDelay = 0f,
-                    WillBurn = false,
                 });
-                sizes.Add(EstimateSize(clone));
             }
 
             if (wreck.Pieces.Count == 0)
                 return false;
 
-            QueueStaggeredBurns(wreck, sizes, seed);
+            QueueSeamFires(wreck, seed, hullRadius);
             _wrecks[ship] = wreck;
 
             PlayBurst(center, hullRadius, power01, (TeamId)team);
@@ -318,141 +414,194 @@ namespace TitanOrbit.Game
                 reference = new float3(p.x, p.y, p.z);
             }
 
+            // Visualizer proxies only — no extra asteroid EntityQuery (mapW/mapH from ToroidalMapEcs).
+            CollectVisualBodies();
+
             _endScratch.Clear();
             foreach (var kv in _wrecks)
             {
                 var wreck = kv.Value;
-                if (wreck.Pieces == null)
+                if (wreck.Pieces == null || wreck.Chunks == null)
                 {
                     _endScratch.Add(kv.Key);
                     continue;
                 }
 
-                for (int i = 0; i < wreck.Pieces.Count; i++)
+                for (int i = 0; i < wreck.Chunks.Count; i++)
                 {
-                    Piece piece = wreck.Pieces[i];
-                    if (piece.Go == null)
+                    Chunk chunk = wreck.Chunks[i];
+                    if (chunk.Root == null)
                         continue;
 
                     ShipDeathDebrisMath.IntegrateDrag(
-                        ref piece.Velocity,
-                        ref piece.SpinDegPerSec,
+                        ref chunk.Velocity,
+                        ref chunk.SpinDegPerSec,
                         dt,
                         _settings.LinearDrag,
                         _settings.AngularDrag);
 
-                    piece.LogicalPos += piece.Velocity * dt;
-                    piece.LogicalPos.y = 0f;
-                    piece.Rotation = math.mul(
-                        piece.Rotation,
-                        quaternion.Euler(math.radians(piece.SpinDegPerSec * dt)));
+                    chunk.LogicalPos += chunk.Velocity * dt;
+                    chunk.LogicalPos.y = 0f;
+                    chunk.Rotation = math.mul(
+                        chunk.Rotation,
+                        quaternion.Euler(math.radians(chunk.SpinDegPerSec * dt)));
 
-                    float3 display = piece.LogicalPos;
+                    ResolveChunkAgainstBodies(ref chunk, wreck.Ship);
+
+                    float3 display = chunk.LogicalPos;
                     if (hasRef && ToroidalMapEcs.IsValidMapSize(_mapW, _mapH))
-                        display = ToroidalMapEcs.GetDisplayPosition(piece.LogicalPos, reference, _mapW, _mapH);
+                        display = ToroidalMapEcs.GetDisplayPosition(chunk.LogicalPos, reference, _mapW, _mapH);
 
-                    piece.Go.transform.SetPositionAndRotation(
+                    chunk.Root.transform.SetPositionAndRotation(
                         new Vector3(display.x, display.y, display.z),
-                        piece.Rotation);
-
-                    float age = Time.time - wreck.StartTime;
-                    if (piece.WillBurn && piece.Burn == null && age >= piece.BurnDelay)
-                        TryStartBurn(ref piece, wreck.Team);
-                    else if (piece.Burn != null)
-                        KeepBurnPlaying(piece.Burn);
-
-                    wreck.Pieces[i] = piece;
+                        chunk.Rotation);
+                    wreck.Chunks[i] = chunk;
                 }
+
+                TickSeamFires(wreck, reference, hasRef);
             }
 
             for (int i = 0; i < _endScratch.Count; i++)
                 DestroyWreck(_endScratch[i]);
         }
 
-        void QueueStaggeredBurns(Wreck wreck, List<float> sizes, uint seed)
+        /// <summary>
+        /// Places repeating Fire/V2 one-shots on the faces that used to touch — torn
+        /// cross-cluster contacts first. Prefabs stay one-shots; we retrigger them.
+        /// </summary>
+        void QueueSeamFires(Wreck wreck, uint seed, float hullRadius)
         {
             if (TitanOrbitDebugFlags.IsolateDisableImpactVfx)
                 return;
-            if (wreck.Pieces == null || sizes.Count == 0)
+            if (wreck.SeamFires == null || wreck.Chunks == null || wreck.Chunks.Count == 0)
                 return;
 
-            int max = Mathf.Min(_settings.MaxBurnAttachments, wreck.Pieces.Count);
-            if (max <= 0)
+            int maxEmitters = Mathf.Max(0, _settings.MaxSeamBursts);
+            if (maxEmitters <= 0)
                 return;
 
-            var order = new List<int>(sizes.Count);
-            for (int i = 0; i < sizes.Count; i++)
-                order.Add(i);
-            order.Sort((a, b) => sizes[b].CompareTo(sizes[a]));
+            int maxPairs = math.max(1, (maxEmitters + 1) / 2);
+            ShipDeathDebrisMath.CollectSeamContacts(
+                s_offsetScratch,
+                s_clusterScratch,
+                maxPairs,
+                s_seamAScratch,
+                s_seamBScratch);
 
-            for (int n = 0; n < max; n++)
+            int emitter = 0;
+            for (int i = 0; i < s_seamAScratch.Count && emitter < maxEmitters; i++)
             {
-                int i = order[n];
-                Piece piece = wreck.Pieces[i];
-                if (piece.Go == null)
-                    continue;
-                piece.WillBurn = true;
-                piece.BurnDelay = ShipDeathDebrisMath.ComputeBurnDelay(
-                    seed, i, _settings.BurnStartDelayMin, _settings.BurnStartDelayMax);
-                wreck.Pieces[i] = piece;
+                TryAddSeamFire(wreck, seed, s_seamAScratch[i], hullRadius, ref emitter);
+                if (emitter >= maxEmitters)
+                    break;
+                if (s_seamBScratch[i] != s_seamAScratch[i])
+                    TryAddSeamFire(wreck, seed, s_seamBScratch[i], hullRadius, ref emitter);
             }
         }
 
-        void TryStartBurn(ref Piece piece, byte team)
+        void TryAddSeamFire(Wreck wreck, uint seed, int partIndex, float hullRadius, ref int emitter)
         {
-            if (_bank == null || piece.Go == null)
+            if (partIndex < 0 || partIndex >= s_partScratch.Count)
+                return;
+            Transform src = s_partScratch[partIndex];
+            if (src == null)
                 return;
 
-            int bankIndex = _fireballsIndex >= 0 ? _fireballsIndex : 0;
-            GameObject prefab = _bank.GetImpactPrefab(bankIndex, (TeamId)team);
+            int cluster = partIndex < s_clusterScratch.Count ? s_clusterScratch[partIndex] : 0;
+            int chunkIndex = cluster >= 0 && cluster < s_chunkIndexScratch.Count
+                ? s_chunkIndexScratch[cluster]
+                : 0;
+            if (chunkIndex < 0 || chunkIndex >= wreck.Chunks.Count)
+                return;
+
+            ShipDeathDebrisMath.ComputeSeamBurst(
+                seed,
+                emitter,
+                _settings,
+                out float firstDelay,
+                out float interval,
+                out float scale,
+                out float3 jitter);
+
+            float3 com = wreck.Chunks[chunkIndex].LogicalPos;
+            float3 world = (float3)src.position;
+            float3 local = world - com;
+            local.y = 0f;
+            local += jitter * math.max(0.35f, hullRadius);
+
+            wreck.SeamFires.Add(new SeamFire
+            {
+                ChunkIndex = chunkIndex,
+                LocalOffset = local,
+                NextTime = wreck.StartTime + firstDelay,
+                Interval = interval,
+                Scale = scale,
+            });
+            emitter++;
+        }
+
+        void TickSeamFires(Wreck wreck, float3 reference, bool hasRef)
+        {
+            if (wreck.SeamFires == null || wreck.Chunks == null)
+                return;
+
+            float now = Time.time;
+            GameObject prefab = PickExplosionPrefab((TeamId)wreck.Team);
             if (prefab == null)
                 return;
-            if (!BulletOneShotVfxPool.TryRent(prefab, out GameObject burn) || burn == null)
-                return;
 
-            burn.name = prefab.name + "_DeathBurn";
-            burn.transform.SetParent(piece.Go.transform, false);
-            burn.transform.localPosition = Vector3.zero;
-            burn.transform.localRotation = Quaternion.identity;
-            VfxUrpCompat.ApplyImpactVisualScale(burn, _settings.BurnScale);
-            MuteAudio(burn);
-            VfxUrpCompat.SetParticleSystemsLooping(burn, true);
-            piece.Burn = burn;
-        }
-
-        static void KeepBurnPlaying(GameObject burn)
-        {
-            if (burn == null)
-                return;
-
-            var systems = burn.GetComponentsInChildren<ParticleSystem>(true);
-            for (int i = 0; i < systems.Length; i++)
+            for (int i = 0; i < wreck.SeamFires.Count; i++)
             {
-                ParticleSystem ps = systems[i];
-                if (ps == null)
+                SeamFire fire = wreck.SeamFires[i];
+                if (now < fire.NextTime)
+                    continue;
+                if (fire.ChunkIndex < 0 || fire.ChunkIndex >= wreck.Chunks.Count)
                     continue;
 
-                var main = ps.main;
-                if (!main.loop)
-                {
-                    main.loop = true;
-                    main.playOnAwake = false;
-                }
+                Chunk chunk = wreck.Chunks[fire.ChunkIndex];
+                if (chunk.Root == null)
+                    continue;
 
-                if (!ps.isPlaying)
-                    ps.Play(true);
+                float3 logical = chunk.LogicalPos + math.mul(chunk.Rotation, fire.LocalOffset);
+                logical.y = 0f;
+                float3 display = logical;
+                if (hasRef && ToroidalMapEcs.IsValidMapSize(_mapW, _mapH))
+                    display = ToroidalMapEcs.GetDisplayPosition(logical, reference, _mapW, _mapH);
+
+                PlaySeamBurst(
+                    new Vector3(display.x, 0f, display.z),
+                    prefab,
+                    fire.Scale,
+                    chunk.Root.transform);
+
+                fire.Interval *= math.max(1f, _settings.SeamRepeatGrow);
+                fire.NextTime = now + fire.Interval;
+                wreck.SeamFires[i] = fire;
             }
+        }
+
+        void PlaySeamBurst(Vector3 display, GameObject prefab, float scale, Transform attach)
+        {
+            if (prefab == null)
+                return;
+            if (!BulletOneShotVfxPool.TryRent(prefab, out GameObject go) || go == null)
+                return;
+
+            go.transform.SetPositionAndRotation(display, Quaternion.identity);
+            VfxUrpCompat.ApplyImpactVisualScale(go, scale);
+            MuteAudio(go);
+            VfxUrpCompat.PrepareVfxInstance(go);
+            if (attach != null)
+                go.transform.SetParent(attach, true);
+            BulletOneShotVfxPool.ScheduleReturn(go, _settings.SeamBurstDuration);
         }
 
         void PlayBurst(float3 logical, float hullRadius, float power01, TeamId team)
         {
             if (TitanOrbitDebugFlags.IsolateDisableImpactVfx)
                 return;
-            if (_bank == null)
-                return;
 
-            int bankIndex = _fireballsIndex >= 0 ? _fireballsIndex : 0;
-            GameObject prefab = _bank.GetImpactPrefab(bankIndex, team);
+            GameObject prefab = PickExplosionPrefab(team);
             if (prefab == null)
                 return;
 
@@ -512,21 +661,69 @@ namespace TitanOrbit.Game
             if (!_wrecks.TryGetValue(ship, out var wreck))
                 return;
             _wrecks.Remove(ship);
-            if (wreck.Pieces == null)
-                return;
 
-            for (int i = 0; i < wreck.Pieces.Count; i++)
+            if (wreck.Chunks != null)
             {
-                Piece piece = wreck.Pieces[i];
-                if (piece.Burn != null)
+                for (int i = 0; i < wreck.Chunks.Count; i++)
                 {
-                    VfxUrpCompat.SetParticleSystemsLooping(piece.Burn, false);
-                    RestoreAudio(piece.Burn);
-                    BulletOneShotVfxPool.ReturnNow(piece.Burn);
+                    if (wreck.Chunks[i].Root != null)
+                        Destroy(wreck.Chunks[i].Root);
+                }
+            }
+        }
+
+        static void CompactPartScratch()
+        {
+            int write = 0;
+            for (int i = 0; i < s_partScratch.Count; i++)
+            {
+                if (s_partScratch[i] != null)
+                    s_partScratch[write++] = s_partScratch[i];
+            }
+
+            if (write < s_partScratch.Count)
+                s_partScratch.RemoveRange(write, s_partScratch.Count - write);
+        }
+
+        /// <summary>
+        /// Averages collected part positions per cluster label into
+        /// <see cref="s_chunkComScratch"/>. Empty labels stay at the ship center.
+        /// </summary>
+        static void BuildChunkCenters(float3 shipCenter, int clusterCount)
+        {
+            s_chunkComScratch.Clear();
+            s_chunkSizeScratch.Clear();
+            int k = math.max(0, clusterCount);
+            for (int c = 0; c < k; c++)
+            {
+                s_chunkComScratch.Add(float3.zero);
+                s_chunkSizeScratch.Add(0);
+            }
+
+            int partCount = math.min(s_partScratch.Count, s_clusterScratch.Count);
+            for (int i = 0; i < partCount; i++)
+            {
+                Transform src = s_partScratch[i];
+                if (src == null)
+                    continue;
+
+                int c = s_clusterScratch[i];
+                if (c < 0 || c >= k)
+                    continue;
+
+                s_chunkComScratch[c] += (float3)src.position;
+                s_chunkSizeScratch[c]++;
+            }
+
+            for (int c = 0; c < k; c++)
+            {
+                if (s_chunkSizeScratch[c] <= 0)
+                {
+                    s_chunkComScratch[c] = shipCenter;
+                    continue;
                 }
 
-                if (piece.Go != null)
-                    Destroy(piece.Go);
+                s_chunkComScratch[c] /= s_chunkSizeScratch[c];
             }
         }
 
@@ -546,6 +743,228 @@ namespace TitanOrbit.Game
                 _mapW = w;
                 _mapH = h;
             }
+        }
+
+        /// <summary>
+        /// Prefers authored Fire/V2 slots, then Editor folder paths so Play Mode works
+        /// before the Resources asset is wired. Same team map as asteroid death V1.
+        /// </summary>
+        void ResolveExplosionPrefabs()
+        {
+            BindExplosionSlot(1, _settings != null ? _settings.ExplosionVfxRed : null, "RedFireImpactV2.prefab");
+            BindExplosionSlot(2, _settings != null ? _settings.ExplosionVfxBlue : null, "BlueFireImpactV2.prefab");
+            BindExplosionSlot(3, _settings != null ? _settings.ExplosionVfxGreen : null, "GreenFireImpactV2.prefab");
+            BindExplosionSlot(4, _settings != null ? _settings.ExplosionVfxYellow : null, "YellowFireImpactV2.prefab");
+            BindExplosionSlot(5, _settings != null ? _settings.ExplosionVfxPurple : null, "PurpleFireImpactV2.prefab");
+
+            GameObject first = null;
+            for (int i = 1; i < _explosionByTeam.Length; i++)
+            {
+                if (_explosionByTeam[i] == null)
+                    continue;
+                first = _explosionByTeam[i];
+                break;
+            }
+
+            _explosionByTeam[0] = first;
+        }
+
+        void BindExplosionSlot(int index, GameObject authored, string editorFileName)
+        {
+            GameObject live = TryLivePrefab(authored);
+#if UNITY_EDITOR
+            if (live == null)
+            {
+                live = TryLivePrefab(
+                    UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(FireV2Folder + editorFileName));
+            }
+#endif
+            _explosionByTeam[index] = live;
+        }
+
+        void EnqueueExplosionPrewarm()
+        {
+            for (int i = 0; i < _explosionByTeam.Length; i++)
+            {
+                if (_explosionByTeam[i] != null)
+                    BulletOneShotVfxPool.EnqueuePrewarm(_explosionByTeam[i], ExplosionPrewarmCount);
+            }
+        }
+
+        GameObject PickExplosionPrefab(TeamId team)
+        {
+            if (_explosionByTeam[0] == null)
+                ResolveExplosionPrefabs();
+
+            int index = (int)team;
+            if (index >= 0 && index < _explosionByTeam.Length && _explosionByTeam[index] != null)
+                return _explosionByTeam[index];
+
+            if (_settings != null)
+            {
+                GameObject fromSettings = TryLivePrefab(_settings.GetExplosionVfx(team));
+                if (fromSettings != null)
+                    return fromSettings;
+            }
+
+            return _explosionByTeam[0];
+        }
+
+        static GameObject TryLivePrefab(GameObject prefab)
+        {
+            if (prefab == null)
+                return null;
+            try
+            {
+                _ = prefab.transform;
+                return prefab;
+            }
+            catch (MissingReferenceException)
+            {
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// Ships + live asteroids from <see cref="EcsWorldVisualizer"/> proxies, sorted by
+        /// entity index so bounce order matches on every client.
+        /// </summary>
+        void CollectVisualBodies()
+        {
+            s_bodyScratch.Clear();
+            var viz = EcsWorldVisualizer.Active;
+            if (viz == null)
+                return;
+
+            var world = EcsGameBridge.GetVisualizationWorld();
+            if (world == null || !world.IsCreated)
+                return;
+
+            var em = world.EntityManager;
+            bool skipShips = ClientJoinSettleCache.ShouldSkipShipEntityQueries;
+            bool skipAsteroids = ClientJoinSettleCache.ShouldSkipMapBodyQueries;
+
+            if (!skipShips)
+            {
+                viz.CopyShipProxyEntitiesTo(s_proxyScratch);
+                for (int i = 0; i < s_proxyScratch.Count; i++)
+                    TryAddShipBody(em, viz, s_proxyScratch[i]);
+            }
+
+            if (!skipAsteroids)
+            {
+                viz.CopyAsteroidProxyEntitiesTo(s_proxyScratch);
+                for (int i = 0; i < s_proxyScratch.Count; i++)
+                    TryAddAsteroidBody(em, viz, s_proxyScratch[i]);
+            }
+
+            s_bodyScratch.Sort(CompareVisualBody);
+        }
+
+        void TryAddShipBody(EntityManager em, EcsWorldVisualizer viz, Entity entity)
+        {
+            if (entity == Entity.Null || !em.Exists(entity))
+                return;
+            if (!em.HasComponent<ShipTag>(entity) || !em.HasComponent<ShipState>(entity))
+                return;
+            if (em.GetComponentData<ShipState>(entity).IsDead)
+                return;
+            if (!viz.TryGetProxy(entity, out GameObject proxy) || proxy == null || !proxy.activeInHierarchy)
+                return;
+
+            float3 pos;
+            float radius;
+            if (em.HasComponent<LocalTransform>(entity))
+            {
+                var lt = em.GetComponentData<LocalTransform>(entity);
+                pos = lt.Position;
+                radius = BodyCollisionMath.GetShipHullRadiusWorld(math.max(0.25f, lt.Scale));
+            }
+            else
+            {
+                Vector3 p = proxy.transform.position;
+                pos = new float3(p.x, 0f, p.z);
+                radius = BodyCollisionMath.GetShipHullRadiusWorld(1f);
+            }
+
+            pos.y = 0f;
+            s_bodyScratch.Add(new VisualBody
+            {
+                Entity = entity,
+                LogicalPos = pos,
+                Radius = radius,
+            });
+        }
+
+        void TryAddAsteroidBody(EntityManager em, EcsWorldVisualizer viz, Entity entity)
+        {
+            if (entity == Entity.Null || !em.Exists(entity))
+                return;
+            if (!em.HasComponent<AsteroidTag>(entity) || !em.HasComponent<AsteroidState>(entity))
+                return;
+            if (!em.GetComponentData<AsteroidState>(entity).IsAliveForCombat)
+                return;
+            if (em.HasComponent<AsteroidClientCulledTag>(entity))
+                return;
+            if (!viz.TryGetProxy(entity, out GameObject proxy) || proxy == null || !proxy.activeInHierarchy)
+                return;
+
+            float3 pos;
+            float radius;
+            if (em.HasComponent<LocalTransform>(entity))
+            {
+                var lt = em.GetComponentData<LocalTransform>(entity);
+                pos = lt.Position;
+                radius = BodyCollisionMath.GetAsteroidBodyRadiusWorld(math.max(0.01f, lt.Scale));
+            }
+            else
+            {
+                Vector3 p = proxy.transform.position;
+                pos = new float3(p.x, 0f, p.z);
+                radius = BodyCollisionMath.GetAsteroidBodyRadiusWorld(1f);
+            }
+
+            pos.y = 0f;
+            s_bodyScratch.Add(new VisualBody
+            {
+                Entity = entity,
+                LogicalPos = pos,
+                Radius = radius,
+            });
+        }
+
+        void ResolveChunkAgainstBodies(ref Chunk chunk, Entity ignoreShip)
+        {
+            bool torus = ToroidalMapEcs.IsValidMapSize(_mapW, _mapH);
+            for (int i = 0; i < s_bodyScratch.Count; i++)
+            {
+                VisualBody body = s_bodyScratch[i];
+                if (body.Entity == ignoreShip)
+                    continue;
+
+                float3 offset = torus
+                    ? ToroidalMapEcs.ShortestOffsetXZ(body.LogicalPos, chunk.LogicalPos, _mapW, _mapH)
+                    : new float3(
+                        chunk.LogicalPos.x - body.LogicalPos.x,
+                        0f,
+                        chunk.LogicalPos.z - body.LogicalPos.z);
+
+                ShipDeathDebrisMath.ResolveVisualSphere(
+                    ref chunk.LogicalPos,
+                    ref chunk.Velocity,
+                    ref chunk.SpinDegPerSec,
+                    offset,
+                    chunk.Radius,
+                    body.Radius,
+                    _settings.VisualBounce,
+                    _settings.VisualHitSpin);
+            }
+        }
+
+        static int CompareVisualBody(VisualBody a, VisualBody b)
+        {
+            int c = a.Entity.Index.CompareTo(b.Entity.Index);
+            return c != 0 ? c : a.Entity.Version.CompareTo(b.Entity.Version);
         }
 
         static string ResolveFamilyPrefix(EntityManager em, Entity ship)
@@ -607,21 +1026,6 @@ namespace TitanOrbit.Game
             }
         }
 
-        static float EstimateSize(GameObject go)
-        {
-            var renderers = go.GetComponentsInChildren<Renderer>(true);
-            float best = 0f;
-            for (int i = 0; i < renderers.Length; i++)
-            {
-                if (renderers[i] == null || renderers[i] is ParticleSystemRenderer)
-                    continue;
-                Vector3 e = renderers[i].bounds.size;
-                best = Mathf.Max(best, e.x * e.y * e.z);
-            }
-
-            return best;
-        }
-
         static void MuteAudio(GameObject root)
         {
             var sources = root.GetComponentsInChildren<AudioSource>(true);
@@ -629,16 +1033,6 @@ namespace TitanOrbit.Game
             {
                 if (sources[i] != null)
                     sources[i].enabled = false;
-            }
-        }
-
-        static void RestoreAudio(GameObject root)
-        {
-            var sources = root.GetComponentsInChildren<AudioSource>(true);
-            for (int i = 0; i < sources.Length; i++)
-            {
-                if (sources[i] != null)
-                    sources[i].enabled = true;
             }
         }
     }

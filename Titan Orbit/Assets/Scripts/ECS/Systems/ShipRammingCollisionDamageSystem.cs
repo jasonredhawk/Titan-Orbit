@@ -253,7 +253,8 @@ namespace TitanOrbit.ECS
                             gemPrefab, shipPos, spawnServerTime, ecb, now,
                             damagerNetworkId: 0,
                             impulseXZ: new float2(normalShipFromOther.x, normalShipFromOther.z),
-                            impulsePower: selfDamage);
+                            impulsePower: selfDamage,
+                            sourceEntity: other);
                         state.EntityManager.SetComponentData(shipEntity, ship);
                     }
 
@@ -294,7 +295,8 @@ namespace TitanOrbit.ECS
                             gemPrefab, shipPos, spawnServerTime, ecb, now,
                             damagerNetworkId: 0,
                             impulseXZ: new float2(normalShipFromOther.x, normalShipFromOther.z),
-                            impulsePower: selfDamage);
+                            impulsePower: selfDamage,
+                            sourceEntity: other);
                         state.EntityManager.SetComponentData(shipEntity, ship);
                     }
                     else
@@ -542,7 +544,8 @@ namespace TitanOrbit.ECS
                 gemPrefab, vicPos, spawnServerTime, ecb, now,
                 damagerNetworkId: offenderNetworkId,
                 impulseXZ: ramImpulse,
-                impulsePower: damage);
+                impulsePower: damage,
+                sourceEntity: offender);
             state.EntityManager.SetComponentData(victim, vicShip);
         }
 
@@ -744,7 +747,8 @@ namespace TitanOrbit.ECS
                 gemPrefab, shipPos, spawnServerTime, ecb, now,
                 damagerNetworkId: 0,
                 impulseXZ: new float2(normalShipFromOther.x, normalShipFromOther.z),
-                impulsePower: selfPulse);
+                impulsePower: selfPulse,
+                sourceEntity: asteroid);
 
             contact.NextGrindTime = now + pulse;
         }
@@ -981,7 +985,8 @@ namespace TitanOrbit.ECS
             double now,
             int damagerNetworkId,
             float2 impulseXZ = default,
-            float impulsePower = -1f)
+            float impulsePower = -1f,
+            Entity sourceEntity = default)
         {
             if (damage <= 0.0001f || ship.IsDead)
                 return;
@@ -1028,7 +1033,8 @@ namespace TitanOrbit.ECS
                     damagerNetworkId,
                     (float)now,
                     impulseXZ,
-                    power);
+                    power,
+                    sourceEntity);
             }
 
             if (result.GemsToExpel > 0.0001f)

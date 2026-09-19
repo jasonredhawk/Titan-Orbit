@@ -23,7 +23,7 @@ namespace TitanOrbit.Game
     /// to the mouse. While a lock is burning, this driver also reports <c>DPS × dt</c>
     /// to <see cref="EcsFloatingCountPresenter"/> so laser hull / rock hits show the
     /// same floating damage numbers as <c>BulletHitRpc</c> (lasers never send that RPC).
-    /// Beams stay on while Fire is held and energy remains.
+    /// Beams stay on while a live lock (or Shift mouse-aim) is burning.
     /// <para>
     /// The Archanor line is world-space. Pose the root and snap the
     /// <see cref="LineRenderer"/> after hybrid hulls move — otherwise the beam sits
@@ -272,12 +272,14 @@ namespace TitanOrbit.Game
             }
             if (energyLockout)
             {
-                if (localOwner)
-                    ClearStickyForShip(binding.ShipEntity.Index);
+                ClearStickyForShip(binding.ShipEntity.Index);
                 return;
             }
             if (!localOwner && !megaState.CannonLaserPulseOn)
+            {
+                ClearStickyForShip(binding.ShipEntity.Index);
                 return;
+            }
             if (localFiring)
                 _humFireHeld = true;
 
@@ -291,25 +293,36 @@ namespace TitanOrbit.Game
                     ShipIndex = binding.ShipEntity.Index,
                     MountIndex = m,
                 };
-                bool tracking = MegaShipWeaponAim.IsTrackingAim(gunners[m]);
+                bool tracking = MegaShipWeaponAim.IsTrackingAim(gunners[m])
+                    && MegaShipWeaponVisualTargets.IsLiveLock(
+                        em,
+                        gunners[m].TargetGhostId,
+                        gunners[m].AimWorldX,
+                        gunners[m].AimWorldZ);
                 bool sticky = !localMouseAim
                     && !tracking
                     && HasStickyLock(key);
                 // Local Fire must try to pose this frame — waiting on ghosted
                 // tracking hid the first auto-lock until a Shift mouse-aim.
                 if (!localMouseAim && !tracking && !sticky && !localFiring)
+                {
+                    HideMountImmediate(key);
                     continue;
+                }
 
                 if (!TryResolveBeamEnds(
                         em, binding, hull, mounts[m], gunners[m], m, team, mapW, mapH,
                         localFiring && !localMouseAim, out Vector3 muzzle, out Vector3 end,
                         out Entity beamHit))
+                {
+                    HideMountImmediate(key);
                     continue;
+                }
 
                 if (!TryGetOrCreate(key, team, out BeamSlot slot) || slot.Root == null)
                     continue;
 
-                RememberStickyLock(slot, gunners[m], beamHit, end);
+                RememberStickyLock(em, slot, gunners[m], beamHit, end);
                 slot.LastUsed = now;
                 slot.LastSeenLive = now;
                 if (SilenceVendorAudio(slot.Root))
@@ -428,15 +441,12 @@ namespace TitanOrbit.Game
             int ghostId = slot.TargetGhostId;
             float aimX = slot.AimWorldX;
             float aimZ = slot.AimWorldZ;
-            bool haveLiveAim = ghostId != 0
-                || math.abs(aimX) > 0.05f
-                || math.abs(aimZ) > 0.05f;
-            // Sticky is only for one-tick ghost drops. Asteroids have GhostId 0 —
-            // using sticky whenever GhostId is 0 pinned the beam on a mined-out rock
-            // and hid the new AimWorld lock.
+            bool haveLiveAim = MegaShipWeaponVisualTargets.IsLiveLock(em, ghostId, aimX, aimZ);
+            // Sticky is only for one-tick ghost drops. Interpolated AimWorld after
+            // a kill is not a lock — if the last point is dead, search again or hide.
             if (!haveLiveAim
                 && TryGetStickyFallback(binding, mountIndex, out int stickyGhost, out float stickyX, out float stickyZ)
-                && IsStickyStillLive(em, stickyGhost, stickyX, stickyZ))
+                && MegaShipWeaponVisualTargets.IsLiveLock(em, stickyGhost, stickyX, stickyZ))
             {
                 ghostId = stickyGhost;
                 aimX = stickyX;
@@ -452,7 +462,7 @@ namespace TitanOrbit.Game
             {
                 if (ghostId != 0
                     && MegaShipWeaponVisualTargets.TryGetEntity(ghostId, out Entity target)
-                    && IsLiveVisualTarget(em, target)
+                    && MegaShipWeaponVisualTargets.IsLiveVisualTarget(em, target)
                     && CannonLaserSurface.TryGetHitPoint(
                         em, target, (float3)muzzle, mapW, mapH, 0.0, out float3 surface))
                 {
@@ -461,7 +471,7 @@ namespace TitanOrbit.Game
                 else if (ghostId != 0
                     && MegaShipWeaponVisualTargets.TryGetDisplayPos(ghostId, muzzle, out Vector3 lockPos)
                     && (!MegaShipWeaponVisualTargets.TryGetEntity(ghostId, out Entity ghostEnt)
-                        || IsLiveVisualTarget(em, ghostEnt)))
+                        || MegaShipWeaponVisualTargets.IsLiveVisualTarget(em, ghostEnt)))
                 {
                     rawEnd = lockPos;
                 }
@@ -469,13 +479,13 @@ namespace TitanOrbit.Game
                     && MegaShipWeaponVisualTargets.TryGetTiledPoint(
                         aimX, aimZ, muzzle, out rawEnd))
                 {
-                    // Live AimWorld (asteroid / pad). Server already validated.
+                    // Live AimWorld (asteroid / pad) still occupied this frame.
                 }
                 else if (allowLocalAutoLock
                     && TryFindLocalAutoLock(
                         em, binding, team, in mount, muzzle, mapW, mapH, out rawEnd))
                 {
-                    // First auto-fire frame before the gunner snapshot arrives.
+                    // First auto-fire frame, or retarget after the last rock popped.
                 }
                 else
                 {
@@ -629,6 +639,7 @@ namespace TitanOrbit.Game
         }
 
         static void RememberStickyLock(
+            EntityManager em,
             BeamSlot slot,
             in MegaShipGunnerSlotElement gunner,
             Entity beamHit,
@@ -637,7 +648,8 @@ namespace TitanOrbit.Game
             if (slot == null)
                 return;
 
-            if (MegaShipWeaponAim.IsTrackingAim(in gunner))
+            if (MegaShipWeaponVisualTargets.IsLiveLock(
+                    em, gunner.TargetGhostId, gunner.AimWorldX, gunner.AimWorldZ))
             {
                 slot.StickyGhostId = gunner.TargetGhostId;
                 slot.StickyAimX = gunner.AimWorldX;
@@ -662,68 +674,19 @@ namespace TitanOrbit.Game
                 ShipIndex = binding.ShipEntity.Index,
                 MountIndex = mountIndex,
             };
-            if (!_instance._live.TryGetValue(key, out BeamSlot slot) || slot == null)
+            _instance.HideMountImmediate(key);
+        }
+
+        void HideMountImmediate(BeamKey key)
+        {
+            if (!_live.TryGetValue(key, out BeamSlot slot) || slot == null)
                 return;
             slot.StickyGhostId = 0;
             slot.StickyAimX = 0f;
             slot.StickyAimZ = 0f;
-        }
-
-        static bool IsLiveVisualTarget(EntityManager em, Entity target)
-        {
-            if (target == Entity.Null || !em.Exists(target))
-                return false;
-            if (em.HasComponent<ShipState>(target))
-                return !em.GetComponentData<ShipState>(target).IsDead;
-            if (em.HasComponent<AsteroidState>(target))
-            {
-                if (em.HasComponent<AsteroidClientCulledTag>(target))
-                    return false;
-                return em.GetComponentData<AsteroidState>(target).IsAliveForCombat;
-            }
-            return true;
-        }
-
-        static bool IsStickyStillLive(
-            EntityManager em,
-            int ghostId,
-            float aimX,
-            float aimZ)
-        {
-            if (ghostId != 0)
-            {
-                if (MegaShipWeaponVisualTargets.TryGetEntity(ghostId, out Entity ghost)
-                    && !IsLiveVisualTarget(em, ghost))
-                    return false;
-                return true;
-            }
-
-            if (math.abs(aimX) <= 0.05f && math.abs(aimZ) <= 0.05f)
-                return false;
-
-            var obstacles = BulletCosmeticHitQuery.CurrentObstacles;
-            if (obstacles == null || obstacles.Count == 0)
-                return false;
-            if (!ToroidalMapEcs.TryGetMapSize(out float mapW, out float mapH))
-                return false;
-
-            float3 aim = new float3(aimX, 0f, aimZ);
-            for (int i = 0; i < obstacles.Count; i++)
-            {
-                var o = obstacles[i];
-                if (o.Kind != BulletCosmeticHitQuery.ObstacleKind.Asteroid
-                    && o.Kind != BulletCosmeticHitQuery.ObstacleKind.Ship
-                    && o.Kind != BulletCosmeticHitQuery.ObstacleKind.PlanetaryDefense
-                    && o.Kind != BulletCosmeticHitQuery.ObstacleKind.Moon)
-                    continue;
-                if (o.SourceEntity != Entity.Null && !IsLiveVisualTarget(em, o.SourceEntity))
-                    continue;
-                float reach = math.max(2f, o.Radius + 1.5f);
-                if (ToroidalMapEcs.ToroidalDistance(aim, o.LogicalCenter, mapW, mapH) <= reach)
-                    return true;
-            }
-
-            return false;
+            slot.LastSeenLive = 0f;
+            slot.LastUsed = -1f;
+            SetBeamShown(slot, false);
         }
 
         static bool TryFindLocalAutoLock(
@@ -798,8 +761,8 @@ namespace TitanOrbit.Game
                 case BulletCosmeticHitQuery.ObstacleKind.Asteroid:
                     if (heal)
                         return false;
-                    return o.SourceEntity == Entity.Null
-                           || IsLiveVisualTarget(em, o.SourceEntity);
+                    return o.SourceEntity != Entity.Null
+                           && MegaShipWeaponVisualTargets.IsLiveVisualTarget(em, o.SourceEntity);
                 case BulletCosmeticHitQuery.ObstacleKind.PlanetaryDefense:
                 case BulletCosmeticHitQuery.ObstacleKind.Moon:
                     if (heal)

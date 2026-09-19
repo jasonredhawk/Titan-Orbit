@@ -55,9 +55,17 @@ namespace TitanOrbit.Data
 
             if (!IsEffectivelyZero(entry.summedStats))
             {
+                // --- Live cruise from unique parts ---
+                // [TITAN-ORBIT] Stored summedStats.moveSpeed used to keep only
+                // Engine / Thruster. Recompute from every unique row that authored
+                // Move so a wing (or any other part) applies without a catalog refresh.
+                MegaShipPartStats raw = entry.summedStats;
+                if (MegaShipComponentInventory.TryComputeCruiseFromUniqueParts(
+                        catalog, entry, out float cruise))
+                    raw.moveSpeed = cruise;
                 MegaShipPartStats resolved = catalog != null
-                    ? catalog.ResolveRuntimeStats(entry.summedStats)
-                    : entry.summedStats;
+                    ? catalog.ResolveRuntimeStats(raw)
+                    : raw;
                 summed = resolved.ToAbilityStats();
                 summed.maxGems = 0f;
                 AddEquippedStoreComponents(ref summed, extraComponentIds, shipLevel);

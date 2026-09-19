@@ -395,7 +395,8 @@ namespace TitanOrbit.ECS
                     em, hitPoint, radius, centerDamage, skipEntity,
                     ownerTeam, ownerNetworkId, serverElapsed, mapW, mapH,
                     ecb, gemPrefab, ShipDamageLogic.ExcessDamageGemExpulsionPerHullDamage,
-                    allowOwnerHits);
+                    allowOwnerHits,
+                    (byte)DeathVfxSourceKind.Mine);
             }
 
             if (blastForce <= 0.01f)
@@ -482,9 +483,12 @@ namespace TitanOrbit.ECS
             byte ownerTeam = bullet.OwnerTeam;
             int ownerNet = bullet.OwnerNetworkId;
 
+            ShipMatchStatsLogic.ClassifyBulletSource(in bullet, out byte blastKind, out int blastGhost);
             ApplyBlastToShips(
                 em, hitPoint, radius, centerDamage, skipEntity, ownerTeam, ownerNet,
-                serverElapsed, mapW, mapH, ecb, gemPrefab, gemExpulsionPerHullDamage);
+                serverElapsed, mapW, mapH, ecb, gemPrefab, gemExpulsionPerHullDamage,
+                sourceKind: blastKind,
+                sourceGhostId: blastGhost);
             ApplyBlastToAsteroids(em, hitPoint, radius, centerDamage, skipEntity, mapW, mapH);
             ApplyBlastToTurrets(em, hitPoint, radius, centerDamage, skipEntity, ownerTeam, serverElapsed, defenseTargets, mapW, mapH);
             ApplyBlastToDrones(em, hitPoint, radius, centerDamage, ownerTeam, ownerNet, droneTargets, mapW, mapH);
@@ -508,7 +512,9 @@ namespace TitanOrbit.ECS
             EntityCommandBuffer ecb,
             Entity gemPrefab,
             float gemExpulsionPerHullDamage,
-            bool allowOwnerHits = false)
+            bool allowOwnerHits = false,
+            byte sourceKind = 0,
+            int sourceGhostId = 0)
         {
             using var query = em.CreateEntityQuery(
                 ComponentType.ReadOnly<ShipTag>(),
@@ -572,7 +578,12 @@ namespace TitanOrbit.ECS
                     float3 off = ToroidalMapEcs.ShortestOffsetXZ(center, pos, mapW, mapH);
                     ShipMatchStatsLogic.SetLastDamager(
                         em, shipEntity, ownerNet, (float)serverElapsed,
-                        new float2(off.x, off.z), splash);
+                        new float2(off.x, off.z), splash,
+                        sourceEntity: default,
+                        sourceKind: sourceKind,
+                        sourceGhostId: sourceGhostId,
+                        sourcePosXZ: new float2(center.x, center.z),
+                        hasSourcePos: sourceKind == (byte)DeathVfxSourceKind.Mine);
                 }
 
                 if (result.GemsToExpel > 0.0001f && gemPrefab != Entity.Null)

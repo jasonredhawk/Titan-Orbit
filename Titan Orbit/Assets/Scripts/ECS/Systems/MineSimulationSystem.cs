@@ -304,7 +304,12 @@ namespace TitanOrbit.ECS
 
                     ShipMatchStatsLogic.SetLastDamager(
                         em, contactShip, mine.OwnerNetworkId, (float)serverElapsed,
-                        mineImpulse, mine.Damage);
+                        mineImpulse, mine.Damage,
+                        sourceEntity: default,
+                        sourceKind: (byte)DeathVfxSourceKind.Mine,
+                        sourceGhostId: 0,
+                        sourcePosXZ: new float2(mine.Position.x, mine.Position.z),
+                        hasSourcePos: true);
                 }
 
                 if (result.GemsToExpel > 0.0001f &&

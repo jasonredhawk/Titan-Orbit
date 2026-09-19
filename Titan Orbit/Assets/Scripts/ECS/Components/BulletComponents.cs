@@ -108,6 +108,21 @@ namespace TitanOrbit.ECS
 
         /// <summary>1 when <see cref="HomingLockPos"/> is a live lock.</summary>
         public byte HomingHasLock;
+
+        /// <summary>
+        /// Planet ghost id for planetary-defense shots. 0 for ship guns / rockets.
+        /// Server-only — this buffer is not ghosted.
+        /// </summary>
+        public int SourceGhostId;
+
+        /// <summary><see cref="DeathVfxSourceKind"/> hint (Turret on PD pads). 0 = infer at hit.</summary>
+        public byte SourceKind;
+
+        /// <summary>
+        /// Muzzle / pad XZ at fire time. Planetary-defense shots stamp the turret so the
+        /// death camera can frame the gun instead of the planet. Zero for ship guns.
+        /// </summary>
+        public float2 SourceOriginXZ;
     }
 
     /// <summary>

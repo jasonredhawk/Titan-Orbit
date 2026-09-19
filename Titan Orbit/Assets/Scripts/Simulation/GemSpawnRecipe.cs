@@ -239,7 +239,10 @@ namespace TitanOrbit.Simulation
             GemExplosionSettings settings,
             GemSpawnRecipe[] dst)
         {
-            if (dst == null || remaining < 0.25f)
+            // --- Any positive leftover / bonus is a gem ---
+            // [TITAN-ORBIT] Triangle yellow is 5% of the red leftover. The old 0.25 floor
+            // dropped that extra on typical rocks (SizeSmallBias keeps most leftovers < 5).
+            if (dst == null || remaining <= 0f)
                 return 0;
 
             settings ??= GemExplosionSettingsCache.ResolveOrDefault();
@@ -257,7 +260,7 @@ namespace TitanOrbit.Simulation
             for (int i = 0; i < count && written < dst.Length; i++)
             {
                 float value = ChordScratch[i];
-                if (value < 0.25f)
+                if (value <= 0f)
                     continue;
 
                 dst[written++] = GemSpawnMath.Create(

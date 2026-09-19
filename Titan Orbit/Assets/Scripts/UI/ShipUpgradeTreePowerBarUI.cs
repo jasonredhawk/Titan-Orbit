@@ -55,6 +55,12 @@ namespace TitanOrbit.UI
         ShipPowerBarStatMaxes _hoverMaxes;
         bool _hoverMegaPool;
         string _hoverChassisId;
+        /// <summary>
+        /// True after one ForceRebuild attempt this enable. Hide() SetActive(false) the
+        /// Orbit Menu backdrop; the next land can leave this tray at 0×0 until a rebuild.
+        /// We only try once so a truly empty equipment bar does not rebuild every LateUpdate.
+        /// </summary>
+        bool _hoverLayoutHealed;
 
         /// <summary>
         /// Extra pixels around the dark tray. Matches the invisible HoverHit pad so
@@ -73,6 +79,14 @@ namespace TitanOrbit.UI
             segments = segmentImages;
             barHeight = height;
             pairGap = gap;
+        }
+
+        void OnEnable()
+        {
+            // --- Fresh hover layout ---
+            // [UNITY] OnDisable/OnEnable runs when the moon-dock backdrop is
+            // SetActive. The next hover must be allowed one rebuild if the tray is 0×0.
+            _hoverLayoutHealed = false;
         }
 
         /// <summary>Builds the same ten-segment bar used on ship upgrade tree nodes (for runtime UI).</summary>
@@ -993,17 +1007,51 @@ namespace TitanOrbit.UI
             out float area,
             out float distSq)
         {
-            // --- Preferred camera, then the other ---
+            // --- Screen-space tray, then local fallback ---
             // [UNITY] Overlay wants a null camera. Screen Space Camera wants worldCamera.
-            // The wrong one still returns a local point — just in the wrong space — so
-            // a tree bar looks empty until the cursor luckily lines up.
-            if (TryHitSlotWithCamera(screenPoint, eventCamera, out slot, out area, out distSq))
+            // Local-rect tests die when Hide() SetActive the dock: rect can stay 0×0
+            // while the colourful fills still *look* painted. World corners → screen
+            // AABB still hit if the bar is on screen.
+            EnsureSlotLayers();
+            RectTransform tray = ResolveHoverTray();
+            if (tray == null)
+            {
+                slot = -1;
+                area = float.MaxValue;
+                distSq = float.MaxValue;
+                return false;
+            }
+
+            TryHealDegenerateHoverTray(tray);
+
+            if (TryHitSlotOnScreen(tray, screenPoint, eventCamera, out slot, out area, out distSq))
                 return true;
 
             UnityEngine.Camera other = eventCamera == null ? FindRootWorldCamera() : null;
-            if (other == eventCamera)
-                return false;
-            return TryHitSlotWithCamera(screenPoint, other, out slot, out area, out distSq);
+            if (other != eventCamera
+                && TryHitSlotOnScreen(tray, screenPoint, other, out slot, out area, out distSq))
+                return true;
+
+            return TryHitSlotWithCamera(screenPoint, eventCamera, out slot, out area, out distSq)
+                || (other != eventCamera
+                    && TryHitSlotWithCamera(screenPoint, other, out slot, out area, out distSq));
+        }
+
+        /// <summary>
+        /// Rebuilds the dark tray after the Orbit Menu is shown again. Public so the
+        /// hover probe can fix every live bar in one pass — not only the first 0×0 hit.
+        /// </summary>
+        public void ForceRebuildHoverTray()
+        {
+            _hoverLayoutHealed = false;
+            RectTransform tray = ResolveHoverTray();
+            if (tray == null)
+                return;
+            LayoutRebuilder.ForceRebuildLayoutImmediate(tray);
+            if (transform is RectTransform self)
+                LayoutRebuilder.ForceRebuildLayoutImmediate(self);
+            RefreshHoverHitRect();
+            _hoverLayoutHealed = true;
         }
 
         /// <summary>Root canvas worldCamera, or null when this bar has no camera canvas.</summary>
@@ -1015,6 +1063,69 @@ namespace TitanOrbit.UI
             if (canvas.rootCanvas != null)
                 canvas = canvas.rootCanvas;
             return canvas.worldCamera;
+        }
+
+        /// <summary>
+        /// Hits the tray from world corners in screen pixels. Does not need a valid
+        /// <c>RectTransform.rect</c> — only that the bar is posed on screen.
+        /// </summary>
+        bool TryHitSlotOnScreen(
+            RectTransform tray,
+            Vector2 screenPoint,
+            UnityEngine.Camera eventCamera,
+            out int slot,
+            out float area,
+            out float distSq)
+        {
+            slot = -1;
+            area = float.MaxValue;
+            distSq = float.MaxValue;
+            if (tray == null)
+                return false;
+
+            tray.GetWorldCorners(s_WorldCorners);
+            Vector2 a = RectTransformUtility.WorldToScreenPoint(eventCamera, s_WorldCorners[0]);
+            Vector2 b = RectTransformUtility.WorldToScreenPoint(eventCamera, s_WorldCorners[2]);
+            if (!float.IsFinite(a.x) || !float.IsFinite(b.x))
+                return false;
+
+            float xMin = Mathf.Min(a.x, b.x) - HoverPadPx;
+            float xMax = Mathf.Max(a.x, b.x) + HoverPadPx;
+            float yMin = Mathf.Min(a.y, b.y) - HoverPadPx;
+            float yMax = Mathf.Max(a.y, b.y) + HoverPadPx;
+            float w = xMax - xMin;
+            float h = yMax - yMin;
+            if (w < 2f || h < 2f)
+                return false;
+
+            if (screenPoint.x < xMin || screenPoint.x > xMax
+                || screenPoint.y < yMin || screenPoint.y > yMax)
+                return false;
+
+            area = w * h;
+            Vector2 center = new Vector2((xMin + xMax) * 0.5f, (yMin + yMax) * 0.5f);
+            distSq = (screenPoint - center).sqrMagnitude;
+
+            if (TryPickPaintedSlot(screenPoint, eventCamera, out int painted, out _, out _))
+            {
+                slot = painted;
+                return true;
+            }
+
+            if (IsMoonTreeStacked())
+            {
+                float nx = Mathf.Clamp01((screenPoint.x - xMin) / w);
+                float ny = Mathf.Clamp01((screenPoint.y - yMin) / h);
+                int pairCount = ShipAbilityCategoryColors.PowerBreakdownPairCount;
+                int pair = Mathf.Clamp((int)(nx * pairCount), 0, pairCount - 1);
+                // Screen Y is up. VerticalLayoutGroup paints the first child at the top.
+                int tone = ny >= 0.5f ? 0 : 1;
+                slot = pair * 2 + tone;
+                return slot >= 0;
+            }
+
+            slot = NearestSlot(screenPoint, eventCamera);
+            return slot >= 0;
         }
 
         /// <summary>One-camera hit test: padded tray, then painted slots, then stacked 5×2 map.</summary>
@@ -1033,6 +1144,8 @@ namespace TitanOrbit.UI
             RectTransform tray = ResolveHoverTray();
             if (tray == null)
                 return false;
+
+            TryHealDegenerateHoverTray(tray);
 
             if (!TryLocalInPaddedRect(tray, screenPoint, eventCamera, HoverPadPx, out Vector2 local))
             {
@@ -1065,6 +1178,26 @@ namespace TitanOrbit.UI
 
             slot = NearestSlot(screenPoint, eventCamera);
             return slot >= 0;
+        }
+
+        /// <summary>
+        /// Rebuilds a 0×0 dark tray once after the Orbit Menu is SetActive again.
+        /// [UNITY] VerticalLayoutGroup children can keep a cached mesh (the colourful
+        /// fills still *look* painted) while <c>rect</c> is empty — hover then misses.
+        /// </summary>
+        /// <param name="tray">PowerBarTrack or this row.</param>
+        void TryHealDegenerateHoverTray(RectTransform tray)
+        {
+            if (tray == null || _hoverLayoutHealed)
+                return;
+            if (tray.rect.width > 1f && tray.rect.height > 1f)
+                return;
+
+            _hoverLayoutHealed = true;
+            LayoutRebuilder.ForceRebuildLayoutImmediate(tray);
+            if (tray.parent is RectTransform parentRt)
+                LayoutRebuilder.ForceRebuildLayoutImmediate(parentRt);
+            RefreshHoverHitRect();
         }
 
         /// <summary>Dark PowerBarTrack when the tree card wrapped us; otherwise this row.</summary>

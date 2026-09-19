@@ -49,7 +49,7 @@ namespace TitanOrbit.ECS
 
         /// <summary>
         /// True when this owner holds at least one living title on <paramref name="team"/>.
-        /// Same rule as the Command Deck and the CMDR pill.
+        /// Same rule as the Command Deck and the Team Commander pill.
         /// </summary>
         public bool HoldsCommandSeat(TeamId team, int networkId) =>
             TeamCommanderRules.HoldsCommandSeat(

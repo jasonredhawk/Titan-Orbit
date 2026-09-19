@@ -598,6 +598,19 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
+        /// Copies ship hybrid-proxy entity keys into <paramref name="dst"/> (clears first).
+        /// Dictionary walk only — no ECS ship gather.
+        /// </summary>
+        public void CopyShipProxyEntitiesTo(List<Entity> dst)
+        {
+            if (dst == null)
+                return;
+            dst.Clear();
+            foreach (Entity e in _shipProxyEntities)
+                dst.Add(e);
+        }
+
+        /// <summary>
         /// [HYBRID] Looks up the GameObject proxy for one entity (gem diameter, anchors, etc.).
         /// Dictionary only — no ECS gathers.
         /// </summary>

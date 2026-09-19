@@ -108,6 +108,14 @@ namespace TitanOrbit.ECS
         public int LastInteractNetworkId;
 
         /// <summary>
+        /// [TITAN-ORBIT] Server-only accrued proximity-mine value. A 60 Hz tick yields
+        /// ~0.083 (&lt; <c>MinGemSpawnValue</c> 0.25), so without this remainder neither
+        /// red chips nor yellow triangle extras Instantiates while parked on a rock.
+        /// Flushed at ~1s of <c>MiningRate</c> (or when the rock empties).
+        /// </summary>
+        public float MiningYieldRemainder;
+
+        /// <summary>
         /// Live rock for combat / aim. Matches destroy + HitRpc (<c>Health ≤ 0.01</c>),
         /// not a raw zero compare — leftover 0.00x HP corpses stay hidden on the client
         /// while miners would otherwise keep shooting empty space.

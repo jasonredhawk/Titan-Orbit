@@ -598,7 +598,9 @@ namespace TitanOrbit.UI
 
             // --- Restore overlay ---
             _moonDockMenuClosedByUser = false;
-            SetMoonDockCenterView(upgradesPanel ? MoonDockCenterView.Ships : MoonDockCenterView.Gear);
+            SetMoonDockCenterView(
+                upgradesPanel ? MoonDockCenterView.Ships : MoonDockCenterView.Gear,
+                reuseWarmedTree: true);
         }
 
         public bool IsMoonDockMenuOpen =>
@@ -1543,6 +1545,7 @@ namespace TitanOrbit.UI
                 _moonDockBackdropGroup.blocksRaycasts = false;
                 _moonDockBackdropGroup.interactable = false;
             }
+            ShipPowerBarStatTooltip.Hide();
         }
 
         /// <summary>
@@ -7314,7 +7317,18 @@ namespace TitanOrbit.UI
 
             _moonDockCenterView = MoonDockCenterView.None;
             _moonDockShipTreeHorizontal = false;
-            if (moonDockCenterBackdrop != null) moonDockCenterBackdrop.SetActive(false);
+            // --- Keep a hidden land-prepare backdrop ---
+            // [TITAN-ORBIT] TickLandedMoonTreePrepare turns the backdrop on at
+            // CanvasGroup alpha 0 so layout can measure. SetActive(false) here used
+            // to wipe those tray rects, then a warmed Show skipped ForceUpdateCanvases
+            // and power-bar hover died on the second land. Join warmup still hides a
+            // leftover visible overlay (active + alpha 1, or no CanvasGroup yet).
+            bool hiddenPrepareArmed = moonDockCenterBackdrop != null
+                && moonDockCenterBackdrop.activeSelf
+                && _moonDockBackdropGroup != null
+                && _moonDockBackdropGroup.alpha <= 0.01f;
+            if (moonDockCenterBackdrop != null && !hiddenPrepareArmed)
+                moonDockCenterBackdrop.SetActive(false);
             ApplyShipTreeHudObscuring(false);
         }
 
@@ -7796,8 +7810,12 @@ namespace TitanOrbit.UI
             if (moonDockCenterBackdrop != null) moonDockCenterBackdrop.transform.SetAsLastSibling();
             if (moonDockCloseButton != null) moonDockCloseButton.transform.SetAsLastSibling();
             ApplyMoonDockShipTreeRowLayout();
-            if (!reuseWarmedTree)
-                Canvas.ForceUpdateCanvases();
+            // --- Hover trays + STAT TELEMETRY overlay ---
+            // [UNITY] Hide() deactivates this backdrop. Flush layout, then rebuild
+            // the dedicated tooltip overlay and LateUpdate probe so the second
+            // Orbit Menu open always gets a live hover card.
+            Canvas.ForceUpdateCanvases();
+            ShipPowerBarStatHoverRelay.NotifyMenuShown();
         }
 
         private void RebuildMoonDockLayoutsAfterShow()

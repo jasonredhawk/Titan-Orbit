@@ -21,13 +21,15 @@ namespace TitanOrbit.UI
     /// holds S, clicks 1–5 words in order (3 free; one ad unlocks the 4th and 5th), then releases S to send that sentence above
     /// their ship. Top-level rails stay TACTICAL / SUBJECT / SOCIAL / COMMANDER (plus TEAM).
     /// Inside each rail, slim telemetry captions (STRIKE, WHO, GEAR, …) keep related
-    /// words on the same 5-wide row. An All / Team / Commander toggle and the RECENT chip list are remembered in PlayerPrefs
+    /// words on the same 5-wide row. An All / Team toggle and the RECENT chip list are remembered in PlayerPrefs
     /// so both survive a new match. Free players get three RECENT rows; one ad unlocks the rest.
     /// Commander is an earned Command Deck seat (living top killer, miner, or troop
-    /// mover): it unlocks Everyone / Escort / Form Up and paints gold chrome. A RECENT
-    /// row that used those words is temporarily locked (same LOCK stamp as the tiles)
-    /// when this machine loses every title — the sentence stays in history and lights
-    /// up again if a title returns. We do not strip it into a different, non-command sentence.
+    /// mover): it unlocks Everyone / Escort / Form Up on its own — there is no CMDR tab —
+    /// and the Team pill relabels to Team Commander. Gold chrome is applied at send
+    /// when those command-deck words go out on Team. A RECENT row that used those
+    /// words is temporarily locked (same LOCK stamp as the tiles) when this machine
+    /// loses every title — the sentence stays in history and lights up again if a
+    /// title returns. We do not strip it into a different, non-command sentence.
     /// Flying inside a non-friendly territory triangle jams comms: a lock veil covers
     /// the keyword card <b>and</b> the docked minimap (COMMS JAMMED / FROM ENEMY
     /// TERRITORY). Clicks, Here pings, and release-S do nothing. Open space and
@@ -73,7 +75,10 @@ namespace TitanOrbit.UI
         /// <summary>Keeps the docked map circle inside the chrome instead of kissing the card edge.</summary>
         const float MinimapCircleInset = 20f;
         const float HeaderHeight = 26f;
+        /// <summary>ALL pill. TEAM grows to <see cref="AudienceTeamToggleWidth"/> so TEAM COMMANDER fits.</summary>
         const float AudienceToggleWidth = 48f;
+        /// <summary>TEAM / TEAM COMMANDER pill — wide enough for the commander caption on one line.</summary>
+        const float AudienceTeamToggleWidth = 116f;
         const float AudienceToggleGap = 4f;
         const float BannerHeight = 14f;
         /// <summary>Top-level TACTICAL / SUBJECT rail — same role as the old section titles.</summary>
@@ -151,13 +156,10 @@ namespace TitanOrbit.UI
         TextMeshProUGUI _headerSub;
         Image _allFill;
         Image _teamFill;
-        Image _commanderFill;
         Outline _allOutline;
         Outline _teamOutline;
-        Outline _commanderOutline;
         TextMeshProUGUI _allLabel;
         TextMeshProUGUI _teamLabel;
-        TextMeshProUGUI _commanderLabel;
         bool _wasHeld;
         bool _built;
         RectTransform _minimapDock;
@@ -676,13 +678,16 @@ namespace TitanOrbit.UI
                 return;
 
             // --- Channel ---
-            // [TITAN-ORBIT] PlayerPrefs-backed All / Team / Commander toggle. The server
-            // re-checks team and commander rank — this byte is a request, not a rank the
-            // client can spoof. Commander words never leave this machine unless the
-            // command deck is unlocked on this hold.
-            ShipCommsChannel channel = ResolveSendableChannel();
-            if (channel != ShipCommsChannel.Commander)
+            // [TITAN-ORBIT] PlayerPrefs-backed All / Team toggle. The server re-checks
+            // team and commander rank — this byte is a request, not a rank the client
+            // can spoof. Command-deck words never leave this machine unless this
+            // hold still has a living category title. Team + those words upgrades
+            // to gold Commander chrome at send time (no CMDR tab).
+            if (!IsLocalCommander())
                 StripCommanderKeywordsFromSequence();
+            bool usesCommanderWords = SequenceHasCommanderKeyword();
+            ShipCommsChannel channel = TeamCommanderRules.ResolveDeliveryChannel(
+                ShipCommsClientState.Channel, IsLocalCommander(), usesCommanderWords);
 
             int count = _sequence.Count;
             if (count < 1)
@@ -758,7 +763,7 @@ namespace TitanOrbit.UI
                 return;
 
             // Locked command-deck tiles stay visible so the squad can see the unlock,
-            // but they do not enter the sentence until CMDR is live.
+            // but they do not enter the sentence until this machine holds a command seat.
             if (ShipCommsKeywordCatalog.LoadDefault().IsCommanderKeyword(index)
                 && !CommanderKeywordsUnlocked())
                 return;
@@ -969,10 +974,8 @@ namespace TitanOrbit.UI
                 ShipCommsClientState.ClearPendingUs();
             ShipCommsClientState.ClearLastPlayAim();
 
-            // Command sentences snap the audience pill back to CMDR. We already
-            // refused the click when this machine is not on the command deck.
-            if (SequenceHasCommanderKeyword() && IsLocalCommander())
-                ShipCommsClientState.SetChannel(ShipCommsChannel.Commander);
+            // Command-deck words stay on whichever All / Team pill is armed. The
+            // seat itself unlocks them — we do not force a third channel.
 
             _recentCursor = index;
             PaintAudience();
@@ -1336,8 +1339,9 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// Two-line header: COMMS MATRIX + HOLD S · N WORDS, with an All / Team /
-        /// Commander channel switch on the right. The switch is remembered in PlayerPrefs.
+        /// Two-line header: COMMS MATRIX + HOLD S · N WORDS, with an All / Team
+        /// channel switch on the right. Team relabels to Team Commander when this
+        /// machine holds a command seat. The switch is remembered in PlayerPrefs.
         /// </summary>
         void BuildHeader(Transform parent, ref float y, float width)
         {
@@ -1346,8 +1350,8 @@ namespace TitanOrbit.UI
             bg.color = CaptionPlateColor;
             bg.raycastTarget = false;
 
-            // Leave room on the right for the All / Team / CMDR pills (three tiles + gaps).
-            float toggleReserve = AudienceToggleWidth * 3f + AudienceToggleGap * 2f + 10f;
+            // Leave room on the right for All + the wide TEAM / TEAM COMMANDER pill.
+            float toggleReserve = AudienceToggleWidth + AudienceTeamToggleWidth + AudienceToggleGap + 10f;
 
             var title = CreateLabel(plate, "Title", "COMMS MATRIX", 11f, AccentColor, TextAlignmentOptions.Left);
             var titleRt = title.rectTransform;
@@ -1373,13 +1377,13 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// Two compact pills on the header's right: ALL (everyone), TEAM (teammates),
-        /// and CMDR (command deck). Clicking one writes <see cref="ShipCommsClientState.SetChannel"/>.
+        /// Two compact pills on the header's right: ALL (everyone) and TEAM
+        /// (teammates). TEAM becomes TEAM COMMANDER while this machine holds a
+        /// command seat. Clicking one writes <see cref="ShipCommsClientState.SetChannel"/>.
         /// </summary>
         void BuildAudienceToggle(RectTransform header, float headerWidth)
         {
-            float commanderX = headerWidth - AudienceToggleWidth - 6f;
-            float teamX = commanderX - AudienceToggleGap - AudienceToggleWidth;
+            float teamX = headerWidth - AudienceTeamToggleWidth - 6f;
             float allX = teamX - AudienceToggleGap - AudienceToggleWidth;
             float y = (HeaderHeight - TileHeight + 8f) * 0.5f;
             float h = HeaderHeight - 6f;
@@ -1394,34 +1398,26 @@ namespace TitanOrbit.UI
             _allFill.gameObject.GetComponent<Button>().onClick.AddListener(
                 () => OnAudienceClicked(ShipCommsChannel.All));
 
-            _teamFill = CreateTile(header, "TeamChannel", teamX, y, AudienceToggleWidth, h, TileIdle);
-            _teamLabel = CreateLabel(_teamFill.transform, "Label", "TEAM", 9f, BodyTextColor, TextAlignmentOptions.Center);
+            _teamFill = CreateTile(header, "TeamChannel", teamX, y, AudienceTeamToggleWidth, h, TileIdle);
+            _teamLabel = CreateLabel(_teamFill.transform, "Label", "TEAM", 8f, BodyTextColor, TextAlignmentOptions.Center);
             Stretch(_teamLabel.rectTransform, 2f);
+            _teamLabel.enableWordWrapping = false;
+            _teamLabel.overflowMode = TextOverflowModes.Ellipsis;
             _teamOutline = _teamFill.gameObject.AddComponent<Outline>();
             _teamOutline.effectColor = AllChannelColor;
             _teamOutline.effectDistance = new Vector2(1f, -1f);
             _teamOutline.useGraphicAlpha = false;
             _teamFill.gameObject.GetComponent<Button>().onClick.AddListener(
                 () => OnAudienceClicked(ShipCommsChannel.Team));
-
-            _commanderFill = CreateTile(header, "CommanderChannel", commanderX, y, AudienceToggleWidth, h, TileIdle);
-            _commanderLabel = CreateLabel(
-                _commanderFill.transform, "Label", "CMDR", 9f, BodyTextColor, TextAlignmentOptions.Center);
-            Stretch(_commanderLabel.rectTransform, 2f);
-            _commanderOutline = _commanderFill.gameObject.AddComponent<Outline>();
-            _commanderOutline.effectColor = CommanderChannelColor;
-            _commanderOutline.effectDistance = new Vector2(1f, -1f);
-            _commanderOutline.useGraphicAlpha = false;
-            _commanderFill.gameObject.GetComponent<Button>().onClick.AddListener(
-                () => OnAudienceClicked(ShipCommsChannel.Commander));
         }
 
         /// <summary>
-        /// Header pill click: remember All / Team / Commander and repaint the switch.
-        /// Safe to tap while composing — it does not clear the 1/2/3 rail unless the
-        /// new channel locks command-deck words that were already picked.
+        /// Header pill click: remember All / Team and repaint the switch.
+        /// Safe to tap while composing — command-deck words stay on the rail when
+        /// this machine still holds a command seat (the seat unlocks them, not a tab).
+        /// Switching audience never strips those words just to change All ↔ Team.
         /// </summary>
-        /// <param name="channel">Audience the next send should request.</param>
+        /// <param name="channel">Audience the next send should request (All or Team).</param>
         void OnAudienceClicked(ShipCommsChannel channel)
         {
             if (!ShipCommsClientState.IsOpen)
@@ -1429,13 +1425,8 @@ namespace TitanOrbit.UI
             if (ShipCommsRpcClient.IsLocalShipJammed())
                 return;
 
-            // Non-commanders can see the CMDR pill but cannot arm it.
-            if (channel == ShipCommsChannel.Commander && !IsLocalCommander())
-                return;
-
-            ShipCommsClientState.SetChannel(channel);
-            if (channel != ShipCommsChannel.Commander)
-                StripCommanderKeywordsFromSequence();
+            // Compose UI is All / Team only. An old Commander value collapses to Team.
+            ShipCommsClientState.SetChannel(TeamCommanderRules.SanitizeComposeChoice((byte)channel));
             PaintAudience();
             PaintSequence();
         }
@@ -1451,29 +1442,25 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// Highlights the active All / Team / CMDR pill and updates the HOLD S subtitle
-        /// so the channel is readable without staring at the switch. The CMDR pill
-        /// stays dim when this machine holds no earned category title.
+        /// Highlights the active All / Team pill and updates the HOLD S subtitle
+        /// so the channel is readable without staring at the switch. While this
+        /// machine holds a command seat, TEAM reads TEAM COMMANDER and uses
+        /// command brass instead of the faction accent.
         /// </summary>
         void PaintAudience()
         {
-            ShipCommsChannel channel = ResolveSendableChannel();
+            ShipCommsChannel channel = TeamCommanderRules.SanitizeComposeChoice(
+                (byte)ShipCommsClientState.Channel);
             Color teamAccent = ResolveLocalTeamAccent();
             bool commanderEligible = IsLocalCommander();
             bool allOn = channel == ShipCommsChannel.All;
             bool teamOn = channel == ShipCommsChannel.Team;
-            bool commanderOn = channel == ShipCommsChannel.Commander;
+            Color teamPaint = commanderEligible ? CommanderChannelColor : teamAccent;
 
             if (_allFill != null)
                 _allFill.color = allOn ? Color.Lerp(TileSelected, AllChannelColor, 0.22f) : TileIdle;
             if (_teamFill != null)
-                _teamFill.color = teamOn ? Color.Lerp(TileSelected, teamAccent, 0.35f) : TileIdle;
-            if (_commanderFill != null)
-            {
-                _commanderFill.color = commanderOn
-                    ? Color.Lerp(TileSelected, CommanderChannelColor, 0.38f)
-                    : (commanderEligible ? TileIdle : Color.Lerp(TileIdle, CaptionPlateColor, 0.4f));
-            }
+                _teamFill.color = teamOn ? Color.Lerp(TileSelected, teamPaint, 0.35f) : TileIdle;
 
             if (_allOutline != null)
             {
@@ -1482,50 +1469,39 @@ namespace TitanOrbit.UI
             }
             if (_teamOutline != null)
             {
-                _teamOutline.effectColor = teamAccent;
+                _teamOutline.effectColor = teamPaint;
                 _teamOutline.enabled = teamOn;
-            }
-            if (_commanderOutline != null)
-            {
-                _commanderOutline.effectColor = CommanderChannelColor;
-                _commanderOutline.enabled = commanderOn;
             }
 
             if (_allLabel != null)
                 _allLabel.color = allOn ? AllChannelColor : CaptionTextColor;
             if (_teamLabel != null)
-                _teamLabel.color = teamOn ? teamAccent : CaptionTextColor;
-            if (_commanderLabel != null)
             {
-                _commanderLabel.color = commanderOn
-                    ? CommanderChannelColor
-                    : (commanderEligible ? CaptionTextColor : new Color(0.40f, 0.44f, 0.50f, 0.85f));
+                _teamLabel.text = commanderEligible ? "TEAM COMMANDER" : "TEAM";
+                _teamLabel.fontSize = commanderEligible ? 7.5f : 9f;
+                _teamLabel.color = teamOn ? teamPaint : CaptionTextColor;
             }
 
             if (_headerSub != null)
             {
                 int allowed = ShipCommsClientState.AllowedSequenceLength;
                 string words = allowed <= 3 ? "3 WORDS" : allowed + " WORDS";
-                string audience = allOn ? "ALL" : (commanderOn ? "CMDR" : "TEAM");
+                string audience = allOn
+                    ? "ALL"
+                    : (commanderEligible ? "TEAM COMMANDER" : "TEAM");
                 _headerSub.text = "HOLD S  ·  " + words + "  ·  " + audience;
             }
         }
 
         /// <summary>
-        /// While S is held, titles can flip (a teammate deposits more gems). Drop the
-        /// Commander channel, strip command-deck words from the compose rail, and lock
-        /// RECENT rows that used those words. We only repaint when commander status
-        /// changes so this LateUpdate path stays cheap.
+        /// While S is held, titles can flip (a teammate deposits more gems). Strip
+        /// command-deck words from the compose rail and lock RECENT rows that used
+        /// those words. We only repaint when commander status changes so this
+        /// LateUpdate path stays cheap.
         /// </summary>
         void EnsureCommanderLocksWhileOpen()
         {
             bool commander = IsLocalCommander();
-
-            // --- Channel ---
-            // The CMDR pill is a request, not a title. If this machine lost every
-            // category seat, collapse to Team so a release-S cannot ask for Commander.
-            if (ShipCommsClientState.Channel == ShipCommsChannel.Commander && !commander)
-                ShipCommsClientState.SetChannel(ShipCommsChannel.Team);
 
             // --- Compose rail ---
             // Words typed this hold cannot send once the command deck is gone.
@@ -1547,24 +1523,13 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// Channel the next send may actually request. Commander collapses to Team
-        /// when this machine is not on the command deck.
-        /// </summary>
-        static ShipCommsChannel ResolveSendableChannel()
-        {
-            ShipCommsChannel channel = ShipCommsClientState.Channel;
-            if (channel == ShipCommsChannel.Commander && !IsLocalCommander())
-                return ShipCommsChannel.Team;
-            return channel;
-        }
-
-        /// <summary>
         /// True when command-deck tiles may enter the sentence: this machine holds
-        /// an earned category title <b>and</b> the CMDR pill is armed.
+        /// an earned category title. The compose card does not require a CMDR tab —
+        /// becoming commander is the unlock.
         /// </summary>
         static bool CommanderKeywordsUnlocked()
         {
-            return ResolveSendableChannel() == ShipCommsChannel.Commander && IsLocalCommander();
+            return IsLocalCommander();
         }
 
         /// <summary>
@@ -2054,7 +2019,7 @@ namespace TitanOrbit.UI
             badgeRt.anchoredPosition = new Vector2(-1f, -1f);
             badge.enabled = false;
 
-            // Hidden until the command deck is locked so a live CMDR tile does not look gated.
+            // Hidden until the command deck is locked so a live commander tile does not look gated.
             var lockLabel = CreateLabel(
                 fill.transform, "Lock", "LOCK", 10f, CommanderLockedStamp, TextAlignmentOptions.Center);
             Stretch(lockLabel.rectTransform, 2f);

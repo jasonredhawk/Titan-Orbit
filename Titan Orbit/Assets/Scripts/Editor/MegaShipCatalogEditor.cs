@@ -123,7 +123,8 @@ namespace TitanOrbit.Editor
                 "Orange rows have a raw 0 on a non-firepower stat. Those zeros stay in the catalog. " +
                 "In-game, 0 becomes the listed Default Stats, then every non-firepower value is raised to Minimum Stats. " +
                 "Cyan wins when a hull is both unarmed and missing other stats. " +
-                "Cruise speed is fastest engine or thruster + Extra Engine Speed Percent of the rest.\n\n" +
+                "Cruise speed is fastest unique part with moveSpeed + Extra Engine Speed Percent of the rest " +
+                "(any part type — not only Engine / Thruster).\n\n" +
                 "Weapon Bullet Banks (Gun / Cannon / Missile / Sniper) pick the BulletVfxBank category those MEGA " +
                 "weapon types fire. Each type also has a Bank Scale (default 1) for tracer / impact size. " +
                 "Unique weapon rows can override the bank; Type table default inherits the type-table bank. " +

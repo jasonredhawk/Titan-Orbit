@@ -329,7 +329,7 @@ namespace TitanOrbit.Data
         [HideInInspector]
         public float globalScale = DefaultGlobalScale;
 
-        [Tooltip("Cruise speed = fastest engine + this fraction of every other engine's moveSpeed. Thrusters are ignored unless the hull has no engines. Default 0.05 (5%).")]
+        [Tooltip("Cruise speed = fastest part with moveSpeed + this fraction of every other part's moveSpeed. Any unique component that authored Move counts (wing, hull, cockpit, engine, thruster, …). Default 0.05 (5%).")]
         [Range(0f, 1f)]
         public float extraEngineSpeedPercent = DefaultExtraEngineSpeedPercent;
 
@@ -991,7 +991,7 @@ namespace TitanOrbit.Data
             return entry != null ? GetScaleForFamily(entry.visualFamily) : GetGlobalScale();
         }
 
-        /// <summary>Extra propulsion cruise fraction (0.05 = 5% of every engine past the fastest).</summary>
+        /// <summary>Extra cruise fraction (0.05 = 5% of every Move contributor past the fastest).</summary>
         public float GetExtraEngineSpeedPercent()
         {
             return extraEngineSpeedPercent > 0f ? extraEngineSpeedPercent : DefaultExtraEngineSpeedPercent;

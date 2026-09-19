@@ -57,6 +57,37 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
+        /// Call when the Orbit Menu becomes visible. Recreates the LateUpdate probe and
+        /// the STAT TELEMETRY overlay so a leftover Unity 6 canvas from the last dock
+        /// cannot stay invisible. Also rebuilds every live tray rect.
+        /// </summary>
+        public static void NotifyMenuShown()
+        {
+            // --- Fresh probe + overlay ---
+            // [UNITY] HideAndDontSave / a disabled nested canvas survived the first
+            // close and left second-open hover with pads but no painted card.
+            if (s_Probe != null)
+            {
+                Object.Destroy(s_Probe.gameObject);
+                s_Probe = null;
+            }
+
+            EnsureProbe();
+            ShipPowerBarStatTooltip.RecreateOverlay();
+            PurgeDead();
+            ClearSlots();
+
+            for (int i = 0; i < s_Live.Count; i++)
+            {
+                ShipPowerBarStatHoverRelay relay = s_Live[i];
+                if (relay == null || relay.Owner == null)
+                    continue;
+                relay._hoverSlot = -1;
+                relay.Owner.ForceRebuildHoverTray();
+            }
+        }
+
+        /// <summary>
         /// Treat a click on the colourful bar as a click on the tree card / gear tile.
         /// [UNITY] Button.OnPointerClick is public — we call it so purchase still works.
         /// </summary>
@@ -244,13 +275,25 @@ namespace TitanOrbit.UI
             }
         }
 
+        /// <summary>Drops Unity fake-nulls left after a hide/destroy so the next open does not walk ghosts.</summary>
+        static void PurgeDead()
+        {
+            for (int i = s_Live.Count - 1; i >= 0; i--)
+            {
+                if (s_Live[i] == null)
+                    s_Live.RemoveAt(i);
+            }
+        }
+
         static void EnsureProbe()
         {
+            // [UNITY] Destroyed objects compare as null. Do not use HideAndDontSave —
+            // that flag let the runner vanish after the first Orbit Menu close.
             if (s_Probe != null)
                 return;
             var go = new GameObject("ShipPowerBarHoverProbe");
             Object.DontDestroyOnLoad(go);
-            go.hideFlags = HideFlags.HideAndDontSave;
+            go.hideFlags = HideFlags.HideInHierarchy;
             s_Probe = go.AddComponent<Probe>();
         }
 

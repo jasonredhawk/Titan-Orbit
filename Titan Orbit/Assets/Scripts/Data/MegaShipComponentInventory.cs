@@ -50,8 +50,8 @@ namespace TitanOrbit.Data
     /// <summary>
     /// Builds the catalog-wide unique component library from MEGA prefabs and
     /// sums each hull from those shared rows × how many times the name appears.
-    /// Cruise speed treats Engine and Thruster as the same contributor
-    /// (fastest + extraEngineSpeedPercent of the rest).
+    /// Cruise speed is every unique part whose authored <c>moveSpeed</c> is &gt; 0
+    /// (not only Engine / Thruster): fastest + extraEngineSpeedPercent of the rest.
     /// </summary>
     public static class MegaShipComponentInventory
     {
@@ -143,7 +143,8 @@ namespace TitanOrbit.Data
         }
 
         /// <summary>
-        /// Walks each hull prefab and writes raw sums (cruise = fastest engine + extra% of other engines).
+        /// Walks each hull prefab and writes raw sums (cruise = fastest part with
+        /// moveSpeed + extra% of every other part that also authored Move).
         /// Zeros stay 0 so orange rows stay honest; in-game defaults/minimums live on the catalog.
         /// </summary>
         public static void RecalcAllShipSums(MegaShipCatalog catalog)
@@ -155,7 +156,16 @@ namespace TitanOrbit.Data
                 RecalcShipSum(catalog, catalog.entries[i]);
         }
 
-        /// <summary>Sums one hull from the unique library × prefab name counts.</summary>
+        /// <summary>
+        /// Sums one hull from the unique library × prefab child names.
+        /// Cruise is written after the walk: fastest authored Move + extra% of the rest,
+        /// from every classified child that has moveSpeed (any part type).
+        /// Called from Refresh Unique Components and from
+        /// <see cref="MegaShipStatsCalculator.SumFromPrefab"/> when a stored sum is empty.
+        /// </summary>
+        /// <param name="catalog">Unique-component library and extra-percent.</param>
+        /// <param name="entry">Hull row to rewrite (counts + summedStats).</param>
+        /// <returns>The raw sum written onto <paramref name="entry"/>.</returns>
         public static MegaShipPartStats RecalcShipSum(
             MegaShipCatalog catalog,
             MegaShipCatalogEntry entry)
@@ -165,8 +175,7 @@ namespace TitanOrbit.Data
                 return sum;
 
             var counts = new List<MegaShipComponentCount>(16);
-            var engineMoves = new List<float>(8);
-            var thrusterMoves = new List<float>(8);
+            var cruiseMoves = new List<float>(8);
             float engineAccelSum = 0f;
             bool anyThruster = false;
             if (entry.prefab != null && catalog != null)
@@ -186,19 +195,20 @@ namespace TitanOrbit.Data
                         ? row.stats
                         : catalog.GetStatsForPartType(partType);
 
-                    // --- Cruise = engines; Accel = thrusters (same split as regular ships) ---
+                    // --- Cruise = any part that authored Move; Accel stays thruster-owned ---
+                    // [TITAN-ORBIT] Regular ships mask Move to engines. Titans do not:
+                    // a wing / hull / cockpit with moveSpeed must raise cruise the same
+                    // way an engine does. Zero Move stays out so empty plates do not
+                    // steal the "fastest" slot. Accel is still thrusters (engines only
+                    // when the hull has none).
                     bool isEngine = ShipFamilyPartTypes.IsEngineProfile(partType);
                     bool isThruster = ShipFamilyPartTypes.IsThrusterProfile(partType);
+                    if (ContributesCruiseMove(part))
+                        cruiseMoves.Add(part.moveSpeed);
                     if (isEngine)
-                    {
-                        engineMoves.Add(part.moveSpeed);
                         engineAccelSum += part.accelerationCap;
-                    }
                     else if (isThruster)
-                    {
-                        thrusterMoves.Add(part.moveSpeed);
                         anyThruster = true;
-                    }
 
                     // Cruise is written after the walk. Engines do not add Accel when thrusters exist.
                     var add = part;
@@ -218,7 +228,6 @@ namespace TitanOrbit.Data
                 counts.Sort((a, b) => string.Compare(a.displayName, b.displayName, StringComparison.OrdinalIgnoreCase));
             }
 
-            var cruiseMoves = engineMoves.Count > 0 ? engineMoves : thrusterMoves;
             sum.moveSpeed = CombineEngineCruise(cruiseMoves, catalog != null
                 ? catalog.GetExtraEngineSpeedPercent()
                 : MegaShipCatalog.DefaultExtraEngineSpeedPercent);
@@ -232,11 +241,85 @@ namespace TitanOrbit.Data
         }
 
         /// <summary>
-        /// Fastest engine + <paramref name="extraPercent"/> of every other engine's
-        /// moveSpeed (callers pass thrusters only when the hull has no engines).
-        /// Empty list → 0 (in-game default/minimum fills it).
+        /// True when this unique-part block should add its authored Move to Titan cruise.
+        /// Part type does not matter — a wing or hull plate with <c>moveSpeed</c> counts
+        /// the same as an engine. Zero stays out so empty plates do not steal "fastest".
         /// </summary>
-        /// <param name="engineMoves">moveSpeed from the owning cruise parts.</param>
+        /// <param name="stats">Unique-component or type-table block for one prefab child.</param>
+        /// <returns>True when <c>moveSpeed</c> is authored above the zero epsilon.</returns>
+        public static bool ContributesCruiseMove(in MegaShipPartStats stats)
+        {
+            return stats.moveSpeed > 0.0001f;
+        }
+
+        /// <summary>
+        /// Fills <paramref name="into"/> with one moveSpeed per copy of each unique
+        /// hull part that authored Move. Uses <see cref="MegaShipCatalogEntry.componentCounts"/>
+        /// so dedicated / player builds can recompute cruise without walking the prefab.
+        /// </summary>
+        /// <param name="catalog">Unique-component library (name → stats).</param>
+        /// <param name="entry">Hull row with name counts.</param>
+        /// <param name="into">Destination list. Cleared on success.</param>
+        /// <returns>False when catalog, entry, or counts are missing (keep a stored sum).</returns>
+        public static bool TryCollectCruiseMovesFromCounts(
+            MegaShipCatalog catalog,
+            MegaShipCatalogEntry entry,
+            List<float> into)
+        {
+            if (into == null || catalog == null || entry?.componentCounts == null)
+                return false;
+
+            into.Clear();
+            for (int i = 0; i < entry.componentCounts.Count; i++)
+            {
+                MegaShipComponentCount count = entry.componentCounts[i];
+                if (count == null || count.count <= 0 || string.IsNullOrEmpty(count.displayName))
+                    continue;
+                if (!catalog.TryGetUniqueComponent(count.displayName, out MegaShipComponentEntry unique)
+                    || unique == null
+                    || !ContributesCruiseMove(unique.stats))
+                    continue;
+
+                for (int n = 0; n < count.count; n++)
+                    into.Add(unique.stats.moveSpeed);
+            }
+
+            return true;
+        }
+
+        /// <summary>
+        /// Live Titan cruise from unique-library Move values × hull name counts.
+        /// Same formula as <see cref="RecalcShipSum"/> so a stale stored
+        /// <see cref="MegaShipCatalogEntry.summedStats"/> still picks up a wing
+        /// (or any other part) the designer just gave moveSpeed.
+        /// </summary>
+        /// <param name="catalog">Unique-component library and extra-percent.</param>
+        /// <param name="entry">Hull row with name counts.</param>
+        /// <param name="cruise">Fastest Move + extra% of the rest, or 0 when none authored.</param>
+        /// <returns>False when counts are missing — caller should keep the stored sum.</returns>
+        public static bool TryComputeCruiseFromUniqueParts(
+            MegaShipCatalog catalog,
+            MegaShipCatalogEntry entry,
+            out float cruise)
+        {
+            cruise = 0f;
+            var moves = new List<float>(16);
+            if (!TryCollectCruiseMovesFromCounts(catalog, entry, moves))
+                return false;
+
+            cruise = CombineEngineCruise(
+                moves,
+                catalog != null
+                    ? catalog.GetExtraEngineSpeedPercent()
+                    : MegaShipCatalog.DefaultExtraEngineSpeedPercent);
+            return true;
+        }
+
+        /// <summary>
+        /// Fastest authored Move + <paramref name="extraPercent"/> of every other
+        /// contributor's moveSpeed. Empty list → 0 (in-game default/minimum fills it).
+        /// </summary>
+        /// <param name="engineMoves">moveSpeed from every cruise contributor (any part type).</param>
         /// <param name="extraPercent">Catalog extraEngineSpeedPercent (0.05 = 5%).</param>
         public static float CombineEngineCruise(List<float> engineMoves, float extraPercent)
         {

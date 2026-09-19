@@ -761,17 +761,7 @@ namespace TitanOrbit.ECS
         /// </summary>
         static MapGenerationLogic.AsteroidBodyTuning ResolveAsteroidBodyTuning()
         {
-            var settings = AsteroidSettingsCache.ResolveOrDefault();
-            settings.ClampValues();
-            return new MapGenerationLogic.AsteroidBodyTuning
-            {
-                MinSize = settings.MinSize,
-                MaxSize = settings.MaxSize,
-                HealthPerSize = settings.HealthPerSize,
-                GemsPerSize = settings.GemsPerSize,
-                VisualScaleAtMinSize = settings.VisualScaleAtMinSize,
-                VisualScaleAtMaxSize = settings.VisualScaleAtMaxSize,
-            };
+            return MapGenerationLogic.FromAsteroidSettings(AsteroidSettingsCache.ResolveOrDefault());
         }
 
         static void SetOrAddComponent<T>(EntityManager em, Entity e, T value) where T : unmanaged, IComponentData

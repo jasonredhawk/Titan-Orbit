@@ -197,11 +197,15 @@ namespace TitanOrbit.ECS
                     LastDamageServerTime = 0f,
                     LastImpulseXZ = float2.zero,
                     LastImpulsePower = 0f,
+                    LastSourceGhostId = 0,
+                    LastSourceKind = 0,
+                    LastSourcePosXZ = float2.zero,
+                    LastSourceHasPos = 0,
                 });
             }
 
             if (em.HasComponent<ShipDeathVfxState>(ship))
-                em.SetComponentData(ship, new ShipDeathVfxState { Packed = 0 });
+                em.SetComponentData(ship, new ShipDeathVfxState());
 
             em.RemoveComponent<ShipDeathState>(ship);
         }

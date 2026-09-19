@@ -18,8 +18,14 @@ namespace TitanOrbit.ECS
     /// </summary>
     public static class GemEconomyConstants
     {
-        /// <summary>World units — ship must be within this toroidal distance to mine an asteroid.</summary>
+        /// <summary>
+        /// Legacy aura (retired). Live mining uses hull + rock radius so a fly-by does
+        /// not empty SizeSmallBias pebbles. Kept so older docs / callers still compile.
+        /// </summary>
         public const float MiningRange = 6f;
+
+        /// <summary>Float slack on hull+rock contact. Not a gameplay aura.</summary>
+        public const float MiningContactPad = 0.05f;
 
         /// <summary>Gem value mined per second while in range.</summary>
         public const float MiningRate = 5f;
@@ -164,8 +170,11 @@ namespace TitanOrbit.ECS
     }
 
     /// <summary>
-    /// Server: ships near asteroids mine gems over time, spawning gem entities when chunks break off.
-    /// Destroys asteroids when RemainingGems reaches zero.
+    /// Server: ships <b>touching</b> asteroids mine gems over time, spawning gem entities
+    /// when chunks break off. Destroys asteroids when RemainingGems reaches zero.
+    /// Range is hull + rock radius (map size from <see cref="MapStateSingleton"/>) —
+    /// a 6u aura used to pop small-bias rocks as the ship flew past.
+    /// MEGA hulls skip this (they plow). Stowed turret hulls skip it too.
     /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation)]
     [UpdateInGroup(typeof(SimulationSystemGroup))]
@@ -225,6 +234,14 @@ namespace TitanOrbit.ECS
             {
                 if (shipState.ValueRO.IsDead || shipState.ValueRO.AwaitingTeamSelection)
                     continue;
+                if (state.EntityManager.HasComponent<MegaShipState>(shipEntity) &&
+                    state.EntityManager.GetComponentData<MegaShipState>(shipEntity).IsMega)
+                    continue;
+                if (state.EntityManager.HasComponent<ShipTurretControlState>(shipEntity) &&
+                    state.EntityManager.GetComponentData<ShipTurretControlState>(shipEntity).IsControlling)
+                    continue;
+
+                float shipRadius = BodyCollisionMath.GetShipHullRadiusWorld(shipTransform.ValueRO.Scale);
 
                 foreach (var (asteroidState, asteroidTransform, asteroidEntity) in SystemAPI
                              .Query<RefRW<AsteroidState>, RefRO<LocalTransform>>()
@@ -234,30 +251,64 @@ namespace TitanOrbit.ECS
                     if (asteroidState.ValueRO.IsDestroyed)
                         continue;
 
+                    float rockRadius = BodyCollisionMath.GetAsteroidBodyRadiusWorld(
+                        asteroidTransform.ValueRO.Scale);
+                    float mineRange = shipRadius + rockRadius + GemEconomyConstants.MiningContactPad;
                     if (ToroidalMapEcs.ToroidalDistance(
                             shipTransform.ValueRO.Position,
                             asteroidTransform.ValueRO.Position,
                             mapW,
-                            mapH) > GemEconomyConstants.MiningRange)
+                            mapH) > mineRange)
                         continue;
 
                     var a = asteroidState.ValueRO;
                     float mineMul = CardEffectQuery.GetMul(state.EntityManager, shipEntity, CardEffectKind.MiningRateMul);
                     float yieldMul = CardEffectQuery.GetMul(state.EntityManager, shipEntity, CardEffectKind.AsteroidGemYieldMul);
-                    float mined = GemEconomyConstants.MiningRate * dt * mineMul;
-                    mined = math.min(mined, a.RemainingGems);
-                    if (mined < GemEconomyConstants.MinGemSpawnValue)
+                    float minedTick = GemEconomyConstants.MiningRate * dt * mineMul;
+                    minedTick = math.min(minedTick, a.RemainingGems);
+                    if (minedTick <= 0f)
                         continue;
+
+                    // --- Accrue sub-threshold 60 Hz chips ---
+                    // [TITAN-ORBIT] MiningRate×dt is ~0.083 at 60 Hz, below MinGemSpawnValue.
+                    // Drain the rock now; Instantiates one red chip per ~1s of MiningRate (5)
+                    // so we do not flood gem RPCs, and yellow (5%) reaches a visible crystal.
+                    a.RemainingGems -= minedTick;
+                    a.MiningYieldRemainder += minedTick;
+                    bool emptied = a.RemainingGems <= 0f;
+                    if (!emptied && a.MiningYieldRemainder < GemEconomyConstants.MiningRate)
+                    {
+                        a.LastInteractTeam = shipState.ValueRO.Team;
+                        if (state.EntityManager.HasComponent<GhostOwner>(shipEntity))
+                            a.LastInteractNetworkId = state.EntityManager.GetComponentData<GhostOwner>(shipEntity).NetworkId;
+                        asteroidState.ValueRW = a;
+                        continue;
+                    }
+
+                    float mined = a.MiningYieldRemainder;
+                    a.MiningYieldRemainder = 0f;
+                    if (mined <= 0f)
+                    {
+                        asteroidState.ValueRW = a;
+                        continue;
+                    }
 
                     // --- Friendly territory gem bonus (tint only once spawned) ---
                     // [TITAN-ORBIT] Base mined chunk is red; extra value Instantiates as a yellow
                     // gem so players see the triangle bonus. Same scoop rules as red — any ship.
-                    // Asteroid loses RemainingGems at the base rate only. Mask (not strongest-wins
-                    // TerritoryTeam): overlap still grants extra yield to each owner.
+                    // Asteroid loses RemainingGems at the base rate only. Live PIT (not the 1s
+                    // stored mask): respawn / graph publish lag used to leave TerritoryTeamsMask=0
+                    // on rocks the client already painted as team-owned.
+                    byte territoryMask = PlanetConnectionGraphCache.ResolveAsteroidTerritoryMask(
+                        a.TerritoryTeamsMask,
+                        asteroidTransform.ValueRO.Position,
+                        mapW,
+                        mapH);
+                    a.TerritoryTeamsMask = territoryMask;
                     int homeLevel = PlanetConnectionGraphLogic.GetHomePlanetLevel(
                         shipState.ValueRO.Team, homeLevels);
                     float gemMult = PlanetConnectionGraphLogic.FriendlyTerritoryGemMultiplier(
-                        shipState.ValueRO.Team, a.TerritoryTeamsMask, homeLevel);
+                        shipState.ValueRO.Team, territoryMask, homeLevel);
                     float bonusValue = mined * (gemMult - 1f);
 
                     // --- Top-miner command bonus (blue, never mixed into yellow) ---
@@ -268,8 +319,6 @@ namespace TitanOrbit.ECS
                         minerNetId = state.EntityManager.GetComponentData<GhostOwner>(shipEntity).NetworkId;
                     bool isTopMiner = haveRoles && roles.IsMiner(shipState.ValueRO.Team, minerNetId);
                     float minerBonus = TeamCommandRoleRules.GemBonusValue(mined, isTopMiner);
-
-                    a.RemainingGems -= mined;
                     // [TITAN-ORBIT] Record miner so destroy Instantiates yellow (team) and
                     // blue (this NetworkId still holding the title). Collection is free-for-all.
                     a.LastInteractTeam = shipState.ValueRO.Team;
@@ -293,7 +342,7 @@ namespace TitanOrbit.ECS
                         burst: false,
                         spawnServerTime,
                         tint: GemVisualTint.Standard);
-                    if (bonusValue >= GemEconomyConstants.MinGemSpawnValue)
+                    if (bonusValue > 0f)
                     {
                         GemSpawning.Spawn(
                             ecb,
@@ -306,7 +355,7 @@ namespace TitanOrbit.ECS
                             tint: GemVisualTint.TerritoryBonus);
                     }
 
-                    if (minerBonus >= GemEconomyConstants.MinGemSpawnValue)
+                    if (minerBonus > 0f)
                     {
                         GemSpawning.Spawn(
                             ecb,
@@ -1075,6 +1124,7 @@ namespace TitanOrbit.ECS
             public TeamId LastInteractTeam;
             public int LastInteractNetworkId;
             public byte TerritoryTeamsMask;
+            public float MiningYieldRemainder;
             public int LayoutSlot;
         }
 
@@ -1106,6 +1156,18 @@ namespace TitanOrbit.ECS
             var respawnBuffer = SystemAPI.GetSingletonBuffer<PendingAsteroidRespawnElement>();
             var em = state.EntityManager;
 
+            // Map period for live triangle PIT (destroy yellow extras). Skip inventing 1000.
+            float mapW = 0f;
+            float mapH = 0f;
+            if (SystemAPI.TryGetSingleton<MapStateSingleton>(out var mapState) &&
+                ToroidalMapEcs.IsValidMapSize(mapState.MapWidth, mapState.MapHeight))
+            {
+                mapW = mapState.MapWidth;
+                mapH = mapState.MapHeight;
+            }
+            else
+                ToroidalMapEcs.TryGetMapSize(out mapW, out mapH);
+
             // --- Phase 1: copy dead rocks (no structural changes inside the query) ---
             var pending = new NativeList<PendingDestroy>(8, Allocator.Temp);
             foreach (var (asteroidState, asteroidTransform, entity) in SystemAPI
@@ -1134,6 +1196,7 @@ namespace TitanOrbit.ECS
                     LastInteractTeam = a.LastInteractTeam,
                     LastInteractNetworkId = a.LastInteractNetworkId,
                     TerritoryTeamsMask = a.TerritoryTeamsMask,
+                    MiningYieldRemainder = a.MiningYieldRemainder,
                     LayoutSlot = AsteroidLayoutSlot.Read(em, entity),
                 });
             }
@@ -1155,7 +1218,7 @@ namespace TitanOrbit.ECS
 
                 float3 pos = dead.Position;
                 pos.y = 0f;
-                float remaining = dead.RemainingGems;
+                float remaining = dead.RemainingGems + math.max(0f, dead.MiningYieldRemainder);
                 float rpcScale = dead.Scale;
                 if (rpcScale <= AsteroidDeathPhysics.CulledTransformScale + 0.001f)
                     rpcScale = 1f;
@@ -1165,14 +1228,16 @@ namespace TitanOrbit.ECS
                 // [TITAN-ORBIT] Extra yellow crystals Instantiates only when the last miner/shooter
                 // owns this rock (mask bit). Enemy-tinted asteroids must not dump bonus yield on
                 // kill. The gems themselves are free-for-all once they exist.
-                // Legacy bug: FriendlyTerritoryGemMultiplier(TerritoryTeam, TerritoryTeam) always
-                // matched for any non-None tint — ignored the destroyer.
+                // Live PIT: stored TerritoryTeamsMask stays 0 until the 1s territory refresh,
+                // so team-tinted rocks used to dump only red leftovers.
+                byte territoryMask = PlanetConnectionGraphCache.ResolveAsteroidTerritoryMask(
+                    dead.TerritoryTeamsMask, pos, mapW, mapH);
                 if (dead.LastInteractTeam != TeamId.None &&
-                    remaining >= GemEconomyConstants.MinGemSpawnValue)
+                    remaining > 0f)
                 {
                     int homeLevel = PlanetConnectionGraphCache.GetHomePlanetLevel(dead.LastInteractTeam);
                     float mult = PlanetConnectionGraphLogic.FriendlyTerritoryGemMultiplier(
-                        dead.LastInteractTeam, dead.TerritoryTeamsMask, homeLevel);
+                        dead.LastInteractTeam, territoryMask, homeLevel);
                     bonusExtra = remaining * (mult - 1f);
                 }
 
@@ -1181,7 +1246,7 @@ namespace TitanOrbit.ECS
                 // two extra colours when a titled miner pops a triangle rock.
                 float minerExtra = 0f;
                 if (dead.LastInteractNetworkId > 0
-                    && remaining >= GemEconomyConstants.MinGemSpawnValue
+                    && remaining > 0f
                     && SystemAPI.TryGetSingleton<ShipCommandRoleSnapshot>(out var roles)
                     && roles.IsMiner(dead.LastInteractTeam, dead.LastInteractNetworkId))
                 {
@@ -1195,14 +1260,14 @@ namespace TitanOrbit.ECS
                     SpawnAsteroidDestructionGems(
                         ecb, gemPrefab, pos, remaining, seed, settings, spawnTime,
                         GemVisualTint.Standard);
-                    if (bonusExtra >= GemEconomyConstants.MinGemSpawnValue)
+                    if (bonusExtra > 0f)
                     {
                         SpawnAsteroidDestructionGems(
                             ecb, gemPrefab, pos, bonusExtra, seed + 1337u, settings, spawnTime,
                             GemVisualTint.TerritoryBonus);
                     }
 
-                    if (minerExtra >= GemEconomyConstants.MinGemSpawnValue)
+                    if (minerExtra > 0f)
                     {
                         SpawnAsteroidDestructionGems(
                             ecb, gemPrefab, pos, minerExtra, seed + 2741u, settings, spawnTime,

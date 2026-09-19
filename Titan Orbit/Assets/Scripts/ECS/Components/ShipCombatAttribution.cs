@@ -5,8 +5,9 @@ namespace TitanOrbit.ECS
 {
     /// <summary>
     /// [ECS/DOTS] Server-only last-damager bookkeeping for kill credit. Not ghost-serialized —
-    /// clients never need who last hit a ship; only the server credits <see cref="ShipMatchStats.Kills"/>
-    /// when <see cref="ShipDeathRecordingSystem"/> sees a new death.
+    /// the death camera reads the copy packed onto <see cref="ShipDeathVfxState"/>.
+    /// Server credits <see cref="ShipMatchStats.Kills"/> when
+    /// <see cref="ShipDeathRecordingSystem"/> sees a new death.
     /// <para>
     /// [TITAN-ORBIT] Written by bullet and ramming damage paths. Cleared on respawn.
     /// Match stats themselves are left intact across deaths.
@@ -38,5 +39,20 @@ namespace TitanOrbit.ECS
         /// <see cref="ShipDeathVfxState.Packed"/> on death.
         /// </summary>
         public float LastImpulsePower;
+
+        /// <summary>
+        /// <c>GhostInstance.ghostId</c> of the last damaging body (asteroid or ship).
+        /// Copied onto <see cref="ShipDeathVfxState"/> so the death camera can frame it.
+        /// </summary>
+        public int LastSourceGhostId;
+
+        /// <summary><see cref="DeathVfxSourceKind"/> of <see cref="LastSourceGhostId"/>.</summary>
+        public byte LastSourceKind;
+
+        /// <summary>Logical XZ of the last-hit body when it is not a live ghost (mine, fallback).</summary>
+        public float2 LastSourcePosXZ;
+
+        /// <summary>1 when <see cref="LastSourcePosXZ"/> was written for this hit.</summary>
+        public byte LastSourceHasPos;
     }
 }

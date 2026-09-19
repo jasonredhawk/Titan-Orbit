@@ -260,8 +260,10 @@ namespace TitanOrbit.ECS
             slot.TargetDistance = tracking
                 ? math.max(CannonLaserMath.MinTrackingDistance, targetDistance)
                 : 0f;
-            slot.AimWorldX = aimPoint.x;
-            slot.AimWorldZ = aimPoint.z;
+            // Parked slots must publish 0. Writing hull XZ made IsTrackingAim stay
+            // true (and client AimWorld interpolate toward the ship) after a lock died.
+            slot.AimWorldX = tracking ? aimPoint.x : 0f;
+            slot.AimWorldZ = tracking ? aimPoint.z : 0f;
             slot.TargetGhostId = tracking ? targetGhostId : 0;
             if (mount.WeaponKind != 0)
                 slot.WeaponKind = mount.WeaponKind;

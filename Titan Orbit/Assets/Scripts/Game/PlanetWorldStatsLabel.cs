@@ -10,11 +10,13 @@ using UnityEngine.Rendering;
 namespace TitanOrbit.Game
 {
     /// <summary>
-    /// World-space label floating above a planet body: proper world name (title), that planet's
-    /// family default bullet type in a smaller line, optional capture-contributor name, plus population.
-    /// Layout reads top-to-bottom as world name, bullet type, a small "Captured by" caption, the
-    /// player who delivered the most troops during capture, then <b>current people</b>,
-    /// then the population <b>capacity</b>
+    /// World-space label floating above a planet body: proper world name (title), a home-capital
+    /// role line on team spawn worlds, that planet's family default bullet type on neutrals,
+    /// optional capture-contributor name, plus population.
+    /// Layout reads top-to-bottom as world name, then on a home world the small-but-heavy
+    /// <c>HOME PLANET</c> stamp (neutrals keep the gun-type subtitle instead), a small
+    /// "Captured by" caption, the player who delivered the most troops during capture, then
+    /// <b>current people</b>, then the population <b>capacity</b>
     /// (base size/level max, and when territory triangles apply, <c>base + bonus</c>).
     /// Client / hybrid presentation only — reads replicated <see cref="PlanetState"/> and the
     /// published connection graph; never drives sim. Paired with <see cref="WorldBodyVisualApplier"/>
@@ -62,8 +64,20 @@ namespace TitanOrbit.Game
         /// <summary>World-name title uses the same size as the capacity line.</summary>
         const float TitleFontSize = MaxFontSize;
 
+        /// <summary>
+        /// Home-capital stamp under the world name. Smaller than the title so the place name
+        /// still leads, but larger than the gun-type subtitle so it reads as a rank, not a note.
+        /// </summary>
+        const float HomeRoleFontSize = TitleFontSize * 0.78f;
+
         /// <summary>Family gun type under the planet name — smaller subtitle, still readable in orbit.</summary>
         const float BulletTypeFontSize = TitleFontSize * 0.62f;
+
+        /// <summary>
+        /// Player-facing home-capital line. Uppercase on purpose — HUD telemetry, not a sentence.
+        /// Shown only when ghosted <see cref="PlanetState.IsHomePlanet"/> is true.
+        /// </summary>
+        const string HomePlanetRoleLabel = "HOME PLANET";
 
         /// <summary>Player name on the capture credit — smaller than the world-name title.</summary>
         const float ContributorNameFontSize = TitleFontSize * 0.55f;
@@ -74,8 +88,11 @@ namespace TitanOrbit.Game
         /// <summary>Local-space gap between world-name title and the population stack.</summary>
         const float TitleGapLocal = 2f;
 
-        /// <summary>Tight gap between the world name and the bullet-type subtitle.</summary>
-        const float TitleToBulletTypeGapLocal = 0.28f;
+        /// <summary>Tight gap between the world name and the line under it (home stamp or gun type).</summary>
+        const float TitleToSubtitleGapLocal = 0.28f;
+
+        /// <summary>Gap between the home stamp and a gun-type line when both are visible.</summary>
+        const float HomeRoleToBulletTypeGapLocal = 0.22f;
 
         /// <summary>Local-space gap around the capture-contributor line.</summary>
         const float ContributorGapLocal = 0.35f;
@@ -92,8 +109,20 @@ namespace TitanOrbit.Game
         /// <summary>TMP outline width for readability over busy planet textures.</summary>
         const float OutlineWidth = 0.2f;
 
+        /// <summary>Heavier outline on the home stamp so the small line still feels solid.</summary>
+        const float HomeRoleOutlineWidth = 0.32f;
+
         /// <summary>TMP face dilate paired with outline so glyphs stay solid.</summary>
         const float FaceDilate = 0.12f;
+
+        /// <summary>
+        /// Extra face dilate on the home stamp. TMP Bold on one weight is a simulated thicken —
+        /// this pushes the glyphs toward a heavy / black look without a second font asset.
+        /// </summary>
+        const float HomeRoleFaceDilate = 0.3f;
+
+        /// <summary>Slight tracking on HOME PLANET so the stamp reads as a banner, not a caption.</summary>
+        const float HomeRoleCharacterSpacing = 2.4f;
 
         /// <summary>Bullet-type subtitle is a bit dimmer than the world name above it.</summary>
         const float BulletTypeAlpha = 0.72f;
@@ -111,6 +140,7 @@ namespace TitanOrbit.Game
 
         Transform _labelRoot;
         TextMeshPro _titleText;
+        TextMeshPro _homeRoleText;
         TextMeshPro _bulletTypeText;
         CaptureCreditRow _captureCredit;
         StatRow _populationRow;
@@ -154,6 +184,7 @@ namespace TitanOrbit.Game
             if (_labelReady &&
                 _labelRoot != null &&
                 _titleText != null &&
+                _homeRoleText != null &&
                 _bulletTypeText != null &&
                 _captureCredit.CaptionText != null &&
                 _captureCredit.NameText != null &&
@@ -172,6 +203,7 @@ namespace TitanOrbit.Game
 
             _labelRoot = CreateLabelRoot("PlanetStatsLabel", transform);
             _titleText = CreateValueText(_labelRoot, "FamilyTitle", TitleFontSize, Color.white);
+            _homeRoleText = CreateHomeRoleText(_labelRoot);
             _bulletTypeText = CreateValueText(_labelRoot, "BulletType", BulletTypeFontSize, Color.white);
             _captureCredit = CreateCaptureCreditRow(_labelRoot, "CaptureCredit");
             _populationRow = CreatePopulationRow(_labelRoot, "PopulationRow");
@@ -199,6 +231,9 @@ namespace TitanOrbit.Game
 
             if (_titleText == null)
                 _titleText = _labelRoot.Find("FamilyTitle")?.GetComponent<TextMeshPro>();
+
+            if (_homeRoleText == null)
+                _homeRoleText = _labelRoot.Find("HomeRole")?.GetComponent<TextMeshPro>();
 
             if (_bulletTypeText == null)
                 _bulletTypeText = _labelRoot.Find("BulletType")?.GetComponent<TextMeshPro>();
@@ -231,7 +266,12 @@ namespace TitanOrbit.Game
 
             RemoveLegacySingleLineContributor(_labelRoot);
 
-            // Play Mode recompile: older labels have no BulletType child — add it once.
+            // Play Mode recompile: older labels have no HomeRole / BulletType child — add once.
+            if (_homeRoleText == null)
+                _homeRoleText = CreateHomeRoleText(_labelRoot);
+            else
+                StyleHomeRoleText(_homeRoleText);
+
             if (_bulletTypeText == null)
                 _bulletTypeText = CreateValueText(_labelRoot, "BulletType", BulletTypeFontSize, Color.white);
 
@@ -242,6 +282,7 @@ namespace TitanOrbit.Game
             _populationRow.MaxText.richText = true;
 
             ApplyReadableTextMaterial(_titleText);
+            ApplyReadableTextMaterial(_homeRoleText, HomeRoleOutlineWidth, HomeRoleFaceDilate);
             ApplyReadableTextMaterial(_bulletTypeText);
             ApplyReadableTextMaterial(_captureCredit.CaptionText);
             ApplyReadableTextMaterial(_captureCredit.NameText);
@@ -264,6 +305,7 @@ namespace TitanOrbit.Game
                 Destroy(_labelRoot.gameObject);
                 _labelRoot = null;
                 _titleText = null;
+                _homeRoleText = null;
                 _bulletTypeText = null;
                 _captureCredit = default;
                 _populationRow = default;
@@ -424,6 +466,39 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
+        /// Builds the home-capital stamp. Same TMP family as the other lines, but heavier
+        /// dilate / outline and a little tracking so the smaller size still feels important.
+        /// </summary>
+        /// <param name="parent">PlanetStatsLabel root.</param>
+        static TextMeshPro CreateHomeRoleText(Transform parent)
+        {
+            // --- Heavy subtitle, not a second title ---
+            // [TITAN-ORBIT] Players scan the place name first (Helios). This line is the
+            // rank badge: smaller, thicker, full team color. Neutrals hide the GameObject.
+            TextMeshPro tmp = CreateValueText(parent, "HomeRole", HomeRoleFontSize, Color.white);
+            StyleHomeRoleText(tmp);
+            tmp.gameObject.SetActive(false);
+            return tmp;
+        }
+
+        /// <summary>
+        /// Applies the heavy stamp look. Safe to call again after a Play Mode recompile
+        /// so an older HomeRole child picks up the thicker SDF settings.
+        /// </summary>
+        /// <param name="tmp">HomeRole TMP. Null is ignored.</param>
+        static void StyleHomeRoleText(TextMeshPro tmp)
+        {
+            if (tmp == null)
+                return;
+
+            tmp.fontSize = HomeRoleFontSize;
+            tmp.fontStyle = FontStyles.Bold;
+            tmp.fontWeight = FontWeight.Black;
+            tmp.characterSpacing = HomeRoleCharacterSpacing;
+            ApplyReadableTextMaterial(tmp, HomeRoleOutlineWidth, HomeRoleFaceDilate);
+        }
+
+        /// <summary>
         /// Snaps the label to the planet surface and sets a readable world TMP scale.
         /// Unit-scale planet roots no longer enlarge children — scale from ECS diameter.
         /// </summary>
@@ -489,13 +564,14 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Centers world name, smaller bullet-type subtitle, capture credit, and population
+        /// Centers world name, home stamp or gun-type subtitle, capture credit, and population
         /// as one vertical block on the planet label.
         /// </summary>
         /// <param name="showTitle">False when this planet has no world name.</param>
-        /// <param name="showBulletType">False when the family has no named gun bank.</param>
+        /// <param name="showHomeRole">True only for team home worlds — the HOME PLANET stamp.</param>
+        /// <param name="showBulletType">False when this is a home world, or the family has no named gun.</param>
         /// <param name="showContributor">False when this planet has no capture contributor.</param>
-        void LayoutLabelBlock(bool showTitle, bool showBulletType, bool showContributor)
+        void LayoutLabelBlock(bool showTitle, bool showHomeRole, bool showBulletType, bool showContributor)
         {
             // --- Measure each visible row ---
             if (_titleText == null)
@@ -509,6 +585,18 @@ namespace TitanOrbit.Game
                 _titleText.fontSize = TitleFontSize;
                 _titleText.ForceMeshUpdate();
                 titleHeight = _titleText.preferredHeight;
+            }
+
+            float homeRoleHeight = 0f;
+            if (showHomeRole && _homeRoleText != null)
+            {
+                // Heavy stamp: keep Bold + Black weight so the smaller size still reads as a rank.
+                _homeRoleText.fontSize = HomeRoleFontSize;
+                _homeRoleText.fontStyle = FontStyles.Bold;
+                _homeRoleText.fontWeight = FontWeight.Black;
+                _homeRoleText.characterSpacing = HomeRoleCharacterSpacing;
+                _homeRoleText.ForceMeshUpdate();
+                homeRoleHeight = _homeRoleText.preferredHeight;
             }
 
             float bulletTypeHeight = 0f;
@@ -527,17 +615,23 @@ namespace TitanOrbit.Game
             }
 
             // --- Stack heights ---
-            // Name block = world name + optional gun-type subtitle. Credit sits under that.
-            bool hasNameBlock = showTitle || showBulletType;
+            // Name block = world name + home stamp and/or gun-type. Credit sits under that.
+            bool hasSubtitle = showHomeRole || showBulletType;
+            bool hasNameBlock = showTitle || hasSubtitle;
             bool hasHeader = hasNameBlock || showContributor;
-            float titleTypeGap = showTitle && showBulletType ? TitleToBulletTypeGapLocal : 0f;
+            float titleToHomeGap = showTitle && showHomeRole ? TitleToSubtitleGapLocal : 0f;
+            float titleToGunGap = showTitle && !showHomeRole && showBulletType ? TitleToSubtitleGapLocal : 0f;
+            float homeToGunGap = showHomeRole && showBulletType ? HomeRoleToBulletTypeGapLocal : 0f;
             float nameToCreditGap = hasNameBlock && showContributor ? ContributorGapLocal : 0f;
             float headerGap = hasHeader ? TitleGapLocal : 0f;
             float populationHeight = GetStatRowHeight(_populationRow);
             float headerHeight = (showTitle ? titleHeight : 0f)
+                + (showHomeRole ? homeRoleHeight : 0f)
                 + (showBulletType ? bulletTypeHeight : 0f)
                 + (showContributor ? creditHeight : 0f)
-                + titleTypeGap
+                + titleToHomeGap
+                + titleToGunGap
+                + homeToGunGap
                 + nameToCreditGap
                 + headerGap;
             float totalHeight = populationHeight + headerHeight;
@@ -551,7 +645,16 @@ namespace TitanOrbit.Game
                     0f,
                     cursor - titleHeight * 0.5f,
                     0f);
-                cursor -= titleHeight + titleTypeGap;
+                cursor -= titleHeight + titleToHomeGap + titleToGunGap;
+            }
+
+            if (showHomeRole && _homeRoleText != null)
+            {
+                _homeRoleText.transform.localPosition = new Vector3(
+                    0f,
+                    cursor - homeRoleHeight * 0.5f,
+                    0f);
+                cursor -= homeRoleHeight + homeToGunGap;
             }
 
             if (showBulletType && _bulletTypeText != null)
@@ -563,7 +666,7 @@ namespace TitanOrbit.Game
                     0f);
                 cursor -= bulletTypeHeight + nameToCreditGap;
             }
-            else if (showTitle && showContributor)
+            else if (hasNameBlock && showContributor)
             {
                 cursor -= nameToCreditGap;
             }
@@ -606,8 +709,17 @@ namespace TitanOrbit.Game
 #endif
         }
 
-        /// <summary>Enables outline + dilate and pushes the material into the Overlay queue.</summary>
-        static void ApplyReadableTextMaterial(TMP_Text text)
+        /// <summary>
+        /// Enables outline + dilate and pushes the material into the Overlay queue.
+        /// Default widths match the title / population lines. The home stamp passes heavier values.
+        /// </summary>
+        /// <param name="text">TMP to style. Null is ignored.</param>
+        /// <param name="outlineWidth">SDF outline; thicker reads as a heavier glyph.</param>
+        /// <param name="faceDilate">SDF face expand; this is how we fake a Black weight.</param>
+        static void ApplyReadableTextMaterial(
+            TMP_Text text,
+            float outlineWidth = OutlineWidth,
+            float faceDilate = FaceDilate)
         {
             // --- Apply changes ---
             if (text == null)
@@ -621,11 +733,11 @@ namespace TitanOrbit.Game
             if (mat.HasProperty("_OutlineColor"))
                 mat.SetColor("_OutlineColor", new Color(1f, 1f, 1f, 0.92f));
             if (mat.HasProperty("_OutlineWidth"))
-                mat.SetFloat("_OutlineWidth", OutlineWidth);
+                mat.SetFloat("_OutlineWidth", outlineWidth);
             if (mat.HasProperty("_OutlineSoftness"))
                 mat.SetFloat("_OutlineSoftness", 0.04f);
             if (mat.HasProperty("_FaceDilate"))
-                mat.SetFloat("_FaceDilate", FaceDilate);
+                mat.SetFloat("_FaceDilate", faceDilate);
             mat.renderQueue = RenderQueueOverlay;
 
             var renderer = text.GetComponent<Renderer>();
@@ -770,8 +882,8 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Pulls planet state + triangle bonus, then writes world name, bullet type,
-        /// capture credit, and population when dirty.
+        /// Pulls planet state + triangle bonus, then writes world name, home stamp or
+        /// bullet type, capture credit, and population when dirty.
         /// </summary>
         /// <returns>True when TMP / layout need ApplyLayout.</returns>
         bool Refresh()
@@ -782,6 +894,7 @@ namespace TitanOrbit.Game
 
             EnsureLabel();
             if (_titleText == null ||
+                _homeRoleText == null ||
                 _bulletTypeText == null ||
                 _captureCredit.CaptionText == null ||
                 _captureCredit.NameText == null ||
@@ -848,7 +961,10 @@ namespace TitanOrbit.Game
             string planetTitle = ResolvePlanetTitle(state);
             string bulletType = ResolveShipFamilyBulletType(state);
             bool hasTitle = !string.IsNullOrEmpty(planetTitle);
-            bool hasBulletType = hasTitle && !string.IsNullOrEmpty(bulletType);
+            bool showHomeRole = hasTitle && state.IsHomePlanet;
+            // Homes already stamp HOME PLANET under the name — skip the gun line so the
+            // capital stays a two-line identity (place + rank), not a three-line stack.
+            bool hasBulletType = hasTitle && !showHomeRole && !string.IsNullOrEmpty(bulletType);
 
             _hasCachedPaint = true;
             _cachedPopulation = state.Population;
@@ -868,7 +984,13 @@ namespace TitanOrbit.Game
             _titleText.text = hasTitle ? planetTitle : string.Empty;
             _titleText.color = teamColor;
 
-            // Subtitle under the world name — same bank that family fires as its default gun.
+            // --- Home capital stamp ---
+            // Full team color (not the dim gun-type alpha) so the smaller line still owns the eye.
+            _homeRoleText.gameObject.SetActive(showHomeRole);
+            _homeRoleText.text = showHomeRole ? HomePlanetRoleLabel : string.Empty;
+            _homeRoleText.color = teamColor;
+
+            // Neutral worlds keep the family gun type under the place name.
             _bulletTypeText.gameObject.SetActive(hasBulletType);
             _bulletTypeText.text = hasBulletType ? bulletType : string.Empty;
             _bulletTypeText.color = WithAlpha(teamColor, BulletTypeAlpha);
@@ -887,7 +1009,7 @@ namespace TitanOrbit.Game
             _populationRow.MaxText.text = FormatCapacityLine(baseMax, bonusAmount, teamColor);
             _populationRow.MaxText.color = WithAlpha(teamColor, MaxLineAlpha);
 
-            LayoutLabelBlock(hasTitle, hasBulletType, hasContributor);
+            LayoutLabelBlock(hasTitle, showHomeRole, hasBulletType, hasContributor);
             return true;
         }
     }

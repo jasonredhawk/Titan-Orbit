@@ -16,7 +16,7 @@ namespace TitanOrbit.ECS
     /// Acquire comes from <see cref="MegaShipAutoFireSystem"/> (same in-range lock as
     /// other Titan guns; the turret slews onto that target first). Burn requires the
     /// barrel to sit inside the 33° cone after that slew. Beams stay on while
-    /// Fire is held and energy remains.
+    /// a live lock (or Shift mouse-aim) is burning and energy remains.
     /// World: ServerSimulation. Map size from <see cref="MapStateSingleton"/>.
     /// </summary>
     [UpdateInGroup(typeof(SimulationSystemGroup))]
@@ -281,7 +281,7 @@ namespace TitanOrbit.ECS
                     EntityManager, ecb, target, ship.Team, attackerNet,
                     muzzle, TeamCommandRoleRules.ScaleFirePower(slice, topKiller),
                     heal, acquireRange, mapW, mapH, moonElapsed, serverElapsed,
-                    gemPrefab, gemSpawnServerTime, ref carry);
+                    gemPrefab, gemSpawnServerTime, ref carry, mega);
                 _gemCarry[target] = carry;
 
                 // Dead / mined-out locks must not keep publishing the corpse aim.
@@ -313,7 +313,7 @@ namespace TitanOrbit.ECS
             ship.CurrentEnergy = energy;
             EntityManager.SetComponentData(mega, ship);
             megaState.CannonLaserLockout = lockout;
-            megaState.CannonLaserPulseOn = cycleActive;
+            megaState.CannonLaserPulseOn = wantedBurn;
             EntityManager.SetComponentData(mega, megaState);
         }
 

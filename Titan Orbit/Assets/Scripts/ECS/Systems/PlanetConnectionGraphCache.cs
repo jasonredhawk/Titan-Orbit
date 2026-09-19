@@ -522,6 +522,92 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
+        /// Point-in-triangle ownership from a side's baked runtime verts. False when that
+        /// side has no triangles or map size is unset (caller keeps any stored asteroid mask).
+        /// </summary>
+        public static bool TryGetPublishedOwnershipAtPosition(
+            PlanetConnectionGraphSide sideKind,
+            float3 worldPos,
+            float mapW,
+            float mapH,
+            out byte mask,
+            out TeamId primaryTeam)
+        {
+            mask = 0;
+            primaryTeam = TeamId.None;
+            if (!ToroidalMapEcs.IsValidMapSize(mapW, mapH))
+                return false;
+            if (!TryGetPublishedRuntimeNative(sideKind, out var runtime) ||
+                !runtime.IsCreated ||
+                runtime.Length == 0)
+                return false;
+
+            float3 wrapped = ToroidalMapEcs.Wrap(worldPos, mapW, mapH);
+            PlanetConnectionGraphLogic.GetTerritoryOwnershipAtPosition(
+                wrapped, runtime, mapW, mapH, out mask, out primaryTeam);
+            return true;
+        }
+
+        /// <summary>
+        /// Mining / destroy yellow extras: prefer live server PIT (same verts as the fill)
+        /// so a rock the player sees as team-owned is not skipped because the 1s
+        /// <c>AsteroidTerritorySystem</c> pass has not written <c>TerritoryTeamsMask</c> yet
+        /// (respawn starts at 0). Falls back to the stored mask when the graph is unpublished.
+        /// </summary>
+        public static byte ResolveAsteroidTerritoryMask(
+            byte storedMask,
+            float3 worldPos,
+            float mapW,
+            float mapH)
+        {
+            if (TryGetPublishedOwnershipAtPosition(
+                    PlanetConnectionGraphSide.Server,
+                    worldPos,
+                    mapW,
+                    mapH,
+                    out byte liveMask,
+                    out _) &&
+                liveMask != 0)
+                return liveMask;
+
+            return storedMask;
+        }
+
+        /// <summary>
+        /// Stamps <see cref="AsteroidState.TerritoryTeamsMask"/> / <c>TerritoryTeam</c> from
+        /// published triangles. Safe at spawn / respawn — no-op when map size or graph is missing.
+        /// Prefers the server bake; listen-server client hydrate can use the client bake.
+        /// </summary>
+        public static void TryStampAsteroidTerritory(float3 worldPos, ref AsteroidState state)
+        {
+            if (!ToroidalMapEcs.TryGetMapSize(out float mapW, out float mapH))
+                return;
+
+            if (!TryGetPublishedOwnershipAtPosition(
+                    PlanetConnectionGraphSide.Server,
+                    worldPos,
+                    mapW,
+                    mapH,
+                    out byte mask,
+                    out TeamId primary) ||
+                mask == 0)
+            {
+                if (!TryGetPublishedOwnershipAtPosition(
+                        PlanetConnectionGraphSide.Client,
+                        worldPos,
+                        mapW,
+                        mapH,
+                        out mask,
+                        out primary) ||
+                    mask == 0)
+                    return;
+            }
+
+            state.TerritoryTeamsMask = mask;
+            state.TerritoryTeam = primary;
+        }
+
+        /// <summary>
         /// Last baked Persistent runtime-triangle array for <paramref name="sideKind"/>
         /// without collecting planet snapshots. Do <b>not</b> Dispose.
         /// <para>

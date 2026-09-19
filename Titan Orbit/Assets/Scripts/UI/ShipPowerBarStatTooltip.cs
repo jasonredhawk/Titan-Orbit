@@ -15,14 +15,13 @@ namespace TitanOrbit.UI
     /// <see cref="ShipFamilyPowerBarNorm.GetStatLeader"/>.
     /// </para>
     /// <para>
-    /// [TITAN-ORBIT] The Orbit Menu lives on its own overlay canvas (sorting order 200).
-    /// Parenting this card to <c>FindFirstObjectByType&lt;Canvas&gt;()</c> used to park it
-    /// on a gameplay HUD canvas (order 0–80). Sibling order cannot beat another canvas,
-    /// so the panel sat behind the whole menu and looked like hover was gone.
-    /// We parent to the hovered bar's Orbit Menu canvas and give the card its own
-    /// nested Canvas (sort 260) so it paints above the dock. Hover show/hide is
-    /// pointer-vs-tray math in <see cref="ShipPowerBarStatHoverRelay"/> — not
-    /// EventSystem enter/exit — so this draw batch cannot hide the card.
+    /// [TITAN-ORBIT] This card lives on its own DontDestroyOnLoad overlay canvas
+    /// (sort 260), not as a child of OrbitStationCanvas. Parenting it to the dock
+    /// used to look like hover was dead on the second menu open: Hide() SetActive
+    /// the nested tip canvas, then the dock backdrop jumped to last sibling and
+    /// Unity 6 stopped painting that nested batch. The overlay never goes inactive.
+    /// We hide with a CanvasGroup so the player just sees it fade. Hover show/hide
+    /// is pointer-vs-tray math in <see cref="ShipPowerBarStatHoverRelay"/>.
     /// </para>
     /// </summary>
     public static class ShipPowerBarStatTooltip
@@ -37,21 +36,23 @@ namespace TitanOrbit.UI
         const float ThumbSize = 28f;
 
         /// <summary>
-        /// Nested-canvas sort so the card paints above Orbit Menu (200) and below
+        /// Overlay sort so the card paints above Orbit Menu (200) and below
         /// death / match-end / escape overlays (8500+).
         /// </summary>
         const int TipSortingOrder = 260;
 
+        static GameObject s_OverlayRoot;
+        static Canvas s_OverlayCanvas;
+        static CanvasGroup s_OverlayGroup;
         static ShipStatTooltipChrome.Handles s_Chrome;
         static Image s_RankThumb;
-        static Canvas s_HostCanvas;
         static int s_ActiveSlot = -1;
         /// <summary>Hover relay that opened the card. Exit / disable on a different bar must not steal this tip.</summary>
         static object s_ActiveOwner;
 
         /// <summary>
         /// Shows (or retargets) the shared card for one power-bar slot.
-        /// Call from pointer-enter / pointer-move when the slot index changes.
+        /// Call from the hover probe when the slot index changes.
         /// </summary>
         /// <param name="statIndex">Slot 0–9.</param>
         /// <param name="breakdown">The painted hull or equipment breakdown.</param>
@@ -72,15 +73,9 @@ namespace TitanOrbit.UI
             if (statIndex < 0 || statIndex >= ShipAbilityCategoryColors.PowerBreakdownStatCount)
                 return;
 
-            // --- Host canvas ---
-            // [TITAN-ORBIT] Must be the Orbit Menu canvas (or whatever canvas owns this bar).
-            // A HUD / loading / leftover canvas would hide the card behind the dock.
-            Canvas host = ResolveHostCanvas(anchor);
-            EnsureChrome(host);
+            EnsureOverlay();
             if (s_Chrome.Root == null)
                 return;
-
-            AttachToHostCanvas(host);
 
             s_ActiveSlot = statIndex;
             s_ActiveOwner = owner;
@@ -102,10 +97,14 @@ namespace TitanOrbit.UI
             ApplyRankThumb(statIndex, megaPool, thisChassisId, thisValue);
             SizeToBody();
             PositionNear(anchor);
-            EnsureTipCanvas();
 
-            if (!s_Chrome.Root.activeSelf)
+            // --- Reveal ---
+            // [UNITY] Do not SetActive the card. The old nested-canvas path died on the
+            // second Orbit Menu open after SetActive(false). CanvasGroup.alpha is enough.
+            if (s_Chrome.Root != null && !s_Chrome.Root.activeSelf)
                 s_Chrome.Root.SetActive(true);
+            if (s_OverlayGroup != null)
+                s_OverlayGroup.alpha = 1f;
         }
 
         /// <summary>Hides the shared card. Safe to call when nothing is showing.</summary>
@@ -113,8 +112,8 @@ namespace TitanOrbit.UI
         {
             s_ActiveSlot = -1;
             s_ActiveOwner = null;
-            if (s_Chrome.Root != null && s_Chrome.Root.activeSelf)
-                s_Chrome.Root.SetActive(false);
+            if (s_OverlayGroup != null)
+                s_OverlayGroup.alpha = 0f;
         }
 
         /// <summary>Hides only if <paramref name="owner"/> is the relay that opened the card.</summary>
@@ -125,6 +124,46 @@ namespace TitanOrbit.UI
             Hide();
         }
 
+        /// <summary>
+        /// Tears down and rebuilds the overlay. Call when the Orbit Menu is shown so a
+        /// leftover Unity 6 canvas from the last dock cannot stay invisible.
+        /// </summary>
+        public static void RecreateOverlay()
+        {
+            DestroyLeftoverDockTips();
+            if (s_OverlayRoot != null)
+                Object.Destroy(s_OverlayRoot);
+            s_OverlayRoot = null;
+            s_OverlayCanvas = null;
+            s_OverlayGroup = null;
+            s_Chrome = default;
+            s_RankThumb = null;
+            s_ActiveSlot = -1;
+            s_ActiveOwner = null;
+            EnsureOverlay();
+        }
+
+        /// <summary>
+        /// Removes STAT TELEMETRY cards left on OrbitStationCanvas from the old
+        /// nested-canvas path. Those leftovers stay invisible behind the dock.
+        /// </summary>
+        static void DestroyLeftoverDockTips()
+        {
+            Canvas[] canvases = Object.FindObjectsByType<Canvas>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+            for (int i = 0; i < canvases.Length; i++)
+            {
+                Canvas canvas = canvases[i];
+                if (canvas == null)
+                    continue;
+                Transform child = canvas.transform.Find("ShipPowerBarStatTooltip");
+                if (child == null)
+                    continue;
+                if (s_OverlayRoot != null && child.IsChildOf(s_OverlayRoot.transform))
+                    continue;
+                Object.Destroy(child.gameObject);
+            }
+        }
+
         /// <summary>Slot currently shown, or -1 when hidden. Hover relays use this to skip rebuilds.</summary>
         public static int ActiveSlot => s_ActiveSlot;
 
@@ -132,48 +171,62 @@ namespace TitanOrbit.UI
         public static object ActiveOwner => s_ActiveOwner;
 
         /// <summary>
-        /// Canvas that should own the floating card. Prefers the hovered bar's root
-        /// canvas so Screen Space Overlay math and draw order match the Orbit Menu.
+        /// Creates (or reuses) the DontDestroyOnLoad overlay. Starts hidden via CanvasGroup.
+        /// No GraphicRaycaster — this batch must not steal clicks from the tree.
         /// </summary>
-        /// <param name="anchor">Slot or bar rect under the pointer.</param>
-        /// <returns>Root canvas, or null when the scene has none.</returns>
-        static Canvas ResolveHostCanvas(RectTransform anchor)
+        static void EnsureOverlay()
         {
-            if (anchor != null)
+            // [UNITY] Destroyed objects compare as null. A leftover Handles struct after
+            // a failed dock close must not skip rebuild.
+            if (s_OverlayRoot == null || s_OverlayCanvas == null || s_Chrome.Root == null)
             {
-                // [UNITY] GetComponentInParent walks up from the slot → card → OrbitStationCanvas.
-                Canvas fromAnchor = anchor.GetComponentInParent<Canvas>();
-                if (fromAnchor != null)
-                    return fromAnchor.rootCanvas != null ? fromAnchor.rootCanvas : fromAnchor;
+                if (s_OverlayRoot != null)
+                    Object.Destroy(s_OverlayRoot);
+                s_OverlayRoot = null;
+                s_OverlayCanvas = null;
+                s_OverlayGroup = null;
+                s_Chrome = default;
+                s_RankThumb = null;
             }
 
-            return s_HostCanvas != null ? s_HostCanvas : Object.FindFirstObjectByType<Canvas>();
-        }
-
-        /// <summary>
-        /// Creates the chrome once under <paramref name="host"/>. Starts hidden.
-        /// Later hovers reuse the same GameObject and only reparent if the menu canvas changed.
-        /// </summary>
-        /// <param name="host">Orbit Menu (or other) overlay that owns the hovered bar.</param>
-        static void EnsureChrome(Canvas host)
-        {
-            if (s_Chrome.Root != null)
-                return;
-            if (host == null)
+            if (s_OverlayRoot != null)
                 return;
 
-            s_HostCanvas = host;
+            // --- Overlay shell ---
+            // [TITAN-ORBIT] Sort 260 sits above OrbitStationCanvas (200). Matching the
+            // dock scaler (1920×1080) keeps the card size stable on laptop and 4K.
+            var go = new GameObject("ShipPowerBarStatTooltipOverlay");
+            Object.DontDestroyOnLoad(go);
+            s_OverlayRoot = go;
+
+            s_OverlayCanvas = go.AddComponent<Canvas>();
+            s_OverlayCanvas.renderMode = RenderMode.ScreenSpaceOverlay;
+            s_OverlayCanvas.sortingOrder = TipSortingOrder;
+            s_OverlayCanvas.additionalShaderChannels =
+                AdditionalCanvasShaderChannels.TexCoord1
+                | AdditionalCanvasShaderChannels.Normal
+                | AdditionalCanvasShaderChannels.Tangent;
+
+            var scaler = go.AddComponent<CanvasScaler>();
+            scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
+            scaler.referenceResolution = new Vector2(1920, 1080);
+
+            s_OverlayGroup = go.AddComponent<CanvasGroup>();
+            s_OverlayGroup.alpha = 0f;
+            s_OverlayGroup.blocksRaycasts = false;
+            s_OverlayGroup.interactable = false;
+            s_OverlayGroup.ignoreParentGroups = true;
+
             s_Chrome = ShipStatTooltipChrome.Build(
                 "ShipPowerBarStatTooltip",
-                host.transform,
+                go.transform,
                 "STAT TELEMETRY",
                 TipWidth,
                 TipMinHeight,
                 1f);
 
             // --- RANK 1 thumb ---
-            // [TITAN-ORBIT] Small preview only. The body already names the hull;
-            // this is a glance icon in the corner, not a second card.
+            // Small preview only. The body already names the hull.
             var thumbGo = new GameObject("RankThumb");
             thumbGo.transform.SetParent(s_Chrome.Root.transform, false);
             RectTransform thumbRt = thumbGo.AddComponent<RectTransform>();
@@ -187,65 +240,8 @@ namespace TitanOrbit.UI
             s_RankThumb.preserveAspect = true;
             s_RankThumb.enabled = false;
 
-            EnsureTipCanvas();
-            EnsureHostTmpChannels(host);
-
             if (s_Chrome.Root != null)
-                s_Chrome.Root.SetActive(false);
-        }
-
-        /// <summary>
-        /// Moves the reused card under the canvas that owns the hovered bar.
-        /// Needed when the first hover built chrome on a different overlay.
-        /// </summary>
-        /// <param name="host">Canvas resolved from the current anchor.</param>
-        static void AttachToHostCanvas(Canvas host)
-        {
-            if (host == null || s_Chrome.RootRect == null)
-                return;
-
-            s_HostCanvas = host;
-            if (s_Chrome.RootRect.parent != host.transform)
-                s_Chrome.RootRect.SetParent(host.transform, false);
-            EnsureTipCanvas();
-            EnsureHostTmpChannels(host);
-        }
-
-        /// <summary>
-        /// Nested canvas so the card draws above Orbit Menu chrome. No GraphicRaycaster —
-        /// hover is tray containment, not EventSystem enter, so this batch cannot steal the pointer.
-        /// </summary>
-        static void EnsureTipCanvas()
-        {
-            if (s_Chrome.Root == null)
-                return;
-
-            Canvas tipCanvas = s_Chrome.Root.GetComponent<Canvas>();
-            if (tipCanvas == null)
-                tipCanvas = s_Chrome.Root.AddComponent<Canvas>();
-
-            tipCanvas.overrideSorting = true;
-            tipCanvas.sortingOrder = TipSortingOrder;
-            tipCanvas.additionalShaderChannels =
-                AdditionalCanvasShaderChannels.TexCoord1
-                | AdditionalCanvasShaderChannels.Normal
-                | AdditionalCanvasShaderChannels.Tangent;
-            s_Chrome.Root.transform.SetAsLastSibling();
-        }
-
-        /// <summary>
-        /// TMP body text needs TexCoord1 on the host canvas. We used to put those
-        /// channels on a nested tip canvas; they now live on the Orbit Menu canvas
-        /// so the body stays visible without a second draw batch.
-        /// </summary>
-        static void EnsureHostTmpChannels(Canvas host)
-        {
-            if (host == null)
-                return;
-            host.additionalShaderChannels |=
-                AdditionalCanvasShaderChannels.TexCoord1
-                | AdditionalCanvasShaderChannels.Normal
-                | AdditionalCanvasShaderChannels.Tangent;
+                s_Chrome.Root.SetActive(true);
         }
 
         /// <summary>Shows the winner's menu sprite when the hovered hull is not RANK 1.</summary>
@@ -283,15 +279,15 @@ namespace TitanOrbit.UI
 
         /// <summary>
         /// Parks the tip to the right of the hovered slot (or left if it would clip),
-        /// then clamps to the canvas. Kept beside the lane so the card does not sit
-        /// on top of the power-bar hit pad.
+        /// then clamps to the overlay. Uses the slot's world corners so a 0×0 local
+        /// rect on a freshly-shown dock still places the card on-screen.
         /// </summary>
         static void PositionNear(RectTransform anchor)
         {
-            if (anchor == null || s_Chrome.RootRect == null || s_HostCanvas == null)
+            if (anchor == null || s_Chrome.RootRect == null || s_OverlayCanvas == null)
                 return;
 
-            RectTransform canvasRt = s_HostCanvas.transform as RectTransform;
+            RectTransform canvasRt = s_OverlayCanvas.transform as RectTransform;
             if (canvasRt == null)
                 return;
 
@@ -300,19 +296,14 @@ namespace TitanOrbit.UI
 
             Vector3[] corners = new Vector3[4];
             anchor.GetWorldCorners(corners);
-            // [UNITY] Qualify Camera — TitanOrbit.Camera is a namespace and would steal the short name.
-            // Overlay canvases use a null camera (screen pixels = canvas space).
-            UnityEngine.Camera cam = s_HostCanvas.renderMode == RenderMode.ScreenSpaceOverlay
-                ? null
-                : s_HostCanvas.worldCamera;
 
-            // Slot top-right and bottom-right — we sit just to the right, vertically centered.
-            Vector2 screenRight = RectTransformUtility.WorldToScreenPoint(cam, (corners[2] + corners[3]) * 0.5f);
-            Vector2 screenLeft = RectTransformUtility.WorldToScreenPoint(cam, (corners[0] + corners[1]) * 0.5f);
+            // Overlay canvas — screen pixels map with a null camera.
+            Vector2 screenRight = RectTransformUtility.WorldToScreenPoint(null, (corners[2] + corners[3]) * 0.5f);
+            Vector2 screenLeft = RectTransformUtility.WorldToScreenPoint(null, (corners[0] + corners[1]) * 0.5f);
             RectTransformUtility.ScreenPointToLocalPointInRectangle(
-                canvasRt, screenRight, cam, out Vector2 localRight);
+                canvasRt, screenRight, null, out Vector2 localRight);
             RectTransformUtility.ScreenPointToLocalPointInRectangle(
-                canvasRt, screenLeft, cam, out Vector2 localLeft);
+                canvasRt, screenLeft, null, out Vector2 localLeft);
 
             Vector2 size = s_Chrome.RootRect.sizeDelta;
             Rect canvasRect = canvasRt.rect;

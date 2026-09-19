@@ -9,8 +9,9 @@ namespace TitanOrbit.UI
     /// <summary>
     /// Small planet tooltip for minimap blips and edge markers.
     /// The player hovers a planet disc (or the off-screen arrow) and sees the same proper world
-    /// name that floats above the planet in the world (<see cref="Game.PlanetWorldStatsLabel"/>),
-    /// plus the ship family that planet rolls (Astro Eagle, Cosmic Shark, …) in a smaller subtitle.
+    /// name that floats above the planet in the world (<see cref="Game.PlanetWorldStatsLabel"/>).
+    /// Home worlds stamp <c>HOME PLANET</c> under the name (small, heavy). Neutrals show the
+    /// ship family (Astro Eagle, Cosmic Shark, …) in a lighter subtitle.
     /// <para>
     /// Client presentation only — reads <see cref="MinimapBlipAnchor"/> plus
     /// <see cref="PlanetShipFamilyConfig"/>. No ECS gathers, no sim writes.
@@ -48,6 +49,15 @@ namespace TitanOrbit.UI
 
         /// <summary>Ship-family subtitle — smaller and lighter so the place name stays primary.</summary>
         const float FamilyNameFontSize = 8f;
+
+        /// <summary>
+        /// Home-capital stamp on the hover card. Smaller than the place name, larger and heavier
+        /// than the family line so it reads as a rank.
+        /// </summary>
+        const float HomeRoleFontSize = 9f;
+
+        /// <summary>Same uppercase stamp the world-space planet label uses.</summary>
+        const string HomePlanetRoleLabel = "HOME PLANET";
 
         /// <summary>Horizontal padding inside the card (left + right each).</summary>
         const float CardPadX = 8f;
@@ -168,7 +178,7 @@ namespace TitanOrbit.UI
 
         /// <summary>
         /// [UNITY] EventSystem hover enter. Builds the shared tip if needed, writes the world name
-        /// plus ship-family subtitle, and shows the card.
+        /// plus HOME PLANET or ship-family subtitle, and shows the card.
         /// </summary>
         public void OnPointerEnter(PointerEventData eventData)
         {
@@ -185,7 +195,7 @@ namespace TitanOrbit.UI
 
             s_Active = this;
             s_Chrome.NameLabel.text = planetName;
-            ApplyFamilySubtitle(ResolveFamilyName(_anchor));
+            ApplySubtitle(_anchor);
             s_Chrome.Root.SetActive(true);
             FitToText();
             PlaceBesideHoveredPlanet();
@@ -277,18 +287,30 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// Writes or hides the family subtitle. Empty family keeps a one-line card (name only).
+        /// Writes the line under the world name. Homes get the heavy HOME PLANET stamp;
+        /// neutrals keep the ship-family subtitle. Empty family hides the second line.
         /// </summary>
-        /// <param name="familyName">Resolved ship family, or empty.</param>
-        static void ApplyFamilySubtitle(string familyName)
+        /// <param name="anchor">Hovered planet blip (null-safe).</param>
+        static void ApplySubtitle(MinimapBlipAnchor anchor)
         {
             if (s_Chrome.FamilyLabel == null)
                 return;
 
-            bool show = !string.IsNullOrWhiteSpace(familyName);
+            bool isHome = anchor != null && anchor.IsHomePlanet;
+            string subtitle = isHome ? HomePlanetRoleLabel : ResolveFamilyName(anchor);
+            bool show = !string.IsNullOrWhiteSpace(subtitle);
             s_Chrome.FamilyLabel.gameObject.SetActive(show);
-            if (show)
-                s_Chrome.FamilyLabel.text = familyName;
+            if (!show)
+                return;
+
+            s_Chrome.FamilyLabel.text = subtitle;
+            s_Chrome.FamilyLabel.fontSize = isHome ? HomeRoleFontSize : FamilyNameFontSize;
+            s_Chrome.FamilyLabel.fontStyle = isHome ? FontStyles.Bold : FontStyles.Normal;
+            s_Chrome.FamilyLabel.fontWeight = isHome ? FontWeight.Black : FontWeight.Regular;
+            s_Chrome.FamilyLabel.characterSpacing = isHome ? 1.6f : 0f;
+            s_Chrome.FamilyLabel.color = isHome
+                ? new Color(0.88f, 0.92f, 0.98f, 1f)
+                : new Color(0.62f, 0.78f, 0.95f, 0.88f);
         }
 
         /// <summary>Loads <c>Resources/PlanetShipFamilyConfig</c> once.</summary>

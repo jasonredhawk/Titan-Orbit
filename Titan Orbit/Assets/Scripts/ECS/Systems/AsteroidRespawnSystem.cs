@@ -234,7 +234,11 @@ namespace TitanOrbit.ECS
                 MaxHealth = health,
                 LastInteractTeam = TeamId.None,
                 LastInteractNetworkId = 0,
+                MiningYieldRemainder = 0f,
             };
+            // [TITAN-ORBIT] Respawn / map-gen used to leave mask 0 until the 1s territory
+            // tick — a team-tinted rock killed immediately dumped only red leftovers.
+            PlanetConnectionGraphCache.TryStampAsteroidTerritory(position, ref asteroidState);
             if (em.HasComponent<AsteroidState>(e))
                 em.SetComponentData(e, asteroidState);
             else

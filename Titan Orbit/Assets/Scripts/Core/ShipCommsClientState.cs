@@ -6,7 +6,7 @@ namespace TitanOrbit.Core
     /// Client-only state for the hold-S comms matrix. <c>ShipCommsPanel</c> writes
     /// <see cref="IsOpen"/> while the overlay is visible; input and cursor code read it so
     /// left-click selects keywords instead of firing the gun. <see cref="Channel"/> is the
-    /// remembered All / Team / Commander audience (PlayerPrefs) the panel and send path share.
+        /// remembered All / Team audience (PlayerPrefs) the panel and send path share.
     /// <para>
     /// Lives in Core (not the UI assembly) so <c>ShipInputBridge</c> and
     /// <c>GameplayCursorController</c> can see it without a Game → Assembly-CSharp reference.
@@ -17,9 +17,10 @@ namespace TitanOrbit.Core
     public static class ShipCommsClientState
     {
         /// <summary>
-        /// [UNITY] PlayerPrefs key for the All / Team / Commander channel. Same machine
+        /// [UNITY] PlayerPrefs key for the All / Team channel. Same machine
         /// remembers the last choice; a missing key means All (the original broadcast).
-        /// Older builds stored 0/1 only — 2 is Commander.
+        /// Older builds stored 0/1 only, then 2 as a Commander tab — that value
+        /// now loads as Team. Commander chrome is applied at send time.
         /// </summary>
         public const string TeamOnlyPrefsKey = "TitanOrbit.ShipComms.TeamOnly";
 
@@ -29,15 +30,17 @@ namespace TitanOrbit.Core
         public static bool IsOpen { get; private set; }
 
         /// <summary>
-        /// True when the next send should go to teammates only (Team or Commander).
-        /// Loaded once from PlayerPrefs; <see cref="SetChannel"/> writes it back.
+        /// True when the next send should go to teammates only (Team, or Team
+        /// upgraded to Commander at send time). Loaded once from PlayerPrefs;
+        /// <see cref="SetChannel"/> writes it back.
         /// </summary>
         public static bool TeamOnly => Channel != ShipCommsChannel.All;
 
         /// <summary>
-        /// Current All / Team / Commander audience. All is the default for first-time players.
-        /// Commander is only valid while this machine holds an earned category title —
-        /// the panel drops back to Team when every title is lost.
+        /// Current All / Team compose audience. All is the default for first-time
+        /// players. Older Commander-tab saves collapse to Team. Gold command
+        /// chrome is not stored here — the send path promotes Team when this
+        /// machine holds a command seat and used command-deck words.
         /// </summary>
         public static ShipCommsChannel Channel
         {
@@ -48,7 +51,7 @@ namespace TitanOrbit.Core
             }
         }
 
-        /// <summary>Remembered All / Team / Commander byte.</summary>
+        /// <summary>Remembered All / Team compose byte (Commander prefs collapse to Team).</summary>
         static ShipCommsChannel s_Channel;
 
         /// <summary>False until the first <see cref="Channel"/> read this process.</summary>
@@ -335,8 +338,8 @@ namespace TitanOrbit.Core
         }
 
         /// <summary>
-        /// Legacy All / Team writer. Commander is a third value — use
-        /// <see cref="SetChannel"/> when the compose panel has three pills.
+        /// Legacy All / Team writer. The compose card only has those two pills —
+        /// Commander chrome is applied at send time, not stored here.
         /// </summary>
         /// <param name="teamOnly">True = teammates; false = every client.</param>
         public static void SetTeamOnly(bool teamOnly)
@@ -345,25 +348,27 @@ namespace TitanOrbit.Core
         }
 
         /// <summary>
-        /// Flips or sets the All / Team / Commander channel and writes PlayerPrefs so the
-        /// next session (and the next hold-S) keep the same choice.
+        /// Flips or sets the All / Team compose audience and writes PlayerPrefs so the
+        /// next session (and the next hold-S) keep the same choice. A Commander
+        /// value from an older build is stored as Team.
         /// </summary>
-        /// <param name="channel">Audience the next send should request.</param>
+        /// <param name="channel">Audience the next send should request (All or Team).</param>
         public static void SetChannel(ShipCommsChannel channel)
         {
             // --- Persist ---
             // [UNITY] PlayerPrefs is a tiny local key/value store (registry on Windows,
             // plist on macOS). Not a server setting — each machine remembers its own toggle.
-            // The int is the enum byte (0 All, 1 Team, 2 Commander).
+            // Compose stores 0 All / 1 Team. Byte 2 (old Commander tab) collapses to Team.
             s_ChannelLoaded = true;
-            s_Channel = TeamCommanderRules.Sanitize((byte)channel);
+            s_Channel = TeamCommanderRules.SanitizeComposeChoice((byte)channel);
             PlayerPrefs.SetInt(s_PrefsKey, (int)s_Channel);
             PlayerPrefs.Save();
         }
 
         /// <summary>
         /// Reads the saved channel once per process. Missing key → All, matching the
-        /// original "broadcast to every client" behavior.
+        /// original "broadcast to every client" behavior. An old Commander-tab
+        /// save (byte 2) becomes Team so the missing third pill does not stick.
         /// </summary>
         static void EnsureChannelLoaded()
         {
@@ -371,7 +376,8 @@ namespace TitanOrbit.Core
                 return;
 
             s_ChannelLoaded = true;
-            s_Channel = TeamCommanderRules.Sanitize((byte)PlayerPrefs.GetInt(s_PrefsKey, 0));
+            s_Channel = TeamCommanderRules.SanitizeComposeChoice(
+                (byte)PlayerPrefs.GetInt(s_PrefsKey, 0));
         }
     }
 }

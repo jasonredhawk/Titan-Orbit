@@ -142,6 +142,9 @@ namespace TitanOrbit.ECS
                 var xf = EntityManager.GetComponentData<LocalTransform>(planetEntity);
                 float3 planetPos = xf.Position;
                 float planetSize = math.max(0.25f, xf.Scale);
+                int planetGhostId = EntityManager.HasComponent<GhostInstance>(planetEntity)
+                    ? EntityManager.GetComponentData<GhostInstance>(planetEntity).ghostId
+                    : 0;
                 int slotCount = buffer.Length;
                 byte ownerTeam = (byte)planet.Ownership;
                 int bankIndex = config.ResolveBulletBankIndex(familyDef);
@@ -259,6 +262,9 @@ namespace TitanOrbit.ECS
                         ScaleMultiplier = math.max(0.1f, visualScale),
                         // Aim stays ships/transports; drones in the beam still take a hit.
                         DamageFilter = BulletDamageFilter.ShipsAndTransports,
+                        SourceGhostId = planetGhostId,
+                        SourceKind = (byte)DeathVfxSourceKind.Turret,
+                        SourceOriginXZ = new float2(muzzle.x, muzzle.z),
                     };
 
                     spawnEvents.Add(new BulletSpawnEventElement

@@ -8,6 +8,7 @@ using TitanOrbit.Simulation;
 using TMPro;
 using Unity.Entities;
 using UnityEngine;
+using UnityEngine.EventSystems;
 using UnityEngine.InputSystem;
 using UnityEngine.Serialization;
 using UnityEngine.UI;
@@ -30,10 +31,12 @@ namespace TitanOrbit.UI
     /// and paint three purchase states: Ready (affordable), Locked (not enough gems), Maxed.
     /// Both rows share dark-glass + category-accent chrome (space-gamer HUD). Chip hover opens
     /// a calculation card from <see cref="ShipAbilityStatBreakdown"/> when the STATS row is on.
-    /// That card uses a nested Canvas (sort 150) so rockets, brakes, turret pad, and sibling HUD
-    /// cannot paint through it.
-    /// MEGA hulls keep the ten buttons visible but disabled (no Extra Level purchases) and hide
-    /// the little tick squares so the strip does not look like upgrades are still available.
+    /// That card lives on an always-active overlay Canvas (sort 160) so rockets, brakes, turret
+    /// pad, comms, and sibling HUD cannot paint through it — even on the first hover.
+    /// A RESET chip appears on a slot that has at least one Extra Level. Hold it for
+    /// <see cref="abilityResetHoldSeconds"/> to zero that ability (no gem refund). Release early
+    /// cancels. MEGA hulls keep the ten buttons visible but disabled (no Extra Level purchases)
+    /// and hide the little tick squares so the strip does not look like upgrades are still available.
     /// MEGA identity is latched through gem Instantiates (plow destroy) so ticks/costs do not flicker.
     /// Titan chips use <see cref="MegaShipStatsCalculator"/> (frozen hull + PerExtra-only
     /// LOADOUT gear, no +per-buy).
@@ -93,6 +96,10 @@ namespace TitanOrbit.UI
         [Tooltip("Uniform font size for all ability titles (scaled on mobile with the upgrade bar).")]
         [SerializeField, FormerlySerializedAs("titleFontSizeMax")] private float titleFontSize = 12f;
 
+        [Header("Ability reset")]
+        [Tooltip("Hold RESET this long to zero that ability. No gem refund. Release early cancels.")]
+        [SerializeField] private float abilityResetHoldSeconds = 3f;
+
         [Header("STATS row toggle")]
         [Tooltip("When on, the top value/+per-buy chips and their hover tips are available.")]
         [SerializeField] private bool statsChipsVisible = true;
@@ -131,13 +138,14 @@ namespace TitanOrbit.UI
         const string StatsChipsPrefsKey = "TitanOrbit.AbilityStatsChipsVisible";
 
         /// <summary>
-        /// Nested-canvas sort for the hover calculation card.
-        /// Main HUD canvas is 0; rocket / space-brake overlays are 80; turret pad is 120;
-        /// orbit station is 200. 150 sits above gameplay HUD and below dock / death / match-end.
+        /// Overlay-canvas sort for the hover calculation card.
+        /// Main HUD canvas is 0; rocket / space-brake / ordnance overlays are 80; turret pad is 120;
+        /// comms is 150; orbit station is 200. 160 sits above gameplay HUD and below dock / death / match-end.
         /// <see cref="Transform.SetAsLastSibling"/> only wins inside one canvas — it cannot beat
-        /// those overlay canvases.
+        /// those overlay canvases. The sort lives on an always-active host, not the inactive tip
+        /// child: Unity drops <c>overrideSorting</c> when you set it on a disabled GameObject.
         /// </summary>
-        const int AbilityTipSortingOrder = 150;
+        const int AbilityTipSortingOrder = 160;
 
         /// <summary>
         /// Purchase affordance for one bottom upgrade slot.
@@ -186,10 +194,35 @@ namespace TitanOrbit.UI
             (UpgradeSlotVisualState)(-1)
         };
 
+        // --- Hold-to-reset (visible only when that ability has at least one Extra Level) ---
+        private GameObject[] _resetHoldRoots = new GameObject[10];
+        private RectTransform[] _resetHoldRects = new RectTransform[10];
+        private Image[] _resetHoldFills = new Image[10];
+        private TextMeshProUGUI[] _resetHoldLabels = new TextMeshProUGUI[10];
+        private int _resetHoldIndex = -1;
+        private float _resetHoldStart;
+        /// <summary>
+        /// Slot whose RESET pointer is still down. Hiding the chip or flipping the parent
+        /// Button back to interactable mid-press made Unity treat the release as a purchase.
+        /// </summary>
+        private int _resetPointerBlockIndex = -1;
+        /// <summary>Slot that just finished a RESET press — swallow Button.onClick this/next frame.</summary>
+        private int _resetClickSuppressIndex = -1;
+        private int _resetClickSuppressThroughFrame = -1;
+        static Sprite s_resetFillSprite;
+
         // --- Quick-stat chips above each ability button ---
         private RectTransform[] _chipRects = new RectTransform[10];
         private TextMeshProUGUI[] _chipValueTexts = new TextMeshProUGUI[10];
         private readonly string[] _lastChipText = new string[10];
+        /// <summary>
+        /// Always-active host for the ability calculation card. Owns the overlay Canvas so Unity
+        /// keeps sort 160 registered even while the tip child is hidden. Parent of
+        /// <see cref="_abilityTipPanel"/>. Stretch-matches the layout canvas so tip
+        /// <c>anchoredPosition</c> stays in the same space as the upgrade strip.
+        /// </summary>
+        private GameObject _abilityTipOverlay;
+
         private GameObject _abilityTipPanel;
         private RectTransform _abilityTipRect;
         private TextMeshProUGUI _abilityTipLabel;
@@ -668,6 +701,13 @@ namespace TitanOrbit.UI
                     costLabels[i].fontSize = F(11f);
                 if (_chipValueTexts[i] != null)
                     _chipValueTexts[i].fontSize = F(12f);
+                if (_resetHoldRects[i] != null)
+                {
+                    _resetHoldRects[i].offsetMin = new Vector2(E(22f), -E(18f));
+                    _resetHoldRects[i].offsetMax = new Vector2(-E(tickColumnRightInset), -E(4f));
+                }
+                if (_resetHoldLabels[i] != null)
+                    _resetHoldLabels[i].fontSize = F(8f);
             }
 
             RefreshStatsToggleVisual();
@@ -733,6 +773,10 @@ namespace TitanOrbit.UI
                 costLabels[i] = btn.costLabel;
                 costGemIcons[i] = btn.costGemIcon;
                 _buttonRects[i] = btn.buttonRect;
+                _resetHoldRoots[i] = btn.resetRoot;
+                _resetHoldRects[i] = btn.resetRect;
+                _resetHoldFills[i] = btn.resetFill;
+                _resetHoldLabels[i] = btn.resetLabel;
                 _lastSlotVisualState[i] = (UpgradeSlotVisualState)(-1);
 
                 var chip = CreateStatChip(rootPanel.transform, i, statColor);
@@ -1121,8 +1165,15 @@ namespace TitanOrbit.UI
         /// </summary>
         void BuildAbilityTipPanel()
         {
-            // Same canvas parent as the strip so anchoredPosition math matches GetUpgradeStripReserveHeight space.
-            Transform tipParent = _layoutCanvasRect != null ? (Transform)_layoutCanvasRect : transform;
+            // --- Overlay host ---
+            // Stretch-match the layout canvas so tip anchoredPosition stays in strip space,
+            // then park the card under that host (not the root canvas). Chrome.Build starts
+            // the tip inactive; the overlay stays on so its Canvas sort is never dropped.
+            EnsureAbilityTipOverlay();
+            Transform tipParent = _abilityTipOverlay != null
+                ? _abilityTipOverlay.transform
+                : (_layoutCanvasRect != null ? (Transform)_layoutCanvasRect : transform);
+
             _abilityTipChrome = ShipStatTooltipChrome.Build(
                 "ShipAbilityStatTooltip",
                 tipParent,
@@ -1142,35 +1193,77 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// Gives the calculation card its own nested Canvas so it paints above other HUD.
-        /// Called once at build and again on hover in case a later HUD sibling stole hierarchy order.
+        /// Creates the always-active overlay that owns the ability-tip Canvas.
+        /// Called at strip build and again on hover if a later HUD destroyed the host.
+        /// Stretch-fills the layout canvas so child <c>anchoredPosition</c> equals strip space.
         /// </summary>
-        void ElevateAbilityTipDrawOrder()
+        void EnsureAbilityTipOverlay()
         {
-            if (_abilityTipPanel == null)
+            if (_abilityTipOverlay != null)
                 return;
 
-            // --- Nested canvas (beats overlay HUDs that sibling-order cannot) ---
-            // [UNITY] A child Canvas with overrideSorting is a separate draw batch. Without it,
-            // RocketLoadoutHUD / SpaceBrakesHUD / BulletTypeHUD (order 80) and the turret pad (120) always
-            // cover this tip even after SetAsLastSibling on the main canvas.
-            Canvas tipCanvas = _abilityTipPanel.GetComponent<Canvas>();
-            if (tipCanvas == null)
-                tipCanvas = _abilityTipPanel.AddComponent<Canvas>();
+            // --- Parent ---
+            // Same root as the upgrade strip. Overlay is stretch-full, so a child with
+            // bottom-left anchors uses the same (x, y) as if it were parented to the canvas.
+            Transform parent = _layoutCanvasRect != null ? (Transform)_layoutCanvasRect : transform;
+            _abilityTipOverlay = new GameObject("ShipAbilityTipOverlay");
+            _abilityTipOverlay.transform.SetParent(parent, false);
 
-            tipCanvas.overrideSorting = true;
-            tipCanvas.sortingOrder = AbilityTipSortingOrder;
+            RectTransform overlayRt = _abilityTipOverlay.AddComponent<RectTransform>();
+            overlayRt.anchorMin = Vector2.zero;
+            overlayRt.anchorMax = Vector2.one;
+            overlayRt.offsetMin = Vector2.zero;
+            overlayRt.offsetMax = Vector2.zero;
+            overlayRt.localScale = Vector3.one;
+
+            // --- Overlay canvas ---
+            // [UNITY] Canvas must live on this active host. Adding overrideSorting to the
+            // inactive tip child is why the first N hovers painted under Rocket / Ordnance / Brakes
+            // (those HUDs are sort 80). Unity only keeps the sort once the Canvas GameObject is on.
+            Canvas overlayCanvas = _abilityTipOverlay.AddComponent<Canvas>();
+            overlayCanvas.overrideSorting = true;
+            overlayCanvas.sortingOrder = AbilityTipSortingOrder;
 
             // [UNITY] Nested canvases start with no extra shader channels. TMP needs TexCoord1
             // (and usually Normal / Tangent) or the body text disappears.
-            tipCanvas.additionalShaderChannels =
+            overlayCanvas.additionalShaderChannels =
                 AdditionalCanvasShaderChannels.TexCoord1
                 | AdditionalCanvasShaderChannels.Normal
                 | AdditionalCanvasShaderChannels.Tangent;
 
-            // Intentional: no GraphicRaycaster — fill/frame are already non-raycast so clicks
-            // still reach the chips and the world under the card.
-            _abilityTipPanel.transform.SetAsLastSibling();
+            // Intentional: no GraphicRaycaster — tip fill/frame are already non-raycast so
+            // clicks still reach the chips and the world under the card.
+            overlayRt.SetAsLastSibling();
+        }
+
+        /// <summary>
+        /// Re-asserts overlay sort 160 and last-sibling order.
+        /// Called once at build and again on hover in case a later HUD sibling stole hierarchy order.
+        /// </summary>
+        void ElevateAbilityTipDrawOrder()
+        {
+            // --- Guarantee the host exists ---
+            // Build creates it; hover re-runs this if another HUD tore the overlay down.
+            EnsureAbilityTipOverlay();
+            if (_abilityTipOverlay == null)
+                return;
+
+            // --- Overlay canvas (beats overlay HUDs that sibling-order cannot) ---
+            // [UNITY] A child Canvas with overrideSorting is a separate draw batch. Without it,
+            // RocketLoadoutHUD / SpaceBrakesHUD / BulletTypeHUD (order 80) and the turret pad (120)
+            // always cover this tip even after SetAsLastSibling on the main canvas.
+            Canvas overlayCanvas = _abilityTipOverlay.GetComponent<Canvas>();
+            if (overlayCanvas == null)
+                overlayCanvas = _abilityTipOverlay.AddComponent<Canvas>();
+
+            overlayCanvas.overrideSorting = true;
+            overlayCanvas.sortingOrder = AbilityTipSortingOrder;
+            overlayCanvas.additionalShaderChannels =
+                AdditionalCanvasShaderChannels.TexCoord1
+                | AdditionalCanvasShaderChannels.Normal
+                | AdditionalCanvasShaderChannels.Tangent;
+
+            _abilityTipOverlay.transform.SetAsLastSibling();
         }
 
         /// <summary>Pointer entered a quick-stat chip — show that ability's calculation card.</summary>
@@ -1193,9 +1286,13 @@ namespace TitanOrbit.UI
             // Build once on enter — not every Update (LIVE vitals removed; body is static until upgrade).
             RefreshAbilityTipContent();
             PositionAbilityTipPanel(abilityIndex);
-            ElevateAbilityTipDrawOrder();
+
+            // --- Show, then re-assert draw order ---
+            // [UNITY] Activate the tip child first. The overlay Canvas is already on (sort 160);
+            // we still call Elevate so a late-spawned HUD cannot steal last-sibling order.
             if (!_abilityTipPanel.activeSelf)
                 _abilityTipPanel.SetActive(true);
+            ElevateAbilityTipDrawOrder();
         }
 
         /// <summary>
@@ -1356,8 +1453,8 @@ namespace TitanOrbit.UI
                 return;
 
             // --- Preferred spot: above the chip, horizontally centered on that slot ---
-            // Tip is parented to the layout canvas with the same anchors as the strip (bottom-left).
-            // anchoredPosition is therefore in the same space as strip.anchoredPosition + chip local X.
+            // Tip is parented to the stretch-full overlay, which matches the layout canvas rect.
+            // Same bottom-left anchors as the strip, so anchoredPosition is strip.anchoredPosition + chip local X.
             RectTransform chip = _chipRects[abilityIndex];
             _abilityTipRect.anchorMin = _stripRootRect.anchorMin;
             _abilityTipRect.anchorMax = _stripRootRect.anchorMax;
@@ -1830,7 +1927,7 @@ namespace TitanOrbit.UI
                 sb.Append("</size>");
         }
 
-        private (Button button, RectTransform buttonRect, TextMeshProUGUI titleText, GameObject tickContainer, Image bgImage, Outline outline, Image accentRail, TextMeshProUGUI keyLabel, TextMeshProUGUI costLabel, Image costGemIcon) CreateUpgradeButton(Transform parent, int index, Color statColor, string keyStr)
+        private (Button button, RectTransform buttonRect, TextMeshProUGUI titleText, GameObject tickContainer, Image bgImage, Outline outline, Image accentRail, TextMeshProUGUI keyLabel, TextMeshProUGUI costLabel, Image costGemIcon, GameObject resetRoot, RectTransform resetRect, Image resetFill, TextMeshProUGUI resetLabel) CreateUpgradeButton(Transform parent, int index, Color statColor, string keyStr)
         {
             GameObject btnObj = new GameObject($"UpgradeBtn_{index}");
             btnObj.transform.SetParent(parent, false);
@@ -1987,7 +2084,83 @@ namespace TitanOrbit.UI
             LayoutElement costLe = costObj.AddComponent<LayoutElement>();
             costLe.flexibleWidth = 0f;
 
-            return (button, btnRect, titleText, tickContainer, bgImage, buttonOutline, accentRail, keyLabel, costLabel, costGemIcon);
+            var reset = CreateAbilityResetHold(btnObj.transform, index);
+            return (button, btnRect, titleText, tickContainer, bgImage, buttonOutline, accentRail, keyLabel, costLabel, costGemIcon, reset.root, reset.rect, reset.fill, reset.label);
+        }
+
+        /// <summary>
+        /// Small top-row RESET chip to the right of the key. Hold 3s to zero that ability.
+        /// Hidden until the slot has at least one Extra Level.
+        /// </summary>
+        (GameObject root, RectTransform rect, Image fill, TextMeshProUGUI label) CreateAbilityResetHold(Transform parent, int index)
+        {
+            GameObject root = new GameObject("ResetHold");
+            root.transform.SetParent(parent, false);
+            RectTransform rect = root.AddComponent<RectTransform>();
+            rect.anchorMin = new Vector2(0f, 1f);
+            rect.anchorMax = new Vector2(1f, 1f);
+            rect.pivot = new Vector2(1f, 1f);
+            rect.offsetMin = new Vector2(E(22f), -E(18f));
+            rect.offsetMax = new Vector2(-E(tickColumnRightInset), -E(4f));
+
+            Image bg = root.AddComponent<Image>();
+            bg.color = new Color(0.18f, 0.05f, 0.07f, 0.92f);
+            bg.raycastTarget = true;
+            bg.sprite = GetResetFillSprite();
+
+            GameObject fillGo = new GameObject("Fill");
+            fillGo.transform.SetParent(root.transform, false);
+            RectTransform fillRt = fillGo.AddComponent<RectTransform>();
+            fillRt.anchorMin = Vector2.zero;
+            fillRt.anchorMax = Vector2.one;
+            fillRt.offsetMin = Vector2.zero;
+            fillRt.offsetMax = Vector2.zero;
+            Image fill = fillGo.AddComponent<Image>();
+            fill.sprite = GetResetFillSprite();
+            fill.color = new Color(0.86f, 0.22f, 0.24f, 0.85f);
+            fill.type = Image.Type.Filled;
+            fill.fillMethod = Image.FillMethod.Horizontal;
+            fill.fillOrigin = (int)Image.OriginHorizontal.Left;
+            fill.fillAmount = 0f;
+            fill.raycastTarget = false;
+
+            GameObject labelGo = new GameObject("Label");
+            labelGo.transform.SetParent(root.transform, false);
+            RectTransform labelRt = labelGo.AddComponent<RectTransform>();
+            labelRt.anchorMin = Vector2.zero;
+            labelRt.anchorMax = Vector2.one;
+            labelRt.offsetMin = Vector2.zero;
+            labelRt.offsetMax = Vector2.zero;
+            TextMeshProUGUI label = labelGo.AddComponent<TextMeshProUGUI>();
+            label.text = "RESET";
+            label.fontSize = F(8f);
+            label.fontStyle = FontStyles.Bold;
+            label.alignment = TextAlignmentOptions.Center;
+            label.color = new Color(0.96f, 0.74f, 0.74f, 1f);
+            label.raycastTarget = false;
+            if (TMP_Settings.defaultFontAsset != null)
+                label.font = TMP_Settings.defaultFontAsset;
+
+            var relay = root.AddComponent<AbilityResetHoldRelay>();
+            relay.Bind(this, index);
+            root.SetActive(false);
+            return (root, rect, fill, label);
+        }
+
+        /// <summary>1×1 white sprite so the RESET hold fill can clip.</summary>
+        static Sprite GetResetFillSprite()
+        {
+            if (s_resetFillSprite != null)
+                return s_resetFillSprite;
+
+            Texture2D tex = Texture2D.whiteTexture;
+            s_resetFillSprite = Sprite.Create(
+                tex,
+                new Rect(0f, 0f, tex.width, tex.height),
+                new Vector2(0.5f, 0.5f),
+                100f);
+            s_resetFillSprite.name = "AbilityResetFillWhite";
+            return s_resetFillSprite;
         }
 
         /// <summary>
@@ -2038,6 +2211,13 @@ namespace TitanOrbit.UI
             {
                 if (tickContainers[i] != null && tickContainers[i].activeSelf == mega)
                     tickContainers[i].SetActive(!mega);
+
+                if (mega && _resetHoldRoots[i] != null && _resetHoldRoots[i].activeSelf)
+                {
+                    _resetHoldRoots[i].SetActive(false);
+                    if (_resetHoldIndex == i)
+                        CancelAbilityResetHold();
+                }
 
                 if (titleTexts[i] == null)
                     continue;
@@ -2111,11 +2291,15 @@ namespace TitanOrbit.UI
             {
                 rootPanel.SetActive(show);
                 _lastShowActive = show;
-                if (!show && _abilityTipPanel != null)
+                if (!show)
                 {
-                    _activeAbilityTipIndex = null;
-                    _pendingHideAbilityTip = null;
-                    _abilityTipPanel.SetActive(false);
+                    CancelAbilityResetHold();
+                    if (_abilityTipPanel != null)
+                    {
+                        _activeAbilityTipIndex = null;
+                        _pendingHideAbilityTip = null;
+                        _abilityTipPanel.SetActive(false);
+                    }
                 }
             }
 
@@ -2153,6 +2337,16 @@ namespace TitanOrbit.UI
                     : ResolveUpgradeSlotState(current, maxUpgrades, ship.CurrentGems, cost);
                 if (!mega)
                     UpdateTickMarks(i, current, maxUpgrades, slotState);
+
+                // Keep the chip under the finger after a completed reset so the parent
+                // Button does not inherit the still-down press and buy a level on release.
+                bool showReset = !mega && (current > 0 || _resetPointerBlockIndex == i);
+                if (_resetHoldRoots[i] != null && _resetHoldRoots[i].activeSelf != showReset)
+                {
+                    _resetHoldRoots[i].SetActive(showReset);
+                    if (!showReset && _resetHoldIndex == i)
+                        CancelAbilityResetHold();
+                }
 
                 if (costLabels[i] == null)
                     continue;
@@ -2196,12 +2390,18 @@ namespace TitanOrbit.UI
                     ApplyUpgradeSlotVisual(i, slotState);
                     _lastSlotVisualState[i] = slotState;
                 }
+
+                // After Ready paint — do not let a mid-press Maxed→Ready flip buy on release.
+                if (_resetPointerBlockIndex == i && buttons[i] != null && buttons[i].interactable)
+                    buttons[i].interactable = false;
             }
 
             _lastMaxUpgrades = maxUpgrades;
             _lastCost = cost;
             _slotVisualsSeeded = true;
 
+            TickAbilityResetHold();
+            ReleaseAbilityResetPointerIfUp();
             FlushPendingAbilityTipHide();
         }
 
@@ -2364,6 +2564,8 @@ namespace TitanOrbit.UI
         private void TryUpgrade(int index)
         {
             // --- Attempt resolution ---
+            if (ShouldSuppressUpgradeAfterReset(index))
+                return;
             if (!CanShowUpgradeBar() || IsLocalShipMega())
                 return;
             if (index < 0 || index > 9)
@@ -2377,6 +2579,164 @@ namespace TitanOrbit.UI
 
             // [NETCODE] Authoritative purchase runs on server after RPC delivery.
             MoonOrbitRpcClient.PurchaseAttributeUpgrade(index);
+        }
+
+        /// <summary>
+        /// Client-side pre-check then RPC — server re-validates in ShipAttributeUpgradeLogic.TryReset.
+        /// No gem refund.
+        /// </summary>
+        void TryResetAbility(int index)
+        {
+            if (!CanShowUpgradeBar() || IsLocalShipMega())
+                return;
+            if (index < 0 || index > 9)
+                return;
+            if (!TryGetUpgradeHudSnapshot(out _, out var attrs))
+                return;
+            if (ShipAttributeUpgradeLogic.GetAttributeLevel(attrs, index) <= 0)
+                return;
+
+            MoonOrbitRpcClient.ResetAttributeUpgrade(index);
+        }
+
+        void BeginAbilityResetHold(int index)
+        {
+            if (!CanShowUpgradeBar() || IsLocalShipMega())
+                return;
+            if (index < 0 || index > 9)
+                return;
+            if (!TryGetUpgradeHudSnapshot(out _, out var attrs))
+                return;
+            if (ShipAttributeUpgradeLogic.GetAttributeLevel(attrs, index) <= 0)
+                return;
+
+            if (_resetHoldIndex >= 0 && _resetHoldIndex != index)
+                CancelAbilityResetHold();
+
+            _resetHoldIndex = index;
+            _resetHoldStart = Time.unscaledTime;
+            _resetPointerBlockIndex = index;
+            _resetClickSuppressIndex = index;
+            _resetClickSuppressThroughFrame = int.MaxValue;
+            if (_resetHoldFills[index] != null)
+                _resetHoldFills[index].fillAmount = 0f;
+            if (_resetHoldLabels[index] != null)
+                _resetHoldLabels[index].text = "HOLD";
+            if (buttons[index] != null)
+                buttons[index].interactable = false;
+        }
+
+        void CancelAbilityResetHold(int index)
+        {
+            if (_resetHoldIndex != index)
+                return;
+            CancelAbilityResetHold();
+        }
+
+        void CancelAbilityResetHold()
+        {
+            if (_resetHoldIndex < 0)
+                return;
+
+            int i = _resetHoldIndex;
+            _resetHoldIndex = -1;
+            if (i >= 0 && i < _resetHoldFills.Length && _resetHoldFills[i] != null)
+                _resetHoldFills[i].fillAmount = 0f;
+            if (i >= 0 && i < _resetHoldLabels.Length && _resetHoldLabels[i] != null)
+                _resetHoldLabels[i].text = "RESET";
+        }
+
+        void TickAbilityResetHold()
+        {
+            if (_resetHoldIndex < 0)
+                return;
+
+            float needed = Mathf.Max(0.25f, abilityResetHoldSeconds);
+            float elapsed = Time.unscaledTime - _resetHoldStart;
+            int i = _resetHoldIndex;
+            if (i >= 0 && i < _resetHoldFills.Length && _resetHoldFills[i] != null)
+                _resetHoldFills[i].fillAmount = Mathf.Clamp01(elapsed / needed);
+
+            if (elapsed < needed)
+                return;
+
+            int completed = i;
+            CancelAbilityResetHold();
+            _resetPointerBlockIndex = completed;
+            _resetClickSuppressIndex = completed;
+            _resetClickSuppressThroughFrame = int.MaxValue;
+            TryResetAbility(completed);
+        }
+
+        bool ShouldSuppressUpgradeAfterReset(int index)
+        {
+            if (index < 0 || index > 9)
+                return false;
+            if (_resetPointerBlockIndex == index)
+                return true;
+            return _resetClickSuppressIndex == index
+                && Time.frameCount <= _resetClickSuppressThroughFrame;
+        }
+
+        void ReleaseAbilityResetPointer(int index)
+        {
+            if (_resetHoldIndex == index)
+                CancelAbilityResetHold();
+            if (_resetPointerBlockIndex == index)
+                _resetPointerBlockIndex = -1;
+            _resetClickSuppressIndex = index;
+            _resetClickSuppressThroughFrame = Time.frameCount + 1;
+        }
+
+        /// <summary>
+        /// Pointer-up can be lost if the RESET chip hides under a still-down press.
+        /// Poll so the parent Button cannot buy a level on that same release.
+        /// </summary>
+        void ReleaseAbilityResetPointerIfUp()
+        {
+            if (_resetPointerBlockIndex < 0)
+                return;
+            if (IsPrimaryPointerHeld())
+                return;
+            ReleaseAbilityResetPointer(_resetPointerBlockIndex);
+        }
+
+        static bool IsPrimaryPointerHeld()
+        {
+            var mouse = Mouse.current;
+            if (mouse != null && mouse.leftButton.isPressed)
+                return true;
+            var touch = Touchscreen.current;
+            if (touch != null && touch.primaryTouch.press.isPressed)
+                return true;
+            return false;
+        }
+
+        /// <summary>
+        /// Pointer relay for one RESET chip. Reports down / up / exit so the HUD can run
+        /// the 3-second hold without a Button.onClick (a short tap must not reset).
+        /// </summary>
+        sealed class AbilityResetHoldRelay : MonoBehaviour, IPointerDownHandler, IPointerUpHandler, IPointerExitHandler
+        {
+            ShipAttributeUpgradeHUD _host;
+            int _index;
+
+            public void Bind(ShipAttributeUpgradeHUD host, int index)
+            {
+                _host = host;
+                _index = index;
+            }
+
+            public void OnPointerDown(PointerEventData eventData) => _host?.BeginAbilityResetHold(_index);
+
+            public void OnPointerUp(PointerEventData eventData) => _host?.ReleaseAbilityResetPointer(_index);
+
+            public void OnPointerExit(PointerEventData eventData)
+            {
+                // Leaving the chip cancels the 3s hold, but the parent Button must not
+                // purchase on the same press (slide-off or chip hide mid-hold).
+                _host?.CancelAbilityResetHold(_index);
+            }
         }
     }
 }

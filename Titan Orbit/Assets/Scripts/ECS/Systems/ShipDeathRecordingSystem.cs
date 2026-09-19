@@ -116,14 +116,33 @@ namespace TitanOrbit.ECS
 
             float2 impulse = float2.zero;
             float power = 0f;
+            int sourceNet = 0;
+            int sourceGhost = 0;
+            byte sourceKind = 0;
+            float2 sourcePos = float2.zero;
+            byte sourceHasPos = 0;
             if (em.HasComponent<ShipCombatAttribution>(victim))
             {
                 var attr = em.GetComponentData<ShipCombatAttribution>(victim);
                 impulse = attr.LastImpulseXZ;
                 power = attr.LastImpulsePower;
+                sourceNet = attr.LastDamagerNetworkId;
+                sourceGhost = attr.LastSourceGhostId;
+                sourceKind = attr.LastSourceKind;
+                sourcePos = attr.LastSourcePosXZ;
+                sourceHasPos = attr.LastSourceHasPos;
             }
 
-            var vfx = new ShipDeathVfxState { Packed = ShipDeathVfxState.Pack(seed, impulse, power) };
+            var vfx = new ShipDeathVfxState
+            {
+                Packed = ShipDeathVfxState.Pack(seed, impulse, power),
+                SourceNetworkId = sourceNet,
+                SourceGhostId = sourceGhost,
+                SourceKind = sourceKind,
+                SourcePosX = sourcePos.x,
+                SourcePosZ = sourcePos.y,
+                SourceHasPos = sourceHasPos,
+            };
             if (em.HasComponent<ShipDeathVfxState>(victim))
                 em.SetComponentData(victim, vfx);
             else
