@@ -160,6 +160,9 @@ namespace TitanOrbit.ECS
                 ShipFamilyConfigIndex = isHome
                     ? PlanetShipFamilyAssignment.HomeFamilyConfigIndex
                     : body.ShipFamilyConfigIndex,
+                BulletBankIndex = isHome
+                    ? PlanetShipFamilyAssignment.DefaultBulletBankIndex
+                    : body.BulletBankIndex,
             };
             SetOrAdd(em, e, planetState);
 

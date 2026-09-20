@@ -265,6 +265,8 @@ namespace TitanOrbit.ECS
             slot.AimWorldX = tracking ? aimPoint.x : 0f;
             slot.AimWorldZ = tracking ? aimPoint.z : 0f;
             slot.TargetGhostId = tracking ? targetGhostId : 0;
+            if (!tracking)
+                slot.CannonLaserRampSeconds = 0f;
             if (mount.WeaponKind != 0)
                 slot.WeaponKind = mount.WeaponKind;
             gunners[mountIndex] = slot;
@@ -296,6 +298,7 @@ namespace TitanOrbit.ECS
                 slot.AimWorldX = 0f;
                 slot.AimWorldZ = 0f;
                 slot.TargetGhostId = 0;
+                slot.CannonLaserRampSeconds = 0f;
                 if (mounts.IsCreated && i < mounts.Length)
                     slot.CurrentYawDeg = GetLocalYawDeg(mounts[i].LocalRotation);
                 gunners[i] = slot;

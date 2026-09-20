@@ -60,6 +60,12 @@ namespace TitanOrbit.UI
         /// </summary>
         public byte ShipFamilyConfigIndex;
 
+        /// <summary>
+        /// [TITAN-ORBIT] Planet's rolled <c>BulletVfxBank</c> category
+        /// (<c>PlanetState.BulletBankIndex</c>). Ships unused. Hover tip names the gun.
+        /// </summary>
+        public byte BulletBankIndex;
+
         // --- Ship vitals / cargo (live hold — not match scores) ---
         /// <summary>[TITAN-ORBIT] Current hull points (<c>ShipState.Health</c>).</summary>
         public float Health;

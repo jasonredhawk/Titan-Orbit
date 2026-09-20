@@ -481,11 +481,13 @@ namespace TitanOrbit.ECS
             // with averages of the mounts for HUD while each mount keeps its own shot strength.
             TryApplyPerMountWeaponCombat(em, shipEntity, chassisId, shipLevel);
 
-            // --- Bullet VFX bank from ShipFamilyDefinition.bulletPrefabIndex ---
+            // --- Bullet VFX bank from the planet-stamped hull default ---
             // [NETCODE] RuntimeBulletIndex is ghosted — server writes; clients read replica / predict.
-            // [TITAN-ORBIT] Reset ONLY when hull family identity changes (ChassisId / branch),
-            // not on ship level or attribute re-applies — otherwise B-key cycle is wiped every
-            // level tick. ShipCycleBulletSystem owns mid-flight index changes.
+            // [TITAN-ORBIT] Family assets default to Laserbolt. The live gun is
+            // ShipState.HullBulletBankIndex (copied from the planet at spawn / moon purchase).
+            // Reset ONLY when hull family identity changes (ChassisId / branch), not on ship
+            // level or attribute re-applies — otherwise B-key cycle is wiped every level tick.
+            // ShipCycleBulletSystem owns mid-flight index changes.
             bool bulletBankIdentityChanged = true;
             if (em.HasComponent<ShipChassisState>(shipEntity))
             {
@@ -497,11 +499,16 @@ namespace TitanOrbit.ECS
 
             if (writeGhostedShipState &&
                 bulletBankIdentityChanged &&
-                em.HasComponent<ShipLoadoutState>(shipEntity) &&
-                TryResolveFamilyForChassisId(chassisId, out ShipFamilyDefinition bankFamily))
+                em.HasComponent<ShipLoadoutState>(shipEntity))
             {
                 var loadout = em.GetComponentData<ShipLoadoutState>(shipEntity);
-                int familyBank = BulletBankProfileUtility.ResolveBankIndexForFamily(bankFamily);
+                int hullBank = PlanetShipFamilyAssignment.DefaultBulletBankIndex;
+                if (em.HasComponent<ShipState>(shipEntity))
+                    hullBank = PlanetShipFamilyAssignment.SanitizeSelectableDamageBank(
+                        em.GetComponentData<ShipState>(shipEntity).HullBulletBankIndex);
+                else if (TryResolveFamilyForChassisId(chassisId, out ShipFamilyDefinition bankFamily))
+                    hullBank = BulletBankProfileUtility.ResolveBankIndexForFamily(bankFamily);
+
                 int[] owned = new int[16];
                 int ownedCount = BulletBankOwnership.CollectOwnedDamageBanks(em, shipEntity, owned);
                 bool stillOwned = false;
@@ -515,7 +522,7 @@ namespace TitanOrbit.ECS
                 }
 
                 if (!stillOwned)
-                    loadout.RuntimeBulletIndex = familyBank;
+                    loadout.RuntimeBulletIndex = hullBank;
                 em.SetComponentData(shipEntity, loadout);
             }
 

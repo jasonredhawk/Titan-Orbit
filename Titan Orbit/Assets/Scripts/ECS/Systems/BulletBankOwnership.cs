@@ -47,13 +47,12 @@ namespace TitanOrbit.ECS
 
             s_Scratch.Clear();
             var config = PlanetShipFamilyConfig.LoadDefault();
-            ShipFamilyDefinition hullFamily = ResolveHullFamily(em, shipEntity, config);
+            ResolveHullDefault(em, shipEntity, config, out _, out int hullBank);
 
             // --- Hull default first ---
             // [TITAN-ORBIT] Do not sort. The HUD and B-key walk hull, then purchases.
-            // ResolveBankIndexForFamily remaps heal / rocket authors to 0 so this always
-            // yields a damage bank. Force-add 0 if the unique filter still rejects it.
-            int hullBank = BulletBankProfileUtility.ResolveBankIndexForFamily(hullFamily);
+            // Planet-stamped HullBulletBankIndex wins; family Laserbolt is the fallback.
+            // Sanitize remaps heal / rocket authors to 0 so this always yields a damage bank.
             AddUniqueDamageBank(s_Scratch, hullBank);
             if (s_Scratch.Count == 0)
                 s_Scratch.Add(0);
@@ -236,18 +235,40 @@ namespace TitanOrbit.ECS
             list.Add(bankIndex);
         }
 
-        static ShipFamilyDefinition ResolveHullFamily(
+        /// <summary>
+        /// Family row plus the gun this hull actually starts with.
+        /// Planet roll on <c>ShipState.HullBulletBankIndex</c> wins; missing stamp uses
+        /// the family's Laserbolt fallback.
+        /// </summary>
+        static void ResolveHullDefault(
             EntityManager em,
             Entity shipEntity,
-            PlanetShipFamilyConfig config)
+            PlanetShipFamilyConfig config,
+            out ShipFamilyDefinition family,
+            out int hullBank)
         {
-            if (config == null)
-                return null;
+            family = null;
+            hullBank = PlanetShipFamilyAssignment.DefaultBulletBankIndex;
             int familyIndex = 0;
+            byte stampedBank = PlanetShipFamilyAssignment.DefaultBulletBankIndex;
+            bool hasStamp = false;
             if (em.HasComponent<ShipState>(shipEntity))
-                familyIndex = em.GetComponentData<ShipState>(shipEntity).ShipFamilyConfigIndex;
-            var entry = config.GetFamilyByConfigIndex(familyIndex);
-            return entry != null ? entry.shipFamilyDefinition : null;
+            {
+                var ship = em.GetComponentData<ShipState>(shipEntity);
+                familyIndex = ship.ShipFamilyConfigIndex;
+                stampedBank = ship.HullBulletBankIndex;
+                hasStamp = true;
+            }
+
+            if (config != null)
+            {
+                var entry = config.GetFamilyByConfigIndex(familyIndex);
+                family = entry != null ? entry.shipFamilyDefinition : null;
+            }
+
+            hullBank = hasStamp
+                ? PlanetShipFamilyAssignment.SanitizeSelectableDamageBank(stampedBank)
+                : BulletBankProfileUtility.ResolveBankIndexForFamily(family);
         }
     }
 }

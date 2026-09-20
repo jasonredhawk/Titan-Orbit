@@ -1,5 +1,6 @@
 using TitanOrbit;
 using TitanOrbit.Core;
+using TitanOrbit.Data;
 using Unity.Collections;
 using Unity.Entities;
 using Unity.Mathematics;
@@ -337,6 +338,8 @@ namespace TitanOrbit.ECS
                 MaxHealth = 100f,
                 Team = team,
                 ShipLevel = 1,
+                ShipFamilyConfigIndex = PlanetShipFamilyAssignment.HomeFamilyConfigIndex,
+                HullBulletBankIndex = PlanetShipFamilyAssignment.DefaultBulletBankIndex,
                 GemCapacity = 50f,
                 CurrentEnergy = 50f,
                 MaxEnergy = 50f,

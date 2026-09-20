@@ -37,6 +37,15 @@ namespace TitanOrbit.ECS
         [GhostField] public byte ShipFamilyConfigIndex;
 
         /// <summary>
+        /// [TITAN-ORBIT] <c>BulletVfxBank</c> category this planet stamps onto hulls bought here
+        /// and onto its planetary-defense pads. Homes are always Laserbolt (0). Neutrals roll
+        /// at spawn from match seed + PlanetId (Fireballs / Rift / …). Independent of
+        /// <see cref="ShipFamilyConfigIndex"/> so the same captured family can fire a different
+        /// gun each match. Ghosted so world labels, minimap hover, and clients resolve the same type.
+        /// </summary>
+        [GhostField] public byte BulletBankIndex;
+
+        /// <summary>
         /// [TITAN-ORBIT] Player who delivered the most troops during the siege that captured this
         /// planet (0 = none / starting claim). Ghosted so late joiners see the name without an RPC.
         /// </summary>

@@ -53,6 +53,7 @@ namespace TitanOrbit.ECS.Authoring
                     // [TITAN-ORBIT] Starters use home family (AstroEagle). Moon-store purchases on
                     // captured neutrals overwrite this with that planet's ShipFamilyConfigIndex.
                     ShipFamilyConfigIndex = 0,
+                    HullBulletBankIndex = 0,
                     GemCapacity = 50f,
                     CurrentEnergy = 50f,
                     MaxEnergy = 50f,

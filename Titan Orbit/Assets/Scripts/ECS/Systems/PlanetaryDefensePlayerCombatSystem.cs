@@ -103,7 +103,7 @@ namespace TitanOrbit.ECS
                     _familyConfig, planet.ShipFamilyConfigIndex);
                 ShipFamilyDefinition familyDef = PlanetaryDefenseConfig.ResolveFamilyDefinition(
                     _familyConfig, planet.ShipFamilyConfigIndex);
-                int bankIndex = config.ResolveBulletBankIndex(familyDef);
+                int bankIndex = config.ResolveBulletBankIndex(familyDef, planet.BulletBankIndex);
 
                 // --- Recipe defaults × bank profile (same as AI combat) ---
                 var stats = config.GetCombatLevelStats(slot.TurretLevel, bankIndex);

@@ -58,6 +58,7 @@ namespace TitanOrbit.Game
         Vector3 _worldOffset;
         float _hotAge;
         float _fontSize = 32f;
+        float _baseIconScale = 2f;
         float _textLeft;
         float _textRight;
         float _bodyRadius;
@@ -117,9 +118,11 @@ namespace TitanOrbit.Game
             int stackLane,
             float stackSpacing,
             float bodyRadius = 0f,
-            bool clearShipHull = false)
+            bool clearShipHull = false,
+            float magnitude = 1f)
         {
             ApplySettings(settings);
+            ApplyMagnitudeScale(magnitude);
             _hasLockedWorldPos = false;
             _cachedTargetHeight = 0f;
             _cachedHullLift = 0f;
@@ -191,9 +194,11 @@ namespace TitanOrbit.Game
             Sprite iconSprite = null,
             float bodyRadius = -1f,
             bool clearShipHull = false,
-            bool replayPop = true)
+            bool replayPop = true,
+            float magnitude = -1f)
         {
             _clearShipHull = clearShipHull;
+            bool fontChanged = magnitude >= 0f && ApplyMagnitudeScale(magnitude);
             SetFollow(followAnchor, followWorldOffset, stackLane, stackSpacing, bodyRadius);
             worldMotionOffset = Vector3.zero;
             _phase = Phase.Hot;
@@ -208,7 +213,7 @@ namespace TitanOrbit.Game
                 _popScaleSettled = false;
             }
 
-            ApplyMessageIfChanged(message, forceMesh: true);
+            ApplyMessageIfChanged(message, forceMesh: fontChanged);
 
             if (iconSprite != null)
                 ApplyIcon(iconSprite, 1f);
@@ -240,7 +245,8 @@ namespace TitanOrbit.Game
                 return;
 
             _fontSize = settings.FontSize;
-            _iconScale = settings.IconScale;
+            _baseIconScale = settings.IconScale;
+            _iconScale = _baseIconScale;
             _iconLeftPadding = settings.IconLeftPadding;
             _extraHeight = settings.ExtraHeight;
             _shipExtraHeight = settings.ShipExtraHeight;
@@ -361,6 +367,35 @@ namespace TitanOrbit.Game
             fadeDuration = Mathf.Max(0.08f, duration);
         }
 
+        /// <summary>
+        /// Grows the TMP point size (and matching icon) with the live shown amount.
+        /// Returns true when the font size changed and the mesh bounds need a rebuild.
+        /// </summary>
+        bool ApplyMagnitudeScale(float magnitude)
+        {
+            magnitude = Mathf.Max(0f, magnitude);
+            var settings = WorldFloatingCountManager.Instance != null
+                ? WorldFloatingCountManager.Instance.Settings
+                : null;
+
+            float nextFont = settings != null ? settings.ResolveFontSize(magnitude) : Mathf.Max(1f, _fontSize);
+            float nextIcon = settings != null ? settings.ResolveIconScale(nextFont) : _baseIconScale;
+            bool fontChanged = Mathf.Abs(nextFont - _fontSize) > 0.05f;
+            if (tmpText != null)
+                fontChanged |= Mathf.Abs(tmpText.fontSize - nextFont) > 0.05f;
+
+            _fontSize = nextFont;
+            _iconScale = nextIcon;
+
+            if (tmpText != null && fontChanged)
+            {
+                tmpText.fontSize = _fontSize;
+                _layoutDirty = true;
+            }
+
+            return fontChanged;
+        }
+
         void ApplyMessage(string message, TMP_FontAsset font, float fontSize)
         {
             if (font != null)
@@ -376,7 +411,7 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Skip TMP assign + ForceMeshUpdate when the visible string did not change.
+        /// Skip TMP assign + ForceMeshUpdate when the visible string and font size did not change.
         /// [TITAN-ORBIT] Profiler: heal / remaining-HP ticks rebuilt the mesh on every +N.
         /// </summary>
         void ApplyMessageIfChanged(string message, bool forceMesh)
@@ -385,13 +420,18 @@ namespace TitanOrbit.Game
                 return;
 
             string next = message ?? string.Empty;
-            if (string.Equals(next, _cachedMessage, StringComparison.Ordinal))
+            bool textChanged = !string.Equals(next, _cachedMessage, StringComparison.Ordinal);
+            if (!textChanged && !forceMesh)
                 return;
 
-            _cachedMessage = next;
-            tmpText.text = next;
-            tmpText.alignment = TextAlignmentOptions.Left;
-            if (forceMesh)
+            if (textChanged)
+            {
+                _cachedMessage = next;
+                tmpText.text = next;
+                tmpText.alignment = TextAlignmentOptions.Left;
+            }
+
+            if (textChanged || forceMesh)
                 tmpText.ForceMeshUpdate();
             CacheTextLeft();
             _layoutDirty = true;

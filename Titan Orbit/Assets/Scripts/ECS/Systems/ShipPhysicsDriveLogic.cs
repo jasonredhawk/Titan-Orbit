@@ -185,7 +185,8 @@ namespace TitanOrbit.ECS
                         dt,
                         mapW,
                         mapH,
-                        elapsedSeconds))
+                        elapsedSeconds,
+                        shipPhysicsRadius))
                 {
                     physicsDamping = default;
                     orbitState = default;

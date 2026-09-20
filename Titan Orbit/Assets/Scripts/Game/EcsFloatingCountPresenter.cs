@@ -763,7 +763,7 @@ namespace TitanOrbit.Game
         /// <summary>
         /// Presentation damage for a live cannon-laser beam. Lasers never send
         /// <c>BulletHitRpc</c> (a per-tick RPC per barrel would hitch the ~60 Hz step),
-        /// so the client beam driver reports <c>firePower × fireRate × dt</c> here.
+        /// so the client beam driver reports <c>firePower × fireRate × ramp × dt</c> here.
         /// Ships reuse <see cref="TryNotifyShipBulletHit"/> (card resist + optimistic hull).
         /// Asteroids reuse the mining float, local shots only — same rule as bullet HitRpc.
         /// Same-team / heal beams are ignored (heal still comes from <see cref="PollShips"/>).
@@ -817,13 +817,14 @@ namespace TitanOrbit.Game
                 return false;
 
             var rock = em.GetComponentData<AsteroidState>(target);
-            if (rock.IsDestroyed || rock.Health <= 0.01f)
+            if (rock.IsDestroyed)
                 return false;
 
+            // Seed-hydrated Health stays at spawn until DestroyRpc. Keep adding
+            // to the damage streak after the client estimate hits 0 — gating on
+            // remaining paused the counter until PollAsteroids snapped spawn HP
+            // back, then the same popup jumped again right before the rock popped.
             float tracked = presenter.PeekTrackedAsteroidHealth(target, rock.Health);
-            if (tracked <= 0.01f)
-                return false;
-
             float remaining = math.max(0f, tracked - slice);
             return TryNotifyLocalAsteroidBulletHit(
                 target,
@@ -875,6 +876,24 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
+        /// True while local laser / HitRpc tracking still holds this rock at 0 HP.
+        /// Seed-hydrated <see cref="AsteroidState.Health"/> stays full until
+        /// DestroyRpc. Do not use this to drop a live lock — a too-early 0
+        /// paused cannon-laser floats until spawn HP snapped back.
+        /// </summary>
+        public static bool IsAsteroidOptimisticallyDead(Entity asteroid)
+        {
+            var presenter = Active;
+            if (presenter == null || asteroid == Entity.Null)
+                return false;
+            if (!presenter._asteroidHealth.TryGetValue(asteroid, out float tracked)
+                || tracked > 0.01f)
+                return false;
+            return presenter._asteroidOptimisticUntil.TryGetValue(asteroid, out float until)
+                   && Time.unscaledTime < until;
+        }
+
+        /// <summary>
         /// Last laser / HitRpc remaining HP for this rock. Seed-hydrated
         /// <see cref="AsteroidState.Health"/> does not fall with cannon DPS, so
         /// the beam must count down from this value, not from the stale snapshot.
@@ -884,10 +903,9 @@ namespace TitanOrbit.Game
             if (!_asteroidHealth.TryGetValue(asteroid, out float tracked))
                 return fallbackHealth;
 
-            bool holdOptimistic =
-                _asteroidOptimisticUntil.TryGetValue(asteroid, out float until) &&
-                Time.unscaledTime < until;
-            return holdOptimistic ? math.min(tracked, fallbackHealth) : tracked;
+            // Always prefer the lower estimate. Seed Health is not a live
+            // snapshot — using it after the hold expired restarted the burn.
+            return math.min(tracked, fallbackHealth);
         }
 
         bool IsShipOptimisticHoldActive(int networkId) =>
@@ -949,30 +967,26 @@ namespace TitanOrbit.Game
 
                 float damage = lastHealth - state.Health;
 
-                // --- Reconcile tracked HP with ghost ---
-                // [TITAN-ORBIT] While optimistic hold is active, keep the lower predicted value so
-                // lagging snapshots do not wipe the stack / double-popup. After the hold expires,
-                // snap UP to ghost Health — otherwise a tunneled / missed server hit leaves
-                // “HP Left: 0” forever on a rock that is still alive.
+                // --- Reconcile tracked HP ---
+                // Seed-hydrated Health is not a live snapshot. Keep the lower
+                // laser / HitRpc estimate; never restore spawn HP after expiry.
                 float tracked = lastHealth;
-                bool holdOptimistic =
-                    _asteroidOptimisticUntil.TryGetValue(entity, out float until) &&
-                    Time.unscaledTime < until;
-
-                if (state.Health < tracked - 0.01f)
+                if (state.IsDestroyed)
                 {
-                    // Ghost caught up (or mining/ram damage) — trust the lower server value.
-                    tracked = state.Health;
+                    tracked = 0f;
                     _asteroidOptimisticUntil.Remove(entity);
                 }
-                else if (!holdOptimistic && state.Health > tracked + 0.01f)
+                else if (state.Health < tracked - 0.01f)
                 {
-                    // Prediction was wrong / expired — restore authoritative HP for future floats.
+                    // HitRpc / ram wrote a lower live value — trust that.
                     tracked = state.Health;
                     _asteroidOptimisticUntil.Remove(entity);
                 }
                 else
                 {
+                    // Seed-hydrated Health stays at spawn until DestroyRpc. Never
+                    // snap the laser / HitRpc estimate back up to that stale full
+                    // value — expiry used to restart the damage streak mid-burn.
                     tracked = Mathf.Min(tracked, state.Health);
                 }
 

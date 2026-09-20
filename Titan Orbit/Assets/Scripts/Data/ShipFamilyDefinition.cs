@@ -116,7 +116,10 @@ namespace TitanOrbit.Data
         public ShipFamilySpecialBonuses specialBonuses = ShipFamilySpecialBonuses.Identity;
 
         [Header("Bullets")]
-        [Tooltip("BulletVfxBank category this family fires. Do not assign Rockets — that bank is reserved for store rocket packs.")]
+        [Tooltip(
+            "Fallback BulletVfxBank category when a planet did not stamp a gun (Laserbolt = 0). " +
+            "Live planets roll their own type at spawn so the same family can fire Fireballs one " +
+            "match and Rift the next. Do not assign Rockets — that bank is reserved for store rocket packs.")]
         public int bulletPrefabIndex = 0;
 
         /// <summary>

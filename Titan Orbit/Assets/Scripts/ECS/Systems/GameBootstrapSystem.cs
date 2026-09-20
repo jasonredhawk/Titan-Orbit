@@ -682,6 +682,10 @@ namespace TitanOrbit.ECS
                 PlanetId = planetId,
                 IsHomePlanet = isHome,
                 ShipFamilyConfigIndex = isHome ? PlanetShipFamilyAssignment.HomeFamilyConfigIndex : shipFamilyConfigIndex,
+                // [TITAN-ORBIT] Homes lock Laserbolt. Neutrals use the same seed+id hash as
+                // MapLayoutBlueprint so client hydrate matches.
+                BulletBankIndex = PlanetShipFamilyAssignment.ResolveSpawnBulletBankIndex(
+                    isHome, _rolled.Seed, planetId),
             });
             if (!em.HasComponent<PlanetTag>(e))
                 em.AddComponent<PlanetTag>(e);

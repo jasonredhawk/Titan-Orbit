@@ -100,8 +100,9 @@ namespace TitanOrbit.Game
 
         /// <summary>
         /// True when this ghost / world point still has a live ship, rock, pad, or
-        /// moon. Interpolated AimWorld after a kill slides toward the origin — do
-        /// not treat that leftover as a lock.
+        /// moon. Closest obstacle wins — a corpse at the last AimWorld must not
+        /// stay locked just because a neighbor sits inside a wide reach. That
+        /// pinned parked Titan beams on dead rocks until the hull moved.
         /// </summary>
         public static bool IsLiveLock(EntityManager em, int ghostId, float aimX, float aimZ)
         {
@@ -122,6 +123,8 @@ namespace TitanOrbit.Game
                 return false;
 
             float3 aim = new float3(aimX, 0f, aimZ);
+            float bestDist = float.MaxValue;
+            int best = -1;
             for (int i = 0; i < obstacles.Count; i++)
             {
                 var o = obstacles[i];
@@ -130,17 +133,34 @@ namespace TitanOrbit.Game
                     && o.Kind != BulletCosmeticHitQuery.ObstacleKind.PlanetaryDefense
                     && o.Kind != BulletCosmeticHitQuery.ObstacleKind.Moon)
                     continue;
-                if (o.SourceEntity != Entity.Null && !IsLiveVisualTarget(em, o.SourceEntity))
+
+                float d = ToroidalMapEcs.ToroidalDistance(aim, o.LogicalCenter, mapW, mapH);
+                if (d >= bestDist)
                     continue;
-                float reach = math.max(2f, o.Radius + 1.5f);
-                if (ToroidalMapEcs.ToroidalDistance(aim, o.LogicalCenter, mapW, mapH) <= reach)
-                    return true;
+                bestDist = d;
+                best = i;
             }
 
-            return false;
+            if (best < 0)
+                return false;
+
+            var closest = obstacles[best];
+            if (closest.SourceEntity != Entity.Null && !IsLiveVisualTarget(em, closest.SourceEntity))
+                return false;
+
+            // Tight body fit — leftover AimWorld after a kill sits on the corpse
+            // center, not on a neighbor. A wide radius+1.5 swallow kept the beam
+            // on empty space while Fire was held and the ship was parked.
+            return bestDist <= closest.Radius + 0.75f;
         }
 
-        /// <summary>Dead ships, mined-out rocks, and client-culled asteroids are not locks.</summary>
+        /// <summary>
+        /// Dead ships, mined-out rocks, and client-culled asteroids are not locks.
+        /// Seed-hydrated <see cref="AsteroidState.Health"/> stays full until
+        /// <c>AsteroidDestroyedRpc</c>, so a client laser HP estimate of 0 is not
+        /// a corpse — treating it as one dropped the beam and paused damage floats
+        /// until the 1.25s optimistic hold snapped spawn HP back.
+        /// </summary>
         public static bool IsLiveVisualTarget(EntityManager em, Entity target)
         {
             if (target == Entity.Null || !em.Exists(target))

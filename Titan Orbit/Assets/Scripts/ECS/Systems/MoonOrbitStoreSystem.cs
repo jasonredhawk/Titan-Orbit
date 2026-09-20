@@ -551,6 +551,9 @@ namespace TitanOrbit.ECS
             ship.ShipLevel = targetLevel;
             ship.BranchIndex = targetBranchIndex;
             ship.ShipFamilyConfigIndex = storeFamilyIndex;
+            // [TITAN-ORBIT] Planet-rolled gun travels with the hull. Family assets are Laserbolt;
+            // this stamp is why Cosmic Shark can fire Rift this match.
+            ship.HullBulletBankIndex = storePlanet.BulletBankIndex;
             em.SetComponentData(shipEntity, ship);
 
             if (em.HasComponent<ShipAttributeUpgradeState>(shipEntity))
@@ -666,8 +669,16 @@ namespace TitanOrbit.ECS
                 return false;
             }
 
-            byte sourceFamilyIndex = ResolveDroneSourceFamilyIndex(em, shipEntity);
-            if (!TryAddEquipmentItem(em, shipEntity, itemType, ship.ShipLevel, purchaseLevel, sourceFamilyIndex, out message))
+            ResolveDroneSource(em, shipEntity, out byte sourceFamilyIndex, out byte sourceBulletBank);
+            if (!TryAddEquipmentItem(
+                    em,
+                    shipEntity,
+                    itemType,
+                    ship.ShipLevel,
+                    purchaseLevel,
+                    sourceFamilyIndex,
+                    sourceBulletBank,
+                    out message))
             {
                 if (!debugFree)
                     ContributedGemsLogic.Refund(em, homeEntity, networkId, cost);
@@ -1170,19 +1181,41 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// Family of the moon the ship is docked at (home family if undocked / unknown).
-        /// Stamped onto purchased drones so each drone keeps that planet's bullet bank.
+        /// Family + rolled gun of the moon the ship is docked at (home if undocked / unknown).
+        /// Stamped onto purchased drones so each drone keeps that planet's bullet type,
+        /// not merely the family's Laserbolt fallback.
         /// </summary>
-        static byte ResolveDroneSourceFamilyIndex(EntityManager em, Entity shipEntity)
+        static void ResolveDroneSource(
+            EntityManager em,
+            Entity shipEntity,
+            out byte familyIndex,
+            out byte bulletBankIndex)
         {
+            familyIndex = PlanetShipFamilyAssignment.HomeFamilyConfigIndex;
+            bulletBankIndex = PlanetShipFamilyAssignment.DefaultBulletBankIndex;
+
             if (em.HasComponent<ShipMoonDockState>(shipEntity))
             {
                 int planetId = em.GetComponentData<ShipMoonDockState>(shipEntity).MoonPlanetId;
                 if (planetId > 0 && TryFindPlanetById(em, planetId, out _, out var storePlanet))
-                    return ResolveStoreFamilyConfigIndex(storePlanet);
+                {
+                    familyIndex = ResolveStoreFamilyConfigIndex(storePlanet);
+                    bulletBankIndex = storePlanet.BulletBankIndex;
+                    return;
+                }
             }
 
-            return PlanetShipFamilyAssignment.HomeFamilyConfigIndex;
+            if (em.HasComponent<ShipState>(shipEntity))
+            {
+                var ship = em.GetComponentData<ShipState>(shipEntity);
+                if (TryFindHomePlanet(em, ship.Team, out _, out var home))
+                {
+                    bulletBankIndex = home.BulletBankIndex;
+                    return;
+                }
+
+                bulletBankIndex = ship.HullBulletBankIndex;
+            }
         }
 
         static byte ResolveStoreFamilyConfigIndex(in PlanetState storePlanet)
@@ -1297,6 +1330,7 @@ namespace TitanOrbit.ECS
             int shipLevel,
             int purchaseLevel,
             byte sourceFamilyConfigIndex,
+            byte sourceBulletBankIndex,
             out FixedString128Bytes message)
         {
             message = default;
@@ -1332,7 +1366,8 @@ namespace TitanOrbit.ECS
                 : 0;
             FixedString64Bytes componentId = default;
             if (StoreItemData.IsDrone(itemType))
-                componentId = BulletBankProfileUtility.FormatDroneSourceFamilyId(sourceFamilyConfigIndex);
+                componentId = BulletBankProfileUtility.FormatDroneSourceFamilyId(
+                    sourceFamilyConfigIndex, sourceBulletBankIndex);
             buffer.Add(new EquippedEquipmentElement
             {
                 ItemType = (int)itemType,

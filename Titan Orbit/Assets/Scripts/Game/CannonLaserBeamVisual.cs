@@ -23,6 +23,7 @@ namespace TitanOrbit.Game
     /// to the mouse. While a lock is burning, this driver also reports <c>DPS × dt</c>
     /// to <see cref="EcsFloatingCountPresenter"/> so laser hull / rock hits show the
     /// same floating damage numbers as <c>BulletHitRpc</c> (lasers never send that RPC).
+    /// Beam width tracks the 50%→300% DPS ramp so the line starts thin and fattens.
     /// Beams stay on while a live lock (or Shift mouse-aim) is burning.
     /// <para>
     /// The Archanor line is world-space. Pose the root and snap the
@@ -58,16 +59,23 @@ namespace TitanOrbit.Game
             public float LastSeenLive;
             public bool Shown;
             public bool NeedsSilence;
-            public bool Thinned;
+            public bool WidthReady;
+            public float VendorBaseWidth;
+            public Vector3 StartFxBaseScale;
+            public Vector3 EndFxBaseScale;
             public int StickyGhostId;
             public float StickyAimX;
             public float StickyAimZ;
+            public float LocalRampSeconds;
+            public Entity RampTarget;
+            public int RampGhostId;
         }
 
         /// <summary>
         /// One looping hum for every live cannon beam. Clip is Archanor
         /// <c>loop_laser2.wav</c> (BeamLaserStart PlayOnAwake+Loop at pitch 1.3).
-        /// We mute those vendor sources and play this once at a lower pitch.
+        /// We mute those vendor sources and play this once; pitch starts low
+        /// at 50% DPS and rises (still in hum range) as the hottest beam charges.
         /// </summary>
         AudioSource _hum;
         AudioClip _humClip;
@@ -87,10 +95,22 @@ namespace TitanOrbit.Game
         /// </summary>
         bool _humFireHeld;
 
-        /// <summary>Vendor BeamLaserStart ships at 1.3 — drop it so the loop is a low hum.</summary>
-        const float HumPitch = 0.4f;
+        /// <summary>Hum pitch at 50% DPS (thin beam, first tick of a lock).</summary>
+        const float HumPitchAtMinDps = 0.25f;
 
-        /// <summary>Line + muzzle/impact FX vs the stock LaserStatic width.</summary>
+        /// <summary>
+        /// Hum pitch at 300% DPS. Kept in hum range so full charge does not
+        /// jump to the frantic 1.0 from the first pass.
+        /// </summary>
+        const float HumPitchAtMaxDps = 0.52f;
+
+        /// <summary>Hottest live-beam ramp this frame (drives hum pitch).</summary>
+        float _humRampSeconds;
+
+        /// <summary>
+        /// Line + muzzle/impact FX vs the stock LaserStatic width at 100% authored
+        /// DPS. Live width is this × the 50%–300% ramp multiplier.
+        /// </summary>
         const float VisualScale = 0.5f;
 
         /// <summary>
@@ -101,6 +121,7 @@ namespace TitanOrbit.Game
         static FieldInfo s_BeamLengthField;
         static FieldInfo s_OriginalWidthField;
         static FieldInfo s_CustomWidthField;
+        static FieldInfo s_WidthMultiplierField;
         static FieldInfo s_BeamStartField;
         static FieldInfo s_BeamEndField;
 
@@ -210,6 +231,8 @@ namespace TitanOrbit.Game
 
             float now = Time.unscaledTime;
             _humFireHeld = false;
+            float drawnHumRamp = 0f;
+            bool hadDrawnRamp = false;
             MarkAllStale();
             // Interval-gated proxy walk — same cache bullet tracers use to stop on hulls.
             BulletCosmeticHitQuery.TryRefresh();
@@ -218,11 +241,13 @@ namespace TitanOrbit.Game
             if (bindings != null)
             {
                 for (int b = 0; b < bindings.Count; b++)
-                    TickBinding(em, bindings[b], mapW, mapH, now);
+                    TickBinding(em, bindings[b], mapW, mapH, now, ref drawnHumRamp, ref hadDrawnRamp);
             }
 
+            if (hadDrawnRamp)
+                _humRampSeconds = drawnHumRamp;
             bool anyDrawn = HideStale();
-            UpdateHum(anyDrawn || (_humFireHeld && AnyRecentLive(now)));
+            UpdateHum(anyDrawn || (_humFireHeld && AnyRecentLive(now)), _humRampSeconds);
         }
 
         void TickBinding(
@@ -230,7 +255,9 @@ namespace TitanOrbit.Game
             MegaShipWeaponVisualBinding binding,
             float mapW,
             float mapH,
-            float now)
+            float now,
+            ref float drawnHumRamp,
+            ref bool hadDrawnRamp)
         {
             if (binding == null || !em.Exists(binding.ShipEntity))
                 return;
@@ -239,7 +266,10 @@ namespace TitanOrbit.Game
                 return;
             if (!em.HasComponent<ShipState>(binding.ShipEntity)
                 || em.GetComponentData<ShipState>(binding.ShipEntity).IsDead)
+            {
+                ResetRampsForShip(binding.ShipEntity.Index);
                 return;
+            }
             if (!em.HasBuffer<ShipWeaponMountElement>(binding.ShipEntity)
                 || !em.HasBuffer<MegaShipGunnerSlotElement>(binding.ShipEntity))
                 return;
@@ -267,11 +297,13 @@ namespace TitanOrbit.Game
             // immediately. Ghosted TargetDistance can stay > 0 for a snapshot.
             if (localOwner && !localFiring)
             {
+                ResetRampsForShip(binding.ShipEntity.Index);
                 ClearStickyForShip(binding.ShipEntity.Index);
                 return;
             }
             if (energyLockout)
             {
+                ResetRampsForShip(binding.ShipEntity.Index);
                 ClearStickyForShip(binding.ShipEntity.Index);
                 return;
             }
@@ -327,7 +359,11 @@ namespace TitanOrbit.Game
                 slot.LastSeenLive = now;
                 if (SilenceVendorAudio(slot.Root))
                     slot.NeedsSilence = false;
-                ApplyThinWidth(slot);
+                float rampSeconds = ResolveBeamRampSeconds(
+                    slot, localOwner, gunners[m], beamHit, localFiring && !energyLockout);
+                ApplyRampWidth(slot, rampSeconds);
+                drawnHumRamp = math.max(drawnHumRamp, rampSeconds);
+                hadDrawnRamp = true;
 
                 slot.Root.transform.position = muzzle;
                 Vector3 toEnd = end - muzzle;
@@ -344,7 +380,7 @@ namespace TitanOrbit.Game
                 // seed-hydrated (GhostId 0), so resolve the rock from the clipped
                 // beam contact — same surface fit bullets use — not TargetGhostId.
                 TryNotifyBeamDamageFloat(
-                    binding.ShipEntity, team, mounts[m], gunners[m], end, beamHit);
+                    binding.ShipEntity, team, mounts[m], gunners[m], end, beamHit, rampSeconds);
             }
         }
 
@@ -359,7 +395,8 @@ namespace TitanOrbit.Game
             in ShipWeaponMountElement mount,
             in MegaShipGunnerSlotElement slot,
             Vector3 impactDisplayPos,
-            Entity clippedHit)
+            Entity clippedHit,
+            float rampSeconds)
         {
             Entity target = clippedHit;
             if (target == Entity.Null && slot.TargetGhostId != 0)
@@ -369,8 +406,8 @@ namespace TitanOrbit.Game
             if (target == Entity.Null)
                 return;
 
-            // --- Slice = firePower × fireRate × dt (same DPS the server applies) ---
-            float slice = ResolveLaserSlice(in mount) * Time.deltaTime;
+            // --- Slice = firePower × fireRate × ramp × dt (same DPS the server applies) ---
+            float slice = ResolveLaserSlice(in mount, rampSeconds) * Time.deltaTime;
             if (slice <= 0.01f)
                 return;
 
@@ -383,23 +420,23 @@ namespace TitanOrbit.Game
         /// applies (client and server). If prediction cleared FirePower, use the catalog
         /// cannon type-table so the number does not go silent.
         /// </summary>
-        static float ResolveLaserSlice(in ShipWeaponMountElement mount)
+        static float ResolveLaserSlice(in ShipWeaponMountElement mount, float rampSeconds)
         {
             float power = mount.FirePower;
             float rate = mount.FireRate;
             if (power > 0.01f && rate > 0.01f)
-                return CannonLaserMath.ComputeDps(power, rate);
+                return CannonLaserMath.ComputeRampedDps(power, rate, rampSeconds);
 
             var catalog = MegaShipCatalog.Load();
             if (catalog == null)
-                return CannonLaserMath.ComputeDps(power, rate);
+                return CannonLaserMath.ComputeRampedDps(power, rate, rampSeconds);
 
             MegaShipPartStats stats = catalog.GetStatsForPartType(ShipFamilyPartTypes.WeaponCannon);
             if (power <= 0.01f)
                 power = stats.firePower;
             if (rate <= 0.01f)
                 rate = stats.fireRate;
-            return CannonLaserMath.ComputeDps(power, rate);
+            return CannonLaserMath.ComputeRampedDps(power, rate, rampSeconds);
         }
 
         static bool TryResolveBeamEnds(
@@ -503,7 +540,17 @@ namespace TitanOrbit.Game
 
             // Mouse aim used to keep the cursor length even when the ray already
             // punched a hull / rock / pad. Clip to the first contact on this segment.
+            Vector3 intendedEnd = rawEnd;
             TryClipBeamToFirstCollider(em, binding, team, muzzle, ref rawEnd, out clippedHit);
+            // Parked Titans clip the new lock through the last rock's leftover
+            // collider (DestroyRpc / optimistic-0 lag). Keep the intended end so
+            // the beam can leave the corpse without the hull moving.
+            if (clippedHit != Entity.Null
+                && !MegaShipWeaponVisualTargets.IsLiveVisualTarget(em, clippedHit))
+            {
+                rawEnd = intendedEnd;
+                clippedHit = Entity.Null;
+            }
 
             end = rawEnd;
             return Vector3.Distance(muzzle, end) > 0.05f;
@@ -657,12 +704,18 @@ namespace TitanOrbit.Game
                 return;
             }
 
-            if (beamHit != Entity.Null)
+            if (beamHit != Entity.Null
+                && MegaShipWeaponVisualTargets.IsLiveVisualTarget(em, beamHit))
             {
                 slot.StickyGhostId = 0;
                 slot.StickyAimX = end.x;
                 slot.StickyAimZ = end.z;
+                return;
             }
+
+            slot.StickyGhostId = 0;
+            slot.StickyAimX = 0f;
+            slot.StickyAimZ = 0f;
         }
 
         static void ClearStickyMount(MegaShipWeaponVisualBinding binding, int mountIndex)
@@ -686,7 +739,70 @@ namespace TitanOrbit.Game
             slot.StickyAimZ = 0f;
             slot.LastSeenLive = 0f;
             slot.LastUsed = -1f;
+            ResetSlotRamp(slot);
             SetBeamShown(slot, false);
+        }
+
+        /// <summary>
+        /// Local owner predicts per-barrel charge and restarts at 50% when the
+        /// clipped lock / ghost id changes. Remotes read the ghosted slot seconds.
+        /// </summary>
+        static float ResolveBeamRampSeconds(
+            BeamSlot slot,
+            bool localOwner,
+            in MegaShipGunnerSlotElement gunner,
+            Entity beamHit,
+            bool charging)
+        {
+            if (!localOwner)
+                return math.max(0f, gunner.CannonLaserRampSeconds);
+
+            Entity target = beamHit;
+            if (target == Entity.Null && gunner.TargetGhostId != 0)
+                MegaShipWeaponVisualTargets.TryGetEntity(gunner.TargetGhostId, out target);
+
+            bool changed = false;
+            if (target != Entity.Null)
+            {
+                changed = slot.RampTarget != Entity.Null && slot.RampTarget != target;
+                slot.RampTarget = target;
+                slot.RampGhostId = gunner.TargetGhostId;
+            }
+            else if (gunner.TargetGhostId != 0)
+            {
+                changed = slot.RampGhostId != 0 && slot.RampGhostId != gunner.TargetGhostId;
+                slot.RampGhostId = gunner.TargetGhostId;
+            }
+
+            if (changed)
+                slot.LocalRampSeconds = 0f;
+
+            float shown = slot.LocalRampSeconds;
+            slot.LocalRampSeconds = CannonLaserMath.StepRampSeconds(
+                shown,
+                Time.deltaTime,
+                reset: false,
+                charging: charging && (target != Entity.Null || gunner.TargetGhostId != 0));
+            return shown;
+        }
+
+        void ResetRampsForShip(int shipIndex)
+        {
+            foreach (var kv in _live)
+            {
+                if (kv.Key.ShipIndex != shipIndex)
+                    continue;
+                ResetSlotRamp(kv.Value);
+            }
+        }
+
+        static void ResetSlotRamp(BeamSlot slot)
+        {
+            if (slot == null)
+                return;
+            slot.LocalRampSeconds = 0f;
+            slot.RampTarget = Entity.Null;
+            slot.RampGhostId = 0;
         }
 
         static bool TryFindLocalAutoLock(
@@ -892,6 +1008,7 @@ namespace TitanOrbit.Game
             s_BeamLengthField = vendorType.GetField("beamLength", bind);
             s_OriginalWidthField = vendorType.GetField("originalWidth", bind);
             s_CustomWidthField = vendorType.GetField("customWidth", bind);
+            s_WidthMultiplierField = vendorType.GetField("widthMultiplier", bind);
             s_BeamStartField = vendorType.GetField("beamStart", bind);
             s_BeamEndField = vendorType.GetField("beamEnd", bind);
         }
@@ -925,7 +1042,7 @@ namespace TitanOrbit.Game
             return found;
         }
 
-        void UpdateHum(bool anyLive)
+        void UpdateHum(bool anyLive, float rampSeconds = 0f)
         {
             if (_hum == null)
             {
@@ -934,11 +1051,12 @@ namespace TitanOrbit.Game
                 _hum.loop = true;
                 _hum.spatialBlend = 0f;
                 _hum.volume = 0.35f;
-                _hum.pitch = HumPitch;
             }
 
             if (_hum.clip == null && _humClip != null)
                 _hum.clip = _humClip;
+
+            _hum.pitch = ComputeHumPitch(rampSeconds);
 
             if (anyLive && _hum.clip != null)
             {
@@ -949,6 +1067,19 @@ namespace TitanOrbit.Game
             {
                 _hum.Stop();
             }
+        }
+
+        /// <summary>
+        /// Maps the 50%→300% DPS ramp onto hum pitch (low → higher, still a hum).
+        /// </summary>
+        static float ComputeHumPitch(float rampSeconds)
+        {
+            float mul = CannonLaserMath.ComputeRampMultiplier(rampSeconds);
+            float span = CannonLaserMath.RampDamageMax - CannonLaserMath.RampDamageMin;
+            float t = span > 0.0001f
+                ? (mul - CannonLaserMath.RampDamageMin) / span
+                : 0f;
+            return math.lerp(HumPitchAtMinDps, HumPitchAtMaxDps, math.saturate(t));
         }
 
         static void ApplyVendorLength(MonoBehaviour vendor, float length)
@@ -1016,39 +1147,58 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Halves the vendor pulse width and muzzle/impact FX. Must run after
-        /// <c>SciFiArsenalBeamStatic.Start</c> so <c>originalWidth</c> is set.
+        /// Scales the vendor pulse width and muzzle/impact FX with the DPS ramp.
+        /// Must run after <c>SciFiArsenalBeamStatic.Start</c> so <c>originalWidth</c>
+        /// is set. Captures the stock width once, then writes every frame.
         /// </summary>
-        static void ApplyThinWidth(BeamSlot slot)
+        static void ApplyRampWidth(BeamSlot slot, float rampSeconds)
         {
-            if (slot == null || slot.Thinned || slot.Vendor == null)
+            if (slot == null || slot.Vendor == null)
                 return;
             if (s_OriginalWidthField == null)
                 CacheVendorFields(slot.Vendor.GetType());
             if (s_OriginalWidthField == null)
                 return;
 
-            float original = (float)s_OriginalWidthField.GetValue(slot.Vendor);
-            if (original <= 0.0001f)
-                return;
-
-            s_OriginalWidthField.SetValue(slot.Vendor, original * VisualScale);
-            if (s_CustomWidthField != null)
+            if (!slot.WidthReady)
             {
-                float custom = (float)s_CustomWidthField.GetValue(slot.Vendor);
-                s_CustomWidthField.SetValue(slot.Vendor, custom * VisualScale);
+                float original = (float)s_OriginalWidthField.GetValue(slot.Vendor);
+                if (original <= 0.0001f)
+                    return;
+
+                slot.VendorBaseWidth = original;
+                var startGo = s_BeamStartField != null
+                    ? s_BeamStartField.GetValue(slot.Vendor) as GameObject
+                    : null;
+                var endGo = s_BeamEndField != null
+                    ? s_BeamEndField.GetValue(slot.Vendor) as GameObject
+                    : null;
+                slot.StartFxBaseScale = startGo != null ? startGo.transform.localScale : Vector3.one;
+                slot.EndFxBaseScale = endGo != null ? endGo.transform.localScale : Vector3.one;
+                slot.WidthReady = true;
             }
 
-            ScaleFx((GameObject)s_BeamStartField?.GetValue(slot.Vendor));
-            ScaleFx((GameObject)s_BeamEndField?.GetValue(slot.Vendor));
-            slot.Thinned = true;
-        }
+            float widthScale = VisualScale * CannonLaserMath.ComputeRampMultiplier(rampSeconds);
+            float width = slot.VendorBaseWidth * widthScale;
+            s_OriginalWidthField.SetValue(slot.Vendor, width);
+            if (s_CustomWidthField != null)
+            {
+                float pulseMul = 1.5f;
+                if (s_WidthMultiplierField != null)
+                    pulseMul = (float)s_WidthMultiplierField.GetValue(slot.Vendor);
+                s_CustomWidthField.SetValue(slot.Vendor, width * math.max(1f, pulseMul));
+            }
 
-        static void ScaleFx(GameObject fx)
-        {
-            if (fx == null)
-                return;
-            fx.transform.localScale *= VisualScale;
+            var startFx = s_BeamStartField != null
+                ? s_BeamStartField.GetValue(slot.Vendor) as GameObject
+                : null;
+            var endFx = s_BeamEndField != null
+                ? s_BeamEndField.GetValue(slot.Vendor) as GameObject
+                : null;
+            if (startFx != null)
+                startFx.transform.localScale = slot.StartFxBaseScale * widthScale;
+            if (endFx != null)
+                endFx.transform.localScale = slot.EndFxBaseScale * widthScale;
         }
 
         void MarkAllStale()
@@ -1146,9 +1296,11 @@ namespace TitanOrbit.Game
 
         void HideAll()
         {
+            _humRampSeconds = 0f;
             foreach (var kv in _live)
             {
                 kv.Value.LastUsed = -1f;
+                ResetSlotRamp(kv.Value);
                 SetBeamShown(kv.Value, false);
             }
 

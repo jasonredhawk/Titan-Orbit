@@ -527,6 +527,7 @@ namespace TitanOrbit.ECS
                     AimWorldX = 0f,
                     AimWorldZ = 0f,
                     TargetGhostId = 0,
+                    CannonLaserRampSeconds = 0f,
                     WeaponKind = mounts.IsCreated && i < mounts.Length
                         ? mounts[i].WeaponKind
                         : (byte)0,

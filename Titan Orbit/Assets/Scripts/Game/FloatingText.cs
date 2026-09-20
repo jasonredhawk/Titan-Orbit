@@ -45,8 +45,12 @@ namespace TitanOrbit.Game
         [Header("Type")]
         [Tooltip("Optional. Empty uses the project TMP default.")]
         public TMP_FontAsset font;
-        [Tooltip("TMP world-space font size. Camera zoom scales the whole popup, not this.")]
+        [Tooltip("TMP world-space font size at magnitude 1 (a single gem, 1 damage, 1 troop). Larger streak totals grow from here. Camera zoom still scales the whole popup.")]
         public float fontSize = 32f;
+        [Tooltip("How much larger the number can get versus fontSize as the shown value grows (2.75 = 32 → 88).")]
+        public float fontSizeMaxMultiplier = 2.75f;
+        [Tooltip("Absolute value that reaches the max font size. Uses a log curve so 1, 10, 50, and 200 stay distinct.")]
+        public float fontSizeValueAtMax = 250f;
 
         [Header("Icon Layout")]
         [Tooltip("Local scale of the type icon (popup root is already ~0.155).")]
@@ -78,7 +82,34 @@ namespace TitanOrbit.Game
         public float postStreakFadeSeconds = 0.6f;
 
         public float FontSize => Mathf.Max(1f, fontSize);
+        public float FontSizeMaxMultiplier => Mathf.Max(1f, fontSizeMaxMultiplier);
+        public float FontSizeValueAtMax => Mathf.Max(1f, fontSizeValueAtMax);
         public float IconScale => Mathf.Max(0.05f, iconScale);
+
+        /// <summary>
+        /// Font size for the live shown amount (streak total, remaining HP, troop count, …).
+        /// Magnitude 1 stays at <see cref="FontSize"/>; <see cref="FontSizeValueAtMax"/> hits the cap.
+        /// </summary>
+        public float ResolveFontSize(float magnitude)
+        {
+            float min = FontSize;
+            float max = min * FontSizeMaxMultiplier;
+            float abs = Mathf.Max(0f, magnitude);
+            if (abs <= 1f)
+                return min;
+
+            float t = Mathf.Log(1f + abs) / Mathf.Log(1f + FontSizeValueAtMax);
+            return Mathf.Lerp(min, max, Mathf.Clamp01(t));
+        }
+
+        /// <summary>Keeps the type icon in proportion when the number grows.</summary>
+        public float ResolveIconScale(float resolvedFontSize)
+        {
+            float baseSize = FontSize;
+            if (baseSize < 0.01f)
+                return IconScale;
+            return IconScale * (Mathf.Max(1f, resolvedFontSize) / baseSize);
+        }
         public float IconLeftPadding => Mathf.Max(0f, iconLeftPadding);
         public float ExtraHeight => Mathf.Max(0f, extraHeight);
         public float ShipExtraHeight => Mathf.Max(0f, shipExtraHeight);

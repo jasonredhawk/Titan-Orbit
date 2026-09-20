@@ -477,7 +477,13 @@ namespace TitanOrbit.ECS
                     if (!TryGetCurrentTargetPos(
                             em, aims[m].Target, ship.Team, heal, muzzle, mountRange,
                             mapW, mapH, moonElapsed, out ghostAim))
-                        ghostAim = aims[m].AimPoint;
+                    {
+                        // Dead / culled lock — do not publish the last lead or the
+                        // beam stays on the corpse until the hull moves.
+                        ghostAim = xf.Position;
+                        targetDist = 0f;
+                        desired = hullForward;
+                    }
                 }
 
                 MegaShipWeaponAim.RotateMountTowardWorldDir(in xf, ref mount, desired, dt);
@@ -530,6 +536,8 @@ namespace TitanOrbit.ECS
                 && em.HasComponent<AsteroidState>(target)
                 && em.HasComponent<LocalTransform>(target))
             {
+                if (!em.GetComponentData<AsteroidState>(target).IsAliveForCombat)
+                    return false;
                 pos = em.GetComponentData<LocalTransform>(target).Position;
                 return true;
             }

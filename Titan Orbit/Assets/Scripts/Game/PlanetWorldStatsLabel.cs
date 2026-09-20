@@ -5,19 +5,15 @@ using TitanOrbit.Simulation;
 using TitanOrbit.UI;
 using TMPro;
 using UnityEngine;
-using UnityEngine.Rendering;
 
 namespace TitanOrbit.Game
 {
     /// <summary>
-    /// World-space label floating above a planet body: proper world name (title), a home-capital
-    /// role line on team spawn worlds, that planet's family default bullet type on neutrals,
-    /// optional capture-contributor name, plus population.
-    /// Layout reads top-to-bottom as world name, then on a home world the small-but-heavy
-    /// <c>HOME PLANET</c> stamp (neutrals keep the gun-type subtitle instead), a small
-    /// "Captured by" caption, the player who delivered the most troops during capture, then
-    /// <b>current people</b>, then the population <b>capacity</b>
-    /// (base size/level max, and when territory triangles apply, <c>base + bonus</c>).
+    /// World-space label floating above a planet body. Reads as cockpit telemetry, not a
+    /// spreadsheet: Rajdhani place name, optional HOME PLANET stamp, <c>HULL</c> / <c>GUN</c>
+    /// rails, then a labeled people stack — <c>CREW</c> (live count), <c>CAP</c> (hold limit),
+    /// and <c>+N LINK</c> when connection triangles add extra beds.
+    /// Optional capture-contributor name sits between identity and the people stack.
     /// Client / hybrid presentation only — reads replicated <see cref="PlanetState"/> and the
     /// published connection graph; never drives sim. Paired with <see cref="WorldBodyVisualApplier"/>
     /// (adds this component) and <see cref="PlanetPopulationMath"/> for cap formulas.
@@ -32,10 +28,12 @@ namespace TitanOrbit.Game
         int _cachedBonusAmount = int.MinValue;
         TeamId _cachedTeam;
         int _cachedFamilyConfigIndex = int.MinValue;
+        int _cachedBulletBankIndex = int.MinValue;
         bool _cachedIsHomePlanet;
         int _cachedContributorNetworkId = int.MinValue;
         bool _hasCachedPaint;
         string _cachedTitle;
+        string _cachedFamilyName;
         string _cachedBulletType;
         string _cachedContributorName;
         bool _legacyIconRemoved;
@@ -52,32 +50,29 @@ namespace TitanOrbit.Game
         float _cachedBodyRadiusWorld;
         /// <summary>True last frame while theatrical owned label pose — forces ApplyLayout on exit.</summary>
         bool _wasTheatricalEngaged;
-        /// <summary>[UNITY] Sorting order so planet text draws above world meshes.</summary>
-        const int TextSortingOrder = 5001;
+        /// <summary>Live CREW digits — the one number players should read from orbit.</summary>
+        const float CurrentFontSize = 40f;
 
-        /// <summary>Large font for the live population count (top line).</summary>
-        const float CurrentFontSize = 36f;
+        /// <summary>CAP line under CREW — clearly smaller so it cannot be mistaken for crew.</summary>
+        const float MaxFontSize = 16f;
 
-        /// <summary>Smaller font for the capacity line under current (base, or base + bonus).</summary>
-        const float MaxFontSize = CurrentFontSize * (21f / 33f);
+        /// <summary>LINK bonus under CAP — same size as CAP, cyan instead of team color.</summary>
+        const float BonusFontSize = 14f;
 
-        /// <summary>World-name title uses the same size as the capacity line.</summary>
-        const float TitleFontSize = MaxFontSize;
+        /// <summary>Tiny tracked rail above the crew digits.</summary>
+        const float StatCaptionFontSize = 9.5f;
 
-        /// <summary>
-        /// Home-capital stamp under the world name. Smaller than the title so the place name
-        /// still leads, but larger than the gun-type subtitle so it reads as a rank, not a note.
-        /// </summary>
-        const float HomeRoleFontSize = TitleFontSize * 0.78f;
+        /// <summary>Place name — largest identity line, Rajdhani Bold.</summary>
+        const float TitleFontSize = 28f;
 
-        /// <summary>Family gun type under the planet name — smaller subtitle, still readable in orbit.</summary>
-        const float BulletTypeFontSize = TitleFontSize * 0.62f;
+        /// <summary>HOME PLANET stamp — smaller than the name, heavier tracking.</summary>
+        const float HomeRoleFontSize = 13.5f;
 
-        /// <summary>
-        /// Player-facing home-capital line. Uppercase on purpose — HUD telemetry, not a sentence.
-        /// Shown only when ghosted <see cref="PlanetState.IsHomePlanet"/> is true.
-        /// </summary>
-        const string HomePlanetRoleLabel = "HOME PLANET";
+        /// <summary>HULL line under the name / stamp.</summary>
+        const float FamilyNameFontSize = 13f;
+
+        /// <summary>GUN line under HULL — one step quieter.</summary>
+        const float BulletTypeFontSize = 12f;
 
         /// <summary>Player name on the capture credit — smaller than the world-name title.</summary>
         const float ContributorNameFontSize = TitleFontSize * 0.55f;
@@ -85,14 +80,11 @@ namespace TitanOrbit.Game
         /// <summary>"Captured by" caption — smaller than the player name underneath.</summary>
         const float CapturedByFontSize = ContributorNameFontSize * 0.7f;
 
-        /// <summary>Local-space gap between world-name title and the population stack.</summary>
-        const float TitleGapLocal = 2f;
-
-        /// <summary>Tight gap between the world name and the line under it (home stamp or gun type).</summary>
+        /// <summary>Tight gap between the world name and the first line under it.</summary>
         const float TitleToSubtitleGapLocal = 0.28f;
 
-        /// <summary>Gap between the home stamp and a gun-type line when both are visible.</summary>
-        const float HomeRoleToBulletTypeGapLocal = 0.22f;
+        /// <summary>Gap between stacked identity lines (home stamp, family, gun type).</summary>
+        const float SubtitleStackGapLocal = 0.2f;
 
         /// <summary>Local-space gap around the capture-contributor line.</summary>
         const float ContributorGapLocal = 0.35f;
@@ -103,37 +95,38 @@ namespace TitanOrbit.Game
         /// <summary>"Captured by" caption is a bit dimmer than the name underneath.</summary>
         const float CapturedByAlpha = 0.65f;
 
+        /// <summary>Tight gap from the CREW rail to the big digits.</summary>
+        const float CaptionToValueGapLocal = 0.12f;
+
         /// <summary>Local-space gap between current and capacity lines.</summary>
-        const float ValueLineGapLocal = 0.5f;
+        const float ValueLineGapLocal = 0.42f;
 
-        /// <summary>TMP outline width for readability over busy planet textures.</summary>
-        const float OutlineWidth = 0.2f;
+        /// <summary>Gap from CAP to the LINK bonus line.</summary>
+        const float BonusGapLocal = 0.18f;
 
-        /// <summary>Heavier outline on the home stamp so the small line still feels solid.</summary>
-        const float HomeRoleOutlineWidth = 0.32f;
+        /// <summary>Height of the thin team-color rule under the identity block.</summary>
+        const float RuleHeightLocal = 0.12f;
 
-        /// <summary>TMP face dilate paired with outline so glyphs stay solid.</summary>
-        const float FaceDilate = 0.12f;
+        /// <summary>Gap around the identity rule.</summary>
+        const float RuleGapLocal = 0.45f;
 
-        /// <summary>
-        /// Extra face dilate on the home stamp. TMP Bold on one weight is a simulated thicken —
-        /// this pushes the glyphs toward a heavy / black look without a second font asset.
-        /// </summary>
-        const float HomeRoleFaceDilate = 0.3f;
+        /// <summary>Title letter-spacing so the place name reads as a hull stencil.</summary>
+        const float TitleCharacterSpacing = 1.8f;
+
+        /// <summary>Caption tracking (CREW / CAP rails).</summary>
+        const float CaptionCharacterSpacing = 4.2f;
 
         /// <summary>Slight tracking on HOME PLANET so the stamp reads as a banner, not a caption.</summary>
-        const float HomeRoleCharacterSpacing = 2.4f;
+        const float HomeRoleCharacterSpacing = 3.4f;
 
-        /// <summary>Bullet-type subtitle is a bit dimmer than the world name above it.</summary>
-        const float BulletTypeAlpha = 0.72f;
+        /// <summary>HULL value alpha vs full team color.</summary>
+        const float FamilyNameAlpha = 0.92f;
+
+        /// <summary>GUN value alpha — quieter than HULL.</summary>
+        const float BulletTypeAlpha = 0.78f;
 
         /// <summary>Capacity-line alpha vs full team color (current stays opaque).</summary>
         const float MaxLineAlpha = 0.6f;
-
-        /// <summary>Slightly brighter alpha on the <c>+ bonus</c> span so the extra capacity reads as a boost.</summary>
-        const float BonusSpanAlpha = 0.9f;
-
-        static readonly int RenderQueueOverlay = (int)RenderQueue.Overlay;
 
         /// <summary>[TITAN-ORBIT] Stable planet id from <see cref="PlanetState.PlanetId"/> — set by Configure.</summary>
         [SerializeField] int planetId;
@@ -141,18 +134,24 @@ namespace TitanOrbit.Game
         Transform _labelRoot;
         TextMeshPro _titleText;
         TextMeshPro _homeRoleText;
+        TextMeshPro _familyText;
         TextMeshPro _bulletTypeText;
+        SpriteRenderer _identityRule;
         CaptureCreditRow _captureCredit;
         StatRow _populationRow;
 
         static PlanetShipFamilyConfig _shipFamilyConfig;
 
-        /// <summary>One vertical stack: current people on top, capacity (max) underneath.</summary>
+        /// <summary>
+        /// People telemetry: CREW rail, live count, CAP hold-limit, optional LINK bonus.
+        /// </summary>
         struct StatRow
         {
             public Transform Root;
+            public TextMeshPro CaptionText;
             public TextMeshPro CurrentText;
             public TextMeshPro MaxText;
+            public TextMeshPro BonusText;
         }
 
         /// <summary>Capture credit: small "Captured by" caption over the player name.</summary>
@@ -185,11 +184,14 @@ namespace TitanOrbit.Game
                 _labelRoot != null &&
                 _titleText != null &&
                 _homeRoleText != null &&
+                _familyText != null &&
                 _bulletTypeText != null &&
                 _captureCredit.CaptionText != null &&
                 _captureCredit.NameText != null &&
+                _populationRow.CaptionText != null &&
                 _populationRow.CurrentText != null &&
-                _populationRow.MaxText != null)
+                _populationRow.MaxText != null &&
+                _populationRow.BonusText != null)
                 return;
 
             // --- Ensure setup ---
@@ -202,9 +204,11 @@ namespace TitanOrbit.Game
             CleanupLegacyLabels();
 
             _labelRoot = CreateLabelRoot("PlanetStatsLabel", transform);
-            _titleText = CreateValueText(_labelRoot, "FamilyTitle", TitleFontSize, Color.white);
+            _titleText = CreateDisplayText(_labelRoot, "FamilyTitle", TitleFontSize);
             _homeRoleText = CreateHomeRoleText(_labelRoot);
-            _bulletTypeText = CreateValueText(_labelRoot, "BulletType", BulletTypeFontSize, Color.white);
+            _familyText = CreateTelemetryText(_labelRoot, "ShipFamily", FamilyNameFontSize);
+            _bulletTypeText = CreateTelemetryText(_labelRoot, "BulletType", BulletTypeFontSize);
+            _identityRule = CreateIdentityRule(_labelRoot);
             _captureCredit = CreateCaptureCreditRow(_labelRoot, "CaptureCredit");
             _populationRow = CreatePopulationRow(_labelRoot, "PopulationRow");
 
@@ -235,8 +239,14 @@ namespace TitanOrbit.Game
             if (_homeRoleText == null)
                 _homeRoleText = _labelRoot.Find("HomeRole")?.GetComponent<TextMeshPro>();
 
+            if (_familyText == null)
+                _familyText = _labelRoot.Find("ShipFamily")?.GetComponent<TextMeshPro>();
+
             if (_bulletTypeText == null)
                 _bulletTypeText = _labelRoot.Find("BulletType")?.GetComponent<TextMeshPro>();
+
+            if (_identityRule == null)
+                _identityRule = _labelRoot.Find("IdentityRule")?.GetComponent<SpriteRenderer>();
 
             if (_captureCredit.Root == null)
             {
@@ -255,25 +265,44 @@ namespace TitanOrbit.Game
                 if (row != null)
                 {
                     _populationRow.Root = row;
+                    _populationRow.CaptionText = row.Find("Caption")?.GetComponent<TextMeshPro>();
                     _populationRow.CurrentText = row.Find("Current")?.GetComponent<TextMeshPro>();
                     _populationRow.MaxText = row.Find("Max")?.GetComponent<TextMeshPro>();
+                    _populationRow.BonusText = row.Find("Bonus")?.GetComponent<TextMeshPro>();
                     RemoveLegacyPopulationIcon(row);
                 }
             }
 
-            if (_titleText == null || _populationRow.CurrentText == null || _populationRow.MaxText == null)
+            if (_titleText == null ||
+                _populationRow.CurrentText == null ||
+                _populationRow.MaxText == null)
                 return false;
 
             RemoveLegacySingleLineContributor(_labelRoot);
 
-            // Play Mode recompile: older labels have no HomeRole / BulletType child — add once.
+            // Play Mode recompile: older labels have no HomeRole / family / gun child — add once.
             if (_homeRoleText == null)
                 _homeRoleText = CreateHomeRoleText(_labelRoot);
             else
                 StyleHomeRoleText(_homeRoleText);
 
+            if (_familyText == null)
+                _familyText = CreateTelemetryText(_labelRoot, "ShipFamily", FamilyNameFontSize);
+            else
+                _familyText.richText = true;
+
             if (_bulletTypeText == null)
-                _bulletTypeText = CreateValueText(_labelRoot, "BulletType", BulletTypeFontSize, Color.white);
+                _bulletTypeText = CreateTelemetryText(_labelRoot, "BulletType", BulletTypeFontSize);
+            else
+                _bulletTypeText.richText = true;
+
+            if (_identityRule == null)
+                _identityRule = CreateIdentityRule(_labelRoot);
+
+            if (_populationRow.Root != null && _populationRow.CaptionText == null)
+                _populationRow.CaptionText = CreateCaptionText(_populationRow.Root, "Caption");
+            if (_populationRow.Root != null && _populationRow.BonusText == null)
+                _populationRow.BonusText = CreateTelemetryText(_populationRow.Root, "Bonus", BonusFontSize);
 
             if (_captureCredit.CaptionText == null || _captureCredit.NameText == null)
                 _captureCredit = CreateCaptureCreditRow(_labelRoot, "CaptureCredit");
@@ -281,13 +310,17 @@ namespace TitanOrbit.Game
             // Capacity line uses rich text for "base + bonus" coloring.
             _populationRow.MaxText.richText = true;
 
+            ApplyThemeFonts();
             ApplyReadableTextMaterial(_titleText);
-            ApplyReadableTextMaterial(_homeRoleText, HomeRoleOutlineWidth, HomeRoleFaceDilate);
+            WorldBodyLabelTheme.ApplyHomeStampOverlay(_homeRoleText);
+            ApplyReadableTextMaterial(_familyText);
             ApplyReadableTextMaterial(_bulletTypeText);
             ApplyReadableTextMaterial(_captureCredit.CaptionText);
             ApplyReadableTextMaterial(_captureCredit.NameText);
+            WorldBodyLabelTheme.ApplyCaptionOverlay(_populationRow.CaptionText);
             ApplyReadableTextMaterial(_populationRow.CurrentText);
             ApplyReadableTextMaterial(_populationRow.MaxText);
+            ApplyReadableTextMaterial(_populationRow.BonusText);
             KeepLabelOnPlanetRoot();
             return true;
         }
@@ -306,7 +339,9 @@ namespace TitanOrbit.Game
                 _labelRoot = null;
                 _titleText = null;
                 _homeRoleText = null;
+                _familyText = null;
                 _bulletTypeText = null;
+                _identityRule = null;
                 _captureCredit = default;
                 _populationRow = default;
             }
@@ -377,8 +412,10 @@ namespace TitanOrbit.Game
             var rowGo = new GameObject(rowName);
             rowGo.transform.SetParent(parent, false);
 
-            var caption = CreateValueText(rowGo.transform, "CapturedBy", CapturedByFontSize, Color.white);
-            var name = CreateValueText(rowGo.transform, "ContributorName", ContributorNameFontSize, Color.white);
+            var caption = CreateCaptionText(rowGo.transform, "CapturedBy");
+            caption.fontSize = CapturedByFontSize;
+            caption.characterSpacing = CaptionCharacterSpacing * 0.45f;
+            var name = CreateDisplayText(rowGo.transform, "ContributorName", ContributorNameFontSize);
             caption.text = "Captured by";
 
             return new CaptureCreditRow
@@ -426,41 +463,96 @@ namespace TitanOrbit.Game
             return row.CaptionText.preferredHeight + ContributorGapLocal + row.NameText.preferredHeight;
         }
 
-        /// <summary>Builds Current (large) + Max (capacity) TMP children under one row root.</summary>
+        /// <summary>Builds CREW rail + live digits + CAP + optional LINK under one row root.</summary>
         StatRow CreatePopulationRow(Transform parent, string rowName)
         {
             // --- Create instance ---
             var rowGo = new GameObject(rowName);
             rowGo.transform.SetParent(parent, false);
 
-            var currentText = CreateValueText(rowGo.transform, "Current", CurrentFontSize, Color.white);
-            var maxText = CreateValueText(rowGo.transform, "Max", MaxFontSize, Color.white);
-            // [TITAN-ORBIT] Rich text lets "base + bonus" tint the boost span without a third TMP.
-            maxText.richText = true;
+            var caption = CreateCaptionText(rowGo.transform, "Caption");
+            caption.text = WorldBodyLabelTheme.CrewCaption;
+            var currentText = CreateDisplayText(rowGo.transform, "Current", CurrentFontSize);
+            var maxText = CreateTelemetryText(rowGo.transform, "Max", MaxFontSize);
+            var bonusText = CreateTelemetryText(rowGo.transform, "Bonus", BonusFontSize);
 
             return new StatRow
             {
                 Root = rowGo.transform,
+                CaptionText = caption,
                 CurrentText = currentText,
                 MaxText = maxText,
+                BonusText = bonusText,
             };
         }
 
-        /// <summary>Creates a centered bold TextMeshPro child for title or population digits.</summary>
-        static TextMeshPro CreateValueText(Transform parent, string name, float fontSize, Color color)
+        /// <summary>Place name / live CREW digits — Rajdhani Bold.</summary>
+        static TextMeshPro CreateDisplayText(Transform parent, string name, float fontSize)
+        {
+            return CreateLabelText(parent, name, fontSize, WorldBodyLabelTheme.DisplayFont, richText: false);
+        }
+
+        /// <summary>HULL / GUN / CAP lines — Rajdhani SemiBold with rich-text caption prefixes.</summary>
+        static TextMeshPro CreateTelemetryText(Transform parent, string name, float fontSize)
+        {
+            return CreateLabelText(parent, name, fontSize, WorldBodyLabelTheme.TelemetryFont, richText: true);
+        }
+
+        /// <summary>Tiny tracked rail (CREW).</summary>
+        static TextMeshPro CreateCaptionText(Transform parent, string name)
+        {
+            TextMeshPro tmp = CreateLabelText(
+                parent,
+                name,
+                StatCaptionFontSize,
+                WorldBodyLabelTheme.CaptionFont,
+                richText: false);
+            tmp.characterSpacing = CaptionCharacterSpacing;
+            WorldBodyLabelTheme.ApplyCaptionOverlay(tmp);
+            return tmp;
+        }
+
+        /// <summary>Thin team-color bar that splits identity from the people stack.</summary>
+        static SpriteRenderer CreateIdentityRule(Transform parent)
+        {
+            Transform existing = parent.Find("IdentityRule");
+            if (existing != null)
+            {
+                var found = existing.GetComponent<SpriteRenderer>();
+                if (found != null)
+                    return found;
+            }
+
+            var go = new GameObject("IdentityRule");
+            go.transform.SetParent(parent, false);
+            var renderer = go.AddComponent<SpriteRenderer>();
+            renderer.sprite = WorldBodyLabelTheme.PixelSprite;
+            renderer.sortingOrder = 5000;
+            renderer.drawMode = SpriteDrawMode.Simple;
+            go.transform.localScale = new Vector3(8f, RuleHeightLocal, 1f);
+            return renderer;
+        }
+
+        /// <summary>Creates a centered TextMeshPro child with a theme font and overlay material.</summary>
+        static TextMeshPro CreateLabelText(
+            Transform parent,
+            string name,
+            float fontSize,
+            TMP_FontAsset font,
+            bool richText)
         {
             // --- Create instance ---
             var textGo = new GameObject(name);
             textGo.transform.SetParent(parent, false);
             var tmp = textGo.AddComponent<TextMeshPro>();
-            tmp.font = ResolveFont();
+            tmp.font = font != null ? font : WorldBodyLabelTheme.DisplayFont;
             tmp.fontSize = fontSize;
             tmp.fontStyle = FontStyles.Bold;
             tmp.alignment = TextAlignmentOptions.Center;
             tmp.verticalAlignment = VerticalAlignmentOptions.Middle;
             tmp.enableWordWrapping = false;
-            tmp.richText = false;
-            tmp.color = color;
+            tmp.richText = richText;
+            tmp.color = Color.white;
             ApplyReadableTextMaterial(tmp);
             return tmp;
         }
@@ -475,7 +567,7 @@ namespace TitanOrbit.Game
             // --- Heavy subtitle, not a second title ---
             // [TITAN-ORBIT] Players scan the place name first (Helios). This line is the
             // rank badge: smaller, thicker, full team color. Neutrals hide the GameObject.
-            TextMeshPro tmp = CreateValueText(parent, "HomeRole", HomeRoleFontSize, Color.white);
+            TextMeshPro tmp = CreateDisplayText(parent, "HomeRole", HomeRoleFontSize);
             StyleHomeRoleText(tmp);
             tmp.gameObject.SetActive(false);
             return tmp;
@@ -491,11 +583,12 @@ namespace TitanOrbit.Game
             if (tmp == null)
                 return;
 
+            tmp.font = WorldBodyLabelTheme.DisplayFont;
             tmp.fontSize = HomeRoleFontSize;
             tmp.fontStyle = FontStyles.Bold;
             tmp.fontWeight = FontWeight.Black;
             tmp.characterSpacing = HomeRoleCharacterSpacing;
-            ApplyReadableTextMaterial(tmp, HomeRoleOutlineWidth, HomeRoleFaceDilate);
+            WorldBodyLabelTheme.ApplyHomeStampOverlay(tmp);
         }
 
         /// <summary>
@@ -524,12 +617,22 @@ namespace TitanOrbit.Game
                 s);
         }
 
-        /// <summary>Stacks current above capacity inside the population row (local Y).</summary>
+        /// <summary>Stacks CREW rail, live digits, CAP, and optional LINK inside the people row.</summary>
         static void LayoutStatRow(ref StatRow row)
         {
             // --- LayoutStatRow ---
             if (row.CurrentText == null || row.MaxText == null)
                 return;
+
+            bool showCaption = row.CaptionText != null && row.CaptionText.gameObject.activeSelf;
+            bool showBonus = row.BonusText != null && row.BonusText.gameObject.activeSelf;
+
+            if (showCaption)
+            {
+                row.CaptionText.fontSize = StatCaptionFontSize;
+                row.CaptionText.characterSpacing = CaptionCharacterSpacing;
+                row.CaptionText.ForceMeshUpdate();
+            }
 
             row.CurrentText.fontSize = CurrentFontSize;
             row.MaxText.fontSize = MaxFontSize;
@@ -538,40 +641,68 @@ namespace TitanOrbit.Game
             row.CurrentText.ForceMeshUpdate();
             row.MaxText.ForceMeshUpdate();
 
+            float captionHeight = showCaption ? row.CaptionText.preferredHeight : 0f;
             float currentHeight = row.CurrentText.preferredHeight;
             float maxHeight = row.MaxText.preferredHeight;
-            float textHeight = currentHeight + ValueLineGapLocal + maxHeight;
-            float stackTop = textHeight * 0.5f;
+            float bonusHeight = 0f;
+            if (showBonus)
+            {
+                row.BonusText.fontSize = BonusFontSize;
+                row.BonusText.fontStyle = FontStyles.Bold;
+                row.BonusText.ForceMeshUpdate();
+                bonusHeight = row.BonusText.preferredHeight;
+            }
 
-            row.CurrentText.transform.localPosition = new Vector3(
-                0f,
-                stackTop - currentHeight * 0.5f,
-                0f);
-            row.MaxText.transform.localPosition = new Vector3(
-                0f,
-                -stackTop + maxHeight * 0.5f,
-                0f);
+            float captionGap = showCaption ? CaptionToValueGapLocal : 0f;
+            float bonusGap = showBonus ? BonusGapLocal : 0f;
+            float textHeight = captionHeight + captionGap + currentHeight + ValueLineGapLocal + maxHeight
+                + bonusGap + bonusHeight;
+            float cursor = textHeight * 0.5f;
+
+            if (showCaption)
+            {
+                row.CaptionText.transform.localPosition = new Vector3(0f, cursor - captionHeight * 0.5f, 0f);
+                cursor -= captionHeight + captionGap;
+            }
+
+            row.CurrentText.transform.localPosition = new Vector3(0f, cursor - currentHeight * 0.5f, 0f);
+            cursor -= currentHeight + ValueLineGapLocal;
+            row.MaxText.transform.localPosition = new Vector3(0f, cursor - maxHeight * 0.5f, 0f);
+            cursor -= maxHeight + bonusGap;
+
+            if (showBonus)
+                row.BonusText.transform.localPosition = new Vector3(0f, cursor - bonusHeight * 0.5f, 0f);
         }
 
-        /// <summary>Preferred height of the current + gap + capacity stack.</summary>
+        /// <summary>Preferred height of the CREW / digits / CAP / LINK stack.</summary>
         static float GetStatRowHeight(StatRow row)
         {
             // --- Compute value ---
             if (row.CurrentText == null || row.MaxText == null)
                 return 0f;
 
-            return row.CurrentText.preferredHeight + ValueLineGapLocal + row.MaxText.preferredHeight;
+            bool showCaption = row.CaptionText != null && row.CaptionText.gameObject.activeSelf;
+            bool showBonus = row.BonusText != null && row.BonusText.gameObject.activeSelf;
+            float caption = showCaption ? row.CaptionText.preferredHeight + CaptionToValueGapLocal : 0f;
+            float bonus = showBonus ? BonusGapLocal + row.BonusText.preferredHeight : 0f;
+            return caption + row.CurrentText.preferredHeight + ValueLineGapLocal + row.MaxText.preferredHeight + bonus;
         }
 
         /// <summary>
-        /// Centers world name, home stamp or gun-type subtitle, capture credit, and population
-        /// as one vertical block on the planet label.
+        /// Centers world name, optional home stamp, ship family, gun type, capture credit,
+        /// and population as one vertical block on the planet label.
         /// </summary>
         /// <param name="showTitle">False when this planet has no world name.</param>
         /// <param name="showHomeRole">True only for team home worlds — the HOME PLANET stamp.</param>
-        /// <param name="showBulletType">False when this is a home world, or the family has no named gun.</param>
+        /// <param name="showFamily">False when the catalog has no family label.</param>
+        /// <param name="showBulletType">False when the family has no named gun bank.</param>
         /// <param name="showContributor">False when this planet has no capture contributor.</param>
-        void LayoutLabelBlock(bool showTitle, bool showHomeRole, bool showBulletType, bool showContributor)
+        void LayoutLabelBlock(
+            bool showTitle,
+            bool showHomeRole,
+            bool showFamily,
+            bool showBulletType,
+            bool showContributor)
         {
             // --- Measure each visible row ---
             if (_titleText == null)
@@ -579,33 +710,10 @@ namespace TitanOrbit.Game
 
             LayoutStatRow(ref _populationRow);
 
-            float titleHeight = 0f;
-            if (showTitle)
-            {
-                _titleText.fontSize = TitleFontSize;
-                _titleText.ForceMeshUpdate();
-                titleHeight = _titleText.preferredHeight;
-            }
-
-            float homeRoleHeight = 0f;
-            if (showHomeRole && _homeRoleText != null)
-            {
-                // Heavy stamp: keep Bold + Black weight so the smaller size still reads as a rank.
-                _homeRoleText.fontSize = HomeRoleFontSize;
-                _homeRoleText.fontStyle = FontStyles.Bold;
-                _homeRoleText.fontWeight = FontWeight.Black;
-                _homeRoleText.characterSpacing = HomeRoleCharacterSpacing;
-                _homeRoleText.ForceMeshUpdate();
-                homeRoleHeight = _homeRoleText.preferredHeight;
-            }
-
-            float bulletTypeHeight = 0f;
-            if (showBulletType && _bulletTypeText != null)
-            {
-                _bulletTypeText.fontSize = BulletTypeFontSize;
-                _bulletTypeText.ForceMeshUpdate();
-                bulletTypeHeight = _bulletTypeText.preferredHeight;
-            }
+            float titleHeight = MeasureTitle(showTitle);
+            float homeRoleHeight = MeasureHomeRole(showHomeRole);
+            float familyHeight = MeasureSubtitle(_familyText, FamilyNameFontSize, showFamily);
+            float bulletTypeHeight = MeasureSubtitle(_bulletTypeText, BulletTypeFontSize, showBulletType);
 
             float creditHeight = 0f;
             if (showContributor && _captureCredit.Root != null)
@@ -615,25 +723,26 @@ namespace TitanOrbit.Game
             }
 
             // --- Stack heights ---
-            // Name block = world name + home stamp and/or gun-type. Credit sits under that.
-            bool hasSubtitle = showHomeRole || showBulletType;
+            // Identity block = place name + home stamp + family + gun. Credit sits under that.
+            bool hasSubtitle = showHomeRole || showFamily || showBulletType;
             bool hasNameBlock = showTitle || hasSubtitle;
-            bool hasHeader = hasNameBlock || showContributor;
-            float titleToHomeGap = showTitle && showHomeRole ? TitleToSubtitleGapLocal : 0f;
-            float titleToGunGap = showTitle && !showHomeRole && showBulletType ? TitleToSubtitleGapLocal : 0f;
-            float homeToGunGap = showHomeRole && showBulletType ? HomeRoleToBulletTypeGapLocal : 0f;
+            float afterTitleGap = showTitle && hasSubtitle ? TitleToSubtitleGapLocal : 0f;
+            float afterHomeGap = showHomeRole && (showFamily || showBulletType) ? SubtitleStackGapLocal : 0f;
+            float afterFamilyGap = showFamily && showBulletType ? SubtitleStackGapLocal : 0f;
             float nameToCreditGap = hasNameBlock && showContributor ? ContributorGapLocal : 0f;
-            float headerGap = hasHeader ? TitleGapLocal : 0f;
+            bool showRule = hasNameBlock || showContributor;
+            float ruleBlock = showRule ? RuleGapLocal + RuleHeightLocal + RuleGapLocal : 0f;
             float populationHeight = GetStatRowHeight(_populationRow);
             float headerHeight = (showTitle ? titleHeight : 0f)
                 + (showHomeRole ? homeRoleHeight : 0f)
+                + (showFamily ? familyHeight : 0f)
                 + (showBulletType ? bulletTypeHeight : 0f)
                 + (showContributor ? creditHeight : 0f)
-                + titleToHomeGap
-                + titleToGunGap
-                + homeToGunGap
+                + afterTitleGap
+                + afterHomeGap
+                + afterFamilyGap
                 + nameToCreditGap
-                + headerGap;
+                + ruleBlock;
             float totalHeight = populationHeight + headerHeight;
 
             // --- Place from the top of the centered stack ---
@@ -641,29 +750,28 @@ namespace TitanOrbit.Game
             if (showTitle)
             {
                 _titleText.fontStyle = FontStyles.Bold;
-                _titleText.transform.localPosition = new Vector3(
-                    0f,
-                    cursor - titleHeight * 0.5f,
-                    0f);
-                cursor -= titleHeight + titleToHomeGap + titleToGunGap;
+                _titleText.characterSpacing = TitleCharacterSpacing;
+                _titleText.transform.localPosition = new Vector3(0f, cursor - titleHeight * 0.5f, 0f);
+                cursor -= titleHeight + afterTitleGap;
             }
 
             if (showHomeRole && _homeRoleText != null)
             {
-                _homeRoleText.transform.localPosition = new Vector3(
-                    0f,
-                    cursor - homeRoleHeight * 0.5f,
-                    0f);
-                cursor -= homeRoleHeight + homeToGunGap;
+                _homeRoleText.transform.localPosition = new Vector3(0f, cursor - homeRoleHeight * 0.5f, 0f);
+                cursor -= homeRoleHeight + afterHomeGap;
+            }
+
+            if (showFamily && _familyText != null)
+            {
+                _familyText.fontStyle = FontStyles.Bold;
+                _familyText.transform.localPosition = new Vector3(0f, cursor - familyHeight * 0.5f, 0f);
+                cursor -= familyHeight + afterFamilyGap;
             }
 
             if (showBulletType && _bulletTypeText != null)
             {
                 _bulletTypeText.fontStyle = FontStyles.Bold;
-                _bulletTypeText.transform.localPosition = new Vector3(
-                    0f,
-                    cursor - bulletTypeHeight * 0.5f,
-                    0f);
+                _bulletTypeText.transform.localPosition = new Vector3(0f, cursor - bulletTypeHeight * 0.5f, 0f);
                 cursor -= bulletTypeHeight + nameToCreditGap;
             }
             else if (hasNameBlock && showContributor)
@@ -673,76 +781,102 @@ namespace TitanOrbit.Game
 
             if (showContributor && _captureCredit.Root != null)
             {
-                _captureCredit.Root.localPosition = new Vector3(
-                    0f,
-                    cursor - creditHeight * 0.5f,
-                    0f);
-                cursor -= creditHeight + headerGap;
+                _captureCredit.Root.localPosition = new Vector3(0f, cursor - creditHeight * 0.5f, 0f);
+                cursor -= creditHeight;
             }
-            else if (hasNameBlock)
+
+            if (showRule && _identityRule != null)
             {
-                cursor -= headerGap;
+                _identityRule.gameObject.SetActive(true);
+                cursor -= RuleGapLocal;
+                float ruleWidth = MeasureRuleWidth(titleHeight, showTitle, showFamily, showBulletType);
+                _identityRule.transform.localScale = new Vector3(ruleWidth, RuleHeightLocal, 1f);
+                _identityRule.transform.localPosition = new Vector3(0f, cursor - RuleHeightLocal * 0.5f, 0f);
+                cursor -= RuleHeightLocal + RuleGapLocal;
+            }
+            else if (_identityRule != null)
+            {
+                _identityRule.gameObject.SetActive(false);
             }
 
-            _populationRow.Root.localPosition = new Vector3(
-                0f,
-                cursor - populationHeight * 0.5f,
-                0f);
+            _populationRow.Root.localPosition = new Vector3(0f, cursor - populationHeight * 0.5f, 0f);
         }
 
-        /// <summary>Resolves TMP default font, then project fallback assets.</summary>
-        static TMP_FontAsset ResolveFont()
+        /// <summary>Measures the world-name title after forcing the live font size.</summary>
+        float MeasureTitle(bool show)
         {
-            // --- Resolve value ---
-            if (TMP_Settings.defaultFontAsset != null)
-                return TMP_Settings.defaultFontAsset;
+            if (!show || _titleText == null)
+                return 0f;
 
-            var fallback = Resources.Load<TMP_FontAsset>("Fonts & Materials/LiberationSans SDF - Fallback");
-            if (fallback != null)
-                return fallback;
-
-#if UNITY_EDITOR
-            return UnityEditor.AssetDatabase.LoadAssetAtPath<TMP_FontAsset>(
-                "Assets/TextMesh Pro/Resources/Fonts & Materials/LiberationSans SDF - Fallback.asset");
-#else
-            return null;
-#endif
+            _titleText.fontSize = TitleFontSize;
+            _titleText.characterSpacing = TitleCharacterSpacing;
+            _titleText.ForceMeshUpdate();
+            return _titleText.preferredHeight;
         }
 
-        /// <summary>
-        /// Enables outline + dilate and pushes the material into the Overlay queue.
-        /// Default widths match the title / population lines. The home stamp passes heavier values.
-        /// </summary>
-        /// <param name="text">TMP to style. Null is ignored.</param>
-        /// <param name="outlineWidth">SDF outline; thicker reads as a heavier glyph.</param>
-        /// <param name="faceDilate">SDF face expand; this is how we fake a Black weight.</param>
-        static void ApplyReadableTextMaterial(
-            TMP_Text text,
-            float outlineWidth = OutlineWidth,
-            float faceDilate = FaceDilate)
+        /// <summary>Measures the heavy HOME PLANET stamp and reapplies Bold + Black weight.</summary>
+        float MeasureHomeRole(bool show)
         {
-            // --- Apply changes ---
-            if (text == null)
-                return;
+            if (!show || _homeRoleText == null)
+                return 0f;
 
-            Material mat = text.fontMaterial;
-            if (mat == null)
-                return;
+            _homeRoleText.fontSize = HomeRoleFontSize;
+            _homeRoleText.fontStyle = FontStyles.Bold;
+            _homeRoleText.fontWeight = FontWeight.Black;
+            _homeRoleText.characterSpacing = HomeRoleCharacterSpacing;
+            _homeRoleText.ForceMeshUpdate();
+            return _homeRoleText.preferredHeight;
+        }
 
-            mat.EnableKeyword("OUTLINE_ON");
-            if (mat.HasProperty("_OutlineColor"))
-                mat.SetColor("_OutlineColor", new Color(1f, 1f, 1f, 0.92f));
-            if (mat.HasProperty("_OutlineWidth"))
-                mat.SetFloat("_OutlineWidth", outlineWidth);
-            if (mat.HasProperty("_OutlineSoftness"))
-                mat.SetFloat("_OutlineSoftness", 0.04f);
-            if (mat.HasProperty("_FaceDilate"))
-                mat.SetFloat("_FaceDilate", faceDilate);
-            mat.renderQueue = RenderQueueOverlay;
+        /// <summary>Measures a smaller identity line (family or gun type) at <paramref name="fontSize"/>.</summary>
+        static float MeasureSubtitle(TextMeshPro text, float fontSize, bool show)
+        {
+            if (!show || text == null)
+                return 0f;
 
-            var renderer = text.GetComponent<Renderer>();
-            if (renderer != null)
-                renderer.sortingOrder = TextSortingOrder;
+            text.fontSize = fontSize;
+            text.ForceMeshUpdate();
+            return text.preferredHeight;
+        }
+
+        /// <summary>Rule width follows the widest identity line so the bar matches the stencil.</summary>
+        float MeasureRuleWidth(float titleHeight, bool showTitle, bool showFamily, bool showBulletType)
+        {
+            float width = 6f;
+            if (showTitle && titleHeight > 0f)
+                width = Mathf.Max(width, _titleText.preferredWidth * 0.92f);
+            if (showFamily && _familyText != null)
+                width = Mathf.Max(width, _familyText.preferredWidth * 0.85f);
+            if (showBulletType && _bulletTypeText != null)
+                width = Mathf.Max(width, _bulletTypeText.preferredWidth * 0.85f);
+            return Mathf.Clamp(width, 5f, 22f);
+        }
+
+        /// <summary>Rebinds Rajdhani faces onto recovered TMP children after a Play Mode reload.</summary>
+        void ApplyThemeFonts()
+        {
+            if (_titleText != null)
+                _titleText.font = WorldBodyLabelTheme.DisplayFont;
+            if (_homeRoleText != null)
+                _homeRoleText.font = WorldBodyLabelTheme.DisplayFont;
+            if (_familyText != null)
+                _familyText.font = WorldBodyLabelTheme.TelemetryFont;
+            if (_bulletTypeText != null)
+                _bulletTypeText.font = WorldBodyLabelTheme.TelemetryFont;
+            if (_populationRow.CaptionText != null)
+                _populationRow.CaptionText.font = WorldBodyLabelTheme.CaptionFont;
+            if (_populationRow.CurrentText != null)
+                _populationRow.CurrentText.font = WorldBodyLabelTheme.DisplayFont;
+            if (_populationRow.MaxText != null)
+                _populationRow.MaxText.font = WorldBodyLabelTheme.TelemetryFont;
+            if (_populationRow.BonusText != null)
+                _populationRow.BonusText.font = WorldBodyLabelTheme.TelemetryFont;
+        }
+
+        /// <summary>Overlay SDF material via the shared space-HUD theme.</summary>
+        static void ApplyReadableTextMaterial(TMP_Text text)
+        {
+            WorldBodyLabelTheme.ApplyOverlay(text);
         }
 
         /// <summary>Returns <paramref name="color"/> with a replaced alpha channel.</summary>
@@ -783,8 +917,24 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Resolves this planet family's default gun type (Fireballs, Rift, …).
-        /// Same string the Gear tab and Bullet Type HUD show for that family.
+        /// Resolves this planet's ship-tree family (Astro Eagle, Cosmic Shark, …).
+        /// Same catalog string hulls, the upgrade tree, and the minimap hover tip use.
+        /// </summary>
+        static string ResolveShipFamilyName(in PlanetState state)
+        {
+            var config = ShipFamilyConfig;
+            if (config == null)
+                return string.Empty;
+
+            return config.GetFamilyDisplayName(
+                state.PlanetId,
+                state.IsHomePlanet,
+                state.ShipFamilyConfigIndex);
+        }
+
+        /// <summary>
+        /// Resolves this planet's rolled gun type (Fireballs, Rift, Laserbolt, …).
+        /// Independent of the ship family so the same tree can fire a different bank next match.
         /// </summary>
         static string ResolveShipFamilyBulletType(in PlanetState state)
         {
@@ -795,28 +945,17 @@ namespace TitanOrbit.Game
             return config.GetPlanetBulletTypeName(
                 state.PlanetId,
                 state.IsHomePlanet,
-                state.ShipFamilyConfigIndex);
+                state.ShipFamilyConfigIndex,
+                state.BulletBankIndex);
         }
 
         /// <summary>
-        /// Formats the capacity line under current population.
-        /// No bonus → just the base max digits. With triangle bonus → <c>base + bonus</c>
-        /// (no words — large current above / smaller capacity below already reads as now vs max).
+        /// Formats the CAP line under CREW. LINK bonus is a separate cyan line so the extra
+        /// beds cannot be read as a second crew count.
         /// </summary>
-        /// <param name="baseMax">Size × level cap with no territory boost.</param>
-        /// <param name="bonusAmount">Extra people from connection triangles (≥ 0).</param>
-        /// <param name="teamColor">Owning team tint for rich-text spans.</param>
-        static string FormatCapacityLine(int baseMax, int bonusAmount, Color teamColor)
+        static string FormatCapacityLine(int baseMax)
         {
-            // --- Plain base only when no triangle boost ---
-            if (bonusAmount <= 0)
-                return baseMax.ToString();
-
-            // --- "175 + 25": base dimmer, +bonus a bit brighter so the boost is obvious ---
-            // [TITAN-ORBIT] No "bonus" / "current" labels — hierarchy + the plus sign teach the meaning.
-            string baseHex = ColorUtility.ToHtmlStringRGBA(WithAlpha(teamColor, MaxLineAlpha));
-            string bonusHex = ColorUtility.ToHtmlStringRGBA(WithAlpha(teamColor, BonusSpanAlpha));
-            return $"<color=#{baseHex}>{baseMax}</color> <color=#{bonusHex}>+ {bonusAmount}</color>";
+            return WorldBodyLabelTheme.FormatCapLine(baseMax);
         }
 
         /// <summary>
@@ -882,8 +1021,8 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Pulls planet state + triangle bonus, then writes world name, home stamp or
-        /// bullet type, capture credit, and population when dirty.
+        /// Pulls planet state + triangle bonus, then writes world name, home stamp,
+        /// ship family, gun type, capture credit, and population when dirty.
         /// </summary>
         /// <returns>True when TMP / layout need ApplyLayout.</returns>
         bool Refresh()
@@ -895,11 +1034,14 @@ namespace TitanOrbit.Game
             EnsureLabel();
             if (_titleText == null ||
                 _homeRoleText == null ||
+                _familyText == null ||
                 _bulletTypeText == null ||
                 _captureCredit.CaptionText == null ||
                 _captureCredit.NameText == null ||
+                _populationRow.CaptionText == null ||
                 _populationRow.CurrentText == null ||
-                _populationRow.MaxText == null)
+                _populationRow.MaxText == null ||
+                _populationRow.BonusText == null)
                 return false;
 
             if (!_legacyIconRemoved)
@@ -951,6 +1093,7 @@ namespace TitanOrbit.Game
                 _cachedBonusAmount == bonusAmount &&
                 _cachedTeam == state.Ownership &&
                 _cachedFamilyConfigIndex == state.ShipFamilyConfigIndex &&
+                _cachedBulletBankIndex == state.BulletBankIndex &&
                 _cachedIsHomePlanet == state.IsHomePlanet &&
                 _cachedContributorNetworkId == contributorId &&
                 _cachedContributorName == contributorName)
@@ -959,12 +1102,12 @@ namespace TitanOrbit.Game
             }
 
             string planetTitle = ResolvePlanetTitle(state);
+            string familyName = ResolveShipFamilyName(state);
             string bulletType = ResolveShipFamilyBulletType(state);
             bool hasTitle = !string.IsNullOrEmpty(planetTitle);
             bool showHomeRole = hasTitle && state.IsHomePlanet;
-            // Homes already stamp HOME PLANET under the name — skip the gun line so the
-            // capital stays a two-line identity (place + rank), not a three-line stack.
-            bool hasBulletType = hasTitle && !showHomeRole && !string.IsNullOrEmpty(bulletType);
+            bool hasFamily = hasTitle && !string.IsNullOrEmpty(familyName);
+            bool hasBulletType = hasTitle && !string.IsNullOrEmpty(bulletType);
 
             _hasCachedPaint = true;
             _cachedPopulation = state.Population;
@@ -972,9 +1115,11 @@ namespace TitanOrbit.Game
             _cachedBonusAmount = bonusAmount;
             _cachedTeam = state.Ownership;
             _cachedFamilyConfigIndex = state.ShipFamilyConfigIndex;
+            _cachedBulletBankIndex = state.BulletBankIndex;
             _cachedIsHomePlanet = state.IsHomePlanet;
             _cachedContributorNetworkId = contributorId;
             _cachedTitle = planetTitle;
+            _cachedFamilyName = familyName;
             _cachedBulletType = bulletType;
             _cachedContributorName = contributorName;
 
@@ -987,29 +1132,47 @@ namespace TitanOrbit.Game
             // --- Home capital stamp ---
             // Full team color (not the dim gun-type alpha) so the smaller line still owns the eye.
             _homeRoleText.gameObject.SetActive(showHomeRole);
-            _homeRoleText.text = showHomeRole ? HomePlanetRoleLabel : string.Empty;
+            _homeRoleText.text = showHomeRole ? WorldBodyLabelTheme.FormatHomeStamp() : string.Empty;
             _homeRoleText.color = teamColor;
 
-            // Neutral worlds keep the family gun type under the place name.
+            // Every world: HULL rail + family, then GUN rail + default bank.
+            _familyText.gameObject.SetActive(hasFamily);
+            _familyText.richText = true;
+            _familyText.text = hasFamily ? WorldBodyLabelTheme.FormatHullLine(familyName) : string.Empty;
+            _familyText.color = WithAlpha(teamColor, FamilyNameAlpha);
+
             _bulletTypeText.gameObject.SetActive(hasBulletType);
-            _bulletTypeText.text = hasBulletType ? bulletType : string.Empty;
+            _bulletTypeText.richText = true;
+            _bulletTypeText.text = hasBulletType ? WorldBodyLabelTheme.FormatGunLine(bulletType) : string.Empty;
             _bulletTypeText.color = WithAlpha(teamColor, BulletTypeAlpha);
 
             if (_captureCredit.Root != null)
                 _captureCredit.Root.gameObject.SetActive(hasContributor);
-            _captureCredit.CaptionText.text = hasContributor ? "Captured by" : string.Empty;
+            _captureCredit.CaptionText.text = hasContributor ? "CAPTURED BY" : string.Empty;
             _captureCredit.CaptionText.color = WithAlpha(teamColor, CapturedByAlpha);
             _captureCredit.NameText.text = hasContributor ? contributorName : string.Empty;
             _captureCredit.NameText.color = WithAlpha(teamColor, ContributorAlpha);
+
+            _populationRow.CaptionText.gameObject.SetActive(true);
+            _populationRow.CaptionText.text = WorldBodyLabelTheme.CrewCaption;
+            _populationRow.CaptionText.color = WorldBodyLabelTheme.CaptionIce;
 
             _populationRow.CurrentText.text = state.Population.ToString();
             _populationRow.CurrentText.color = teamColor;
 
             _populationRow.MaxText.richText = true;
-            _populationRow.MaxText.text = FormatCapacityLine(baseMax, bonusAmount, teamColor);
+            _populationRow.MaxText.text = FormatCapacityLine(baseMax);
             _populationRow.MaxText.color = WithAlpha(teamColor, MaxLineAlpha);
 
-            LayoutLabelBlock(hasTitle, showHomeRole, hasBulletType, hasContributor);
+            bool showLink = bonusAmount > 0;
+            _populationRow.BonusText.gameObject.SetActive(showLink);
+            _populationRow.BonusText.text = showLink ? WorldBodyLabelTheme.FormatLinkLine(bonusAmount) : string.Empty;
+            _populationRow.BonusText.color = WorldBodyLabelTheme.LinkCyan;
+
+            if (_identityRule != null)
+                _identityRule.color = WithAlpha(teamColor, 0.55f);
+
+            LayoutLabelBlock(hasTitle, showHomeRole, hasFamily, hasBulletType, hasContributor);
             return true;
         }
     }

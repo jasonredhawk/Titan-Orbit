@@ -92,7 +92,8 @@ namespace TitanOrbit.ECS
         [GhostField] public int ItemLevel;
 
         /// <summary>
-        /// Ship-part catalog id, or <c>DroneFam:{configIndex}</c> for drones (purchase-planet family).
+        /// Ship-part catalog id, or <c>DroneFam:{family}:{bank}</c> for drones
+        /// (purchase-planet family plus that planet's rolled gun).
         /// </summary>
         [GhostField] public FixedString64Bytes ComponentId;
     }

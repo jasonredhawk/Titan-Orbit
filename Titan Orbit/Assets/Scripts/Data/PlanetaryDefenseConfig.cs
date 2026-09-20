@@ -201,8 +201,8 @@ namespace TitanOrbit.Data
         };
 
         /// <summary>
-        /// Inspector inherit row: use the owning planet family's
-        /// <see cref="ShipFamilyDefinition.bulletPrefabIndex"/> (and that bank's full profile).
+        /// Inspector inherit row: use the planet's rolled <c>PlanetState.BulletBankIndex</c>,
+        /// then the family's Laserbolt fallback (and that bank's full profile).
         /// </summary>
         public const int UseFamilyBulletBankIndex = -1;
 
@@ -211,8 +211,8 @@ namespace TitanOrbit.Data
         [Header("Bullets")]
         [BulletVfxBankCategory(true, "Ship family default")]
         [Tooltip(
-            "Bullet bank this turret fires. Ship family default uses the owning family's " +
-            "ShipFamilyDefinition.bulletPrefabIndex for VFX, on-hit abilities, AND stat " +
+            "Bullet bank this turret fires. Ship family default uses the planet's rolled " +
+            "BulletBankIndex (then the family's Laserbolt fallback) for VFX, on-hit abilities, AND stat " +
             "multipliers (fire power, fire rate, speed, range) applied to this recipe's " +
             "Level 1–6 defaults. Lightning is the usual example: 0.25× fire rate and " +
             "0.9× fire power on top of damageAtLevel* / fireRateAtLevel*.")]
@@ -425,11 +425,13 @@ namespace TitanOrbit.Data
         }
 
         /// <summary>
-        /// Bank this recipe fires for <paramref name="family"/>. Inherit (-1) follows
-        /// the family's default damage bank; a pinned index uses that category instead.
+        /// Bank this recipe fires. A pinned inspector index wins; inherit (−1) uses the
+        /// planet's rolled gun, then the family's Laserbolt fallback.
         /// </summary>
-        public int ResolveBulletBankIndex(ShipFamilyDefinition family) =>
-            BulletBankProfileUtility.ResolveBankIndexForPlanetaryDefense(this, family);
+        /// <param name="family">Owning family — used only when the planet bank is missing.</param>
+        /// <param name="planetBulletBankIndex">Ghosted <c>PlanetState.BulletBankIndex</c> (−1 = ignore).</param>
+        public int ResolveBulletBankIndex(ShipFamilyDefinition family, int planetBulletBankIndex = -1) =>
+            BulletBankProfileUtility.ResolveBankIndexForPlanetaryDefense(this, family, planetBulletBankIndex);
 
         /// <summary>
         /// Ship-family definition for a planet's <c>ShipFamilyConfigIndex</c>, or null.

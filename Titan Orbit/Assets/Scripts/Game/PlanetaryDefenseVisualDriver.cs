@@ -536,7 +536,7 @@ namespace TitanOrbit.Game
                     _familyConfig, planet.ShipFamilyConfigIndex);
                 ShipFamilyDefinition familyDef = PlanetaryDefenseConfig.ResolveFamilyDefinition(
                     _familyConfig, planet.ShipFamilyConfigIndex);
-                int bankIndex = config.ResolveBulletBankIndex(familyDef);
+                int bankIndex = config.ResolveBulletBankIndex(familyDef, planet.BulletBankIndex);
 
                 if (!_groupsByPlanetId.TryGetValue(planet.PlanetId, out var group))
                 {

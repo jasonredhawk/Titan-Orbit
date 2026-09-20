@@ -52,13 +52,16 @@ namespace TitanOrbit.Data
         static float Mul(float authored) => authored > 0f ? authored : 1f;
 
         /// <summary>
-        /// Family default bank category from <see cref="ShipFamilyDefinition.bulletPrefabIndex"/>.
+        /// Family fallback bank from <see cref="ShipFamilyDefinition.bulletPrefabIndex"/>.
+        /// Every gameplay family authors Laserbolt (0). Live hulls use the planet-stamped
+        /// <c>ShipState.HullBulletBankIndex</c> instead — this is the asset default only.
         /// Negative authored values clamp to 0 (Laserbolt / first bank category).
         /// </summary>
         public static int ResolveBankIndexForFamily(ShipFamilyDefinition family)
         {
-            // --- Family → bank ---
-            // [TITAN-ORBIT] Wired into ShipLoadoutState.RuntimeBulletIndex by ShipStatApplyLogic.
+            // --- Family fallback → bank ---
+            // [TITAN-ORBIT] Planets overwrite this at spawn. ShipStatApplyLogic prefers
+            // HullBulletBankIndex; this path is store preview, missing stamp, and inherit.
             if (family == null)
                 return 0;
             int index = family.bulletPrefabIndex < 0 ? 0 : family.bulletPrefabIndex;
@@ -128,12 +131,18 @@ namespace TitanOrbit.Data
         /// <summary>
         /// Bank a planetary-defense pad fires. <paramref name="config"/> may pin a category;
         /// <see cref="PlanetaryDefenseConfig.UseFamilyBulletBankIndex"/> (-1, the default)
-        /// inherits the owning family's damage bank. Heal and store-reserved (Rockets)
-        /// never win — those fall back to the family default.
+        /// inherits the planet's rolled gun, then the owning family's Laserbolt fallback.
+        /// Heal and store-reserved (Rockets) never win.
         /// </summary>
+        /// <param name="config">Turret recipe (may pin a bank).</param>
+        /// <param name="family">Owning family — used only when the planet did not stamp a gun.</param>
+        /// <param name="planetBulletBankIndex">
+        /// Ghosted <c>PlanetState.BulletBankIndex</c> (−1 = ignore and use family fallback).
+        /// </param>
         public static int ResolveBankIndexForPlanetaryDefense(
             PlanetaryDefenseConfig config,
-            ShipFamilyDefinition family)
+            ShipFamilyDefinition family,
+            int planetBulletBankIndex = -1)
         {
             if (config != null && config.bulletBankIndex >= 0)
             {
@@ -141,6 +150,9 @@ namespace TitanOrbit.Data
                 if (!IsHealBankIndex(authored) && !IsStoreReservedBankIndex(authored))
                     return authored;
             }
+
+            if (planetBulletBankIndex >= 0)
+                return PlanetShipFamilyAssignment.SanitizeSelectableDamageBank(planetBulletBankIndex);
 
             return Mathf.Max(0, ResolveBankIndexForFamily(family));
         }
@@ -155,28 +167,60 @@ namespace TitanOrbit.Data
         /// <summary>Prefix stamped on drone <c>EquippedEquipmentElement.ComponentId</c> at purchase.</summary>
         public const string DroneSourceFamilyIdPrefix = "DroneFam:";
 
-        /// <summary>Encodes the store planet's family config index onto a purchased drone.</summary>
-        public static string FormatDroneSourceFamilyId(int familyConfigIndex) =>
-            DroneSourceFamilyIdPrefix + Mathf.Max(0, familyConfigIndex);
+        /// <summary>
+        /// Encodes the store planet's family + rolled gun onto a purchased drone
+        /// (<c>DroneFam:{family}:{bank}</c>). Older saves used <c>DroneFam:{family}</c> only.
+        /// </summary>
+        public static string FormatDroneSourceFamilyId(int familyConfigIndex, int bulletBankIndex = -1)
+        {
+            int family = Mathf.Max(0, familyConfigIndex);
+            if (bulletBankIndex < 0)
+                return DroneSourceFamilyIdPrefix + family;
+            int bank = PlanetShipFamilyAssignment.SanitizeSelectableDamageBank(bulletBankIndex);
+            return DroneSourceFamilyIdPrefix + family + ":" + bank;
+        }
 
         /// <summary>True when <paramref name="componentId"/> is a drone source-family stamp.</summary>
         public static bool TryParseDroneSourceFamilyId(string componentId, out int familyConfigIndex)
         {
-            familyConfigIndex = 0;
-            if (string.IsNullOrEmpty(componentId) ||
-                !componentId.StartsWith(DroneSourceFamilyIdPrefix, System.StringComparison.Ordinal))
-                return false;
-            return int.TryParse(componentId.Substring(DroneSourceFamilyIdPrefix.Length), out familyConfigIndex);
+            return TryParseDroneSource(componentId, out familyConfigIndex, out _);
         }
 
         /// <summary>
-        /// Bank for a combat drone: stamped purchase-planet family, else the hull family default.
-        /// Never returns the heal bank.
+        /// Reads <c>DroneFam:{family}</c> or <c>DroneFam:{family}:{bank}</c>.
+        /// <paramref name="bulletBankIndex"/> is −1 when the older family-only stamp is present.
+        /// </summary>
+        public static bool TryParseDroneSource(string componentId, out int familyConfigIndex, out int bulletBankIndex)
+        {
+            familyConfigIndex = 0;
+            bulletBankIndex = -1;
+            if (string.IsNullOrEmpty(componentId) ||
+                !componentId.StartsWith(DroneSourceFamilyIdPrefix, System.StringComparison.Ordinal))
+                return false;
+
+            string rest = componentId.Substring(DroneSourceFamilyIdPrefix.Length);
+            int colon = rest.IndexOf(':');
+            if (colon < 0)
+                return int.TryParse(rest, out familyConfigIndex);
+
+            if (!int.TryParse(rest.Substring(0, colon), out familyConfigIndex))
+                return false;
+            if (int.TryParse(rest.Substring(colon + 1), out int bank))
+                bulletBankIndex = bank;
+            return true;
+        }
+
+        /// <summary>
+        /// Bank for a combat drone: stamped purchase-planet gun when present, else that
+        /// planet's family fallback, else the hull family default. Never returns the heal bank.
         /// </summary>
         public static int ResolveBankIndexForDrone(string componentId, ShipFamilyDefinition hullFallback = null)
         {
-            if (TryParseDroneSourceFamilyId(componentId, out int familyIndex))
+            if (TryParseDroneSource(componentId, out int familyIndex, out int stampedBank))
             {
+                if (stampedBank >= 0)
+                    return PlanetShipFamilyAssignment.SanitizeSelectableDamageBank(stampedBank);
+
                 var config = PlanetShipFamilyConfig.LoadDefault();
                 var entry = config != null ? config.GetFamilyByConfigIndex(familyIndex) : null;
                 if (entry?.shipFamilyDefinition != null)
@@ -263,9 +307,9 @@ namespace TitanOrbit.Data
             if (family == null)
                 return string.Empty;
 
-            // --- Family default bank ---
-            // [TITAN-ORBIT] Each gameplay family authors one bulletPrefabIndex. Planet labels
-            // show that type under the family name so players can spot the gun from orbit.
+            // --- Family fallback bank ---
+            // [TITAN-ORBIT] Family assets default to Laserbolt. Planet world labels should
+            // prefer PlanetState.BulletBankIndex — this string is the asset fallback only.
             int bankIndex = ResolveBankIndexForFamily(family);
             return FormatBankCategoryName(bankIndex);
         }

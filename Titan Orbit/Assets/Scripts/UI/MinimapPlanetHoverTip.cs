@@ -9,9 +9,8 @@ namespace TitanOrbit.UI
     /// <summary>
     /// Small planet tooltip for minimap blips and edge markers.
     /// The player hovers a planet disc (or the off-screen arrow) and sees the same proper world
-    /// name that floats above the planet in the world (<see cref="Game.PlanetWorldStatsLabel"/>).
-    /// Home worlds stamp <c>HOME PLANET</c> under the name (small, heavy). Neutrals show the
-    /// ship family (Astro Eagle, Cosmic Shark, …) in a lighter subtitle.
+    /// name that floats above the planet in the world (<see cref="Game.PlanetWorldStatsLabel"/>),
+    /// then family + weapon type. Home worlds also stamp <c>HOME PLANET</c> under the name.
     /// <para>
     /// Client presentation only — reads <see cref="MinimapBlipAnchor"/> plus
     /// <see cref="PlanetShipFamilyConfig"/>. No ECS gathers, no sim writes.
@@ -50,6 +49,9 @@ namespace TitanOrbit.UI
         /// <summary>Ship-family subtitle — smaller and lighter so the place name stays primary.</summary>
         const float FamilyNameFontSize = 8f;
 
+        /// <summary>Weapon-type line under the family — smallest identity line on the card.</summary>
+        const float WeaponNameFontSize = 7.5f;
+
         /// <summary>
         /// Home-capital stamp on the hover card. Smaller than the place name, larger and heavier
         /// than the family line so it reads as a rank.
@@ -65,11 +67,11 @@ namespace TitanOrbit.UI
         /// <summary>Top padding under the ice-blue rail.</summary>
         const float CardPadTop = 5f;
 
-        /// <summary>Bottom padding under the family line (or the name when family is missing).</summary>
+        /// <summary>Bottom padding under the last subtitle (or the name when none are shown).</summary>
         const float CardPadBottom = 4f;
 
-        /// <summary>Gap between the world name and the family subtitle.</summary>
-        const float NameToFamilyGap = 1f;
+        /// <summary>Gap between stacked identity lines on the hover card.</summary>
+        const float LineGap = 1f;
 
         /// <summary>
         /// Tiny HUD card: dark glass fill, thin ice-blue rail, world name + smaller family subtitle.
@@ -80,7 +82,9 @@ namespace TitanOrbit.UI
             public GameObject Root;
             public RectTransform RootRect;
             public TextMeshProUGUI NameLabel;
+            public TextMeshProUGUI HomeRoleLabel;
             public TextMeshProUGUI FamilyLabel;
+            public TextMeshProUGUI WeaponLabel;
             public Canvas HostCanvas;
         }
 
@@ -178,7 +182,7 @@ namespace TitanOrbit.UI
 
         /// <summary>
         /// [UNITY] EventSystem hover enter. Builds the shared tip if needed, writes the world name
-        /// plus HOME PLANET or ship-family subtitle, and shows the card.
+        /// plus home stamp / family / weapon subtitles, and shows the card.
         /// </summary>
         public void OnPointerEnter(PointerEventData eventData)
         {
@@ -195,7 +199,7 @@ namespace TitanOrbit.UI
 
             s_Active = this;
             s_Chrome.NameLabel.text = planetName;
-            ApplySubtitle(_anchor);
+            ApplyIdentityLines(_anchor);
             s_Chrome.Root.SetActive(true);
             FitToText();
             PlaceBesideHoveredPlanet();
@@ -287,30 +291,83 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// Writes the line under the world name. Homes get the heavy HOME PLANET stamp;
-        /// neutrals keep the ship-family subtitle. Empty family hides the second line.
+        /// Weapon-type label for this planet (Fireballs, Rift, …).
+        /// Same catalog string the world-space planet and moon labels show under the family.
+        /// </summary>
+        static string ResolveWeaponName(MinimapBlipAnchor anchor)
+        {
+            if (anchor == null)
+                return string.Empty;
+
+            PlanetShipFamilyConfig config = GetFamilyConfig();
+            if (config == null)
+                return string.Empty;
+
+            return config.GetPlanetBulletTypeName(
+                anchor.PlanetId,
+                anchor.IsHomePlanet,
+                anchor.ShipFamilyConfigIndex,
+                anchor.BulletBankIndex);
+        }
+
+        /// <summary>
+        /// Writes the identity stack under the world name: HOME PLANET on capitals,
+        /// then family and weapon on every planet.
         /// </summary>
         /// <param name="anchor">Hovered planet blip (null-safe).</param>
-        static void ApplySubtitle(MinimapBlipAnchor anchor)
+        static void ApplyIdentityLines(MinimapBlipAnchor anchor)
         {
-            if (s_Chrome.FamilyLabel == null)
+            bool isHome = anchor != null && anchor.IsHomePlanet;
+            ApplyLine(
+                s_Chrome.HomeRoleLabel,
+                isHome ? HomePlanetRoleLabel : string.Empty,
+                HomeRoleFontSize,
+                FontStyles.Bold,
+                FontWeight.Black,
+                1.6f,
+                new Color(0.88f, 0.92f, 0.98f, 1f));
+            ApplyLine(
+                s_Chrome.FamilyLabel,
+                ResolveFamilyName(anchor),
+                FamilyNameFontSize,
+                FontStyles.Bold,
+                FontWeight.Regular,
+                0f,
+                new Color(0.72f, 0.84f, 0.96f, 0.92f));
+            ApplyLine(
+                s_Chrome.WeaponLabel,
+                ResolveWeaponName(anchor),
+                WeaponNameFontSize,
+                FontStyles.Bold,
+                FontWeight.Regular,
+                0f,
+                new Color(0.62f, 0.78f, 0.95f, 0.82f));
+        }
+
+        /// <summary>Shows or hides one hover-card line and applies its type style.</summary>
+        static void ApplyLine(
+            TextMeshProUGUI label,
+            string text,
+            float fontSize,
+            FontStyles style,
+            FontWeight weight,
+            float tracking,
+            Color color)
+        {
+            if (label == null)
                 return;
 
-            bool isHome = anchor != null && anchor.IsHomePlanet;
-            string subtitle = isHome ? HomePlanetRoleLabel : ResolveFamilyName(anchor);
-            bool show = !string.IsNullOrWhiteSpace(subtitle);
-            s_Chrome.FamilyLabel.gameObject.SetActive(show);
+            bool show = !string.IsNullOrWhiteSpace(text);
+            label.gameObject.SetActive(show);
             if (!show)
                 return;
 
-            s_Chrome.FamilyLabel.text = subtitle;
-            s_Chrome.FamilyLabel.fontSize = isHome ? HomeRoleFontSize : FamilyNameFontSize;
-            s_Chrome.FamilyLabel.fontStyle = isHome ? FontStyles.Bold : FontStyles.Normal;
-            s_Chrome.FamilyLabel.fontWeight = isHome ? FontWeight.Black : FontWeight.Regular;
-            s_Chrome.FamilyLabel.characterSpacing = isHome ? 1.6f : 0f;
-            s_Chrome.FamilyLabel.color = isHome
-                ? new Color(0.88f, 0.92f, 0.98f, 1f)
-                : new Color(0.62f, 0.78f, 0.95f, 0.88f);
+            label.text = text;
+            label.fontSize = fontSize;
+            label.fontStyle = style;
+            label.fontWeight = weight;
+            label.characterSpacing = tracking;
+            label.color = color;
         }
 
         /// <summary>Loads <c>Resources/PlanetShipFamilyConfig</c> once.</summary>
@@ -333,8 +390,10 @@ namespace TitanOrbit.UI
         {
             if (s_Chrome.Root != null)
             {
-                // --- Reuse current two-line card ---
-                if (s_Chrome.FamilyLabel != null)
+                // --- Reuse current identity card ---
+                if (s_Chrome.FamilyLabel != null &&
+                    s_Chrome.HomeRoleLabel != null &&
+                    s_Chrome.WeaponLabel != null)
                 {
                     // Hot-reload: keep the sit-on-top pivot even if this card was built with the old (0,0) pivot.
                     if (s_Chrome.RootRect != null)
@@ -382,20 +441,32 @@ namespace TitanOrbit.UI
             accent.color = new Color(0.35f, 0.72f, 0.95f, 0.95f);
             accent.raycastTarget = false;
 
-            // --- Two-line stack: place name on top, family under it ---
-            // Both labels hang from the top so FitToText can grow the card downward.
+            // --- Identity stack: place name, optional HOME PLANET, family, weapon ---
+            // Labels hang from the top so FitToText can grow the card downward.
             TextMeshProUGUI nameLabel = CreateLineLabel(
                 "Name",
                 root.transform,
                 PlanetNameFontSize,
                 FontStyles.Bold,
                 new Color(0.88f, 0.92f, 0.98f, 1f));
+            TextMeshProUGUI homeRoleLabel = CreateLineLabel(
+                "HomeRole",
+                root.transform,
+                HomeRoleFontSize,
+                FontStyles.Bold,
+                new Color(0.88f, 0.92f, 0.98f, 1f));
             TextMeshProUGUI familyLabel = CreateLineLabel(
                 "Family",
                 root.transform,
                 FamilyNameFontSize,
-                FontStyles.Normal,
-                new Color(0.62f, 0.78f, 0.95f, 0.88f));
+                FontStyles.Bold,
+                new Color(0.72f, 0.84f, 0.96f, 0.92f));
+            TextMeshProUGUI weaponLabel = CreateLineLabel(
+                "Weapon",
+                root.transform,
+                WeaponNameFontSize,
+                FontStyles.Bold,
+                new Color(0.62f, 0.78f, 0.95f, 0.82f));
 
             root.transform.SetAsLastSibling();
             root.SetActive(false);
@@ -405,7 +476,9 @@ namespace TitanOrbit.UI
                 Root = root,
                 RootRect = rootRt,
                 NameLabel = nameLabel,
+                HomeRoleLabel = homeRoleLabel,
                 FamilyLabel = familyLabel,
+                WeaponLabel = weaponLabel,
                 HostCanvas = canvas
             };
         }
@@ -461,41 +534,73 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// Shrinks or grows the card to the world name (and family subtitle when shown).
-        /// Also parks each line: name under the top pad, family under the name.
+        /// Shrinks or grows the card to the world name plus any visible identity lines.
+        /// Parks each line from the top: name, HOME PLANET, family, weapon.
         /// </summary>
         static void FitToText()
         {
             if (s_Chrome.NameLabel == null || s_Chrome.RootRect == null)
                 return;
 
-            // --- Measure both lines ---
-            s_Chrome.NameLabel.ForceMeshUpdate();
-            Vector2 namePref = s_Chrome.NameLabel.GetPreferredValues(s_Chrome.NameLabel.text);
+            // --- Measure visible lines ---
+            Vector2 namePref = MeasureLine(s_Chrome.NameLabel);
+            bool showHome = IsShown(s_Chrome.HomeRoleLabel);
+            bool showFamily = IsShown(s_Chrome.FamilyLabel);
+            bool showWeapon = IsShown(s_Chrome.WeaponLabel);
+            Vector2 homePref = showHome ? MeasureLine(s_Chrome.HomeRoleLabel) : Vector2.zero;
+            Vector2 familyPref = showFamily ? MeasureLine(s_Chrome.FamilyLabel) : Vector2.zero;
+            Vector2 weaponPref = showWeapon ? MeasureLine(s_Chrome.WeaponLabel) : Vector2.zero;
 
-            bool showFamily = s_Chrome.FamilyLabel != null && s_Chrome.FamilyLabel.gameObject.activeSelf;
-            Vector2 familyPref = Vector2.zero;
+            float textWidth = namePref.x;
+            if (showHome)
+                textWidth = Mathf.Max(textWidth, homePref.x);
             if (showFamily)
-            {
-                s_Chrome.FamilyLabel.ForceMeshUpdate();
-                familyPref = s_Chrome.FamilyLabel.GetPreferredValues(s_Chrome.FamilyLabel.text);
-            }
+                textWidth = Mathf.Max(textWidth, familyPref.x);
+            if (showWeapon)
+                textWidth = Mathf.Max(textWidth, weaponPref.x);
 
-            float textWidth = showFamily ? Mathf.Max(namePref.x, familyPref.x) : namePref.x;
+            int extraLines = (showHome ? 1 : 0) + (showFamily ? 1 : 0) + (showWeapon ? 1 : 0);
+            float gaps = extraLines * LineGap;
+            float extraHeight = homePref.y + familyPref.y + weaponPref.y;
             float width = Mathf.Clamp(textWidth + (CardPadX * 2f), 48f, 220f);
-            float gap = showFamily ? NameToFamilyGap : 0f;
-            float height = Mathf.Max(20f, CardPadTop + namePref.y + gap + familyPref.y + CardPadBottom);
+            float height = Mathf.Max(20f, CardPadTop + namePref.y + gaps + extraHeight + CardPadBottom);
             s_Chrome.RootRect.sizeDelta = new Vector2(width, height);
 
             // --- Park lines from the top ---
-            // Labels are top-stretched; sizeDelta.x is the inset (negative = pad both sides).
             float lineWidth = -(CardPadX * 2f);
-            PlaceLine(s_Chrome.NameLabel.rectTransform, -CardPadTop, namePref.y, lineWidth);
+            float y = -CardPadTop;
+            PlaceLine(s_Chrome.NameLabel.rectTransform, y, namePref.y, lineWidth);
+            y -= namePref.y;
+            if (showHome)
+            {
+                y -= LineGap;
+                PlaceLine(s_Chrome.HomeRoleLabel.rectTransform, y, homePref.y, lineWidth);
+                y -= homePref.y;
+            }
+
             if (showFamily)
             {
-                float familyY = -(CardPadTop + namePref.y + gap);
-                PlaceLine(s_Chrome.FamilyLabel.rectTransform, familyY, familyPref.y, lineWidth);
+                y -= LineGap;
+                PlaceLine(s_Chrome.FamilyLabel.rectTransform, y, familyPref.y, lineWidth);
+                y -= familyPref.y;
             }
+
+            if (showWeapon)
+            {
+                y -= LineGap;
+                PlaceLine(s_Chrome.WeaponLabel.rectTransform, y, weaponPref.y, lineWidth);
+            }
+        }
+
+        /// <summary>True when this hover-card line exists and is currently shown.</summary>
+        static bool IsShown(TextMeshProUGUI label) =>
+            label != null && label.gameObject.activeSelf;
+
+        /// <summary>Preferred size for one hover-card TMP after a mesh update.</summary>
+        static Vector2 MeasureLine(TextMeshProUGUI label)
+        {
+            label.ForceMeshUpdate();
+            return label.GetPreferredValues(label.text);
         }
 
         /// <summary>

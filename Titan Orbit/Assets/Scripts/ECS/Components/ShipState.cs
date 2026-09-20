@@ -48,6 +48,15 @@ namespace TitanOrbit.ECS
         /// </summary>
         [GhostField] public byte ShipFamilyConfigIndex;
 
+        /// <summary>
+        /// [TITAN-ORBIT] Hull-default <c>BulletVfxBank</c> category copied from the planet where
+        /// this hull was bought (or the home world at team spawn). Family assets all default to
+        /// Laserbolt (0); the planet roll is what the guns actually start on. B-key may cycle
+        /// away via <c>ShipLoadoutState.RuntimeBulletIndex</c>, but ownership and chassis-swap
+        /// reset come back to this index. Ghosted so clients own the same default gun.
+        /// </summary>
+        [GhostField] public byte HullBulletBankIndex;
+
         /// <summary>[TITAN-ORBIT] Gems currently stored in the ship cargo hold.</summary>
         [GhostField] public float CurrentGems;
 

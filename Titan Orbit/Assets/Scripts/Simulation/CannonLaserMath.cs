@@ -7,7 +7,10 @@ namespace TitanOrbit.Simulation
     /// <summary>
     /// Shared MEGA cannon-laser acquire and DPS math. Server combat and client beams
     /// use the same 33° half-angle cone and firePower × fireRate damage rate.
-    /// Map size comes from <see cref="MapStateSingleton"/> via the caller.
+    /// Sustained burn ramps that authored DPS from
+    /// <see cref="RampDamageMin"/> to <see cref="RampDamageMax"/> over
+    /// <see cref="RampDurationSeconds"/>. Map size comes from
+    /// <see cref="MapStateSingleton"/> via the caller.
     /// </summary>
     [BurstCompile]
     public static class CannonLaserMath
@@ -36,6 +39,15 @@ namespace TitanOrbit.Simulation
         /// </summary>
         public const float MinTrackingDistance = 0.25f;
 
+        /// <summary>Hold Fire this long to reach <see cref="RampDamageMax"/>.</summary>
+        public const float RampDurationSeconds = 5f;
+
+        /// <summary>Damage multiplier on the first tick of a burn (50% authored DPS).</summary>
+        public const float RampDamageMin = 0.5f;
+
+        /// <summary>Damage multiplier after <see cref="RampDurationSeconds"/> (300% authored DPS).</summary>
+        public const float RampDamageMax = 3f;
+
         /// <summary>Sticky hold range from an acquire range (hysteresis).</summary>
         public static float KeepRange(float acquireRange)
         {
@@ -45,12 +57,42 @@ namespace TitanOrbit.Simulation
         /// <summary>Minimum planar length before a direction can be normalized.</summary>
         const float MinDirectionSq = 0.0001f;
 
-        /// <summary>Damage (and energy) per second while the beam is locked: firePower × fireRate.</summary>
+        /// <summary>Authored damage (and energy) per second while locked: firePower × fireRate.</summary>
         public static float ComputeDps(float firePower, float fireRate)
         {
             float power = math.max(0f, firePower);
             float rate = math.max(0.1f, fireRate);
             return power * rate;
+        }
+
+        /// <summary>
+        /// Linear 50% → 300% over <see cref="RampDurationSeconds"/>. Caps at the max.
+        /// Energy drain stays at <see cref="ComputeDps"/>; only the hit uses this.
+        /// </summary>
+        public static float ComputeRampMultiplier(float rampSeconds)
+        {
+            float t = math.saturate(math.max(0f, rampSeconds) / RampDurationSeconds);
+            return math.lerp(RampDamageMin, RampDamageMax, t);
+        }
+
+        /// <summary>Authored DPS × the live burn ramp (50%–300%).</summary>
+        public static float ComputeRampedDps(float firePower, float fireRate, float rampSeconds)
+        {
+            return ComputeDps(firePower, fireRate) * ComputeRampMultiplier(rampSeconds);
+        }
+
+        /// <summary>
+        /// Advances one barrel's charge. Resets when Fire is released, lockout
+        /// trips, or the lock entity changes. Same lock across a one-tick gap
+        /// keeps the current value.
+        /// </summary>
+        public static float StepRampSeconds(float current, float dt, bool reset, bool charging)
+        {
+            if (reset)
+                return 0f;
+            if (!charging)
+                return math.max(0f, current);
+            return math.min(RampDurationSeconds, math.max(0f, current) + math.max(0f, dt));
         }
 
         /// <summary>

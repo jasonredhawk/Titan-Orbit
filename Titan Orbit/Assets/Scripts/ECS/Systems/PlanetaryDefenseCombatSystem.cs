@@ -32,8 +32,8 @@ namespace TitanOrbit.ECS
     /// Lead uses <see cref="PlanetaryDefenseAimMath.ShipVelocityLeadScale"/> (1 — no accel bias)
     /// for ships and transports so constant-velocity strafe matches the quadratic.
     /// <see cref="BulletVisualScale"/> grows tracers with fire power. Bullet bank is the
-    /// recipe's inherit / pinned category (default: family's
-    /// <see cref="ShipFamilyDefinition.bulletPrefabIndex"/>). Combat stats come from
+    /// recipe's inherit / pinned category (default: this planet's rolled
+    /// <c>PlanetState.BulletBankIndex</c>, then Laserbolt). Combat stats come from
     /// <see cref="PlanetaryDefenseConfig.GetCombatLevelStats"/> so that bank's
     /// fire-power / fire-rate / speed / range multipliers rewrite the recipe defaults.
     /// Each shot's <see cref="BulletElement.MaxDistance"/> is
@@ -147,7 +147,7 @@ namespace TitanOrbit.ECS
                     : 0;
                 int slotCount = buffer.Length;
                 byte ownerTeam = (byte)planet.Ownership;
-                int bankIndex = config.ResolveBulletBankIndex(familyDef);
+                int bankIndex = config.ResolveBulletBankIndex(familyDef, planet.BulletBankIndex);
                 if (_vfxBank != null)
                     categoryUpgradeScale = _vfxBank.GetCategoryUpgradeVisualScaleMultiplier(bankIndex);
 

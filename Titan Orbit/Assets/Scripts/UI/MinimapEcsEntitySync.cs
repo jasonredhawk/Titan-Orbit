@@ -386,6 +386,7 @@ namespace TitanOrbit.UI
                     anchor.PlanetId = planet.PlanetId;
                     anchor.IsHomePlanet = planet.IsHomePlanet;
                     anchor.ShipFamilyConfigIndex = planet.ShipFamilyConfigIndex;
+                    anchor.BulletBankIndex = planet.BulletBankIndex;
                     anchor.BodySize = math.max(0.25f, lt.Scale);
                     // Per-entity buffer read — not a map-body archetype gather (quarantine-safe).
                     anchor.DefenseTurretBuiltMask = ReadDefenseTurretBuiltMask(em, entity);
@@ -601,6 +602,7 @@ namespace TitanOrbit.UI
             // Home + family index — world labels and the minimap hover tip resolve the name from these.
             anchor.IsHomePlanet = state.IsHomePlanet;
             anchor.ShipFamilyConfigIndex = state.ShipFamilyConfigIndex;
+            anchor.BulletBankIndex = state.BulletBankIndex;
             anchor.BodySize = math.max(0.25f, lt.Scale);
             // Per-entity buffer read — not a map-body archetype gather (quarantine-safe).
             anchor.DefenseTurretBuiltMask = ReadDefenseTurretBuiltMask(em, entity);
