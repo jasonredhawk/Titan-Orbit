@@ -204,7 +204,52 @@ namespace TitanOrbit.ECS
             return dest[(idx + 1) % count];
         }
 
+        /// <summary>
+        /// Next bank on the same list the Weapons HUD paints. Production walks hull
+        /// default then purchases. Cycle-all walks every non-reserved catalog row.
+        /// When <paramref name="current"/> is missing from that list, treat the caret
+        /// as parked on the first row (same as the HUD) and step to the second.
+        /// </summary>
+        /// <param name="em">World that owns <paramref name="shipEntity"/>.</param>
+        /// <param name="shipEntity">Ship whose visible banks we walk.</param>
+        /// <param name="current">Bank the player is on (runtime index or optimistic HUD caret).</param>
+        /// <returns>The next visible bank, or <paramref name="current"/> when the list is empty.</returns>
+        public static int NextVisibleBank(EntityManager em, Entity shipEntity, int current)
+        {
+            // --- Same rows as BulletTypeHUD ---
+            // [TITAN-ORBIT] B and the left-side WEAPONS strip must share this walk.
+            // NextOwnedDamageBank is production-only; cycle-all used a catalog increment
+            // that could land on a row the 16-tile HUD never painted.
+            int count = CollectVisibleBankRows(em, shipEntity, s_VisibleScratch);
+            if (count <= 0)
+                return current < 0 ? 0 : current;
+            if (count == 1)
+                return s_VisibleScratch[0].BankIndex;
+
+            // --- Find the live row ---
+            // Missing current → idx 0. HUD already parks the caret there, so B
+            // advances to row 1 instead of snapping to a type the player thinks
+            // they already have selected.
+            int idx = 0;
+            for (int i = 0; i < count; i++)
+            {
+                if (s_VisibleScratch[i].BankIndex == current)
+                {
+                    idx = i;
+                    break;
+                }
+            }
+
+            return s_VisibleScratch[(idx + 1) % count].BankIndex;
+        }
+
         static readonly int[] s_NextScratch = new int[16];
+
+        /// <summary>
+        /// Scratch for <see cref="NextVisibleBank"/>. Length matches
+        /// <c>BulletTypeHUD</c> MaxRows so B cannot pick a bank the strip never shows.
+        /// </summary>
+        static readonly VisibleBankRow[] s_VisibleScratch = new VisibleBankRow[16];
 
         /// <summary>Scratch for ownership checks shared by visible-row and selectable helpers.</summary>
         static readonly int[] s_OwnedScratch = new int[16];

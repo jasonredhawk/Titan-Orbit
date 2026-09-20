@@ -359,8 +359,9 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// Writes the uppercase family caption and optional FAMILY STATS rail.
-        /// Hides the rail when every special bonus is 1× (Astro Eagle today).
+        /// Writes the uppercase family caption and the FAMILY BONUSES list.
+        /// Hides the list when every special bonus is 1× (Astro Eagle today) —
+        /// the upgrade-tree matrix still shows the full baseline board.
         /// </summary>
         public void RefreshFamilyIdentity(
             ShipFamilyDefinition family,
@@ -371,11 +372,24 @@ namespace TitanOrbit.UI
             if (_familyNameText != null)
                 _familyNameText.text = FamilyStatHudCopy.FormatFamilyCaption(family);
 
-            bool showStats = FamilyStatHudCopy.HasVisibleFamilyStats(family);
+            // Family lineage + this planet's bullet-type damage (Rockets +20% vs rocks).
+            int extras = BulletBankCombatLogic.CountFirePowerExtraLevels(Mathf.Max(1, shipLevel), 0);
+            BulletBankProfile bankProfile = ResolveBankProfile(family, planetOrHullBankIndex);
+            string familyLines = family != null
+                ? FamilyStatHudCopy.FormatListedBonusesRichText(family.specialBonuses)
+                : string.Empty;
+            string bankLines = FamilyStatHudCopy.FormatListedBankDamageRichText(bankProfile, extras);
+            bool showStats = !string.IsNullOrEmpty(familyLines) || !string.IsNullOrEmpty(bankLines);
             if (_familyStatsBlock != null)
                 _familyStatsBlock.SetActive(showStats);
             if (showStats && _familyStatsText != null)
-                _familyStatsText.text = FamilyStatHudCopy.FormatNonIdentityBonuses(family.specialBonuses);
+            {
+                if (!string.IsNullOrEmpty(familyLines) && !string.IsNullOrEmpty(bankLines))
+                    _familyStatsText.text = familyLines + "\n" + bankLines;
+                else
+                    _familyStatsText.text = !string.IsNullOrEmpty(familyLines) ? familyLines : bankLines;
+                ApplyFamilyStatsBlockHeight();
+            }
 
             string bankName = BulletBankHudCopy.FormatFamilyTypeName(family, planetOrHullBankIndex);
             bool listedOwned = TryFormatOwnedWeaponsGlance(shipLevel, out string ownedGlance, out string ownedTip);
@@ -399,6 +413,10 @@ namespace TitanOrbit.UI
             }
         }
 
+        /// <summary>
+        /// Dark FAMILY BONUSES plate under Your Ship. Starts hidden; RefreshFamilyIdentity
+        /// turns it on when the docked family has any ≠1 multiplier.
+        /// </summary>
         void CreateFamilyStatsBlock(Transform parent)
         {
             _familyStatsBlock = new GameObject("FamilyStats");
@@ -421,7 +439,7 @@ namespace TitanOrbit.UI
             var capGo = new GameObject("Caption");
             capGo.transform.SetParent(_familyStatsBlock.transform, false);
             var cap = capGo.AddComponent<TextMeshProUGUI>();
-            cap.text = "FAMILY STATS";
+            cap.text = "FAMILY BONUSES";
             cap.fontSize = 9f;
             cap.fontStyle = FontStyles.Bold;
             cap.characterSpacing = 1.2f;
@@ -434,9 +452,42 @@ namespace TitanOrbit.UI
             _familyStatsText = bodyGo.AddComponent<TextMeshProUGUI>();
             _familyStatsText.fontSize = 10f;
             _familyStatsText.color = new Color(0.88f, 0.92f, 0.98f, 1f);
+            _familyStatsText.richText = true;
+            _familyStatsText.enableWordWrapping = true;
             _familyStatsText.raycastTarget = false;
             ApplyFont(_familyStatsText);
             _familyStatsBlock.SetActive(false);
+        }
+
+        /// <summary>
+        /// Grows the sidebar FAMILY BONUSES plate to fit every ≠1 line.
+        /// Cosmic Shark has four live fields; Hyper Falcon has six — a fixed
+        /// 36px rail used to clip the rest.
+        /// </summary>
+        void ApplyFamilyStatsBlockHeight()
+        {
+            if (_familyStatsBlock == null || _familyStatsText == null)
+                return;
+
+            var le = _familyStatsBlock.GetComponent<LayoutElement>();
+            if (le == null)
+                return;
+
+            // Caption + padding + one 12px line per bonus. Clamp so a huge
+            // designer stack cannot shove LOADOUT off the dock.
+            // [STANDARD] Count newlines instead of Split — dock refresh is rare,
+            // but we still skip the string[] alloc.
+            string body = _familyStatsText.text;
+            int lines = 1;
+            for (int i = 0; i < body.Length; i++)
+            {
+                if (body[i] == '\n')
+                    lines++;
+            }
+
+            float h = 22f + lines * 13f;
+            le.minHeight = 36f;
+            le.preferredHeight = Mathf.Clamp(h, 36f, 160f);
         }
 
         static readonly VisibleBankRow[] s_OwnedWeaponRows = new VisibleBankRow[16];
@@ -1317,6 +1368,19 @@ namespace TitanOrbit.UI
         {
             if (fontAsset != null)
                 tmp.font = fontAsset;
+        }
+
+        /// <summary>
+        /// Planet / family bank profile for the FAMILY BONUSES damage lines.
+        /// Null when the combat catalog has not loaded yet.
+        /// </summary>
+        static BulletBankProfile ResolveBankProfile(ShipFamilyDefinition family, int planetOrHullBankIndex)
+        {
+            int idx = BulletBankProfileUtility.ResolveBankIndexForFamily(family, planetOrHullBankIndex);
+            var bank = BulletBankCombatLogic.Bank;
+            if (bank == null || !bank.TryGetProfile(idx, out BulletBankProfile profile))
+                return null;
+            return profile;
         }
     }
 }

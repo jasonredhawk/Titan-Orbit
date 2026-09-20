@@ -1,3 +1,5 @@
+using UnityEngine;
+
 namespace TitanOrbit.ECS
 {
     /// <summary>
@@ -108,10 +110,22 @@ namespace TitanOrbit.ECS
 
         /// <summary>
         /// Clears the B-key latch after ShipInput has been copied onto the local ghost this tick.
+        /// Also zeros <see cref="Latest"/>.CycleBullet so a second GhostInput tick in the
+        /// same Unity frame cannot reuse the same press (that skipped HUD rows).
         /// </summary>
         public static void ConsumeCycleBulletLatch()
         {
             s_cycleBulletLatched = false;
+            if (!HasValue)
+                return;
+
+            // --- One apply per press ---
+            // [NETCODE] GhostInputSystemGroup can run more than once per Update when
+            // the sim catches up. Latest still held CycleBullet.IsSet, so each extra
+            // tick incremented the bank again and the Weapons caret jumped.
+            var input = Latest;
+            input.CycleBullet = default;
+            Latest = input;
         }
 
         /// <summary>Call when the player presses ALT (or the rocket HUD). Stays true until consumed.</summary>
@@ -124,6 +138,11 @@ namespace TitanOrbit.ECS
         public static void ConsumeFireRocketLatch()
         {
             s_fireRocketLatched = false;
+            if (!HasValue)
+                return;
+            var input = Latest;
+            input.FireRocket = default;
+            Latest = input;
         }
 
         /// <summary>True while a cycle press is waiting to be applied (for floating-name UI).</summary>
@@ -142,6 +161,11 @@ namespace TitanOrbit.ECS
         public static void ConsumePlaceMineLatch()
         {
             s_placeMineLatched = false;
+            if (!HasValue)
+                return;
+            var input = Latest;
+            input.PlaceMine = default;
+            Latest = input;
         }
 
         /// <summary>True while a mine press is waiting to be applied.</summary>
@@ -157,6 +181,11 @@ namespace TitanOrbit.ECS
         public static void ConsumeSetBulletBankLatch()
         {
             s_setBulletBankLatched = false;
+            if (!HasValue)
+                return;
+            var input = Latest;
+            input.SetBulletBank = default;
+            Latest = input;
         }
 
         /// <summary>True while a HUD bank click is waiting to be applied.</summary>
@@ -164,23 +193,75 @@ namespace TitanOrbit.ECS
     }
 
     /// <summary>
-    /// Client-side bank the bullet-type HUD wants to fire. Tile clicks write this;
+    /// Client-side bank the Weapons HUD wants to fire. Tile clicks and B write this;
     /// <c>ShipInputBridge</c> copies it onto <see cref="ShipInput.SelectedBulletBank"/> only
-    /// on the latched SetBulletBank tick so B-key increment is not overwritten every frame.
+    /// on the latched SetBulletBank tick so a sticky every-frame index cannot fight
+    /// the next press. The HUD caret reads <see cref="ResolveCaretBank"/> so the
+    /// highlight moves on the same Unity frame as the key, before the ghost snapshot.
     /// </summary>
     public static class BulletBankSelection
     {
-        /// <summary><c>BulletVfxBank</c> category index from the last HUD click (−1 = none).</summary>
+        /// <summary>
+        /// How long the Weapons caret may sit on a B / click request before we fall
+        /// back to the ghosted runtime index. Covers one NetCode tick plus a hitch.
+        /// </summary>
+        const float OptimisticCaretSeconds = 0.75f;
+
+        /// <summary><c>BulletVfxBank</c> category index from the last HUD click or B (−1 = none).</summary>
         public static int RequestedBankIndex { get; private set; } = -1;
 
         /// <summary>
-        /// Records a tile click and latches the one-shot so NetCode's next fixed tick sees it.
+        /// <see cref="Time.unscaledTime"/> of the last <see cref="Request"/>. Used so
+        /// the caret stays on the type the player just picked until prediction writes
+        /// <see cref="ShipLoadoutState.RuntimeBulletIndex"/>.
         /// </summary>
-        /// <param name="bankIndex">Category index the player tapped.</param>
+        static float s_requestUnscaledTime = -999f;
+
+        /// <summary>
+        /// Records a tile click or B-key step and latches the one-shot so NetCode's
+        /// next fixed tick sees it. The Weapons HUD highlights this bank immediately.
+        /// </summary>
+        /// <param name="bankIndex">Category index the player tapped or cycled to.</param>
         public static void Request(int bankIndex)
         {
             RequestedBankIndex = bankIndex;
+            s_requestUnscaledTime = Time.unscaledTime;
             ShipPendingInput.LatchSetBulletBank();
+        }
+
+        /// <summary>
+        /// Bank the Weapons caret should paint. Prefers the last B / click while the
+        /// latch is pending or the optimistic window is open, then the ghosted runtime
+        /// index once prediction or the snapshot catches up.
+        /// </summary>
+        /// <param name="runtimeBank">Ghosted <see cref="ShipLoadoutState.RuntimeBulletIndex"/>.</param>
+        /// <returns>Category index to highlight.</returns>
+        public static int ResolveCaretBank(int runtimeBank)
+        {
+            int runtime = runtimeBank < 0 ? 0 : runtimeBank;
+            if (RequestedBankIndex < 0)
+                return runtime;
+
+            // --- Optimistic caret ---
+            // [TITAN-ORBIT] B used to spawn floating text instantly while the HUD
+            // waited on the ghost. The strip is the only feedback now, so it must
+            // move on the same frame as the key.
+            bool pending = ShipPendingInput.SetBulletBankLatched;
+            bool recent = Time.unscaledTime - s_requestUnscaledTime <= OptimisticCaretSeconds;
+            if (pending || recent || RequestedBankIndex == runtime)
+                return RequestedBankIndex;
+
+            return runtime;
+        }
+
+        /// <summary>
+        /// Drops a stale request (no local ship, HUD hidden). Next paint uses the
+        /// ghosted runtime index until the player presses B or clicks again.
+        /// </summary>
+        public static void Clear()
+        {
+            RequestedBankIndex = -1;
+            s_requestUnscaledTime = -999f;
         }
     }
 

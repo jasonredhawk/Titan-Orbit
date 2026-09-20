@@ -9,9 +9,11 @@ namespace TitanOrbit.ECS
     /// B-key and bullet-type HUD selection. Production: owned damage banks only (hull family +
     /// purchased foreign weapons). MEGA hulls use the same owned list; only Titan
     /// Bullet mounts retarget. Orbit Menu heal mode ignores B and HUD clicks.
-    /// GameManager <c>CycleAllBulletBanks</c> wraps every <see cref="BulletVfxBank"/> category
-    /// including EnergySpheres, but does <b>not</b> latch <c>HealingBulletsActive</c> —
-    /// that flag is Orbit Menu only. HUD clicks arrive as <see cref="ShipInput.SetBulletBank"/>.
+    /// GameManager <c>CycleAllBulletBanks</c> walks the same non-reserved catalog the
+    /// Weapons HUD paints (EnergySpheres included, Rockets skipped) and does <b>not</b>
+    /// latch <c>HealingBulletsActive</c> — that flag is Orbit Menu only. B and tile
+    /// clicks both arrive as <see cref="ShipInput.SetBulletBank"/> when the client
+    /// can resolve the next visible row; CycleBullet is the fallback increment.
     /// </summary>
     [UpdateInGroup(typeof(PredictedSimulationSystemGroup))]
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation | WorldSystemFilterFlags.ClientSimulation)]
@@ -81,20 +83,14 @@ namespace TitanOrbit.ECS
                     continue;
                 }
 
-                if (TitanOrbitDebugFlags.CycleAllBulletBanks)
-                {
-                    int current = loadout.ValueRO.RuntimeBulletIndex;
-                    loadout.ValueRW.RuntimeBulletIndex =
-                        BulletBankProfileUtility.NextDebugCycleBankIndex(current, _categoryCount);
-                    if (loadout.ValueRO.RuntimeBulletIndex != previousBank)
-                        ResetMountCooldowns(state.EntityManager, entity);
-                    continue;
-                }
-
-                if (loadout.ValueRO.HealingBulletsActive)
+                // --- B key: same walk as the Weapons HUD ---
+                // [TITAN-ORBIT] Production = owned damage banks. Cycle-all = catalog
+                // minus Rockets. Heal mode is Orbit Menu only and ignores B unless
+                // the Test flag is on (testers still need to walk EnergySpheres).
+                if (loadout.ValueRO.HealingBulletsActive && !TitanOrbitDebugFlags.CycleAllBulletBanks)
                     continue;
 
-                loadout.ValueRW.RuntimeBulletIndex = BulletBankOwnership.NextOwnedDamageBank(
+                loadout.ValueRW.RuntimeBulletIndex = BulletBankOwnership.NextVisibleBank(
                     state.EntityManager, entity, loadout.ValueRO.RuntimeBulletIndex);
                 if (loadout.ValueRO.RuntimeBulletIndex != previousBank)
                     ResetMountCooldowns(state.EntityManager, entity);

@@ -17,9 +17,11 @@ namespace TitanOrbit.Game
     /// PlayerInputHandler and writes into <see cref="ShipPendingInput"/>, which
     /// <see cref="ShipInputApplySystem"/> reads during GhostInputSystemGroup on the client world.
     /// <para>
-    /// B-key cycles the bullet bank: latches the press (so fixed-tick NetCode does not miss
-    /// <c>WasPressedThisFrame</c>), shows floating category name, and relies on
-    /// <see cref="ShipCycleBulletSystem"/> + baked <see cref="ShipLoadoutState"/> for the sticky index.
+    /// B-key cycles the bullet bank: walks the same list the Weapons HUD paints, latches
+    /// <see cref="ShipInput.SetBulletBank"/> (so fixed-tick NetCode does not miss
+    /// <c>WasPressedThisFrame</c>), and relies on <see cref="ShipCycleBulletSystem"/> +
+    /// baked <see cref="ShipLoadoutState"/> for the sticky index. The HUD caret is the
+    /// only player-facing feedback — no world-space category name.
     /// V-key hold sets <see cref="ShipInput.WantExpelGems"/> so the server dumps cargo
     /// forward of the hull. T-key (when GameManager Cycle All Thruster VFX is on) walks
     /// <see cref="ThrusterVfxBank"/> on live ship proxies only — no ghost / RPC.
@@ -30,20 +32,13 @@ namespace TitanOrbit.Game
     [DefaultExecutionOrder(-10000)]
     public class ShipInputBridge : MonoBehaviour
     {
-        /// <summary>Optional floating-name prefab (SimpleFloatingText). Loaded from Prefabs/Ships in Editor if unset.</summary>
+        /// <summary>Optional floating-name prefab (SimpleFloatingText). T-key thruster debug only. Loaded from Prefabs/Ships in Editor if unset.</summary>
         [SerializeField] GameObject bulletNameTextPrefab;
 
         PlayerInputHandler _input;
-        BulletVfxBank _bank;
         ThrusterVfxBank _thrusterBank;
         Camera _cachedCamera;
 
-        /// <summary>
-        /// Client-side display index for floating text. Advanced on each B press so the label
-        /// always matches the cycle even before the ghost snapshot arrives. Resynced from
-        /// <see cref="ShipLoadoutState.RuntimeBulletIndex"/> when not actively cycling.
-        /// </summary>
-        int _displayBankIndex = -1;
         static GameObject s_ThrusterCycleLabel;
         static int s_LastThrusterCycleFrame = -1;
         static ShipInputBridge s_Active;
@@ -67,11 +62,10 @@ namespace TitanOrbit.Game
                 s_Active = null;
         }
 
-        /// <summary>[UNITY] Resolve input handler + optional bullet-name prefab.</summary>
+        /// <summary>[UNITY] Resolve input handler + optional T-key thruster label prefab.</summary>
         void Start()
         {
             _input = FindAnyObjectByType<PlayerInputHandler>();
-            _bank = BulletVfxBank.LoadDefault();
             _thrusterBank = ThrusterVfxBank.LoadDefault();
 
 #if UNITY_EDITOR
@@ -84,18 +78,23 @@ namespace TitanOrbit.Game
 #endif
         }
 
-        /// <summary>Each frame: latch B if pressed, publish ShipInput, show category name on cycle.</summary>
+        /// <summary>Each frame: latch B if pressed, publish ShipInput, keep thruster debug labels.</summary>
         void Update()
         {
             // --- Per-frame refresh ---
             if (_input == null)
                 return;
 
-            bool cyclePressed = _input.CycleBulletPressed && !MoonOrbitClientState.IsOrbitMenuVisible;
+            // --- B / CycleBullet ---
+            // [TITAN-ORBIT] Orbit Menu and turret pads do not cycle hull guns. Prefer
+            // SetBulletBank for the next Weapons-HUD row so the caret and the ghost
+            // write the same index. CycleBullet increment is only a fallback when we
+            // cannot see the local ship yet (join / Instantiates).
+            bool cyclePressed = _input.CycleBulletPressed
+                && !MoonOrbitClientState.IsOrbitMenuVisible
+                && !PlanetaryDefenseTurretClientState.IsControlling;
 
-            // --- Latch B until ShipInputApplySystem copies it onto the ghost ---
-            // [TITAN-ORBIT] Without this, WasPressedThisFrame dies before GhostInputSystemGroup.
-            if (cyclePressed)
+            if (cyclePressed && !TryRequestNextVisibleWeapon())
                 ShipPendingInput.LatchCycleBullet();
 
             // --- ALT activates the focused loadout pack ---
@@ -114,9 +113,6 @@ namespace TitanOrbit.Game
             if (minePressed)
                 ShipPendingInput.LatchPlaceMine();
 
-            if (cyclePressed)
-                TryShowBulletCycleName();
-
             if (TitanOrbitDebugFlags.CycleAllThrusterVfx
                 && _input.CycleThrusterVfxPressed
                 && !MoonOrbitClientState.IsOrbitMenuVisible)
@@ -129,7 +125,7 @@ namespace TitanOrbit.Game
                 && !PlanetaryDefenseTurretClientState.IsControlling;
 
             ShipPendingInput.Set(
-                BuildInput(cyclePressed, rocketPressed, minePressed, setBankPressed),
+                BuildInput(rocketPressed, minePressed, setBankPressed),
                 localHostMode: false);
         }
 
@@ -137,10 +133,8 @@ namespace TitanOrbit.Game
         /// Converts PlayerInputHandler state into a ShipInput struct for ECS consumption.
         /// Aim direction is computed from mouse world position relative to local ship.
         /// </summary>
-        /// <param name="cyclePressedThisFrame">True when B was pressed this Unity frame (also latched).</param>
-        /// <param name="setBankPressedThisFrame">True when the bullet-type HUD latched a click.</param>
+        /// <param name="setBankPressedThisFrame">True when B or a Weapons tile latched a bank.</param>
         ShipInput BuildInput(
-            bool cyclePressedThisFrame,
             bool rocketPressedThisFrame,
             bool minePressedThisFrame,
             bool setBankPressedThisFrame)
@@ -198,10 +192,11 @@ namespace TitanOrbit.Game
                 && !ShipCommsClientState.IsOpen)
                 fire.Set();
 
-            // [TITAN-ORBIT] B / CycleBullet — latch + Set; ShipPendingInput.Set merges latch again.
-            // Suppress cycle while in a turret (pad uses the turret bullet bank).
+            // [TITAN-ORBIT] B fallback increment only. The usual path is SetBulletBank
+            // from TryRequestNextVisibleWeapon — putting CycleBullet.IsSet on the same
+            // tick would step twice (click-next AND increment).
             var cycleBullet = new InputEvent();
-            if (!turretControl && (cyclePressedThisFrame || ShipPendingInput.CycleBulletLatched))
+            if (!turretControl && ShipPendingInput.CycleBulletLatched)
                 cycleBullet.Set();
 
             var fireRocket = new InputEvent();
@@ -251,64 +246,40 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Spawns SimpleFloatingText with the next category name above the local ship.
-        /// Mirrors server B-key rules: owned damage banks, heal-mode lock, or debug cycle-all.
+        /// Walks the Weapons HUD list and latches that bank as a HUD-style set.
+        /// Heal mode (Orbit Menu) eats the press so B does not also increment.
+        /// Returns false only when we cannot see the local ship — caller then
+        /// falls back to <see cref="ShipPendingInput.LatchCycleBullet"/>.
         /// </summary>
-        void TryShowBulletCycleName()
+        /// <returns>True when B was handled (cycled, locked, or no-op on a one-row list).</returns>
+        bool TryRequestNextVisibleWeapon()
         {
-            // --- Resolve bank ---
-            if (_bank == null)
-                _bank = BulletVfxBank.LoadDefault();
-            if (_bank == null || _bank.CategoryCount < 1)
-                return;
+            // --- Local ship on the client world ---
+            var world = EcsGameBridge.ClientWorld;
+            if (world == null || !world.IsCreated)
+                return false;
+            if (!EcsGameBridge.TryGetLocalShipEntityOnWorld(world, out Entity ship) ||
+                ship == Entity.Null)
+                return false;
 
+            // --- Heal lock / current index ---
+            // [TITAN-ORBIT] Production heal ignores B. Treat as handled so we do not
+            // latch CycleBullet, which the cycle system would also ignore.
+            int runtime = 0;
             if (EcsGameBridge.TryGetLocalShipLoadout(out ShipLoadoutState loadout))
             {
-                if (TitanOrbitDebugFlags.CycleAllBulletBanks)
-                {
-                    int current = loadout.RuntimeBulletIndex < 0 ? 0 : loadout.RuntimeBulletIndex;
-                    _displayBankIndex = BulletBankProfileUtility.NextDebugCycleBankIndex(
-                        current, _bank.CategoryCount);
-                }
-                else if (loadout.HealingBulletsActive)
-                {
-                    int heal = BulletBankProfileUtility.FindHealBankIndex();
-                    _displayBankIndex = heal >= 0 ? heal : loadout.RuntimeBulletIndex;
-                }
-                else if (EcsGameBridge.TryGetLocalShipEntityOnWorld(
-                             EcsGameBridge.ClientWorld, out Entity shipEntity) &&
-                         EcsGameBridge.ClientWorld != null)
-                {
-                    _displayBankIndex = BulletBankOwnership.NextOwnedDamageBank(
-                        EcsGameBridge.ClientWorld.EntityManager,
-                        shipEntity,
-                        loadout.RuntimeBulletIndex);
-                }
-                else
-                    _displayBankIndex = loadout.RuntimeBulletIndex;
-            }
-            else if (_displayBankIndex < 0)
-                _displayBankIndex = 0;
-
-            string name = _bank.GetCategoryName(_displayBankIndex);
-            if (string.IsNullOrEmpty(name))
-                return;
-
-            if (bulletNameTextPrefab == null)
-            {
-                Debug.Log($"[BulletBank] {_displayBankIndex}: {name}");
-                return;
+                if (loadout.HealingBulletsActive && !TitanOrbitDebugFlags.CycleAllBulletBanks)
+                    return true;
+                runtime = loadout.RuntimeBulletIndex;
             }
 
-            if (!EcsGameBridge.TryGetLocalShipPosition(out Vector3 shipPos))
-                return;
-
-            // --- Spawn floating label (legacy NGO ShowBulletNameLocal parity) ---
-            // SimpleFloatingText lives in Assembly-CSharp — call Initialize via reflection
-            // so TitanOrbit.Game does not take a hard asmdef reference.
-            Vector3 pos = shipPos + Vector3.up * 5f;
-            GameObject go = Instantiate(bulletNameTextPrefab, pos, Quaternion.identity);
-            TryInitializeFloatingText(go, name, Color.white, 2f);
+            // --- Next HUD row ---
+            // Prefer the optimistic caret so rapid B walks the painted list
+            // even before RuntimeBulletIndex catches up.
+            int current = BulletBankSelection.ResolveCaretBank(runtime);
+            int next = BulletBankOwnership.NextVisibleBank(world.EntityManager, ship, current);
+            BulletBankSelection.Request(next);
+            return true;
         }
 
         /// <summary>

@@ -410,11 +410,34 @@ namespace TitanOrbit.UI
 
             view.SetInteractable(clickable);
             view.EnsureStableButtonRendering();
-            if (canSwapHull) view.SetButtonBackgroundColor(new Color(0.28f, 0.68f, 0.82f, 0.98f));
-            else if (isCurrent) view.SetButtonBackgroundColor(new Color(0.26f, 0.62f, 0.36f, 0.98f));
-            else if (tierBlocked) view.SetButtonBackgroundColor(new Color(0.1f, 0.11f, 0.14f, 0.92f));
-            else if (isNextChoice) view.SetButtonBackgroundColor(new Color(0.25f, 0.48f, 0.78f, 0.98f));
-            else view.SetButtonBackgroundColor(new Color(0.19f, 0.23f, 0.31f, 0.94f));
+            // Fill + ink stay paired. Cyan available tiles need cream captions —
+            // ice-blue type disappears into (0.28, 0.68, 0.82).
+            ShipUpgradeTreeNodeUI.RegularCardInk ink;
+            if (canSwapHull)
+            {
+                view.SetButtonBackgroundColor(new Color(0.28f, 0.68f, 0.82f, 0.98f));
+                ink = ShipUpgradeTreeNodeUI.RegularCardInk.Available;
+            }
+            else if (isCurrent)
+            {
+                view.SetButtonBackgroundColor(new Color(0.26f, 0.62f, 0.36f, 0.98f));
+                ink = ShipUpgradeTreeNodeUI.RegularCardInk.Current;
+            }
+            else if (tierBlocked)
+            {
+                view.SetButtonBackgroundColor(new Color(0.1f, 0.11f, 0.14f, 0.92f));
+                ink = ShipUpgradeTreeNodeUI.RegularCardInk.Blocked;
+            }
+            else if (isNextChoice)
+            {
+                view.SetButtonBackgroundColor(new Color(0.25f, 0.48f, 0.78f, 0.98f));
+                ink = ShipUpgradeTreeNodeUI.RegularCardInk.Available;
+            }
+            else
+            {
+                view.SetButtonBackgroundColor(new Color(0.19f, 0.23f, 0.31f, 0.94f));
+                ink = ShipUpgradeTreeNodeUI.RegularCardInk.Idle;
+            }
 
             Sprite sp = ResolveShipTreePreviewSprite(view.Level, view.BranchIndex);
             view.SetPreview(sp);
@@ -429,7 +452,7 @@ namespace TitanOrbit.UI
             if (view.Level == 7)
                 view.ApplyMegaShipCardStyle(isCurrent, canPurchase, megaOccupied, tierBlocked);
             else
-                view.ClearMegaShipCardStyle();
+                view.ApplyRegularCardInk(ink);
 
             if (megaOccupied)
             {
@@ -484,11 +507,24 @@ namespace TitanOrbit.UI
             view.SetInteractable(clickable);
             view.EnsureStableButtonRendering();
             view.SetInteractable(clickable);
-            view.SetButtonBackgroundColor(megaOccupied
-                ? new Color(0.15f, 0.16f, 0.18f, 0.92f)
-                : isCurrent
-                    ? new Color(0.26f, 0.62f, 0.36f, 0.98f)
-                    : new Color(0.28f, 0.68f, 0.82f, 0.98f));
+            // Debug-free paints every regular hull cyan + "Free". Cream captions
+            // keep Lv / family / weapons readable on that fill.
+            ShipUpgradeTreeNodeUI.RegularCardInk ink;
+            if (megaOccupied)
+            {
+                view.SetButtonBackgroundColor(new Color(0.15f, 0.16f, 0.18f, 0.92f));
+                ink = ShipUpgradeTreeNodeUI.RegularCardInk.Blocked;
+            }
+            else if (isCurrent)
+            {
+                view.SetButtonBackgroundColor(new Color(0.26f, 0.62f, 0.36f, 0.98f));
+                ink = ShipUpgradeTreeNodeUI.RegularCardInk.Current;
+            }
+            else
+            {
+                view.SetButtonBackgroundColor(new Color(0.28f, 0.68f, 0.82f, 0.98f));
+                ink = ShipUpgradeTreeNodeUI.RegularCardInk.Available;
+            }
 
             view.SetPreview(ResolveShipTreePreviewSprite(view.Level, view.BranchIndex));
 
@@ -506,7 +542,7 @@ namespace TitanOrbit.UI
             if (view.Level == 7)
                 view.ApplyMegaShipCardStyle(isCurrent, clickable && !isCurrent, megaOccupied, false);
             else
-                view.ClearMegaShipCardStyle();
+                view.ApplyRegularCardInk(ink);
 
             if (megaOccupied)
             {
@@ -565,7 +601,10 @@ namespace TitanOrbit.UI
             shipUpgradeTree.EnsurePanelHeader();
             if (shipUpgradeTree.Title != null)
                 shipUpgradeTree.Title.text = ShipUpgradeTreeUI.PanelTitleText;
-            shipUpgradeTree.ApplyFamilyIdentity(ResolveUpgradeTreeFamily());
+            shipUpgradeTree.ApplyFamilyIdentity(
+                ResolveUpgradeTreeFamily(),
+                currentShip != null ? currentShip.ShipLevel : 1,
+                ResolveStoreFamilyBulletBankIndex());
 
             if (shipUpgradeTree.Hint == null || currentShip == null)
                 return;

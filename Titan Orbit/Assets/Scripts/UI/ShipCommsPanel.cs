@@ -19,7 +19,9 @@ namespace TitanOrbit.UI
     /// <summary>
     /// Hold-S comms matrix: a centered dark-glass HUD card with keyword tiles. The player
     /// holds S, clicks 1–5 words in order (3 free; one ad unlocks the 4th and 5th), then releases S to send that sentence above
-    /// their ship. Top-level rails stay TACTICAL / SUBJECT / SOCIAL / COMMANDER (plus TEAM).
+    /// their ship. Granted extras keep a quiet brass hint (same idea as the Orbit Menu
+    /// +1 gear slot, dimmer) so chips 4–5 and extra RECENT rows stay distinct from the free set.
+    /// Top-level rails stay TACTICAL / SUBJECT / SOCIAL / COMMANDER (plus TEAM).
     /// Inside each rail, slim telemetry captions (STRIKE, WHO, GEAR, …) keep related
     /// words on the same 5-wide row. An All / Team toggle and the RECENT chip list are remembered in PlayerPrefs
     /// so both survive a new match. Free players get three RECENT rows; one ad unlocks the rest.
@@ -129,6 +131,16 @@ namespace TitanOrbit.UI
         static readonly Color AdGateVeil = new Color(0.010f, 0.012f, 0.020f, 0.82f);
         /// <summary>Amber plate for the single watch-ad CTA (same hue as the old AD stamp).</summary>
         static readonly Color AdGatePlate = new Color(0.07f, 0.045f, 0.018f, 0.96f);
+        /// <summary>
+        /// Quiet brass wash for granted extras (chips 4–5, extra RECENT rows).
+        /// Same idea as the Orbit Menu +1 BONUS slot, but dimmer so the matrix
+        /// stays navy and the extras only read as a hint, not a gold card.
+        /// </summary>
+        static readonly Color BonusPlateBg = new Color(0.038f, 0.036f, 0.032f, 0.94f);
+        /// <summary>Thin muted brass frame — low alpha so it does not glow like command gold.</summary>
+        static readonly Color BonusPlateOutline = new Color(0.56f, 0.48f, 0.34f, 0.38f);
+        /// <summary>Empty extra-slot number (4 / 5) — warm caption, not bright gold leaf.</summary>
+        static readonly Color BonusPlateTitle = new Color(0.72f, 0.68f, 0.54f, 0.88f);
         /// <summary>Dark veil over every compose button while flying in enemy fill.</summary>
         static readonly Color JamVeil = new Color(0.018f, 0.008f, 0.010f, 0.88f);
         /// <summary>Hostile red plate for the jam lock stamp (not command gold).</summary>
@@ -983,7 +995,10 @@ namespace TitanOrbit.UI
             PaintRecent();
         }
 
-        /// <summary>Refreshes preview chips and the 1/2/3 badges on keyword tiles.</summary>
+        /// <summary>
+        /// Refreshes preview chips and the 1/2/3 badges on keyword tiles.
+        /// Slots 4–5 use the gold bonus plate after the keyword ad (or Orbit Unlocked).
+        /// </summary>
         void PaintSequence()
         {
             var catalog = ShipCommsKeywordCatalog.LoadDefault();
@@ -1002,22 +1017,30 @@ namespace TitanOrbit.UI
                 }
 
                 PreviewSlot slot = _preview[i];
+                // Slots 4–5 after the keyword ad (or Orbit Unlocked) — quiet brass, not navy Empty.
+                bool bonusSlot = !locked && i >= ShipCommsKeywordCatalog.DefaultSequenceLength;
                 Color previewFill = locked ? CaptionPlateColor : (filled ? TileSelected : PreviewEmpty);
                 Color previewLabel = filled ? BodyTextColor : CaptionTextColor;
                 Color previewAccent = AccentColor;
                 if (filled)
                     ShipCommsCalloutGraphics.ResolveChipPaint(label, selected: true, out previewFill, out previewLabel, out previewAccent);
+                if (bonusSlot && !filled)
+                    previewFill = BonusPlateBg;
                 if (slot.Fill != null)
                     slot.Fill.color = previewFill;
                 if (slot.Outline != null)
                 {
-                    slot.Outline.effectColor = previewAccent;
-                    slot.Outline.enabled = filled && !locked;
+                    // Empty extras keep a hairline brass frame so 4 and 5 stay readable.
+                    slot.Outline.effectColor = bonusSlot ? BonusPlateOutline : previewAccent;
+                    slot.Outline.effectDistance = bonusSlot
+                        ? new Vector2(1.1f, -1.1f)
+                        : new Vector2(1.2f, -1.2f);
+                    slot.Outline.enabled = bonusSlot || (filled && !locked);
                 }
                 if (slot.Label != null)
                 {
                     slot.Label.text = locked ? string.Empty : (filled ? label.ToUpperInvariant() : (i + 1).ToString());
-                    slot.Label.color = previewLabel;
+                    slot.Label.color = !filled && bonusSlot ? BonusPlateTitle : previewLabel;
                 }
 
                 if (slot.Button != null)
@@ -1094,7 +1117,8 @@ namespace TitanOrbit.UI
 
         /// <summary>
         /// Fills the RECENT column from <see cref="ShipCommsHistory"/>. Rows past the
-        /// free first three stay ghosted under one unlock plate until that video runs.
+        /// free first three stay ghosted under one unlock plate until that video runs,
+        /// then keep the gold bonus plate so they stay distinct from the free three.
         /// A filled row that used command-deck words is temporarily locked (opaque
         /// veil + LOCK stamp, same language as the command tiles) while this machine
         /// is not a commander. The sentence stays in history; we do not rewrite it.
@@ -1121,12 +1145,24 @@ namespace TitanOrbit.UI
                 // --- Row plate ---
                 // Ad-locked rows stay the caption plate under the veil. Command-gated
                 // rows use an opaque void so LOCK does not sit on see-through chips.
+                // Granted extras (past the free first three) get a quiet brass hint
+                // so they stay distinct without a gold flood.
+                bool bonusRow = !adLocked && i >= ShipCommsClientState.FreeRecentRows;
                 if (slot.Fill != null)
                 {
                     if (commanderLocked)
                         slot.Fill.color = CommanderLockedRecentVeil;
                     else if (adLocked)
                         slot.Fill.color = CaptionPlateColor;
+                    else if (bonusRow && !filled)
+                        slot.Fill.color = BonusPlateBg;
+                    else if (bonusRow)
+                    {
+                        Color live = selected
+                            ? Color.Lerp(TileSelected, AllChannelColor, 0.42f)
+                            : TileSelected;
+                        slot.Fill.color = Color.Lerp(live, BonusPlateBg, 0.16f);
+                    }
                     else
                         slot.Fill.color = selected
                             ? Color.Lerp(TileSelected, AllChannelColor, 0.42f)
@@ -1134,13 +1170,24 @@ namespace TitanOrbit.UI
                 }
                 if (slot.Outline != null)
                 {
-                    slot.Outline.effectColor = commanderLocked ? CommanderLockedStamp : AllChannelColor;
-                    slot.Outline.effectDistance = selected ? new Vector2(2f, -2f) : new Vector2(0.8f, -0.8f);
-                    slot.Outline.enabled = selected;
+                    if (bonusRow && !commanderLocked)
+                    {
+                        slot.Outline.effectColor = BonusPlateOutline;
+                        slot.Outline.effectDistance = selected
+                            ? new Vector2(1.6f, -1.6f)
+                            : new Vector2(1.0f, -1.0f);
+                        slot.Outline.enabled = true;
+                    }
+                    else
+                    {
+                        slot.Outline.effectColor = commanderLocked ? CommanderLockedStamp : AllChannelColor;
+                        slot.Outline.effectDistance = selected ? new Vector2(2f, -2f) : new Vector2(0.8f, -0.8f);
+                        slot.Outline.enabled = selected;
+                    }
                 }
                 if (slot.Caret != null)
                 {
-                    slot.Caret.color = AllChannelColor;
+                    slot.Caret.color = bonusRow && !commanderLocked ? BonusPlateTitle : AllChannelColor;
                     slot.Caret.enabled = selected;
                 }
                 if (slot.Button != null)

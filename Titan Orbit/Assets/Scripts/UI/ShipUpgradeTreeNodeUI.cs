@@ -17,12 +17,31 @@ namespace TitanOrbit.UI
     /// and just above the buy chip (CosmicShark → Cosmic Shark, smaller than the ship name).
     /// Level-7 Titan cards use a separate bronze-void fill, gold frame, and "TITAN SHIP" caption
     /// so they read as boss hulls next to the navy L1–L6 family cards.
+    /// Regular L1–L6 cards swap caption ink with <see cref="ApplyRegularCardInk"/> so cyan
+    /// available / debug-free fills do not keep ice-blue type (blue on blue).
     /// <see cref="SetPreview"/> and <see cref="ApplyPowerBreakdown"/> skip redundant canvas
     /// work when the screenshot / chassis did not change — landing used to hitch by
     /// rewriting every card.
     /// </summary>
     public class ShipUpgradeTreeNodeUI : MonoBehaviour
     {
+        /// <summary>
+        /// Text palette on L1–L6 family cards. The cyan "available / Free" fill used to keep
+        /// the same ice-blue captions as navy idle cards — those lines vanished into the tile.
+        /// MEGA cards ignore this enum and keep gold / slate chrome.
+        /// </summary>
+        public enum RegularCardInk
+        {
+            /// <summary>Dark navy idle / other-route card. Ice-blue captions, white hull name.</summary>
+            Idle,
+            /// <summary>Cyan available, next-hull, same-tier swap, or debug-free. Cream captions.</summary>
+            Available,
+            /// <summary>Green "you are here" card. Pale mint captions, white hull name.</summary>
+            Current,
+            /// <summary>Locked or dim card. Muted slate so the type reads disabled, not icy.</summary>
+            Blocked,
+        }
+
         /// <summary>Equal left/right inset used by tree cards and the power-bar track width.</summary>
         public const float TreeCardEdgePad = 6f;
 
@@ -176,8 +195,29 @@ namespace TitanOrbit.UI
         private Color _cachedLevelColor = Color.white;
         private Color _cachedNameColor = Color.white;
         private Color _cachedFamilyColor = FamilyCaptionColor;
-        /// <summary>Muted cyan so the family line is quieter than the hull name.</summary>
+        /// <summary>Last L1–L6 ink. Layout rebuilds re-apply this so ice-blue never snaps back on cyan tiles.</summary>
+        RegularCardInk _regularInk = RegularCardInk.Idle;
+        /// <summary>Muted cyan so the family line is quieter than the hull name — navy idle tiles only.</summary>
         static readonly Color FamilyCaptionColor = new Color(0.62f, 0.78f, 0.95f, 0.88f);
+        /// <summary>Prefab Lv caption on navy idle tiles (brighter ice than the family line).</summary>
+        static readonly Color IdleLevelColor = new Color(0.55f, 0.78f, 1f, 1f);
+        /// <summary>Prefab hull-name white on navy idle tiles.</summary>
+        static readonly Color IdleNameColor = new Color(0.95f, 0.97f, 1f, 1f);
+        /// <summary>Hull name on available cyan fill. Near-white so it does not sit in the fill.</summary>
+        static readonly Color AvailableNameColor = new Color(0.99f, 0.99f, 1f, 1f);
+        /// <summary>
+        /// Lv / family / weapon line on available cyan. Warm cream is complementary to the
+        /// cyan tile — ice-blue (0.55, 0.78, 1) disappeared into (0.28, 0.68, 0.82).
+        /// </summary>
+        static readonly Color AvailableCaptionColor = new Color(0.99f, 0.93f, 0.68f, 1f);
+        /// <summary>Hull name on the green current-path tile.</summary>
+        static readonly Color CurrentNameColor = new Color(0.97f, 1f, 0.96f, 1f);
+        /// <summary>Pale mint captions on the green current-path tile.</summary>
+        static readonly Color CurrentCaptionColor = new Color(0.86f, 0.98f, 0.90f, 1f);
+        /// <summary>Muted hull name on locked / dim tiles.</summary>
+        static readonly Color BlockedNameColor = new Color(0.64f, 0.68f, 0.74f, 0.92f);
+        /// <summary>Muted captions on locked / dim tiles.</summary>
+        static readonly Color BlockedCaptionColor = new Color(0.50f, 0.56f, 0.64f, 0.85f);
         /// <summary>Warm gold on MEGA cards so the family line matches the bronze frame.</summary>
         static readonly Color MegaFamilyCaptionColor = new Color(0.86f, 0.76f, 0.52f, 0.88f);
         static readonly Color MegaFamilyOccupiedColor = new Color(0.52f, 0.52f, 0.54f, 0.85f);
@@ -819,14 +859,18 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// Uppercase telemetry color: gold on Titan cards, ice-blue on family cards,
-        /// slate when a unique MEGA is already claimed.
+        /// Uppercase telemetry color: gold on Titan cards, cream on available cyan family
+        /// cards, ice-blue on navy idle family cards, slate when a unique MEGA is claimed.
         /// </summary>
+        /// <param name="occupied">True when this unique MEGA already has an owner.</param>
         void ApplyWeaponLoadoutTextSettings(bool occupied)
         {
             if (_weaponLoadoutText == null || _sidebarHeroLayout)
                 return;
 
+            // --- Overflow + ink ---
+            // One-line-per-weapon telemetry. Color follows the card fill so cyan
+            // available tiles never keep ice-blue type.
             _weaponLoadoutText.enableWordWrapping = false;
             _weaponLoadoutText.overflowMode = TextOverflowModes.Overflow;
             _weaponLoadoutText.maxVisibleLines = 4;
@@ -835,7 +879,7 @@ namespace TitanOrbit.UI
             if (_megaCardChromeActive)
                 _weaponLoadoutText.color = occupied ? MegaFamilyOccupiedColor : MegaFamilyCaptionColor;
             else
-                _weaponLoadoutText.color = FamilyCaptionColor;
+                _weaponLoadoutText.color = CaptionColorForRegularInk(_regularInk);
         }
 
         /// <summary>Puts Lv N / TITAN SHIP back in the left-column stack (not a card overlay).</summary>
@@ -1756,8 +1800,10 @@ namespace TitanOrbit.UI
             familyNameText.maxVisibleLines = 1;
             familyNameText.alignment = TextAlignmentOptions.Left;
             familyNameText.fontStyle = FontStyles.Normal;
-            if (!_megaCardChromeActive && !_cachedRegularTextColors)
-                familyNameText.color = FamilyCaptionColor;
+            // [TITAN-ORBIT] Idle navy tiles keep ice-blue. Available cyan tiles use cream
+            // from ApplyRegularCardInk — do not snap back to FamilyCaptionColor.
+            if (!_megaCardChromeActive)
+                familyNameText.color = CaptionColorForRegularInk(_regularInk);
         }
 
         /// <summary>
@@ -2095,17 +2141,90 @@ namespace TitanOrbit.UI
 
             if (!IsCurrentShipDisplay && Level >= 1)
                 RestoreInFlowLevelLabel();
-            if (levelText != null && _cachedRegularTextColors)
-                levelText.color = _cachedLevelColor;
 
-            if (shipNameText != null && _cachedRegularTextColors)
-                shipNameText.color = _cachedNameColor;
-            if (familyNameText != null && _cachedRegularTextColors)
-                familyNameText.color = _cachedFamilyColor;
-            else if (familyNameText != null)
-                familyNameText.color = FamilyCaptionColor;
-
+            // Regular ink, not the cached prefab ice-blue — available cyan tiles
+            // would go blue-on-blue again if we restored the prefab colors here.
+            PaintRegularCardInk();
             ApplyWeaponLoadoutTextSettings(occupied: false);
+        }
+
+        /// <summary>
+        /// Paints L1–L6 family-card text for the current fill. Call after
+        /// <see cref="SetButtonBackgroundColor"/> on regular slots. Debug-free and
+        /// next-hull cyan fills must pass <see cref="RegularCardInk.Available"/>.
+        /// MEGA slots ignore this (gold / slate chrome).
+        /// </summary>
+        /// <param name="ink">Palette that matches the fill just applied to this tile.</param>
+        public void ApplyRegularCardInk(RegularCardInk ink)
+        {
+            // --- Regular family-card ink ---
+            _regularInk = ink;
+            if (IsCurrentShipDisplay || _sidebarHeroLayout)
+                return;
+            if (ShipFamilyPowerBarNorm.IsMegaTreeLevel(Level))
+                return;
+
+            if (_megaCardChromeActive)
+                ClearMegaShipCardStyle();
+            else
+                PaintRegularCardInk();
+        }
+
+        /// <summary>
+        /// Writes name / level / family / weapon colors for <see cref="_regularInk"/>.
+        /// Skips MEGA chrome and the sidebar hero (those keep their own palettes).
+        /// </summary>
+        void PaintRegularCardInk()
+        {
+            if (_megaCardChromeActive || IsCurrentShipDisplay || _sidebarHeroLayout)
+                return;
+
+            Color name = NameColorForRegularInk(_regularInk);
+            Color caption = CaptionColorForRegularInk(_regularInk);
+            Color level = LevelColorForRegularInk(_regularInk);
+            if (levelText != null)
+                levelText.color = level;
+            if (shipNameText != null)
+                shipNameText.color = name;
+            if (familyNameText != null)
+                familyNameText.color = caption;
+            if (_weaponLoadoutText != null)
+                _weaponLoadoutText.color = caption;
+        }
+
+        /// <summary>Hull-name color for one regular-card ink state.</summary>
+        static Color NameColorForRegularInk(RegularCardInk ink)
+        {
+            switch (ink)
+            {
+                case RegularCardInk.Available: return AvailableNameColor;
+                case RegularCardInk.Current: return CurrentNameColor;
+                case RegularCardInk.Blocked: return BlockedNameColor;
+                default: return IdleNameColor;
+            }
+        }
+
+        /// <summary>Family / weapon caption color for one regular-card ink state.</summary>
+        static Color CaptionColorForRegularInk(RegularCardInk ink)
+        {
+            switch (ink)
+            {
+                case RegularCardInk.Available: return AvailableCaptionColor;
+                case RegularCardInk.Current: return CurrentCaptionColor;
+                case RegularCardInk.Blocked: return BlockedCaptionColor;
+                default: return FamilyCaptionColor;
+            }
+        }
+
+        /// <summary>
+        /// Lv caption color. Idle keeps the prefab ice-blue; other states share the
+        /// family/weapon caption so the left column stays one readable hue.
+        /// </summary>
+        static Color LevelColorForRegularInk(RegularCardInk ink)
+        {
+            return ink == RegularCardInk.Idle
+                ? IdleLevelColor
+                : CaptionColorForRegularInk(ink);
         }
 
         /// <summary>

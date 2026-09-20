@@ -22,9 +22,10 @@ namespace TitanOrbit.UI
     /// <para>
     /// Parks under <see cref="RocketLoadoutHUD"/> when that column is showing, or in the
     /// same mid-left slot when no rockets / mines are equipped. Grows downward.
-    /// <see cref="SpaceBrakesHUD"/> docks under this strip. Writes nothing to ECS — clicks latch
-    /// <see cref="BulletBankSelection"/>; <see cref="ShipCycleBulletSystem"/> applies the
-    /// ghosted <see cref="ShipLoadoutState.RuntimeBulletIndex"/> on the predicted tick.
+    /// <see cref="SpaceBrakesHUD"/> docks under this strip. Writes nothing to ECS — B and
+    /// clicks latch <see cref="BulletBankSelection"/>; the caret paints that request
+    /// immediately. <see cref="ShipCycleBulletSystem"/> then writes the ghosted
+    /// <see cref="ShipLoadoutState.RuntimeBulletIndex"/> on the predicted tick.
     /// Hidden on the main menu, Join Team, Orbit Menu, and while the local
     /// ship is dead. MEGA hulls show the same owned list; only Titan Bullet
     /// mounts adopt the selected bank. Holds last paint during
@@ -213,6 +214,10 @@ namespace TitanOrbit.UI
                 HUDController.MinimapExpandedObscuresHud ||
                 HUDController.CommsMatrixObscuresHud)
             {
+                if (HUDController.LocalPlayerDeathHidesHud ||
+                    ClientTeamFlowState.ShouldSuppressLocalPlayerControl() ||
+                    IsMainMenuShowing())
+                    BulletBankSelection.Clear();
                 SetVisible(false);
                 return;
             }
@@ -233,6 +238,7 @@ namespace TitanOrbit.UI
 
             if (!EcsGameBridge.HasLocalPlayerShip())
             {
+                BulletBankSelection.Clear();
                 SetVisible(false);
                 return;
             }
@@ -316,9 +322,11 @@ namespace TitanOrbit.UI
 
             _paintedCount = 0;
 
-            // Heal / Test cycle-all can fire a bank that is not in this owned list.
-            // Park the caret on the hull default so the strip still has a live row.
-            int caretBank = selectedBank;
+            // --- Caret ---
+            // [TITAN-ORBIT] B / click latch an optimistic bank so this strip moves on
+            // the same Unity frame. Heal / Test can still fire a bank that is not in
+            // this owned list — park on the hull default so a row stays live.
+            int caretBank = BulletBankSelection.ResolveCaretBank(selectedBank);
             bool caretInList = false;
             for (int i = 0; i < rowCount; i++)
             {

@@ -71,15 +71,22 @@ namespace TitanOrbit.UI
         private const float SidebarSlotCellSpacing = 5f;
         /// <summary>Filled equipment card: icon + title/type row + power bar (no mount panel).</summary>
         private const float SidebarEquipmentSlotCardHeight = 102f;
-        /// <summary>Empty equipment slot — title row only so unused slots do not waste scroll space.</summary>
-        private const float SidebarEquipmentSlotCardHeightEmpty = 38f;
+        /// <summary>
+        /// Empty equipment slot: accent rail + "Empty" + one hint line.
+        /// Earlier 38px cards crushed those two TMP lines into the 3px top rail.
+        /// </summary>
+        private const float SidebarEquipmentSlotCardHeightEmpty = 56f;
+        /// <summary>Header row when the slot is empty (title + one-line store hint, no icon).</summary>
+        private const float SidebarEquipmentHeaderHeightEmpty = 38f;
+        /// <summary>Single-line hint under "Empty" ("Buy from store" / bonus copy). Filled meta stays taller.</summary>
+        private const float SidebarEquipmentEmptySublineHeight = 14f;
         /// <summary>Bumps <see cref="SetEquipmentSlotLayoutMode"/> so existing sessions rebuild the new glance cards.</summary>
-        private const int EquipmentSlotCardLayoutVersion = 2;
+        private const int EquipmentSlotCardLayoutVersion = 3;
         /// <summary>
         /// Locked +1 row: accent + "+1 SLOT" + a full-width WATCH AD button (no power bar).
         /// Taller than empty so the button has a usable hit target inside the same card chrome.
         /// </summary>
-        private const float SidebarEquipmentSlotCardHeightLocked = 64f;
+        private const float SidebarEquipmentSlotCardHeightLocked = 78f;
         /// <summary>Extra height when the player expands mount Move/Turn controls on a component.</summary>
         private const float SidebarEquipmentPlacementPanelHeight = 118f;
         /// <summary>Height of the collapsed "Adjust mount" toggle row on component cards.</summary>
@@ -90,6 +97,21 @@ namespace TitanOrbit.UI
         private const float SidebarEquipmentStatsFooterHeight = 14f;
         private const float SidebarEquipmentHeaderHeight = 54f;
         private static readonly Color SidebarEquipmentEmptyAccent = new Color(0.35f, 0.4f, 0.48f, 0.85f);
+        /// <summary>
+        /// Gold rail on the extra loadout row (Orbit Unlocked or a claimed match bonus).
+        /// Level-capped empties stay ice-grey; this slot must read as a permanent extra.
+        /// </summary>
+        private static readonly Color SidebarEquipmentBonusAccent = new Color(0.92f, 0.72f, 0.28f, 0.95f);
+        /// <summary>Warm dark glass — slightly different from the cool navy used by regular gear cards.</summary>
+        private static readonly Color SidebarEquipmentBonusBg = new Color(0.16f, 0.13f, 0.07f, 0.98f);
+        /// <summary>Gold outline so the bonus row stays distinct even when a component is mounted in it.</summary>
+        private static readonly Color SidebarEquipmentBonusOutline = new Color(0.85f, 0.68f, 0.28f, 0.78f);
+        /// <summary>Empty-bonus title / subline — same gold family as Orbit Unlocked chrome.</summary>
+        private static readonly Color SidebarEquipmentBonusTitle = new Color(0.96f, 0.86f, 0.52f, 1f);
+        /// <summary>Regular empty-slot meta line (reset when a row stops being the bonus slot).</summary>
+        private static readonly Color SidebarEquipmentSublineColor = new Color(0.82f, 0.88f, 0.96f, 0.92f);
+        const string BonusSlotEmptyTitle = "+1 BONUS";
+        const string BonusSlotEmptySubline = "Permanent extra slot";
         private const float MoonDockUpgradeSpinCardHeight = 280f;
         private const float MoonDockUpgradeSpinCardMinWidth = 210f;
         private const float MoonDockUpgradeSpinIconHeight = 88f;
@@ -329,6 +351,8 @@ namespace TitanOrbit.UI
         {
             /// <summary>LayoutElement on the card root — preferredHeight updates when empty/filled/placement expands.</summary>
             public LayoutElement cardLayout;
+            /// <summary>Card-edge outline. Gold on the bonus row, ice-white on regular slots.</summary>
+            public Outline outline;
             public Image accentImage;
             public Image iconImage;
             public TextMeshProUGUI iconGlyph;
@@ -2424,6 +2448,11 @@ namespace TitanOrbit.UI
             }
 
             string expectedStructureKey = _moonDockShipTreeHorizontal ? MoonDockShipTreeStructureKey : ShipTreeStructureKey;
+            // Paint FAMILY BONUSES before node geometry so the tree can subtract the matrix height.
+            shipUpgradeTree.ApplyFamilyIdentity(
+                ResolveUpgradeTreeFamily(),
+                currentShip != null ? currentShip.ShipLevel : 1,
+                ResolveStoreFamilyBulletBankIndex());
             shipUpgradeTree.RebuildIfNeeded(_moonDockShipTreeHorizontal, expectedStructureKey);
             _shipTreeStructureKey = expectedStructureKey;
 
@@ -2837,10 +2866,13 @@ namespace TitanOrbit.UI
             var cardOutline = boxRoot.AddComponent<Outline>();
             cardOutline.effectColor = MoonDockStoreCardFrameColor;
             cardOutline.effectDistance = new Vector2(1f, 1f);
+            slotUi.outline = cardOutline;
 
             var cardVlg = boxRoot.AddComponent<VerticalLayoutGroup>();
-            cardVlg.spacing = 2f;
-            cardVlg.padding = new RectOffset(4, 4, 3, 3);
+            // [TITAN-ORBIT] Extra top pad + spacing after the 3px accent so empty-slot
+            // titles sit below the rail instead of drawing through it.
+            cardVlg.spacing = 4f;
+            cardVlg.padding = new RectOffset(4, 4, 6, 4);
             cardVlg.childAlignment = TextAnchor.UpperCenter;
             cardVlg.childControlWidth = true;
             cardVlg.childControlHeight = true;
@@ -2866,7 +2898,7 @@ namespace TitanOrbit.UI
             headerLe.preferredHeight = SidebarEquipmentHeaderHeight;
             var headerHlg = slotUi.headerRow.AddComponent<HorizontalLayoutGroup>();
             headerHlg.spacing = 8f;
-            headerHlg.padding = new RectOffset(2, 2, 2, 2);
+            headerHlg.padding = new RectOffset(2, 2, 4, 2);
             headerHlg.childAlignment = TextAnchor.MiddleLeft;
             headerHlg.childControlWidth = true;
             headerHlg.childControlHeight = true;
@@ -2908,7 +2940,7 @@ namespace TitanOrbit.UI
             textColLe.minWidth = 80f;
             var textVlg = textCol.AddComponent<VerticalLayoutGroup>();
             textVlg.spacing = 1f;
-            textVlg.padding = new RectOffset(0, 0, 2, 2);
+            textVlg.padding = new RectOffset(0, 0, 0, 0);
             textVlg.childAlignment = TextAnchor.MiddleLeft;
             textVlg.childControlWidth = true;
             textVlg.childControlHeight = true;
@@ -2924,7 +2956,8 @@ namespace TitanOrbit.UI
             titleText.text = "Empty";
             titleText.fontSize = 12f;
             titleText.fontStyle = FontStyles.Bold;
-            titleText.alignment = TextAlignmentOptions.Left;
+            // [UNITY] TMP Left is top-left — MidlineLeft keeps glyphs off the accent rail.
+            titleText.alignment = TextAlignmentOptions.MidlineLeft;
             titleText.color = Color.white;
             titleText.overflowMode = TextOverflowModes.Ellipsis;
             titleText.raycastTarget = false;
@@ -2938,7 +2971,7 @@ namespace TitanOrbit.UI
             slotUi.sublineText = sublineGo.AddComponent<TextMeshProUGUI>();
             slotUi.sublineText.fontSize = 10f;
             slotUi.sublineText.fontStyle = FontStyles.Normal;
-            slotUi.sublineText.alignment = TextAlignmentOptions.Left;
+            slotUi.sublineText.alignment = TextAlignmentOptions.MidlineLeft;
             slotUi.sublineText.color = new Color(0.82f, 0.88f, 0.96f, 0.92f);
             slotUi.sublineText.enableWordWrapping = true;
             slotUi.sublineText.overflowMode = TextOverflowModes.Ellipsis;
@@ -6562,6 +6595,12 @@ namespace TitanOrbit.UI
             ApplyMoonDockUpgradeCardsSectionHeight();
         }
 
+        /// <summary>
+        /// Rebuilds the left-dock gear list from the docked hull's loadout.
+        /// Filled components come first, then empty level-capped rows, then either
+        /// the locked WATCH AD row or the granted gold "+1 BONUS" plate.
+        /// Called from store refresh / claim callbacks — not per frame.
+        /// </summary>
         private void RefreshEquipmentSlots()
         {
             if (currentShip == null || equipmentBoxes == null) return;
@@ -6578,6 +6617,12 @@ namespace TitanOrbit.UI
                 && (TitanOrbitRewardedAds.CanOfferRewarded || !TitanOrbitAdsGate.ShouldShowAds);
             int slotCount = gearCount + emptyNeeded + (showLockedExtra ? 1 : 0);
             int lockedIndex = showLockedExtra ? slotCount - 1 : -1;
+            // Granted extra capacity always sits on the last visible gear row so
+            // Orbit Unlocked / claimed-ad players still see a gold "+1 BONUS" plate
+            // instead of another ice-grey Empty.
+            int bonusIndex = currentShip.LoadoutBonusSlots > 0 && slotCount > 0
+                ? slotCount - 1
+                : -1;
 
             if (equipmentSectionLabel != null)
                 equipmentSectionLabel.text = OrbitDockSidebarPanelUI.SectionTitleEquipment;
@@ -6643,7 +6688,8 @@ namespace TitanOrbit.UI
                         shipLevel,
                         slotMaxPower,
                         sidebarPowerTrackWidth,
-                        slotUi);
+                        slotUi,
+                        isPermanentBonus: i == bonusIndex);
                     continue;
                 }
 
@@ -6657,6 +6703,7 @@ namespace TitanOrbit.UI
                         equipmentTitleTexts[i].text = ShipComponentStoreData.FormatComponentId(entry.ComponentId);
                     else
                         equipmentTitleTexts[i].text = StoreItemData.GetShortDisplayName(itemType);
+                    equipmentTitleTexts[i].color = Color.white;
                 }
                 if (equipmentDescTexts != null && i < equipmentDescTexts.Length && equipmentDescTexts[i] != null)
                 {
@@ -6712,6 +6759,9 @@ namespace TitanOrbit.UI
                     equipmentDeleteButtons[i].gameObject.SetActive(filled);
                     equipmentDeleteButtons[i].interactable = filled;
                 }
+
+                if (i == bonusIndex)
+                    ApplyEquipmentSlotPermanentBonusLook(i, slotUi: null, filled);
             }
 
             // Relayout after per-card heights are known (empty / filled / mount expanded).
@@ -6722,13 +6772,17 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// Dim locked row under the level-capped slots. Clicking WATCH AD / UNLOCK
-        /// plays a rewarded video then RPCs <see cref="MoonOrbitRpcClient.ClaimRewardedBonusSlot"/>.
+        /// Dim locked row under the level-capped slots. Same gold plate as the
+        /// granted "+1 BONUS" row, plus WATCH AD / UNLOCK. Clicking plays a
+        /// rewarded video then RPCs <see cref="MoonOrbitRpcClient.ClaimRewardedBonusSlot"/>.
         /// </summary>
         void PaintLockedBonusEquipmentSlot(int index)
         {
             if (equipmentTitleTexts != null && index < equipmentTitleTexts.Length && equipmentTitleTexts[index] != null)
+            {
                 equipmentTitleTexts[index].text = "+1 SLOT";
+                equipmentTitleTexts[index].color = SidebarEquipmentBonusTitle;
+            }
             if (equipmentDescTexts != null && index < equipmentDescTexts.Length && equipmentDescTexts[index] != null)
                 equipmentDescTexts[index].text = string.Empty;
             if (equipmentChargeTexts != null && index < equipmentChargeTexts.Length && equipmentChargeTexts[index] != null)
@@ -6738,11 +6792,11 @@ namespace TitanOrbit.UI
                     bubble.gameObject.SetActive(false);
             }
             if (equipmentBgImages != null && index < equipmentBgImages.Length && equipmentBgImages[index] != null)
-                equipmentBgImages[index].color = new Color(0.10f, 0.12f, 0.18f, 0.92f);
+                equipmentBgImages[index].color = SidebarEquipmentBonusBg;
             if (equipmentBorderImages != null && index < equipmentBorderImages.Length && equipmentBorderImages[index] != null)
             {
                 equipmentBorderImages[index].enabled = true;
-                equipmentBorderImages[index].color = new Color(0.55f, 0.42f, 0.22f, 0.85f);
+                equipmentBorderImages[index].color = SidebarEquipmentBonusOutline;
             }
             if (equipmentDeleteButtons != null && index < equipmentDeleteButtons.Length && equipmentDeleteButtons[index] != null)
             {
@@ -6756,7 +6810,8 @@ namespace TitanOrbit.UI
             if (slotUi != null)
             {
                 if (slotUi.accentImage != null)
-                    slotUi.accentImage.color = new Color(0.85f, 0.62f, 0.28f, 0.9f);
+                    slotUi.accentImage.color = SidebarEquipmentBonusAccent;
+                ApplyEquipmentSlotOutline(slotUi, index, bonusLook: true);
                 // Locked row is title + watch-ad button only — hide the empty-slot power bar,
                 // icon, charges, and mount chrome so the button can fill the card body.
                 if (slotUi.sublineText != null)
@@ -6898,6 +6953,8 @@ namespace TitanOrbit.UI
         /// Paints one compact owned Equipment card: accent, title, icon, colorful power bar, subline.
         /// Ability line-by-line stats are omitted (store purchase cards already show them).
         /// Mount Move/Turn controls stay behind Adjust mount until the player expands them.
+        /// <paramref name="isPermanentBonus"/> is the extra capacity row (last visible
+        /// slot when <c>LoadoutBonusSlots</c> is 1) — gold glass instead of navy Empty.
         /// </summary>
         private void RefreshSidebarEquipmentSlotRich(
             int index,
@@ -6909,8 +6966,14 @@ namespace TitanOrbit.UI
             int shipLevel,
             float maxComponentPower,
             float trackWidth,
-            SidebarEquipmentSlotUi slotUi)
+            SidebarEquipmentSlotUi slotUi,
+            bool isPermanentBonus)
         {
+            // --- Standard chrome first ---
+            // A row that used to be the bonus slot must drop gold outline / title colour
+            // before we paint this refresh, or the gold sticks after the extra moves.
+            ApplyEquipmentSlotStandardFrame(index, slotUi);
+
             if (equipmentBgImages != null && index < equipmentBgImages.Length && equipmentBgImages[index] != null)
                 equipmentBgImages[index].color = MoonDockEquipmentCardBg;
 
@@ -6934,6 +6997,8 @@ namespace TitanOrbit.UI
 
             if (equipmentTitleTexts != null && index < equipmentTitleTexts.Length && equipmentTitleTexts[index] != null)
             {
+                // Midline keeps "Empty" off the 3px accent — TMP Left is top-left and drew through it.
+                equipmentTitleTexts[index].alignment = TextAlignmentOptions.MidlineLeft;
                 if (!filled)
                     equipmentTitleTexts[index].text = "Empty";
                 else if (entry.IsShipComponent && componentEntry != null)
@@ -7060,16 +7125,7 @@ namespace TitanOrbit.UI
                 else if (slotUi.iconRoot != null)
                     slotUi.iconRoot.SetActive(false);
 
-                if (slotUi.headerRow != null)
-                {
-                    var headerLe = slotUi.headerRow.GetComponent<LayoutElement>();
-                    if (headerLe != null)
-                    {
-                        float hh = filled ? SidebarEquipmentHeaderHeight : 22f;
-                        headerLe.preferredHeight = hh;
-                        headerLe.minHeight = filled ? SidebarEquipmentIconMinHeight : 18f;
-                    }
-                }
+                ApplyEquipmentSlotHeaderMetrics(slotUi, filled);
             }
 
             if (equipmentDeleteButtons != null && index < equipmentDeleteButtons.Length && equipmentDeleteButtons[index] != null)
@@ -7097,7 +7153,8 @@ namespace TitanOrbit.UI
                 slotUi.placementReadout.text = FormatEquipmentPlacementCompact(entry.LocalPosition, entry.LocalEulerAngles);
 
             // --- Variable card height ---
-            // Empty = short title row; filled = glance card; expanded mount adds placement panel height.
+            // Empty = accent + title + one hint line (tall enough that text clears the rail).
+            // Filled = glance card; expanded mount adds placement panel height.
             if (slotUi?.cardLayout != null)
             {
                 float h;
@@ -7117,6 +7174,137 @@ namespace TitanOrbit.UI
                 slotUi.cardLayout.preferredHeight = h;
                 slotUi.cardLayout.minHeight = h;
             }
+
+            // --- Permanent bonus plate ---
+            // Last after item copy so we only override chrome (and empty title / subline).
+            if (isPermanentBonus)
+                ApplyEquipmentSlotPermanentBonusLook(index, slotUi, filled);
+        }
+
+        /// <summary>
+        /// Sizes the title/meta header for a filled glance card vs a short empty slot.
+        /// Empty slots keep one hint line; filled slots keep the two-line item meta.
+        /// Called from <see cref="RefreshSidebarEquipmentSlotRich"/> after icon visibility is set.
+        /// </summary>
+        /// <param name="slotUi">Rich-layout refs for this row.</param>
+        /// <param name="filled">True when a card / component occupies the slot.</param>
+        void ApplyEquipmentSlotHeaderMetrics(SidebarEquipmentSlotUi slotUi, bool filled)
+        {
+            if (slotUi == null)
+                return;
+
+            // --- Header row ---
+            // Empty: no icon, so the row only needs title + one hint line.
+            // Filled: icon column is ~52px; header matches that so the name sits mid-row.
+            if (slotUi.headerRow != null)
+            {
+                var headerLe = slotUi.headerRow.GetComponent<LayoutElement>();
+                if (headerLe != null)
+                {
+                    float hh = filled ? SidebarEquipmentHeaderHeight : SidebarEquipmentHeaderHeightEmpty;
+                    headerLe.preferredHeight = hh;
+                    headerLe.minHeight = filled ? SidebarEquipmentIconMinHeight : SidebarEquipmentHeaderHeightEmpty;
+                }
+            }
+
+            // --- Hint / meta line ---
+            // The same TMP is "Buy from store" when empty and "Lv.3 · Weapon" when filled.
+            // Empty uses one short line so it cannot shove "Empty" up into the accent rail.
+            if (slotUi.sublineText == null)
+                return;
+
+            var subLe = slotUi.sublineText.GetComponent<LayoutElement>();
+            if (subLe != null)
+            {
+                subLe.preferredHeight = filled ? 24f : SidebarEquipmentEmptySublineHeight;
+                subLe.minHeight = filled ? 18f : 12f;
+            }
+            slotUi.sublineText.maxVisibleLines = filled ? 2 : 1;
+            slotUi.sublineText.enableWordWrapping = filled;
+            slotUi.sublineText.alignment = TextAlignmentOptions.MidlineLeft;
+        }
+
+        /// <summary>
+        /// Restores cool-navy card chrome after a row stops being the extra bonus slot.
+        /// Title / subline colour reset here; callers still write the actual copy.
+        /// </summary>
+        /// <param name="index">Zero-based equipment row.</param>
+        /// <param name="slotUi">Rich-layout refs, or null on the legacy grid.</param>
+        void ApplyEquipmentSlotStandardFrame(int index, SidebarEquipmentSlotUi slotUi)
+        {
+            ApplyEquipmentSlotOutline(slotUi, index, bonusLook: false);
+            if (equipmentTitleTexts != null && index < equipmentTitleTexts.Length && equipmentTitleTexts[index] != null)
+                equipmentTitleTexts[index].color = Color.white;
+            if (slotUi?.sublineText != null)
+                slotUi.sublineText.color = SidebarEquipmentSublineColor;
+        }
+
+        /// <summary>
+        /// Gold glass on the extra loadout row so it never reads as another Empty.
+        /// Filled items keep their name and category accent — only the plate changes.
+        /// Empty rows show "+1 BONUS" / "Permanent extra slot".
+        /// </summary>
+        /// <param name="index">Zero-based equipment row (last visible when bonus is granted).</param>
+        /// <param name="slotUi">Rich-layout refs, or null on the legacy grid.</param>
+        /// <param name="filled">True when a card / component already occupies the extra slot.</param>
+        void ApplyEquipmentSlotPermanentBonusLook(int index, SidebarEquipmentSlotUi slotUi, bool filled)
+        {
+            // --- Warm plate ---
+            if (equipmentBgImages != null && index < equipmentBgImages.Length && equipmentBgImages[index] != null)
+                equipmentBgImages[index].color = SidebarEquipmentBonusBg;
+
+            if (slotUi?.accentImage != null && !filled)
+                slotUi.accentImage.color = SidebarEquipmentBonusAccent;
+
+            ApplyEquipmentSlotOutline(slotUi, index, bonusLook: true);
+
+            if (equipmentBorderImages != null && index < equipmentBorderImages.Length && equipmentBorderImages[index] != null)
+            {
+                equipmentBorderImages[index].enabled = true;
+                equipmentBorderImages[index].color = SidebarEquipmentBonusOutline;
+            }
+
+            // --- Empty copy ---
+            // Occupied bonus rows keep the item name; only the empty extra needs a label.
+            if (filled)
+                return;
+
+            if (equipmentTitleTexts != null && index < equipmentTitleTexts.Length && equipmentTitleTexts[index] != null)
+            {
+                equipmentTitleTexts[index].text = BonusSlotEmptyTitle;
+                equipmentTitleTexts[index].color = SidebarEquipmentBonusTitle;
+            }
+            if (slotUi?.sublineText != null)
+            {
+                // Orbit Unlocked keeps the extra every match; an ad claim lasts this match only.
+                slotUi.sublineText.text = TitanOrbitEntitlements.IsOrbitUnlockedOwned
+                    ? BonusSlotEmptySubline
+                    : "Match bonus slot";
+                slotUi.sublineText.color = SidebarEquipmentBonusTitle;
+                slotUi.sublineText.gameObject.SetActive(true);
+            }
+        }
+
+        /// <summary>
+        /// Sets the UGUI Outline on one equipment card. Gold + a slightly thicker
+        /// stroke for the bonus row; ice-white hairline for regular slots.
+        /// </summary>
+        void ApplyEquipmentSlotOutline(SidebarEquipmentSlotUi slotUi, int index, bool bonusLook)
+        {
+            Outline outline = slotUi != null ? slotUi.outline : null;
+            if (outline == null
+                && equipmentBoxes != null
+                && index >= 0
+                && index < equipmentBoxes.Length
+                && equipmentBoxes[index] != null)
+            {
+                outline = equipmentBoxes[index].GetComponent<Outline>();
+            }
+            if (outline == null)
+                return;
+
+            outline.effectColor = bonusLook ? SidebarEquipmentBonusOutline : MoonDockStoreCardFrameColor;
+            outline.effectDistance = bonusLook ? new Vector2(1.5f, 1.5f) : new Vector2(1f, 1f);
         }
 
         private void UpdateLegacyOrbitStorePanelTop(int cardSlotCount, int equipmentSlotCount)
