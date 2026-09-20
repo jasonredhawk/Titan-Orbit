@@ -132,9 +132,8 @@ namespace TitanOrbit.UI
         /// <summary>Amber plate for the single watch-ad CTA (same hue as the old AD stamp).</summary>
         static readonly Color AdGatePlate = new Color(0.07f, 0.045f, 0.018f, 0.96f);
         /// <summary>
-        /// Quiet brass wash for granted extras (chips 4–5, extra RECENT rows).
-        /// Same idea as the Orbit Menu +1 BONUS slot, but dimmer so the matrix
-        /// stays navy and the extras only read as a hint, not a gold card.
+        /// Quiet brass wash for granted keyword chips 4–5. Extra RECENT rows
+        /// skip this fill and use <see cref="BonusPlateOutline"/> only.
         /// </summary>
         static readonly Color BonusPlateBg = new Color(0.038f, 0.036f, 0.032f, 0.94f);
         /// <summary>Thin muted brass frame — low alpha so it does not glow like command gold.</summary>
@@ -1118,7 +1117,7 @@ namespace TitanOrbit.UI
         /// <summary>
         /// Fills the RECENT column from <see cref="ShipCommsHistory"/>. Rows past the
         /// free first three stay ghosted under one unlock plate until that video runs,
-        /// then keep the gold bonus plate so they stay distinct from the free three.
+        /// then keep a brass outline only so they stay distinct from the free three.
         /// A filled row that used command-deck words is temporarily locked (opaque
         /// veil + LOCK stamp, same language as the command tiles) while this machine
         /// is not a commander. The sentence stays in history; we do not rewrite it.
@@ -1145,8 +1144,8 @@ namespace TitanOrbit.UI
                 // --- Row plate ---
                 // Ad-locked rows stay the caption plate under the veil. Command-gated
                 // rows use an opaque void so LOCK does not sit on see-through chips.
-                // Granted extras (past the free first three) get a quiet brass hint
-                // so they stay distinct without a gold flood.
+                // Granted extras (past the free first three) keep the same navy fill
+                // as the free rows — only a quiet brass outline marks them.
                 bool bonusRow = !adLocked && i >= ShipCommsClientState.FreeRecentRows;
                 if (slot.Fill != null)
                 {
@@ -1154,15 +1153,6 @@ namespace TitanOrbit.UI
                         slot.Fill.color = CommanderLockedRecentVeil;
                     else if (adLocked)
                         slot.Fill.color = CaptionPlateColor;
-                    else if (bonusRow && !filled)
-                        slot.Fill.color = BonusPlateBg;
-                    else if (bonusRow)
-                    {
-                        Color live = selected
-                            ? Color.Lerp(TileSelected, AllChannelColor, 0.42f)
-                            : TileSelected;
-                        slot.Fill.color = Color.Lerp(live, BonusPlateBg, 0.16f);
-                    }
                     else
                         slot.Fill.color = selected
                             ? Color.Lerp(TileSelected, AllChannelColor, 0.42f)
@@ -1187,7 +1177,7 @@ namespace TitanOrbit.UI
                 }
                 if (slot.Caret != null)
                 {
-                    slot.Caret.color = bonusRow && !commanderLocked ? BonusPlateTitle : AllChannelColor;
+                    slot.Caret.color = AllChannelColor;
                     slot.Caret.enabled = selected;
                 }
                 if (slot.Button != null)
