@@ -1,9 +1,12 @@
 using System;
+using System.Text;
 using TitanOrbit.Core;
 using TitanOrbit.Data;
+using TitanOrbit.ECS;
 using TitanOrbit.Game;
 using TitanOrbit.Simulation;
 using TMPro;
+using Unity.Entities;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -359,7 +362,10 @@ namespace TitanOrbit.UI
         /// Writes the uppercase family caption and optional FAMILY STATS rail.
         /// Hides the rail when every special bonus is 1× (Astro Eagle today).
         /// </summary>
-        public void RefreshFamilyIdentity(ShipFamilyDefinition family, int shipLevel = 1)
+        public void RefreshFamilyIdentity(
+            ShipFamilyDefinition family,
+            int shipLevel = 1,
+            int planetOrHullBankIndex = -1)
         {
             EnsureBuilt();
             if (_familyNameText != null)
@@ -371,18 +377,25 @@ namespace TitanOrbit.UI
             if (showStats && _familyStatsText != null)
                 _familyStatsText.text = FamilyStatHudCopy.FormatNonIdentityBonuses(family.specialBonuses);
 
-            string bankName = BulletBankHudCopy.FormatFamilyTypeName(family);
-            bool showWeapon = !string.IsNullOrEmpty(bankName);
+            string bankName = BulletBankHudCopy.FormatFamilyTypeName(family, planetOrHullBankIndex);
+            bool listedOwned = TryFormatOwnedWeaponsGlance(shipLevel, out string ownedGlance, out string ownedTip);
+            bool showWeapon = listedOwned || !string.IsNullOrEmpty(bankName);
             if (_ordnanceBlock != null)
                 _ordnanceBlock.SetActive(showWeapon);
             if (showWeapon && _ordnanceText != null)
-                _ordnanceText.text = BulletBankHudCopy.FormatFamilyWeaponGlance(family, shipLevel);
+            {
+                _ordnanceText.text = listedOwned
+                    ? ownedGlance
+                    : BulletBankHudCopy.FormatFamilyWeaponGlance(family, shipLevel, planetOrHullBankIndex);
+            }
             if (_ordnanceTip != null)
             {
                 _ordnanceTip.Caption = BulletBankHudCopy.WeaponTypeCaption;
-                _ordnanceTip.Body = showWeapon
-                    ? BulletBankHudCopy.BuildFamilyOrdnanceTooltip(family, shipLevel)
-                    : string.Empty;
+                _ordnanceTip.Body = !showWeapon
+                    ? string.Empty
+                    : (listedOwned
+                        ? ownedTip
+                        : BulletBankHudCopy.BuildFamilyOrdnanceTooltip(family, shipLevel, planetOrHullBankIndex));
             }
         }
 
@@ -426,13 +439,63 @@ namespace TitanOrbit.UI
             _familyStatsBlock.SetActive(false);
         }
 
+        static readonly VisibleBankRow[] s_OwnedWeaponRows = new VisibleBankRow[16];
+
+        /// <summary>
+        /// Hull gun plus each purchased weapon type the local ship can B-key.
+        /// False when the ghost has not hydrated yet.
+        /// </summary>
+        static bool TryFormatOwnedWeaponsGlance(int shipLevel, out string glance, out string tip)
+        {
+            glance = string.Empty;
+            tip = string.Empty;
+            var world = EcsGameBridge.GetLocalPlayerShipWorld();
+            if (world == null || !world.IsCreated)
+                return false;
+            if (!EcsGameBridge.TryGetLocalShipEntityOnWorld(world, out Entity ship) || ship == Entity.Null)
+                return false;
+
+            int count = BulletBankOwnership.CollectVisibleBankRows(
+                world.EntityManager, ship, s_OwnedWeaponRows);
+            if (count <= 0)
+                return false;
+
+            var body = new StringBuilder(96);
+            var tipSb = new StringBuilder(256);
+            int listed = 0;
+            for (int i = 0; i < count; i++)
+            {
+                VisibleBankRow row = s_OwnedWeaponRows[i];
+                if (!row.IsOwned)
+                    continue;
+                string name = BulletBankProfileUtility.FormatBankCategoryName(row.BankIndex);
+                if (string.IsNullOrEmpty(name))
+                    continue;
+                if (body.Length > 0)
+                    body.Append('\n');
+                body.Append(name);
+                if (row.IsHullDefault)
+                    body.Append("  · hull");
+                if (tipSb.Length > 0)
+                    tipSb.Append("\n\n");
+                tipSb.Append(BulletBankHudCopy.BuildFamilyOrdnanceTooltip(null, shipLevel, row.BankIndex));
+                listed++;
+            }
+
+            if (listed <= 0)
+                return false;
+            glance = body.ToString();
+            tip = tipSb.ToString();
+            return true;
+        }
+
         void CreateOrdnanceBlock(Transform parent)
         {
-            _ordnanceBlock = new GameObject("Ordnance");
+            _ordnanceBlock = new GameObject("Weapons");
             _ordnanceBlock.transform.SetParent(parent, false);
             var le = _ordnanceBlock.AddComponent<LayoutElement>();
-            le.preferredHeight = 52f;
-            le.minHeight = 40f;
+            le.preferredHeight = 72f;
+            le.minHeight = 44f;
             le.flexibleHeight = 0f;
             var bg = _ordnanceBlock.AddComponent<Image>();
             bg.color = new Color(0.018f, 0.028f, 0.045f, 1f);
@@ -462,7 +525,7 @@ namespace TitanOrbit.UI
             _ordnanceText.color = new Color(0.88f, 0.92f, 0.98f, 1f);
             _ordnanceText.enableWordWrapping = true;
             _ordnanceText.overflowMode = TextOverflowModes.Ellipsis;
-            _ordnanceText.maxVisibleLines = 3;
+            _ordnanceText.maxVisibleLines = 8;
             _ordnanceText.raycastTarget = false;
             ApplyFont(_ordnanceText);
 

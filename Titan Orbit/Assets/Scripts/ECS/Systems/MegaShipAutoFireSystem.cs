@@ -331,9 +331,8 @@ namespace TitanOrbit.ECS
                     float keepRange = isCannon
                         ? CannonLaserMath.KeepRange(acquireRange)
                         : acquireRange;
-                    int mountBank = mount.BulletBankIndex >= 0
-                        ? mount.BulletBankIndex
-                        : bankIndex;
+                    int mountBank = BulletBankFireResolve.ResolveMegaMountFireBank(
+                        in mount, bankIndex);
                     float leadBulletSpeed = isCannon
                         ? 0f
                         : ResolveLeadBulletSpeed(
@@ -1129,7 +1128,8 @@ namespace TitanOrbit.ECS
         /// <summary>
         /// Muzzle-relative bullet speed after the same bank modifiers Phase B applies.
         /// Lead must use this value or the intercept systematically under- or over-leads.
-        /// Rockets use <see cref="RocketCatalog"/> speed (same as <see cref="RocketHomingFire"/>).
+        /// Titan missiles use the mount's catalog Weapon Missile <c>bulletSpeed</c>
+        /// (same as <see cref="RocketHomingFire"/>).
         /// </summary>
         static float ResolveLeadBulletSpeed(
             in ShipWeaponConfig weapon,
@@ -1139,8 +1139,9 @@ namespace TitanOrbit.ECS
         {
             if (RocketHomingFire.IsRocketBank(bankIndex))
             {
-                float catalogSpeed = RocketCatalog.Get(math.max(1, shipLevel)).speed;
-                return math.max(PlanetaryDefenseAimMath.MinBulletSpeed, catalogSpeed);
+                return math.max(
+                    PlanetaryDefenseAimMath.MinBulletSpeed,
+                    RocketHomingFire.ResolveFlightSpeed(shipLevel, mount.BulletSpeed));
             }
 
             float speed = math.max(

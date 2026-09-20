@@ -553,7 +553,8 @@ namespace TitanOrbit.ECS
             ship.ShipFamilyConfigIndex = storeFamilyIndex;
             // [TITAN-ORBIT] Planet-rolled gun travels with the hull. Family assets are Laserbolt;
             // this stamp is why Cosmic Shark can fire Rift this match.
-            ship.HullBulletBankIndex = storePlanet.BulletBankIndex;
+            ship.HullBulletBankIndex = (byte)PlanetShipFamilyAssignment.SanitizeSelectableDamageBank(
+                storePlanet.BulletBankIndex);
             em.SetComponentData(shipEntity, ship);
 
             if (em.HasComponent<ShipAttributeUpgradeState>(shipEntity))
@@ -1200,7 +1201,8 @@ namespace TitanOrbit.ECS
                 if (planetId > 0 && TryFindPlanetById(em, planetId, out _, out var storePlanet))
                 {
                     familyIndex = ResolveStoreFamilyConfigIndex(storePlanet);
-                    bulletBankIndex = storePlanet.BulletBankIndex;
+                    bulletBankIndex = (byte)PlanetShipFamilyAssignment.SanitizeSelectableDamageBank(
+                        storePlanet.BulletBankIndex);
                     return;
                 }
             }

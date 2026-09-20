@@ -577,7 +577,8 @@ namespace TitanOrbit.ECS
                 var mount = mounts[m];
                 if (ShipWeaponKind.IsCannonLaser(mount, gunners, m))
                     continue;
-                int mountBank = mount.BulletBankIndex >= 0 ? mount.BulletBankIndex : fallbackBankIndex;
+                int mountBank = BulletBankFireResolve.ResolveMegaMountFireBank(
+                    in mount, fallbackBankIndex);
                 float categoryUpgradeScale = vfxBankForScale != null
                     ? vfxBankForScale.GetCategoryUpgradeVisualScaleMultiplier(mountBank)
                     : 1f;
@@ -626,7 +627,8 @@ namespace TitanOrbit.ECS
                     shipState.ShipLevel,
                     dt, gemPrefab, gemSpawnServerTime, mapW, mapH,
                     moonElapsed, serverElapsed,
-                    interceptDistance);
+                    interceptDistance,
+                    RocketHomingFire.IsRocketBank(mountBank) ? fireMount.BulletSpeed : 0f);
                 if (!math.isfinite(fireRateMul) || fireRateMul < 0.05f)
                     fireRateMul = 0.05f;
 
@@ -710,7 +712,8 @@ namespace TitanOrbit.ECS
             float mapH,
             double moonElapsed,
             double serverElapsed,
-            float interceptDistance = 0f)
+            float interceptDistance = 0f,
+            float homingFlightSpeedOverride = 0f)
         {
             float fallbackRefDamage = weaponCfg.ReferenceBulletDamage > 0f
                 ? weaponCfg.ReferenceBulletDamage
@@ -751,7 +754,8 @@ namespace TitanOrbit.ECS
             float acquireRange = 0f;
             if (RocketHomingFire.TryApply(
                     bankIndex, shipLevel, fireForward, ref plan,
-                    out turnSpeedDeg, out acquireRange))
+                    out turnSpeedDeg, out acquireRange,
+                    homingFlightSpeedOverride))
             {
                 homing = 1;
             }

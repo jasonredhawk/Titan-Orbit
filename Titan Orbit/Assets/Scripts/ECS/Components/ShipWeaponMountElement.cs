@@ -81,8 +81,9 @@ namespace TitanOrbit.ECS
 
         /// <summary>
         /// [TITAN-ORBIT] Muzzle speed for this barrel (MEGA unique-component
-        /// <c>bulletSpeed</c>). Regular ships leave this 0 and use hull
-        /// <c>ShipWeaponConfig.BulletSpeed</c>. Not a hull sum — guns/cannons/snipers
+        /// <c>bulletSpeed</c>). Missiles keep Weapon Missile Stats as authored
+        /// (not the hull runtime minimum). Regular ships leave this 0 and use hull
+        /// <c>ShipWeaponConfig.BulletSpeed</c>. Not a hull sum — guns/cannons/missiles/snipers
         /// each keep their own catalog number.
         /// </summary>
         public float BulletSpeed;
@@ -96,8 +97,10 @@ namespace TitanOrbit.ECS
 
         /// <summary>
         /// [TITAN-ORBIT] MEGA per-mount <c>BulletVfxBank</c> category from the catalog unique
-        /// weapon row (or type-table default). Regular ships leave this 0 and fire the
-        /// hull <c>ShipLoadoutState.RuntimeBulletIndex</c>.
+        /// weapon row (or type-table default). Cannon / missile / sniper always fire this
+        /// bank. Titan Bullet (Gun) mounts adopt the hull
+        /// <c>ShipLoadoutState.RuntimeBulletIndex</c> when the player cycles. Regular
+        /// ships leave this 0 and fire the hull index.
         /// </summary>
         public int BulletBankIndex;
 

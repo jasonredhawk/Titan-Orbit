@@ -1871,9 +1871,9 @@ namespace TitanOrbit.UI
         /// LeftMiddle already exists.
         /// </summary>
         /// <param name="chassisId">Tree-slot chassis id (<c>AstroEagle_03</c>, <c>MEGA_007</c>).</param>
-        public void ApplyWeaponLoadoutFromChassis(string chassisId)
+        public void ApplyWeaponLoadoutFromChassis(string chassisId, int planetOrHullBankIndex = -1)
         {
-            SetWeaponLoadout(ShipWeaponLoadout.ForChassisId(chassisId));
+            SetWeaponLoadout(ShipWeaponLoadout.ForChassisId(chassisId, planetOrHullBankIndex));
         }
 
         public void SetPrice(string text)

@@ -828,7 +828,9 @@ namespace TitanOrbit.UI
             view.SetFamilyName(GetFamilyDisplayNameForSlot(chassisId));
             view.SetPreview(GetMenuPreviewForChassis(chassisId));
             // Gun / laser / missile / sniper counts — family cards and Titans share this row.
-            view.ApplyWeaponLoadoutFromChassis(chassisId);
+            view.ApplyWeaponLoadoutFromChassis(
+                chassisId,
+                EcsGameBridge.ResolvePlanetFamilyBulletBankIndex(_storePlanetId));
             if (view.Level == 7)
                 view.ApplyMegaShipCardStyle(isCurrent, canPurchase, megaOccupied, tierBlocked);
             else
@@ -898,7 +900,9 @@ namespace TitanOrbit.UI
             view.SetShipName(GetShipDisplayNameForSlot(level, branch, chassisId));
             view.SetFamilyName(GetFamilyDisplayNameForSlot(chassisId));
             view.SetPreview(GetMenuPreviewForChassis(chassisId));
-            view.ApplyWeaponLoadoutFromChassis(chassisId);
+            view.ApplyWeaponLoadoutFromChassis(
+                chassisId,
+                EcsGameBridge.ResolvePlanetFamilyBulletBankIndex(_storePlanetId));
             if (level == 7)
                 view.ApplyMegaShipCardStyle(isCurrent, clickable && !isCurrent, megaOccupied, !hasChassis);
             else

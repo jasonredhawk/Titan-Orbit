@@ -21,6 +21,22 @@ namespace TitanOrbit.ECS
         /// <summary>High-speed projectile.</summary>
         public const byte Sniper = 3;
 
+        /// <summary>
+        /// Cannon / missile / sniper keep catalog banks when the hull B-key cycles.
+        /// Only <see cref="Gun"/> (Titan Bullet) mounts adopt
+        /// <c>ShipLoadoutState.RuntimeBulletIndex</c>.
+        /// </summary>
+        public static bool KeepsAuthoredBulletBank(byte weaponKind)
+        {
+            return weaponKind == Cannon || weaponKind == Missile || weaponKind == Sniper;
+        }
+
+        /// <summary>True when this barrel should fire the hull's cycled damage bank.</summary>
+        public static bool UsesCycledBulletBank(in ShipWeaponMountElement mount)
+        {
+            return !KeepsAuthoredBulletBank(mount.WeaponKind);
+        }
+
         /// <summary>True when this barrel burns with the cannon laser (not a bullet).</summary>
         public static bool IsCannonLaser(in ShipWeaponMountElement mount)
         {

@@ -23,6 +23,12 @@ namespace TitanOrbit.ECS
         /// from AstroEagle to a captured-neutral family re-runs ApplyToShip at the same level/branch.
         /// </summary>
         public byte AppliedShipFamilyConfigIndex;
+
+        /// <summary>
+        /// [TITAN-ORBIT] Last applied <see cref="ShipState.HullBulletBankIndex"/> so buying the
+        /// same family at a different planet (Fireballs → Rift) re-runs apply and adopts the new gun.
+        /// </summary>
+        public byte AppliedHullBulletBankIndex;
         /// <summary>
         /// Sum of ghosted <see cref="ShipAttributeUpgradeState"/> levels at last apply.
         /// Client re-applies motor when attribute RPCs land without a level change.
@@ -489,12 +495,30 @@ namespace TitanOrbit.ECS
             // level or attribute re-applies — otherwise B-key cycle is wiped every level tick.
             // ShipCycleBulletSystem owns mid-flight index changes.
             bool bulletBankIdentityChanged = true;
+            bool adoptPlanetHullGun = true;
             if (em.HasComponent<ShipChassisState>(shipEntity))
             {
                 var prevForBank = em.GetComponentData<ShipChassisState>(shipEntity);
                 var chassisKeyForBank = new FixedString64Bytes(chassisId);
-                bulletBankIdentityChanged = !prevForBank.ChassisId.Equals(chassisKeyForBank)
+                byte liveFamily = 0;
+                byte liveHullBank = PlanetShipFamilyAssignment.DefaultBulletBankIndex;
+                if (em.HasComponent<ShipState>(shipEntity))
+                {
+                    var liveShip = em.GetComponentData<ShipState>(shipEntity);
+                    liveFamily = liveShip.ShipFamilyConfigIndex;
+                    liveHullBank = liveShip.HullBulletBankIndex;
+                }
+
+                bool chassisChanged = !prevForBank.ChassisId.Equals(chassisKeyForBank)
                     || prevForBank.AppliedBranchIndex != branchIndex;
+                bool familyOrPlanetGunChanged =
+                    prevForBank.AppliedShipFamilyConfigIndex != liveFamily
+                    || prevForBank.AppliedHullBulletBankIndex != liveHullBank;
+                bulletBankIdentityChanged = chassisChanged || familyOrPlanetGunChanged;
+                // [TITAN-ORBIT] Family / planet-gun swap must adopt the planet's type
+                // (Cosmic Shark at a Rift world fires Rift). Same-family level-up keeps B-key
+                // if that bank is still owned.
+                adoptPlanetHullGun = familyOrPlanetGunChanged;
             }
 
             if (writeGhostedShipState &&
@@ -509,20 +533,28 @@ namespace TitanOrbit.ECS
                 else if (TryResolveFamilyForChassisId(chassisId, out ShipFamilyDefinition bankFamily))
                     hullBank = BulletBankProfileUtility.ResolveBankIndexForFamily(bankFamily);
 
-                int[] owned = new int[16];
-                int ownedCount = BulletBankOwnership.CollectOwnedDamageBanks(em, shipEntity, owned);
-                bool stillOwned = false;
-                for (int i = 0; i < ownedCount; i++)
+                if (adoptPlanetHullGun)
                 {
-                    if (owned[i] == loadout.RuntimeBulletIndex)
+                    loadout.RuntimeBulletIndex = hullBank;
+                }
+                else
+                {
+                    int[] owned = new int[16];
+                    int ownedCount = BulletBankOwnership.CollectOwnedDamageBanks(em, shipEntity, owned);
+                    bool stillOwned = false;
+                    for (int i = 0; i < ownedCount; i++)
                     {
-                        stillOwned = true;
-                        break;
+                        if (owned[i] == loadout.RuntimeBulletIndex)
+                        {
+                            stillOwned = true;
+                            break;
+                        }
                     }
+
+                    if (!stillOwned)
+                        loadout.RuntimeBulletIndex = hullBank;
                 }
 
-                if (!stillOwned)
-                    loadout.RuntimeBulletIndex = hullBank;
                 em.SetComponentData(shipEntity, loadout);
             }
 
@@ -648,6 +680,9 @@ namespace TitanOrbit.ECS
                 AppliedShipLevel = shipLevel,
                 AppliedBranchIndex = branchIndex,
                 AppliedShipFamilyConfigIndex = (byte)familyIndex,
+                AppliedHullBulletBankIndex = em.HasComponent<ShipState>(shipEntity)
+                    ? em.GetComponentData<ShipState>(shipEntity).HullBulletBankIndex
+                    : PlanetShipFamilyAssignment.DefaultBulletBankIndex,
                 AppliedAttributeSum = attributeSum,
                 AppliedEquipmentFingerprint = equipmentFingerprint,
             };

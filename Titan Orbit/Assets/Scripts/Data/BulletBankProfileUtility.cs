@@ -16,9 +16,10 @@ namespace TitanOrbit.Data
         public static ShipComponentAbilityStats ApplyProfileToComponentStats(
             ShipComponentAbilityStats stats,
             ShipFamilyComponentEntry entry,
-            ShipFamilyDefinition family = null)
+            ShipFamilyDefinition family = null,
+            int planetOrHullBankIndex = -1)
         {
-            int bankIndex = ResolveBankIndexForFamily(family);
+            int bankIndex = ResolveBankIndexForComponentEntry(entry, family, planetOrHullBankIndex);
             var bank = BulletVfxBank.LoadDefault();
             if (bank == null || !bank.TryGetProfile(bankIndex, out BulletBankProfile profile) || profile == null)
                 return stats;
@@ -57,11 +58,17 @@ namespace TitanOrbit.Data
         /// <c>ShipState.HullBulletBankIndex</c> instead — this is the asset default only.
         /// Negative authored values clamp to 0 (Laserbolt / first bank category).
         /// </summary>
-        public static int ResolveBankIndexForFamily(ShipFamilyDefinition family)
+        public static int ResolveBankIndexForFamily(
+            ShipFamilyDefinition family,
+            int planetOrHullBankIndex = -1)
         {
-            // --- Family fallback → bank ---
-            // [TITAN-ORBIT] Planets overwrite this at spawn. ShipStatApplyLogic prefers
-            // HullBulletBankIndex; this path is store preview, missing stamp, and inherit.
+            // --- Planet / hull stamp wins ---
+            // [TITAN-ORBIT] Neutral planets roll a gun. That index is the family's live
+            // default on that world — Cosmic Shark at a Rift planet fires Rift, not Laserbolt.
+            if (planetOrHullBankIndex >= 0)
+                return PlanetShipFamilyAssignment.SanitizeSelectableDamageBank(planetOrHullBankIndex);
+
+            // --- Family asset fallback (Laserbolt) ---
             if (family == null)
                 return 0;
             int index = family.bulletPrefabIndex < 0 ? 0 : family.bulletPrefabIndex;
@@ -282,11 +289,28 @@ namespace TitanOrbit.Data
         /// <returns>Zero-based <see cref="BulletVfxBank"/> category index (0 when both inputs are missing).</returns>
         public static int ResolveBankIndexForComponentEntry(
             ShipFamilyComponentEntry entry,
-            ShipFamilyDefinition family)
+            ShipFamilyDefinition family,
+            int planetOrHullBankIndex = -1)
         {
-            // --- Authored override ---
-            // [TITAN-ORBIT] -1 (default) means "same bank as this family's hull guns."
-            // A heal bank on a store weapon is remapped: players buy a gun, then toggle heal with B.
+            // --- Planet / hull stamp ---
+            // [TITAN-ORBIT] Inherit (−1), heal remap, and the family Laserbolt default
+            // all adopt the planet's rolled gun. A unique authored bank still wins.
+            if (planetOrHullBankIndex >= 0)
+            {
+                int planetBank = PlanetShipFamilyAssignment.SanitizeSelectableDamageBank(planetOrHullBankIndex);
+                if (entry == null || entry.bulletPrefabIndex < 0)
+                    return planetBank;
+                if (IsHealBankIndex(entry.bulletPrefabIndex))
+                    return planetBank;
+                int familyDefault = family != null && family.bulletPrefabIndex >= 0
+                    ? family.bulletPrefabIndex
+                    : 0;
+                if (entry.bulletPrefabIndex == familyDefault)
+                    return planetBank;
+                return entry.bulletPrefabIndex;
+            }
+
+            // --- Authored override / family Laserbolt fallback ---
             if (entry != null && entry.bulletPrefabIndex >= 0)
             {
                 if (IsHealBankIndex(entry.bulletPrefabIndex))
@@ -294,7 +318,6 @@ namespace TitanOrbit.Data
                 return entry.bulletPrefabIndex;
             }
 
-            // --- Family default ---
             return ResolveBankIndexForFamily(family);
         }
 
@@ -302,15 +325,14 @@ namespace TitanOrbit.Data
         /// Player-facing default gun bank name for a ship family (Fireballs, Rift, Laserbolt, …).
         /// Same string planet world labels and the Gear tab use. Empty when the family or bank is missing.
         /// </summary>
-        public static string FormatFamilyBulletTypeName(ShipFamilyDefinition family)
+        public static string FormatFamilyBulletTypeName(
+            ShipFamilyDefinition family,
+            int planetOrHullBankIndex = -1)
         {
-            if (family == null)
+            if (family == null && planetOrHullBankIndex < 0)
                 return string.Empty;
 
-            // --- Family fallback bank ---
-            // [TITAN-ORBIT] Family assets default to Laserbolt. Planet world labels should
-            // prefer PlanetState.BulletBankIndex — this string is the asset fallback only.
-            int bankIndex = ResolveBankIndexForFamily(family);
+            int bankIndex = ResolveBankIndexForFamily(family, planetOrHullBankIndex);
             return FormatBankCategoryName(bankIndex);
         }
 
@@ -320,11 +342,10 @@ namespace TitanOrbit.Data
         /// </summary>
         public static string FormatComponentBulletTypeName(
             ShipFamilyComponentEntry entry,
-            ShipFamilyDefinition family)
+            ShipFamilyDefinition family,
+            int planetOrHullBankIndex = -1)
         {
-            // --- Resolve then look up ---
-            // Same index combat uses for this part; name matches Bullet Type HUD / B-key cycle.
-            int bankIndex = ResolveBankIndexForComponentEntry(entry, family);
+            int bankIndex = ResolveBankIndexForComponentEntry(entry, family, planetOrHullBankIndex);
             return FormatBankCategoryName(bankIndex);
         }
 
@@ -341,17 +362,25 @@ namespace TitanOrbit.Data
         }
 
         /// <summary>
-        /// Bank for a purchased component: authored override, else the part's source family default.
+        /// Bank for a purchased component: authored override, else the hull/planet stamp,
+        /// else the part's source family Laserbolt fallback.
         /// Walks every family in the planet config until the component id is found.
         /// </summary>
-        public static int ResolveBankIndexForComponent(string componentId, PlanetShipFamilyConfig config = null)
+        public static int ResolveBankIndexForComponent(
+            string componentId,
+            PlanetShipFamilyConfig config = null,
+            int planetOrHullBankIndex = -1)
         {
             if (string.IsNullOrWhiteSpace(componentId))
-                return 0;
+                return planetOrHullBankIndex >= 0
+                    ? PlanetShipFamilyAssignment.SanitizeSelectableDamageBank(planetOrHullBankIndex)
+                    : 0;
             if (config == null)
                 config = PlanetShipFamilyConfig.LoadDefault();
             if (config?.families == null)
-                return 0;
+                return planetOrHullBankIndex >= 0
+                    ? PlanetShipFamilyAssignment.SanitizeSelectableDamageBank(planetOrHullBankIndex)
+                    : 0;
 
             // --- Find the authored row ---
             // Component ids are unique across families in PlanetShipFamilyConfig.
@@ -360,10 +389,12 @@ namespace TitanOrbit.Data
                 var family = config.families[i]?.shipFamilyDefinition;
                 if (family == null || !family.TryGetComponentEntry(componentId, out ShipFamilyComponentEntry entry))
                     continue;
-                return ResolveBankIndexForComponentEntry(entry, family);
+                return ResolveBankIndexForComponentEntry(entry, family, planetOrHullBankIndex);
             }
 
-            return 0;
+            return planetOrHullBankIndex >= 0
+                ? PlanetShipFamilyAssignment.SanitizeSelectableDamageBank(planetOrHullBankIndex)
+                : 0;
         }
 
         /// <summary>Looks up a component id on any family in the planet config.</summary>
@@ -372,7 +403,23 @@ namespace TitanOrbit.Data
             out ShipFamilyComponentEntry entry,
             PlanetShipFamilyConfig config = null)
         {
+            return TryFindComponentInAnyFamily(componentId, out entry, out _, out _, config);
+        }
+
+        /// <summary>
+        /// Same catalog walk as <see cref="TryFindComponentInAnyFamily(string,out ShipFamilyComponentEntry,PlanetShipFamilyConfig)"/>,
+        /// plus the owning family and its <c>PlanetShipFamilyConfig</c> list index.
+        /// </summary>
+        public static bool TryFindComponentInAnyFamily(
+            string componentId,
+            out ShipFamilyComponentEntry entry,
+            out ShipFamilyDefinition family,
+            out int familyConfigIndex,
+            PlanetShipFamilyConfig config = null)
+        {
             entry = null;
+            family = null;
+            familyConfigIndex = -1;
             if (string.IsNullOrWhiteSpace(componentId))
                 return false;
             if (config == null)
@@ -382,9 +429,12 @@ namespace TitanOrbit.Data
 
             for (int i = 0; i < config.families.Count; i++)
             {
-                var family = config.families[i]?.shipFamilyDefinition;
-                if (family != null && family.TryGetComponentEntry(componentId, out entry) && entry != null)
-                    return true;
+                var candidate = config.families[i]?.shipFamilyDefinition;
+                if (candidate == null || !candidate.TryGetComponentEntry(componentId, out entry) || entry == null)
+                    continue;
+                family = candidate;
+                familyConfigIndex = i;
+                return true;
             }
 
             return false;

@@ -256,9 +256,6 @@ namespace TitanOrbit.Game
         /// </summary>
         void TryShowBulletCycleName()
         {
-            if (EcsGameBridge.TryGetLocalMegaShipState(out MegaShipState mega) && mega.IsMega)
-                return;
-
             // --- Resolve bank ---
             if (_bank == null)
                 _bank = BulletVfxBank.LoadDefault();

@@ -729,6 +729,51 @@ namespace TitanOrbit.Data
             return false;
         }
 
+        /// <summary>
+        /// True for a rapid Titan Bullet / Gun unique row. Laser, missile, and
+        /// sniper rows keep their catalog banks when the hull cycles fire types.
+        /// </summary>
+        public static bool IsGunClassWeaponRow(MegaShipComponentEntry row)
+        {
+            if (row == null)
+                return false;
+            if (!row.isWeapon && !ShipFamilyPartTypes.IsWeapon(row.partType))
+                return false;
+            if (row.isLaser || ShipFamilyPartTypes.IsWeaponCannonProfile(row.partType))
+                return false;
+            if (string.Equals(row.partType, ShipFamilyPartTypes.WeaponMissile, StringComparison.OrdinalIgnoreCase))
+                return false;
+            if (string.Equals(row.partType, ShipFamilyPartTypes.WeaponSniper, StringComparison.OrdinalIgnoreCase))
+                return false;
+            return true;
+        }
+
+        /// <summary>
+        /// First Titan Bullet bank on this hull (B-key / HUD default), or false
+        /// when the chassis has no gun-class unique weapon.
+        /// </summary>
+        public bool TryGetFirstGunBankIndex(MegaShipCatalogEntry entry, out int bankIndex)
+        {
+            bankIndex = 0;
+            if (entry?.componentCounts == null)
+                return false;
+
+            for (int i = 0; i < entry.componentCounts.Count; i++)
+            {
+                MegaShipComponentCount count = entry.componentCounts[i];
+                if (count == null || count.count <= 0 || string.IsNullOrEmpty(count.displayName))
+                    continue;
+                if (!TryGetUniqueComponent(count.displayName, out MegaShipComponentEntry row) || row == null)
+                    continue;
+                if (!IsGunClassWeaponRow(row))
+                    continue;
+                bankIndex = ResolveWeaponBankIndex(row);
+                return true;
+            }
+
+            return false;
+        }
+
         /// <summary>Looks up a <see cref="BulletVfxBank"/> category by name; 0 (Laserbolt) when missing.</summary>
         public static int ResolveNamedBankIndex(string categoryName)
         {

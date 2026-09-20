@@ -400,6 +400,25 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
+        /// MEGA B-key / HUD: clear leftover timers on Titan Bullet mounts only.
+        /// Cannons, missiles, and snipers keep cadence — their bank does not change.
+        /// </summary>
+        public static void ResetCycledBulletMountCooldowns(DynamicBuffer<ShipWeaponMountElement> mounts)
+        {
+            if (mounts.Length <= 0)
+                return;
+
+            for (int i = 0; i < mounts.Length; i++)
+            {
+                ShipWeaponMountElement m = mounts[i];
+                if (m.FireCooldown == 0f || ShipWeaponKind.KeepsAuthoredBulletBank(m.WeaponKind))
+                    continue;
+                m.FireCooldown = 0f;
+                mounts[i] = m;
+            }
+        }
+
+        /// <summary>
         /// Resolves per-barrel damage, fire rate, and energy cost (energy = firePower + ability drain).
         /// </summary>
         static void ResolveMountCombat(

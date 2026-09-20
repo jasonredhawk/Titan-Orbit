@@ -21,7 +21,7 @@ namespace TitanOrbit.UI
         const string HexMute = "5B7A94";
         const string HexResult = "AAEEDD";
         const string HexAccent = "FFAA66";
-        public const string WeaponTypeCaption = "WEAPON TYPE";
+        public const string WeaponTypeCaption = "WEAPONS";
 
         /// <summary>B-key / heal bank currently fired by the local ship (0 when unknown).</summary>
         public static int ResolveLiveFireBankIndex()
@@ -113,7 +113,7 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// Full ORDNANCE block: type name, bank multipliers, and every ability at current
+        /// Full WEAPONS block: type name, bank multipliers, and every ability at current
         /// Fire Power Extra Levels (same numbers combat uses).
         /// </summary>
         public static void AppendFullSection(
@@ -396,11 +396,11 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>Family default bank type name (Fireballs, Rift, …) for Orbit Menu rails.</summary>
-        public static string FormatFamilyTypeName(ShipFamilyDefinition family)
+        public static string FormatFamilyTypeName(ShipFamilyDefinition family, int planetOrHullBankIndex = -1)
         {
-            if (family == null)
+            if (family == null && planetOrHullBankIndex < 0)
                 return string.Empty;
-            int idx = BulletBankProfileUtility.ResolveBankIndexForFamily(family);
+            int idx = BulletBankProfileUtility.ResolveBankIndexForFamily(family, planetOrHullBankIndex);
             var bank = BulletBankCombatLogic.Bank;
             if (bank == null)
                 return string.Empty;
@@ -409,29 +409,47 @@ namespace TitanOrbit.UI
 
         /// <summary>
         /// Glance line for the left dock: type name plus the specials that type actually does
-        /// (stun, burn, pull, …) at this ship level.
+        /// (stun, burn, pull, bonus dmg, …) at this ship level.
+        /// Each special includes its live Extra-Level number so the rail is not just a label.
         /// </summary>
-        public static string FormatFamilyWeaponGlance(ShipFamilyDefinition family, int shipLevel)
+        /// <param name="family">Planet / chassis family. May be null when
+        /// <paramref name="planetOrHullBankIndex"/> is already resolved.</param>
+        /// <param name="shipLevel">Hull level used for Extra-Level scaling (no Fire Power purchases).</param>
+        /// <param name="planetOrHullBankIndex">Rolled planet bank, or −1 to use the family default.</param>
+        /// <returns>Two-line copy, or empty when the bank has no display name.</returns>
+        public static string FormatFamilyWeaponGlance(
+            ShipFamilyDefinition family,
+            int shipLevel,
+            int planetOrHullBankIndex = -1)
         {
-            string typeName = FormatFamilyTypeName(family);
+            string typeName = FormatFamilyTypeName(family, planetOrHullBankIndex);
             if (string.IsNullOrEmpty(typeName))
                 return string.Empty;
 
-            string specials = FormatFamilyWeaponSpecials(family, shipLevel);
+            string specials = FormatFamilyWeaponSpecials(family, shipLevel, planetOrHullBankIndex);
             return string.IsNullOrEmpty(specials) ? typeName : typeName + "\n" + specials;
         }
 
-        static string FormatFamilyWeaponSpecials(ShipFamilyDefinition family, int shipLevel)
+        /// <summary>
+        /// Compact specials under the type name: stun seconds, burn DPS, bonus × vs a target, …
+        /// Empty when the resolved bank has no abilities.
+        /// </summary>
+        static string FormatFamilyWeaponSpecials(
+            ShipFamilyDefinition family,
+            int shipLevel,
+            int planetOrHullBankIndex = -1)
         {
-            if (family == null)
+            if (family == null && planetOrHullBankIndex < 0)
                 return string.Empty;
 
-            int idx = BulletBankProfileUtility.ResolveBankIndexForFamily(family);
+            int idx = BulletBankProfileUtility.ResolveBankIndexForFamily(family, planetOrHullBankIndex);
             var bank = BulletBankCombatLogic.Bank;
             if (bank == null || !bank.TryGetProfile(idx, out BulletBankProfile profile) || profile == null
                 || profile.abilities == null || profile.abilities.Count == 0)
                 return string.Empty;
 
+            // --- Extra-Level scale ---
+            // Store preview has no Fire Power purchases — only hull level counts.
             int extras = BulletBankCombatLogic.CountFirePowerExtraLevels(Mathf.Max(1, shipLevel), 0);
             var parts = new System.Collections.Generic.List<string>(profile.abilities.Count);
             for (int i = 0; i < profile.abilities.Count; i++)
@@ -447,8 +465,17 @@ namespace TitanOrbit.UI
             return parts.Count == 0 ? string.Empty : string.Join(" · ", parts);
         }
 
+        /// <summary>
+        /// One dock-rail token for an ability at the current Extra Level.
+        /// Always includes the live number (stun seconds, burn DPS, bonus ×, heal /hit)
+        /// so the left panel matches the hover tooltip, not just a flavor label.
+        /// </summary>
+        /// <param name="authored">ScriptableObject row. Never mutated — we resolve a copy.</param>
+        /// <param name="extras">Fire Power Extra Levels already counted for this hull.</param>
         static string FormatShortAbilityGlance(BulletBankAbility authored, int extras)
         {
+            // --- Resolve ---
+            // Same Extra-Level math combat uses. Magnitude 2 on a dmg bonus = ×2 vs that target.
             BulletBankAbility now = authored.Resolved(extras);
             switch (authored.type)
             {
@@ -457,32 +484,35 @@ namespace TitanOrbit.UI
                 case BulletBankAbilityType.BurnOverTime:
                     return "Burn " + F(now.magnitude) + "/s";
                 case BulletBankAbilityType.HealFriendly:
-                    return "Heals allies";
+                    return "Heal " + F(now.magnitude) + "/hit";
                 case BulletBankAbilityType.ConcussivePush:
-                    return "Blast push";
+                    return "Push " + F(now.magnitude) + "  blast " + F(now.radius);
                 case BulletBankAbilityType.GravityPull:
-                    return "Pull field";
+                    return "Pull " + F(now.radius) + "  force " + F(now.magnitude);
                 case BulletBankAbilityType.DamageMultiplier:
                 case BulletBankAbilityType.DamageMultiplierVsAsteroid:
                 case BulletBankAbilityType.DamageMultiplierVsShip:
                 case BulletBankAbilityType.DamageMultiplierVsGemMoon:
                 case BulletBankAbilityType.DamageMultiplierVsGem:
-                    return "Bonus dmg vs " + DamageTargetLabel(authored);
+                    return "Bonus ×" + F(now.magnitude) + " vs " + DamageTargetLabel(authored);
                 case BulletBankAbilityType.StretchLengthInFlight:
-                    return "Stretch shot";
+                    return "Stretch " + F(now.radius) + "→" + F(now.magnitude);
                 default:
                     return DisplayNameFormatting.SplitCamelCase(authored.type.ToString());
             }
         }
 
         /// <summary>
-        /// Full ORDNANCE tooltip for the family's default bank at this ship level
+        /// Full WEAPONS tooltip for the family's default bank at this ship level
         /// (no Fire Power purchases — store preview).
         /// </summary>
-        public static string BuildFamilyOrdnanceTooltip(ShipFamilyDefinition family, int shipLevel)
+        public static string BuildFamilyOrdnanceTooltip(
+            ShipFamilyDefinition family,
+            int shipLevel,
+            int planetOrHullBankIndex = -1)
         {
             return BuildOrdnanceTooltip(
-                BulletBankProfileUtility.ResolveBankIndexForFamily(family),
+                BulletBankProfileUtility.ResolveBankIndexForFamily(family, planetOrHullBankIndex),
                 shipLevel);
         }
 
@@ -493,10 +523,11 @@ namespace TitanOrbit.UI
         public static string BuildComponentOrdnanceTooltip(
             ShipFamilyComponentEntry entry,
             ShipFamilyDefinition family,
-            int shipLevel)
+            int shipLevel,
+            int planetOrHullBankIndex = -1)
         {
             return BuildOrdnanceTooltip(
-                BulletBankProfileUtility.ResolveBankIndexForComponentEntry(entry, family),
+                BulletBankProfileUtility.ResolveBankIndexForComponentEntry(entry, family, planetOrHullBankIndex),
                 shipLevel);
         }
 

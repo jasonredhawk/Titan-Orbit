@@ -73,21 +73,27 @@ namespace TitanOrbit.Data
 
 
         /// <summary>Single scalar power number for gem pricing (sum of breakdown categories).</summary>
-        public static float GetComponentPowerScore(ShipFamilyComponentEntry entry, int shipLevel, ShipFamilyDefinition family = null)
+        public static float GetComponentPowerScore(
+            ShipFamilyComponentEntry entry,
+            int shipLevel,
+            ShipFamilyDefinition family = null,
+            int planetOrHullBankIndex = -1)
         {
             if (entry == null)
                 return 0f;
-            return GetPowerBreakdown(entry, shipLevel, family).Total;
+            return GetPowerBreakdown(entry, shipLevel, family, planetOrHullBankIndex).Total;
         }
 
         public static ShipFamilyPowerScoreBreakdown GetPowerBreakdown(
             ShipFamilyComponentEntry entry,
             int shipLevel,
-            ShipFamilyDefinition family = null)
+            ShipFamilyDefinition family = null,
+            int planetOrHullBankIndex = -1)
         {
             if (entry == null)
                 return default;
-            ShipComponentAbilityStats effective = GetEffectiveStatsForDisplay(entry, shipLevel, family);
+            ShipComponentAbilityStats effective = GetEffectiveStatsForDisplay(
+                entry, shipLevel, family, planetOrHullBankIndex);
             return ShipFamilyPowerScoreBreakdown.FromSummedShipStats(effective);
         }
 
@@ -95,7 +101,8 @@ namespace TitanOrbit.Data
         public static ShipComponentAbilityStats GetEffectiveStatsForDisplay(
             ShipFamilyComponentEntry entry,
             int shipLevel,
-            ShipFamilyDefinition family = null)
+            ShipFamilyDefinition family = null,
+            int planetOrHullBankIndex = -1)
         {
             if (entry == null)
                 return default;
@@ -105,7 +112,8 @@ namespace TitanOrbit.Data
                 entry.stats, shipLevel, entry.componentId);
             if (family != null)
                 effective = family.ApplySpecialBonuses(effective);
-            return BulletBankProfileUtility.ApplyProfileToComponentStats(effective, entry, family);
+            return BulletBankProfileUtility.ApplyProfileToComponentStats(
+                effective, entry, family, planetOrHullBankIndex);
         }
 
         /// <summary>Gem cost from power score × level multiplier, floored at <see cref="MinimumComponentGemPrice"/>.</summary>
@@ -201,12 +209,18 @@ namespace TitanOrbit.Data
         }
 
         /// <summary>Human-readable multi-line stat summary for moon-dock tooltips (top N non-zero stats).</summary>
-        public static string GetStatsDescription(ShipFamilyComponentEntry entry, int shipLevel, ShipFamilyDefinition family = null, int maxLines = 4)
+        public static string GetStatsDescription(
+            ShipFamilyComponentEntry entry,
+            int shipLevel,
+            ShipFamilyDefinition family = null,
+            int maxLines = 4,
+            int planetOrHullBankIndex = -1)
         {
             if (entry == null)
                 return string.Empty;
 
-            ShipComponentAbilityStats s = GetEffectiveStatsForDisplay(entry, shipLevel, family);
+            ShipComponentAbilityStats s = GetEffectiveStatsForDisplay(
+                entry, shipLevel, family, planetOrHullBankIndex);
             var lines = new List<string>(maxLines);
             // --- Pick top non-zero stats in fixed priority order ---
             TryAddLine(lines, "Fire", s.firePower, maxLines);
@@ -246,9 +260,11 @@ namespace TitanOrbit.Data
             ShipFamilyComponentEntry entry,
             int shipLevel,
             ShipFamilyDefinition family = null,
-            int maxLines = 14)
+            int maxLines = 14,
+            int planetOrHullBankIndex = -1)
         {
-            return BuildAbilityDescription(entry, shipLevel, family, maxLines, richText: true);
+            return BuildAbilityDescription(
+                entry, shipLevel, family, maxLines, richText: true, planetOrHullBankIndex);
         }
 
         /// <summary>Plain-text variant (legacy equipment panel / short tooltips).</summary>
@@ -258,7 +274,8 @@ namespace TitanOrbit.Data
             ShipFamilyDefinition family = null,
             int maxLines = 8)
         {
-            return BuildAbilityDescription(entry, shipLevel, family, maxLines, richText: false);
+            return BuildAbilityDescription(
+                entry, shipLevel, family, maxLines, richText: false, planetOrHullBankIndex: -1);
         }
 
         /// <summary>
@@ -272,13 +289,15 @@ namespace TitanOrbit.Data
             int shipLevel,
             ShipFamilyDefinition family,
             int maxLines,
-            bool richText)
+            bool richText,
+            int planetOrHullBankIndex = -1)
         {
             if (entry == null)
                 return string.Empty;
 
             // Extra Level + family specials + bank multipliers — same numbers as the power bar.
-            ShipComponentAbilityStats s = GetEffectiveStatsForDisplay(entry, shipLevel, family);
+            ShipComponentAbilityStats s = GetEffectiveStatsForDisplay(
+                entry, shipLevel, family, planetOrHullBankIndex);
             entry.EnsureStatCategories();
             if (entry.statCategories == null || entry.statCategories.Count == 0)
                 entry.statCategories = ShipFamilyComponentPartKey.InferDefaultStatCategories(entry.componentId);
@@ -291,7 +310,7 @@ namespace TitanOrbit.Data
             // [TITAN-ORBIT] Gear-tab weapon cards list which bullet bank this part fires
             // (Fireballs, Rift, …) next to Fire Power / Speed / Range. Authored
             // entry.bulletPrefabIndex overrides the family default when set.
-            TryQueueWeaponBulletType(lines, entry, family);
+            TryQueueWeaponBulletType(lines, entry, family, planetOrHullBankIndex);
 
             // --- Offense / Health / Energy (full gain = authored; they sum) ---
             TryQueue(lines, s.firePower, "Fire Power", 0);
@@ -490,12 +509,14 @@ namespace TitanOrbit.Data
         static void TryQueueWeaponBulletType(
             List<AbilityLine> lines,
             ShipFamilyComponentEntry entry,
-            ShipFamilyDefinition family)
+            ShipFamilyDefinition family,
+            int planetOrHullBankIndex = -1)
         {
             if (entry == null || !ShipComponentAbilityStats.IsWeaponComponent(entry.componentId))
                 return;
 
-            string typeName = BulletBankProfileUtility.FormatComponentBulletTypeName(entry, family);
+            string typeName = BulletBankProfileUtility.FormatComponentBulletTypeName(
+                entry, family, planetOrHullBankIndex);
             if (string.IsNullOrEmpty(typeName))
                 return;
 
@@ -609,7 +630,8 @@ namespace TitanOrbit.Data
         public static string BuildExtraLevelTooltipRichText(
             ShipFamilyComponentEntry entry,
             int shipLevel,
-            ShipFamilyDefinition family)
+            ShipFamilyDefinition family,
+            int planetOrHullBankIndex = -1)
         {
             if (entry == null)
                 return string.Empty;
@@ -618,7 +640,8 @@ namespace TitanOrbit.Data
             sb.Append("<b>EXTRA LEVEL</b>\n");
             bool weapon = ShipComponentAbilityStats.IsWeaponComponent(entry.componentId);
             bool propulsion = ShipComponentAbilityStats.IsPropulsionComponent(entry.componentId);
-            ShipComponentAbilityStats s = GetEffectiveStatsForDisplay(entry, shipLevel, family);
+            ShipComponentAbilityStats s = GetEffectiveStatsForDisplay(
+                entry, shipLevel, family, planetOrHullBankIndex);
             int lv = Mathf.Max(1, shipLevel);
 
             void Line(string label, float value, bool abilityOnly)

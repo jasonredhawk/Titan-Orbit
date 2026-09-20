@@ -108,6 +108,7 @@ namespace TitanOrbit.ECS
                     bool sameIdentity = chassis.AppliedShipLevel == ship.ValueRO.ShipLevel
                         && chassis.AppliedBranchIndex == branch
                         && chassis.AppliedShipFamilyConfigIndex == ship.ValueRO.ShipFamilyConfigIndex
+                        && chassis.AppliedHullBulletBankIndex == ship.ValueRO.HullBulletBankIndex
                         && chassis.AppliedAttributeSum == attrSum;
                     if (sameIdentity
                         && !(state.World.IsClient()

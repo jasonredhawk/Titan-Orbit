@@ -25,8 +25,9 @@ namespace TitanOrbit.UI
     /// <see cref="SpaceBrakesHUD"/> docks under this strip. Writes nothing to ECS — clicks latch
     /// <see cref="BulletBankSelection"/>; <see cref="ShipCycleBulletSystem"/> applies the
     /// ghosted <see cref="ShipLoadoutState.RuntimeBulletIndex"/> on the predicted tick.
-    /// Hidden on the main menu, Join Team, Orbit Menu, MEGA hulls, and while the local
-    /// ship is dead. Holds last paint during
+    /// Hidden on the main menu, Join Team, Orbit Menu, and while the local
+    /// ship is dead. MEGA hulls show the same owned list; only Titan Bullet
+    /// mounts adopt the selected bank. Holds last paint during
     /// <see cref="ClientJoinSettleCache.ShouldSkipShipEntityQueries"/> so MEGA plow gem
     /// Instantiates do not blink the panel off.
     /// </para>
@@ -54,7 +55,7 @@ namespace TitanOrbit.UI
         /// <summary>Inset from the dark panel edge to the first tile.</summary>
         const float PanelPad = 6f;
 
-        /// <summary>Thin ORDNANCE caption above the first tile.</summary>
+        /// <summary>Thin WEAPONS caption above the first tile.</summary>
         const float HeaderHeight = 14f;
 
         /// <summary>Panel width = tile + left/right pad.</summary>
@@ -216,13 +217,6 @@ namespace TitanOrbit.UI
                 return;
             }
 
-            // MEGA volleys each fire a baked catalog bank — B and this list do not apply.
-            if (EcsGameBridge.TryGetLocalMegaShipState(out MegaShipState mega) && mega.IsMega)
-            {
-                SetVisible(false);
-                return;
-            }
-
             // --- Instantiates gate: hold last paint, do not hide ---
             // [TITAN-ORBIT] ShouldSkipShipEntityQueries is also true mid-combat when MEGA plow
             // Instantiates gem ghosts. SetVisible(false) here blinked the left-side list.
@@ -288,8 +282,17 @@ namespace TitanOrbit.UI
                 healLocked = loadout.HealingBulletsActive && !TitanOrbitDebugFlags.CycleAllBulletBanks;
             }
 
-            // Hull tile uses THIS ship's family, not the first config row that shares the bank.
-            if (em.HasComponent<ShipState>(ship))
+            // Hull tile uses THIS ship's family (or Titan catalog name), not the
+            // first config row that shares the bank.
+            if (em.HasComponent<MegaShipState>(ship)
+                && em.GetComponentData<MegaShipState>(ship).IsMega)
+            {
+                var catalog = MegaShipCatalog.Load();
+                if (catalog != null)
+                    hullFamilyName = catalog.GetDisplayName(
+                        em.GetComponentData<MegaShipState>(ship).CatalogIndex);
+            }
+            else if (em.HasComponent<ShipState>(ship))
             {
                 if (_familyConfig == null)
                     _familyConfig = PlanetShipFamilyConfig.LoadDefault();
@@ -625,7 +628,7 @@ namespace TitanOrbit.UI
             accentGo.GetComponent<Image>().color = ShipAbilityCategoryColors.GetPowerBreakdownStatColorForHud(0);
             accentGo.GetComponent<Image>().raycastTarget = false;
 
-            var header = CreateLabel(_panel, "Header", "ORDNANCE", 7.5f, HeaderColor, TextAlignmentOptions.Left);
+            var header = CreateLabel(_panel, "Header", "WEAPONS", 7.5f, HeaderColor, TextAlignmentOptions.Left);
             var headerRt = header.rectTransform;
             headerRt.anchorMin = new Vector2(0f, 1f);
             headerRt.anchorMax = new Vector2(1f, 1f);

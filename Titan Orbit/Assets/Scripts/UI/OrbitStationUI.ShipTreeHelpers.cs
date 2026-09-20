@@ -423,7 +423,9 @@ namespace TitanOrbit.UI
             view.SetShipName(GetShipDisplayName(view.Node, view.Level, view.BranchIndex));
             view.SetFamilyName(GetShipFamilyDisplayName(view.Level, view.BranchIndex));
             // Gun / laser / missile / sniper counts from the catalog or family prefab.
-            view.ApplyWeaponLoadoutFromChassis(viewChassisId);
+            view.ApplyWeaponLoadoutFromChassis(
+                viewChassisId,
+                EcsGameBridge.ResolvePlanetFamilyBulletBankIndex(OrbitStationEcsContext.StorePlanetId));
             if (view.Level == 7)
                 view.ApplyMegaShipCardStyle(isCurrent, canPurchase, megaOccupied, tierBlocked);
             else
@@ -498,7 +500,9 @@ namespace TitanOrbit.UI
                     currentShip, storePlanet.PlanetId, nodeLevel, nodeBranch)
                 : null;
             // Same roster as the live tree — debug-free still shows what the hull mounts.
-            view.ApplyWeaponLoadoutFromChassis(debugChassisId);
+            view.ApplyWeaponLoadoutFromChassis(
+                debugChassisId,
+                EcsGameBridge.ResolvePlanetFamilyBulletBankIndex(OrbitStationEcsContext.StorePlanetId));
             if (view.Level == 7)
                 view.ApplyMegaShipCardStyle(isCurrent, clickable && !isCurrent, megaOccupied, false);
             else

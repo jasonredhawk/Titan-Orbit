@@ -14,8 +14,10 @@ namespace TitanOrbit.ECS
     /// Writes MEGA / Titan motor / weapon / vitals onto a ship. Hull parts stay frozen
     /// (no Extra Level, no attribute upgrades). Equipped moon-store ship components in
     /// LOADOUT slots add PerExtra × shipLevel only (no Base) onto those frozen totals.
-    /// Gem cap stays 0. Each mount fires the catalog unique-component (or type-table)
-    /// bullet bank — not the store planet's gameplay family. Fire mode is Energy Hybrid;
+    /// Gem cap stays 0. Cannon / missile / sniper mounts fire the catalog unique-component
+    /// (or type-table) bank. Titan Bullet mounts follow the B-key hull cycle
+    /// (<see cref="ShipLoadoutState.RuntimeBulletIndex"/>) from owned weapon gear.
+    /// Fire mode is Energy Hybrid;
     /// Phase B uses <see cref="ShipWeaponFireLogic.TryPlanMegaFire"/>.
     /// Paired with <see cref="ShipStatApplyLogic.ApplyToShip"/> which routes here when
     /// <see cref="MegaShipState.IsMega"/> is true.
@@ -116,12 +118,49 @@ namespace TitanOrbit.ECS
                 em.SetComponentData(shipEntity, weapon);
             }
 
-            // --- Loadout display bank (first catalog weapon) — live shots use per-mount banks ---
+            // --- Loadout cycle bank (Titan Bullet mounts only) ---
+            // [TITAN-ORBIT] B-key / HUD walk owned banks like a regular hull. Only
+            // WeaponKind.Gun barrels adopt RuntimeBulletIndex. Cannons, missiles,
+            // and snipers keep the catalog banks written on each mount. Reset the
+            // index on chassis / slot change; keep B-key across extra-part applies.
             if (writeGhostedShipState && em.HasComponent<ShipLoadoutState>(shipEntity))
             {
                 var loadout = em.GetComponentData<ShipLoadoutState>(shipEntity);
-                if (catalog.TryGetFirstWeaponBankIndex(entry, out int firstBank))
-                    loadout.RuntimeBulletIndex = firstBank;
+                int gunBank = catalog.GetTypeTableBankIndex(ShipFamilyPartTypes.WeaponBullet);
+                if (catalog.TryGetFirstGunBankIndex(entry, out int firstGun))
+                    gunBank = firstGun;
+
+                bool adoptMegaGunDefault = true;
+                if (em.HasComponent<ShipChassisState>(shipEntity))
+                {
+                    var prevForBank = em.GetComponentData<ShipChassisState>(shipEntity);
+                    var chassisKeyForBank = new FixedString64Bytes(chassisId);
+                    adoptMegaGunDefault = !prevForBank.ChassisId.Equals(chassisKeyForBank)
+                        || prevForBank.AppliedBranchIndex != mega.MegaSlotIndex;
+                }
+
+                if (adoptMegaGunDefault)
+                {
+                    loadout.RuntimeBulletIndex = gunBank;
+                }
+                else
+                {
+                    int[] owned = new int[16];
+                    int ownedCount = BulletBankOwnership.CollectOwnedDamageBanks(em, shipEntity, owned);
+                    bool stillOwned = false;
+                    for (int i = 0; i < ownedCount; i++)
+                    {
+                        if (owned[i] == loadout.RuntimeBulletIndex)
+                        {
+                            stillOwned = true;
+                            break;
+                        }
+                    }
+
+                    if (!stillOwned)
+                        loadout.RuntimeBulletIndex = gunBank;
+                }
+
                 loadout.BranchIndex = mega.MegaSlotIndex;
                 loadout.ChassisIndex = mega.MegaSlotIndex;
                 em.SetComponentData(shipEntity, loadout);
@@ -360,6 +399,16 @@ namespace TitanOrbit.ECS
             mount.BulletRange = math.max(
                 4f, resolved.bulletRange > 0.5f ? resolved.bulletRange : raw.bulletRange);
             float partSpeed = resolved.bulletSpeed > 0.01f ? resolved.bulletSpeed : raw.bulletSpeed;
+            // Weapon Missile Stats (type table / unique row) stay as authored.
+            // ResolveRuntimeStats would raise 6 → runtimeMinimumStats.bulletSpeed (8).
+            if (string.Equals(partType, ShipFamilyPartTypes.WeaponMissile, System.StringComparison.OrdinalIgnoreCase))
+            {
+                float missileSpeed = raw.bulletSpeed > 0.01f
+                    ? raw.bulletSpeed
+                    : catalog.weaponMissileStats.bulletSpeed;
+                if (missileSpeed > 0.01f)
+                    partSpeed = missileSpeed;
+            }
             mount.BulletSpeed = math.max(0.1f, partSpeed);
             mount.ReferenceFirePower = math.max(0f, raw.firePower);
             mount.FirePowerPerExtraLevel = 0f;

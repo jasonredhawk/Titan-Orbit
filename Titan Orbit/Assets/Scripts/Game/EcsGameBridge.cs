@@ -2968,6 +2968,43 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
+        /// Live gun for the family sold at this planet. Homes are Laserbolt; neutrals
+        /// use the rolled <c>PlanetState.BulletBankIndex</c>. −1 when the planet is unknown
+        /// so callers can fall back to the family asset default.
+        /// </summary>
+        public static int ResolvePlanetFamilyBulletBankIndex(int planetId)
+        {
+            if (planetId <= 0 || !TryGetPlanetStateByPlanetId(planetId, out PlanetState planet))
+                return -1;
+            if (planet.IsHomePlanet)
+                return PlanetShipFamilyAssignment.DefaultBulletBankIndex;
+            return PlanetShipFamilyAssignment.SanitizeSelectableDamageBank(planet.BulletBankIndex);
+        }
+
+        /// <summary>
+        /// Rolled gun on the planet that owns this family this match. Home family is
+        /// Laserbolt. −1 when no planet has that config index yet (join settle).
+        /// </summary>
+        public static int ResolvePlanetBulletBankForFamilyConfigIndex(int familyConfigIndex)
+        {
+            if (familyConfigIndex <= PlanetShipFamilyAssignment.HomeFamilyConfigIndex)
+                return PlanetShipFamilyAssignment.DefaultBulletBankIndex;
+
+            EnsurePlanetStateCacheForFrame();
+            foreach (var kv in s_PlanetStateByIdCache)
+            {
+                PlanetState planet = kv.Value;
+                if (planet.IsHomePlanet)
+                    continue;
+                if (planet.ShipFamilyConfigIndex != familyConfigIndex)
+                    continue;
+                return PlanetShipFamilyAssignment.SanitizeSelectableDamageBank(planet.BulletBankIndex);
+            }
+
+            return -1;
+        }
+
+        /// <summary>
         /// MEGA L7 slot on a planet (catalog index + occupancy). Used by the Orbit Menu tree.
         /// Skips during late-join settle so we do not scan planet buffers while ghosts hydrate.
         /// </summary>

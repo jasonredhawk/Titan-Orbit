@@ -134,7 +134,7 @@ namespace TitanOrbit.Data
         /// Empty / unknown ids return a zero roster (card hides the row).
         /// </summary>
         /// <param name="chassisId">Upgrade-tree chassis id. Null / blank returns default.</param>
-        public static ShipWeaponLoadoutCounts ForChassisId(string chassisId)
+        public static ShipWeaponLoadoutCounts ForChassisId(string chassisId, int planetOrHullBankIndex = -1)
         {
             // --- Guard ---
             if (string.IsNullOrWhiteSpace(chassisId))
@@ -142,11 +142,15 @@ namespace TitanOrbit.Data
 
             // --- Cache ---
             // [TITAN-ORBIT] Same chassis is painted on every tree refresh while docked.
-            if (s_cache.TryGetValue(chassisId, out ShipWeaponLoadoutCounts cached))
+            // Key includes the planet gun so CosmicShark_01 / Fireballs and / Rift stay distinct.
+            string cacheKey = planetOrHullBankIndex >= 0
+                ? chassisId + "|" + planetOrHullBankIndex.ToString()
+                : chassisId;
+            if (s_cache.TryGetValue(cacheKey, out ShipWeaponLoadoutCounts cached))
                 return cached;
 
-            ShipWeaponLoadoutCounts counts = CountUncached(chassisId);
-            s_cache[chassisId] = counts;
+            ShipWeaponLoadoutCounts counts = CountUncached(chassisId, planetOrHullBankIndex);
+            s_cache[cacheKey] = counts;
             return counts;
         }
 
@@ -156,11 +160,15 @@ namespace TitanOrbit.Data
         /// </summary>
         /// <param name="prefab">Chassis prefab asset. Null returns default.</param>
         /// <param name="family">Optional family so the gun line can print Fireballs / Rift / ….</param>
-        public static ShipWeaponLoadoutCounts CountFromPrefab(GameObject prefab, ShipFamilyDefinition family = null)
+        public static ShipWeaponLoadoutCounts CountFromPrefab(
+            GameObject prefab,
+            ShipFamilyDefinition family = null,
+            int planetOrHullBankIndex = -1)
         {
             ShipWeaponLoadoutCounts counts = CountFromPrefabAssemblies(prefab);
             if (counts.Gun > 0)
-                counts.GunLabel = FormatGunCardLabel(BulletBankProfileUtility.FormatFamilyBulletTypeName(family));
+                counts.GunLabel = FormatGunCardLabel(
+                    BulletBankProfileUtility.FormatFamilyBulletTypeName(family, planetOrHullBankIndex));
             return counts;
         }
 
@@ -226,7 +234,7 @@ namespace TitanOrbit.Data
         }
 
         /// <summary>Picks MEGA catalog vs family prefab from the chassis-id prefix.</summary>
-        static ShipWeaponLoadoutCounts CountUncached(string chassisId)
+        static ShipWeaponLoadoutCounts CountUncached(string chassisId, int planetOrHullBankIndex = -1)
         {
             // --- MEGA catalog ---
             if (MegaShipCatalog.IsMegaChassisId(chassisId))
@@ -245,7 +253,7 @@ namespace TitanOrbit.Data
             ShipFamilyDefinition family = config != null
                 ? config.GetShipFamilyDefinitionForChassisId(chassisId)
                 : null;
-            return CountFromPrefab(prefab, family);
+            return CountFromPrefab(prefab, family, planetOrHullBankIndex);
         }
 
         /// <summary>
@@ -379,27 +387,10 @@ namespace TitanOrbit.Data
             if (catalog == null)
                 return LabelGun;
 
-            if (entry?.componentCounts != null)
+            if (catalog.TryGetFirstGunBankIndex(entry, out int gunBank))
             {
-                for (int i = 0; i < entry.componentCounts.Count; i++)
-                {
-                    MegaShipComponentCount count = entry.componentCounts[i];
-                    if (count == null || count.count <= 0 || string.IsNullOrEmpty(count.displayName))
-                        continue;
-                    if (!catalog.TryGetUniqueComponent(count.displayName, out MegaShipComponentEntry row)
-                        || row == null)
-                        continue;
-                    if (!row.isWeapon && !ShipFamilyPartTypes.IsWeapon(row.partType))
-                        continue;
-                    if (row.isLaser || ShipFamilyPartTypes.IsWeaponCannonProfile(row.partType))
-                        continue;
-                    if (string.Equals(row.partType, ShipFamilyPartTypes.WeaponMissile, StringComparison.OrdinalIgnoreCase)
-                        || string.Equals(row.partType, ShipFamilyPartTypes.WeaponSniper, StringComparison.OrdinalIgnoreCase))
-                        continue;
-
-                    return FormatGunCardLabel(
-                        BulletBankProfileUtility.FormatBankCategoryName(catalog.ResolveWeaponBankIndex(row)));
-                }
+                return FormatGunCardLabel(
+                    BulletBankProfileUtility.FormatBankCategoryName(gunBank));
             }
 
             return FormatGunCardLabel(

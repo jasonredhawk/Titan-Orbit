@@ -173,7 +173,16 @@ namespace TitanOrbit.Game
                 _predictedEnergy = shipState.CurrentEnergy;
                 _lastGhostEnergy = shipState.CurrentEnergy;
                 _predictedBelowGhostStableTime = 0f;
-                ShipWeaponFireLogic.ResetMountCooldowns(mounts);
+                if (isMega)
+                {
+                    var resetGunners = world.EntityManager.HasBuffer<MegaShipGunnerSlotElement>(shipEntity)
+                        ? world.EntityManager.GetBuffer<MegaShipGunnerSlotElement>(shipEntity)
+                        : default;
+                    ShipWeaponKind.RestoreMountKindsFromGhostedSlots(mounts, resetGunners);
+                    ShipWeaponFireLogic.ResetCycledBulletMountCooldowns(mounts);
+                }
+                else
+                    ShipWeaponFireLogic.ResetMountCooldowns(mounts);
             }
 
             // Tick cooldowns even when Fire is released so barrels stay in sync with server cadence.
@@ -306,9 +315,9 @@ namespace TitanOrbit.Game
                 ShipWeaponMountElement mount = mounts[mountIdx];
                 if (isMega && ShipWeaponKind.IsCannonLaser(mount, gunners, mountIdx))
                     continue;
-                int shotBank = isMega ? mount.BulletBankIndex : bankIndex;
-                if (shotBank < 0)
-                    shotBank = bankIndex;
+                int shotBank = isMega
+                    ? BulletBankFireResolve.ResolveMegaMountFireBank(in mount, bankIndex)
+                    : bankIndex;
                 float shotCategoryScale = vfxBank != null
                     ? vfxBank.GetCategoryUpgradeVisualScaleMultiplier(shotBank)
                     : categoryUpgradeScale;
@@ -343,7 +352,8 @@ namespace TitanOrbit.Game
                 float acquireRange = 0f;
                 if (RocketHomingFire.TryApply(
                         shotBank, shipState.ShipLevel, fireForward, ref plan,
-                        out turnSpeedDeg, out acquireRange))
+                        out turnSpeedDeg, out acquireRange,
+                        isMega ? mount.BulletSpeed : 0f))
                     homing = 1;
 
                 if (!BulletVfxBridge.TryEnqueueSpawn(new BulletVfxBridge.SpawnRequest

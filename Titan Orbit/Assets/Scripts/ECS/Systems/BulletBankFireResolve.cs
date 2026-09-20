@@ -26,5 +26,20 @@ namespace TitanOrbit.ECS
 
             return runtime;
         }
+
+        /// <summary>
+        /// MEGA shot bank: Titan Bullet (Gun) mounts follow the hull cycle / heal
+        /// index. Laser cannons, missiles, and snipers keep the catalog bank
+        /// stamped on the mount.
+        /// </summary>
+        public static int ResolveMegaMountFireBank(
+            in ShipWeaponMountElement mount,
+            int hullRuntimeBank)
+        {
+            int hull = hullRuntimeBank < 0 ? 0 : hullRuntimeBank;
+            if (ShipWeaponKind.KeepsAuthoredBulletBank(mount.WeaponKind))
+                return mount.BulletBankIndex >= 0 ? mount.BulletBankIndex : hull;
+            return hull;
+        }
     }
 }
