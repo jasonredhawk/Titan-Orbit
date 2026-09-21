@@ -123,9 +123,12 @@ namespace TitanOrbit.Game
             bool setBankPressed = ShipPendingInput.SetBulletBankLatched
                 && !MoonOrbitClientState.IsOrbitMenuVisible
                 && !PlanetaryDefenseTurretClientState.IsControlling;
+            bool setArmPressed = ShipPendingInput.SetWeaponArmLatched
+                && !MoonOrbitClientState.IsOrbitMenuVisible
+                && !PlanetaryDefenseTurretClientState.IsControlling;
 
             ShipPendingInput.Set(
-                BuildInput(rocketPressed, minePressed, setBankPressed),
+                BuildInput(rocketPressed, minePressed, setBankPressed, setArmPressed),
                 localHostMode: false);
         }
 
@@ -134,10 +137,12 @@ namespace TitanOrbit.Game
         /// Aim direction is computed from mouse world position relative to local ship.
         /// </summary>
         /// <param name="setBankPressedThisFrame">True when B or a Weapons tile latched a bank.</param>
+        /// <param name="setArmPressedThisFrame">True when the arsenal HUD latched a mute / arm.</param>
         ShipInput BuildInput(
             bool rocketPressedThisFrame,
             bool minePressedThisFrame,
-            bool setBankPressedThisFrame)
+            bool setBankPressedThisFrame,
+            bool setArmPressedThisFrame)
         {
             // --- Build data ---
             // Cache Camera.main — looking it up every frame was part of a ~4ms Update (Profiler 41220).
@@ -213,6 +218,11 @@ namespace TitanOrbit.Game
             if (!turretControl && (setBankPressedThisFrame || ShipPendingInput.SetBulletBankLatched))
                 setBulletBank.Set();
 
+            // [TITAN-ORBIT] Arsenal HUD — one-shot mute / arm, not a sticky every-tick mask.
+            var setWeaponArm = new InputEvent();
+            if (!turretControl && (setArmPressedThisFrame || ShipPendingInput.SetWeaponArmLatched))
+                setWeaponArm.Set();
+
             // [TITAN-ORBIT] Shift alone (not AND thrust). Regular ships: OVERDRIVE
             // latch + burst while thrusting. MEGAs: same bit is heading-lock / unoccupied
             // auto-gun mouse-aim (no speed burst). Clear while stowed so prediction
@@ -242,6 +252,10 @@ namespace TitanOrbit.Game
                 SetBulletBank = setBulletBank,
                 SelectedBulletBank = BulletBankSelection.RequestedBankIndex,
                 WantExpelGems = wantExpelGems,
+                SetWeaponArm = setWeaponArm,
+                WeaponArmMode = WeaponArmSelection.RequestedMode,
+                WeaponArmIndex = WeaponArmSelection.RequestedIndex,
+                WeaponArmEnabled = WeaponArmSelection.RequestedEnabled,
             };
         }
 

@@ -749,8 +749,10 @@ namespace TitanOrbit.Data
         }
 
         /// <summary>
-        /// First Titan Bullet bank on this hull (B-key / HUD default), or false
-        /// when the chassis has no gun-class unique weapon.
+        /// First Titan Bullet bank on this hull (the original catalog type B-key
+        /// can still select). Titans default to the ship-family fleet weapon
+        /// instead; this bank is the extra "Bullets" row. False when the chassis
+        /// has no gun-class unique weapon.
         /// </summary>
         public bool TryGetFirstGunBankIndex(MegaShipCatalogEntry entry, out int bankIndex)
         {

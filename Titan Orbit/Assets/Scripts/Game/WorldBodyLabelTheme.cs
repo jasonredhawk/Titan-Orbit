@@ -10,7 +10,7 @@ namespace TitanOrbit.Game
     /// <para>
     /// [TITAN-ORBIT] LiberationSans made every line feel like the same spreadsheet cell.
     /// Shift Rajdhani is the cockpit face the rest of the HUD already uses. Titles go Bold,
-    /// numbers SemiBold, tiny tracked captions Light so CREW / CAP / HULL read as telemetry
+    /// numbers SemiBold, tiny tracked captions Light so CREW / CAP / FLEET read as telemetry
     /// rails, not body copy. Paired with <see cref="PlanetWorldStatsLabel"/> and
     /// <see cref="GemMoonWorldStatsLabel"/>.
     /// </para>
@@ -33,7 +33,7 @@ namespace TitanOrbit.Game
         public const string LinkCaption = "LINK";
 
         /// <summary>Prefix on the ship-family line.</summary>
-        public const string HullCaption = "HULL";
+        public const string FleetCaption = "FLEET";
 
         /// <summary>Prefix on the default weapon line.</summary>
         public const string GunCaption = "GUN";
@@ -50,13 +50,13 @@ namespace TitanOrbit.Game
         /// <summary>Prefix on moon shield capacity.</summary>
         public const string ShieldMaxCaption = "MAX";
 
-        /// <summary>Ice caption used for HULL / GUN / CREW / CAP rails.</summary>
+        /// <summary>Ice caption used for FLEET / GUN / CREW / CAP rails.</summary>
         public static readonly Color CaptionIce = new Color(0.62f, 0.78f, 0.95f, 0.88f);
 
         /// <summary>Cyan for the LINK bonus so extra cap does not look like a second crew count.</summary>
         public static readonly Color LinkCyan = new Color(0.42f, 0.94f, 1f, 0.96f);
 
-        /// <summary>Dimmer ice for GUN under HULL.</summary>
+        /// <summary>Dimmer ice for GUN under FLEET.</summary>
         public static readonly Color GunIce = new Color(0.62f, 0.78f, 0.95f, 0.72f);
 
         const int TextSortingOrder = 5001;
@@ -98,7 +98,7 @@ namespace TitanOrbit.Game
             }
         }
 
-        /// <summary>Rajdhani Light for tracked uppercase rails (CREW, HULL, GUN).</summary>
+        /// <summary>Rajdhani Light for tracked uppercase rails (CREW, FLEET, GUN).</summary>
         public static TMP_FontAsset CaptionFont
         {
             get
@@ -109,14 +109,14 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// <c>HULL  Astro Eagle</c> — ice caption, then the family in the TMP's face color.
+        /// <c>FLEET  Astro Eagle</c> — ice caption, then the family in the TMP's face color.
         /// </summary>
-        public static string FormatHullLine(string familyName)
+        public static string FormatFleetLine(string familyName)
         {
             if (string.IsNullOrEmpty(familyName))
                 return string.Empty;
 
-            return PrefixLine(HullCaption, familyName);
+            return PrefixLine(FleetCaption, familyName);
         }
 
         /// <summary>
@@ -236,7 +236,7 @@ namespace TitanOrbit.Game
             }
         }
 
-        /// <summary>Ice hex for rich-text caption prefixes (HULL / GUN / CAP).</summary>
+        /// <summary>Ice hex for rich-text caption prefixes (FLEET / GUN / CAP).</summary>
         public static string CaptionIceHex => ColorUtility.ToHtmlStringRGBA(CaptionIce);
 
         static string PrefixLine(string caption, string value)

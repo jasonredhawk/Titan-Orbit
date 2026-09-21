@@ -132,8 +132,7 @@ namespace TitanOrbit.UI
 
             if (!IsTreeDataAvailable())
             {
-                if (shipUpgradeTree.Hint != null)
-                    shipUpgradeTree.Hint.text = "Upgrade tree unavailable.";
+                shipUpgradeTree.HideHint();
                 return;
             }
 
@@ -593,59 +592,25 @@ namespace TitanOrbit.UI
                 currentShip.CurrentChassisId);
         }
 
+        /// <summary>
+        /// Paints family + bullet type on the identity rail and keeps the old
+        /// path-legend / debug subtitle hidden so it cannot sit under those labels.
+        /// </summary>
         private void UpdateShipTreeHintText()
         {
             if (shipUpgradeTree == null)
                 return;
 
             shipUpgradeTree.EnsurePanelHeader();
-            if (shipUpgradeTree.Title != null)
-                shipUpgradeTree.Title.text = ShipUpgradeTreeUI.PanelTitleText;
+            shipUpgradeTree.HidePanelTitle();
             shipUpgradeTree.ApplyFamilyIdentity(
                 ResolveUpgradeTreeFamily(),
                 currentShip != null ? currentShip.ShipLevel : 1,
                 ResolveStoreFamilyBulletBankIndex());
 
-            if (shipUpgradeTree.Hint == null || currentShip == null)
-                return;
-
-            UpgradeTree tree = UpgradeSystem.Instance != null ? UpgradeSystem.Instance.UpgradeTree : null;
-            Planet storePlanet = GetShipUpgradeStorePlanet();
-            if (tree == null || storePlanet == null || CardShopSystem.Instance == null)
-            {
-                shipUpgradeTree.Hint.text = "Upgrade tree unavailable.";
-                return;
-            }
-
-            int homeLevel = currentHomePlanet != null ? Mathf.Max(1, currentHomePlanet.HomePlanetLevel) : 1;
-            int currentLevel = currentShip.ShipLevel;
-            int currentBranch = currentShip.BranchIndex;
-            int nextLevel = currentLevel + 1;
-            bool canSwapHullAtCurrentSlot = CardShopSystem.Instance.CanSwapShipAtSameTreeSlot(
-                currentShip, storePlanet, currentLevel, currentBranch, out _);
-            string slotChassisId = CardShopSystem.Instance.GetChassisIdForUpgradeLadderSlot(
-                currentShip, storePlanet.PlanetId, currentLevel, currentBranch);
-            bool hasAlternateHullAtSlot = !string.IsNullOrEmpty(slotChassisId)
-                && !string.Equals(slotChassisId, currentShip.CurrentChassisId, StringComparison.OrdinalIgnoreCase);
-            int storePlanetLevel = Mathf.Max(1, storePlanet.PlanetLevel);
-            bool storePlanetLevelBlocksSwap = hasAlternateHullAtSlot && storePlanetLevel < currentLevel;
-            bool homeAllowsNextUpgrade = currentLevel < 7 && homeLevel >= nextLevel;
-            bool upgradeBlockedByStoreLevel = homeAllowsNextUpgrade && nextLevel > storePlanetLevel;
-
-            if (IsDebugFreeShipUpgradeTree())
-                shipUpgradeTree.Hint.text = "Debug: click any ship for free. Claimed Titans stay with their owner.";
-            else if (canSwapHullAtCurrentSlot)
-                shipUpgradeTree.Hint.text = "Click your ship in the left panel to swap to this moon's hull at your tier (free).";
-            else if (storePlanetLevelBlocksSwap)
-                shipUpgradeTree.Hint.text = $"This planet must reach level {currentLevel} to swap your level {currentLevel} ship.";
-            else if (upgradeBlockedByStoreLevel)
-                shipUpgradeTree.Hint.text = $"This planet must reach level {nextLevel} to purchase a level {nextLevel} ship.";
-            else if (nextLevel == 7)
-                shipUpgradeTree.Hint.text = "TITAN — planet level 6 and a full gem moon unlock these hulls. Each unique hull is in service on one ship at a time.";
-            else if (nextLevel <= 7 && homeLevel < nextLevel)
-                shipUpgradeTree.Hint.text = $"Locked — raise home planet to level {nextLevel}.";
-            else
-                shipUpgradeTree.Hint.text = ShipUpgradeTreeUI.PanelDefaultSubtitle;
+            // Hint copy used to sit under COSMIC SHARK / FIREBALLS. The
+            // identity rail owns that corner now — keep the line off.
+            shipUpgradeTree.HideHint();
         }
 
         /// <summary>

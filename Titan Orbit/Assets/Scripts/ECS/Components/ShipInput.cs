@@ -135,7 +135,36 @@ namespace TitanOrbit.ECS
         [GhostField]
         public bool WantExpelGems;
 
+        /// <summary>
+        /// [NETCODE] InputEvent — arsenal HUD click. Server
+        /// <c>ShipWeaponArmSystem</c> writes <see cref="ShipWeaponArmState"/> from
+        /// <see cref="WeaponArmMode"/> / <see cref="WeaponArmIndex"/> /
+        /// <see cref="WeaponArmEnabled"/> on that tick only.
+        /// Appended after <see cref="WantExpelGems"/> so older command layouts still line up.
+        /// </summary>
+        [GhostField]
+        public InputEvent SetWeaponArm;
+
+        /// <summary>
+        /// <see cref="ShipWeaponArmState.ModeMount"/> or <see cref="ShipWeaponArmState.ModeKind"/>.
+        /// Only applied on the tick <see cref="SetWeaponArm"/> is set.
+        /// </summary>
+        [GhostField]
+        public byte WeaponArmMode;
+
+        /// <summary>
+        /// Mount buffer index, or a <see cref="ShipWeaponKind"/> byte when
+        /// <see cref="WeaponArmMode"/> is kind. Same one-shot rule as
+        /// <see cref="SelectedBulletBank"/>.
+        /// </summary>
+        [GhostField]
+        public int WeaponArmIndex;
+
+        /// <summary>1 = arm / fire, 0 = mute. Explicit set so prediction does not toggle twice.</summary>
+        [GhostField]
+        public byte WeaponArmEnabled;
+
         public FixedString512Bytes ToFixedString() =>
-            $"ShipInput[t={Thrust},o={Overdrive},f={Fire.Count},c={CycleBullet.Count},r={FireRocket.Count},m={PlaceMine.Count},b={!DisableSpaceBrakes},d={WantDepositGems},s={SelectedRocketSlot},n={SelectedMineSlot},ad={AimDistance},sb={SetBulletBank.Count},bb={SelectedBulletBank},e={WantExpelGems}]";
+            $"ShipInput[t={Thrust},o={Overdrive},f={Fire.Count},c={CycleBullet.Count},r={FireRocket.Count},m={PlaceMine.Count},b={!DisableSpaceBrakes},d={WantDepositGems},s={SelectedRocketSlot},n={SelectedMineSlot},ad={AimDistance},sb={SetBulletBank.Count},bb={SelectedBulletBank},e={WantExpelGems},wa={SetWeaponArm.Count},wm={WeaponArmMode},wi={WeaponArmIndex},we={WeaponArmEnabled}]";
     }
 }

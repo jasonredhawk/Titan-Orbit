@@ -87,6 +87,13 @@ namespace TitanOrbit.ECS
                          .WithEntityAccess())
                 ecb.AddComponent(entity, new ShipWeaponState());
 
+            // [NETCODE] Prefer baking ShipWeaponArmState. Runtime add covers older
+            // SubScenes; GhostFields will not replicate until the ship ghost is rebaked.
+            foreach (var (_, entity) in SystemAPI.Query<RefRO<ShipTag>>()
+                         .WithNone<ShipWeaponArmState>()
+                         .WithEntityAccess())
+                ecb.AddComponent(entity, ShipWeaponArmState.AllOn);
+
             // --- Weapon mounts and wing tractor beams (DynamicBuffer for multi-mount ships) ---
             // [TITAN-ORBIT] Empty mount buffer = intentional unarmed ship — never inject a fake muzzle.
             foreach (var (_, entity) in SystemAPI.Query<RefRO<ShipTag>>().WithEntityAccess())

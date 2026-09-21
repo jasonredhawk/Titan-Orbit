@@ -383,6 +383,7 @@ namespace TitanOrbit.Game
             bool fontChanged = Mathf.Abs(nextFont - _fontSize) > 0.05f;
             if (tmpText != null)
                 fontChanged |= Mathf.Abs(tmpText.fontSize - nextFont) > 0.05f;
+            bool iconChanged = Mathf.Abs(nextIcon - _iconScale) > 0.001f;
 
             _fontSize = nextFont;
             _iconScale = nextIcon;
@@ -393,7 +394,22 @@ namespace TitanOrbit.Game
                 _layoutDirty = true;
             }
 
-            return fontChanged;
+            if (iconChanged)
+            {
+                _layoutDirty = true;
+                _popScaleSettled = false;
+                ApplySettledIconScale();
+            }
+
+            return fontChanged || iconChanged;
+        }
+
+        /// <summary>Writes the magnitude icon size when the pop bounce is not running.</summary>
+        void ApplySettledIconScale()
+        {
+            if (iconRenderer == null || !iconRenderer.enabled || _popElapsed < PopDuration)
+                return;
+            iconRenderer.transform.localScale = Vector3.one * _iconScale;
         }
 
         void ApplyMessage(string message, TMP_FontAsset font, float fontSize)
@@ -709,7 +725,9 @@ namespace TitanOrbit.Game
         {
             if (_popElapsed >= PopDuration)
             {
-                if (_popScaleSettled)
+                bool iconNeedsScale = iconRenderer != null && iconRenderer.enabled &&
+                    Mathf.Abs(iconRenderer.transform.localScale.x - _iconScale) > 0.001f;
+                if (_popScaleSettled && !iconNeedsScale)
                     return;
                 _popScaleSettled = true;
                 if (tmpText != null)

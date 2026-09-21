@@ -10,7 +10,7 @@ namespace TitanOrbit.Game
 {
     /// <summary>
     /// World-space label above the orbiting gem moon. Matches the planet cockpit stack:
-    /// Rajdhani place name, <c>HULL</c> / <c>GUN</c> rails, then labeled GEMS and SHIELD
+    /// Rajdhani place name, <c>FLEET</c> / <c>GUN</c> rails, then labeled GEMS and SHIELD
     /// counts (current over BANK / MAX). World / family / gun strings match
     /// <see cref="PlanetWorldStatsLabel"/> (same planet <see cref="PlanetState"/> + config).
     /// Client presentation only. During idle theatrical camera,
@@ -35,9 +35,9 @@ namespace TitanOrbit.Game
         const float StatCaptionFontSize = 7.5f;
         /// <summary>Place name — Rajdhani Bold, same family as the planet label.</summary>
         const float TitleFontSize = 18f;
-        /// <summary>HULL line under the name.</summary>
+        /// <summary>FLEET line under the name.</summary>
         const float FamilyNameFontSize = 10.5f;
-        /// <summary>GUN line under HULL.</summary>
+        /// <summary>GUN line under FLEET.</summary>
         const float BulletTypeFontSize = 9.5f;
         const float TitleCharacterSpacing = 1.2f;
         const float CaptionCharacterSpacing = 2.6f;
@@ -733,7 +733,7 @@ namespace TitanOrbit.Game
 
             _familyText.gameObject.SetActive(hasFamily);
             _familyText.richText = true;
-            _familyText.text = hasFamily ? WorldBodyLabelTheme.FormatHullLine(familyName) : string.Empty;
+            _familyText.text = hasFamily ? WorldBodyLabelTheme.FormatFleetLine(familyName) : string.Empty;
             _familyText.color = WithAlpha(teamColor, FamilyNameAlpha);
 
             _bulletTypeText.gameObject.SetActive(hasBulletType);

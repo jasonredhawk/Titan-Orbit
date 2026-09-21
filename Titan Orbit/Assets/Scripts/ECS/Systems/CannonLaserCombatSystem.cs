@@ -211,11 +211,18 @@ namespace TitanOrbit.ECS
 
             bool wantedBurn = false;
             int mountCount = mounts.Length;
+            // [TITAN-ORBIT] Arsenal HUD can mute one laser or the whole LASER class.
+            var arm = ShipWeaponArmState.Resolve(EntityManager, mega);
             for (int m = 0; m < mountCount; m++)
             {
                 var mount = mounts[m];
                 if (!ShipWeaponKind.IsCannonLaser(mount, gunners, m) || mount.FirePower <= 0.01f)
                     continue;
+                if (!ShipWeaponArmState.IsArmed(in arm, m))
+                {
+                    WriteLaserOff(gunners, m, in mount);
+                    continue;
+                }
 
                 float3 muzzle = ResolveMuzzle(xf, mount);
                 float3 barrelFwd = MegaShipWeaponAim.GetBarrelForward(in xf, in mount);

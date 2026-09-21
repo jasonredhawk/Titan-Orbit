@@ -15,10 +15,10 @@ namespace TitanOrbit.UI
     /// <summary>
     /// Compact left-side in-flight list of fire types the local ship can shoot. Each tile
     /// names the <see cref="BulletVfxBank"/> category (LASERBOLT) and the ship family
-    /// that authored it (ASTRO EAGLE). Production shows the hull default plus purchased
-    /// foreign weapons. GameManager cycle-all (Test) lists every non-reserved catalog
-    /// bank so testers can click types they have not bought. B walks the same list; a
-    /// tile click jumps to that bank.
+    /// that authored it (ASTRO EAGLE). Production shows the family fleet gun, a Titan's
+    /// original catalog gun, plus purchased foreign weapons. GameManager cycle-all
+    /// (Test) lists every non-reserved catalog bank so testers can click types they
+    /// have not bought. B walks the same list; a tile click jumps to that bank.
     /// <para>
     /// Parks under <see cref="RocketLoadoutHUD"/> when that column is showing, or in the
     /// same mid-left slot when no rockets / mines are equipped. Grows downward.
@@ -27,8 +27,8 @@ namespace TitanOrbit.UI
     /// immediately. <see cref="ShipCycleBulletSystem"/> then writes the ghosted
     /// <see cref="ShipLoadoutState.RuntimeBulletIndex"/> on the predicted tick.
     /// Hidden on the main menu, Join Team, Orbit Menu, and while the local
-    /// ship is dead. MEGA hulls show the same owned list; only Titan Bullet
-    /// mounts adopt the selected bank. Holds last paint during
+    /// ship is dead. MEGA hulls show family fleet + original Titan gun; only
+    /// Titan Bullet mounts adopt the selected bank. Holds last paint during
     /// <see cref="ClientJoinSettleCache.ShouldSkipShipEntityQueries"/> so MEGA plow gem
     /// Instantiates do not blink the panel off.
     /// </para>
@@ -243,14 +243,19 @@ namespace TitanOrbit.UI
                 return;
             }
 
-            if (!TryReadRows(out int rowCount, out int selectedBank, out bool healLocked, out string hullFamilyName))
+            if (!TryReadRows(
+                    out int rowCount,
+                    out int selectedBank,
+                    out bool healLocked,
+                    out string hullFamilyName,
+                    out string titanDisplayName))
             {
                 SetVisible(false);
                 return;
             }
 
             SetVisible(true);
-            Paint(rowCount, selectedBank, healLocked, hullFamilyName);
+            Paint(rowCount, selectedBank, healLocked, hullFamilyName, titanDisplayName);
         }
 
         /// <summary>
@@ -260,13 +265,20 @@ namespace TitanOrbit.UI
         /// <param name="selectedBank">Ghosted fire index (heal bank when heal mode is firing).</param>
         /// <param name="healLocked">True when Production heal mode ignores clicks (same as B).</param>
         /// <param name="hullFamilyName">Local ship family label for the hull-default tile.</param>
+        /// <param name="titanDisplayName">Titan catalog name for the original-gun tile (empty on regular hulls).</param>
         /// <returns>True when at least one tile should paint.</returns>
-        bool TryReadRows(out int rowCount, out int selectedBank, out bool healLocked, out string hullFamilyName)
+        bool TryReadRows(
+            out int rowCount,
+            out int selectedBank,
+            out bool healLocked,
+            out string hullFamilyName,
+            out string titanDisplayName)
         {
             rowCount = 0;
             selectedBank = 0;
             healLocked = false;
             hullFamilyName = string.Empty;
+            titanDisplayName = string.Empty;
 
             var world = EcsGameBridge.ClientWorld;
             if (world == null || !world.IsCreated)
@@ -288,23 +300,26 @@ namespace TitanOrbit.UI
                 healLocked = loadout.HealingBulletsActive && !TitanOrbitDebugFlags.CycleAllBulletBanks;
             }
 
-            // Hull tile uses THIS ship's family (or Titan catalog name), not the
-            // first config row that shares the bank.
-            if (em.HasComponent<MegaShipState>(ship)
-                && em.GetComponentData<MegaShipState>(ship).IsMega)
-            {
-                var catalog = MegaShipCatalog.Load();
-                if (catalog != null)
-                    hullFamilyName = catalog.GetDisplayName(
-                        em.GetComponentData<MegaShipState>(ship).CatalogIndex);
-            }
-            else if (em.HasComponent<ShipState>(ship))
+            // Family-fleet tile uses THIS ship's family (Astro Eagle), not the
+            // first config row that shares Laserbolt. Titans keep that family
+            // caption on the default row and put the catalog hull name on the
+            // original "Bullets" tile.
+            if (em.HasComponent<ShipState>(ship))
             {
                 if (_familyConfig == null)
                     _familyConfig = PlanetShipFamilyConfig.LoadDefault();
                 if (_familyConfig != null)
                     hullFamilyName = _familyConfig.GetFamilyDisplayName(
                         em.GetComponentData<ShipState>(ship).ShipFamilyConfigIndex);
+            }
+
+            if (em.HasComponent<MegaShipState>(ship)
+                && em.GetComponentData<MegaShipState>(ship).IsMega)
+            {
+                var catalog = MegaShipCatalog.Load();
+                if (catalog != null)
+                    titanDisplayName = catalog.GetDisplayName(
+                        em.GetComponentData<MegaShipState>(ship).CatalogIndex);
             }
 
             return true;
@@ -314,7 +329,12 @@ namespace TitanOrbit.UI
         /// Stacks compact tiles for the current visible set, docks under rockets, and
         /// enables scroll only when Test cycle-all would cover Space Brakes.
         /// </summary>
-        void Paint(int rowCount, int selectedBank, bool healLocked, string hullFamilyName)
+        void Paint(
+            int rowCount,
+            int selectedBank,
+            bool healLocked,
+            string hullFamilyName,
+            string titanDisplayName)
         {
             bool cycleAll = TitanOrbitDebugFlags.CycleAllBulletBanks;
             if (cycleAll != _lastCycleAll)
@@ -350,7 +370,8 @@ namespace TitanOrbit.UI
 
                 VisibleBankRow row = _rowScratch[i];
                 bool isSelected = row.BankIndex == caretBank;
-                PaintTile(_tiles[i], i, row, isSelected, healLocked, cycleAll, hullFamilyName);
+                PaintTile(
+                    _tiles[i], i, row, isSelected, healLocked, cycleAll, hullFamilyName, titanDisplayName);
                 _paintedBanks[i] = row.BankIndex;
                 _paintedCount++;
             }
@@ -413,7 +434,8 @@ namespace TitanOrbit.UI
             bool isSelected,
             bool healLocked,
             bool cycleAll,
-            string hullFamilyName)
+            string hullFamilyName,
+            string titanDisplayName)
         {
             if (tile == null || tile.Root == null)
                 return;
@@ -424,9 +446,16 @@ namespace TitanOrbit.UI
                 PanelPad,
                 -PanelPad - HeaderHeight - row * (TileHeight + TileGap));
 
-            string family = data.IsHullDefault && !string.IsNullOrEmpty(hullFamilyName)
-                ? hullFamilyName
-                : ResolveFamilyCaption(data.BankIndex);
+            // Family fleet (Laserbolt / Astro Eagle) first. Titan original
+            // (Bullets / Craizan Star) second. Purchased types fall back to
+            // whoever uniquely authored that bank.
+            string family;
+            if (data.IsTitanOriginal && !string.IsNullOrEmpty(titanDisplayName))
+                family = titanDisplayName;
+            else if (data.IsHullDefault && !string.IsNullOrEmpty(hullFamilyName))
+                family = hullFamilyName;
+            else
+                family = ResolveFamilyCaption(data.BankIndex);
             string category = ResolveCategoryName(data.BankIndex);
             bool unowned = cycleAll && !data.IsOwned;
 

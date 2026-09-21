@@ -1,3 +1,4 @@
+using Unity.Entities;
 using UnityEngine;
 
 namespace TitanOrbit.ECS
@@ -53,6 +54,12 @@ namespace TitanOrbit.ECS
         static bool s_setBulletBankLatched;
 
         /// <summary>
+        /// [TITAN-ORBIT] Latched arsenal HUD click (mute one barrel or a whole kind).
+        /// Same latch rule as SetBulletBank.
+        /// </summary>
+        static bool s_setWeaponArmLatched;
+
+        /// <summary>
         /// [HYBRID] Called from ShipInputBridge.Update each frame. Stores input for the next
         /// GhostInputSystemGroup fixed tick. Preserves latched CycleBullet across frames until
         /// the input apply system consumes it.
@@ -92,6 +99,16 @@ namespace TitanOrbit.ECS
                 setBank.Set();
                 input.SetBulletBank = setBank;
                 input.SelectedBulletBank = BulletBankSelection.RequestedBankIndex;
+            }
+
+            if (s_setWeaponArmLatched)
+            {
+                var setArm = new Unity.NetCode.InputEvent();
+                setArm.Set();
+                input.SetWeaponArm = setArm;
+                input.WeaponArmMode = WeaponArmSelection.RequestedMode;
+                input.WeaponArmIndex = WeaponArmSelection.RequestedIndex;
+                input.WeaponArmEnabled = WeaponArmSelection.RequestedEnabled;
             }
 
             Latest = input;
@@ -190,6 +207,26 @@ namespace TitanOrbit.ECS
 
         /// <summary>True while a HUD bank click is waiting to be applied.</summary>
         public static bool SetBulletBankLatched => s_setBulletBankLatched;
+
+        /// <summary>Call when the arsenal HUD mutes or arms a barrel / kind.</summary>
+        public static void LatchSetWeaponArm()
+        {
+            s_setWeaponArmLatched = true;
+        }
+
+        /// <summary>Clears the arsenal-HUD latch after ShipInput has been copied onto the local ghost.</summary>
+        public static void ConsumeSetWeaponArmLatch()
+        {
+            s_setWeaponArmLatched = false;
+            if (!HasValue)
+                return;
+            var input = Latest;
+            input.SetWeaponArm = default;
+            Latest = input;
+        }
+
+        /// <summary>True while an arsenal HUD click is waiting to be applied.</summary>
+        public static bool SetWeaponArmLatched => s_setWeaponArmLatched;
     }
 
     /// <summary>
@@ -320,6 +357,89 @@ namespace TitanOrbit.ECS
             if (SelectedIndex >= count)
                 SelectedIndex = count - 1;
             return SelectedIndex;
+        }
+    }
+
+    /// <summary>
+    /// Client-side arsenal mute request. HUD clicks write this; <c>ShipInputBridge</c>
+    /// copies it onto <see cref="ShipInput"/> only on the latched SetWeaponArm tick.
+    /// The arsenal strip paints this immediately so a click does not wait for the
+    /// predicted ghost write.
+    /// </summary>
+    public static class WeaponArmSelection
+    {
+        /// <summary>
+        /// How long the HUD may show the click before falling back to the ghosted mask.
+        /// Covers one NetCode tick plus a hitch.
+        /// </summary>
+        const float OptimisticSeconds = 0.75f;
+
+        /// <summary><see cref="ShipWeaponArmState.ModeMount"/> or <see cref="ShipWeaponArmState.ModeKind"/>.</summary>
+        public static byte RequestedMode { get; private set; }
+
+        /// <summary>Mount index or weapon-kind byte from the last click.</summary>
+        public static int RequestedIndex { get; private set; } = -1;
+
+        /// <summary>1 = arm, 0 = mute.</summary>
+        public static byte RequestedEnabled { get; private set; } = 1;
+
+        /// <summary><see cref="Time.unscaledTime"/> of the last <see cref="Request"/>.</summary>
+        static float s_requestUnscaledTime = -999f;
+
+        /// <summary>
+        /// Records an arsenal click and latches the one-shot so NetCode's next
+        /// fixed tick writes <see cref="ShipWeaponArmState"/>.
+        /// </summary>
+        /// <param name="mode">Mount or kind command.</param>
+        /// <param name="index">Mount buffer index, or a <see cref="ShipWeaponKind"/> byte.</param>
+        /// <param name="enabled">True to let that barrel / class fire.</param>
+        public static void Request(byte mode, int index, bool enabled)
+        {
+            RequestedMode = mode;
+            RequestedIndex = index;
+            RequestedEnabled = enabled ? (byte)1 : (byte)0;
+            s_requestUnscaledTime = Time.unscaledTime;
+            ShipPendingInput.LatchSetWeaponArm();
+        }
+
+        /// <summary>True while a click is pending or still in the optimistic window.</summary>
+        public static bool IsOptimistic()
+        {
+            if (RequestedIndex < 0)
+                return false;
+            if (ShipPendingInput.SetWeaponArmLatched)
+                return true;
+            return Time.unscaledTime - s_requestUnscaledTime <= OptimisticSeconds;
+        }
+
+        /// <summary>
+        /// Overlay the last click onto a ghosted mask so the HUD paints the same
+        /// frame as the tap. Kind commands need the live mount buffer.
+        /// </summary>
+        public static ShipWeaponArmState Overlay(
+            in ShipWeaponArmState ghost,
+            DynamicBuffer<ShipWeaponMountElement> mounts)
+        {
+            if (!IsOptimistic())
+                return ghost;
+
+            ShipWeaponArmState arm = ghost;
+            bool enabled = RequestedEnabled != 0;
+            if (RequestedMode == ShipWeaponArmState.ModeKind)
+            {
+                ShipWeaponArmState.SetKind(ref arm, mounts, (byte)RequestedIndex, enabled);
+                return arm;
+            }
+
+            ShipWeaponArmState.SetMount(ref arm, RequestedIndex, enabled);
+            return arm;
+        }
+
+        /// <summary>Drops a stale request (no local ship, HUD hidden).</summary>
+        public static void Clear()
+        {
+            RequestedIndex = -1;
+            s_requestUnscaledTime = -999f;
         }
     }
 }

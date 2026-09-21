@@ -425,6 +425,8 @@ namespace TitanOrbit.ECS
                 }
 
                 // --- Volley / round-robin / hybrid per ShipWeaponConfig.FireMode ---
+                // [TITAN-ORBIT] Arsenal HUD mute mask drops disabled barrels from the bank.
+                var arm = ShipWeaponArmState.Resolve(state.EntityManager, entity);
                 if (!ShipWeaponFireLogic.TryPlanFire(
                         shipState.ValueRO.CurrentEnergy,
                         mounts,
@@ -437,7 +439,8 @@ namespace TitanOrbit.ECS
                         out float energySpend,
                         out int nextMountIndexAfter,
                         abilityEnergy,
-                        weaponState.ValueRO.FireCooldown))
+                        weaponState.ValueRO.FireCooldown,
+                        in arm))
                     continue;
 
                 // [TITAN-ORBIT] Top killer: +5% damage, same energy. Snapshot rebuilt this tick.
@@ -475,11 +478,21 @@ namespace TitanOrbit.ECS
                 weaponState.ValueRW.NextMountIndex = nextMountIndexAfter;
                 if (shotCount == 1)
                 {
-                    float nextCost = ShipWeaponFireLogic.GetMountEnergyCost(
-                        mounts[nextMountIndexAfter],
-                        weaponCfg.ValueRO.BulletDamage,
-                        weaponCfg.ValueRO.FireRate,
-                        abilityEnergy);
+                    int chargeMount = nextMountIndexAfter;
+                    if (chargeMount < 0 || chargeMount >= mounts.Length
+                        || !ShipWeaponArmState.IsArmed(in arm, chargeMount))
+                    {
+                        ShipWeaponFireLogic.TryGetNextArmedRegularMount(
+                            mounts, in arm, nextMountIndexAfter, out chargeMount);
+                    }
+
+                    float nextCost = chargeMount >= 0 && chargeMount < mounts.Length
+                        ? ShipWeaponFireLogic.GetMountEnergyCost(
+                            mounts[chargeMount],
+                            weaponCfg.ValueRO.BulletDamage,
+                            weaponCfg.ValueRO.FireRate,
+                            abilityEnergy)
+                        : 0f;
                     weaponState.ValueRW.FireCooldown = ShipWeaponFireLogic.ComputeEnergyChargeSeconds(
                         nextCost, energyRegen);
                 }
@@ -547,6 +560,7 @@ namespace TitanOrbit.ECS
                 : default;
             ShipWeaponKind.RestoreMountKindsFromGhostedSlots(mounts, gunners);
 
+            var arm = ShipWeaponArmState.Resolve(state.EntityManager, mega);
             if (!ShipWeaponFireLogic.TryPlanMegaFire(
                     shipState.CurrentEnergy,
                     mounts,
@@ -556,7 +570,8 @@ namespace TitanOrbit.ECS
                     out int shotCount,
                     out float energySpend,
                     out int nextMountIndexAfter,
-                    weaponState.FireCooldown))
+                    weaponState.FireCooldown,
+                    in arm))
                 return;
 
             int megaOwnerNet = ghostOwner.NetworkId;
@@ -644,7 +659,7 @@ namespace TitanOrbit.ECS
             if (shotCount == 1)
             {
                 float nextCost = ShipWeaponFireLogic.GetNextArmedMegaShotCost(
-                    mounts, nextMountIndexAfter);
+                    mounts, in arm, nextMountIndexAfter);
                 weaponState.FireCooldown = ShipWeaponFireLogic.ComputeEnergyChargeSeconds(
                     nextCost, energyRegen);
             }

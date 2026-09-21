@@ -431,10 +431,28 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
+        /// Identity-rail body under the type name: specials on the first line,
+        /// then the bank's live combat / vs-target stats. Empty when both are blank.
+        /// </summary>
+        public static string FormatFamilyWeaponRailDetail(
+            ShipFamilyDefinition family,
+            int shipLevel,
+            int planetOrHullBankIndex = -1)
+        {
+            string specials = FormatFamilyWeaponSpecials(family, shipLevel, planetOrHullBankIndex);
+            string stats = FormatFamilyWeaponStatLine(family, shipLevel, planetOrHullBankIndex);
+            if (string.IsNullOrEmpty(specials))
+                return stats;
+            if (string.IsNullOrEmpty(stats))
+                return specials;
+            return specials + "\n" + stats;
+        }
+
+        /// <summary>
         /// Compact specials under the type name: stun seconds, burn DPS, bonus × vs a target, …
         /// Empty when the resolved bank has no abilities.
         /// </summary>
-        static string FormatFamilyWeaponSpecials(
+        public static string FormatFamilyWeaponSpecials(
             ShipFamilyDefinition family,
             int shipLevel,
             int planetOrHullBankIndex = -1)
@@ -463,6 +481,61 @@ namespace TitanOrbit.UI
             }
 
             return parts.Count == 0 ? string.Empty : string.Join(" · ", parts);
+        }
+
+        /// <summary>
+        /// One rail of ≠1 bank combat muls and vs-target damage, e.g.
+        /// <c>FP +15%  SPD −10%  VS SHIPS +20%</c>. Empty when everything is 1×.
+        /// </summary>
+        public static string FormatFamilyWeaponStatLine(
+            ShipFamilyDefinition family,
+            int shipLevel,
+            int planetOrHullBankIndex = -1)
+        {
+            if (family == null && planetOrHullBankIndex < 0)
+                return string.Empty;
+
+            int idx = BulletBankProfileUtility.ResolveBankIndexForFamily(family, planetOrHullBankIndex);
+            var bank = BulletBankCombatLogic.Bank;
+            if (bank == null || !bank.TryGetProfile(idx, out BulletBankProfile profile) || profile == null)
+                return string.Empty;
+
+            int extras = BulletBankCombatLogic.CountFirePowerExtraLevels(Mathf.Max(1, shipLevel), 0);
+            var sb = new StringBuilder(96);
+            BulletBankStatModifiers m = profile.statModifiers;
+            AppendStatToken(sb, "FP", m.firePowerMultiplier);
+            AppendStatToken(sb, "SPD", m.bulletSpeedMultiplier);
+            AppendStatToken(sb, "RATE", m.fireRateMultiplier);
+            AppendStatToken(sb, "RANGE", m.bulletRangeMultiplier);
+            AppendStatToken(sb, "RAM", m.rammingPowerMultiplier);
+            AppendStatToken(sb, "VS AST", profile.GetDamageMultiplier(BulletBankDamageTarget.Asteroid, extras));
+            AppendStatToken(sb, "VS SHIPS", profile.GetDamageMultiplier(BulletBankDamageTarget.ShipOrDrone, extras));
+            AppendStatToken(sb, "VS MOONS", profile.GetDamageMultiplier(BulletBankDamageTarget.GemMoon, extras));
+            AppendStatToken(sb, "VS GEMS", profile.GetDamageMultiplier(BulletBankDamageTarget.Gem, extras));
+            return sb.ToString();
+        }
+
+        static void AppendStatToken(StringBuilder sb, string label, float mul)
+        {
+            float m = SafeMul(mul);
+            if (Mathf.Approximately(m, 1f))
+                return;
+
+            if (sb.Length > 0)
+                sb.Append("  ");
+
+            float signed = (m - 1f) * 100f;
+            string body = Mathf.Abs(signed).ToString("0.#", CultureInfo.InvariantCulture);
+            string hex = signed > 0.05f ? FamilyStatHudCopy.HexBoost
+                : signed < -0.05f ? FamilyStatHudCopy.HexPenalty
+                : FamilyStatHudCopy.HexNeutral;
+            sb.Append("<color=#").Append(HexMute).Append('>').Append(label).Append("</color> ");
+            sb.Append("<color=#").Append(hex).Append('>');
+            if (signed > 0.05f)
+                sb.Append('+');
+            else if (signed < -0.05f)
+                sb.Append('−');
+            sb.Append(body).Append("%").Append("</color>");
         }
 
         /// <summary>

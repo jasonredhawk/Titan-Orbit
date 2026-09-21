@@ -6,9 +6,10 @@ using Unity.NetCode;
 namespace TitanOrbit.ECS
 {
     /// <summary>
-    /// B-key and bullet-type HUD selection. Production: owned damage banks only (hull family +
-    /// purchased foreign weapons). MEGA hulls use the same owned list; only Titan
-    /// Bullet mounts retarget. Orbit Menu heal mode ignores B and HUD clicks.
+    /// B-key and bullet-type HUD selection. Production: owned damage banks only
+    /// (family fleet gun, a Titan's original catalog gun, then purchased foreign
+    /// weapons). MEGA hulls use that same owned list; only Titan Bullet mounts
+    /// retarget. Orbit Menu heal mode ignores B and HUD clicks.
     /// GameManager <c>CycleAllBulletBanks</c> walks the same non-reserved catalog the
     /// Weapons HUD paints (EnergySpheres included, Rockets skipped) and does <b>not</b>
     /// latch <c>HealingBulletsActive</c> — that flag is Orbit Menu only. B and tile

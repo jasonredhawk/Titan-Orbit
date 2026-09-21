@@ -2441,8 +2441,7 @@ namespace TitanOrbit.UI
             {
                 _shipTreeStructureKey = "";
                 shipUpgradeTree.Clear();
-                if (shipUpgradeTree.Hint != null)
-                    shipUpgradeTree.Hint.text = "Upgrade tree unavailable.";
+                shipUpgradeTree.HideHint();
                 UpdateShipsTabContentHeight();
                 return;
             }

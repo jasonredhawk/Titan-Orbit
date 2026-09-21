@@ -16,7 +16,8 @@ namespace TitanOrbit.ECS
     /// LOADOUT slots add PerExtra × shipLevel only (no Base) onto those frozen totals.
     /// Gem cap stays 0. Cannon / missile / sniper mounts fire the catalog unique-component
     /// (or type-table) bank. Titan Bullet mounts follow the B-key hull cycle
-    /// (<see cref="ShipLoadoutState.RuntimeBulletIndex"/>) from owned weapon gear.
+    /// (<see cref="ShipLoadoutState.RuntimeBulletIndex"/>): family fleet weapon first
+    /// (Laserbolt on Astro Eagle), then the catalog "Bullets" type.
     /// Fire mode is Energy Hybrid;
     /// Phase B uses <see cref="ShipWeaponFireLogic.TryPlanMegaFire"/>.
     /// Paired with <see cref="ShipStatApplyLogic.ApplyToShip"/> which routes here when
@@ -119,16 +120,15 @@ namespace TitanOrbit.ECS
             }
 
             // --- Loadout cycle bank (Titan Bullet mounts only) ---
-            // [TITAN-ORBIT] B-key / HUD walk owned banks like a regular hull. Only
-            // WeaponKind.Gun barrels adopt RuntimeBulletIndex. Cannons, missiles,
-            // and snipers keep the catalog banks written on each mount. Reset the
-            // index on chassis / slot change; keep B-key across extra-part applies.
+            // [TITAN-ORBIT] B-key / HUD walk family fleet first, then the Titan's
+            // original catalog gun. Only WeaponKind.Gun barrels adopt
+            // RuntimeBulletIndex. Cannons, missiles, and snipers keep the catalog
+            // banks written on each mount. Reset the index on chassis / slot
+            // change; keep B-key across extra-part applies.
             if (writeGhostedShipState && em.HasComponent<ShipLoadoutState>(shipEntity))
             {
                 var loadout = em.GetComponentData<ShipLoadoutState>(shipEntity);
-                int gunBank = catalog.GetTypeTableBankIndex(ShipFamilyPartTypes.WeaponBullet);
-                if (catalog.TryGetFirstGunBankIndex(entry, out int firstGun))
-                    gunBank = firstGun;
+                int defaultBank = BulletBankOwnership.ResolveHullDefaultBank(em, shipEntity);
 
                 bool adoptMegaGunDefault = true;
                 if (em.HasComponent<ShipChassisState>(shipEntity))
@@ -141,7 +141,7 @@ namespace TitanOrbit.ECS
 
                 if (adoptMegaGunDefault)
                 {
-                    loadout.RuntimeBulletIndex = gunBank;
+                    loadout.RuntimeBulletIndex = defaultBank;
                 }
                 else
                 {
@@ -158,7 +158,7 @@ namespace TitanOrbit.ECS
                     }
 
                     if (!stillOwned)
-                        loadout.RuntimeBulletIndex = gunBank;
+                        loadout.RuntimeBulletIndex = defaultBank;
                 }
 
                 loadout.BranchIndex = mega.MegaSlotIndex;

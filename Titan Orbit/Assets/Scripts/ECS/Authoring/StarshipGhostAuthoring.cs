@@ -125,6 +125,9 @@ namespace TitanOrbit.ECS.Authoring
                 AddComponent(entity, new ShipVitalsState());
                 AddComponent(entity, new ShipAttributeUpgradeState());
                 AddComponent(entity, new ShipWeaponState());
+                // [NETCODE] Arsenal mute mask MUST bake — GhostFields do not replicate
+                // when ShipEnsureComponentsSystem adds this only at runtime.
+                AddComponent(entity, ShipWeaponArmState.AllOn);
                 AddComponent(entity, new ShipOrbitState());
                 // [TITAN-ORBIT] Sticky friendly-triangle thrust latch — not a MovementSpeed attribute.
                 AddComponent(entity, new ShipTerritoryBoostLatch

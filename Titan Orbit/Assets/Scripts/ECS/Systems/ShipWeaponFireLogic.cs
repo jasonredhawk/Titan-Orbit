@@ -1,3 +1,4 @@
+using System;
 using TitanOrbit.Data;
 using Unity.Entities;
 using Unity.Mathematics;
@@ -7,22 +8,21 @@ namespace TitanOrbit.ECS
     /// <summary>
     /// Shared multi-mount fire planner for server bullets and client anticipation VFX.
     /// <para>
-    /// [TITAN-ORBIT] Shared energy pool (summed cap + regen). Sequencing follows
-    /// <see cref="ShipWeaponFireMode"/> from the ship family (via <see cref="ShipWeaponConfig.FireMode"/>):
+    /// [TITAN-ORBIT] Shared energy pool stacked onto clips in arsenal-strip order
+    /// (gun, laser, missile, sniper — same walk as <c>ShipWeaponArmHUD</c>). A barrel
+    /// whose clip is full and off cooldown fires; leftover energy spills into the
+    /// next clip. Two full clips at 20 energy both shoot. A half-full clip does not.
+    /// <see cref="ShipWeaponFireMode"/> still special-cases:
     /// <list type="bullet">
-    /// <item><b>Energy Hybrid</b> — energy ≥ sum of every mount’s firePower <b>and</b> every mount’s
-    /// cooldown is ready → all barrels fire in the same tick; otherwise only
-    /// <see cref="ShipWeaponState.NextMountIndex"/> may spend energy (round-robin drip).</item>
-    /// <item><b>Always Fire Together</b> — same full-volley gate only; never drip a single barrel.</item>
-    /// <item><b>Always Round-Robin</b> — never volley; always the NextMountIndex energy queue.</item>
+    /// <item><b>Energy Hybrid</b> — fire every full, ready clip this tick.</item>
+    /// <item><b>Always Fire Together</b> — fire only when every armed clip is full and ready.</item>
+    /// <item><b>Always Round-Robin</b> — fire only the first full, ready clip.</item>
     /// </list>
     /// Each mount still keeps its own <see cref="ShipWeaponMountElement.FirePower"/> /
     /// <see cref="ShipWeaponMountElement.FireRate"/> / cooldown.
     /// </para>
-    /// MEGA hulls use <see cref="TryPlanMegaFire"/>: volley every ready barrel when
-    /// energy covers the <b>whole bank</b>; otherwise cycle one gun at a time.
-    /// After a drip, the next gun charges at hull regen so leftover energy cannot
-    /// empty the cycle across a few ticks or client frames.
+    /// MEGA hulls use the same clip stack; cannon lasers reserve energy in the stack
+    /// but burn via <see cref="CannonLaserCombatSystem"/> (no bullet spawn).
     /// Paired with <see cref="BulletSimulationSystem"/> (server) and
     /// <c>ClientLocalBulletVfxBridge</c> (client cosmetics).
     /// </summary>
@@ -93,6 +93,32 @@ namespace TitanOrbit.ECS
             float abilityEnergyPerShot = 0f,
             float chargeCooldown = 0f)
         {
+            var allOn = ShipWeaponArmState.AllOn;
+            return TryPlanFire(
+                currentEnergy, mounts, nextMountIndex, fallbackDamage, fallbackFireRate,
+                fireMode, shots, out shotCount, out totalEnergySpend, out nextMountIndexAfter,
+                abilityEnergyPerShot, chargeCooldown, in allOn);
+        }
+
+        /// <summary>
+        /// Same as <see cref="TryPlanFire(float,DynamicBuffer{ShipWeaponMountElement},int,float,float,ShipWeaponFireMode,MountShot[],out int,out float,out int,float,float)"/>
+        /// but skips barrels the player muted on the arsenal HUD.
+        /// </summary>
+        public static bool TryPlanFire(
+            float currentEnergy,
+            DynamicBuffer<ShipWeaponMountElement> mounts,
+            int nextMountIndex,
+            float fallbackDamage,
+            float fallbackFireRate,
+            ShipWeaponFireMode fireMode,
+            MountShot[] shots,
+            out int shotCount,
+            out float totalEnergySpend,
+            out int nextMountIndexAfter,
+            float abilityEnergyPerShot,
+            float chargeCooldown,
+            in ShipWeaponArmState arm)
+        {
             shotCount = 0;
             totalEnergySpend = 0f;
             nextMountIndexAfter = nextMountIndex;
@@ -100,95 +126,26 @@ namespace TitanOrbit.ECS
             if (mounts.Length <= 0 || shots == null || shots.Length <= 0)
                 return false;
 
-            int mountCount = mounts.Length;
-            float abilityAdd = math.max(0f, abilityEnergyPerShot);
+            // chargeCooldown is leftover from the old drip gate. The clip stack already
+            // refuses a barrel that does not have a full clip — do not block a ready one.
+            _ = chargeCooldown;
 
-            // --- Sum every barrel’s cost + check all cooldowns ready ---
-            float totalCost = 0f;
-            bool allReady = true;
-            for (int i = 0; i < mountCount; i++)
-            {
-                ResolveMountCombat(mounts[i], fallbackDamage, fallbackFireRate,
-                    out float damage, out _, out float energyCost, abilityAdd);
-                totalCost += energyCost;
-                if (mounts[i].FireCooldown > 0f)
-                    allReady = false;
-            }
-
-            // --- Mode: Always Round-Robin — skip volley entirely ---
-            // [TITAN-ORBIT] Designer forced drip-fire even when the pool could afford a full bank.
-            bool allowVolley = fireMode != ShipWeaponFireMode.AlwaysRoundRobin;
-
-            // --- Full volley (pool covers every weapon and all are off cooldown) ---
-            // [TITAN-ORBIT] Same-tick multi-fire only when energy can feed the whole bank at once.
-            // EnergyHybrid and AlwaysFireTogether both use this gate; AlwaysRoundRobin never does.
-            // A leftover drip-charge does not block this — enough energy means fire all.
-            if (allowVolley && allReady && currentEnergy >= totalCost && totalCost > 0f)
-            {
-                int capacity = math.min(mountCount, math.min(shots.Length, MaxShotsPerTick));
-                for (int i = 0; i < capacity; i++)
-                {
-                    ResolveMountCombat(mounts[i], fallbackDamage, fallbackFireRate,
-                        out float damage, out float fireRate, out float energyCost, abilityAdd);
-                    shots[shotCount++] = new MountShot
-                    {
-                        MountIndex = i,
-                        Damage = damage,
-                        EnergyCost = energyCost,
-                        CooldownSeconds = 1f / fireRate,
-                    };
-                    totalEnergySpend += energyCost;
-                }
-
-                // Next drip after the pool drains starts at mount 0.
-                nextMountIndexAfter = 0;
-                return shotCount > 0;
-            }
-
-            // --- Always Fire Together: wait for full bank — no single-barrel drip ---
-            // [TITAN-ORBIT] EnergyHybrid falls through to round-robin when volley is unaffordable.
-            if (fireMode == ShipWeaponFireMode.AlwaysFireTogether)
+            Span<int> order = stackalloc int[MaxShotsPerTick];
+            int orderCount = BuildArmedStripOrder(mounts, in arm, order, skipCannonLasers: false);
+            if (orderCount <= 0)
                 return false;
 
-            // Leftover pool must not pay the next gun on the very next tick / frame.
-            if (chargeCooldown > 0.001f)
-                return false;
-
-            // --- Energy queue — only NextMountIndex may spend / fire ---
-            // [TITAN-ORBIT] Regen fills the shared pool, but other barrels must wait their turn.
-            // That is what makes low-energy fire cycle 0→1→2→… instead of mount 0 monopolizing.
-            int mountIdx = nextMountIndex;
-            if (mountIdx < 0)
-                mountIdx = 0;
-            mountIdx %= mountCount;
-
-            ShipWeaponMountElement mount = mounts[mountIdx];
-            if (mount.FireCooldown > 0f)
-                return false;
-
-            ResolveMountCombat(mount, fallbackDamage, fallbackFireRate,
-                out float dripDamage, out float dripRate, out float dripCost, abilityAdd);
-            if (currentEnergy < dripCost)
-                return false;
-
-            shots[0] = new MountShot
-            {
-                MountIndex = mountIdx,
-                Damage = dripDamage,
-                EnergyCost = dripCost,
-                CooldownSeconds = 1f / dripRate,
-            };
-            shotCount = 1;
-            totalEnergySpend = dripCost;
-            nextMountIndexAfter = (mountIdx + 1) % mountCount;
-            return true;
+            return TryPlanClipStack(
+                currentEnergy, mounts, in arm, order, orderCount,
+                fallbackDamage, fallbackFireRate, abilityEnergyPerShot,
+                fireMode, skipCannonLaserShots: false,
+                shots, out shotCount, out totalEnergySpend, out nextMountIndexAfter);
         }
 
         /// <summary>
-        /// MEGA energy hybrid: volley every ready barrel only when the pool covers
-        /// <b>every armed gun</b> (not just the ones off cooldown). Otherwise fire
-        /// exactly the cursor gun — cheaper ready barrels do not sneak a shot.
-        /// Cannon lasers are skipped — they burn via <see cref="CannonLaserCombatSystem"/>.
+        /// MEGA clip stack: same pour as the arsenal HUD. Full projectile clips
+        /// fire; cannon lasers reserve energy in the stack and burn via
+        /// <see cref="CannonLaserCombatSystem"/>.
         /// </summary>
         public static bool TryPlanMegaFire(
             float currentEnergy,
@@ -201,6 +158,29 @@ namespace TitanOrbit.ECS
             out int nextMountIndexAfter,
             float chargeCooldown = 0f)
         {
+            var allOn = ShipWeaponArmState.AllOn;
+            return TryPlanMegaFire(
+                currentEnergy, mounts, nextMountIndex, fallbackFireRate, shots,
+                out shotCount, out totalEnergySpend, out nextMountIndexAfter,
+                chargeCooldown, in allOn);
+        }
+
+        /// <summary>
+        /// Same as <see cref="TryPlanMegaFire(float,DynamicBuffer{ShipWeaponMountElement},int,float,MountShot[],out int,out float,out int,float)"/>
+        /// but skips barrels the player muted (and still skips cannon lasers).
+        /// </summary>
+        public static bool TryPlanMegaFire(
+            float currentEnergy,
+            DynamicBuffer<ShipWeaponMountElement> mounts,
+            int nextMountIndex,
+            float fallbackFireRate,
+            MountShot[] shots,
+            out int shotCount,
+            out float totalEnergySpend,
+            out int nextMountIndexAfter,
+            float chargeCooldown,
+            in ShipWeaponArmState arm)
+        {
             shotCount = 0;
             totalEnergySpend = 0f;
             nextMountIndexAfter = nextMountIndex;
@@ -208,59 +188,154 @@ namespace TitanOrbit.ECS
             if (mounts.Length <= 0 || shots == null || shots.Length <= 0)
                 return false;
 
-            int mountCount = mounts.Length;
-            float bankCost = 0f;
-            int armedCount = 0;
-            for (int i = 0; i < mountCount; i++)
-            {
-                if (mounts[i].FirePower <= 0.01f || ShipWeaponKind.IsCannonLaser(mounts[i]))
-                    continue;
-                bankCost += mounts[i].FirePower;
-                armedCount++;
-            }
+            _ = chargeCooldown;
 
-            if (armedCount <= 0)
+            Span<int> order = stackalloc int[MaxShotsPerTick];
+            int orderCount = BuildArmedStripOrder(mounts, in arm, order, skipCannonLasers: false);
+            if (orderCount <= 0)
                 return false;
 
-            int capacity = math.min(mountCount, math.min(shots.Length, MaxShotsPerTick));
+            return TryPlanClipStack(
+                currentEnergy, mounts, in arm, order, orderCount,
+                fallbackDamage: 0f, fallbackFireRate, abilityEnergyPerShot: 0f,
+                ShipWeaponFireMode.EnergyHybrid, skipCannonLaserShots: true,
+                shots, out shotCount, out totalEnergySpend, out nextMountIndexAfter);
+        }
 
-            // --- Full bank volley — pool must pay every armed gun, not the ready subset ---
-            // [TITAN-ORBIT] Gating on ready-only cost let a low tank dump whatever
-            // happened to be off cooldown. Capacity for the whole bank is the rule.
-            if (currentEnergy >= bankCost && bankCost > 0f)
+        /// <summary>
+        /// Armed barrels in the same order the arsenal HUD paints (kind, then buffer
+        /// index). HUD and fire planning must share this walk so a bright clip is a
+        /// clip that may actually shoot.
+        /// </summary>
+        /// <param name="skipCannonLasers">True to omit hitscan cannons from the list.</param>
+        /// <returns>How many slots in <paramref name="order"/> were written.</returns>
+        public static int BuildArmedStripOrder(
+            DynamicBuffer<ShipWeaponMountElement> mounts,
+            in ShipWeaponArmState arm,
+            Span<int> order,
+            bool skipCannonLasers)
+        {
+            int written = 0;
+            if (!mounts.IsCreated || order.Length <= 0)
+                return 0;
+
+            int mountCount = mounts.Length;
+            for (byte kind = 0; kind <= ShipWeaponKind.Sniper; kind++)
             {
-                for (int i = 0; i < mountCount && shotCount < capacity; i++)
+                for (int i = 0; i < mountCount && written < order.Length; i++)
                 {
-                    ShipWeaponMountElement mount = mounts[i];
-                    if (mount.FirePower <= 0.01f || mount.FireCooldown > 0.001f
-                        || ShipWeaponKind.IsCannonLaser(mount))
+                    if (mounts[i].WeaponKind != kind)
                         continue;
-                    shots[shotCount++] = BuildMegaShot(i, mount, fallbackFireRate);
-                    totalEnergySpend += mount.FirePower;
+                    if (!ShipWeaponArmState.IsArmed(in arm, i))
+                        continue;
+                    if (skipCannonLasers && ShipWeaponKind.IsCannonLaser(mounts[i]))
+                        continue;
+                    order[written++] = i;
+                }
+            }
+
+            return written;
+        }
+
+        /// <summary>
+        /// Pours <paramref name="currentEnergy"/> onto strip-order clips. A full clip
+        /// that is off cooldown becomes a shot (unless the fire mode says otherwise).
+        /// An earlier full-but-cooling clip still reserves its cost so a later gun
+        /// cannot steal it — same stack the HUD shows.
+        /// </summary>
+        static bool TryPlanClipStack(
+            float currentEnergy,
+            DynamicBuffer<ShipWeaponMountElement> mounts,
+            in ShipWeaponArmState arm,
+            Span<int> order,
+            int orderCount,
+            float fallbackDamage,
+            float fallbackFireRate,
+            float abilityEnergyPerShot,
+            ShipWeaponFireMode fireMode,
+            bool skipCannonLaserShots,
+            MountShot[] shots,
+            out int shotCount,
+            out float totalEnergySpend,
+            out int nextMountIndexAfter)
+        {
+            shotCount = 0;
+            totalEnergySpend = 0f;
+            nextMountIndexAfter = orderCount > 0 ? order[0] : 0;
+
+            float remaining = math.max(0f, currentEnergy);
+            float abilityAdd = math.max(0f, abilityEnergyPerShot);
+            int capacity = math.min(shots.Length, MaxShotsPerTick);
+            int firstPartial = -1;
+            int fullClips = 0;
+            int readyClips = 0;
+            int considered = 0;
+
+            for (int n = 0; n < orderCount; n++)
+            {
+                int i = order[n];
+                ShipWeaponMountElement mount = mounts[i];
+                bool laser = ShipWeaponKind.IsCannonLaser(mount);
+                ResolveMountCombat(mount, fallbackDamage, fallbackFireRate,
+                    out float damage, out float fireRate, out float energyCost, abilityAdd);
+                if (skipCannonLaserShots && laser)
+                    energyCost = math.max(0.01f, mount.FirePower);
+
+                considered++;
+                if (remaining + 0.001f < energyCost)
+                {
+                    if (firstPartial < 0)
+                        firstPartial = i;
+                    break;
                 }
 
-                nextMountIndexAfter = 0;
-                return shotCount > 0;
+                remaining -= energyCost;
+                fullClips++;
+                bool cooling = mount.FireCooldown > 0.001f;
+                if (cooling)
+                    continue;
+
+                readyClips++;
+                if (skipCannonLaserShots && laser)
+                    continue;
+                if (shotCount >= capacity)
+                    continue;
+
+                shots[shotCount++] = skipCannonLaserShots
+                    ? BuildMegaShot(i, mount, fallbackFireRate)
+                    : new MountShot
+                    {
+                        MountIndex = i,
+                        Damage = damage,
+                        EnergyCost = energyCost,
+                        CooldownSeconds = 1f / fireRate,
+                    };
+                totalEnergySpend += skipCannonLaserShots ? mount.FirePower : energyCost;
             }
 
-            if (chargeCooldown > 0.001f)
-                return false;
+            nextMountIndexAfter = firstPartial >= 0
+                ? firstPartial
+                : (orderCount > 0 ? order[0] : 0);
 
-            // --- Energy queue — this barrel's turn only ---
-            if (!TryGetNextArmedMegaMount(mounts, nextMountIndex, out int mountIdx))
-                return false;
+            // --- Fire-mode gates ---
+            // Together: every armed clip must be full and ready, or nobody shoots.
+            // Round-robin: keep only the first planned shot.
+            if (fireMode == ShipWeaponFireMode.AlwaysFireTogether)
+            {
+                if (fullClips < considered || readyClips < considered || shotCount <= 0)
+                {
+                    shotCount = 0;
+                    totalEnergySpend = 0f;
+                    return false;
+                }
+            }
+            else if (fireMode == ShipWeaponFireMode.AlwaysRoundRobin && shotCount > 1)
+            {
+                totalEnergySpend = shots[0].EnergyCost;
+                shotCount = 1;
+            }
 
-            ShipWeaponMountElement drip = mounts[mountIdx];
-            if (drip.FireCooldown > 0.001f)
-                return false;
-            if (currentEnergy < drip.FirePower)
-                return false;
-
-            shots[0] = BuildMegaShot(mountIdx, drip, fallbackFireRate);
-            shotCount = 1;
-            totalEnergySpend = drip.FirePower;
-            nextMountIndexAfter = NextArmedMegaMountIndex(mounts, mountIdx + 1);
-            return true;
+            return shotCount > 0;
         }
 
         /// <summary>
@@ -291,7 +366,17 @@ namespace TitanOrbit.ECS
             DynamicBuffer<ShipWeaponMountElement> mounts,
             int startIndex)
         {
-            if (!TryGetNextArmedMegaMount(mounts, startIndex, out int mountIdx))
+            var allOn = ShipWeaponArmState.AllOn;
+            return GetNextArmedMegaShotCost(mounts, in allOn, startIndex);
+        }
+
+        /// <summary>FirePower of the next HUD-armed MEGA barrel at or after <paramref name="startIndex"/>.</summary>
+        public static float GetNextArmedMegaShotCost(
+            DynamicBuffer<ShipWeaponMountElement> mounts,
+            in ShipWeaponArmState arm,
+            int startIndex)
+        {
+            if (!TryGetNextArmedMegaMount(mounts, in arm, startIndex, out int mountIdx))
                 return 0f;
             return mounts[mountIdx].FirePower;
         }
@@ -299,6 +384,20 @@ namespace TitanOrbit.ECS
         /// <summary>Next armed MEGA mount index, wrapping. False when the hull is unarmed.</summary>
         public static bool TryGetNextArmedMegaMount(
             DynamicBuffer<ShipWeaponMountElement> mounts,
+            int startIndex,
+            out int mountIndex)
+        {
+            var allOn = ShipWeaponArmState.AllOn;
+            return TryGetNextArmedMegaMount(mounts, in allOn, startIndex, out mountIndex);
+        }
+
+        /// <summary>
+        /// Next MEGA projectile barrel that is catalog-armed and HUD-armed, wrapping.
+        /// Cannon lasers stay out of this queue — they burn in <see cref="CannonLaserCombatSystem"/>.
+        /// </summary>
+        public static bool TryGetNextArmedMegaMount(
+            DynamicBuffer<ShipWeaponMountElement> mounts,
+            in ShipWeaponArmState arm,
             int startIndex,
             out int mountIndex)
         {
@@ -315,7 +414,7 @@ namespace TitanOrbit.ECS
             for (int n = 0; n < mountCount; n++)
             {
                 int i = (start + n) % mountCount;
-                if (mounts[i].FirePower <= 0.01f || ShipWeaponKind.IsCannonLaser(mounts[i]))
+                if (!IsMegaProjectileArmed(mounts[i], in arm, i))
                     continue;
                 mountIndex = i;
                 return true;
@@ -329,9 +428,78 @@ namespace TitanOrbit.ECS
             DynamicBuffer<ShipWeaponMountElement> mounts,
             int startIndex)
         {
-            if (!TryGetNextArmedMegaMount(mounts, startIndex, out int mountIndex))
+            var allOn = ShipWeaponArmState.AllOn;
+            return NextArmedMegaMountIndex(mounts, in allOn, startIndex);
+        }
+
+        /// <summary>Wrap-around index of the next HUD-armed MEGA barrel, or 0 when none.</summary>
+        public static int NextArmedMegaMountIndex(
+            DynamicBuffer<ShipWeaponMountElement> mounts,
+            in ShipWeaponArmState arm,
+            int startIndex)
+        {
+            if (!TryGetNextArmedMegaMount(mounts, in arm, startIndex, out int mountIndex))
                 return 0;
             return mountIndex;
+        }
+
+        /// <summary>
+        /// Next regular-hull barrel the energy queue may visit (HUD-armed, wrapping).
+        /// False when every mount is muted.
+        /// </summary>
+        public static bool TryGetNextArmedRegularMount(
+            DynamicBuffer<ShipWeaponMountElement> mounts,
+            in ShipWeaponArmState arm,
+            int startIndex,
+            out int mountIndex)
+        {
+            mountIndex = 0;
+            int mountCount = mounts.Length;
+            if (mountCount <= 0)
+                return false;
+
+            int start = startIndex;
+            if (start < 0)
+                start = 0;
+            start %= mountCount;
+
+            for (int n = 0; n < mountCount; n++)
+            {
+                int i = (start + n) % mountCount;
+                if (!ShipWeaponArmState.IsArmed(in arm, i))
+                    continue;
+                mountIndex = i;
+                return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>Wrap-around index of the next HUD-armed regular barrel, or 0 when none.</summary>
+        public static int NextArmedRegularMountIndex(
+            DynamicBuffer<ShipWeaponMountElement> mounts,
+            in ShipWeaponArmState arm,
+            int startIndex)
+        {
+            if (!TryGetNextArmedRegularMount(mounts, in arm, startIndex, out int mountIndex))
+                return 0;
+            return mountIndex;
+        }
+
+        /// <summary>
+        /// MEGA projectile that may join the energy queue: catalog firePower, not a
+        /// cannon laser, and not muted on the arsenal HUD.
+        /// </summary>
+        static bool IsMegaProjectileArmed(
+            in ShipWeaponMountElement mount,
+            in ShipWeaponArmState arm,
+            int mountIndex)
+        {
+            if (!ShipWeaponArmState.IsArmed(in arm, mountIndex))
+                return false;
+            if (mount.FirePower <= 0.01f || ShipWeaponKind.IsCannonLaser(mount))
+                return false;
+            return true;
         }
 
         /// <summary>One MEGA shot — energy cost is that barrel’s firePower.</summary>

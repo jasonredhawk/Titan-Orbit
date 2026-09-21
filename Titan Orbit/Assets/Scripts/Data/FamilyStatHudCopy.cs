@@ -14,24 +14,30 @@ namespace TitanOrbit.Data
     /// Header rails use <see cref="FormatFamilyCaption"/> (uppercase).
     /// The upgrade-tree lineage matrix and the sidebar FAMILY BONUSES block
     /// both walk <see cref="CollectBonusRows"/> so every authored multiplier
-    /// can be listed, including 1× baseline fields. The same plate also lists
-    /// bullet-type damage via <see cref="CollectBankDamageRows"/>.
+    /// can be listed, including 1× baseline fields (shown as <c>1.00×</c>).
+    /// Hull and Energy are separate groups so defense and power are not mixed.
+    /// The same plate also lists bullet-type damage via <see cref="CollectBankDamageRows"/>.
     /// </para>
     /// </summary>
     public static class FamilyStatHudCopy
     {
         /// <summary>
         /// HUD grouping for one family bonus. Matches the five power-bar
-        /// categories plus a Sensors bucket for camera height (presentation only).
+        /// categories (Movement / Offense / Defense / Energy / Capacity) plus a
+        /// BANK row for planet bullet-type damage. Camera height stays in Hold —
+        /// it is presentation zoom, not a cargo stat, but it is still a lineage
+        /// identity lever and should sit with the other non-combat extras.
         /// </summary>
         public enum BonusCategory
         {
             Mobility = 0,
             Combat = 1,
             Hull = 2,
-            Hold = 3,
+            /// <summary>Energy cap / regen — split from Hull so defense and power are not one mixed strip.</summary>
+            Energy = 3,
+            Hold = 4,
             /// <summary>Planet / hull bullet-bank damage (FP + vs-target muls).</summary>
-            Ordnance = 4
+            Ordnance = 5
         }
 
         /// <summary>
@@ -86,15 +92,19 @@ namespace TitanOrbit.Data
         /// <summary>TMP hex for camera / zoom (ice blue).</summary>
         public const string HexNeutral = "7EC8FF";
 
-        /// <summary>TMP hex for a 1× baseline mid-dot.</summary>
+        /// <summary>TMP hex for a 1× baseline value.</summary>
         public const string HexMuted = "5B7A94";
+
+        /// <summary>Stock 1× copy shown on identity / near-identity cells.</summary>
+        public const string NeutralBaseText = "1.00×";
 
         /// <summary>Ordered category captions for the lineage matrix.</summary>
         public static readonly string[] CategoryCaptions =
         {
-            "MOBILITY",
+            "MOVE",
             "COMBAT",
             "HULL",
+            "ENERGY",
             "HOLD",
             "BANK"
         };
@@ -230,7 +240,7 @@ namespace TitanOrbit.Data
         /// <param name="bonuses">Family multipliers from the definition asset.</param>
         /// <param name="dest">Caller-owned list. Cleared then filled.</param>
         /// <param name="includeIdentity">
-        /// When true, 1× baseline fields stay in the list so the matrix can show every slot.
+        /// When true, 1× baseline fields stay in the list as <c>1.00×</c> stock bases.
         /// When false, only ≠1 trade-offs remain (sidebar compact list).
         /// </param>
         public static void CollectBonusRows(
@@ -268,14 +278,18 @@ namespace TitanOrbit.Data
             TryAdd(dest, "RAM", "RAMMING", bonuses.rammingMul, BonusCategory.Combat,
                 lowerIsBetter: false, isNeutral: false, includeIdentity);
 
-            // --- Hull (defense + energy) ---
+            // --- Hull (defense only) ---
+            // Energy used to share this strip; it is its own power-bar category
+            // so the matrix keeps HP / regen next to each other, not mixed with EN.
             TryAdd(dest, "HP", "HEALTH CAP", bonuses.healthCapMul, BonusCategory.Hull,
                 lowerIsBetter: false, isNeutral: false, includeIdentity);
             TryAdd(dest, "H.REG", "HEALTH REGEN", bonuses.healthRegenMul, BonusCategory.Hull,
                 lowerIsBetter: false, isNeutral: false, includeIdentity);
-            TryAdd(dest, "EN", "ENERGY CAP", bonuses.energyCapMul, BonusCategory.Hull,
+
+            // --- Energy ---
+            TryAdd(dest, "EN", "ENERGY CAP", bonuses.energyCapMul, BonusCategory.Energy,
                 lowerIsBetter: false, isNeutral: false, includeIdentity);
-            TryAdd(dest, "E.REG", "ENERGY REGEN", bonuses.energyRegenMul, BonusCategory.Hull,
+            TryAdd(dest, "E.REG", "ENERGY REGEN", bonuses.energyRegenMul, BonusCategory.Energy,
                 lowerIsBetter: false, isNeutral: false, includeIdentity);
 
             // --- Hold (cargo + tractor + camera zoom) ---
@@ -302,7 +316,7 @@ namespace TitanOrbit.Data
         /// <param name="profile">Resolved bank profile. Null skips the row.</param>
         /// <param name="extras">Fire Power Extra Levels (hull level only in the store).</param>
         /// <param name="dest">Caller-owned list. Appended — not cleared.</param>
-        /// <param name="includeIdentity">When true, 1× targets stay as baseline dots.</param>
+        /// <param name="includeIdentity">When true, 1× targets stay as <c>1.00×</c> stock bases.</param>
         public static void CollectBankDamageRows(
             BulletBankProfile profile,
             int extras,
@@ -366,7 +380,7 @@ namespace TitanOrbit.Data
             return sb.ToString();
         }
 
-        /// <summary>Caption for a matrix category row (MOBILITY, COMBAT, …).</summary>
+        /// <summary>Caption for a matrix category group (MOVE, COMBAT, HULL, ENERGY, HOLD, BANK).</summary>
         public static string GetCategoryCaption(BonusCategory category)
         {
             int i = (int)category;
@@ -376,13 +390,15 @@ namespace TitanOrbit.Data
         }
 
         /// <summary>
-        /// Player-facing value for one cell. Baseline is a mid-dot so the matrix
-        /// stays readable; live bonuses use a signed percent.
+        /// Player-facing value for one cell.
+        /// Neutral 1× fields show the stock base (<c>1.00×</c>) so the board is
+        /// a full lineage card, not only the live trade-offs. Active fields use
+        /// a signed percent (<c>+12%</c> / <c>−25%</c>).
         /// </summary>
         public static string FormatSignedPercent(in BonusRow row)
         {
             if (row.IsIdentity)
-                return "·";
+                return NeutralBaseText;
 
             float abs = Mathf.Abs(row.SignedPercent);
             string body = abs.ToString("0.#", CultureInfo.InvariantCulture);
@@ -390,7 +406,7 @@ namespace TitanOrbit.Data
                 return "+" + body + "%";
             if (row.SignedPercent < -0.05f)
                 return "−" + body + "%";
-            return "·";
+            return NeutralBaseText;
         }
 
         /// <summary>TMP hex for a cell value (boost / penalty / zoom / baseline).</summary>

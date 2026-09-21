@@ -10,7 +10,7 @@ namespace TitanOrbit.Game
 {
     /// <summary>
     /// World-space label floating above a planet body. Reads as cockpit telemetry, not a
-    /// spreadsheet: Rajdhani place name, optional HOME PLANET stamp, <c>HULL</c> / <c>GUN</c>
+    /// spreadsheet: Rajdhani place name, optional HOME PLANET stamp, <c>FLEET</c> / <c>GUN</c>
     /// rails, then a labeled people stack — <c>CREW</c> (live count), <c>CAP</c> (hold limit),
     /// and <c>+N LINK</c> when connection triangles add extra beds.
     /// Optional capture-contributor name sits between identity and the people stack.
@@ -68,10 +68,10 @@ namespace TitanOrbit.Game
         /// <summary>HOME PLANET stamp — smaller than the name, heavier tracking.</summary>
         const float HomeRoleFontSize = 13.5f;
 
-        /// <summary>HULL line under the name / stamp.</summary>
+        /// <summary>FLEET line under the name / stamp.</summary>
         const float FamilyNameFontSize = 13f;
 
-        /// <summary>GUN line under HULL — one step quieter.</summary>
+        /// <summary>GUN line under FLEET — one step quieter.</summary>
         const float BulletTypeFontSize = 12f;
 
         /// <summary>Player name on the capture credit — smaller than the world-name title.</summary>
@@ -119,10 +119,10 @@ namespace TitanOrbit.Game
         /// <summary>Slight tracking on HOME PLANET so the stamp reads as a banner, not a caption.</summary>
         const float HomeRoleCharacterSpacing = 3.4f;
 
-        /// <summary>HULL value alpha vs full team color.</summary>
+        /// <summary>FLEET value alpha vs full team color.</summary>
         const float FamilyNameAlpha = 0.92f;
 
-        /// <summary>GUN value alpha — quieter than HULL.</summary>
+        /// <summary>GUN value alpha — quieter than FLEET.</summary>
         const float BulletTypeAlpha = 0.78f;
 
         /// <summary>Capacity-line alpha vs full team color (current stays opaque).</summary>
@@ -492,7 +492,7 @@ namespace TitanOrbit.Game
             return CreateLabelText(parent, name, fontSize, WorldBodyLabelTheme.DisplayFont, richText: false);
         }
 
-        /// <summary>HULL / GUN / CAP lines — Rajdhani SemiBold with rich-text caption prefixes.</summary>
+        /// <summary>FLEET / GUN / CAP lines — Rajdhani SemiBold with rich-text caption prefixes.</summary>
         static TextMeshPro CreateTelemetryText(Transform parent, string name, float fontSize)
         {
             return CreateLabelText(parent, name, fontSize, WorldBodyLabelTheme.TelemetryFont, richText: true);
@@ -1135,10 +1135,10 @@ namespace TitanOrbit.Game
             _homeRoleText.text = showHomeRole ? WorldBodyLabelTheme.FormatHomeStamp() : string.Empty;
             _homeRoleText.color = teamColor;
 
-            // Every world: HULL rail + family, then GUN rail + default bank.
+            // Every world: FLEET rail + family, then GUN rail + default bank.
             _familyText.gameObject.SetActive(hasFamily);
             _familyText.richText = true;
-            _familyText.text = hasFamily ? WorldBodyLabelTheme.FormatHullLine(familyName) : string.Empty;
+            _familyText.text = hasFamily ? WorldBodyLabelTheme.FormatFleetLine(familyName) : string.Empty;
             _familyText.color = WithAlpha(teamColor, FamilyNameAlpha);
 
             _bulletTypeText.gameObject.SetActive(hasBulletType);

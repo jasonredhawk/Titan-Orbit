@@ -745,7 +745,8 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// Updates the upgrade-tree subtitle under the title. Debug mode explains that every node is free.
+        /// Paints family + bullet type on the identity rail and keeps the old
+        /// path-legend / debug subtitle hidden so it cannot sit under those labels.
         /// </summary>
         void UpdateShipTreeHintText()
         {
@@ -753,21 +754,15 @@ namespace TitanOrbit.UI
                 return;
 
             _shipTree.EnsurePanelHeader();
-            if (_shipTree.Title != null)
-                _shipTree.Title.text = ShipUpgradeTreeUI.PanelTitleText;
+            _shipTree.HidePanelTitle();
             _shipTree.ApplyFamilyIdentity(
                 ResolveUpgradeTreeFamily(),
                 ShipLevel,
                 EcsGameBridge.ResolvePlanetFamilyBulletBankIndex(_storePlanetId));
 
-            if (_shipTree.Hint == null)
-                return;
-
-            // [TITAN-ORBIT] Debug still unlocks family hulls, but unique MEGAs stay claimed.
-            if (IsDebugFreeShipUpgradeTree())
-                _shipTree.Hint.text = "Debug: click any ship for free. Claimed Titans stay with their owner.";
-            else
-                _shipTree.Hint.text = ShipUpgradeTreeUI.PanelDefaultSubtitle;
+            // Identity rail (family + bullet type) owns the top-left. Do not
+            // put the path-legend / debug subtitle back underneath it.
+            _shipTree.HideHint();
         }
 
         /// <summary>

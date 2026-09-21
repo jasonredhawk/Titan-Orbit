@@ -85,6 +85,12 @@ namespace TitanOrbit.Game
         /// <summary>Cached reference to scene input — resolved in Start.</summary>
         PlayerInputHandler _input;
 
+        /// <summary>
+        /// Live overlay instance. The arsenal HUD reads predicted energy / queue
+        /// from here so the fill bar matches local tracers, not lagged ghost energy.
+        /// </summary>
+        static ClientLocalBulletVfxBridge _instance;
+
         /// <summary>[UNITY] Auto-install when session manager exists in scene.</summary>
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         static void EnsureInstalled()
@@ -102,8 +108,15 @@ namespace TitanOrbit.Game
             _input = FindAnyObjectByType<PlayerInputHandler>();
         }
 
+        void OnEnable()
+        {
+            _instance = this;
+        }
+
         void OnDisable()
         {
+            if (_instance == this)
+                _instance = null;
             _energyPrimed = false;
             _predictedEnergy = 0f;
             _lastGhostEnergy = 0f;
@@ -111,6 +124,31 @@ namespace TitanOrbit.Game
             _nextMountIndex = 0;
             _energyChargeCooldown = 0f;
             _lastFireBankIndex = int.MinValue;
+        }
+
+        /// <summary>
+        /// Predicted energy-queue the arsenal HUD should paint. False when this
+        /// bridge has not synced a local ship yet — HUD then uses ghost energy.
+        /// </summary>
+        /// <param name="nextMountIndex">Barrel that may spend next (round-robin cursor).</param>
+        /// <param name="predictedEnergy">Local pool after anticipation spends.</param>
+        /// <param name="chargeCooldown">Seconds the next drip barrel is still charging.</param>
+        /// <returns>True when the values are live for this frame.</returns>
+        public static bool TryGetLocalEnergyQueue(
+            out int nextMountIndex,
+            out float predictedEnergy,
+            out float chargeCooldown)
+        {
+            nextMountIndex = 0;
+            predictedEnergy = 0f;
+            chargeCooldown = 0f;
+            if (_instance == null || !_instance._energyPrimed)
+                return false;
+
+            nextMountIndex = _instance._nextMountIndex;
+            predictedEnergy = _instance._predictedEnergy;
+            chargeCooldown = _instance._energyChargeCooldown;
+            return true;
         }
 
         /// <summary>
@@ -236,6 +274,7 @@ namespace TitanOrbit.Game
             var gunners = isMega && world.EntityManager.HasBuffer<MegaShipGunnerSlotElement>(shipEntity)
                 ? world.EntityManager.GetBuffer<MegaShipGunnerSlotElement>(shipEntity)
                 : default;
+            var arm = ShipWeaponArmState.Resolve(world.EntityManager, shipEntity);
             if (isMega)
             {
                 ShipWeaponKind.RestoreMountKindsFromGhostedSlots(mounts, gunners);
@@ -248,7 +287,8 @@ namespace TitanOrbit.Game
                         out shotCount,
                         out energySpend,
                         out nextMountIndexAfter,
-                        _energyChargeCooldown))
+                        _energyChargeCooldown,
+                        in arm))
                     return;
             }
             else if (!ShipWeaponFireLogic.TryPlanFire(
@@ -263,7 +303,8 @@ namespace TitanOrbit.Game
                     out energySpend,
                     out nextMountIndexAfter,
                     abilityEnergy,
-                    _energyChargeCooldown))
+                    _energyChargeCooldown,
+                    in arm))
             {
                 return;
             }
@@ -406,12 +447,14 @@ namespace TitanOrbit.Game
                         regen = world.EntityManager.GetComponentData<ShipVitalsConfig>(shipEntity)
                             .EnergyRegenPerSecond;
                     float nextCost = isMega
-                        ? ShipWeaponFireLogic.GetNextArmedMegaShotCost(mounts, _nextMountIndex)
-                        : ShipWeaponFireLogic.GetMountEnergyCost(
-                            mounts[_nextMountIndex],
-                            weaponCfg.BulletDamage,
-                            weaponCfg.FireRate,
-                            abilityEnergy);
+                        ? ShipWeaponFireLogic.GetNextArmedMegaShotCost(mounts, in arm, _nextMountIndex)
+                        : (_nextMountIndex >= 0 && _nextMountIndex < mounts.Length
+                            ? ShipWeaponFireLogic.GetMountEnergyCost(
+                                mounts[_nextMountIndex],
+                                weaponCfg.BulletDamage,
+                                weaponCfg.FireRate,
+                                abilityEnergy)
+                            : 0f);
                     _energyChargeCooldown = ShipWeaponFireLogic.ComputeEnergyChargeSeconds(
                         nextCost, regen);
                 }

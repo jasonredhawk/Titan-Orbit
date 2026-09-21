@@ -10,11 +10,11 @@ namespace TitanOrbit.UI
 {
     /// <summary>
     /// Left-column CTRL keycap for space brakes. Shows ON / OFF and toggles the same
-    /// flag as Left Ctrl. Sits under <see cref="BulletTypeHUD"/> (or the rocket column
-    /// when no fire types are showing) so the left HUDs do not overlap.
+    /// flag as Left Ctrl. Sits under <see cref="ShipWeaponArmHUD"/> (or fire types /
+    /// rockets when that strip is hidden) so the left HUDs do not overlap.
     /// Hidden on the main menu, Join Team, and Orbit Menu. Does not query ship entities.
     /// </summary>
-    [DefaultExecutionOrder(66230)]
+    [DefaultExecutionOrder(66260)]
     public class SpaceBrakesHUD : MonoBehaviour
     {
         /// <summary>Inner tile width. Matches rocket / bullet buttons.</summary>
@@ -87,7 +87,7 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// Docks under bullets / rockets, then paints ON/OFF from
+        /// Docks under arsenal / bullets / rockets, then paints ON/OFF from
         /// <see cref="PlayerInputHandler"/>. Hides on menus and while
         /// <see cref="HUDController.LocalPlayerDeathHidesHud"/>.
         /// </summary>
@@ -119,8 +119,8 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// Parks this tile under the fire-type strip, or under rockets when that strip
-        /// is hidden, or in the mid-left slot when both are hidden.
+        /// Parks this tile under the arsenal strip, or under fire types / rockets
+        /// when that strip is hidden, or in the mid-left slot when the column is empty.
         /// </summary>
         void ApplyDock()
         {
@@ -130,9 +130,14 @@ namespace TitanOrbit.UI
             float dockBottom = 0f;
             bool stacked = false;
 
-            // Execution order 66230 runs after BulletTypeHUD (66220) and rockets (66200).
-            if (BulletTypeHUD.TryGetOverlayDockBottomY(out dockBottom, out bool bulletsVisible) &&
-                bulletsVisible)
+            // Execution order 66260 runs after ShipWeaponArmHUD (66250) and fire types (66220).
+            if (ShipWeaponArmHUD.TryGetOverlayDockBottomY(out dockBottom, out bool arsenalVisible) &&
+                arsenalVisible)
+            {
+                stacked = true;
+            }
+            else if (BulletTypeHUD.TryGetOverlayDockBottomY(out dockBottom, out bool bulletsVisible) &&
+                     bulletsVisible)
             {
                 stacked = true;
             }
