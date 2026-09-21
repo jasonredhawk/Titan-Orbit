@@ -1,3 +1,4 @@
+using TitanOrbit.Core;
 using TitanOrbit.Generation;
 using Unity.Mathematics;
 
@@ -155,10 +156,26 @@ namespace TitanOrbit.Simulation
         public const float EscortBuzzSpeed = 2.4f;
 
         /// <summary>Trail lag seconds for a +1 capsule (keeps up more tightly).</summary>
-        public const float EscortTrailLagMin = 0.07f;
+        public const float EscortTrailLagMin = 0.12f;
 
         /// <summary>Trail lag seconds for a +36 capsule (heavier, lags more on boost).</summary>
-        public const float EscortTrailLagMax = 0.18f;
+        public const float EscortTrailLagMax = 0.28f;
+
+        /// <summary>
+        /// Seconds for the escort formation heading to catch ~63% of a yaw change.
+        /// High enough that a flick-turn does not whip the pack; low enough that
+        /// they still settle behind the hull.
+        /// </summary>
+        public const float EscortHeadingLagTau = 0.38f;
+
+        /// <summary>Speed (world/s) where formation heading starts trusting travel over the nose.</summary>
+        public const float EscortHeadingVelBlendStart = 0.75f;
+
+        /// <summary>Speed where formation heading is almost fully travel-aligned.</summary>
+        public const float EscortHeadingVelBlendFull = 5.5f;
+
+        /// <summary>Max mix of travel heading vs nose once above <see cref="EscortHeadingVelBlendFull"/>.</summary>
+        public const float EscortHeadingVelWeight = 0.88f;
 
         public static float EffectiveVisualTravelSeconds =>
             TargetVisualTravelSeconds * VisualTravelDurationMultiplier / VisualTravelSpeedBonus;
@@ -171,6 +188,77 @@ namespace TitanOrbit.Simulation
             if (isLoad)
                 cruiseSpeed *= LoadMagnetSpeedMultiplier;
             return cruiseSpeed;
+        }
+
+        /// <summary>
+        /// Fixed hop duration matching <see cref="ComputeCruiseSpeed"/> (load is shorter).
+        /// Both sides lerp spawn → live target over this clock so the flight is
+        /// closed-form like drone escort — no independent magnet integration.
+        /// </summary>
+        public static float GetHopTravelSeconds(bool isLoad)
+        {
+            float travel = EffectiveVisualTravelSeconds;
+            if (isLoad)
+                travel /= LoadMagnetSpeedMultiplier;
+            return math.max(0.35f, travel);
+        }
+
+        /// <summary>
+        /// True when an unload hop should abort and fly home. Ownership is latched at
+        /// launch; a capture (or any other flip) recalls leftover capsules.
+        /// </summary>
+        public static bool ShouldRecallUnloadHop(byte ownerAtSpawn, TeamId liveOwner)
+        {
+            return ownerAtSpawn != (byte)liveOwner;
+        }
+
+        /// <summary>Toroidal shortest-path lerp on XZ. Y is forced to 0.</summary>
+        public static float3 ToroidalLerpXZ(float3 from, float3 to, float t, float mapW, float mapH)
+        {
+            from.y = 0f;
+            to.y = 0f;
+            t = math.saturate(t);
+            float3 pos = from + ToroidalMapEcs.ShortestOffsetXZ(from, to, mapW, mapH) * t;
+            pos.y = 0f;
+            if (ToroidalMapEcs.IsValidMapSize(mapW, mapH))
+                pos = ToroidalMapEcs.Wrap(pos, mapW, mapH);
+            return pos;
+        }
+
+        /// <summary>
+        /// Closed-form hop pose: smoothstep from <paramref name="spawnPos"/> to the
+        /// live <paramref name="targetPos"/> over <paramref name="travelSeconds"/>.
+        /// Server sim and client VFX must share spawn time (NetworkTime seconds).
+        /// </summary>
+        public static float3 EvaluateDeterministicHop(
+            float3 spawnPos,
+            float3 targetPos,
+            float elapsed,
+            float travelSeconds,
+            float mapW,
+            float mapH)
+        {
+            float travel = math.max(0.08f, travelSeconds);
+            float t = math.saturate(elapsed / travel);
+            float s = t * t * (3f - 2f * t);
+            return ToroidalLerpXZ(spawnPos, targetPos, s, mapW, mapH);
+        }
+
+        /// <summary>Analytic planar velocity of <see cref="EvaluateDeterministicHop"/>.</summary>
+        public static float3 EvaluateDeterministicHopVelocity(
+            float3 spawnPos,
+            float3 targetPos,
+            float elapsed,
+            float travelSeconds,
+            float mapW,
+            float mapH)
+        {
+            float travel = math.max(0.08f, travelSeconds);
+            float t = math.saturate(elapsed / travel);
+            float ds = 6f * t * (1f - t);
+            float3 offset = ToroidalMapEcs.ShortestOffsetXZ(spawnPos, targetPos, mapW, mapH);
+            offset.y = 0f;
+            return offset * (ds / travel);
         }
 
         public static float3 SteerMagnetVelocity(
@@ -472,9 +560,11 @@ namespace TitanOrbit.Simulation
             float peopleAmount,
             int shipNetworkId,
             float mapW,
-            float mapH)
+            float mapH,
+            float3 formationHeading)
         {
-            GetEscortShipBasis(shipPos, shipRot, out shipPos, out float3 forward, out float3 right);
+            GetEscortFormationBasis(
+                shipPos, shipRot, formationHeading, out shipPos, out float3 forward, out float3 right);
             seatId = math.max(0, seatId);
 
             // Golden-ratio wrap so 10 or 30 seats stay unique in the aft 180°.
@@ -497,7 +587,8 @@ namespace TitanOrbit.Simulation
 
         /// <summary>
         /// Closed-form voyage pose: aft seat + buzz + trail lag from ship velocity.
-        /// Server hit-scan and client visuals must share this — no per-orb network.
+        /// Formation yaw uses <paramref name="formationHeading"/> (ghosted lagged heading)
+        /// so a flick-turn does not whip the pack. Hits and meshes share this.
         /// </summary>
         public static float3 EvaluateEscortSwarmPose(
             float3 shipPos,
@@ -510,11 +601,14 @@ namespace TitanOrbit.Simulation
             float3 shipVelocity,
             double timeSeconds,
             float mapW,
-            float mapH)
+            float mapH,
+            float3 formationHeading)
         {
             float3 home = EvaluateEscortSlotPose(
-                shipPos, shipRot, extX, extZ, seatId, peopleAmount, shipNetworkId, mapW, mapH);
-            GetEscortShipBasis(shipPos, shipRot, out _, out float3 forward, out float3 right);
+                shipPos, shipRot, extX, extZ, seatId, peopleAmount, shipNetworkId,
+                mapW, mapH, formationHeading);
+            GetEscortFormationBasis(
+                shipPos, shipRot, formationHeading, out _, out float3 forward, out float3 right);
             float phase = EscortSlotHash01(shipNetworkId, seatId * 19 + 3) * (math.PI * 2f);
             float t = (float)timeSeconds;
             float3 buzz = right * (math.sin(t * EscortBuzzSpeed + phase) * EscortBuzzAmplitude)
@@ -617,21 +711,93 @@ namespace TitanOrbit.Simulation
             }
         }
 
-        static void GetEscortShipBasis(
+        /// <summary>
+        /// Advance the ghosted escort heading toward travel / nose. Same function on
+        /// server and predicted client so hits match meshes.
+        /// </summary>
+        public static float3 StepEscortFormationHeading(
+            float3 current,
+            quaternion shipRot,
+            float3 shipVelocity,
+            float dt)
+        {
+            float3 nose = GetEscortNose(shipRot);
+            float3 vel = shipVelocity;
+            vel.y = 0f;
+            float speed = math.length(vel);
+            float3 travel = speed > 1e-4f ? vel / speed : nose;
+            float u = math.saturate(
+                (speed - EscortHeadingVelBlendStart) /
+                math.max(0.01f, EscortHeadingVelBlendFull - EscortHeadingVelBlendStart));
+            u = u * u * (3f - 2f * u);
+            float3 target = PlanarSlerpDir(nose, travel, u * EscortHeadingVelWeight);
+
+            current.y = 0f;
+            if (math.lengthsq(current) < 0.25f)
+                return target;
+
+            float tau = math.max(0.05f, EscortHeadingLagTau);
+            float alpha = 1f - math.exp(-math.max(0f, dt) / tau);
+            return PlanarSlerpDir(current, target, alpha);
+        }
+
+        /// <summary>True when the ghosted heading is long enough to replace ship nose.</summary>
+        public static bool TryGetEscortFormationHeading(float3 formationHeading, out float3 forward)
+        {
+            formationHeading.y = 0f;
+            if (math.lengthsq(formationHeading) < 0.25f)
+            {
+                forward = default;
+                return false;
+            }
+
+            forward = math.normalize(formationHeading);
+            return true;
+        }
+
+        static float3 GetEscortNose(quaternion shipRot)
+        {
+            float3 forward = math.mul(shipRot, new float3(0f, 0f, 1f));
+            forward.y = 0f;
+            if (math.lengthsq(forward) < 1e-4f)
+                return new float3(0f, 0f, 1f);
+            return math.normalize(forward);
+        }
+
+        static float3 PlanarSlerpDir(float3 from, float3 to, float t)
+        {
+            from.y = 0f;
+            to.y = 0f;
+            float fromLenSq = math.lengthsq(from);
+            float toLenSq = math.lengthsq(to);
+            if (fromLenSq < 1e-8f)
+                return toLenSq < 1e-8f ? new float3(0f, 0f, 1f) : math.normalize(to);
+            if (toLenSq < 1e-8f)
+                return math.normalize(from);
+
+            from = math.normalize(from);
+            to = math.normalize(to);
+            t = math.saturate(t);
+            float fromYaw = math.atan2(from.x, from.z);
+            float toYaw = math.atan2(to.x, to.z);
+            float delta = math.atan2(math.sin(toYaw - fromYaw), math.cos(toYaw - fromYaw));
+            float yaw = fromYaw + delta * t;
+            return new float3(math.sin(yaw), 0f, math.cos(yaw));
+        }
+
+        static void GetEscortFormationBasis(
             float3 shipPos,
             quaternion shipRot,
+            float3 formationHeading,
             out float3 planarPos,
             out float3 forward,
             out float3 right)
         {
             planarPos = shipPos;
             planarPos.y = 0f;
-            forward = math.mul(shipRot, new float3(0f, 0f, 1f));
-            forward.y = 0f;
-            if (math.lengthsq(forward) < 1e-4f)
-                forward = new float3(0f, 0f, 1f);
-            else
-                forward = math.normalize(forward);
+            forward = TryGetEscortFormationHeading(formationHeading, out float3 lagged)
+                ? lagged
+                : GetEscortNose(shipRot);
             right = new float3(-forward.z, 0f, forward.x);
             if (math.lengthsq(right) < 1e-4f)
                 right = new float3(1f, 0f, 0f);

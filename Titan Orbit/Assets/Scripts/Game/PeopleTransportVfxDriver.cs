@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using TitanOrbit.Audio;
 using TitanOrbit.Core;
 using TitanOrbit.ECS;
+using TitanOrbit.Entities;
 using TitanOrbit.Generation;
 using TitanOrbit.NetCode;
 using TitanOrbit.Simulation;
@@ -18,9 +19,10 @@ namespace TitanOrbit.Game
     /// Server remains authoritative: non-ghost transport entities move, take bullet hits, and
     /// deliver people. This driver Instantiates cosmetic spheres from
     /// <see cref="PeopleTransportSpawnRpc"/> and end poses (Consumed / Destroyed / Returned).
-    /// Load hops magnet toward the live ship ghost while it stays eligible (orbit ring,
-    /// idle). If the ship leaves before consume, the sphere retargets to the source planet
-    /// surface — same rule as server <c>StepTransportMotion</c>. No per-tick Active pose stream.
+    /// Load / unload hops use the same closed-form pose as the server
+    /// (<c>EvaluateDeterministicHop</c>). If the ship leaves before consume, a load
+    /// rebases toward the source planet. If the dest planet is captured mid-unload,
+    /// leftover hops rebase toward the source ship. No per-tick Active pose stream.
     /// </para>
     /// <para>
     /// On <see cref="PeopleTransportPoseStatus.Consumed"/> we play the people transfer one-shot
@@ -68,10 +70,15 @@ namespace TitanOrbit.Game
             public int SourcePlanetId;
             public int TargetPlanetId;
             public int TargetShipNetworkId;
+            /// <summary>Planet owner latched at spawn (255 = unknown). Capture flips this and recalls.</summary>
+            public byte TargetOwnerAtSpawn;
             public float Amount;
             public float CruiseSpeed;
             public byte Team;
             public float RemainingLifetime;
+            public float3 HopSpawnPos;
+            public float HopSpawnTime;
+            public bool Returning;
             public int TileK;
             public int TileM;
             public bool LeavePopupShown;
@@ -301,74 +308,100 @@ namespace TitanOrbit.Game
                     continue;
                 }
 
-                // --- Magnet toward the live ship (load) or planet (return / unload) ---
-                // Same eligibility as server StepTransportMotion: leave the ring / thrust
-                // before consume → steer home. Missing eligibility data keeps the last ship
-                // chase (ghost orbit can lag a tick behind leave).
-                // Unload hops always magnet to the destination planet — they keep flying if
-                // the source ship dies.
+                // --- Closed-form hop (same function as server StepTransportMotion) ---
+                if (PlanetGemMoonOrbitClock.TryGetElapsedSeconds(out double hopNow, includeTickFraction: true))
+                    DroneSwarmSimTime.Publish(hopNow);
+                float clock = (float)DroneSwarmSimTime.ResolveOrFallback(Time.time);
+
                 float3 target = f.LogicalPos + f.Velocity;
-                bool magnetToShip = false;
-                float3 shipPos = default;
-                float shipScale = 1f;
-                if (f.IsLoad != 0 && f.TargetShipNetworkId > 0 &&
+                if (f.IsLoad == 0 && f.TargetPlanetId != 0 && f.TargetOwnerAtSpawn == 255 &&
+                    EcsGameBridge.TryGetPlanetPoseByPlanetId(
+                        f.TargetPlanetId, out _, out _, out var latchPlanet))
+                    f.TargetOwnerAtSpawn = (byte)latchPlanet.Ownership;
+
+                bool recallUnload = f.IsLoad == 0 &&
+                    (f.Returning ||
+                     f.TargetPlanetId == 0 ||
+                     (f.TargetPlanetId != 0 &&
+                      f.TargetOwnerAtSpawn != 255 &&
+                      EcsGameBridge.TryGetPlanetPoseByPlanetId(
+                          f.TargetPlanetId, out _, out _, out var livePlanet) &&
+                      PeopleTransportMath.ShouldRecallUnloadHop(
+                          f.TargetOwnerAtSpawn, livePlanet.Ownership)));
+
+                bool flyToShip = false;
+                if (f.TargetShipNetworkId > 0 &&
                     EcsGameBridge.TryGetShipSimTransformByNetworkId(
                         f.TargetShipNetworkId, out var liveShipXf))
                 {
-                    bool shipEligible = true;
-                    if (EcsGameBridge.TryIsShipEligibleForPeopleLoad(
-                            f.TargetShipNetworkId, f.SourcePlanetId, out bool eligible))
+                    bool shipEligible = f.IsLoad == 0;
+                    if (f.IsLoad != 0)
                     {
-                        shipEligible = eligible;
+                        shipEligible = true;
+                        if (EcsGameBridge.TryIsShipEligibleForPeopleLoad(
+                                f.TargetShipNetworkId, f.SourcePlanetId, out bool eligible))
+                            shipEligible = eligible;
+                    }
+                    else
+                    {
+                        shipEligible = recallUnload;
                     }
 
                     if (shipEligible)
                     {
-                        magnetToShip = true;
-                        shipPos = liveShipXf.Position;
-                        shipScale = liveShipXf.Scale;
+                        flyToShip = true;
+                        target = liveShipXf.Position;
+                        target.y = 0f;
                     }
                 }
 
-                if (magnetToShip)
+                if (flyToShip)
                 {
-                    float hull = PeopleTransportMath.GetShipHullRadius(shipScale);
-                    target = PeopleTransportMath.GetShipMagnetTarget(
-                        shipPos, hull, f.LogicalPos, mapW, mapH);
+                    if (f.IsLoad == 0 && !f.Returning)
+                    {
+                        f.Returning = true;
+                        f.HopSpawnPos = f.LogicalPos;
+                        f.HopSpawnTime = clock;
+                    }
                 }
-                else if (f.IsLoad != 0 && f.SourcePlanetId != 0 &&
-                         EcsGameBridge.TryGetPlanetPoseByPlanetId(
-                             f.SourcePlanetId, out float3 planetPos, out float planetScale, out _))
+                else
                 {
-                    target = PeopleTransportMath.GetPlanetSurfaceToward(
-                        planetPos, math.max(0.5f, planetScale), f.LogicalPos, mapW, mapH);
-                }
-                else if (f.TargetPlanetId != 0 &&
-                         EcsGameBridge.TryGetPlanetPoseByPlanetId(
-                             f.TargetPlanetId, out float3 destPos, out float destScale, out _))
-                {
-                    target = PeopleTransportMath.GetPlanetSurfaceToward(
-                        destPos, math.max(0.5f, destScale), f.LogicalPos, mapW, mapH);
-                }
-                else if (f.SourcePlanetId != 0 &&
-                         EcsGameBridge.TryGetPlanetPoseByPlanetId(
-                             f.SourcePlanetId, out float3 fallbackPos, out float fallbackScale, out _))
-                {
-                    target = PeopleTransportMath.GetPlanetSurfaceToward(
-                        fallbackPos, math.max(0.5f, fallbackScale), f.LogicalPos, mapW, mapH);
+                    if (f.IsLoad != 0 && !f.Returning)
+                    {
+                        f.Returning = true;
+                        f.HopSpawnPos = f.LogicalPos;
+                        f.HopSpawnTime = clock;
+                    }
+
+                    if (f.IsLoad != 0 && f.SourcePlanetId != 0 &&
+                        EcsGameBridge.TryGetPlanetPoseByPlanetId(
+                            f.SourcePlanetId, out float3 planetPos, out float planetScale, out _))
+                    {
+                        target = PeopleTransportMath.GetPlanetSurfaceToward(
+                            planetPos, math.max(0.5f, planetScale), f.LogicalPos, mapW, mapH);
+                    }
+                    else if (f.TargetPlanetId != 0 &&
+                             EcsGameBridge.TryGetPlanetPoseByPlanetId(
+                                 f.TargetPlanetId, out float3 destPos, out float destScale, out _))
+                    {
+                        target = PeopleTransportMath.GetPlanetSurfaceToward(
+                            destPos, math.max(0.5f, destScale), f.LogicalPos, mapW, mapH);
+                    }
+                    else if (f.SourcePlanetId != 0 &&
+                             EcsGameBridge.TryGetPlanetPoseByPlanetId(
+                                 f.SourcePlanetId, out float3 fallbackPos, out float fallbackScale, out _))
+                    {
+                        target = PeopleTransportMath.GetPlanetSurfaceToward(
+                            fallbackPos, math.max(0.5f, fallbackScale), f.LogicalPos, mapW, mapH);
+                    }
                 }
 
-                float cruise = f.CruiseSpeed > 0.08f
-                    ? f.CruiseSpeed
-                    : PeopleTransportMath.ComputeCruiseSpeed(
-                        f.LogicalPos, target, f.IsLoad != 0, mapW, mapH);
-                f.CruiseSpeed = cruise;
-                f.Velocity = PeopleTransportMath.SteerMagnetVelocity(
-                    f.LogicalPos, target, f.Velocity, dt, cruise, mapW, mapH);
-                f.LogicalPos += f.Velocity * dt;
-                f.LogicalPos.y = 0f;
-                if (ToroidalMapEcs.IsValidMapSize(mapW, mapH))
-                    f.LogicalPos = ToroidalMapEcs.Wrap(f.LogicalPos, mapW, mapH);
+                float travel = PeopleTransportMath.GetHopTravelSeconds(f.IsLoad != 0 && !f.Returning);
+                float elapsed = clock - f.HopSpawnTime;
+                f.LogicalPos = PeopleTransportMath.EvaluateDeterministicHop(
+                    f.HopSpawnPos, target, elapsed, travel, mapW, mapH);
+                f.Velocity = PeopleTransportMath.EvaluateDeterministicHopVelocity(
+                    f.HopSpawnPos, target, elapsed, travel, mapW, mapH);
 
                 // --- Display unwrap (cosmetic only) ---
                 int k = f.TileK;
@@ -481,10 +514,13 @@ namespace TitanOrbit.Game
                 // Leftover load spheres that fly home must +N the planet, never the ship.
                 // Returned is authoritative; consume-at-planet covers older Consumed refunds.
                 bool loadReturnedToPlanet =
-                    pose.Status == PeopleTransportPoseStatus.Returned ||
-                    f.ReturnPopupShown ||
-                    IsLoadConsumeAtSourcePlanet(in f, pose.Position) ||
-                    IsLoadReturningToPlanet(in f);
+                    f.IsLoad != 0 &&
+                    (pose.Status == PeopleTransportPoseStatus.Returned ||
+                     f.ReturnPopupShown ||
+                     IsLoadConsumeAtSourcePlanet(in f, pose.Position) ||
+                     IsLoadReturningToPlanet(in f));
+                if (pose.Status == PeopleTransportPoseStatus.Returned && f.IsLoad == 0)
+                    f.Returning = true;
 
                 if (f.Go != null && !f.ReturnPopupShown)
                 {
@@ -559,6 +595,12 @@ namespace TitanOrbit.Game
                     go.transform.position = displayPos;
                 }
 
+                byte ownerAtSpawn = 255;
+                if (req.IsLoad == 0 && req.TargetPlanetId != 0 &&
+                    EcsGameBridge.TryGetPlanetPoseByPlanetId(
+                        req.TargetPlanetId, out _, out _, out var spawnPlanet))
+                    ownerAtSpawn = (byte)spawnPlanet.Ownership;
+
                 var flight = new Flight
                 {
                     Go = go,
@@ -569,10 +611,14 @@ namespace TitanOrbit.Game
                     SourcePlanetId = req.SourcePlanetId,
                     TargetPlanetId = req.TargetPlanetId,
                     TargetShipNetworkId = req.TargetShipNetworkId,
+                    TargetOwnerAtSpawn = ownerAtSpawn,
                     Amount = math.max(1f, req.Amount),
                     CruiseSpeed = req.CruiseSpeed,
                     Team = req.Team,
                     RemainingLifetime = MaxLifetimeSeconds,
+                    HopSpawnPos = spawn,
+                    HopSpawnTime = math.abs(req.Velocity.y) > 0.001f ? req.Velocity.y : (float)DroneSwarmSimTime.ResolveOrFallback(Time.time),
+                    Returning = req.IsLoad == 0 && req.TargetPlanetId == 0,
                     TileK = int.MinValue,
                     TileM = int.MinValue,
                     LeavePopupShown = false,
@@ -711,7 +757,7 @@ namespace TitanOrbit.Game
             Vector3 hint = flight.Go != null
                 ? flight.Go.transform.position
                 : new Vector3(flight.LogicalPos.x, LiftY, flight.LogicalPos.z);
-            if (flight.IsLoad != 0)
+            if (flight.IsLoad != 0 || flight.Returning)
                 ShowShipPeoplePopup(flight.Amount, (TeamId)flight.Team, in flight);
             else
                 ShowPlanetPeoplePopup(flight.Amount, (TeamId)flight.Team, in flight, hint);
@@ -778,7 +824,8 @@ namespace TitanOrbit.Game
             if (audio == null)
                 return;
 
-            if (returnedToPlanet || flight.IsLoad == 0)
+            bool landedOnPlanet = returnedToPlanet || (flight.IsLoad == 0 && !flight.Returning);
+            if (landedOnPlanet)
                 audio.PlayPeopleUnloadSound(flight.Amount);
             else
                 audio.PlayPeopleLoadSound(flight.Amount);

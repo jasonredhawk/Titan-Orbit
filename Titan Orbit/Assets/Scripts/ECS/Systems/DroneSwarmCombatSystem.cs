@@ -202,8 +202,11 @@ namespace TitanOrbit.ECS
                 var shipState = EntityManager.GetComponentData<ShipState>(entity);
                 if (shipState.IsDead || shipState.AwaitingTeamSelection)
                     continue;
-                // [TITAN-ORBIT] Hull stowed in a defense pad — drones are out of play with the ship.
+                // [TITAN-ORBIT] Hull stowed in a defense pad or fully moon-docked — drones are
+                // out of play with the ship (client hides the swarm in the same states).
                 if (PlanetaryDefenseTurretControlLogic.IsControllingTurret(EntityManager, entity))
+                    continue;
+                if (ShipMoonDockState.IsFullyLandedOnMoon(EntityManager, entity))
                     continue;
                 if (!EntityManager.HasBuffer<EquippedEquipmentElement>(entity))
                     continue;

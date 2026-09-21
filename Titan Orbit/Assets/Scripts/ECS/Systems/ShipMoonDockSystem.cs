@@ -270,7 +270,9 @@ namespace TitanOrbit.ECS
                         Linear = dockedMoonOrbitalVelocity,
                         Angular = float3.zero,
                     };
-                    shipKinematics.ValueRW = new ShipKinematics { Velocity = dockedMoonOrbitalVelocity };
+                    var kin = shipKinematics.ValueRO;
+                    kin.Velocity = dockedMoonOrbitalVelocity;
+                    shipKinematics.ValueRW = kin;
                 }
 
                 moonDock.ValueRW = new ShipMoonDockState

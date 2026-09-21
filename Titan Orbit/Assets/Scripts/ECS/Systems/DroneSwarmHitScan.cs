@@ -99,8 +99,11 @@ namespace TitanOrbit.ECS
                 var shipState = em.GetComponentData<ShipState>(ship);
                 if (shipState.IsDead || shipState.AwaitingTeamSelection)
                     continue;
-                // [TITAN-ORBIT] No shield spheres while the owner is piloting a defense pad.
+                // [TITAN-ORBIT] No drone spheres while the owner is piloting a defense pad
+                // or fully landed on a gem moon (meshes are hidden; hitboxes must match).
                 if (PlanetaryDefenseTurretControlLogic.IsControllingTurret(em, ship))
+                    continue;
+                if (ShipMoonDockState.IsFullyLandedOnMoon(em, ship))
                     continue;
 
                 var buf = em.GetBuffer<EquippedEquipmentElement>(ship);

@@ -175,6 +175,7 @@ namespace TitanOrbit.ECS
                 ref territoryLatch,
                 ref transform,
                 spawnPos);
+            PeopleTransportEscortLogic.ClearAll(em, ship);
 
             em.SetComponentData(ship, shipState);
             if (em.HasComponent<ShipKinematics>(ship))
@@ -278,6 +279,7 @@ namespace TitanOrbit.ECS
             ship.IsEliminated = false;
             ship.OverdriveLockout = false;
             kinematics.Velocity = float3.zero;
+            kinematics.FormationHeading = float3.zero;
             orbit.OrbitPlanetId = 0;
             orbit.InOrbitRing = false;
             orbit.UsingOrbitMotor = false;

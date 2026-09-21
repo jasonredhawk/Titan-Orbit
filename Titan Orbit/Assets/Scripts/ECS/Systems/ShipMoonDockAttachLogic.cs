@@ -80,10 +80,9 @@ namespace TitanOrbit.ECS
                 em.SetComponentData(shipEntity, physicsVelocity);
             if (em.HasComponent<ShipKinematics>(shipEntity))
             {
-                em.SetComponentData(shipEntity, new ShipKinematics
-                {
-                    Velocity = physicsVelocity.Linear,
-                });
+                var kin = em.GetComponentData<ShipKinematics>(shipEntity);
+                kin.Velocity = physicsVelocity.Linear;
+                em.SetComponentData(shipEntity, kin);
             }
 
             return true;

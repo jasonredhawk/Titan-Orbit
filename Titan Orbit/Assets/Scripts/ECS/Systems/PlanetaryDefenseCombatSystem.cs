@@ -343,26 +343,41 @@ namespace TitanOrbit.ECS
                     continue;
 
                 bool moonStowed = ShipMoonDockState.IsFullyLandedOnMoon(EntityManager, e);
-                if (!moonStowed)
+                if (moonStowed)
+                    continue;
+
+                var shipXf = EntityManager.GetComponentData<LocalTransform>(e);
+                float3 pos = MegaShipCombatAim.GetAimPoint(EntityManager, e, shipXf);
+                pos.y = PlanetaryDefenseMath.FixedY;
+
+                float3 fromMuzzle = ToroidalMapEcs.ShortestOffsetXZ(muzzle, pos, mapW, mapH);
+                float muzzleDistSq = math.lengthsq(new float3(fromMuzzle.x, 0f, fromMuzzle.z));
+                if (muzzleDistSq <= engageRangeSq && muzzleDistSq < bestMuzzleDistSq)
                 {
-                    var shipXf = EntityManager.GetComponentData<LocalTransform>(e);
-                    float3 pos = MegaShipCombatAim.GetAimPoint(EntityManager, e, shipXf);
-                    pos.y = PlanetaryDefenseMath.FixedY;
-
-                    float3 fromMuzzle = ToroidalMapEcs.ShortestOffsetXZ(muzzle, pos, mapW, mapH);
-                    float muzzleDistSq = math.lengthsq(new float3(fromMuzzle.x, 0f, fromMuzzle.z));
-                    if (muzzleDistSq <= engageRangeSq && muzzleDistSq < bestMuzzleDistSq)
+                    bestMuzzleDistSq = muzzleDistSq;
+                    targetPos = pos;
+                    targetVel = float3.zero;
+                    if (EntityManager.HasComponent<ShipKinematics>(e))
                     {
-                        bestMuzzleDistSq = muzzleDistSq;
-                        targetPos = pos;
-                        targetVel = float3.zero;
-                        if (EntityManager.HasComponent<ShipKinematics>(e))
-                        {
-                            float3 vel = EntityManager.GetComponentData<ShipKinematics>(e).Velocity;
-                            vel.y = 0f;
-                            targetVel = vel;
-                        }
+                        float3 vel = EntityManager.GetComponentData<ShipKinematics>(e).Velocity;
+                        vel.y = 0f;
+                        targetVel = vel;
+                    }
 
+                    found = true;
+                }
+
+                if (PeopleTransportEscortHitScan.TryFindNearestEscortOnShip(
+                        EntityManager, e, muzzle, bestMuzzleDistSq, mapW, mapH, timeSeconds,
+                        out float3 escortPos, out float3 escortVel))
+                {
+                    float3 fromMuzzleEscort = ToroidalMapEcs.ShortestOffsetXZ(muzzle, escortPos, mapW, mapH);
+                    float escortDistSq = math.lengthsq(new float3(fromMuzzleEscort.x, 0f, fromMuzzleEscort.z));
+                    if (escortDistSq <= engageRangeSq && escortDistSq < bestMuzzleDistSq)
+                    {
+                        bestMuzzleDistSq = escortDistSq;
+                        targetPos = escortPos;
+                        targetVel = escortVel;
                         found = true;
                     }
                 }

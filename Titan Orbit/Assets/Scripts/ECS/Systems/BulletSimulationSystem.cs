@@ -1242,6 +1242,20 @@ namespace TitanOrbit.ECS
                                 ConsiderHashedShip(
                                     em, in b, from, to, mapW, mapH, healFriendly, entry.Entity,
                                     ref bestT, ref bestHit, ref bestKind, ref bestEntity);
+                            if (wantTransport &&
+                                PeopleTransportEscortHitScan.TryKeepNearestEscortHitOnShip(
+                                    em, entry.Entity, in b, from, to, mapW, mapH, moonElapsed,
+                                    ref bestT, ref bestHit, out byte escortSeat, out float escortHp))
+                            {
+                                bestKind = BulletHitKind.Transport;
+                                bestEntity = entry.Entity;
+                                s_TroopShipNetworkId = em.HasComponent<GhostOwner>(entry.Entity)
+                                    ? em.GetComponentData<GhostOwner>(entry.Entity).NetworkId
+                                    : 0;
+                                s_TroopSeatId = escortSeat;
+                                s_TroopHealthAfter = escortHp;
+                                s_TroopSequence = 0;
+                            }
                             break;
                         case BulletObstacleKind.Asteroid:
                             if (wantAsteroid)
@@ -1556,6 +1570,13 @@ namespace TitanOrbit.ECS
                             s_TroopHealthAfter = t.Health;
                             state.EntityManager.SetComponentData(bestEntity, t);
                         }
+                    }
+                    else if (s_TroopShipNetworkId > 0)
+                    {
+                        float after = PeopleTransportEscortLogic.ApplyDamage(
+                            state.EntityManager, bestEntity, s_TroopSeatId, hitDamage);
+                        s_TroopHealthAfter = after;
+                        s_TroopSequence = 0;
                     }
 
                     TrySpawnWell(ref state, hitPoint, profile, serverElapsed, mapW, mapH, in b, ecb, gemPrefab, hitDamage, bestEntity);

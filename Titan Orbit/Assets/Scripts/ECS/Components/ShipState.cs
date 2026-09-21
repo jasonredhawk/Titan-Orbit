@@ -411,6 +411,13 @@ namespace TitanOrbit.ECS
         /// <summary>[ECS/DOTS] Linear velocity; quantized for network bandwidth.</summary>
         [GhostField(Quantization = 1000)]
         public float3 Velocity;
+
+        /// <summary>
+        /// Planar escort-formation heading (unit XZ, y unused). Ghosted so parked troop
+        /// orbs lag ship yaw the same on every peer. Zero = use the ship's nose this tick.
+        /// </summary>
+        [GhostField(Quantization = 1000)]
+        public float3 FormationHeading;
     }
 
     /// <summary>[ECS/DOTS] Marker — entity is a player or AI starship (used in queries across all ship systems).</summary>

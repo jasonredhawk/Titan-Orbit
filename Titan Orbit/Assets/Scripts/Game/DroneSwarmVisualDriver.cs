@@ -244,9 +244,17 @@ namespace TitanOrbit.Game
 
         void LateUpdate()
         {
-            // [TITAN-ORBIT] Skip entity buffer reads during TeamChoice Instantiates.
+            // [TITAN-ORBIT] Skip entity buffer reads during TeamChoice / moon-dock Instantiates.
+            // Fully landed: tear down the local swarm (orbit menu owns that state).
+            // Still approaching: carry hubs onto ShipDisplayPose so they do not freeze in space.
             if (ClientJoinSettleCache.ShouldSkipShipEntityQueries)
+            {
+                if (IsLocalShipFullyMoonLanded())
+                    HideLocalGroup();
+                else
+                    CarryExistingGroupsWithLocalHull();
                 return;
+            }
 
             RefreshMapSize();
             if (_mapW < 100f || _mapH < 100f)
@@ -323,17 +331,12 @@ namespace TitanOrbit.Game
                 if (netId <= 0)
                     continue;
 
-                // --- Hide drones while the owner is stowed in a planetary defense turret ---
-                // [TITAN-ORBIT] Same possession mode that hides the hull — swarm GOs must not
-                // keep orbiting an invisible pad-parked ship.
-                if (em.HasComponent<ShipTurretControlState>(shipEntity) &&
-                    em.GetComponentData<ShipTurretControlState>(shipEntity).IsControlling)
+                // --- Hide drones while the owner is stowed (turret pad or fully moon-docked) ---
+                // [TITAN-ORBIT] Same possession mode that hides the hull / nameplate — swarm GOs
+                // must not keep orbiting a pad-parked or moon-landed ship. Other ships stay up.
+                if (IsOwnerSwarmHidden(em, shipEntity))
                 {
-                    if (_groupsByNetId.TryGetValue(netId, out var stowedGroup))
-                    {
-                        DestroyGroup(stowedGroup);
-                        _groupsByNetId.Remove(netId);
-                    }
+                    HideGroup(netId);
                     continue;
                 }
 
@@ -697,6 +700,54 @@ namespace TitanOrbit.Game
             _groupsByNetId.Clear();
             _formationOffsetBySlot.Clear();
             _anchorSimTimeByNetId.Clear();
+        }
+
+        /// <summary>
+        /// No ship gather. Pins the local swarm hub to <see cref="ShipDisplayPose"/> so moon-dock
+        /// Instantiates cannot leave fighter / shield / mining meshes at last orbit pose.
+        /// </summary>
+        void CarryExistingGroupsWithLocalHull()
+        {
+            if (!ShipDisplayPose.HasLocalPose)
+                return;
+
+            int localId = EcsGameBridge.GetLocalNetworkId();
+            if (localId <= 0 || !_groupsByNetId.TryGetValue(localId, out var group) || group.Hub == null)
+                return;
+
+            group.Hub.position = ShipDisplayPose.LocalPosition;
+        }
+
+        /// <summary>
+        /// True when this hull is turret-stowed or fully landed on a gem moon.
+        /// Per-ship — one dock must not hide another ship's swarm.
+        /// </summary>
+        static bool IsOwnerSwarmHidden(EntityManager em, Entity shipEntity)
+        {
+            if (em.HasComponent<ShipTurretControlState>(shipEntity) &&
+                em.GetComponentData<ShipTurretControlState>(shipEntity).IsControlling)
+                return true;
+            return ShipMoonDockState.IsFullyLandedOnMoon(em, shipEntity);
+        }
+
+        static bool IsLocalShipFullyMoonLanded()
+        {
+            return EcsGameBridge.TryGetLocalShipMoonDockState(out var dock) && dock.IsFullyLanded;
+        }
+
+        void HideLocalGroup()
+        {
+            int localId = EcsGameBridge.GetLocalNetworkId();
+            if (localId > 0)
+                HideGroup(localId);
+        }
+
+        void HideGroup(int netId)
+        {
+            if (!_groupsByNetId.TryGetValue(netId, out var group))
+                return;
+            DestroyGroup(group);
+            _groupsByNetId.Remove(netId);
         }
 
         /// <summary>

@@ -69,7 +69,8 @@ namespace TitanOrbit.ECS
                             ? s.TargetShipNetworkId
                             : s.SourceShipNetworkId,
                         SourcePlanetId = s.SourcePlanetId,
-                        TargetPlanetId = s.TargetPlanetId,
+                        // Returning unloads hide the dest planet so the client flies to the ship.
+                        TargetPlanetId = s.Returning != 0 && s.IsLoad == 0 ? 0 : s.TargetPlanetId,
                         IsLoad = s.IsLoad,
                         Team = s.Team,
                     });

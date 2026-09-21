@@ -68,6 +68,7 @@ namespace TitanOrbit.ECS
                 // Cargo still aboard dies with the hull. Unload hops that already left
                 // the ship keep flying in PeopleTransportSimulationSystem.
                 shipState.ValueRW.CurrentPeople = 0;
+                PeopleTransportEscortLogic.ClearAll(state.EntityManager, entity);
                 kinematics.ValueRW.Velocity = Unity.Mathematics.float3.zero;
                 orbitState.ValueRW.OrbitPlanetId = 0;
                 orbitState.ValueRW.InOrbitRing = false;
