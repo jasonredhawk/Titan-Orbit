@@ -25,6 +25,18 @@ namespace TitanOrbit.ECS
         static readonly HashSet<int> ConsumedSpawnIds = new HashSet<int>();
         static readonly Dictionary<int, GemTractorLockRpc> PendingLocks = new Dictionary<int, GemTractorLockRpc>(16);
         static readonly GemSpawnRecipe[] BurstScratch = new GemSpawnRecipe[GemExplosionMath.AbsoluteMaxGemCount];
+        static readonly List<GemSpawnRecipe> DeferredSpawns = new List<GemSpawnRecipe>(16);
+        static readonly List<GemCatchUpRpc> DeferredCatchUps = new List<GemCatchUpRpc>(8);
+        static readonly List<DeferredBurst> DeferredBursts = new List<DeferredBurst>(4);
+
+        struct DeferredBurst
+        {
+            public float3 Origin;
+            public float RemainingValue;
+            public uint Seed;
+            public float SpawnServerTime;
+            public GemVisualTint Tint;
+        }
 
         /// <summary>Removes a despawned gem from the SpawnId map.</summary>
         public static void Unregister(int spawnId)
@@ -39,6 +51,67 @@ namespace TitanOrbit.ECS
             BySpawnId.Clear();
             ConsumedSpawnIds.Clear();
             PendingLocks.Clear();
+            DeferredSpawns.Clear();
+            DeferredCatchUps.Clear();
+            DeferredBursts.Clear();
+            GemClientSimStepper.Reset();
+        }
+
+        /// <summary>
+        /// Holds spawn / burst / catch-up until ServerTick is valid. Integrating against
+        /// World.Time parks crystals away from the server gem — shown, but never scooped.
+        /// </summary>
+        public static void DeferSpawn(in GemSpawnRecipe recipe) => DeferredSpawns.Add(recipe);
+
+        /// <summary>Queues a burst until the network clock is ready.</summary>
+        public static void DeferBurst(
+            float3 origin,
+            float remainingValue,
+            uint seed,
+            float spawnServerTime,
+            GemVisualTint tint)
+        {
+            DeferredBursts.Add(new DeferredBurst
+            {
+                Origin = origin,
+                RemainingValue = remainingValue,
+                Seed = seed,
+                SpawnServerTime = spawnServerTime,
+                Tint = tint,
+            });
+        }
+
+        /// <summary>Queues a late-join snapshot until the network clock is ready.</summary>
+        public static void DeferCatchUp(in GemCatchUpRpc rpc) => DeferredCatchUps.Add(rpc);
+
+        /// <summary>Hydrates anything deferred once ServerTick exists.</summary>
+        public static void FlushDeferred(EntityManager em, Entity gemPrefab, float nowServerTime)
+        {
+            if (gemPrefab == Entity.Null)
+                return;
+
+            for (int i = 0; i < DeferredCatchUps.Count; i++)
+                SpawnFromCatchUp(em, gemPrefab, DeferredCatchUps[i]);
+            DeferredCatchUps.Clear();
+
+            for (int i = 0; i < DeferredBursts.Count; i++)
+            {
+                var b = DeferredBursts[i];
+                float elapsed = math.max(0f, nowServerTime - b.SpawnServerTime);
+                SpawnBurst(
+                    em, gemPrefab, b.Origin, b.RemainingValue, b.Seed, b.SpawnServerTime, b.Tint, elapsed);
+            }
+
+            DeferredBursts.Clear();
+
+            for (int i = 0; i < DeferredSpawns.Count; i++)
+            {
+                var recipe = DeferredSpawns[i];
+                float elapsed = math.max(0f, nowServerTime - recipe.SpawnServerTime);
+                SpawnFromRecipe(em, gemPrefab, recipe, elapsed);
+            }
+
+            DeferredSpawns.Clear();
         }
 
         /// <summary>Looks up a live client gem by recipe id.</summary>
@@ -109,6 +182,7 @@ namespace TitanOrbit.ECS
         {
             origin.y = 0f;
             var settings = GemExplosionSettingsCache.ResolveOrDefault();
+            settings.ClampCounts();
             int count = GemBurstExpansion.FillRecipes(
                 origin, remainingValue, seed, spawnServerTime, tint, settings, BurstScratch);
             for (int i = 0; i < count; i++)
@@ -123,7 +197,12 @@ namespace TitanOrbit.ECS
             if (ConsumedSpawnIds.Contains(rpc.SpawnId))
                 return Entity.Null;
             if (TryGet(rpc.SpawnId, out Entity existing))
+            {
+                // Server snapshot is current — snap a live crystal that hydrated from a late
+                // spawn/burst with the wrong IntegrateElapsed pose.
+                ApplyCatchUpPose(em, existing, rpc);
                 return existing;
+            }
 
             var resolved = new GemSpawnResolved
             {
@@ -163,6 +242,54 @@ namespace TitanOrbit.ECS
             }
 
             return e;
+        }
+
+        /// <summary>Writes a late-join snapshot onto an already-hydrated crystal.</summary>
+        static void ApplyCatchUpPose(EntityManager em, Entity e, in GemCatchUpRpc rpc)
+        {
+            if (!em.Exists(e))
+                return;
+
+            float scale = rpc.Size > 0.01f ? rpc.Size : math.clamp(math.sqrt(rpc.Value) * 0.2f, 0.2f, 0.5f);
+            if (em.HasComponent<LocalTransform>(e))
+            {
+                var lt = em.GetComponentData<LocalTransform>(e);
+                em.SetComponentData(e, LocalTransform.FromPositionRotationScale(
+                    rpc.Position, lt.Rotation, scale));
+            }
+
+            if (em.HasComponent<GemState>(e))
+            {
+                var gem = em.GetComponentData<GemState>(e);
+                gem.Value = rpc.Value;
+                gem.Size = scale;
+                gem.SpawnServerTime = rpc.SpawnServerTime;
+                gem.Tint = (GemVisualTint)rpc.IsBonusGem;
+                gem.ExcludePickupNetworkId = rpc.ExcludePickupNetworkId;
+                gem.ExcludePickupUntilServerTime = rpc.ExcludePickupUntilServerTime;
+                em.SetComponentData(e, gem);
+            }
+
+            if (em.HasComponent<GemKinematics>(e))
+            {
+                em.SetComponentData(e, new GemKinematics
+                {
+                    Velocity = rpc.Velocity,
+                    AngularVelocity = rpc.AngularVelocity,
+                });
+            }
+
+            if (em.HasComponent<GemMotionState>(e))
+            {
+                var motion = em.GetComponentData<GemMotionState>(e);
+                motion.Phase = rpc.Phase;
+                motion.BurstIndex = rpc.BurstIndex;
+                motion.TractorShipId = rpc.TractorShipId;
+                motion.TractorWingIndex = rpc.TractorWingIndex;
+                motion.TractorLockTick = rpc.TractorLockTick;
+                motion.TractorExtendDuration = rpc.TractorExtendDuration;
+                em.SetComponentData(e, motion);
+            }
         }
 
         /// <summary>Applies a leftover value after a partial scoop.</summary>
@@ -309,6 +436,52 @@ namespace TitanOrbit.ECS
 
                 em.DestroyEntity(e);
             }
+        }
+    }
+
+    /// <summary>
+    /// Client gem coast / tractor must step on whole ServerTicks at 1/Hz — the same dt the
+    /// server uses. ClientSimulation often runs every render frame with a partial-tick dt,
+    /// and that parks crystals off the scoopable server pose.
+    /// </summary>
+    public static class GemClientSimStepper
+    {
+        const int MaxCatchUpTicks = 8;
+        static uint s_committedTick;
+
+        /// <summary>Drops the latch (disconnect / world teardown).</summary>
+        public static void Reset() => s_committedTick = 0;
+
+        /// <summary>
+        /// How many whole sim ticks to integrate this frame. False on the first sample
+        /// (hydrate already advanced to "now") and when the tick has not moved.
+        /// </summary>
+        public static bool TryGetSteps(EntityManager em, out int steps, out float dt)
+        {
+            steps = 0;
+            dt = GemMotionLogic.CatchUpStepSeconds;
+            if (!PlanetGemMoonOrbitClock.TryGetServerTick(em, out uint tick, out int hz))
+                return false;
+
+            dt = hz > 0 ? 1f / hz : GemMotionLogic.CatchUpStepSeconds;
+            if (s_committedTick == 0)
+            {
+                s_committedTick = tick;
+                return false;
+            }
+
+            if (tick <= s_committedTick)
+                return false;
+
+            steps = (int)math.min(tick - s_committedTick, MaxCatchUpTicks);
+            return steps > 0;
+        }
+
+        /// <summary>Marks <paramref name="em"/>'s current ServerTick as already integrated.</summary>
+        public static void Commit(EntityManager em)
+        {
+            if (PlanetGemMoonOrbitClock.TryGetServerTick(em, out uint tick, out _))
+                s_committedTick = tick;
         }
     }
 }

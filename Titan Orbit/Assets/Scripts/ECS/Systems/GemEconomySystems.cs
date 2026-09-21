@@ -494,12 +494,20 @@ namespace TitanOrbit.ECS
                          .WithEntityAccess())
             {
                 float spawnTime = gemState.ValueRO.SpawnServerTime;
-                if (spawnTime <= 0f)
+                if (spawnTime <= 0f || gemState.ValueRO.SpawnId == 0)
                 {
                     // Prefab default leaked — stamp now so lifetime and self-pickup can run.
-                    // Leaving 0 made gems immortal and unblocked forever.
+                    // Leaving 0 made gems immortal and unblocked forever. SpawnId 0 also
+                    // swallowed GemConsumedRpc, so clients kept a crystal they could not scoop.
                     var stamped = gemState.ValueRO;
-                    stamped.SpawnServerTime = now;
+                    if (spawnTime <= 0f)
+                        stamped.SpawnServerTime = now;
+                    if (stamped.SpawnId == 0)
+                    {
+                        int hashed = (int)math.hash(new uint2((uint)gemEntity.Index, math.asuint(now)));
+                        stamped.SpawnId = hashed == 0 ? 1 : hashed;
+                    }
+
                     ecb.SetComponent(gemEntity, stamped);
                     continue;
                 }
@@ -604,6 +612,7 @@ namespace TitanOrbit.ECS
             if (gemCount <= 0)
                 return;
 
+            float dt = SystemAPI.Time.DeltaTime;
             var pickupSettings = TractorBeamSettingsCache.ResolveOrDefault();
             var gemEntities = _gemQuery.ToEntityArray(Allocator.Temp);
             var gemStates = _gemQuery.ToComponentDataArray<GemState>(Allocator.Temp);
@@ -701,6 +710,9 @@ namespace TitanOrbit.ECS
                     // [TITAN-ORBIT] Damage-spill penalty — source ship cannot reclaim yet.
                     bool pickupBlocked = GemSelfPickupBlock.IsPickupBlockedForShip(
                         gemState, shipNetworkId, nowServerTime);
+                    float3 shipMove = float3.zero;
+                    if (state.EntityManager.HasComponent<ShipKinematics>(shipEntity))
+                        shipMove = state.EntityManager.GetComponentData<ShipKinematics>(shipEntity).Velocity * dt;
                     bool inRange = IsWithinPickupRange(
                             state.EntityManager,
                             shipEntity,
@@ -710,7 +722,8 @@ namespace TitanOrbit.ECS
                             hasWings,
                             pickupSettings,
                             mapW,
-                            mapH);
+                            mapH,
+                            shipMove);
                     if (!inRange)
                         continue;
 
@@ -786,7 +799,8 @@ namespace TitanOrbit.ECS
             bool hasWings,
             TractorBeamSettings pickupSettings,
             float mapW,
-            float mapH)
+            float mapH,
+            float3 shipMove)
         {
             float3 gemPos = gemTransform.Position;
 
@@ -803,7 +817,9 @@ namespace TitanOrbit.ECS
                 for (int wi = 0; wi < wings.Length; wi++)
                 {
                     float3 wingPos = ShipWingTractorBeamPose.GetWorldPosition(shipTransform, wings[wi]);
-                    if (GemTractorBeamMath.ToroidalDistance(gemPos, wingPos, mapW, mapH) <= collectRadius)
+                    float3 prevWing = ToroidalMapEcs.Wrap(wingPos - shipMove, mapW, mapH);
+                    if (GemCollectMath.SegmentReachesPoint(
+                            gemPos, prevWing, wingPos, collectRadius, mapW, mapH))
                         return true;
                 }
 
@@ -812,13 +828,14 @@ namespace TitanOrbit.ECS
                 // for a wing tip / tractor lock. When OFF, only tip zones collect (tight old feel).
                 if (pickupSettings.AlsoUseHullPickupWithWings)
                     return IsWithinHullPickupRange(
-                        em, shipEntity, shipTransform, gemPos, gemState, pickupSettings, mapW, mapH);
+                        em, shipEntity, shipTransform, gemPos, gemState, pickupSettings, mapW, mapH, shipMove);
 
                 return false;
             }
 
             // --- No wings: hull-center only ---
-            return IsWithinHullPickupRange(em, shipEntity, shipTransform, gemPos, gemState, pickupSettings, mapW, mapH);
+            return IsWithinHullPickupRange(
+                em, shipEntity, shipTransform, gemPos, gemState, pickupSettings, mapW, mapH, shipMove);
         }
 
         /// <summary>
@@ -833,13 +850,16 @@ namespace TitanOrbit.ECS
             in GemState gemState,
             TractorBeamSettings pickupSettings,
             float mapW,
-            float mapH)
+            float mapH,
+            float3 shipMove)
         {
             float hullRange = GemCollectMath.ResolveHullCollectRadius(
                 pickupSettings, gemState.Value, gemState.Size, shipTransform.Scale)
                 + CardEffectQuery.GetValue(em, shipEntity, CardEffectKind.GemPickupRadiusAdd);
-            return GemTractorBeamMath.ToroidalDistance(gemPos, shipTransform.Position, mapW, mapH) <=
-                   hullRange;
+            float3 hullPos = shipTransform.Position;
+            float3 prevHull = ToroidalMapEcs.Wrap(hullPos - shipMove, mapW, mapH);
+            return GemCollectMath.SegmentReachesPoint(
+                gemPos, prevHull, hullPos, hullRange, mapW, mapH);
         }
     }
 

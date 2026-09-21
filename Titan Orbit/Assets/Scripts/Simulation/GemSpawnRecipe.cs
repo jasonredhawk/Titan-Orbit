@@ -246,6 +246,7 @@ namespace TitanOrbit.Simulation
                 return 0;
 
             settings ??= GemExplosionSettingsCache.ResolveOrDefault();
+            settings.ClampCounts();
             var rng = Random.CreateFromIndex(seed);
             int count = GemExplosionMath.ResolveGemCountForUnitCap(
                 remaining,

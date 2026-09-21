@@ -19,11 +19,11 @@ namespace TitanOrbit.Data
         [Header("Clusters")]
         [Tooltip("Fewest rigid chunks the hull can split into (clamped by part count).")]
         [Range(1, 12)]
-        public int ClusterCountMin = 3;
+        public int ClusterCountMin = 2;
 
         [Tooltip("Most rigid chunks the hull can split into. Nearby components stay in the same chunk.")]
         [Range(1, 12)]
-        public int ClusterCountMax = 9;
+        public int ClusterCountMax = 5;
 
         [Header("Launch")]
         [Tooltip("Base outward speed (world units/sec) for each chunk.")]

@@ -1,4 +1,5 @@
 using TitanOrbit.Data;
+using TitanOrbit.Generation;
 using Unity.Mathematics;
 
 namespace TitanOrbit.Simulation
@@ -44,6 +45,34 @@ namespace TitanOrbit.Simulation
                               math.max(0f, gemSize) * 0.5f;
             float visual = GemPresentationScale.ComputeVisualRadius(gemValue);
             return math.max(designed, math.max(hullFloor, visual));
+        }
+
+        /// <summary>
+        /// True when <paramref name="point"/> is within <paramref name="radius"/> of the
+        /// toroidal segment from <paramref name="segmentFrom"/> to <paramref name="segmentTo"/>.
+        /// Covers a ship that tunnels through a crystal in one sim tick.
+        /// </summary>
+        public static bool SegmentReachesPoint(
+            float3 point,
+            float3 segmentFrom,
+            float3 segmentTo,
+            float radius,
+            float mapW,
+            float mapH)
+        {
+            if (radius <= 0f)
+                return false;
+
+            float3 toPoint = ToroidalMapEcs.ShortestOffsetXZ(segmentFrom, point, mapW, mapH);
+            float3 along = ToroidalMapEcs.ShortestOffsetXZ(segmentFrom, segmentTo, mapW, mapH);
+            float alongLenSq = math.lengthsq(along);
+            if (alongLenSq < 1e-8f)
+                return math.lengthsq(toPoint) <= radius * radius;
+
+            float t = math.saturate(math.dot(toPoint, along) / alongLenSq);
+            float3 closest = toPoint - along * t;
+            closest.y = 0f;
+            return math.lengthsq(closest) <= radius * radius;
         }
     }
 }

@@ -123,14 +123,49 @@ namespace TitanOrbit.ECS
             double fallbackElapsed,
             bool includeTickFraction = false)
         {
-            // --- NetworkTime singleton ---
-            // [NETCODE] Allocates a short-lived query — call once per system OnUpdate, not per entity.
-            using var timeQuery = em.CreateEntityQuery(ComponentType.ReadOnly<NetworkTime>());
-            if (!timeQuery.TryGetSingleton<NetworkTime>(out var networkTime) || !networkTime.ServerTick.IsValid)
-                return (float)fallbackElapsed;
+            if (TryGetElapsedSeconds(em, out float elapsed, includeTickFraction))
+                return elapsed;
+            return (float)fallbackElapsed;
+        }
 
-            // --- Sim Hz (usually 60) ---
-            int hz = FallbackSimulationHz;
+        /// <summary>
+        /// ServerTick seconds with no World.Time fallback. False when networking is not ready.
+        /// Gem hydrate must not integrate against process uptime — that parks crystals off the
+        /// server pose so they render but never scoop.
+        /// </summary>
+        public static bool TryGetElapsedSeconds(
+            EntityManager em,
+            out float elapsed,
+            bool includeTickFraction = false)
+        {
+            elapsed = 0f;
+            if (!TryGetNetworkTime(em, out var networkTime, out int hz))
+                return false;
+
+            elapsed = (float)ToElapsedSeconds(networkTime, hz, includeTickFraction);
+            return true;
+        }
+
+        /// <summary>Whole ServerTick index + sim Hz for fixed-step client gem motion.</summary>
+        public static bool TryGetServerTick(EntityManager em, out uint tickIndex, out int simulationHz)
+        {
+            tickIndex = 0;
+            simulationHz = FallbackSimulationHz;
+            if (!TryGetNetworkTime(em, out var networkTime, out simulationHz))
+                return false;
+
+            tickIndex = networkTime.ServerTick.TickIndexForValidTick;
+            return tickIndex > 0;
+        }
+
+        static bool TryGetNetworkTime(EntityManager em, out NetworkTime networkTime, out int hz)
+        {
+            networkTime = default;
+            hz = FallbackSimulationHz;
+            using var timeQuery = em.CreateEntityQuery(ComponentType.ReadOnly<NetworkTime>());
+            if (!timeQuery.TryGetSingleton<NetworkTime>(out networkTime) || !networkTime.ServerTick.IsValid)
+                return false;
+
             using var rateQuery = em.CreateEntityQuery(ComponentType.ReadOnly<ClientServerTickRate>());
             if (rateQuery.TryGetSingleton<ClientServerTickRate>(out var tickRate)
                 && tickRate.SimulationTickRate > 0)
@@ -138,7 +173,7 @@ namespace TitanOrbit.ECS
                 hz = tickRate.SimulationTickRate;
             }
 
-            return (float)ToElapsedSeconds(networkTime, hz, includeTickFraction);
+            return true;
         }
 
         /// <summary>

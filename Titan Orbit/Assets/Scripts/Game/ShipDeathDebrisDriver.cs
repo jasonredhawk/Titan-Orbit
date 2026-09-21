@@ -17,7 +17,7 @@ namespace TitanOrbit.Game
 {
     /// <summary>
     /// Client-only: clones prefab components on a dying ship, groups nearby ones into
-    /// 3–9 rigid chunks, and flies those chunks as non-interactive debris until respawn.
+    /// 2–5 rigid chunks, and flies those chunks as non-interactive debris until respawn.
     /// Fire/V2 one-shots retrigger at torn contacts (parts that used to touch).
     /// Chunks bounce off ship / asteroid ghosts with toroidal sphere math (no PhysicsCollider,
     /// nothing on the server). Motion is seeded from <see cref="ShipDeathVfxState.Packed"/>

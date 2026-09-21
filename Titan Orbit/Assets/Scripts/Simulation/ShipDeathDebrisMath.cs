@@ -8,7 +8,7 @@ namespace TitanOrbit.Simulation
 {
     /// <summary>
     /// Deterministic spatial clustering + per-chunk launch for the cosmetic ship-death
-    /// breakup. Nearby prefab components become 3–9 rigid chunks; seed + cluster index
+    /// breakup. Nearby prefab components become 2–5 rigid chunks; seed + cluster index
     /// → same velocity / spin on every client. No physics.
     /// </summary>
     public static class ShipDeathDebrisMath
