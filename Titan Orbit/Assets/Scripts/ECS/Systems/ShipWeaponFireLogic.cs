@@ -8,15 +8,20 @@ namespace TitanOrbit.ECS
     /// <summary>
     /// Shared multi-mount fire planner for server bullets and client anticipation VFX.
     /// <para>
-    /// [TITAN-ORBIT] Shared energy pool stacked onto clips in arsenal-strip order
-    /// (gun, laser, missile, sniper — same walk as <c>ShipWeaponArmHUD</c>). A barrel
-    /// whose clip is full and off cooldown fires; leftover energy spills into the
-    /// next clip. Two full clips at 20 energy both shoot. A half-full clip does not.
+    /// [TITAN-ORBIT] Shared energy pool, one clip at a time, in arsenal-strip
+    /// order (gun, laser, missile, sniper — same walk as <c>ShipWeaponArmHUD</c>).
+    /// The energy-queue cursor (<see cref="ShipWeaponState.NextMountIndex"/>) is
+    /// whose bar is charging. That clip fills, fires, then the cursor steps to
+    /// the next square and wraps from the last weapon back to the first. Leftover
+    /// energy stays in the hull tank until the current clip fires — it does not
+    /// pre-fill later squares. When the pool can pay every armed clip at once,
+    /// Energy Hybrid still volleys the whole bank and the cursor returns to the
+    /// first square.
     /// <see cref="ShipWeaponFireMode"/> still special-cases:
     /// <list type="bullet">
-    /// <item><b>Energy Hybrid</b> — fire every full, ready clip this tick.</item>
+    /// <item><b>Energy Hybrid</b> — volley when the pool covers the whole bank; otherwise one clip, then wrap.</item>
     /// <item><b>Always Fire Together</b> — fire only when every armed clip is full and ready.</item>
-    /// <item><b>Always Round-Robin</b> — fire only the first full, ready clip.</item>
+    /// <item><b>Always Round-Robin</b> — always one clip, then the next, wrapping at the end.</item>
     /// </list>
     /// Each mount still keeps its own <see cref="ShipWeaponMountElement.FirePower"/> /
     /// <see cref="ShipWeaponMountElement.FireRate"/> / cooldown.
@@ -97,7 +102,7 @@ namespace TitanOrbit.ECS
             return TryPlanFire(
                 currentEnergy, mounts, nextMountIndex, fallbackDamage, fallbackFireRate,
                 fireMode, shots, out shotCount, out totalEnergySpend, out nextMountIndexAfter,
-                abilityEnergyPerShot, chargeCooldown, in allOn);
+                abilityEnergyPerShot, chargeCooldown, in allOn, lastFiredMountIndex: -1);
         }
 
         /// <summary>
@@ -117,7 +122,8 @@ namespace TitanOrbit.ECS
             out int nextMountIndexAfter,
             float abilityEnergyPerShot,
             float chargeCooldown,
-            in ShipWeaponArmState arm)
+            in ShipWeaponArmState arm,
+            int lastFiredMountIndex = -1)
         {
             shotCount = 0;
             totalEnergySpend = 0f;
@@ -136,7 +142,8 @@ namespace TitanOrbit.ECS
                 return false;
 
             return TryPlanClipStack(
-                currentEnergy, mounts, in arm, order, orderCount,
+                currentEnergy, mounts, in arm, order, orderCount, nextMountIndex,
+                lastFiredMountIndex,
                 fallbackDamage, fallbackFireRate, abilityEnergyPerShot,
                 fireMode, skipCannonLaserShots: false,
                 shots, out shotCount, out totalEnergySpend, out nextMountIndexAfter);
@@ -162,7 +169,7 @@ namespace TitanOrbit.ECS
             return TryPlanMegaFire(
                 currentEnergy, mounts, nextMountIndex, fallbackFireRate, shots,
                 out shotCount, out totalEnergySpend, out nextMountIndexAfter,
-                chargeCooldown, in allOn);
+                chargeCooldown, in allOn, lastFiredMountIndex: -1);
         }
 
         /// <summary>
@@ -179,7 +186,8 @@ namespace TitanOrbit.ECS
             out float totalEnergySpend,
             out int nextMountIndexAfter,
             float chargeCooldown,
-            in ShipWeaponArmState arm)
+            in ShipWeaponArmState arm,
+            int lastFiredMountIndex = -1)
         {
             shotCount = 0;
             totalEnergySpend = 0f;
@@ -196,7 +204,8 @@ namespace TitanOrbit.ECS
                 return false;
 
             return TryPlanClipStack(
-                currentEnergy, mounts, in arm, order, orderCount,
+                currentEnergy, mounts, in arm, order, orderCount, nextMountIndex,
+                lastFiredMountIndex,
                 fallbackDamage: 0f, fallbackFireRate, abilityEnergyPerShot: 0f,
                 ShipWeaponFireMode.EnergyHybrid, skipCannonLaserShots: true,
                 shots, out shotCount, out totalEnergySpend, out nextMountIndexAfter);
@@ -238,10 +247,125 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// Pours <paramref name="currentEnergy"/> onto strip-order clips. A full clip
-        /// that is off cooldown becomes a shot (unless the fire mode says otherwise).
-        /// An earlier full-but-cooling clip still reserves its cost so a later gun
-        /// cannot steal it — same stack the HUD shows.
+        /// Where the energy queue sits in <paramref name="order"/>. Exact mount match
+        /// wins. A muted or stale cursor snaps to the next armed strip slot, then
+        /// wraps to the first square. The arsenal HUD uses the same slot so the
+        /// charging bar is the barrel that may shoot next.
+        /// </summary>
+        /// <param name="order">Armed mount indices in strip order (kind, then buffer index).</param>
+        /// <param name="orderCount">How many entries in <paramref name="order"/> are live.</param>
+        /// <param name="cursorMountIndex">
+        /// <see cref="ShipWeaponState.NextMountIndex"/> or the client mirror.
+        /// </param>
+        /// <returns>Index into <paramref name="order"/>, or 0 when the strip is empty.</returns>
+        public static int FindEnergyQueueSlot(Span<int> order, int orderCount, int cursorMountIndex)
+        {
+            if (orderCount <= 0 || order.Length <= 0)
+                return 0;
+
+            int count = math.min(orderCount, order.Length);
+            int later = -1;
+            for (int n = 0; n < count; n++)
+            {
+                int mount = order[n];
+                if (mount == cursorMountIndex)
+                    return n;
+                // Strip order follows buffer index within each class, so the first
+                // armed mount past a muted cursor is that cursor's successor.
+                if (later < 0 && mount > cursorMountIndex)
+                    later = n;
+            }
+
+            return later >= 0 ? later : 0;
+        }
+
+        /// <summary>
+        /// Slot of the barrel that should charge now. Exact cursor match wins.
+        /// MEGA cannon lasers burn on their own, so the queue skips them.
+        /// Wraps to the first fireable square when the cursor is past the end
+        /// or sitting on a muted barrel.
+        /// </summary>
+        public static int ResolveCycleSlot(
+            Span<int> order,
+            int orderCount,
+            int cursorMountIndex,
+            DynamicBuffer<ShipWeaponMountElement> mounts,
+            bool skipCannonLasers)
+        {
+            int slot = FindEnergyQueueSlot(order, orderCount, cursorMountIndex);
+            if (!skipCannonLasers || orderCount <= 0)
+                return slot;
+
+            for (int n = 0; n < orderCount; n++)
+            {
+                int s = (slot + n) % orderCount;
+                if (!ShipWeaponKind.IsCannonLaser(mounts[order[s]]))
+                    return s;
+            }
+
+            return slot;
+        }
+
+        /// <summary>
+        /// Next square after <paramref name="slot"/>, wrapping from the last
+        /// weapon back to the first. MEGA cannon lasers are skipped so the
+        /// queue cannot stall on a hitscan barrel.
+        /// </summary>
+        public static int NextCycleSlot(
+            Span<int> order,
+            int orderCount,
+            int slot,
+            DynamicBuffer<ShipWeaponMountElement> mounts,
+            bool skipCannonLasers)
+        {
+            if (orderCount <= 0)
+                return 0;
+
+            for (int n = 1; n <= orderCount; n++)
+            {
+                int s = (slot + n) % orderCount;
+                if (skipCannonLasers && ShipWeaponKind.IsCannonLaser(mounts[order[s]]))
+                    continue;
+                return s;
+            }
+
+            return slot;
+        }
+
+        /// <summary>
+        /// True when the pool can pay every armed clip in strip order. Energy
+        /// Hybrid volleys in that case; otherwise it drips one square at a time.
+        /// </summary>
+        public static bool CanAffordEveryArmedClip(
+            float energy,
+            DynamicBuffer<ShipWeaponMountElement> mounts,
+            Span<int> order,
+            int orderCount,
+            float fallbackDamage,
+            float fallbackFireRate,
+            float abilityEnergyPerShot,
+            bool skipCannonLaserShots)
+        {
+            float remaining = math.max(0f, energy);
+            float abilityAdd = math.max(0f, abilityEnergyPerShot);
+            for (int n = 0; n < orderCount; n++)
+            {
+                float cost = ResolveClipEnergyCost(
+                    mounts[order[n]], fallbackDamage, fallbackFireRate,
+                    abilityAdd, skipCannonLaserShots);
+                if (remaining + 0.001f < cost)
+                    return false;
+                remaining -= cost;
+            }
+
+            return orderCount > 0;
+        }
+
+        /// <summary>
+        /// Plans shots for the current energy. A full bank volleys. A dry ship
+        /// charges only the cursor clip, fires that one barrel, then steps the
+        /// cursor to the next square — last weapon wraps to the first. Leftover
+        /// energy stays in the tank until that fire so later bars start empty.
         /// </summary>
         static bool TryPlanClipStack(
             float currentEnergy,
@@ -249,10 +373,144 @@ namespace TitanOrbit.ECS
             in ShipWeaponArmState arm,
             Span<int> order,
             int orderCount,
+            int queueMountIndex,
+            int lastFiredMountIndex,
             float fallbackDamage,
             float fallbackFireRate,
             float abilityEnergyPerShot,
             ShipWeaponFireMode fireMode,
+            bool skipCannonLaserShots,
+            MountShot[] shots,
+            out int shotCount,
+            out float totalEnergySpend,
+            out int nextMountIndexAfter)
+        {
+            _ = arm;
+            shotCount = 0;
+            totalEnergySpend = 0f;
+            int cycleSlot = ResolveCycleSlot(
+                order, orderCount, queueMountIndex, mounts, skipCannonLaserShots);
+            nextMountIndexAfter = orderCount > 0 ? order[cycleSlot] : queueMountIndex;
+
+            float abilityAdd = math.max(0f, abilityEnergyPerShot);
+            bool together = fireMode == ShipWeaponFireMode.AlwaysFireTogether;
+            // Once any barrel has dripped, stay on the one-at-a-time walk.
+            // A mid-cycle volley was resetting the cursor to square 0 and
+            // firing that same chip again.
+            bool dripOnly = !together
+                            && (fireMode == ShipWeaponFireMode.AlwaysRoundRobin
+                                || lastFiredMountIndex >= 0
+                                || !CanAffordEveryArmedClip(
+                                    currentEnergy, mounts, order, orderCount,
+                                    fallbackDamage, fallbackFireRate, abilityAdd,
+                                    skipCannonLaserShots));
+
+            if (dripOnly)
+            {
+                return TryPlanCycleDrip(
+                    currentEnergy, mounts, order, orderCount, cycleSlot,
+                    lastFiredMountIndex,
+                    fallbackDamage, fallbackFireRate, abilityAdd,
+                    skipCannonLaserShots, shots,
+                    out shotCount, out totalEnergySpend, out nextMountIndexAfter);
+            }
+
+            return TryPlanFullBank(
+                currentEnergy, mounts, order, orderCount,
+                fallbackDamage, fallbackFireRate, abilityAdd,
+                together, skipCannonLaserShots, shots,
+                out shotCount, out totalEnergySpend, out nextMountIndexAfter);
+        }
+
+        /// <summary>
+        /// One clip: walk the strip from the cursor, skip the barrel that just
+        /// fired and any still on cooldown, charge the first that needs energy,
+        /// fire the first that is full and ready. After a shot the cursor is
+        /// the next square (last wraps to first). Same square cannot fire twice
+        /// in a row while another armed barrel exists.
+        /// </summary>
+        static bool TryPlanCycleDrip(
+            float currentEnergy,
+            DynamicBuffer<ShipWeaponMountElement> mounts,
+            Span<int> order,
+            int orderCount,
+            int cycleSlot,
+            int lastFiredMountIndex,
+            float fallbackDamage,
+            float fallbackFireRate,
+            float abilityAdd,
+            bool skipCannonLaserShots,
+            MountShot[] shots,
+            out int shotCount,
+            out float totalEnergySpend,
+            out int nextMountIndexAfter)
+        {
+            shotCount = 0;
+            totalEnergySpend = 0f;
+            nextMountIndexAfter = orderCount > 0 ? order[cycleSlot] : 0;
+            if (orderCount <= 0 || shots == null || shots.Length <= 0)
+                return false;
+
+            // --- Walk the ring once ---
+            // [TITAN-ORBIT] A stale cursor on the barrel that just fired used
+            // to dump leftover energy into that same square. Skip it, skip a
+            // cooling clip, and stop on the first square that should charge.
+            for (int step = 0; step < orderCount; step++)
+            {
+                int slot = (cycleSlot + step) % orderCount;
+                int i = order[slot];
+                ShipWeaponMountElement mount = mounts[i];
+                bool laser = ShipWeaponKind.IsCannonLaser(mount);
+                if (skipCannonLaserShots && laser)
+                    continue;
+                if (orderCount > 1 && i == lastFiredMountIndex)
+                    continue;
+                if (mount.FireCooldown > 0.001f)
+                    continue;
+
+                ResolveMountCombat(mount, fallbackDamage, fallbackFireRate,
+                    out float damage, out float fireRate, out float energyCost, abilityAdd);
+
+                // This square is next — leave the cursor here while it fills.
+                if (currentEnergy + 0.001f < energyCost)
+                {
+                    nextMountIndexAfter = i;
+                    return false;
+                }
+
+                shots[0] = skipCannonLaserShots
+                    ? BuildMegaShot(i, mount, fallbackFireRate)
+                    : new MountShot
+                    {
+                        MountIndex = i,
+                        Damage = damage,
+                        EnergyCost = energyCost,
+                        CooldownSeconds = 1f / fireRate,
+                    };
+                shotCount = 1;
+                totalEnergySpend = shots[0].EnergyCost;
+                nextMountIndexAfter = order[NextCycleSlot(
+                    order, orderCount, slot, mounts, skipCannonLaserShots)];
+                return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// Whole bank: Energy Hybrid fires every ready clip; Together waits
+        /// until every armed clip is full and ready. Cursor returns to the
+        /// first square after a volley.
+        /// </summary>
+        static bool TryPlanFullBank(
+            float currentEnergy,
+            DynamicBuffer<ShipWeaponMountElement> mounts,
+            Span<int> order,
+            int orderCount,
+            float fallbackDamage,
+            float fallbackFireRate,
+            float abilityAdd,
+            bool together,
             bool skipCannonLaserShots,
             MountShot[] shots,
             out int shotCount,
@@ -264,9 +522,7 @@ namespace TitanOrbit.ECS
             nextMountIndexAfter = orderCount > 0 ? order[0] : 0;
 
             float remaining = math.max(0f, currentEnergy);
-            float abilityAdd = math.max(0f, abilityEnergyPerShot);
             int capacity = math.min(shots.Length, MaxShotsPerTick);
-            int firstPartial = -1;
             int fullClips = 0;
             int readyClips = 0;
             int considered = 0;
@@ -283,16 +539,11 @@ namespace TitanOrbit.ECS
 
                 considered++;
                 if (remaining + 0.001f < energyCost)
-                {
-                    if (firstPartial < 0)
-                        firstPartial = i;
                     break;
-                }
 
                 remaining -= energyCost;
                 fullClips++;
-                bool cooling = mount.FireCooldown > 0.001f;
-                if (cooling)
+                if (mount.FireCooldown > 0.001f)
                     continue;
 
                 readyClips++;
@@ -313,14 +564,7 @@ namespace TitanOrbit.ECS
                 totalEnergySpend += skipCannonLaserShots ? mount.FirePower : energyCost;
             }
 
-            nextMountIndexAfter = firstPartial >= 0
-                ? firstPartial
-                : (orderCount > 0 ? order[0] : 0);
-
-            // --- Fire-mode gates ---
-            // Together: every armed clip must be full and ready, or nobody shoots.
-            // Round-robin: keep only the first planned shot.
-            if (fireMode == ShipWeaponFireMode.AlwaysFireTogether)
+            if (together)
             {
                 if (fullClips < considered || readyClips < considered || shotCount <= 0)
                 {
@@ -329,13 +573,24 @@ namespace TitanOrbit.ECS
                     return false;
                 }
             }
-            else if (fireMode == ShipWeaponFireMode.AlwaysRoundRobin && shotCount > 1)
-            {
-                totalEnergySpend = shots[0].EnergyCost;
-                shotCount = 1;
-            }
 
             return shotCount > 0;
+        }
+
+        /// <summary>Energy one clip must hold before it can fire.</summary>
+        static float ResolveClipEnergyCost(
+            in ShipWeaponMountElement mount,
+            float fallbackDamage,
+            float fallbackFireRate,
+            float abilityAdd,
+            bool skipCannonLaserShots)
+        {
+            if (skipCannonLaserShots && ShipWeaponKind.IsCannonLaser(mount))
+                return math.max(0.01f, mount.FirePower);
+
+            ResolveMountCombat(mount, fallbackDamage, fallbackFireRate,
+                out _, out _, out float energyCost, abilityAdd);
+            return energyCost;
         }
 
         /// <summary>

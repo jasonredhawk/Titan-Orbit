@@ -16,7 +16,7 @@ using UnityEngine.UI;
 namespace TitanOrbit.UI
 {
     /// <summary>
-    /// Left-middle in-flight list of equipped rocket and mine packs as one column of
+    /// Top-left in-flight list of equipped rocket and mine packs as one column of
     /// gear-slot buttons. Each button names the pack (ROCKET or MINE) and prints
     /// level, damage, and remaining shots. There is no separate ROCKETS / MINES
     /// header — the words live on the tiles so a mixed loadout reads as one list.
@@ -53,6 +53,16 @@ namespace TitanOrbit.UI
 
         /// <summary>Panel width = tile + left/right pad. Height grows with pack count.</summary>
         const float PanelWidth = TileWidth + PanelPad * 2f;
+
+        /// <summary>Left edge, lined up with <c>ShipStatsPanel</c> (x = 20).</summary>
+        internal const float ColumnLeft = 20f;
+
+        /// <summary>
+        /// Top of this column in top-left anchor space. Ship stats sit 20px from
+        /// the screen top and are 128px tall; 20px of air under them matches the
+        /// orbit station so the weapon glass starts just below the vitals.
+        /// </summary>
+        internal const float ColumnTop = -168f;
 
         static readonly Color FillColor = new Color(0.012f, 0.016f, 0.028f, 0.92f);
 
@@ -157,7 +167,7 @@ namespace TitanOrbit.UI
             go.AddComponent<RocketLoadoutHUD>();
         }
 
-        /// <summary>Builds the left-middle overlay canvas and empty gear-slot rows.</summary>
+        /// <summary>Builds the top-left overlay canvas and empty gear-slot rows.</summary>
         void Awake()
         {
             _instance = this;
@@ -174,12 +184,13 @@ namespace TitanOrbit.UI
 
         /// <summary>
         /// Bottom edge of the rocket / mine glass in the shared 1920×1080 overlay
-        /// (left-center anchor space). <see cref="BulletTypeHUD"/> calls this after we
-        /// LateUpdate so the fire-type strip docks 8px under this column.
+        /// (top-left anchor space, Y down as negative). <see cref="BulletTypeHUD"/>
+        /// calls this after we LateUpdate so the fire-type strip docks 8px under
+        /// this column.
         /// </summary>
         /// <param name="y">
         /// Overlay Y of the panel bottom when visible, or 0 when the column is hidden
-        /// so bullets occupy the mid-left slot rockets would have used.
+        /// so bullets occupy the slot under ship stats that rockets would have used.
         /// </param>
         /// <param name="visible">True when at least one rocket or mine tile is showing.</param>
         /// <returns>True when this HUD exists and has a panel to measure.</returns>
@@ -191,7 +202,7 @@ namespace TitanOrbit.UI
                 return false;
 
             // --- Hidden column ---
-            // No packs (or menus hid us). BulletTypeHUD parks at mid-left like we do.
+            // No packs (or menus hid us). BulletTypeHUD parks under ship stats like we do.
             visible = _instance._panel.gameObject.activeSelf;
             if (!visible)
                 return true;
@@ -200,12 +211,34 @@ namespace TitanOrbit.UI
             return true;
         }
 
-        /// <summary>Bottom edge in the panel's parent (left-center overlay) using the current pivot.</summary>
+        /// <summary>Bottom edge in the panel's parent (top-left overlay) using the current pivot.</summary>
         internal static float OverlayPanelBottomY(RectTransform panel)
         {
             if (panel == null)
                 return 0f;
             return panel.anchoredPosition.y - panel.sizeDelta.y * panel.pivot.y;
+        }
+
+        /// <summary>
+        /// Parks a left-column glass under the ship stats, or stacked under the
+        /// panel above. Every strip in this column uses the same top-left anchor
+        /// so bottom-Y measurements stay in one space.
+        /// </summary>
+        /// <param name="panel">The glass to move.</param>
+        /// <param name="stacked">True when a strip above is showing and <paramref name="dockBottom"/> is its bottom edge.</param>
+        /// <param name="dockBottom">Bottom Y of the strip above, in top-left overlay space.</param>
+        /// <param name="dockGap">Air between that bottom and this panel's top.</param>
+        internal static void PlaceInLeftColumn(RectTransform panel, bool stacked, float dockBottom, float dockGap)
+        {
+            if (panel == null)
+                return;
+
+            panel.anchorMin = new Vector2(0f, 1f);
+            panel.anchorMax = new Vector2(0f, 1f);
+            panel.pivot = new Vector2(0f, 1f);
+            panel.anchoredPosition = stacked
+                ? new Vector2(ColumnLeft, dockBottom - dockGap)
+                : new Vector2(ColumnLeft, ColumnTop);
         }
 
         /// <summary>
@@ -606,15 +639,14 @@ namespace TitanOrbit.UI
             var scaler = gameObject.AddComponent<CanvasScaler>();
             scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
             scaler.referenceResolution = new Vector2(1920f, 1080f);
+            // Same match as the ship-stats canvas so 168px under the top lines up with that panel.
+            scaler.matchWidthOrHeight = 0.5f;
             gameObject.AddComponent<GraphicRaycaster>();
 
             var panelGo = new GameObject("Panel", typeof(RectTransform), typeof(Image));
             panelGo.transform.SetParent(transform, false);
             _panel = panelGo.GetComponent<RectTransform>();
-            _panel.anchorMin = new Vector2(0f, 0.5f);
-            _panel.anchorMax = new Vector2(0f, 0.5f);
-            _panel.pivot = new Vector2(0f, 0.5f);
-            _panel.anchoredPosition = new Vector2(14f, 0f);
+            PlaceInLeftColumn(_panel, false, 0f, 0f);
             _panel.sizeDelta = new Vector2(PanelWidth, TileHeight + PanelPad * 2f);
             var bg = panelGo.GetComponent<Image>();
             bg.color = FillColor;

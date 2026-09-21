@@ -400,6 +400,13 @@ namespace TitanOrbit.ECS
         /// 0→1→2→…→0. Reset to 0 after a full same-tick volley.
         /// </summary>
         public int NextMountIndex;
+
+        /// <summary>
+        /// Mount that fired last. The drip walker skips it so the same square
+        /// cannot shoot twice in a row when more than one barrel is armed.
+        /// −1 means nobody has fired yet this cycle (full-bank volley is still allowed).
+        /// </summary>
+        public int LastFiredMountIndex;
     }
 
     /// <summary>

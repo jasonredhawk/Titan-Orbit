@@ -97,7 +97,7 @@ namespace TitanOrbit.ECS
             for (int i = 0; i < DeferredBursts.Count; i++)
             {
                 var b = DeferredBursts[i];
-                float elapsed = math.max(0f, nowServerTime - b.SpawnServerTime);
+                float elapsed = GemClientSimStepper.CoastElapsedSeconds(em, nowServerTime, b.SpawnServerTime);
                 SpawnBurst(
                     em, gemPrefab, b.Origin, b.RemainingValue, b.Seed, b.SpawnServerTime, b.Tint, elapsed);
             }
@@ -107,7 +107,8 @@ namespace TitanOrbit.ECS
             for (int i = 0; i < DeferredSpawns.Count; i++)
             {
                 var recipe = DeferredSpawns[i];
-                float elapsed = math.max(0f, nowServerTime - recipe.SpawnServerTime);
+                float elapsed = GemClientSimStepper.CoastElapsedSeconds(
+                    em, nowServerTime, recipe.SpawnServerTime);
                 SpawnFromRecipe(em, gemPrefab, recipe, elapsed);
             }
 
@@ -453,8 +454,35 @@ namespace TitanOrbit.ECS
         public static void Reset() => s_committedTick = 0;
 
         /// <summary>
+        /// Seconds <see cref="GemClientMotionSystem"/> will still apply this frame.
+        /// Hydrate must stop short of this or the new crystal is coasted twice and rests
+        /// off the server gem (visible, not scoopable once the burst damps out).
+        /// </summary>
+        public static float PendingIntegrationSeconds(EntityManager em)
+        {
+            if (!PlanetGemMoonOrbitClock.TryGetServerTick(em, out uint tick, out int hz))
+                return 0f;
+            if (s_committedTick == 0 || tick <= s_committedTick)
+                return 0f;
+
+            float dt = hz > 0 ? 1f / hz : GemMotionLogic.CatchUpStepSeconds;
+            int steps = (int)math.min(tick - s_committedTick, MaxCatchUpTicks);
+            return steps * dt;
+        }
+
+        /// <summary>
+        /// Elapsed coast time for a gem that spawned at <paramref name="spawnServerTime"/>,
+        /// stopping before the pending motion steps so this frame does not double-integrate.
+        /// </summary>
+        public static float CoastElapsedSeconds(EntityManager em, float nowServerTime, float spawnServerTime)
+        {
+            float elapsed = nowServerTime - spawnServerTime - PendingIntegrationSeconds(em);
+            return math.max(0f, elapsed);
+        }
+
+        /// <summary>
         /// How many whole sim ticks to integrate this frame. False on the first sample
-        /// (hydrate already advanced to "now") and when the tick has not moved.
+        /// and when the tick has not moved.
         /// </summary>
         public static bool TryGetSteps(EntityManager em, out int steps, out float dt)
         {

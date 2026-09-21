@@ -46,6 +46,8 @@ namespace TitanOrbit.Game
         sealed class ShipEscortGroup
         {
             public int NetworkId;
+            /// <summary>Ship team. Cosmetic tracers skip same-team orbs (server escort scan does too).</summary>
+            public byte Team;
             public readonly List<SlotVisual> Visuals = new List<SlotVisual>(12);
             public int LayoutFingerprint = int.MinValue;
             /// <summary>Last presentation hull used so Instantiates-skip can carry orbs with the ship.</summary>
@@ -205,6 +207,8 @@ namespace TitanOrbit.Game
                 group = new ShipEscortGroup { NetworkId = netId };
                 _groups[netId] = group;
             }
+
+            group.Team = (byte)team;
 
             PeopleTransportEscortLogic.GetEscortHullExtents(em, ship, scale, out float extX, out float extZ);
             float3 vel = float3.zero;
@@ -525,7 +529,11 @@ namespace TitanOrbit.Game
             return true;
         }
 
-        /// <summary>Join-safe parked escort spheres for cosmetic tracers.</summary>
+        /// <summary>
+        /// Join-safe parked escort spheres for cosmetic tracers.
+        /// Team and owner must be set — a zero team makes the cannon beam and tracers
+        /// treat the orb as hostile and stop on the shooter's own troop drones.
+        /// </summary>
         public static void AppendBulletObstacles(List<BulletCosmeticHitQuery.Obstacle> into)
         {
             if (into == null || s_Instance == null)
@@ -546,7 +554,8 @@ namespace TitanOrbit.Game
                         SourceEntity = Entity.Null,
                         LogicalCenter = new float3(p.x, 0f, p.z),
                         Radius = PeopleTransportMath.GetEscortHitRadius(vis.Amount),
-                        TeamOrOwnership = 0,
+                        TeamOrOwnership = group.Team,
+                        OwnerNetworkId = group.NetworkId,
                     });
                 }
             }

@@ -13,7 +13,7 @@ using UnityEngine.UI;
 namespace TitanOrbit.UI
 {
     /// <summary>
-    /// Compact left-side in-flight list of fire types the local ship can shoot. Each tile
+    /// Compact top-left in-flight list of fire types the local ship can shoot. Each tile
     /// names the <see cref="BulletVfxBank"/> category (LASERBOLT) and the ship family
     /// that authored it (ASTRO EAGLE). Production shows the family fleet gun, a Titan's
     /// original catalog gun, plus purchased foreign weapons. GameManager cycle-all
@@ -21,7 +21,7 @@ namespace TitanOrbit.UI
     /// have not bought. B walks the same list; a tile click jumps to that bank.
     /// <para>
     /// Parks under <see cref="RocketLoadoutHUD"/> when that column is showing, or in the
-    /// same mid-left slot when no rockets / mines are equipped. Grows downward.
+    /// same slot under the ship stats when no rockets / mines are equipped. Grows downward.
     /// <see cref="SpaceBrakesHUD"/> docks under this strip. Writes nothing to ECS — B and
     /// clicks latch <see cref="BulletBankSelection"/>; the caret paints that request
     /// immediately. <see cref="ShipCycleBulletSystem"/> then writes the ghosted
@@ -61,9 +61,6 @@ namespace TitanOrbit.UI
 
         /// <summary>Panel width = tile + left/right pad.</summary>
         const float PanelWidth = TileWidth + PanelPad * 2f;
-
-        /// <summary>Left inset shared with rockets and Space Brakes on the 1920×1080 overlay.</summary>
-        const float OverlayLeft = 14f;
 
         /// <summary>Air between the rocket column bottom and this strip's top.</summary>
         const float DockGap = 8f;
@@ -387,7 +384,7 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// Parks this strip under the rocket column, or in the mid-left slot when that
+        /// Parks this strip under the rocket column, or under the ship stats when that
         /// column is hidden. Space Brakes docks under whatever height we settle on.
         /// </summary>
         /// <param name="contentHeight">Full stacked-tile height including panel pad.</param>
@@ -402,22 +399,10 @@ namespace TitanOrbit.UI
 
             // Execution order 66220 runs after RocketLoadoutHUD (66200), so this
             // measurement already includes this frame's rocket / mine row count.
-            if (RocketLoadoutHUD.TryGetOverlayDockBottomY(out dockBottom, out rocketsVisible) &&
-                rocketsVisible)
-            {
-                // --- Under rockets ---
-                // Top-left pivot: the strip hangs down from just below the rocket glass.
-                _panel.pivot = new Vector2(0f, 1f);
-                _panel.anchoredPosition = new Vector2(OverlayLeft, dockBottom - DockGap);
-            }
-            else
-            {
-                // --- Mid-left park ---
-                // Same slot rockets use when they have packs. Pivot 0.5 grows equally
-                // up and down from screen center.
-                _panel.pivot = new Vector2(0f, 0.5f);
-                _panel.anchoredPosition = new Vector2(OverlayLeft, 0f);
-            }
+            bool stacked = RocketLoadoutHUD.TryGetOverlayDockBottomY(out dockBottom, out rocketsVisible) &&
+                           rocketsVisible;
+            // Under rockets when that glass is up; otherwise the home slot under ship stats.
+            RocketLoadoutHUD.PlaceInLeftColumn(_panel, stacked, dockBottom, DockGap);
 
             float panelHeight = Mathf.Max(minHeight, contentHeight);
             _panel.sizeDelta = new Vector2(PanelWidth, panelHeight);
@@ -630,7 +615,7 @@ namespace TitanOrbit.UI
         /// <summary>
         /// Builds dark-glass canvas and a pool of tappable fire-type buttons parented
         /// to the panel (same as rockets). A Mask + Color.clear viewport used to hide
-        /// every tile. Starts in the mid-left rocket slot; LateUpdate docks under rockets.
+        /// every tile. Starts under the ship stats; LateUpdate docks under rockets.
         /// </summary>
         void BuildUi()
         {
@@ -640,15 +625,13 @@ namespace TitanOrbit.UI
             var scaler = gameObject.AddComponent<CanvasScaler>();
             scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
             scaler.referenceResolution = new Vector2(1920f, 1080f);
+            scaler.matchWidthOrHeight = 0.5f;
             gameObject.AddComponent<GraphicRaycaster>();
 
             var panelGo = new GameObject("Panel", typeof(RectTransform), typeof(Image));
             panelGo.transform.SetParent(transform, false);
             _panel = panelGo.GetComponent<RectTransform>();
-            _panel.anchorMin = new Vector2(0f, 0.5f);
-            _panel.anchorMax = new Vector2(0f, 0.5f);
-            _panel.pivot = new Vector2(0f, 0.5f);
-            _panel.anchoredPosition = new Vector2(OverlayLeft, 0f);
+            RocketLoadoutHUD.PlaceInLeftColumn(_panel, false, 0f, 0f);
             _panel.sizeDelta = new Vector2(PanelWidth, TileHeight + PanelPad * 2f);
             var bg = panelGo.GetComponent<Image>();
             bg.color = FillColor;

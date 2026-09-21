@@ -117,7 +117,7 @@ namespace TitanOrbit.ECS
                 for (int i = 0; i < bursts.Length; i++)
                 {
                     var b = bursts[i];
-                    float elapsed = math.max(0f, now - b.SpawnServerTime);
+                    float elapsed = GemClientSimStepper.CoastElapsedSeconds(em, now, b.SpawnServerTime);
                     ClientLocalGemSpawn.SpawnBurst(
                         em, gemPrefab, b.Origin, b.Remaining, b.Seed, b.SpawnServerTime, b.Tint, elapsed);
                 }
@@ -125,7 +125,7 @@ namespace TitanOrbit.ECS
                 for (int i = 0; i < spawns.Length; i++)
                 {
                     var recipe = spawns[i].Recipe;
-                    float elapsed = math.max(0f, now - recipe.SpawnServerTime);
+                    float elapsed = GemClientSimStepper.CoastElapsedSeconds(em, now, recipe.SpawnServerTime);
                     ClientLocalGemSpawn.SpawnFromRecipe(em, gemPrefab, recipe, elapsed);
                 }
             }

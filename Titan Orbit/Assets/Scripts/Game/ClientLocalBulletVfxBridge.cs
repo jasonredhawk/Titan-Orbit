@@ -71,6 +71,12 @@ namespace TitanOrbit.Game
         int _nextMountIndex;
 
         /// <summary>
+        /// Mount that last anticipated a shot. The drip walker skips it so the
+        /// same arsenal square cannot flash twice in a row.
+        /// </summary>
+        int _lastFiredMountIndex = -1;
+
+        /// <summary>
         /// After a drip shot, the next barrel charges at hull regen. A full-bank
         /// volley ignores this so leftover pool cannot dump every gun across frames.
         /// </summary>
@@ -122,6 +128,7 @@ namespace TitanOrbit.Game
             _lastGhostEnergy = 0f;
             _predictedBelowGhostStableTime = 0f;
             _nextMountIndex = 0;
+            _lastFiredMountIndex = -1;
             _energyChargeCooldown = 0f;
             _lastFireBankIndex = int.MinValue;
         }
@@ -137,17 +144,20 @@ namespace TitanOrbit.Game
         public static bool TryGetLocalEnergyQueue(
             out int nextMountIndex,
             out float predictedEnergy,
-            out float chargeCooldown)
+            out float chargeCooldown,
+            out int lastFiredMountIndex)
         {
             nextMountIndex = 0;
             predictedEnergy = 0f;
             chargeCooldown = 0f;
+            lastFiredMountIndex = -1;
             if (_instance == null || !_instance._energyPrimed)
                 return false;
 
             nextMountIndex = _instance._nextMountIndex;
             predictedEnergy = _instance._predictedEnergy;
             chargeCooldown = _instance._energyChargeCooldown;
+            lastFiredMountIndex = _instance._lastFiredMountIndex;
             return true;
         }
 
@@ -207,6 +217,7 @@ namespace TitanOrbit.Game
             {
                 _lastFireBankIndex = bankIndex;
                 _nextMountIndex = 0;
+                _lastFiredMountIndex = -1;
                 _energyChargeCooldown = 0f;
                 _predictedEnergy = shipState.CurrentEnergy;
                 _lastGhostEnergy = shipState.CurrentEnergy;
@@ -233,7 +244,10 @@ namespace TitanOrbit.Game
             SyncPredictedEnergy(shipState.CurrentEnergy, dt);
 
             if (!fireHeld)
+            {
+                _lastFiredMountIndex = -1;
                 return;
+            }
 
             // --- Orbit ring: no cosmetic tracers ---
             // [TITAN-ORBIT] Server rejects Fire while InOrbitRing. Skip anticipation so the player
@@ -288,7 +302,8 @@ namespace TitanOrbit.Game
                         out energySpend,
                         out nextMountIndexAfter,
                         _energyChargeCooldown,
-                        in arm))
+                        in arm,
+                        _lastFiredMountIndex))
                     return;
             }
             else if (!ShipWeaponFireLogic.TryPlanFire(
@@ -304,7 +319,8 @@ namespace TitanOrbit.Game
                     out nextMountIndexAfter,
                     abilityEnergy,
                     _energyChargeCooldown,
-                    in arm))
+                    in arm,
+                    _lastFiredMountIndex))
             {
                 return;
             }
@@ -436,9 +452,8 @@ namespace TitanOrbit.Game
                 // Spend only what actually queued — a clipped MEGA volley must not drain the
                 // full plan or predicted energy sticks at 0 and later shots never plan.
                 _predictedEnergy = math.max(0f, _predictedEnergy - spent);
-                // Only advance the energy-queue cursor when the full plan enqueued (avoids skips).
-                if (enqueued == shotCount)
-                    _nextMountIndex = nextMountIndexAfter;
+                _nextMountIndex = nextMountIndexAfter;
+                _lastFiredMountIndex = s_ShotScratch[enqueued - 1].MountIndex;
 
                 if (shotCount == 1)
                 {

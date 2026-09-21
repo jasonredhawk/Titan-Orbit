@@ -85,7 +85,7 @@ namespace TitanOrbit.ECS
             foreach (var (_, entity) in SystemAPI.Query<RefRO<ShipTag>>()
                          .WithNone<ShipWeaponState>()
                          .WithEntityAccess())
-                ecb.AddComponent(entity, new ShipWeaponState());
+                ecb.AddComponent(entity, new ShipWeaponState { LastFiredMountIndex = -1 });
 
             // [NETCODE] Prefer baking ShipWeaponArmState. Runtime add covers older
             // SubScenes; GhostFields will not replicate until the ship ghost is rebaked.

@@ -596,7 +596,7 @@ namespace TitanOrbit.ECS
                         result.GemsToExpel,
                         intensity: 0.5f,
                         salt: (uint)(shipEntity.Index * 19349663) ^ (uint)(serverElapsed * 1000.0),
-                        (float)serverElapsed,
+                        PlanetGemMoonOrbitClock.GetElapsedSecondsOrFallback(em, serverElapsed),
                         sourceNetworkId);
                 }
             }

@@ -14,13 +14,14 @@ using UnityEngine.UI;
 namespace TitanOrbit.UI
 {
     /// <summary>
-    /// Compact left-column arsenal strip under WEAPONS: every barrel on the local ship, grouped by
+    /// Compact arsenal strip under the ship stats, stacked with WEAPONS: every barrel on the local ship, grouped by
     /// combat class (gun / laser / missile / sniper). Click a cell to mute that
     /// barrel; click the class header to mute or arm the whole group. Energy fill
     /// lives in the cell background and is <b>that barrel’s shot cost</b>, not the
-    /// hull tank. Live energy stacks onto clips in strip order (first gun, then
-    /// the next). Regen fills one clip at a time and spills leftover into the
-    /// following barrel; overdrive / spend peels the same stack in reverse.
+    /// hull tank. When energy is low, only the current square fills: charge,
+    /// fire, then the next square, wrapping from the last weapon back to the
+    /// first. Leftover energy stays in the tank so later bars start empty.
+    /// When the pool can pay every armed clip, every ready square lights at once.
     /// Dim ice while a clip is filling, bright cyan only when that clip is full
     /// and ready. The gun currently receiving energy gets a caret. User-off is a
     /// muted slate chip, not the same look as “waiting for energy.”
@@ -32,8 +33,8 @@ namespace TitanOrbit.UI
     /// <see cref="ShipWeaponArmState"/> on the predicted tick.
     /// </para>
     /// <para>
-    /// Parks under <see cref="BulletTypeHUD"/> in the same left column (or under
-    /// rockets when that strip is hidden). <see cref="SpaceBrakesHUD"/> docks under
+    /// Parks under <see cref="BulletTypeHUD"/> in the column below the ship stats
+    /// (or under rockets when that strip is hidden). <see cref="SpaceBrakesHUD"/> docks under
     /// this glass. Hidden on the main menu, Join Team, Orbit Menu, and while the
     /// local ship is dead. Holds last paint during
     /// <see cref="ClientJoinSettleCache.ShouldSkipShipEntityQueries"/>.
@@ -66,9 +67,6 @@ namespace TitanOrbit.UI
 
         /// <summary>Matches the WEAPONS / rocket tile column (108 + 6+6 pad).</summary>
         const float PanelWidth = 120f;
-
-        /// <summary>Left inset shared with rockets, fire types, and Space Brakes.</summary>
-        const float OverlayLeft = 14f;
 
         /// <summary>Air between the WEAPONS glass and this strip.</summary>
         const float DockGap = 8f;
@@ -177,7 +175,7 @@ namespace TitanOrbit.UI
             go.AddComponent<ShipWeaponArmHUD>();
         }
 
-        /// <summary>Builds the left-column overlay canvas and empty group / cell pools.</summary>
+        /// <summary>Builds the top-left overlay canvas and empty group / cell pools.</summary>
         void Awake()
         {
             _instance = this;
@@ -196,7 +194,7 @@ namespace TitanOrbit.UI
 
         /// <summary>
         /// Bottom edge of the arsenal glass in the shared 1920×1080 overlay
-        /// (left-center anchor space). <see cref="SpaceBrakesHUD"/> calls this after we
+        /// (top-left anchor space). <see cref="SpaceBrakesHUD"/> calls this after we
         /// LateUpdate so CTRL docks under this strip.
         /// </summary>
         /// <param name="y">Overlay Y of the panel bottom when visible, or 0 when hidden.</param>
@@ -268,7 +266,7 @@ namespace TitanOrbit.UI
 
         /// <summary>
         /// Parks this strip under the WEAPONS fire-type glass, or under rockets when
-        /// that strip is hidden, or in the mid-left slot when both are hidden.
+        /// that strip is hidden, or under the ship stats when both are hidden.
         /// Execution order 66250 runs after <see cref="BulletTypeHUD"/> (66220).
         /// </summary>
         void ApplyDock()
@@ -290,16 +288,7 @@ namespace TitanOrbit.UI
                 stacked = true;
             }
 
-            if (stacked)
-            {
-                _panel.pivot = new Vector2(0f, 1f);
-                _panel.anchoredPosition = new Vector2(OverlayLeft, dockBottom - DockGap);
-            }
-            else
-            {
-                _panel.pivot = new Vector2(0f, 0.5f);
-                _panel.anchoredPosition = new Vector2(OverlayLeft, 0f);
-            }
+            RocketLoadoutHUD.PlaceInLeftColumn(_panel, stacked, dockBottom, DockGap);
         }
 
         /// <summary>
@@ -346,9 +335,14 @@ namespace TitanOrbit.UI
                 : default;
 
             float energy = shipState.CurrentEnergy;
+            int queueMount = 0;
+            int lastFired = -1;
             if (ClientLocalBulletVfxBridge.TryGetLocalEnergyQueue(
-                    out _, out float predEnergy, out _))
+                    out int predQueue, out float predEnergy, out _, out lastFired))
+            {
                 energy = predEnergy;
+                queueMount = predQueue;
+            }
 
             float abilityEnergy = 0f;
             if (!isMega && em.HasComponent<ShipLoadoutState>(ship))
@@ -381,7 +375,8 @@ namespace TitanOrbit.UI
             _hasPainted = true;
 
             ComputeMountCharges(
-                mounts, in arm, isMega, laserLockout, energy, in weaponCfg, abilityEnergy);
+                mounts, in arm, isMega, laserLockout, energy, queueMount, lastFired,
+                weaponCfg.FireMode, in weaponCfg, abilityEnergy);
 
             int paintedCells = PaintGroupsAndCells(mounts, gunCaption, layoutDirty);
 
@@ -567,10 +562,9 @@ namespace TitanOrbit.UI
 
         /// <summary>
         /// Writes per-barrel clip fill into <see cref="_mountFill"/>. Each chip is
-        /// that barrel’s own shot cost. The live pool is a stack: pour into the
-        /// first armed chip in strip order, spill the rest into the next, and so on.
-        /// Regen grows the first empty clip; overdrive peels the last full clip.
-        /// Four guns at 10 each with 15 energy → first ready, second half, rest empty.
+        /// that barrel’s own shot cost. A dry ship shows only the cursor square
+        /// filling; after it fires the cursor wraps to the next type and that
+        /// bar starts from empty. A full bank still lights every ready clip.
         /// </summary>
         void ComputeMountCharges(
             DynamicBuffer<ShipWeaponMountElement> mounts,
@@ -578,6 +572,9 @@ namespace TitanOrbit.UI
             bool isMega,
             bool laserLockout,
             float energy,
+            int queueMountIndex,
+            int lastFiredMountIndex,
+            ShipWeaponFireMode fireMode,
             in ShipWeaponConfig weaponCfg,
             float abilityEnergy)
         {
@@ -598,10 +595,89 @@ namespace TitanOrbit.UI
                     _mountLook[i] = CellLook.UserOff;
             }
 
-            // Same walk the fire planner uses so a bright clip is a clip that may shoot.
             int orderCount = ShipWeaponFireLogic.BuildArmedStripOrder(
                 mounts, in arm, _cascadeOrder, skipCannonLasers: false);
+            bool skipLasers = isMega;
+            int cycleSlot = ShipWeaponFireLogic.ResolveCycleSlot(
+                _cascadeOrder, orderCount, queueMountIndex, mounts, skipLasers);
+            bool together = fireMode == ShipWeaponFireMode.AlwaysFireTogether;
+            bool dripOnly = !together
+                            && (fireMode == ShipWeaponFireMode.AlwaysRoundRobin
+                                || lastFiredMountIndex >= 0
+                                || !ShipWeaponFireLogic.CanAffordEveryArmedClip(
+                                    energy, mounts, _cascadeOrder, orderCount,
+                                    weaponCfg.BulletDamage, weaponCfg.FireRate,
+                                    abilityEnergy, skipLasers));
 
+            if (dripOnly)
+            {
+                PaintCycleClip(
+                    mounts, cycleSlot, orderCount, lastFiredMountIndex, skipLasers,
+                    energy, isMega, laserLockout, in weaponCfg, abilityEnergy);
+                return;
+            }
+
+            PaintFullBankClips(
+                mounts, orderCount, energy, isMega, laserLockout,
+                in weaponCfg, abilityEnergy);
+        }
+
+        /// <summary>
+        /// One square charging. Other armed chips stay empty so the sequence
+        /// is readable: this bar fills, fires, then the next type starts over.
+        /// </summary>
+        void PaintCycleClip(
+            DynamicBuffer<ShipWeaponMountElement> mounts,
+            int cycleSlot,
+            int orderCount,
+            int lastFiredMountIndex,
+            bool skipLasers,
+            float energy,
+            bool isMega,
+            bool laserLockout,
+            in ShipWeaponConfig weaponCfg,
+            float abilityEnergy)
+        {
+            if (orderCount <= 0 || cycleSlot < 0 || cycleSlot >= orderCount)
+                return;
+
+            // Same walk as the fire planner: skip the square that just shot
+            // and any still on cooldown so the caret sits on the next weapon.
+            for (int step = 0; step < orderCount; step++)
+            {
+                int slot = (cycleSlot + step) % orderCount;
+                int i = _cascadeOrder[slot];
+                if (i < 0 || i >= mounts.Length)
+                    continue;
+
+                ShipWeaponMountElement mount = mounts[i];
+                if (skipLasers && ShipWeaponKind.IsCannonLaser(mount))
+                    continue;
+                if (orderCount > 1 && i == lastFiredMountIndex)
+                    continue;
+                if (mount.FireCooldown > 0.001f)
+                    continue;
+
+                float cost = ResolveMountShotCost(mount, isMega, in weaponCfg, abilityEnergy);
+                float fill = cost > 0.01f ? Mathf.Clamp01(energy / cost) : 0f;
+                _mountFill[i] = fill;
+                _mountLook[i] = LookForClip(mount, fill, laserLockout);
+                if (_mountLook[i] != CellLook.Ready && _mountLook[i] != CellLook.UserOff)
+                    _mountLook[i] = CellLook.Charging;
+                return;
+            }
+        }
+
+        /// <summary>Every armed clip stacked from the first square — full-bank volley.</summary>
+        void PaintFullBankClips(
+            DynamicBuffer<ShipWeaponMountElement> mounts,
+            int orderCount,
+            float energy,
+            bool isMega,
+            bool laserLockout,
+            in ShipWeaponConfig weaponCfg,
+            float abilityEnergy)
+        {
             float remaining = Mathf.Max(0f, energy);
             int caret = -1;
             for (int n = 0; n < orderCount; n++)
@@ -613,24 +689,26 @@ namespace TitanOrbit.UI
                 float fill = cost > 0.01f ? allocated / cost : 0f;
                 remaining = Mathf.Max(0f, remaining - allocated);
                 _mountFill[i] = fill;
-
-                bool laser = ShipWeaponKind.IsCannonLaser(mount);
-                bool ready = fill >= 0.999f
-                             && mount.FireCooldown <= 0.001f
-                             && (!laser || !laserLockout);
-                if (ready)
-                {
-                    _mountLook[i] = CellLook.Ready;
-                    continue;
-                }
-
-                _mountLook[i] = CellLook.Starved;
-                if (caret < 0)
+                _mountLook[i] = LookForClip(mount, fill, laserLockout);
+                if (caret < 0 && _mountLook[i] == CellLook.Starved && (fill > 0.001f || n == 0))
                     caret = i;
             }
 
             if (caret >= 0 && _mountLook[caret] != CellLook.Ready)
                 _mountLook[caret] = CellLook.Charging;
+        }
+
+        /// <summary>Ready / cooldown / starved for one chip. Mute is already applied.</summary>
+        static CellLook LookForClip(in ShipWeaponMountElement mount, float fill, bool laserLockout)
+        {
+            bool laser = ShipWeaponKind.IsCannonLaser(mount);
+            if (fill >= 0.999f
+                && mount.FireCooldown <= 0.001f
+                && (!laser || !laserLockout))
+                return CellLook.Ready;
+            if (fill >= 0.999f)
+                return CellLook.Cooldown;
+            return CellLook.Starved;
         }
 
         /// <summary>Energy this barrel must hold before it can fire (HUD clip size).</summary>
@@ -813,6 +891,7 @@ namespace TitanOrbit.UI
             var scaler = gameObject.AddComponent<CanvasScaler>();
             scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
             scaler.referenceResolution = new Vector2(1920f, 1080f);
+            scaler.matchWidthOrHeight = 0.5f;
             gameObject.AddComponent<GraphicRaycaster>();
 
             if (s_fillSprite == null)
@@ -821,10 +900,7 @@ namespace TitanOrbit.UI
             var panelGo = new GameObject("Panel", typeof(RectTransform), typeof(Image));
             panelGo.transform.SetParent(transform, false);
             _panel = panelGo.GetComponent<RectTransform>();
-            _panel.anchorMin = new Vector2(0f, 0.5f);
-            _panel.anchorMax = new Vector2(0f, 0.5f);
-            _panel.pivot = new Vector2(0f, 0.5f);
-            _panel.anchoredPosition = new Vector2(OverlayLeft, 0f);
+            RocketLoadoutHUD.PlaceInLeftColumn(_panel, false, 0f, 0f);
             _panel.sizeDelta = new Vector2(PanelWidth, HeaderHeight + CellHeight + PanelPad * 2f);
             var bg = panelGo.GetComponent<Image>();
             bg.color = FillColor;

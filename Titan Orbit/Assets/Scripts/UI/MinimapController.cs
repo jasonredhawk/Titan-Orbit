@@ -6,6 +6,7 @@ using TMPro;
 using System.Collections.Generic;
 using TitanOrbit.Core;
 using TitanOrbit.Data;
+using TitanOrbit.ECS;
 using TitanOrbit.Generation;
 using TitanOrbit.Game;
 using TitanOrbit.Simulation;
@@ -27,6 +28,8 @@ namespace TitanOrbit.UI
     /// Planet blips also draw a thin orbit ring at the gem-moon / ship orbit radius
     /// (<see cref="PlanetOrbitMath.GetOrbitRingCenterRadiusLocal"/>). Ring RGB always matches
     /// the world orbit fill (idle white, or locked-in ship teams cycling ~1s each).
+    /// The planet disc itself stays empty (dark interior, team-colored rim) at zero troops
+    /// and fills from the bottom with team color as population rises toward the cap.
     /// Collapsed world radius scales with ship-level camera zoom (<see cref="CameraFollowEcs.CurrentHeightZoomFactor"/>)
     /// so the circle shows proportionally more map as the gameplay camera rises. Expanded mode still fits the full torus.
     /// Hovering a planet disc (or its off-screen edge arrow) shows the proper world name via
@@ -314,7 +317,8 @@ namespace TitanOrbit.UI
             MegaTriangleFill, // MEGA troop fill stamp — inset solid, yellow via Image.color
             Irregular,   // Asteroids
             Bullseye,    // Legacy sprite id — comms Here ping uses CreateBullseyeSprite
-            Ring         // Thin annulus — planet moon-orbit path on the minimap
+            Ring,        // Thin annulus — planet moon-orbit path on the minimap
+            PlanetDiscOutline // Planet rim — hollow disc so troop fill can rise inside
         }
 
         /// <summary>
@@ -538,6 +542,9 @@ namespace TitanOrbit.UI
                 Image fill = FindPlanetFillImage(rt);
                 if (fill != null)
                     fill.color = layout.Color;
+                Image outline = FindPlanetOutlineImage(rt);
+                if (outline != null)
+                    outline.color = layout.Color;
             }
         }
 
@@ -2585,7 +2592,8 @@ namespace TitanOrbit.UI
                 return;
 
             Image img = FindPlanetFillImage(blipRt);
-            if (img == null)
+            Image outline = FindPlanetOutlineImage(blipRt);
+            if (img == null && outline == null)
                 return;
 
             bool friendly = playerAnchor != null && p.Team == playerAnchor.Team && p.Team != TeamId.None;
@@ -2594,14 +2602,21 @@ namespace TitanOrbit.UI
                 float wave = 0.5f + 0.5f * Mathf.Sin(Time.unscaledTime * 4.2f);
                 Color c = GetTeamColor(p.Team);
                 c.a = 0.78f + 0.22f * wave;
-                img.color = c;
+                if (img != null)
+                    img.color = c;
+                if (outline != null)
+                    outline.color = c;
                 float s = 1f + 0.07f * wave;
                 blipRt.localScale = new Vector3(s, s, 1f);
             }
             else
             {
                 Color baseColor = p.Team == TeamId.None ? planetColor : GetTeamColor(p.Team);
-                img.color = new Color(baseColor.r * 0.35f, baseColor.g * 0.35f, baseColor.b * 0.35f, 0.32f);
+                Color dim = new Color(baseColor.r * 0.35f, baseColor.g * 0.35f, baseColor.b * 0.35f, 0.32f);
+                if (img != null)
+                    img.color = dim;
+                if (outline != null)
+                    outline.color = dim;
                 blipRt.localScale = Vector3.one;
             }
         }
@@ -2624,6 +2639,137 @@ namespace TitanOrbit.UI
             }
 
             return blipRt.GetComponent<Image>();
+        }
+
+        /// <summary>
+        /// Team-colored rim drawn on top of the troop fill so an empty planet still reads as a disc.
+        /// </summary>
+        static Image FindPlanetOutlineImage(RectTransform blipRt)
+        {
+            if (blipRt == null)
+                return null;
+            Transform outlineTf = blipRt.Find("PlanetOutline");
+            return outlineTf != null ? outlineTf.GetComponent<Image>() : null;
+        }
+
+        /// <summary>
+        /// Stretches one disc layer to the planet blip. Troop fill uses vertical
+        /// <see cref="Image.Type.Filled"/> from the bottom; interior and rim stay solid.
+        /// </summary>
+        static Image AddPlanetDiscLayer(RectTransform blipRt, string layerName, Sprite sprite, Color color, bool filled)
+        {
+            var layerGo = new GameObject(layerName, typeof(RectTransform));
+            layerGo.transform.SetParent(blipRt, false);
+            var layerRt = layerGo.GetComponent<RectTransform>();
+            layerRt.anchorMin = Vector2.zero;
+            layerRt.anchorMax = Vector2.one;
+            layerRt.offsetMin = Vector2.zero;
+            layerRt.offsetMax = Vector2.zero;
+            var img = layerGo.AddComponent<Image>();
+            img.sprite = sprite;
+            img.color = color;
+            img.raycastTarget = false;
+            if (filled)
+            {
+                img.type = Image.Type.Filled;
+                img.fillMethod = Image.FillMethod.Vertical;
+                img.fillOrigin = (int)Image.OriginVertical.Bottom;
+                img.fillAmount = 0f;
+            }
+            return img;
+        }
+
+        /// <summary>
+        /// Population / effective cap (size, level, and triangle connection bonus).
+        /// 0 troops → empty disc; a full planet → solid team color.
+        /// </summary>
+        static float ResolvePlanetPopulationFillAmount(MinimapBlipAnchor p)
+        {
+            if (p == null || p.Population <= 0)
+                return 0f;
+
+            float size = ResolvePlanetWorldSize(p);
+            float bonus = p.PlanetId > 0
+                ? PlanetConnectionGraphCache.GetStackedConnectionBonusFraction(p.PlanetId)
+                : 0f;
+            int maxPop = PlanetPopulationMath.GetEffectiveMaxPopulation(size, p.PlanetLevel, bonus);
+            if (maxPop <= 0)
+                return 0f;
+            return Mathf.Clamp01(p.Population / (float)maxPop);
+        }
+
+        /// <summary>
+        /// Keeps the dark interior, team rim, and bottom-up troop fill in sync.
+        /// Creates any missing layer so a blip built before this gauge still upgrades in place.
+        /// </summary>
+        void ApplyPlanetTroopFill(RectTransform blipRt, MinimapBlipAnchor p, Color teamColor)
+        {
+            if (blipRt == null || p == null)
+                return;
+
+            Image fill = FindPlanetFillImage(blipRt);
+            if (fill == null || fill.gameObject == blipRt.gameObject)
+                fill = AddPlanetDiscLayer(blipRt, "PlanetFill", GetPlanetDiscFillSprite(), teamColor, filled: true);
+
+            if (fill.sprite == null || fill.type != Image.Type.Filled)
+            {
+                fill.sprite = GetPlanetDiscFillSprite();
+                fill.type = Image.Type.Filled;
+                fill.fillMethod = Image.FillMethod.Vertical;
+                fill.fillOrigin = (int)Image.OriginVertical.Bottom;
+            }
+
+            fill.color = teamColor;
+            fill.fillAmount = ResolvePlanetPopulationFillAmount(p);
+
+            // Interior sits behind the rising fill. Insert only when missing — reordering
+            // every frame swaps siblings with the population label.
+            Image interior = FindNamedImage(blipRt, "PlanetInterior");
+            if (interior == null)
+            {
+                interior = AddPlanetDiscLayer(blipRt, "PlanetInterior", GetPlanetDiscFillSprite(), PlanetEmptyInterior, filled: false);
+                if (fill.transform.parent == blipRt)
+                    interior.transform.SetSiblingIndex(fill.transform.GetSiblingIndex());
+            }
+
+            Image outline = FindPlanetOutlineImage(blipRt);
+            if (outline == null)
+            {
+                outline = AddPlanetDiscLayer(blipRt, "PlanetOutline", GetPlanetDiscOutlineSprite(), teamColor, filled: false);
+                Transform text = blipRt.Find("PopulationText");
+                if (text != null)
+                    outline.transform.SetSiblingIndex(text.GetSiblingIndex());
+            }
+
+            outline.color = teamColor;
+        }
+
+        static Image FindNamedImage(RectTransform blipRt, string childName)
+        {
+            if (blipRt == null)
+                return null;
+            Transform child = blipRt.Find(childName);
+            return child != null ? child.GetComponent<Image>() : null;
+        }
+
+        Sprite GetPlanetDiscFillSprite()
+        {
+            if (_planetDiscFillSpriteCache != null && _planetDiscFillSpriteCache.name == PlanetDiscFillSpriteName)
+                return _planetDiscFillSpriteCache;
+            _planetDiscFillSpriteCache = CreateBlipSprite(64, BlipType.Circle);
+            if (_planetDiscFillSpriteCache != null)
+                _planetDiscFillSpriteCache.name = PlanetDiscFillSpriteName;
+            return _planetDiscFillSpriteCache;
+        }
+
+        Sprite GetPlanetDiscOutlineSprite()
+        {
+            if (_planetDiscOutlineSpriteCache != null && _planetDiscOutlineSpriteCache.name == PlanetDiscOutlineSpriteName)
+                return _planetDiscOutlineSpriteCache;
+            _planetDiscOutlineSpriteCache = CreateBlipSprite(64, BlipType.PlanetDiscOutline);
+            if (_planetDiscOutlineSpriteCache != null)
+                _planetDiscOutlineSpriteCache.name = PlanetDiscOutlineSpriteName;
+            return _planetDiscOutlineSpriteCache;
         }
 
         private void UpdateBlips()
@@ -3426,7 +3572,8 @@ namespace TitanOrbit.UI
 
         /// <summary>
         /// Builds a layered planet blip under <see cref="minimapContent"/>: orbit ring, level dots,
-        /// filled disc, and population label. Ring radius matches the gem-moon / ship orbit centerline.
+        /// empty disc that fills with team color as population grows, and a population label.
+        /// Ring radius matches the gem-moon / ship orbit centerline.
         /// </summary>
         /// <param name="p">Planet (or home) anchor with team, level, and population.</param>
         /// <param name="color">Team tint, or neutral grey / gold when unowned.</param>
@@ -3464,18 +3611,11 @@ namespace TitanOrbit.UI
                 dotsRect, p.PlanetLevel, size, color, p.DefenseTurretBuiltMask,
                 planetWorldSize, worldToMinimapScale);
 
-            // --- Planet fill disc ---
-            var fillGo = new GameObject("PlanetFill", typeof(RectTransform));
-            fillGo.transform.SetParent(rt, false);
-            var fillRt = fillGo.GetComponent<RectTransform>();
-            fillRt.anchorMin = Vector2.zero;
-            fillRt.anchorMax = Vector2.one;
-            fillRt.offsetMin = Vector2.zero;
-            fillRt.offsetMax = Vector2.zero;
-            var fillImg = fillGo.AddComponent<Image>();
-            fillImg.sprite = CreateBlipSprite((int)size, BlipType.Circle);
-            fillImg.color = color;
-            fillImg.raycastTarget = false;
+            // --- Empty interior, then team-color troop fill rising from the bottom ---
+            AddPlanetDiscLayer(rt, "PlanetInterior", GetPlanetDiscFillSprite(), PlanetEmptyInterior, filled: false);
+            Image troopFill = AddPlanetDiscLayer(rt, "PlanetFill", GetPlanetDiscFillSprite(), color, filled: true);
+            troopFill.fillAmount = ResolvePlanetPopulationFillAmount(p);
+            AddPlanetDiscLayer(rt, "PlanetOutline", GetPlanetDiscOutlineSprite(), color, filled: false);
 
             // --- Population text (auto-sized inside the disc) ---
             var textGo = new GameObject("PopulationText", typeof(RectTransform));
@@ -3630,6 +3770,21 @@ namespace TitanOrbit.UI
         /// Cached thin-ring sprite shared by all planet orbit rings (white, tinted by Image.color).
         /// </summary>
         private Sprite _minimapOrbitRingSpriteCache;
+
+        /// <summary>Shared solid disc used as the empty interior and the troop fill mask.</summary>
+        private Sprite _planetDiscFillSpriteCache;
+
+        /// <summary>Shared rim so a planet with zero troops still reads as a circle.</summary>
+        private Sprite _planetDiscOutlineSpriteCache;
+
+        const string PlanetDiscFillSpriteName = "PlanetDiscFill_v1";
+        const string PlanetDiscOutlineSpriteName = "PlanetDiscOutline_v1";
+
+        /// <summary>
+        /// Dark void inside the planet disc. Team color is the rim and the rising troop fill,
+        /// so zero population stays an empty circle.
+        /// </summary>
+        static readonly Color PlanetEmptyInterior = new Color(0.04f, 0.05f, 0.07f, 0.95f);
 
         /// <summary>
         /// Returns a high-resolution thin annulus sprite for planet orbit rings on the minimap.
@@ -3796,12 +3951,10 @@ namespace TitanOrbit.UI
                 prev.DefenseTurretBuiltMask == turretMask &&
                 prev.Color.r == c32.r && prev.Color.g == c32.g && prev.Color.b == c32.b && prev.Color.a == c32.a)
             {
-                // Layout is stable — skip sprite rebuilds. Still write the fill so a leftover
-                // death-picker dim/pulse cannot stick after respawn (cache compared the
-                // un-dimmed team color, not the Image sitting on the disc).
-                Image cachedFill = FindPlanetFillImage(blipRt);
-                if (cachedFill != null)
-                    cachedFill.color = color;
+                // Layout is stable — skip sprite rebuilds. Still rewrite the troop gauge so a
+                // leftover death-picker dim cannot stick, and a connection-bonus cap change
+                // still moves the fill while population itself is unchanged.
+                ApplyPlanetTroopFill(blipRt, p, color);
 
                 // Orbit ring still retints every frame so multi-team cycles animate.
                 ApplyPlanetOrbitRingOccupancyTint(blipRt, p.PlanetId);
@@ -3824,10 +3977,8 @@ namespace TitanOrbit.UI
             float planetWorldSize = ResolvePlanetWorldSize(p);
             AddOrUpdatePlanetOrbitRing(blipRt, planetWorldSize, worldToMinimapScale, p.PlanetId);
 
-            // --- Planet fill tint ---
-            Image planetImg = FindPlanetFillImage(blipRt);
-            if (planetImg != null)
-                planetImg.color = color;
+            // --- Empty disc + troop gauge (team color rises with population / cap) ---
+            ApplyPlanetTroopFill(blipRt, p, color);
 
             // --- Population label ---
             var textGo = blipRt.Find("PopulationText");
@@ -4235,6 +4386,35 @@ namespace TitanOrbit.UI
                     }
                     break;
                 }
+
+                case BlipType.PlanetDiscOutline:
+                {
+                    // Disc rim thick enough to read on a small minimap planet.
+                    // Troop fill uses the solid Circle sprite inside this stroke.
+                    float outer = textureSize * 0.5f - 1f;
+                    float stroke = Mathf.Max(2.5f, textureSize * 0.11f);
+                    float inner = Mathf.Max(1f, outer - stroke);
+                    float aa = Mathf.Max(0.75f, textureSize * 0.03f);
+                    for (int y = 0; y < textureSize; y++)
+                    {
+                        for (int x = 0; x < textureSize; x++)
+                        {
+                            float dx = x - centerX;
+                            float dy = y - centerY;
+                            float dist = Mathf.Sqrt(dx * dx + dy * dy);
+                            float outside = Mathf.Max(dist - outer, inner - dist);
+                            float alpha;
+                            if (outside <= 0f)
+                                alpha = 1f;
+                            else if (outside < aa)
+                                alpha = 1f - Mathf.SmoothStep(0f, aa, outside);
+                            else
+                                alpha = 0f;
+                            pixels[y * textureSize + x] = new Color(1f, 1f, 1f, alpha);
+                        }
+                    }
+                    break;
+                }
             }
             
             texture.SetPixels(pixels);
@@ -4252,6 +4432,7 @@ namespace TitanOrbit.UI
                 case BlipType.Irregular: spriteName = "Irregular"; break;
                 case BlipType.Bullseye: spriteName = "Bullseye"; break;
                 case BlipType.Ring: spriteName = "Ring"; break;
+                case BlipType.PlanetDiscOutline: spriteName = "PlanetDiscOutline"; break;
             }
             
             Sprite sprite = Sprite.Create(texture, new Rect(0, 0, textureSize, textureSize), new Vector2(0.5f, 0.5f), 100f);

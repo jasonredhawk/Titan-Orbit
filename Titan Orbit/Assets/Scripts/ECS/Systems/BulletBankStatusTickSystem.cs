@@ -146,7 +146,8 @@ namespace TitanOrbit.ECS
                             result.GemsToExpel,
                             intensity: 0.5f,
                             salt: (uint)(entity.Index * 19349663) ^ (uint)(elapsed * 1000.0),
-                            (float)elapsed,
+                            PlanetGemMoonOrbitClock.GetElapsedSecondsOrFallback(
+                                state.EntityManager, elapsed),
                             sourceNetworkId);
                     }
 

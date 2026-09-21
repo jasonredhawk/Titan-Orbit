@@ -124,7 +124,7 @@ namespace TitanOrbit.ECS.Authoring
                 });
                 AddComponent(entity, new ShipVitalsState());
                 AddComponent(entity, new ShipAttributeUpgradeState());
-                AddComponent(entity, new ShipWeaponState());
+                AddComponent(entity, new ShipWeaponState { LastFiredMountIndex = -1 });
                 // [NETCODE] Arsenal mute mask MUST bake — GhostFields do not replicate
                 // when ShipEnsureComponentsSystem adds this only at runtime.
                 AddComponent(entity, ShipWeaponArmState.AllOn);

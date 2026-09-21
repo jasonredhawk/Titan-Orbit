@@ -384,6 +384,12 @@ namespace TitanOrbit.ECS
     /// same-tick coherent. Skips linear damping only while a live tractor lock is active
     /// (<see cref="GemMotionState.PhaseTractor"/> and non-zero <see cref="GemMotionState.TractorShipId"/>).
     /// Tunables: <see cref="GemExplosionSettings"/> (Editor).
+    /// <para>
+    /// Steps whole ServerTicks at 1/Hz, matching <see cref="GemClientMotionSystem"/>.
+    /// Host <c>SimulationSystemGroup</c> runs every render frame with frame <c>DeltaTime</c>
+    /// while the client coasts on ServerTick — that parked spilled gems off the scoop pose
+    /// once the burst finished damping.
+    /// </para>
     /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation)]
     [UpdateInGroup(typeof(SimulationSystemGroup))]
@@ -391,10 +397,29 @@ namespace TitanOrbit.ECS
     [UpdateAfter(typeof(MiningSystem))]
     public partial struct GemMotionSystem : ISystem
     {
+        /// <summary>Last ServerTick this system already integrated. 0 = not sampled yet.</summary>
+        uint _committedTick;
+
         /// <summary>Integrates velocity + tumble with PhysX-like damping, then wraps XZ.</summary>
         public void OnUpdate(ref SystemState state)
         {
-            float dt = SystemAPI.Time.DeltaTime;
+            if (!PlanetGemMoonOrbitClock.TryGetServerTick(state.EntityManager, out uint tick, out int hz))
+                return;
+
+            float dt = hz > 0 ? 1f / hz : GemMotionLogic.CatchUpStepSeconds;
+            if (_committedTick == 0 || tick < _committedTick)
+            {
+                _committedTick = tick;
+                return;
+            }
+
+            if (tick == _committedTick)
+                return;
+
+            // Dedicated catch-up can jump many ticks in one frame; host editor stays at 1–2.
+            int steps = (int)math.min(tick - _committedTick, 64);
+            _committedTick = tick;
+
             var settings = GemExplosionSettingsCache.ResolveOrDefault();
             float linearDamping = settings.LinearDamping;
             float angularDamping = settings.AngularDamping;
@@ -431,20 +456,23 @@ namespace TitanOrbit.ECS
                 byte phase = hasMotion ? motionRo.Phase : GemMotionState.PhaseCoast;
                 bool haveMap = ToroidalMapEcs.TryGetMapSize(out float mapW, out float mapH);
 
-                GemMotionLogic.IntegrateStep(
-                    ref pos,
-                    ref rot,
-                    ref vel,
-                    ref ang,
-                    ref phase,
-                    underTractor,
-                    dt,
-                    linearDamping,
-                    angularDamping,
-                    stopSpeed,
-                    mapW,
-                    mapH,
-                    haveMap);
+                for (int s = 0; s < steps; s++)
+                {
+                    GemMotionLogic.IntegrateStep(
+                        ref pos,
+                        ref rot,
+                        ref vel,
+                        ref ang,
+                        ref phase,
+                        underTractor,
+                        dt,
+                        linearDamping,
+                        angularDamping,
+                        stopSpeed,
+                        mapW,
+                        mapH,
+                        haveMap);
+                }
 
                 lt.Position = pos;
                 lt.Rotation = rot;
@@ -1657,7 +1685,8 @@ namespace TitanOrbit.ECS
     /// Shared check: damage-spilled gems block the source ship from tractor / pickup.
     /// Window is <c>SpawnServerTime + duration</c> on the ServerTick clock — not the ghosted
     /// <see cref="GemState.ExcludePickupUntilServerTime"/> float (quantization could stick
-    /// the block on forever).
+    /// the block on forever). A spawn stamp far ahead of that clock fails open so the
+    /// spilling ship is not locked out for the rest of the match.
     /// </summary>
     public static class GemSelfPickupBlock
     {
@@ -1680,7 +1709,13 @@ namespace TitanOrbit.ECS
             float spawn = gem.SpawnServerTime;
             if (spawn <= 0f)
                 return false;
-            return nowServerTime < spawn + blockSeconds;
+            float age = nowServerTime - spawn;
+            // Spawn stamped on World.Time while this check uses ServerTick (or the reverse)
+            // leaves age largely negative. Treating that as "still in the window" locked the
+            // spilling ship out until the slow clock caught up — often the rest of the match.
+            if (age < -0.25f)
+                return false;
+            return age < blockSeconds;
         }
 
         /// <summary>Tractor window — full designer self-pickup penalty.</summary>

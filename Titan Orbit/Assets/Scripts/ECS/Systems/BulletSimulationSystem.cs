@@ -357,7 +357,12 @@ namespace TitanOrbit.ECS
                 if (!isMega)
                 {
                     if (!input.ValueRO.Fire.IsSet)
+                    {
+                        // New trigger pull may volley again; do not keep the last drip lock.
+                        if (weaponState.ValueRO.LastFiredMountIndex >= 0)
+                            weaponState.ValueRW.LastFiredMountIndex = -1;
                         continue;
+                    }
 
                     // --- Electric shock: cannot fire while stunned ---
                     if (ownerShocked)
@@ -440,7 +445,8 @@ namespace TitanOrbit.ECS
                         out int nextMountIndexAfter,
                         abilityEnergy,
                         weaponState.ValueRO.FireCooldown,
-                        in arm))
+                        in arm,
+                        weaponState.ValueRO.LastFiredMountIndex))
                     continue;
 
                 // [TITAN-ORBIT] Top killer: +5% damage, same energy. Snapshot rebuilt this tick.
@@ -476,6 +482,7 @@ namespace TitanOrbit.ECS
                 shipState.ValueRW.CurrentEnergy = math.max(0f, shipState.ValueRO.CurrentEnergy - energySpend);
                 // Advance energy-queue cursor (0 after full volley; +1 after a drip shot).
                 weaponState.ValueRW.NextMountIndex = nextMountIndexAfter;
+                weaponState.ValueRW.LastFiredMountIndex = s_ShotScratch[shotCount - 1].MountIndex;
                 if (shotCount == 1)
                 {
                     int chargeMount = nextMountIndexAfter;
@@ -553,7 +560,11 @@ namespace TitanOrbit.ECS
             bool topKiller)
         {
             if (!ownerMayFire)
+            {
+                if (weaponState.LastFiredMountIndex >= 0)
+                    weaponState.LastFiredMountIndex = -1;
                 return;
+            }
 
             var gunners = state.EntityManager.HasBuffer<MegaShipGunnerSlotElement>(mega)
                 ? state.EntityManager.GetBuffer<MegaShipGunnerSlotElement>(mega)
@@ -571,7 +582,8 @@ namespace TitanOrbit.ECS
                     out float energySpend,
                     out int nextMountIndexAfter,
                     weaponState.FireCooldown,
-                    in arm))
+                    in arm,
+                    weaponState.LastFiredMountIndex))
                 return;
 
             int megaOwnerNet = ghostOwner.NetworkId;
@@ -656,6 +668,7 @@ namespace TitanOrbit.ECS
 
             shipState.CurrentEnergy = math.max(0f, shipState.CurrentEnergy - energySpend);
             weaponState.NextMountIndex = nextMountIndexAfter;
+            weaponState.LastFiredMountIndex = s_ShotScratch[shotCount - 1].MountIndex;
             if (shotCount == 1)
             {
                 float nextCost = ShipWeaponFireLogic.GetNextArmedMegaShotCost(
