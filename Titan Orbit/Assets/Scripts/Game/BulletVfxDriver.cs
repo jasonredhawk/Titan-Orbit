@@ -809,7 +809,8 @@ namespace TitanOrbit.Game
                         display, sparkNormal, ramScale, killBoom, ramBank, ramTeam);
                     // Sequence-0 is also the grind metronome (4 Hz). Local hull SFX is predicted
                     // from contacts; remotes hear these pulses (skip-near-local inside the driver).
-                    ShipCollisionSfxDriver.NotifyRemoteRamPulse(display, hit.Damage, killBoom);
+                    ShipCollisionSfxDriver.NotifyRemoteRamPulse(
+                        display, hit.Damage, killBoom, hit.OwnerNetworkId);
                     if (killBoom)
                     {
                         BulletImpactAttach.PlayAtLogicalPoint(

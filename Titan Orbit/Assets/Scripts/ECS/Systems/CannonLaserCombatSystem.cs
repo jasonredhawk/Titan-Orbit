@@ -419,7 +419,10 @@ namespace TitanOrbit.ECS
             return false;
         }
 
-        /// <summary>Closest hostile pad or moon on one planet (same rule as AutoFire).</summary>
+        /// <summary>
+        /// Closest hostile pad or non-friendly moon shield on one planet
+        /// (same rule as AutoFire). Neutral shields lock; friendly ones do not.
+        /// </summary>
         bool TryResolvePlanetAim(
             Entity planet,
             TeamId ownerTeam,
@@ -437,12 +440,13 @@ namespace TitanOrbit.ECS
 
             var planetState = EntityManager.GetComponentData<PlanetState>(planet);
             var planetXf = EntityManager.GetComponentData<LocalTransform>(planet);
-            if (planetState.Ownership == TeamId.None || planetState.Ownership == ownerTeam)
+            if (planetState.Ownership == ownerTeam)
                 return false;
 
             float best = range;
             bool found = false;
-            if (EntityManager.HasBuffer<PlanetaryDefenseSlotElement>(planet))
+            if (planetState.Ownership != TeamId.None
+                && EntityManager.HasBuffer<PlanetaryDefenseSlotElement>(planet))
             {
                 var slots = EntityManager.GetBuffer<PlanetaryDefenseSlotElement>(planet);
                 int slotCount = slots.Length;
@@ -467,21 +471,31 @@ namespace TitanOrbit.ECS
                 }
             }
 
-            if (EntityManager.HasComponent<PlanetGemMoonState>(planet)
-                && !PlanetGemMoonCombatLogic.IsTeamFriendlyToMoon(planetState.Ownership, ownerTeam))
+            if (EntityManager.HasComponent<PlanetGemMoonState>(planet))
             {
-                float3 moonPos = PlanetOrbitMath.GetMoonWorldPosition(
-                    planetXf.Position,
-                    math.max(0.25f, planetXf.Scale),
-                    planetState.PlanetLevel,
-                    planetState.PlanetId,
-                    moonElapsed,
-                    planetState.IsHomePlanet);
-                float moonDist = ToroidalMapEcs.ToroidalDistance(from, moonPos, mapW, mapH);
-                if (moonDist < best)
+                var moon = EntityManager.GetComponentData<PlanetGemMoonState>(planet);
+                if (PlanetGemMoonCombatLogic.TryGetNonFriendlyMoonAim(
+                        planetState.Ownership,
+                        ownerTeam,
+                        planetXf.Position,
+                        planetXf.Scale,
+                        planetState.PlanetLevel,
+                        planetState.PlanetId,
+                        planetState.IsHomePlanet,
+                        moon.CurrentShield,
+                        from,
+                        mapW,
+                        mapH,
+                        moonElapsed,
+                        out float3 moonAim,
+                        out _))
                 {
-                    aim = moonPos;
-                    found = true;
+                    float moonDist = ToroidalMapEcs.ToroidalDistance(from, moonAim, mapW, mapH);
+                    if (moonDist < best)
+                    {
+                        aim = moonAim;
+                        found = true;
+                    }
                 }
             }
 

@@ -3,6 +3,7 @@ using TitanOrbit;
 using TitanOrbit.Data;
 using Unity.Collections;
 using Unity.Entities;
+using Unity.NetCode;
 using UnityEngine;
 
 namespace TitanOrbit.ECS
@@ -318,6 +319,7 @@ namespace TitanOrbit.ECS
         }
 
         static int s_FamilyPlanetBankFrame = -1;
+        static World s_FamilyPlanetBankWorld;
         static int[] s_FamilyPlanetBanks;
 
         /// <summary>
@@ -347,11 +349,20 @@ namespace TitanOrbit.ECS
 
         static void EnsureFamilyPlanetBanks(EntityManager em)
         {
+            World world = em.World;
             int frame = Time.frameCount;
-            if (s_FamilyPlanetBankFrame == frame && s_FamilyPlanetBanks != null)
+            if (s_FamilyPlanetBankFrame == frame
+                && s_FamilyPlanetBankWorld == world
+                && s_FamilyPlanetBanks != null)
+                return;
+
+            // Client Instantiates window: do not gather planets (and do not replace
+            // a good server snapshot with an empty client query).
+            if (world != null && world.IsClient() && ClientJoinSettleCache.ShouldSkipMapBodyQueries)
                 return;
 
             s_FamilyPlanetBankFrame = frame;
+            s_FamilyPlanetBankWorld = world;
             if (s_FamilyPlanetBanks == null)
                 s_FamilyPlanetBanks = new int[16];
             for (int i = 0; i < s_FamilyPlanetBanks.Length; i++)
@@ -405,6 +416,68 @@ namespace TitanOrbit.ECS
             var config = PlanetShipFamilyConfig.LoadDefault();
             ResolveHullDefault(em, shipEntity, config, out _, out int hullBank);
             return hullBank;
+        }
+
+        /// <summary>
+        /// Family whose weapon meshes belong on this B-key / HUD bank.
+        /// Hull default → this ship's family. Purchased foreign guns → that extra's
+        /// family. Cycle-all then walks the planet that rolled the bank, then the
+        /// rare unique authored default (Laserbolt is shared, so it never wins there).
+        /// </summary>
+        public static bool TryResolveFamilyForBank(
+            EntityManager em,
+            Entity shipEntity,
+            int bankIndex,
+            out ShipFamilyDefinition family)
+        {
+            family = null;
+            if (shipEntity == Entity.Null || em == default || !em.Exists(shipEntity))
+                return false;
+
+            var config = PlanetShipFamilyConfig.LoadDefault();
+            ResolveHullDefault(em, shipEntity, config, out ShipFamilyDefinition hullFamily, out int hullBank);
+
+            // --- Hull fleet gun ---
+            // [TITAN-ORBIT] Same bank as spawn keeps host guns. A purchased Laserbolt
+            // on a Fireballs hull is a different row and must not land here.
+            if (bankIndex == hullBank && hullFamily != null)
+            {
+                family = hullFamily;
+                return true;
+            }
+
+            // --- Purchased weapon extras ---
+            // Buying CosmicShark_Weapon_2 at a Fireballs world adds Fireballs to B-key;
+            // cycling there restyles every barrel to that family's catalog guns.
+            if (em.HasBuffer<EquippedEquipmentElement>(shipEntity))
+            {
+                var equipment = em.GetBuffer<EquippedEquipmentElement>(shipEntity);
+                for (int i = 0; i < equipment.Length; i++)
+                {
+                    EquippedEquipmentElement item = equipment[i];
+                    if ((StoreItemType)item.ItemType != StoreItemType.ShipComponent)
+                        continue;
+
+                    string id = item.ComponentId.ToString();
+                    if (!IsPurchasedWeaponComponent(id))
+                        continue;
+                    if (ResolvePurchasedWeaponBank(em, id, config, hullBank) != bankIndex)
+                        continue;
+                    if (!BulletBankProfileUtility.TryFindComponentInAnyFamily(
+                            id, out _, out ShipFamilyDefinition extraFamily, out _, config)
+                        || extraFamily == null)
+                        continue;
+
+                    family = extraFamily;
+                    return true;
+                }
+            }
+
+            // Cycle-all banks with no purchased extra keep the current meshes.
+            // A planet gather from presentation LateUpdate used to overwrite the
+            // shared per-frame cache and made the server think only the hull gun
+            // was owned — B then snapped back to the default type.
+            return false;
         }
 
         /// <summary>

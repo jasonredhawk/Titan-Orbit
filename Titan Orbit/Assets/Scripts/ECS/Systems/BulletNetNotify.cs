@@ -187,6 +187,10 @@ namespace TitanOrbit.ECS
         /// </param>
         /// <param name="scaleMultiplier">Visual size from ram damage (kill frames are larger).</param>
         /// <param name="asteroidHealthAfter">Health after this pulse; 0 means the rock died.</param>
+        /// <param name="ownerNetworkId">
+        /// Ramming ship. 0 for burn ticks. Clients skip grind SFX for their own id so a
+        /// late pulse cannot keep the loop playing after the hull has left the rock.
+        /// </param>
         public static void SendRamAsteroidHit(
             ref EntityCommandBuffer ecb,
             float3 hitPosition,
@@ -195,7 +199,8 @@ namespace TitanOrbit.ECS
             int bankIndex,
             float scaleMultiplier,
             float asteroidHealthAfter,
-            int asteroidLayoutSlot = -1)
+            int asteroidLayoutSlot = -1,
+            int ownerNetworkId = 0)
         {
             // --- Flatten to the play plane ---
             // [TITAN-ORBIT] Combat and display are XZ; Y is unused on the torus.
@@ -216,6 +221,7 @@ namespace TitanOrbit.ECS
                 PlanetaryDefenseSlotIndex = 0,
                 PlanetaryDefenseHealthAfter = -1f,
                 AsteroidLayoutSlot = asteroidLayoutSlot,
+                OwnerNetworkId = ownerNetworkId,
             };
 
             // --- Host in-process (Editor / listen-server) ---
@@ -239,6 +245,7 @@ namespace TitanOrbit.ECS
                 PlanetaryDefenseSlotIndex = 0,
                 PlanetaryDefenseHealthAfter = -1f,
                 AsteroidLayoutSlot = asteroidLayoutSlot,
+                OwnerNetworkId = ownerNetworkId,
             });
             ecb.AddComponent(rpcEntity, new SendRpcCommandRequest { TargetConnection = Entity.Null });
         }

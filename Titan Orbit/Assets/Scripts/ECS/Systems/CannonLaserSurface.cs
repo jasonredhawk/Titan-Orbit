@@ -149,14 +149,18 @@ namespace TitanOrbit.ECS
                     planetState.PlanetId,
                     moonElapsed,
                     planetState.IsHomePlanet);
-                float moonDist = ToroidalMapEcs.ToroidalDistance(muzzle, moonPos, mapW, mapH);
+                float hitRadius = PlanetGemMoonMath.GetMoonBulletHitRadiusWorld(
+                    math.max(0.25f, planetXf.Scale),
+                    planetState.IsHomePlanet,
+                    moon.CurrentShield);
+                float3 surface = CannonLaserMath.PullToSphereSurface(
+                    muzzle, moonPos, hitRadius, mapW, mapH);
+                float moonDist = ToroidalMapEcs.ToroidalDistance(muzzle, surface, mapW, mapH);
                 if (moonDist < best)
                 {
+                    best = moonDist;
                     center = moonPos;
-                    radius = PlanetGemMoonMath.GetMoonBulletHitRadiusWorld(
-                        math.max(0.25f, planetXf.Scale),
-                        planetState.IsHomePlanet,
-                        moon.CurrentShield);
+                    radius = hitRadius;
                     found = true;
                 }
             }

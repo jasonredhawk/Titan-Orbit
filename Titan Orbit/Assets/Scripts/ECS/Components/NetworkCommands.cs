@@ -597,7 +597,8 @@ namespace TitanOrbit.ECS
 
         /// <summary>
         /// Shooter NetworkId for orphan-tracer reconcile when Sequence was never bound.
-        /// 0 on ram/grind (Sequence 0).
+        /// Ram/grind (Sequence 0) carries the ramming ship so the local client does not
+        /// replay its own grind SFX. 0 when the shooter is unknown (burn ticks).
         /// </summary>
         public int OwnerNetworkId;
 

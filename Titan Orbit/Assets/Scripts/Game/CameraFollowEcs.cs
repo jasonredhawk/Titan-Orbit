@@ -514,6 +514,21 @@ namespace TitanOrbit.Game
             if (dt <= 0f)
                 return;
 
+            // --- Dead: ignore a one-frame hop to the home-ring spawn ---
+            // [TITAN-ORBIT] Asteroid death can present LocalTransform at the join spawn for
+            // a single frame, then the wreck pose returns. The camera hard-locks to XZ, so
+            // that frame cuts to the home planet and the next frame cuts back to the field.
+            // _wasLocalShipDead is still last frame here; UpdateTheatricalModeState updates it.
+            bool deadNow = EcsGameBridge.TryGetLocalShipState(out var deadShip) && deadShip.IsDead;
+            bool respawnedNow = _wasLocalShipDead && !deadNow;
+            if (_hasLastShipPos && deadNow && !respawnedNow)
+            {
+                Vector3 flatLast = new Vector3(_lastShipPos.x, 0f, _lastShipPos.z);
+                Vector3 flatNow = new Vector3(shipPos.x, 0f, shipPos.z);
+                if (Vector3.Distance(flatLast, flatNow) > 40f)
+                    shipPos = _lastShipPos;
+            }
+
             MapWrapTransition.Tick(dt);
 
             // --- Same-frame wrap: snap velocity sample so look-ahead does not spike ---

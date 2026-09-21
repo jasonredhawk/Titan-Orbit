@@ -1,3 +1,4 @@
+using TitanOrbit;
 using TitanOrbit.Core;
 using TitanOrbit.Data;
 using TitanOrbit.Simulation;
@@ -59,6 +60,9 @@ namespace TitanOrbit.ECS
     /// </summary>
     public static class ShipStatApplyLogic
     {
+        /// <summary>Scratch for "is this B-key bank still owned?" after a gear discard.</summary>
+        static readonly int[] s_OwnedBankScratch = new int[16];
+
         static PlanetShipFamilyConfig s_config;
 
         /// <summary>Lazily loads PlanetShipFamilyConfig from Resources (cached until InvalidateConfigCache).</summary>
@@ -535,7 +539,30 @@ namespace TitanOrbit.ECS
 
                 if (adoptPlanetHullGun)
                 {
-                    loadout.RuntimeBulletIndex = hullBank;
+                    // Family / planet stamp changed → take that gun. Missing
+                    // chassis state (first apply) must not wipe a live B-key.
+                    if (em.HasComponent<ShipChassisState>(shipEntity))
+                    {
+                        loadout.RuntimeBulletIndex = hullBank;
+                    }
+                    else
+                    {
+                        int[] ownedFirst = new int[16];
+                        int ownedFirstCount = BulletBankOwnership.CollectOwnedDamageBanks(
+                            em, shipEntity, ownedFirst);
+                        bool firstOwned = false;
+                        for (int i = 0; i < ownedFirstCount; i++)
+                        {
+                            if (ownedFirst[i] == loadout.RuntimeBulletIndex)
+                            {
+                                firstOwned = true;
+                                break;
+                            }
+                        }
+
+                        if (!firstOwned)
+                            loadout.RuntimeBulletIndex = hullBank;
+                    }
                 }
                 else
                 {
@@ -557,6 +584,12 @@ namespace TitanOrbit.ECS
 
                 em.SetComponentData(shipEntity, loadout);
             }
+
+            // Discarding the weapon that owned the live bank must return the hull gun.
+            // Otherwise the mesh swap keeps the bought barrels and the next gear buy
+            // eats whatever is left under them.
+            if (writeGhostedShipState)
+                SnapRuntimeBankIfUnowned(em, shipEntity, chassisId);
 
             // --- Physics tuning (ShipPhysicsDriveSystem reads these) ---
             if (em.HasComponent<ShipMotorConfig>(shipEntity))
@@ -733,6 +766,47 @@ namespace TitanOrbit.ECS
 
                 return hash;
             }
+        }
+
+        /// <summary>
+        /// B-key stays put while the bank is still on the hull or a purchased weapon.
+        /// Deleting that weapon drops it from the owned set — snap back to the hull gun
+        /// so presentation restores the original barrels.
+        /// </summary>
+        static void SnapRuntimeBankIfUnowned(EntityManager em, Entity shipEntity, string chassisId)
+        {
+            if (!em.HasComponent<ShipLoadoutState>(shipEntity))
+                return;
+
+            // Debug "cycle all banks" is allowed to sit on a type the hull does not own.
+            if (TitanOrbitDebugFlags.CycleAllBulletBanks)
+                return;
+
+            var loadout = em.GetComponentData<ShipLoadoutState>(shipEntity);
+
+            int count = BulletBankOwnership.CollectOwnedDamageBanks(em, shipEntity, s_OwnedBankScratch);
+            for (int i = 0; i < count; i++)
+            {
+                if (s_OwnedBankScratch[i] == loadout.RuntimeBulletIndex)
+                    return;
+            }
+
+            int hullBank = PlanetShipFamilyAssignment.DefaultBulletBankIndex;
+            if (em.HasComponent<ShipState>(shipEntity))
+            {
+                hullBank = PlanetShipFamilyAssignment.SanitizeSelectableDamageBank(
+                    em.GetComponentData<ShipState>(shipEntity).HullBulletBankIndex);
+            }
+            else if (TryResolveFamilyForChassisId(chassisId, out ShipFamilyDefinition bankFamily))
+            {
+                hullBank = BulletBankProfileUtility.ResolveBankIndexForFamily(bankFamily);
+            }
+
+            if (loadout.RuntimeBulletIndex == hullBank)
+                return;
+
+            loadout.RuntimeBulletIndex = hullBank;
+            em.SetComponentData(shipEntity, loadout);
         }
 
         /// <summary>

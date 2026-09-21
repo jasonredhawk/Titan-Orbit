@@ -497,11 +497,14 @@ namespace TitanOrbit.Game
 
             if (!TryGetLocalMouseBeamEnd(em, binding, in hull, in mount, muzzle, mapW, mapH, out rawEnd))
             {
+                double beamMoonElapsed = 0d;
+                PlanetGemMoonOrbitClock.TryGetElapsedSeconds(
+                    out beamMoonElapsed, includeTickFraction: true);
                 if (ghostId != 0
                     && MegaShipWeaponVisualTargets.TryGetEntity(ghostId, out Entity target)
                     && MegaShipWeaponVisualTargets.IsLiveVisualTarget(em, target)
                     && CannonLaserSurface.TryGetHitPoint(
-                        em, target, (float3)muzzle, mapW, mapH, 0.0, out float3 surface))
+                        em, target, (float3)muzzle, mapW, mapH, beamMoonElapsed, out float3 surface))
                 {
                     rawEnd = (Vector3)surface;
                 }
@@ -841,6 +844,29 @@ namespace TitanOrbit.Game
                     continue;
 
                 float3 logical = o.LogicalCenter;
+                if (o.Kind == BulletCosmeticHitQuery.ObstacleKind.Moon)
+                {
+                    double moonElapsed = 0d;
+                    PlanetGemMoonOrbitClock.TryGetElapsedSeconds(
+                        out moonElapsed, includeTickFraction: true);
+                    if (!PlanetGemMoonCombatLogic.TryGetNonFriendlyMoonAim(
+                            (TeamId)o.TeamOrOwnership,
+                            team,
+                            o.LogicalCenter,
+                            o.Scale,
+                            o.PlanetLevel,
+                            o.PlanetId,
+                            o.IsHomePlanet,
+                            o.CurrentShield,
+                            (float3)muzzle,
+                            mapW,
+                            mapH,
+                            moonElapsed,
+                            out logical,
+                            out _))
+                        continue;
+                }
+
                 float d = ToroidalMapEcs.ToroidalDistance((float3)muzzle, logical, mapW, mapH);
                 if (d >= best)
                     continue;
@@ -880,11 +906,15 @@ namespace TitanOrbit.Game
                     return o.SourceEntity != Entity.Null
                            && MegaShipWeaponVisualTargets.IsLiveVisualTarget(em, o.SourceEntity);
                 case BulletCosmeticHitQuery.ObstacleKind.PlanetaryDefense:
-                case BulletCosmeticHitQuery.ObstacleKind.Moon:
                     if (heal)
                         return false;
                     return (TeamId)o.TeamOrOwnership != team
                            && (TeamId)o.TeamOrOwnership != TeamId.None;
+                case BulletCosmeticHitQuery.ObstacleKind.Moon:
+                    if (heal)
+                        return false;
+                    return !PlanetGemMoonCombatLogic.IsTeamFriendlyToMoon(
+                        (TeamId)o.TeamOrOwnership, team);
                 default:
                     return false;
             }

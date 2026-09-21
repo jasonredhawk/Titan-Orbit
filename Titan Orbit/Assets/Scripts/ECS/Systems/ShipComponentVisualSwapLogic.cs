@@ -15,7 +15,8 @@ namespace TitanOrbit.ECS
     /// <para>
     /// Store extras remap cockpit / engine / wing / thruster / tail / hull. Weapons are
     /// owned by B-key <see cref="ShipLoadoutState.RuntimeBulletIndex"/> so purchase and
-    /// cycle do not fight. Combat stats stay on Extra Level merge.
+    /// cycle do not fight: every barrel restyles to the family that owns that bank
+    /// (purchased extra, else the planet that rolled it). Combat stats stay on Extra Level merge.
     /// </para>
     /// <para>
     /// [TITAN-ORBIT] Original host parts are cloned under
@@ -30,7 +31,9 @@ namespace TitanOrbit.ECS
         static readonly List<ShipFamilyPartMatch.Slot> HostSlots = new List<ShipFamilyPartMatch.Slot>(32);
         static readonly List<ShipFamilyPartMatch.Slot> MatchSlots = new List<ShipFamilyPartMatch.Slot>(8);
         static readonly List<Transform> RestoreScratch = new List<Transform>(8);
+        static readonly List<Transform> StashEntryScratch = new List<Transform>(32);
         static readonly HashSet<string> KeepRemappedNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        static readonly HashSet<string> LiveSlotNames = new HashSet<string>(StringComparer.Ordinal);
 
         /// <summary>
         /// Reads the ghosted equipment buffer + bullet bank and remaps <paramref name="root"/>.
@@ -86,28 +89,32 @@ namespace TitanOrbit.ECS
                 team,
                 originalStash,
                 stripColliders,
-                remapNonWeapons);
+                remapNonWeapons,
+                em,
+                shipEntity);
         }
 
         /// <summary>
-        /// True when extras or a foreign bullet bank would change meshes (bake must clone).
+        /// True when store extras would change non-weapon meshes (bake must clone).
+        /// B-key weapon restyle is presentation-only and does not dirty covering hulls.
         /// </summary>
         public static bool WouldRemap(
             ShipFamilyDefinition hostFamily,
             IReadOnlyList<string> extraComponentIds,
             int runtimeBulletIndex,
-            bool healingBullets)
+            bool healingBullets,
+            EntityManager em,
+            Entity shipEntity)
         {
-            if (HasNonWeaponExtra(extraComponentIds))
-                return true;
-            if (healingBullets)
-                return false;
-            if (!TryResolveBankFamily(runtimeBulletIndex, out ShipFamilyDefinition bankFamily)
-                || bankFamily == null)
-                return false;
-            if (hostFamily == null || string.IsNullOrWhiteSpace(hostFamily.familyId))
-                return true;
-            return !string.Equals(bankFamily.familyId, hostFamily.familyId, StringComparison.OrdinalIgnoreCase);
+            // B-key weapon restyle is presentation-only. Covering colliders stay
+            // host + store extras so a bank cycle does not Instantiates/Destroy
+            // weapon children during the sim tick (that aborted B-key writes).
+            _ = hostFamily;
+            _ = runtimeBulletIndex;
+            _ = healingBullets;
+            _ = em;
+            _ = shipEntity;
+            return HasNonWeaponExtra(extraComponentIds);
         }
 
         /// <summary>
@@ -126,7 +133,9 @@ namespace TitanOrbit.ECS
             TeamId team,
             Transform originalStash,
             bool stripColliders,
-            bool remapNonWeapons = true)
+            bool remapNonWeapons = true,
+            EntityManager em = default,
+            Entity shipEntity = default)
         {
             if (root == null)
                 return false;
@@ -141,13 +150,18 @@ namespace TitanOrbit.ECS
                 CollectRemappedHostNamesForExtras(root, hostFamilyPrefix, extraComponentIds, KeepRemappedNames);
 
             ShipFamilyDefinition bankFamily = null;
-            bool foreignWeapons = !healingBullets
-                && TryResolveBankFamily(runtimeBulletIndex, out bankFamily)
-                && bankFamily != null
-                && (hostFamily == null
-                    || !string.Equals(bankFamily.familyId, hostFamily.familyId, StringComparison.OrdinalIgnoreCase));
+            bool resolvedFamily = !healingBullets
+                && TryResolveBankFamily(runtimeBulletIndex, em, shipEntity, out bankFamily)
+                && bankFamily != null;
+            bool hostWeapons = resolvedFamily
+                && hostFamily != null
+                && string.Equals(bankFamily.familyId, hostFamily.familyId, StringComparison.OrdinalIgnoreCase);
+            bool foreignWeapons = resolvedFamily && !hostWeapons;
 
             // --- Restore remapped slots the player no longer owns ---
+            // Weapons restore only when we know this is the hull gun. A failed
+            // family resolve must not put host guns back (that looked like B
+            // snapping to the default type).
             changed |= RestoreUnownedRemaps(
                 root,
                 hostFamilyPrefix,
@@ -156,9 +170,14 @@ namespace TitanOrbit.ECS
                 originalStash,
                 stripColliders,
                 remapNonWeapons,
-                foreignWeapons);
+                restoreHostWeapons: hostWeapons);
 
-            ShipFamilyPartMatch.CollectSlots(root, hostFamilyPrefix, HostSlots);
+            // A swap that destroyed its own socket (nested DestroyImmediate abort)
+            // leaves no live marker to restore onto. Put that Bind-time part back
+            // before the next extra tries to match an empty hull.
+            changed |= ResurrectMissingStashedSlots(root, hostFamily, team, originalStash);
+
+            CollectHostSlots(root, hostFamilyPrefix, HostSlots);
 
             if (remapNonWeapons && extraComponentIds != null)
             {
@@ -171,8 +190,8 @@ namespace TitanOrbit.ECS
             if (foreignWeapons)
             {
                 changed |= RemapAllWeapons(
-                    root, hostFamilyPrefix, hostFamily, bankFamily, shipLevel, team,
-                    originalStash, stripColliders);
+                    root, hostFamilyPrefix, hostFamily, bankFamily, extraComponentIds,
+                    shipLevel, team, originalStash, stripColliders);
             }
 
             return changed;
@@ -193,7 +212,7 @@ namespace TitanOrbit.ECS
             if (root == null || originalStash == null)
                 return;
 
-            ShipFamilyPartMatch.CollectSlots(root, hostFamilyPrefix, HostSlots);
+            CollectHostSlots(root, hostFamilyPrefix, HostSlots);
             for (int i = 0; i < HostSlots.Count; i++)
             {
                 Transform slot = HostSlots[i].Transform;
@@ -205,9 +224,21 @@ namespace TitanOrbit.ECS
             }
         }
 
-        /// <summary>Family that authored this default gun bank, or false when none.</summary>
-        public static bool TryResolveBankFamily(int bankIndex, out ShipFamilyDefinition family)
+        /// <summary>
+        /// Family whose guns belong on this bank. Prefers owned extras + hull stamp
+        /// (every family asset now defaults to Laserbolt, so unique-default lookup
+        /// almost never finds a owner).
+        /// </summary>
+        public static bool TryResolveBankFamily(
+            int bankIndex,
+            EntityManager em,
+            Entity shipEntity,
+            out ShipFamilyDefinition family)
         {
+            if (BulletBankOwnership.TryResolveFamilyForBank(em, shipEntity, bankIndex, out family)
+                && family != null)
+                return true;
+
             family = null;
             var config = PlanetShipFamilyConfig.LoadDefault();
             return config != null && config.TryGetFamilyForDefaultBank(bankIndex, out family) && family != null;
@@ -248,7 +279,7 @@ namespace TitanOrbit.ECS
             if (template == null)
                 return false;
 
-            ShipFamilyPartMatch.CollectSlots(root, hostFamilyPrefix, HostSlots);
+            CollectHostSlots(root, hostFamilyPrefix, HostSlots);
             ShipFamilyPartMatch.CollectBestHostSlots(
                 HostSlots, sourceFamily.familyId, entry.componentId, MatchSlots);
             return SwapSlots(
@@ -260,6 +291,7 @@ namespace TitanOrbit.ECS
             string hostFamilyPrefix,
             ShipFamilyDefinition hostFamily,
             ShipFamilyDefinition sourceFamily,
+            IReadOnlyList<string> extraComponentIds,
             int shipLevel,
             TeamId team,
             Transform originalStash,
@@ -267,12 +299,25 @@ namespace TitanOrbit.ECS
         {
             // Templates always pull L1 authored weapon scale; shipLevel is unused here.
             _ = shipLevel;
-            ShipFamilyPartMatch.CollectSlots(root, hostFamilyPrefix, HostSlots);
+            CollectHostSlots(root, hostFamilyPrefix, HostSlots);
             var weaponSlots = new List<ShipFamilyPartMatch.Slot>(8);
             for (int i = 0; i < HostSlots.Count; i++)
             {
                 if (ShipFamilyPartMatch.IsWeaponPartType(HostSlots[i].PartType))
                     weaponSlots.Add(HostSlots[i]);
+            }
+
+            if (weaponSlots.Count == 0)
+                return false;
+
+            // Store extras remap one host assembly. Nested barrel / muzzle
+            // children also parse as weapons — DestroyImmediate of the parent
+            // then the child asserted `t.GetParent() == nullptr` and aborted
+            // the tick, which snapped RuntimeBulletIndex back to the hull gun.
+            for (int i = weaponSlots.Count - 1; i >= 0; i--)
+            {
+                if (IsNestedUnderAnotherSlot(weaponSlots[i].Transform, weaponSlots))
+                    weaponSlots.RemoveAt(i);
             }
 
             if (weaponSlots.Count == 0)
@@ -291,16 +336,7 @@ namespace TitanOrbit.ECS
                 if (!doneIndices.Add(index))
                     continue;
 
-                string wanted = "Weapon_" + index;
-                // Level 1 authored scale — attribute grow applies after the swap.
-                GameObject template = ShipFamilyPartVisualCache.GetOrCreateTemplate(
-                    sourceFamily, sourceFamily.familyId + "_" + wanted, shipLevel: 1);
-                if (template == null)
-                {
-                    template = ShipFamilyPartVisualCache.GetOrCreateTemplate(
-                        sourceFamily, wanted, shipLevel: 1);
-                }
-
+                GameObject template = ResolveWeaponTemplate(sourceFamily, index, extraComponentIds);
                 if (template == null)
                     continue;
 
@@ -318,6 +354,156 @@ namespace TitanOrbit.ECS
             return changed;
         }
 
+        /// <summary>
+        /// Template for one host barrel index: purchased extra of this family first
+        /// (same pick as a Gear-tab buy), then that family's catalog weapon at the
+        /// same index, then <c>Family_Weapon_N</c>.
+        /// </summary>
+        static GameObject ResolveWeaponTemplate(
+            ShipFamilyDefinition sourceFamily,
+            int hostIndex,
+            IReadOnlyList<string> extraComponentIds)
+        {
+            if (sourceFamily == null)
+                return null;
+
+            string extraId = FindWeaponComponentId(sourceFamily, hostIndex, extraComponentIds);
+            if (!string.IsNullOrEmpty(extraId))
+            {
+                GameObject fromExtra = ShipFamilyPartVisualCache.GetOrCreateTemplate(
+                    sourceFamily, extraId, shipLevel: 1);
+                if (fromExtra != null)
+                    return fromExtra;
+            }
+
+            string catalogId = FindWeaponComponentId(sourceFamily, hostIndex, extras: null);
+            if (!string.IsNullOrEmpty(catalogId))
+            {
+                GameObject fromCatalog = ShipFamilyPartVisualCache.GetOrCreateTemplate(
+                    sourceFamily, catalogId, shipLevel: 1);
+                if (fromCatalog != null)
+                    return fromCatalog;
+            }
+
+            string wanted = "Weapon_" + hostIndex;
+            GameObject template = ShipFamilyPartVisualCache.GetOrCreateTemplate(
+                sourceFamily, sourceFamily.familyId + "_" + wanted, shipLevel: 1);
+            if (template != null)
+                return template;
+            return ShipFamilyPartVisualCache.GetOrCreateTemplate(sourceFamily, wanted, shipLevel: 1);
+        }
+
+        /// <summary>
+        /// Best weapon component id on <paramref name="sourceFamily"/> for this barrel.
+        /// Exact index, else closest at or below, else the highest (same rule as
+        /// <see cref="ShipFamilyPartMatch.CollectBestHostSlotsForType"/>).
+        /// When <paramref name="extras"/> is set, only purchased ids from that family.
+        /// </summary>
+        static string FindWeaponComponentId(
+            ShipFamilyDefinition sourceFamily,
+            int hostIndex,
+            IReadOnlyList<string> extras)
+        {
+            if (sourceFamily == null || string.IsNullOrWhiteSpace(sourceFamily.familyId))
+                return null;
+
+            string exact = null;
+            string bestAtOrBelow = null;
+            int bestAtOrBelowIdx = -1;
+            string bestAny = null;
+            int bestAnyIdx = -1;
+
+            if (extras != null)
+            {
+                for (int i = 0; i < extras.Count; i++)
+                    ConsiderWeaponId(extras[i], sourceFamily, hostIndex, requireFamilyOwner: true,
+                        ref exact, ref bestAtOrBelow, ref bestAtOrBelowIdx, ref bestAny, ref bestAnyIdx);
+            }
+            else if (sourceFamily.components != null)
+            {
+                for (int i = 0; i < sourceFamily.components.Count; i++)
+                {
+                    ShipFamilyComponentEntry entry = sourceFamily.components[i];
+                    if (entry == null || string.IsNullOrWhiteSpace(entry.componentId))
+                        continue;
+                    ConsiderWeaponId(entry.componentId, sourceFamily, hostIndex, requireFamilyOwner: false,
+                        ref exact, ref bestAtOrBelow, ref bestAtOrBelowIdx, ref bestAny, ref bestAnyIdx);
+                }
+            }
+
+            if (!string.IsNullOrEmpty(exact))
+                return exact;
+            if (!string.IsNullOrEmpty(bestAtOrBelow))
+                return bestAtOrBelow;
+            return bestAny;
+        }
+
+        static void ConsiderWeaponId(
+            string componentId,
+            ShipFamilyDefinition sourceFamily,
+            int hostIndex,
+            bool requireFamilyOwner,
+            ref string exact,
+            ref string bestAtOrBelow,
+            ref int bestAtOrBelowIdx,
+            ref string bestAny,
+            ref int bestAnyIdx)
+        {
+            if (string.IsNullOrWhiteSpace(componentId))
+                return;
+            if (requireFamilyOwner)
+            {
+                if (!TryFindSourceFamily(componentId, out ShipFamilyDefinition owner) || owner == null)
+                    return;
+                if (!string.Equals(owner.familyId, sourceFamily.familyId, StringComparison.OrdinalIgnoreCase))
+                    return;
+            }
+
+            if (!ShipFamilyPartMatch.TryParseSlotName(
+                    componentId, sourceFamily.familyId, out string partType, out int index, out _))
+                return;
+            if (!ShipFamilyPartMatch.IsWeaponPartType(partType))
+                return;
+
+            if (index == hostIndex && exact == null)
+                exact = componentId;
+            if (index <= hostIndex && index > bestAtOrBelowIdx)
+            {
+                bestAtOrBelowIdx = index;
+                bestAtOrBelow = componentId;
+            }
+
+            if (index > bestAnyIdx)
+            {
+                bestAnyIdx = index;
+                bestAny = componentId;
+            }
+        }
+
+        /// <summary>
+        /// True when <paramref name="slot"/> sits under another collected slot
+        /// (inner barrel of a Weapon assembly).
+        /// </summary>
+        static bool IsNestedUnderAnotherSlot(Transform slot, List<ShipFamilyPartMatch.Slot> slots)
+        {
+            if (slot == null || slots == null)
+                return false;
+
+            Transform walk = slot.parent;
+            while (walk != null)
+            {
+                for (int i = 0; i < slots.Count; i++)
+                {
+                    if (slots[i].Transform == walk)
+                        return true;
+                }
+
+                walk = walk.parent;
+            }
+
+            return false;
+        }
+
         static bool SwapSlots(
             Transform root,
             List<ShipFamilyPartMatch.Slot> slots,
@@ -330,6 +516,15 @@ namespace TitanOrbit.ECS
         {
             if (slots == null || slots.Count == 0 || template == null)
                 return false;
+
+            // Parent assembly and a nested barrel of the same type both match.
+            // DestroyImmediate of the parent, then the child, asserts and aborts
+            // the apply — the socket is gone and later discards have nothing to restore.
+            for (int i = slots.Count - 1; i >= 0; i--)
+            {
+                if (IsNestedUnderAnotherSlot(slots[i].Transform, slots))
+                    slots.RemoveAt(i);
+            }
 
             bool changed = false;
             for (int i = 0; i < slots.Count; i++)
@@ -415,7 +610,7 @@ namespace TitanOrbit.ECS
             if (root == null || extraComponentIds == null || dest == null)
                 return;
 
-            ShipFamilyPartMatch.CollectSlots(root, hostFamilyPrefix, HostSlots);
+            CollectHostSlots(root, hostFamilyPrefix, HostSlots);
             for (int i = 0; i < extraComponentIds.Count; i++)
             {
                 string extraId = extraComponentIds[i];
@@ -443,7 +638,7 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// Puts the host mesh back on remapped hardpoints the store / foreign bank no
+        /// Puts the host mesh back on remapped hardpoints the store / hull bank no
         /// longer own. Instantiates the original first, then destroys the purchased
         /// clone so a failed restore cannot leave a hole.
         /// </summary>
@@ -455,12 +650,12 @@ namespace TitanOrbit.ECS
             Transform originalStash,
             bool stripColliders,
             bool remapNonWeapons,
-            bool foreignWeapons)
+            bool restoreHostWeapons)
         {
             if (root == null)
                 return false;
 
-            ShipFamilyPartMatch.CollectSlots(root, hostFamilyPrefix, HostSlots);
+            CollectHostSlots(root, hostFamilyPrefix, HostSlots);
             RestoreScratch.Clear();
             for (int i = 0; i < HostSlots.Count; i++)
             {
@@ -474,8 +669,8 @@ namespace TitanOrbit.ECS
                 if (!remapNonWeapons && !isWeapon)
                     continue;
 
-                // Foreign bank will replace every gun after this pass.
-                if (isWeapon && foreignWeapons)
+                // Leave guns unless this is the confirmed hull bank (restore).
+                if (isWeapon && !restoreHostWeapons)
                     continue;
 
                 // Still purchased — TryRemapStoreExtra will refresh the foreign mesh.
@@ -499,20 +694,17 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// True when this live child is a purchased / B-cycled mesh (has a foreign
-        /// <see cref="ShipPartVisualSource"/>). Unmarked parts are treated as host originals.
+        /// True when this live child was swapped in by a purchase or B-cycle
+        /// (<see cref="ShipPartVisualSource"/>). Same-family gear still stamps the
+        /// marker — discard must restore those sockets too. Unmarked parts are host originals.
         /// </summary>
         static bool IsRemappedSlot(Transform slot, ShipFamilyDefinition hostFamily)
         {
+            _ = hostFamily;
             if (slot == null)
                 return false;
             var marker = slot.GetComponent<ShipPartVisualSource>();
-            if (marker == null || string.IsNullOrWhiteSpace(marker.sourceFamilyId))
-                return false;
-            if (hostFamily != null
-                && string.Equals(marker.sourceFamilyId, hostFamily.familyId, StringComparison.OrdinalIgnoreCase))
-                return false;
-            return true;
+            return marker != null && !string.IsNullOrWhiteSpace(marker.sourceFamilyId);
         }
 
         /// <summary>
@@ -591,6 +783,10 @@ namespace TitanOrbit.ECS
             if (restored == null)
                 return false;
 
+            // A bad parent path can nest the original under the mesh we are about to delete.
+            if (restored.transform.IsChildOf(liveSlot))
+                restored.transform.SetParent(liveParent, false);
+
             // Destroy the purchased clone only after the original is in the hierarchy.
             DestroyNow(liveSlot.gameObject);
             return true;
@@ -605,6 +801,11 @@ namespace TitanOrbit.ECS
             if (stash == null || hostSlot == null)
                 return;
             if (hostSlot.GetComponent<ShipPartVisualSource>() != null)
+                return;
+            // Children of a purchased mesh keep source-family names and must not
+            // be cached as the hull's original (that overwrite is how deletes
+            // put the bought part back).
+            if (IsUnderRemappedAncestor(hostSlot))
                 return;
             if (FindStashEntry(stash, hostSlot.name) != null)
                 return;
@@ -785,6 +986,167 @@ namespace TitanOrbit.ECS
                         ? teamMats[s % teamMats.Count]
                         : current[s];
                 renderer.sharedMaterials = replaced;
+            }
+        }
+
+        /// <summary>
+        /// Host slots for remap / restore. Children inside an already purchased mesh
+        /// keep source-family names and must not be matched again — a later gear buy
+        /// was destroying those guts until the hull had no parts left.
+        /// </summary>
+        static void CollectHostSlots(Transform root, string familyPrefix, List<ShipFamilyPartMatch.Slot> dest)
+        {
+            ShipFamilyPartMatch.CollectSlots(root, familyPrefix, dest);
+            if (dest == null)
+                return;
+
+            for (int i = dest.Count - 1; i >= 0; i--)
+            {
+                Transform t = dest[i].Transform;
+                if (t != null && IsUnderRemappedAncestor(t))
+                    dest.RemoveAt(i);
+            }
+        }
+
+        /// <summary>True when a parent (not this transform) carries a purchase / B-cycle marker.</summary>
+        static bool IsUnderRemappedAncestor(Transform t)
+        {
+            if (t == null)
+                return false;
+
+            Transform walk = t.parent;
+            while (walk != null)
+            {
+                var marker = walk.GetComponent<ShipPartVisualSource>();
+                if (marker != null && !string.IsNullOrWhiteSpace(marker.sourceFamilyId))
+                    return true;
+                if (walk.name == ShipFamilyPartMatch.OriginalStashName)
+                    return false;
+                walk = walk.parent;
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// Puts Bind-time originals back when the live socket is gone entirely
+        /// (destroyed as a child of a swapped part, or lost when a nested destroy aborted).
+        /// Shallow parents first so a restored engine brings its own guns and we
+        /// do not also drop a second copy of those guns.
+        /// </summary>
+        static bool ResurrectMissingStashedSlots(
+            Transform root,
+            ShipFamilyDefinition hostFamily,
+            TeamId team,
+            Transform originalStash)
+        {
+            if (root == null || originalStash == null)
+                return false;
+
+            StashEntryScratch.Clear();
+            for (int i = 0; i < originalStash.childCount; i++)
+            {
+                Transform child = originalStash.GetChild(i);
+                if (child != null && child.GetComponent<ShipPartOriginalStashEntry>() != null)
+                    StashEntryScratch.Add(child);
+            }
+
+            for (int i = 1; i < StashEntryScratch.Count; i++)
+            {
+                Transform key = StashEntryScratch[i];
+                int keyDepth = PathDepth(key.GetComponent<ShipPartOriginalStashEntry>().ParentPath);
+                int j = i - 1;
+                while (j >= 0)
+                {
+                    int depth = PathDepth(StashEntryScratch[j].GetComponent<ShipPartOriginalStashEntry>().ParentPath);
+                    if (depth <= keyDepth)
+                        break;
+                    StashEntryScratch[j + 1] = StashEntryScratch[j];
+                    j--;
+                }
+
+                StashEntryScratch[j + 1] = key;
+            }
+
+            CaptureLiveSlotNames(root);
+            bool changed = false;
+            for (int i = 0; i < StashEntryScratch.Count; i++)
+            {
+                ShipPartOriginalStashEntry entry = StashEntryScratch[i].GetComponent<ShipPartOriginalStashEntry>();
+                if (entry == null)
+                    continue;
+
+                string hostName = string.IsNullOrEmpty(entry.HostSlotName)
+                    ? entry.gameObject.name
+                    : entry.HostSlotName;
+                if (string.IsNullOrEmpty(hostName) || LiveSlotNames.Contains(hostName))
+                    continue;
+
+                Transform parent = ResolveRelative(root, entry.ParentPath);
+                if (parent == null || IsUnderStash(parent))
+                    parent = root;
+
+                // Still under a purchased assembly — that stash copy includes this
+                // part and comes back when the gear is discarded. Dropping it now
+                // would stack a second set on the bought mesh.
+                if (parent != root
+                    && (IsRemappedSlot(parent, hostFamily) || IsUnderRemappedAncestor(parent)))
+                    continue;
+
+                GameObject restored = Object.Instantiate(entry.gameObject, parent, false);
+                var leftover = restored.GetComponent<ShipPartOriginalStashEntry>();
+                if (leftover != null)
+                    DestroyNow(leftover);
+                StripVisualSource(restored);
+                StripJetVfxInstances(restored);
+                restored.name = hostName;
+                restored.SetActive(true);
+                restored.transform.localPosition = entry.transform.localPosition;
+                restored.transform.localRotation = entry.transform.localRotation;
+                restored.transform.SetSiblingIndex(
+                    Mathf.Clamp(entry.SiblingIndex, 0, parent.childCount - 1));
+                ApplyHostTeamMaterials(hostFamily, restored, team);
+                LiveSlotNames.Add(hostName);
+                RememberHierarchyNames(restored.transform);
+                changed = true;
+            }
+
+            return changed;
+        }
+
+        static int PathDepth(string path)
+        {
+            if (string.IsNullOrEmpty(path))
+                return 0;
+            int depth = 1;
+            for (int i = 0; i < path.Length; i++)
+            {
+                if (path[i] == '/')
+                    depth++;
+            }
+
+            return depth;
+        }
+
+        static void CaptureLiveSlotNames(Transform root)
+        {
+            LiveSlotNames.Clear();
+            RememberHierarchyNames(root);
+            LiveSlotNames.Remove(root.name);
+        }
+
+        static void RememberHierarchyNames(Transform t)
+        {
+            if (t == null)
+                return;
+
+            for (int i = 0; i < t.childCount; i++)
+            {
+                Transform child = t.GetChild(i);
+                if (child == null || child.name == ShipFamilyPartMatch.OriginalStashName)
+                    continue;
+                LiveSlotNames.Add(child.name);
+                RememberHierarchyNames(child);
             }
         }
 

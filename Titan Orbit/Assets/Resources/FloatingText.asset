@@ -20,7 +20,7 @@ MonoBehaviour:
     damageShipOrDrone: 1
     damageMoon: 0
     healthChange: 0
-    healing: 0
+    healing: 1
     healthRegen: 0
     peopleLoad: 1
     peopleUnload: 1
@@ -40,10 +40,10 @@ MonoBehaviour:
   upgradeColor: {r: 0.95, g: 0.85, b: 0.35, a: 1}
   font: {fileID: 0}
   fontSize: 10
-  fontSizeMaxMultiplier: 3
-  fontSizeValueAtMax: 333
-  iconScale: 1.5
-  iconLeftPadding: 1.5
+  fontSizeMaxMultiplier: 5
+  fontSizeValueAtMax: 555
+  iconScale: 1
+  iconLeftPadding: 1
   extraHeight: 1
   shipExtraHeight: 2
   worldOffset: {x: 0, y: 0, z: 0}

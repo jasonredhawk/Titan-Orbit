@@ -194,7 +194,7 @@ namespace TitanOrbit.ECS
         {
             var planetState = em.GetComponentData<PlanetState>(planet);
             var planetXf = em.GetComponentData<LocalTransform>(planet);
-            if (planetState.Ownership == TeamId.None || planetState.Ownership == attackerTeam)
+            if (planetState.Ownership == attackerTeam)
                 return;
 
             float best = range;
@@ -202,7 +202,8 @@ namespace TitanOrbit.ECS
             bool moonWins = false;
             float3 bestPos = planetXf.Position;
 
-            if (em.HasBuffer<PlanetaryDefenseSlotElement>(planet))
+            if (planetState.Ownership != TeamId.None
+                && em.HasBuffer<PlanetaryDefenseSlotElement>(planet))
             {
                 var slots = em.GetBuffer<PlanetaryDefenseSlotElement>(planet);
                 int slotCount = slots.Length;
@@ -228,38 +229,53 @@ namespace TitanOrbit.ECS
                 }
             }
 
-            if (em.HasComponent<PlanetGemMoonState>(planet)
-                && !PlanetGemMoonCombatLogic.IsTeamFriendlyToMoon(planetState.Ownership, attackerTeam))
+            if (em.HasComponent<PlanetGemMoonState>(planet))
             {
-                float3 moonPos = PlanetOrbitMath.GetMoonWorldPosition(
-                    planetXf.Position,
-                    math.max(0.25f, planetXf.Scale),
-                    planetState.PlanetLevel,
-                    planetState.PlanetId,
-                    moonElapsed,
-                    planetState.IsHomePlanet);
-                float moonDist = ToroidalMapEcs.ToroidalDistance(muzzle, moonPos, mapW, mapH);
-                if (moonDist < best)
+                var moon = em.GetComponentData<PlanetGemMoonState>(planet);
+                if (PlanetGemMoonCombatLogic.TryGetNonFriendlyMoonAim(
+                        planetState.Ownership,
+                        attackerTeam,
+                        planetXf.Position,
+                        planetXf.Scale,
+                        planetState.PlanetLevel,
+                        planetState.PlanetId,
+                        planetState.IsHomePlanet,
+                        moon.CurrentShield,
+                        muzzle,
+                        mapW,
+                        mapH,
+                        moonElapsed,
+                        out float3 moonAim,
+                        out _))
                 {
-                    best = moonDist;
-                    bestPos = moonPos;
-                    moonWins = true;
-                    bestPad = -1;
+                    float moonDist = ToroidalMapEcs.ToroidalDistance(muzzle, moonAim, mapW, mapH);
+                    if (moonDist < best)
+                    {
+                        best = moonDist;
+                        bestPos = moonAim;
+                        moonWins = true;
+                        bestPad = -1;
+                    }
                 }
             }
 
-            result.HitPoint = CannonLaserSurface.TryGetHitPoint(
-                    em, planet, muzzle, mapW, mapH, moonElapsed, out float3 planetSurface)
-                ? planetSurface
-                : bestPos;
+            if (!moonWins && bestPad < 0)
+                return;
+
             if (moonWins)
             {
+                result.HitPoint = bestPos;
                 var moon = em.GetComponentData<PlanetGemMoonState>(planet);
                 PlanetGemMoonCombatLogic.ApplyBulletDamage(
                     ref moon, damage, attackerTeam, planetState.Ownership, serverElapsed);
                 em.SetComponentData(planet, moon);
                 return;
             }
+
+            result.HitPoint = CannonLaserSurface.TryGetHitPoint(
+                    em, planet, muzzle, mapW, mapH, moonElapsed, out float3 planetSurface)
+                ? planetSurface
+                : bestPos;
 
             if (bestPad >= 0)
                 PlanetaryDefenseHitScan.ApplyDamage(em, planet, bestPad, damage, serverElapsed);

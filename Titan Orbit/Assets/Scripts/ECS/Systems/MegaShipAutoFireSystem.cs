@@ -19,8 +19,8 @@ namespace TitanOrbit.ECS
     /// there is no remote Take Control path. Cannon barrels stay parked and lock anyone
     /// Cannon lasers use the same in-range auto-aim, then the turret slews onto
     /// that lock; <see cref="CannonLaserCombatSystem"/> burns once the barrel faces it.
-    /// Damage mode treats enemy ships, planetary defense turrets, and enemy moon
-    /// shields as one priority — closest in range wins. Asteroids are second
+    /// Damage mode treats enemy ships, planetary defense turrets, and non-friendly
+    /// moon shields (enemy and neutral) as one priority — closest in range wins. Asteroids are second
     /// (only when no combat target is in that gun's range). Heal mode aims at the
     /// nearest friendly ship. Cannon lasers also acquire asteroids (lowest
     /// priority) so a destroyed rock does not leave the beam stuck. Projectile
@@ -767,8 +767,8 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// Closest in-range target from this muzzle. Ships, hostile pads, and moon
-        /// shields compete by toroidal distance; (debug) asteroids are only used when
+        /// Closest in-range target from this muzzle. Ships, hostile pads, and non-friendly
+        /// moon shields compete by toroidal distance; (debug) asteroids are only used when
         /// none of those are in range. Two guns may lock the same entity.
         /// Used when a barrel has no live lock (first press, or the last target died / left range).
         /// <paramref name="betterThan"/> is kept so a first search can skip a lower class.
@@ -936,8 +936,10 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// Best hostile pad or moon on one planet — they compete by distance.
-        /// Returns false when the planet is friendly, empty, or out of range.
+        /// Best hostile pad or non-friendly moon shield on one planet — they compete
+        /// by distance to the pad or the near side of the shield (body when the
+        /// barrier is down). Returns false when the planet is friendly, empty, or
+        /// out of range. Neutral planets have no pads; their moon shields still lock.
         /// </summary>
         bool TryResolvePlanetAim(
             Entity planet,
@@ -958,12 +960,13 @@ namespace TitanOrbit.ECS
 
             var planetState = EntityManager.GetComponentData<PlanetState>(planet);
             var planetXf = EntityManager.GetComponentData<LocalTransform>(planet);
-            if (planetState.Ownership == TeamId.None || planetState.Ownership == ownerTeam)
+            if (planetState.Ownership == ownerTeam)
                 return false;
 
             float best = range;
             bool found = false;
-            if (EntityManager.HasBuffer<PlanetaryDefenseSlotElement>(planet))
+            if (planetState.Ownership != TeamId.None
+                && EntityManager.HasBuffer<PlanetaryDefenseSlotElement>(planet))
             {
                 var slots = EntityManager.GetBuffer<PlanetaryDefenseSlotElement>(planet);
                 int slotCount = slots.Length;
@@ -989,28 +992,34 @@ namespace TitanOrbit.ECS
                 }
             }
 
-            if (EntityManager.HasComponent<PlanetGemMoonState>(planet)
-                && !PlanetGemMoonCombatLogic.IsTeamFriendlyToMoon(planetState.Ownership, ownerTeam))
+            if (EntityManager.HasComponent<PlanetGemMoonState>(planet))
             {
-                float3 moonPos = PlanetOrbitMath.GetMoonWorldPosition(
-                    planetXf.Position,
-                    math.max(0.25f, planetXf.Scale),
-                    planetState.PlanetLevel,
-                    planetState.PlanetId,
-                    moonElapsed,
-                    planetState.IsHomePlanet);
-                float moonDist = ToroidalMapEcs.ToroidalDistance(from, moonPos, mapW, mapH);
-                if (moonDist < best)
-                {
-                    aim = moonPos;
-                    // Moons ride the orbit ring — lead with the same orbital velocity
-                    // the dock motor uses so shots intercept a moving moon.
-                    aimVel = PlanetOrbitMath.GetMoonOrbitalVelocity(
-                        math.max(0.25f, planetXf.Scale),
+                var moon = EntityManager.GetComponentData<PlanetGemMoonState>(planet);
+                if (PlanetGemMoonCombatLogic.TryGetNonFriendlyMoonAim(
+                        planetState.Ownership,
+                        ownerTeam,
+                        planetXf.Position,
+                        planetXf.Scale,
                         planetState.PlanetLevel,
                         planetState.PlanetId,
-                        moonElapsed);
-                    found = true;
+                        planetState.IsHomePlanet,
+                        moon.CurrentShield,
+                        from,
+                        mapW,
+                        mapH,
+                        moonElapsed,
+                        out float3 moonAim,
+                        out float3 moonVel))
+                {
+                    float moonDist = ToroidalMapEcs.ToroidalDistance(from, moonAim, mapW, mapH);
+                    if (moonDist < best)
+                    {
+                        aim = moonAim;
+                        // Shield surface rides the orbit ring — lead with the moon's
+                        // orbital velocity so shots meet the moving barrier.
+                        aimVel = moonVel;
+                        found = true;
+                    }
                 }
             }
 

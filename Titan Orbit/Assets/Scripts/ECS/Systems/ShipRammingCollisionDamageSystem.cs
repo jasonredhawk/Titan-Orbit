@@ -929,6 +929,10 @@ namespace TitanOrbit.ECS
                     scaleMul *= ShipComponentRammingSuggestions.RamKillImpactVisualScale;
             }
 
+            int ownerNet = 0;
+            if (state.EntityManager.HasComponent<GhostOwner>(shipEntity))
+                ownerNet = state.EntityManager.GetComponentData<GhostOwner>(shipEntity).NetworkId;
+
             BulletNetNotify.SendRamAsteroidHit(
                 ref ecb,
                 hitPos,
@@ -937,7 +941,8 @@ namespace TitanOrbit.ECS
                 bankIndex,
                 scaleMul,
                 healthAfter,
-                AsteroidLayoutSlot.Read(state.EntityManager, asteroid));
+                AsteroidLayoutSlot.Read(state.EntityManager, asteroid),
+                ownerNet);
         }
 
         /// <summary>
