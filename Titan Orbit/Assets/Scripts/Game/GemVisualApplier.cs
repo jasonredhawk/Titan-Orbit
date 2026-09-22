@@ -53,6 +53,22 @@ namespace TitanOrbit.Game
         /// <summary>Shared blue material for top-miner command-bonus gems.</summary>
         static Material s_sharedMinerTintedGemMaterial;
 
+        /// <summary>
+        /// Alpha while the local ship cannot scoop a gem it just expelled.
+        /// Shared per tint so grind dumps do not allocate a material per crystal.
+        /// </summary>
+        public const float SelfPickupBlockedAlpha = 0.3f;
+
+        /// <summary>Alpha once that same gem may be scooped again.</summary>
+        public const float SelfPickupReadyAlpha = 1f;
+
+        static Material s_blockedStandard;
+        static Material s_blockedBonus;
+        static Material s_blockedMiner;
+        static Material s_readyStandard;
+        static Material s_readyBonus;
+        static Material s_readyMiner;
+
         /// <summary>True after <see cref="EnsureSharedTintReady"/> finished material + keyword setup.</summary>
         static bool s_tintReady;
 
@@ -74,6 +90,12 @@ namespace TitanOrbit.Game
             s_sharedTintedGemMaterial = null;
             s_sharedBonusTintedGemMaterial = null;
             s_sharedMinerTintedGemMaterial = null;
+            s_blockedStandard = null;
+            s_blockedBonus = null;
+            s_blockedMiner = null;
+            s_readyStandard = null;
+            s_readyBonus = null;
+            s_readyMiner = null;
             s_tintReady = false;
         }
 
@@ -150,6 +172,27 @@ namespace TitanOrbit.Game
         /// <summary>Re-applies red, yellow, or blue on an already-rented gem proxy.</summary>
         public static void ApplyTint(GameObject root, GemVisualTint tint) =>
             ApplyGemTint(root, tint);
+
+        /// <summary>
+        /// Local view of a gem this ship expelled. Blocked crystals use
+        /// <see cref="SelfPickupBlockedAlpha"/>; once the scoop delay ends they use
+        /// <see cref="SelfPickupReadyAlpha"/>. Other gems stay on the shared tint.
+        /// </summary>
+        public static void ApplySelfPickupConsumeAlpha(GameObject root, GemVisualTint tint, bool blocked)
+        {
+            if (root == null)
+                return;
+
+            var renderer = root.GetComponentInChildren<Renderer>();
+            if (renderer == null)
+                return;
+
+            EnsureConsumeAlphaMaterials(renderer);
+            renderer.shadowCastingMode = ShadowCastingMode.Off;
+            Material material = ResolveConsumeAlphaMaterial(tint, blocked);
+            if (material != null)
+                renderer.sharedMaterial = material;
+        }
 
         /// <summary>
         /// [TITAN-ORBIT] Builds the shared URP tint material (and warms keywords) before combat.
@@ -346,6 +389,8 @@ namespace TitanOrbit.Game
                     };
                     ConfigureUrpTransparentTint(s_sharedMinerTintedGemMaterial, MinerCommanderTintColor);
                 }
+
+                EnsureConsumeAlphaMaterials(renderer);
             }
 
             // [UNITY] sharedMaterial — all gems of a tint class share one Material.
@@ -355,6 +400,66 @@ namespace TitanOrbit.Game
                 renderer.sharedMaterial = s_sharedBonusTintedGemMaterial;
             else
                 renderer.sharedMaterial = s_sharedTintedGemMaterial;
+        }
+
+        /// <summary>
+        /// One shared 0.3 and one shared 1.0 material per tint. Built once from the
+        /// prefab shader so a grind burst does not clone a material per gem.
+        /// </summary>
+        static void EnsureConsumeAlphaMaterials(Renderer renderer)
+        {
+            if (s_blockedStandard != null && s_readyStandard != null)
+                return;
+
+            Material source = s_sharedTintedGemMaterial != null
+                ? s_sharedTintedGemMaterial
+                : renderer.sharedMaterial;
+            if (source == null)
+                return;
+
+            if (s_blockedStandard == null)
+                s_blockedStandard = CreateSharedTint(source, "TitanOrbit_GemTinted_SelfBlocked", WithAlpha(GemTintColor, SelfPickupBlockedAlpha));
+            if (s_blockedBonus == null)
+                s_blockedBonus = CreateSharedTint(source, "TitanOrbit_GemBonusTinted_SelfBlocked", WithAlpha(BonusGemTintColor, SelfPickupBlockedAlpha));
+            if (s_blockedMiner == null)
+                s_blockedMiner = CreateSharedTint(source, "TitanOrbit_GemMinerTinted_SelfBlocked", WithAlpha(MinerCommanderTintColor, SelfPickupBlockedAlpha));
+            if (s_readyStandard == null)
+                s_readyStandard = CreateSharedTint(source, "TitanOrbit_GemTinted_SelfReady", WithAlpha(GemTintColor, SelfPickupReadyAlpha));
+            if (s_readyBonus == null)
+                s_readyBonus = CreateSharedTint(source, "TitanOrbit_GemBonusTinted_SelfReady", WithAlpha(BonusGemTintColor, SelfPickupReadyAlpha));
+            if (s_readyMiner == null)
+                s_readyMiner = CreateSharedTint(source, "TitanOrbit_GemMinerTinted_SelfReady", WithAlpha(MinerCommanderTintColor, SelfPickupReadyAlpha));
+        }
+
+        static Material ResolveConsumeAlphaMaterial(GemVisualTint tint, bool blocked)
+        {
+            if (blocked)
+            {
+                if (tint == GemVisualTint.MinerCommander)
+                    return s_blockedMiner;
+                if (tint == GemVisualTint.TerritoryBonus)
+                    return s_blockedBonus;
+                return s_blockedStandard;
+            }
+
+            if (tint == GemVisualTint.MinerCommander)
+                return s_readyMiner;
+            if (tint == GemVisualTint.TerritoryBonus)
+                return s_readyBonus;
+            return s_readyStandard;
+        }
+
+        static Material CreateSharedTint(Material source, string name, Color tint)
+        {
+            var material = new Material(source) { name = name };
+            ConfigureUrpTransparentTint(material, tint);
+            return material;
+        }
+
+        static Color WithAlpha(Color color, float alpha)
+        {
+            color.a = alpha;
+            return color;
         }
 
         /// <summary>

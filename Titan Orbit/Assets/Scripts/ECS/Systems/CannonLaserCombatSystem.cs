@@ -30,7 +30,10 @@ namespace TitanOrbit.ECS
         /// <summary>Leftover cargo spill too small to spawn this tick (per victim).</summary>
         readonly Dictionary<Entity, float> _gemCarry = new Dictionary<Entity, float>(16);
 
-        /// <summary>Last lock entity per cannon so a new target restarts the DPS ramp.</summary>
+        /// <summary>
+        /// Last lock entity per cannon. A different entity restarts the DPS ramp
+        /// at 50%. The same entity keeps charge through hide, Fire release, and lockout.
+        /// </summary>
         readonly Dictionary<LaserRampKey, Entity> _lastLaserLock = new Dictionary<LaserRampKey, Entity>(16);
 
         /// <summary>MEGAs whose lasers were walked by the bullet strip this tick.</summary>
@@ -176,8 +179,10 @@ namespace TitanOrbit.ECS
                         continue;
                     if (_reservedMounts.Contains(m))
                         continue;
+                    // Hide the beam for this tick. Do not forget the lock or
+                    // wipe ramp seconds — a skipped square / one-tick miss
+                    // used to restart 50% DPS on the same target.
                     WriteLaserOff(gunners, m, mounts[m]);
-                    ForgetLaserLock(mega, m);
                 }
             }
 
@@ -301,7 +306,6 @@ namespace TitanOrbit.ECS
             if (!canBurn)
             {
                 WriteMouseAim(gunners, mountIndex, in xf, in mount, in input, barrelFwd, acquireRange, mapW, mapH);
-                WriteLaserRamp(gunners, mountIndex, 0f);
                 return;
             }
 
@@ -322,8 +326,8 @@ namespace TitanOrbit.ECS
             {
                 if (aims.IsCreated && mountIndex < aims.Length)
                     aims[mountIndex] = default;
-                ForgetLaserLock(mega, mountIndex);
                 WriteLaserOff(gunners, mountIndex, in mount);
+                ResetLaserRamp(mega, mountIndex, gunners);
                 return;
             }
 
@@ -342,12 +346,12 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// Hides every cannon beam when Fire is up. Lockout stays until the
-        /// pool is above 10% of max — releasing Fire does not reset it.
+        /// Hides every cannon beam when Fire is up. Charge stays on the last
+        /// lock entity so the same target does not restart at 50%. Lockout
+        /// stays until the pool is above 10% of max.
         /// </summary>
         void Quench(Entity mega)
         {
-            int mountCount = 0;
             if (EntityManager.HasBuffer<ShipWeaponMountElement>(mega))
             {
                 var mounts = EntityManager.GetBuffer<ShipWeaponMountElement>(mega);
@@ -355,15 +359,13 @@ namespace TitanOrbit.ECS
                     ? EntityManager.GetBuffer<MegaShipGunnerSlotElement>(mega)
                     : default;
                 ShipWeaponKind.RestoreMountKindsFromGhostedSlots(mounts, gunners);
-                mountCount = mounts.Length;
-                for (int m = 0; m < mountCount; m++)
+                for (int m = 0; m < mounts.Length; m++)
                 {
                     if (ShipWeaponKind.IsCannonLaser(mounts[m], gunners, m))
                         WriteLaserOff(gunners, m, mounts[m]);
                 }
             }
 
-            ForgetLaserLocks(mega, mountCount);
             if (!EntityManager.HasComponent<MegaShipState>(mega))
                 return;
 
@@ -627,8 +629,8 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// Current barrel ramp. A different lock entity restarts at 0 (50% DPS).
-        /// Fire release / lockout also restarts. Same lock after a one-tick gap keeps charge.
+        /// Current barrel ramp. Only a different lock entity restarts at 0 (50% DPS).
+        /// The same target keeps charge through a missed tick, Fire release, or lockout.
         /// </summary>
         float ResolveLockRampSeconds(
             Entity mega,
@@ -679,10 +681,16 @@ namespace TitanOrbit.ECS
             _lastLaserLock.Remove(new LaserRampKey { Ship = mega, Mount = mountIndex });
         }
 
-        void ForgetLaserLocks(Entity mega, int mountCount)
+        /// <summary>
+        /// The locked entity died. Next lock is a new target, so charge restarts.
+        /// </summary>
+        void ResetLaserRamp(
+            Entity mega,
+            int mountIndex,
+            DynamicBuffer<MegaShipGunnerSlotElement> gunners)
         {
-            for (int m = 0; m < mountCount; m++)
-                ForgetLaserLock(mega, m);
+            ForgetLaserLock(mega, mountIndex);
+            WriteLaserRamp(gunners, mountIndex, 0f);
         }
     }
 }

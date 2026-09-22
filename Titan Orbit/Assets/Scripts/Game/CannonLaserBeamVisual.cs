@@ -285,10 +285,12 @@ namespace TitanOrbit.Game
                 : default;
 
             bool localOwner = em.HasComponent<LocalPlayerShipTag>(binding.ShipEntity);
+            bool pulseOn = megaState.CannonLaserPulseOn;
             bool energyLockout = localOwner
-                ? StepLocalEnergyLockout(in shipState, megaState.CannonLaserLockout)
-                : megaState.CannonLaserLockout
-                  || CannonLaserMath.IsLaserPoolEmpty(shipState.CurrentEnergy);
+                ? StepLocalEnergyLockout(in shipState, megaState.CannonLaserLockout, pulseOn)
+                : !pulseOn
+                  && (megaState.CannonLaserLockout
+                      || CannonLaserMath.IsLaserPoolEmpty(shipState.CurrentEnergy));
             var localInput = localOwner && em.HasComponent<ShipInput>(binding.ShipEntity)
                 ? em.GetComponentData<ShipInput>(binding.ShipEntity)
                 : default;
@@ -298,13 +300,11 @@ namespace TitanOrbit.Game
             // immediately. Ghosted TargetDistance can stay > 0 for a snapshot.
             if (localOwner && !localFiring)
             {
-                ResetRampsForShip(binding.ShipEntity.Index);
                 ClearStickyForShip(binding.ShipEntity.Index);
                 return;
             }
             if (energyLockout)
             {
-                ResetRampsForShip(binding.ShipEntity.Index);
                 ClearStickyForShip(binding.ShipEntity.Index);
                 return;
             }
@@ -356,7 +356,7 @@ namespace TitanOrbit.Game
                 if (SilenceVendorAudio(slot.Root))
                     slot.NeedsSilence = false;
                 float rampSeconds = ResolveBeamRampSeconds(
-                    slot, localOwner, gunners[m], beamHit, localFiring && !energyLockout);
+                    em, slot, localOwner, gunners[m], beamHit, localFiring && !energyLockout);
                 ApplyRampWidth(slot, rampSeconds);
                 drawnHumRamp = math.max(drawnHumRamp, rampSeconds);
                 hadDrawnRamp = true;
@@ -604,16 +604,22 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Same 10% recharge gate as the server. Shift mouse-aim used to ignore
-        /// <see cref="MegaShipGunnerSlotElement.TargetDistance"/> and keep drawing.
+        /// Hide at empty before the lockout ghost arrives. The server already
+        /// waits for &gt;10% before clearing <see cref="MegaShipState.CannonLaserLockout"/>;
+        /// do not also require that ratio here — after unlock the ghost pool
+        /// is already draining and would never look ready again.
         /// </summary>
-        bool StepLocalEnergyLockout(in ShipState ship, bool serverLockout)
+        bool StepLocalEnergyLockout(in ShipState ship, bool serverLockout, bool pulseOn)
         {
-            float maxEnergy = math.max(1f, ship.MaxEnergy);
+            if (pulseOn)
+            {
+                _localEnergyLockout = false;
+                return false;
+            }
+
             if (serverLockout || CannonLaserMath.IsLaserPoolEmpty(ship.CurrentEnergy))
                 _localEnergyLockout = true;
-            if (_localEnergyLockout && !serverLockout
-                && CannonLaserMath.IsLaserPoolReady(ship.CurrentEnergy, maxEnergy))
+            else
                 _localEnergyLockout = false;
             return _localEnergyLockout;
         }
@@ -738,15 +744,16 @@ namespace TitanOrbit.Game
             slot.StickyAimZ = 0f;
             slot.LastSeenLive = 0f;
             slot.LastUsed = -1f;
-            ResetSlotRamp(slot);
             SetBeamShown(slot, false);
         }
 
         /// <summary>
-        /// Local owner predicts per-barrel charge and restarts at 50% when the
-        /// clipped lock / ghost id changes. Remotes read the ghosted slot seconds.
+        /// Local owner predicts per-barrel charge. Restarts at 50% only when
+        /// the server lock entity changes. A clipped rock in front of that lock
+        /// is not a new target. Remotes read the ghosted slot seconds.
         /// </summary>
         static float ResolveBeamRampSeconds(
+            EntityManager em,
             BeamSlot slot,
             bool localOwner,
             in MegaShipGunnerSlotElement gunner,
@@ -756,32 +763,25 @@ namespace TitanOrbit.Game
             if (!localOwner)
                 return math.max(0f, gunner.CannonLaserRampSeconds);
 
-            Entity target = beamHit;
-            if (target == Entity.Null && gunner.TargetGhostId != 0)
-                MegaShipWeaponVisualTargets.TryGetEntity(gunner.TargetGhostId, out target);
-
-            bool changed = false;
-            if (target != Entity.Null)
+            if (MegaShipWeaponVisualTargets.TryGetLockEntity(
+                    em, gunner.TargetGhostId, gunner.AimWorldX, gunner.AimWorldZ, out Entity lockEnt)
+                && lockEnt != Entity.Null)
             {
-                changed = slot.RampTarget != Entity.Null && slot.RampTarget != target;
-                slot.RampTarget = target;
-                slot.RampGhostId = gunner.TargetGhostId;
-            }
-            else if (gunner.TargetGhostId != 0)
-            {
-                changed = slot.RampGhostId != 0 && slot.RampGhostId != gunner.TargetGhostId;
+                if (slot.RampTarget != Entity.Null && slot.RampTarget != lockEnt)
+                    slot.LocalRampSeconds = 0f;
+                slot.RampTarget = lockEnt;
                 slot.RampGhostId = gunner.TargetGhostId;
             }
 
-            if (changed)
-                slot.LocalRampSeconds = 0f;
-
+            bool haveLock = lockEnt != Entity.Null
+                            || beamHit != Entity.Null
+                            || MegaShipWeaponAim.IsTrackingAim(in gunner);
             float shown = slot.LocalRampSeconds;
             slot.LocalRampSeconds = CannonLaserMath.StepRampSeconds(
                 shown,
                 Time.deltaTime,
                 reset: false,
-                charging: charging && (target != Entity.Null || gunner.TargetGhostId != 0));
+                charging: charging && haveLock);
             return shown;
         }
 

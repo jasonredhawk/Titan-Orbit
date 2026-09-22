@@ -134,6 +134,12 @@ namespace TitanOrbit.Game
         readonly Dictionary<Entity, GemVisualTint> _proxyGemBonusTint = new Dictionary<Entity, GemVisualTint>();
 
         /// <summary>
+        /// Local scoop fade for gems this ship expelled: 0 = normal tint, 1 = blocked
+        /// (alpha 0.3), 2 = delay elapsed (alpha 1). Other players' gems stay at 0.
+        /// </summary>
+        readonly Dictionary<Entity, byte> _proxyGemSelfPickupFade = new Dictionary<Entity, byte>();
+
+        /// <summary>
         /// [TITAN-ORBIT] Client topology revision last used for asteroid tint PIT.
         /// Full PIT for every rock on every PublishClient was ~2+ ms — revision + budget instead.
         /// </summary>
@@ -402,6 +408,7 @@ namespace TitanOrbit.Game
             _asteroidBurstFired.Clear();
             _asteroidLastKnown.Clear();
             _proxyGemBonusTint.Clear();
+            _proxyGemSelfPickupFade.Clear();
             ResetInstanceLoadingCounts();
         }
 
@@ -1275,12 +1282,15 @@ namespace TitanOrbit.Game
             // is stable between graph publishes. Running PIT for every rock every frame cost
             // ~2.3 ms with ~236 asteroids — budget + revision invalidate instead.
             TeamId viewerTeam = TeamId.None;
+            int localNetworkId = 0;
             if (TryResolveLocalPlayerShipEntityCached(em, out var localShip) &&
                 localShip != Entity.Null &&
                 em.Exists(localShip) &&
                 em.HasComponent<ShipState>(localShip))
             {
                 viewerTeam = em.GetComponentData<ShipState>(localShip).Team;
+                if (em.HasComponent<GhostOwner>(localShip))
+                    localNetworkId = em.GetComponentData<GhostOwner>(localShip).NetworkId;
             }
 
             int graphRevision = PlanetConnectionGraphCache.ClientPublishRevision;
@@ -1334,16 +1344,47 @@ namespace TitanOrbit.Game
                     // so a yellow / blue extra does not stay on the pooled red material.
                     // Skip GetComponentInChildren + sharedMaterial write when the tint is unchanged
                     // (grind dumps gems at 4 Hz; walking them all used to retint every frame).
-                    if (!_proxyGemBonusTint.TryGetValue(entity, out GemVisualTint appliedTint) ||
-                        appliedTint != gemState.Tint)
-                    {
-                        GemVisualApplier.ApplyTint(go, gemState.Tint);
-                        _proxyGemBonusTint[entity] = gemState.Tint;
-                    }
+                    bool tintChanged = !_proxyGemBonusTint.TryGetValue(entity, out GemVisualTint appliedTint) ||
+                                       appliedTint != gemState.Tint;
                     // [TITAN-ORBIT] ServerTick clock — World.Time diverges on late-join (moon orbit rule).
                     float now = PlanetGemMoonOrbitClock.TryGetElapsedSeconds(out double tickNow, includeTickFraction: true)
                         ? (float)tickNow
                         : (float)Time.timeAsDouble;
+                    // Own expelled gems stay faded until SelfPickupBlockSeconds, then go opaque.
+                    // Other ships still see the normal tint — they can scoop immediately.
+                    byte fade = 0;
+                    if (localNetworkId > 0 &&
+                        GemSelfPickupBlock.IsPickupBlockedForShip(gemState, localNetworkId, now))
+                    {
+                        fade = 1;
+                    }
+                    else if (_proxyGemSelfPickupFade.TryGetValue(entity, out byte prevFade) && prevFade != 0)
+                    {
+                        fade = 2;
+                    }
+
+                    if (tintChanged && fade == 0)
+                    {
+                        GemVisualApplier.ApplyTint(go, gemState.Tint);
+                        _proxyGemBonusTint[entity] = gemState.Tint;
+                    }
+                    else if (tintChanged)
+                    {
+                        _proxyGemBonusTint[entity] = gemState.Tint;
+                    }
+
+                    if (tintChanged ||
+                        !_proxyGemSelfPickupFade.TryGetValue(entity, out byte appliedFade) ||
+                        appliedFade != fade)
+                    {
+                        if (fade == 1)
+                            GemVisualApplier.ApplySelfPickupConsumeAlpha(go, gemState.Tint, blocked: true);
+                        else if (fade == 2)
+                            GemVisualApplier.ApplySelfPickupConsumeAlpha(go, gemState.Tint, blocked: false);
+                        else if (!tintChanged)
+                            GemVisualApplier.ApplyTint(go, gemState.Tint);
+                        _proxyGemSelfPickupFade[entity] = fade;
+                    }
                     scale = GemVisualApplier.ComputeLifetimeVisualScale(
                         gemValue, gemState.SpawnServerTime, now);
                 }
@@ -3241,6 +3282,7 @@ namespace TitanOrbit.Game
                 _proxyPlanetVisuals.Remove(entity);
                 _proxyAsteroidTerritory.Remove(entity);
                 _proxyGemBonusTint.Remove(entity);
+                _proxyGemSelfPickupFade.Remove(entity);
                 _bulletStretchVisuals.Remove(entity);
             }
         }
@@ -3794,6 +3836,7 @@ namespace TitanOrbit.Game
             _proxyPlanetVisuals.Clear();
             _proxyAsteroidTerritory.Clear();
             _proxyGemBonusTint.Clear();
+            _proxyGemSelfPickupFade.Clear();
             ClearProxyCountStaticsIfOwner();
         }
     }

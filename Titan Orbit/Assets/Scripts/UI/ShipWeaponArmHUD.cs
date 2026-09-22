@@ -350,9 +350,12 @@ namespace TitanOrbit.UI
                 : default;
 
             float energy = shipState.CurrentEnergy;
+            var megaState = isMega && em.HasComponent<MegaShipState>(ship)
+                ? em.GetComponentData<MegaShipState>(ship)
+                : default;
             bool laserLockout = isMega
-                                && em.HasComponent<MegaShipState>(ship)
-                                && em.GetComponentData<MegaShipState>(ship).CannonLaserLockout;
+                                && megaState.CannonLaserLockout
+                                && !megaState.CannonLaserPulseOn;
 
             float abilityEnergy = 0f;
             if (!isMega && em.HasComponent<ShipLoadoutState>(ship))

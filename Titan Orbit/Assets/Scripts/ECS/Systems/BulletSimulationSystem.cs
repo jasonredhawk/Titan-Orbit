@@ -582,7 +582,11 @@ namespace TitanOrbit.ECS
                 }
 
                 if (!ShipWeaponFireLogic.TryTakeSequentialSlot(ref walk, cost))
-                    break;
+                {
+                    // A dry gun must not skip later cannons. Breaking here hid
+                    // those beams and restarted the lock ramp on the same target.
+                    continue;
+                }
 
                 if (mount.FireCooldown > 0.001f)
                     continue;

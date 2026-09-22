@@ -113,6 +113,40 @@ namespace TitanOrbit.Game
                 return true;
             }
 
+            return TryGetAimWorldLockEntity(em, aimX, aimZ, out _);
+        }
+
+        /// <summary>
+        /// Server lock entity for ramp identity. Ghost id when the target is a
+        /// ship; otherwise the obstacle sitting on AimWorld (asteroid / pad / moon).
+        /// Do not use a clipped contact in front of that lock — that is not a retarget.
+        /// </summary>
+        public static bool TryGetLockEntity(
+            EntityManager em,
+            int ghostId,
+            float aimX,
+            float aimZ,
+            out Entity entity)
+        {
+            entity = Entity.Null;
+            if (ghostId != 0)
+            {
+                if (TryGetEntity(ghostId, out entity) && IsLiveVisualTarget(em, entity))
+                    return true;
+                entity = Entity.Null;
+                return false;
+            }
+
+            return TryGetAimWorldLockEntity(em, aimX, aimZ, out entity);
+        }
+
+        static bool TryGetAimWorldLockEntity(
+            EntityManager em,
+            float aimX,
+            float aimZ,
+            out Entity entity)
+        {
+            entity = Entity.Null;
             if (math.abs(aimX) <= 0.05f && math.abs(aimZ) <= 0.05f)
                 return false;
 
@@ -151,7 +185,11 @@ namespace TitanOrbit.Game
             // Tight body fit — leftover AimWorld after a kill sits on the corpse
             // center, not on a neighbor. A wide radius+1.5 swallow kept the beam
             // on empty space while Fire was held and the ship was parked.
-            return bestDist <= closest.Radius + 0.75f;
+            if (bestDist > closest.Radius + 0.75f)
+                return false;
+
+            entity = closest.SourceEntity;
+            return entity != Entity.Null;
         }
 
         /// <summary>

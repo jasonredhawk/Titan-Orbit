@@ -98,9 +98,9 @@ namespace TitanOrbit.Simulation
         }
 
         /// <summary>
-        /// Advances one barrel's charge. Resets when Fire is released, lockout
-        /// trips, or the lock entity changes. Same lock across a one-tick gap
-        /// keeps the current value.
+        /// Advances one barrel's charge. Resets only when the lock entity
+        /// changes. Same target keeps the current value across a missed tick,
+        /// Fire release, or lockout.
         /// </summary>
         public static float StepRampSeconds(float current, float dt, bool reset, bool charging)
         {

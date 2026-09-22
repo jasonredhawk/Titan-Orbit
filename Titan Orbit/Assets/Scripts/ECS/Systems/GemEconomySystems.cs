@@ -138,14 +138,6 @@ namespace TitanOrbit.ECS
         public const float MinGemSpawnValue = 0.25f;
 
         /// <summary>
-        /// Absorb-zone self-pickup grace after a ship spills cargo. Tractor stays blocked for
-        /// the full <see cref="GemExplosionSettings.SelfPickupBlockSeconds"/> so you cannot
-        /// magnet dumps back; fly-over scoop uses this shorter window so burst nuggets are not
-        /// uncollectable for seconds while they sit in the explosion cloud.
-        /// </summary>
-        public const float SelfPickupAbsorbBlockSeconds = 0.45f;
-
-        /// <summary>
         /// Fallback explosion speed when <see cref="GemExplosionSettings"/> is missing.
         /// Prefer the ScriptableObject (Assets/Resources/GemExplosionSettings.asset).
         /// </summary>
@@ -1729,15 +1721,18 @@ namespace TitanOrbit.ECS
                 gem, shipNetworkId, nowServerTime, settings.SelfPickupBlockSeconds);
         }
 
-        /// <summary>Absorb-zone window — short anti-vacuum, then fly-over is allowed.</summary>
+        /// <summary>
+        /// Absorb-zone window — same delay as tractor. The spilling hull cannot scoop
+        /// gems that are still inside its own explosion.
+        /// </summary>
         public static bool IsPickupBlockedForShip(
             in GemState gem,
             int shipNetworkId,
             float nowServerTime)
         {
             var settings = GemExplosionSettingsCache.ResolveOrDefault();
-            float window = math.min(settings.SelfPickupBlockSeconds, GemEconomyConstants.SelfPickupAbsorbBlockSeconds);
-            return IsBlockedForShip(gem, shipNetworkId, nowServerTime, window);
+            return IsBlockedForShip(
+                gem, shipNetworkId, nowServerTime, settings.SelfPickupBlockSeconds);
         }
     }
 }

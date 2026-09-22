@@ -306,6 +306,8 @@ namespace TitanOrbit.ECS
                         }
                         else
                         {
+                            // Shift cone is intentional aim. An empty cone parks;
+                            // do not keep cooking a target the barrel no longer faces.
                             aims[m] = new MegaShipAutoAimSlotElement
                             {
                                 Target = mega,
@@ -367,11 +369,15 @@ namespace TitanOrbit.ECS
                     }
                     else
                     {
-                        aims[m] = new MegaShipAutoAimSlotElement
-                        {
-                            Target = mega,
-                            AimPoint = default,
-                        };
+                        // Cannons hold the last entity through a one-tick miss so
+                        // keep-range hysteresis can recover and the DPS ramp stays.
+                        aims[m] = isCannon
+                            ? HoldLastLockOrPark(mega, hadLock, slot)
+                            : new MegaShipAutoAimSlotElement
+                            {
+                                Target = mega,
+                                AimPoint = default,
+                            };
                     }
                 }
 
@@ -394,6 +400,24 @@ namespace TitanOrbit.ECS
                 asteroidStates.Dispose();
             if (asteroidXfs.IsCreated)
                 asteroidXfs.Dispose();
+        }
+
+        /// <summary>
+        /// Keep a live cannon lock through a one-tick keep/acquire miss so the
+        /// barrel can recover inside keep-range and the DPS ramp does not restart.
+        /// </summary>
+        static MegaShipAutoAimSlotElement HoldLastLockOrPark(
+            Entity mega,
+            bool hadLock,
+            in MegaShipAutoAimSlotElement slot)
+        {
+            if (hadLock && slot.Target != Entity.Null && slot.Target != mega)
+                return slot;
+            return new MegaShipAutoAimSlotElement
+            {
+                Target = mega,
+                AimPoint = default,
+            };
         }
 
         /// <summary>Per-barrel acquire range from catalog component stats; short fallback if unset.</summary>
@@ -469,6 +493,10 @@ namespace TitanOrbit.ECS
                         desired = offset / dist;
                         targetDist = dist;
                     }
+                    else
+                    {
+                        targetDist = CannonLaserMath.MinTrackingDistance;
+                    }
 
                     // Mesh LookAt uses the target's current point, not the lead intercept.
                     // Lead stays on AimPoint / LocalRotation so bullets do not change.
@@ -477,11 +505,20 @@ namespace TitanOrbit.ECS
                             em, aims[m].Target, ship.Team, heal, muzzle, mountRange,
                             mapW, mapH, moonElapsed, out ghostAim))
                     {
-                        // Dead / culled lock — do not publish the last lead or the
-                        // beam stays on the corpse until the hull moves.
-                        ghostAim = xf.Position;
-                        targetDist = 0f;
-                        desired = hullForward;
+                        if (!em.Exists(aims[m].Target))
+                        {
+                            ghostAim = xf.Position;
+                            targetDist = 0f;
+                            desired = hullForward;
+                        }
+                        else
+                        {
+                            // Live lock, aim helper missed this tick — keep the last
+                            // point so a close / pad flicker does not park the barrel.
+                            ghostAim = aims[m].AimPoint;
+                            if (targetDist < 0.05f)
+                                targetDist = CannonLaserMath.MinTrackingDistance;
+                        }
                     }
                 }
 
@@ -677,10 +714,7 @@ namespace TitanOrbit.ECS
                 var xf = EntityManager.GetComponentData<LocalTransform>(target);
                 float3 pos = MegaShipCombatAim.GetAimPoint(EntityManager, target, xf);
                 if (!PassesRangeAndCone(from, coneFwd, pos, range, mapW, mapH, coneLock))
-                {
-                    aim = default;
                     return false;
-                }
 
                 if (coneLock)
                 {
@@ -706,10 +740,7 @@ namespace TitanOrbit.ECS
                 }
 
                 if (!PassesRangeAndCone(from, coneFwd, planetAim, range, mapW, mapH, coneLock))
-                {
-                    aim = default;
                     return false;
-                }
 
                 if (coneLock)
                 {
@@ -735,10 +766,7 @@ namespace TitanOrbit.ECS
 
                 float3 pos = EntityManager.GetComponentData<LocalTransform>(target).Position;
                 if (!PassesRangeAndCone(from, coneFwd, pos, range, mapW, mapH, coneLock))
-                {
-                    aim = default;
                     return false;
-                }
 
                 if (coneLock)
                 {
