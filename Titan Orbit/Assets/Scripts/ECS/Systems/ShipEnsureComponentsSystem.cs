@@ -101,6 +101,9 @@ namespace TitanOrbit.ECS
                 if (!state.EntityManager.HasBuffer<ShipWeaponMountElement>(entity))
                     ecb.AddBuffer<ShipWeaponMountElement>(entity);
 
+                if (!state.EntityManager.HasBuffer<ShipWeaponReadyElement>(entity))
+                    ecb.AddBuffer<ShipWeaponReadyElement>(entity);
+
                 if (!state.EntityManager.HasBuffer<ShipWingTractorBeamElement>(entity))
                     ecb.AddBuffer<ShipWingTractorBeamElement>(entity);
             }

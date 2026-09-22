@@ -16,15 +16,11 @@ namespace TitanOrbit.UI
     /// <summary>
     /// Compact arsenal strip under the ship stats, stacked with WEAPONS: every barrel on the local ship, grouped by
     /// combat class (gun / laser / missile / sniper). Click a cell to mute that
-    /// barrel; click the class header to mute or arm the whole group. Energy fill
-    /// lives in the cell background and is <b>that barrel’s shot cost</b>, not the
-    /// hull tank. When energy is low, only the current square fills: charge,
-    /// fire, then the next square, wrapping from the last weapon back to the
-    /// first. Leftover energy stays in the tank so later bars start empty.
-    /// When the pool can pay every armed clip, every ready square lights at once.
-    /// Dim ice while a clip is filling, bright cyan only when that clip is full
-    /// and ready. The gun currently receiving energy gets a caret. User-off is a
-    /// muted slate chip, not the same look as “waiting for energy.”
+    /// barrel; click the class header to mute or arm the whole group. Each square
+    /// fills over that barrel's fire interval (<c>1 / fireRate</c>) from the
+    /// server's ready timer. Filling does not spend energy. A full square that
+    /// the hull pool can pay is bright and ready. A full square the pool cannot
+    /// pay stays full and waits. User-off is a muted slate chip.
     /// <para>
     /// Regular family hulls show one GUN (or live bullet-type name) group.
     /// MEGA / Titan hulls show whichever classes the catalog actually mounted.
@@ -151,6 +147,14 @@ namespace TitanOrbit.UI
 
         /// <summary>Per-mount clip fill (0–1). Written by <see cref="ComputeMountCharges"/> each paint.</summary>
         readonly float[] _mountFill = new float[ShipWeaponArmState.MaxTrackedMounts];
+
+        /// <summary>Displayed ready delay, counted down between ghost snapshots.</summary>
+        readonly float[] _shownCooldown = new float[ShipWeaponArmState.MaxTrackedMounts];
+
+        /// <summary>Last ghost ready delay, so a new snapshot can resync the bar.</summary>
+        readonly float[] _lastGhostCooldown = new float[ShipWeaponArmState.MaxTrackedMounts];
+
+        bool _cooldownSmoothInit;
 
         /// <summary>Per-mount look. Same index as <see cref="_mountFill"/>.</summary>
         readonly CellLook[] _mountLook = new CellLook[ShipWeaponArmState.MaxTrackedMounts];
@@ -335,14 +339,6 @@ namespace TitanOrbit.UI
                 : default;
 
             float energy = shipState.CurrentEnergy;
-            int queueMount = 0;
-            int lastFired = -1;
-            if (ClientLocalBulletVfxBridge.TryGetLocalEnergyQueue(
-                    out int predQueue, out float predEnergy, out _, out lastFired))
-            {
-                energy = predEnergy;
-                queueMount = predQueue;
-            }
 
             float abilityEnergy = 0f;
             if (!isMega && em.HasComponent<ShipLoadoutState>(ship))
@@ -374,9 +370,13 @@ namespace TitanOrbit.UI
             _lastGunCaption = gunCaption;
             _hasPainted = true;
 
+            DynamicBuffer<ShipWeaponReadyElement> ready = default;
+            if (em.HasBuffer<ShipWeaponReadyElement>(ship))
+                ready = em.GetBuffer<ShipWeaponReadyElement>(ship);
+
             ComputeMountCharges(
-                mounts, in arm, isMega, laserLockout, energy, queueMount, lastFired,
-                weaponCfg.FireMode, in weaponCfg, abilityEnergy);
+                mounts, ready, in arm, isMega, laserLockout, energy,
+                in weaponCfg, abilityEnergy);
 
             int paintedCells = PaintGroupsAndCells(mounts, gunCaption, layoutDirty);
 
@@ -555,26 +555,24 @@ namespace TitanOrbit.UI
             if (cell.Background != null)
                 cell.Background.color = look == CellLook.UserOff ? UserOffFill : CellBack;
             if (cell.Caret != null)
-                cell.Caret.enabled = charging;
+                cell.Caret.enabled = charging && cell.Fill != null && cell.Fill.fillAmount < 0.999f;
             if (cell.Outline != null)
                 cell.Outline.enabled = charging || look == CellLook.Ready;
         }
 
         /// <summary>
-        /// Writes per-barrel clip fill into <see cref="_mountFill"/>. Each chip is
-        /// that barrel’s own shot cost. A dry ship shows only the cursor square
-        /// filling; after it fires the cursor wraps to the next type and that
-        /// bar starts from empty. A full bank still lights every ready clip.
+        /// Paints each square from the server ready timer. Fill is
+        /// <c>1 - cooldown / (1/fireRate)</c>, moved between snapshots so the
+        /// bar does not sit still until the next ghost. Full and affordable is
+        /// ready. Full and short on energy stays waiting. Muted stays muted.
         /// </summary>
         void ComputeMountCharges(
             DynamicBuffer<ShipWeaponMountElement> mounts,
+            DynamicBuffer<ShipWeaponReadyElement> ready,
             in ShipWeaponArmState arm,
             bool isMega,
             bool laserLockout,
             float energy,
-            int queueMountIndex,
-            int lastFiredMountIndex,
-            ShipWeaponFireMode fireMode,
             in ShipWeaponConfig weaponCfg,
             float abilityEnergy)
         {
@@ -582,6 +580,7 @@ namespace TitanOrbit.UI
             if (mountCount > ShipWeaponArmState.MaxTrackedMounts)
                 mountCount = ShipWeaponArmState.MaxTrackedMounts;
 
+            EnsureCooldownSmooth();
             for (int i = 0; i < ShipWeaponArmState.MaxTrackedMounts; i++)
             {
                 _mountFill[i] = 0f;
@@ -597,118 +596,74 @@ namespace TitanOrbit.UI
 
             int orderCount = ShipWeaponFireLogic.BuildArmedStripOrder(
                 mounts, in arm, _cascadeOrder, skipCannonLasers: false);
-            bool skipLasers = isMega;
-            int cycleSlot = ShipWeaponFireLogic.ResolveCycleSlot(
-                _cascadeOrder, orderCount, queueMountIndex, mounts, skipLasers);
-            bool together = fireMode == ShipWeaponFireMode.AlwaysFireTogether;
-            bool dripOnly = !together
-                            && (fireMode == ShipWeaponFireMode.AlwaysRoundRobin
-                                || lastFiredMountIndex >= 0
-                                || !ShipWeaponFireLogic.CanAffordEveryArmedClip(
-                                    energy, mounts, _cascadeOrder, orderCount,
-                                    weaponCfg.BulletDamage, weaponCfg.FireRate,
-                                    abilityEnergy, skipLasers));
 
-            if (dripOnly)
-            {
-                PaintCycleClip(
-                    mounts, cycleSlot, orderCount, lastFiredMountIndex, skipLasers,
-                    energy, isMega, laserLockout, in weaponCfg, abilityEnergy);
-                return;
-            }
-
-            PaintFullBankClips(
-                mounts, orderCount, energy, isMega, laserLockout,
-                in weaponCfg, abilityEnergy);
-        }
-
-        /// <summary>
-        /// One square charging. Other armed chips stay empty so the sequence
-        /// is readable: this bar fills, fires, then the next type starts over.
-        /// </summary>
-        void PaintCycleClip(
-            DynamicBuffer<ShipWeaponMountElement> mounts,
-            int cycleSlot,
-            int orderCount,
-            int lastFiredMountIndex,
-            bool skipLasers,
-            float energy,
-            bool isMega,
-            bool laserLockout,
-            in ShipWeaponConfig weaponCfg,
-            float abilityEnergy)
-        {
-            if (orderCount <= 0 || cycleSlot < 0 || cycleSlot >= orderCount)
-                return;
-
-            // Same walk as the fire planner: skip the square that just shot
-            // and any still on cooldown so the caret sits on the next weapon.
-            for (int step = 0; step < orderCount; step++)
-            {
-                int slot = (cycleSlot + step) % orderCount;
-                int i = _cascadeOrder[slot];
-                if (i < 0 || i >= mounts.Length)
-                    continue;
-
-                ShipWeaponMountElement mount = mounts[i];
-                if (skipLasers && ShipWeaponKind.IsCannonLaser(mount))
-                    continue;
-                if (orderCount > 1 && i == lastFiredMountIndex)
-                    continue;
-                if (mount.FireCooldown > 0.001f)
-                    continue;
-
-                float cost = ResolveMountShotCost(mount, isMega, in weaponCfg, abilityEnergy);
-                float fill = cost > 0.01f ? Mathf.Clamp01(energy / cost) : 0f;
-                _mountFill[i] = fill;
-                _mountLook[i] = LookForClip(mount, fill, laserLockout);
-                if (_mountLook[i] != CellLook.Ready && _mountLook[i] != CellLook.UserOff)
-                    _mountLook[i] = CellLook.Charging;
-                return;
-            }
-        }
-
-        /// <summary>Every armed clip stacked from the first square — full-bank volley.</summary>
-        void PaintFullBankClips(
-            DynamicBuffer<ShipWeaponMountElement> mounts,
-            int orderCount,
-            float energy,
-            bool isMega,
-            bool laserLockout,
-            in ShipWeaponConfig weaponCfg,
-            float abilityEnergy)
-        {
-            float remaining = Mathf.Max(0f, energy);
-            int caret = -1;
             for (int n = 0; n < orderCount; n++)
             {
                 int i = _cascadeOrder[n];
-                ShipWeaponMountElement mount = mounts[i];
-                float cost = ResolveMountShotCost(mount, isMega, in weaponCfg, abilityEnergy);
-                float allocated = cost > 0.01f ? Mathf.Min(remaining, cost) : 0f;
-                float fill = cost > 0.01f ? allocated / cost : 0f;
-                remaining = Mathf.Max(0f, remaining - allocated);
-                _mountFill[i] = fill;
-                _mountLook[i] = LookForClip(mount, fill, laserLockout);
-                if (caret < 0 && _mountLook[i] == CellLook.Starved && (fill > 0.001f || n == 0))
-                    caret = i;
-            }
+                if (i < 0 || i >= mounts.Length)
+                    continue;
+                if (_mountLook[i] == CellLook.UserOff)
+                    continue;
 
-            if (caret >= 0 && _mountLook[caret] != CellLook.Ready)
-                _mountLook[caret] = CellLook.Charging;
+                ShipWeaponMountElement mount = mounts[i];
+                float ghost = mount.FireCooldown;
+                if (ready.IsCreated && i < ready.Length)
+                    ghost = ready[i].FireCooldown;
+                if (float.IsNaN(ghost) || ghost < 0f)
+                    ghost = 0f;
+
+                float rate = mount.FireRate > 0.01f ? mount.FireRate : weaponCfg.FireRate;
+                if (rate < 0.1f)
+                    rate = 0.1f;
+                float interval = 1f / rate;
+                float shown = SmoothReady(i, ghost);
+                float fill = 1f - Mathf.Clamp01(shown / interval);
+                _mountFill[i] = fill;
+
+                bool full = shown <= 0.001f;
+                float cost = ResolveMountShotCost(mount, isMega, in weaponCfg, abilityEnergy);
+                bool canPay = energy + 0.001f >= cost;
+                bool laserWaiting = ShipWeaponKind.IsCannonLaser(mount) && laserLockout;
+                if (!full)
+                    _mountLook[i] = CellLook.Charging;
+                else if (!canPay || laserWaiting)
+                    _mountLook[i] = CellLook.Charging;
+                else
+                    _mountLook[i] = CellLook.Ready;
+            }
         }
 
-        /// <summary>Ready / cooldown / starved for one chip. Mute is already applied.</summary>
-        static CellLook LookForClip(in ShipWeaponMountElement mount, float fill, bool laserLockout)
+        /// <summary>First paint treats every slot as unsynced so the ghost value wins.</summary>
+        void EnsureCooldownSmooth()
         {
-            bool laser = ShipWeaponKind.IsCannonLaser(mount);
-            if (fill >= 0.999f
-                && mount.FireCooldown <= 0.001f
-                && (!laser || !laserLockout))
-                return CellLook.Ready;
-            if (fill >= 0.999f)
-                return CellLook.Cooldown;
-            return CellLook.Starved;
+            if (_cooldownSmoothInit)
+                return;
+
+            for (int i = 0; i < _shownCooldown.Length; i++)
+            {
+                _shownCooldown[i] = -1f;
+                _lastGhostCooldown[i] = -1f;
+            }
+
+            _cooldownSmoothInit = true;
+        }
+
+        /// <summary>
+        /// Counts the ready delay down between snapshots. A new ghost value
+        /// (including a shot that restarts the timer) snaps the bar back.
+        /// </summary>
+        float SmoothReady(int index, float ghost)
+        {
+            float prev = _lastGhostCooldown[index];
+            float shown = _shownCooldown[index];
+            if (shown < 0f || Mathf.Abs(ghost - prev) > 0.0005f)
+                shown = ghost;
+            else
+                shown = Mathf.Max(0f, shown - Time.deltaTime);
+
+            _shownCooldown[index] = shown;
+            _lastGhostCooldown[index] = ghost;
+            return shown;
         }
 
         /// <summary>Energy this barrel must hold before it can fire (HUD clip size).</summary>

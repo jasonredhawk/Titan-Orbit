@@ -1374,6 +1374,7 @@ namespace TitanOrbit.Game
             if (mainMenuPanel != null)
                 mainMenuPanel.SetActive(!connected && !connecting &&
                                       !showLoadingOverlay &&
+                                      !MatchCloseGate.SuppressMainMenu &&
                                       (_joinBrowser == null || !_joinBrowser.IsVisible));
 
             if (showRejoinChoice && hasRejoinableShip && _rejoinChoice != null)

@@ -12,18 +12,18 @@ using Unity.Transforms;
 namespace TitanOrbit.ECS
 {
     /// <summary>
-    /// Server: MEGA cannon barrels burn a hitscan laser at firePower × fireRate DPS
-    /// ramped from 50% to 300% over 5 seconds on the same lock. A new lock entity
-    /// restarts that barrel at 50%.
-    /// Acquire comes from <see cref="MegaShipAutoFireSystem"/> (same in-range lock as
-    /// other Titan guns; the turret slews onto that target first). Burn requires the
-    /// barrel to sit inside the 33° cone after that slew. Beams stay on while
-    /// a live lock (or Shift mouse-aim) is burning and energy remains.
+    /// Server: MEGA cannon barrels pulse when their arsenal square is ready.
+    /// The square fills over <c>1 / fireRate</c> and does not drain the hull
+    /// pool while it fills. A ready square fires only if the pool can pay one
+    /// interval of beam DPS (<c>DPS / fireRate</c>, this barrel's fire power).
+    /// The hit is that pulse times the 50%→300% lock ramp. <see cref="BulletSimulationSystem"/>
+    /// calls <see cref="TryReadyPulse"/> in arsenal-strip order so a laser is
+    /// paid after guns and before missiles. This system only hides beams on
+    /// hulls the bullet pass did not handle.
     /// World: ServerSimulation. Map size from <see cref="MapStateSingleton"/>.
     /// </summary>
     [UpdateInGroup(typeof(SimulationSystemGroup))]
-    [UpdateAfter(typeof(MegaShipAutoFireSystem))]
-    [UpdateBefore(typeof(BulletSimulationSystem))]
+    [UpdateAfter(typeof(BulletSimulationSystem))]
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation)]
     public partial class CannonLaserCombatSystem : SystemBase
     {
@@ -34,6 +34,12 @@ namespace TitanOrbit.ECS
 
         /// <summary>Last lock entity per cannon so a new target restarts the DPS ramp.</summary>
         readonly Dictionary<LaserRampKey, Entity> _lastLaserLock = new Dictionary<LaserRampKey, Entity>(16);
+
+        /// <summary>MEGAs whose lasers were walked by the bullet strip this tick.</summary>
+        readonly HashSet<Entity> _handledShips = new HashSet<Entity>(8);
+
+        bool _passLockout;
+        bool _passWantedBurn;
 
         struct LaserRampKey : System.IEquatable<LaserRampKey>
         {
@@ -58,63 +64,28 @@ namespace TitanOrbit.ECS
                 ComponentType.ReadWrite<ShipWeaponMountElement>());
         }
 
-        /// <summary>Drain energy and apply DPS for every locked cannon while Fire is held.</summary>
+        /// <summary>
+        /// Hides beams on MEGAs the bullet strip did not walk (not firing, dead,
+        /// or missing from that pass). Pulses themselves run from
+        /// <see cref="TryReadyPulse"/> so they share strip order with the guns.
+        /// </summary>
         protected override void OnUpdate()
         {
-            if (!SystemAPI.TryGetSingleton<MapStateSingleton>(out var map) ||
-                !ToroidalMapEcs.IsValidMapSize(map.MapWidth, map.MapHeight))
-                return;
-
             using var megas = _megaQuery.ToEntityArray(Allocator.Temp);
-            bool anyCannon = false;
-            for (int i = 0; i < megas.Length; i++)
-            {
-                if (!EntityManager.GetComponentData<MegaShipState>(megas[i]).IsMega)
-                    continue;
-                if (!HasCannonMount(megas[i]))
-                    continue;
-                anyCannon = true;
-                break;
-            }
-
-            if (!anyCannon)
-                return;
-
-            float dt = SystemAPI.Time.DeltaTime;
-            if (dt <= 0f)
-                return;
-
-            float mapW = map.MapWidth;
-            float mapH = map.MapHeight;
-            double serverElapsed = SystemAPI.Time.ElapsedTime;
-            int hz = 0;
-            if (SystemAPI.TryGetSingleton<ClientServerTickRate>(out var tickRate))
-                hz = tickRate.SimulationTickRate;
-            double moonElapsed = SystemAPI.TryGetSingleton<NetworkTime>(out var networkTime)
-                ? PlanetGemMoonOrbitClock.GetElapsedSeconds(networkTime, hz, includeTickFraction: false)
-                : serverElapsed;
-
-            Entity gemPrefab = Entity.Null;
-            if (SystemAPI.TryGetSingleton<GamePrefabs>(out var gamePrefabs))
-                gemPrefab = gamePrefabs.Gem;
-            float gemSpawnServerTime = PlanetGemMoonOrbitClock.GetElapsedSecondsOrFallback(
-                EntityManager, serverElapsed);
-
-            var ecb = new EntityCommandBuffer(Allocator.Temp);
-
             for (int i = 0; i < megas.Length; i++)
             {
                 Entity mega = megas[i];
-                if (!EntityManager.GetComponentData<MegaShipState>(mega).IsMega)
+                if (!EntityManager.HasComponent<MegaShipState>(mega)
+                    || !EntityManager.GetComponentData<MegaShipState>(mega).IsMega)
                     continue;
-
-                TickMegaCannons(
-                    mega, dt, mapW, mapH, moonElapsed, serverElapsed,
-                    gemPrefab, gemSpawnServerTime, ecb);
+                if (_handledShips.Contains(mega))
+                    continue;
+                if (!HasCannonMount(mega))
+                    continue;
+                Quench(mega);
             }
 
-            ecb.Playback(EntityManager);
-            ecb.Dispose();
+            _handledShips.Clear();
         }
 
         /// <summary>True when this hull has at least one cannon-laser barrel.</summary>
@@ -137,13 +108,64 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// Burns each locked cannon while Fire is held. Energy is shared: each
-        /// beam costs its own DPS this tick. A barrel with no lock or an empty
-        /// pool writes TargetDistance 0 so the beam hides. AutoFire tracking
-        /// stays so turrets remain on target between ticks.
+        /// Marks this MEGA as handled by the bullet strip and clears lockout
+        /// once the pool has refilled past the recharge ratio. Muted lasers
+        /// are turned off so a silenced barrel cannot keep a beam.
         /// </summary>
-        void TickMegaCannons(
+        public void BeginLaserTick(Entity mega, float energy, float maxEnergy)
+        {
+            _handledShips.Add(mega);
+            _passWantedBurn = false;
+            var megaState = EntityManager.GetComponentData<MegaShipState>(mega);
+            _passLockout = megaState.CannonLaserLockout;
+            if (_passLockout && energy >= math.max(1f, maxEnergy) * CannonLaserMath.RechargeRatio)
+                _passLockout = false;
+
+            if (!EntityManager.HasBuffer<ShipWeaponMountElement>(mega))
+                return;
+
+            var mounts = EntityManager.GetBuffer<ShipWeaponMountElement>(mega);
+            var gunners = EntityManager.HasBuffer<MegaShipGunnerSlotElement>(mega)
+                ? EntityManager.GetBuffer<MegaShipGunnerSlotElement>(mega)
+                : default;
+            ShipWeaponKind.RestoreMountKindsFromGhostedSlots(mounts, gunners);
+            var arm = ShipWeaponArmState.Resolve(EntityManager, mega);
+            for (int m = 0; m < mounts.Length; m++)
+            {
+                if (!ShipWeaponKind.IsCannonLaser(mounts[m], gunners, m))
+                    continue;
+                if (!ShipWeaponArmState.IsArmed(in arm, m))
+                    WriteLaserOff(gunners, m, mounts[m]);
+            }
+        }
+
+        /// <summary>
+        /// Writes lockout and the pulse flag after every laser in the strip
+        /// has had its chance. Energy itself is written by the bullet walk.
+        /// </summary>
+        public void EndLaserTick(Entity mega, float energy)
+        {
+            if (!math.isfinite(energy))
+                energy = 0f;
+            if (_passWantedBurn && energy <= 0.0001f)
+                _passLockout = true;
+
+            var megaState = EntityManager.GetComponentData<MegaShipState>(mega);
+            megaState.CannonLaserLockout = _passLockout;
+            megaState.CannonLaserPulseOn = _passWantedBurn;
+            EntityManager.SetComponentData(mega, megaState);
+        }
+
+        /// <summary>
+        /// One laser square. Ready and affordable: spend one interval of DPS,
+        /// restart the delay, and apply that pulse. Short on energy or still
+        /// filling: the beam stays off and the square waits.
+        /// </summary>
+        public void TryReadyPulse(
             Entity mega,
+            int mountIndex,
+            in ShipWeaponMountElement mount,
+            ref float energy,
             float dt,
             float mapW,
             float mapH,
@@ -151,210 +173,170 @@ namespace TitanOrbit.ECS
             double serverElapsed,
             Entity gemPrefab,
             float gemSpawnServerTime,
-            EntityCommandBuffer ecb)
+            bool topKiller,
+            ref EntityCommandBuffer ecb)
         {
-            var ship = EntityManager.GetComponentData<ShipState>(mega);
-            var megaState = EntityManager.GetComponentData<MegaShipState>(mega);
             var gunners = EntityManager.HasBuffer<MegaShipGunnerSlotElement>(mega)
                 ? EntityManager.GetBuffer<MegaShipGunnerSlotElement>(mega)
                 : default;
-            if (ship.IsDead || ship.Team == TeamId.None)
+            if (!ShipWeaponKind.IsCannonLaser(mount, gunners, mountIndex) || mount.FirePower <= 0.01f)
             {
-                ForgetLaserLocks(mega, gunners.IsCreated ? gunners.Length : 0);
-                if (megaState.CannonLaserLockout || megaState.CannonLaserPulseOn)
-                {
-                    megaState.CannonLaserLockout = false;
-                    megaState.CannonLaserPulseOn = false;
-                    EntityManager.SetComponentData(mega, megaState);
-                }
+                WriteLaserOff(gunners, mountIndex, in mount);
                 return;
             }
 
+            if (_passLockout || mount.FireCooldown > 0.001f)
+            {
+                WriteLaserOff(gunners, mountIndex, in mount);
+                return;
+            }
+
+            var ship = EntityManager.GetComponentData<ShipState>(mega);
             var xf = EntityManager.GetComponentData<LocalTransform>(mega);
-            var mounts = EntityManager.GetBuffer<ShipWeaponMountElement>(mega);
-            ShipWeaponKind.RestoreMountKindsFromGhostedSlots(mounts, gunners);
-            var aims = EntityManager.HasBuffer<MegaShipAutoAimSlotElement>(mega)
-                ? EntityManager.GetBuffer<MegaShipAutoAimSlotElement>(mega)
-                : default;
-
-            bool heal = EntityManager.HasComponent<ShipLoadoutState>(mega) &&
-                        EntityManager.GetComponentData<ShipLoadoutState>(mega).HealingBulletsActive;
-            bool shocked = EntityManager.HasComponent<ShipElectricShockState>(mega) &&
-                           EntityManager.GetComponentData<ShipElectricShockState>(mega)
-                               .IsActive(serverElapsed);
-            bool inOrbit = EntityManager.HasComponent<ShipOrbitState>(mega) &&
-                           EntityManager.GetComponentData<ShipOrbitState>(mega).InOrbitRing;
-            var input = EntityManager.HasComponent<ShipInput>(mega)
-                ? EntityManager.GetComponentData<ShipInput>(mega)
-                : default;
-            bool wantsFire = EntityManager.HasComponent<ShipInput>(mega) &&
-                             input.Fire.IsSet &&
-                             !shocked &&
-                             !inOrbit;
-            bool ownerShift = EntityManager.HasComponent<ShipInput>(mega) && input.Overdrive;
-
-            int attackerNet = 0;
-            if (EntityManager.HasComponent<GhostOwner>(mega))
-                attackerNet = EntityManager.GetComponentData<GhostOwner>(mega).NetworkId;
-
             var weapon = EntityManager.HasComponent<ShipWeaponConfig>(mega)
                 ? EntityManager.GetComponentData<ShipWeaponConfig>(mega)
                 : default;
+            var input = EntityManager.HasComponent<ShipInput>(mega)
+                ? EntityManager.GetComponentData<ShipInput>(mega)
+                : default;
+            bool heal = EntityManager.HasComponent<ShipLoadoutState>(mega)
+                        && EntityManager.GetComponentData<ShipLoadoutState>(mega).HealingBulletsActive;
+            bool ownerShift = input.Overdrive;
+            int attackerNet = EntityManager.HasComponent<GhostOwner>(mega)
+                ? EntityManager.GetComponentData<GhostOwner>(mega).NetworkId
+                : 0;
 
-            float energy = ship.CurrentEnergy;
-            float maxEnergy = math.max(1f, ship.MaxEnergy);
-            bool lockout = megaState.CannonLaserLockout;
-            if (lockout && energy >= maxEnergy * CannonLaserMath.RechargeRatio)
-                lockout = false;
-
-            bool cycleActive = wantsFire && !lockout;
-
-            bool wantedBurn = false;
-            int mountCount = mounts.Length;
-            // [TITAN-ORBIT] Arsenal HUD can mute one laser or the whole LASER class.
-            var arm = ShipWeaponArmState.Resolve(EntityManager, mega);
-            for (int m = 0; m < mountCount; m++)
+            float3 muzzle = ResolveMuzzle(xf, mount);
+            float3 barrelFwd = MegaShipWeaponAim.GetBarrelForward(in xf, in mount);
+            float acquireRange = ResolveRange(in mount, in weapon);
+            float keepRange = CannonLaserMath.KeepRange(acquireRange);
+            var aims = EntityManager.HasBuffer<MegaShipAutoAimSlotElement>(mega)
+                ? EntityManager.GetBuffer<MegaShipAutoAimSlotElement>(mega)
+                : default;
+            Entity target = Entity.Null;
+            float3 aimPoint = muzzle;
+            if (aims.IsCreated && mountIndex < aims.Length && aims[mountIndex].Target != Entity.Null
+                && aims[mountIndex].Target != mega)
             {
-                var mount = mounts[m];
-                if (!ShipWeaponKind.IsCannonLaser(mount, gunners, m) || mount.FirePower <= 0.01f)
-                    continue;
-                if (!ShipWeaponArmState.IsArmed(in arm, m))
-                {
-                    WriteLaserOff(gunners, m, in mount);
-                    continue;
-                }
-
-                float3 muzzle = ResolveMuzzle(xf, mount);
-                float3 barrelFwd = MegaShipWeaponAim.GetBarrelForward(in xf, in mount);
-                float acquireRange = ResolveRange(in mount, in weapon);
-                float keepRange = CannonLaserMath.KeepRange(acquireRange);
-                Entity target = Entity.Null;
-                float3 aimPoint = muzzle;
-                if (aims.IsCreated && m < aims.Length && aims[m].Target != Entity.Null
-                    && aims[m].Target != mega)
-                {
-                    target = aims[m].Target;
-                    aimPoint = aims[m].AimPoint;
-                }
-
-                bool haveLock = wantsFire
-                    && !lockout
-                    && target != Entity.Null
-                    && TryValidateLock(
-                        mega, target, ship.Team, heal, muzzle, barrelFwd, keepRange,
-                        mapW, mapH, moonElapsed, out aimPoint);
-                bool canBurn = haveLock && cycleActive && energy > 0.0001f;
-                bool mouseStream = cycleActive && ownerShift && energy > 0.0001f;
-                if (canBurn || mouseStream)
-                    wantedBurn = true;
-
-                float dps = CannonLaserMath.ComputeDps(mount.FirePower, mount.FireRate);
-                float slice = dps * dt;
-                float rampSeconds = ResolveLockRampSeconds(
-                    mega, m, target, canBurn, cycleActive, gunners);
-                float rampMul = CannonLaserMath.ComputeRampMultiplier(rampSeconds);
-                // [TITAN-ORBIT] Energy drain stays at authored DPS. The hit is
-                // ramped 50%→300% and then +5% for the top killer.
-                if ((canBurn || mouseStream) && energy < slice)
-                {
-                    if (energy <= 0.0001f)
-                    {
-                        canBurn = false;
-                        mouseStream = false;
-                    }
-                    else
-                    {
-                        slice = energy;
-                        energy = 0f;
-                    }
-                }
-                else if (canBurn || mouseStream)
-                {
-                    energy = math.max(0f, energy - slice);
-                }
-
-                if ((!canBurn && !mouseStream) || slice <= 0.0001f)
-                {
-                    // Keep AutoFire tracking so turrets stay on target. Shift
-                    // mouse-aim still follows the cursor. Rewrite the ghost so
-                    // predicted clients see AimWorld / GhostId on the first tick.
-                    if (cycleActive && haveLock)
-                    {
-                        WriteLockAim(gunners, m, in xf, in mount, target, aimPoint, barrelFwd, mapW, mapH);
-                        WriteLaserRamp(gunners, m, rampSeconds);
-                        continue;
-                    }
-                    if (cycleActive && ownerShift)
-                    {
-                        WriteMouseAim(gunners, m, in xf, in mount, in input, barrelFwd, acquireRange, mapW, mapH);
-                        WriteLaserRamp(gunners, m, 0f);
-                        continue;
-                    }
-
-                    WriteLaserOff(gunners, m, in mount);
-                    continue;
-                }
-
-                if (!canBurn)
-                {
-                    WriteMouseAim(gunners, m, in xf, in mount, in input, barrelFwd, acquireRange, mapW, mapH);
-                    WriteLaserRamp(gunners, m, 0f);
-                    continue;
-                }
-
-                if (!_gemCarry.TryGetValue(target, out float carry))
-                    carry = 0f;
-
-                bool topKiller = SystemAPI.TryGetSingleton<ShipCommandRoleSnapshot>(out var roles)
-                                 && roles.IsKiller(ship.Team, attackerNet);
-                var hit = CannonLaserHitApply.Apply(
-                    EntityManager, ecb, target, ship.Team, attackerNet,
-                    muzzle, TeamCommandRoleRules.ScaleFirePower(slice * rampMul, topKiller),
-                    heal, acquireRange, mapW, mapH, moonElapsed, serverElapsed,
-                    gemPrefab, gemSpawnServerTime, ref carry, mega);
-                _gemCarry[target] = carry;
-
-                // Dead / mined-out locks must not keep publishing the corpse aim.
-                // Clear the AutoFire slot so the next tick cannot keep-sticky a
-                // recycled handle; writing the last hit pinned parked beams.
-                if (!IsLiveLockTarget(target))
-                {
-                    if (aims.IsCreated && m < aims.Length)
-                        aims[m] = default;
-                    ForgetLaserLock(mega, m);
-                    WriteLaserOff(gunners, m, in mount);
-                    continue;
-                }
-
-                float3 ghostAim = math.lengthsq(hit.HitPoint) > 0.0001f
-                    ? hit.HitPoint
-                    : aimPoint;
-                float3 offset = ToroidalMapEcs.ShortestOffsetXZ(muzzle, ghostAim, mapW, mapH);
-                offset.y = 0f;
-                float dist = math.length(offset);
-                float3 fireDir = dist > 0.05f ? offset / dist : barrelFwd;
-                int ghostId = MegaShipWeaponAim.ReadGhostId(EntityManager, target);
-                MegaShipWeaponAim.WriteGhostedYaw(
-                    gunners, m, in mount, ghostAim, dist, fireDir, ghostId);
-                WriteLaserRamp(
-                    gunners,
-                    m,
-                    CannonLaserMath.StepRampSeconds(rampSeconds, dt, reset: false, charging: true));
+                target = aims[mountIndex].Target;
+                aimPoint = aims[mountIndex].AimPoint;
             }
 
-            if (!math.isfinite(energy))
-                energy = 0f;
-            energy = math.max(0f, energy);
-            if (wantedBurn && energy <= 0.0001f)
-                lockout = true;
+            bool haveLock = target != Entity.Null
+                            && TryValidateLock(
+                                mega, target, ship.Team, heal, muzzle, barrelFwd, keepRange,
+                                mapW, mapH, moonElapsed, out aimPoint);
+            bool canBurn = haveLock;
+            bool mouseStream = ownerShift;
+            if (!canBurn && !mouseStream)
+            {
+                WriteLaserOff(gunners, mountIndex, in mount);
+                return;
+            }
 
-            ship.CurrentEnergy = energy;
-            EntityManager.SetComponentData(mega, ship);
-            megaState.CannonLaserLockout = lockout;
-            megaState.CannonLaserPulseOn = wantedBurn;
+            float rate = math.max(0.1f, mount.FireRate);
+            float pulseCost = math.max(0.01f, CannonLaserMath.ComputeDps(mount.FirePower, rate) / rate);
+            if (energy + 0.001f < pulseCost)
+            {
+                WriteLaserOff(gunners, mountIndex, in mount);
+                if (energy <= 0.0001f)
+                    _passLockout = true;
+                return;
+            }
+
+            energy = math.max(0f, energy - pulseCost);
+            _passWantedBurn = true;
+            RestartReadyDelay(mega, mountIndex, rate);
+
+            if (!canBurn)
+            {
+                WriteMouseAim(gunners, mountIndex, in xf, in mount, in input, barrelFwd, acquireRange, mapW, mapH);
+                WriteLaserRamp(gunners, mountIndex, 0f);
+                return;
+            }
+
+            float rampSeconds = ResolveLockRampSeconds(
+                mega, mountIndex, target, canBurn: true, cycleActive: true, gunners);
+            float rampMul = CannonLaserMath.ComputeRampMultiplier(rampSeconds);
+            if (!_gemCarry.TryGetValue(target, out float carry))
+                carry = 0f;
+
+            var hit = CannonLaserHitApply.Apply(
+                EntityManager, ecb, target, ship.Team, attackerNet,
+                muzzle, TeamCommandRoleRules.ScaleFirePower(pulseCost * rampMul, topKiller),
+                heal, acquireRange, mapW, mapH, moonElapsed, serverElapsed,
+                gemPrefab, gemSpawnServerTime, ref carry, mega);
+            _gemCarry[target] = carry;
+
+            if (!IsLiveLockTarget(target))
+            {
+                if (aims.IsCreated && mountIndex < aims.Length)
+                    aims[mountIndex] = default;
+                ForgetLaserLock(mega, mountIndex);
+                WriteLaserOff(gunners, mountIndex, in mount);
+                return;
+            }
+
+            float3 ghostAim = math.lengthsq(hit.HitPoint) > 0.0001f ? hit.HitPoint : aimPoint;
+            float3 offset = ToroidalMapEcs.ShortestOffsetXZ(muzzle, ghostAim, mapW, mapH);
+            offset.y = 0f;
+            float dist = math.length(offset);
+            float3 fireDir = dist > 0.05f ? offset / dist : barrelFwd;
+            int ghostId = MegaShipWeaponAim.ReadGhostId(EntityManager, target);
+            MegaShipWeaponAim.WriteGhostedYaw(
+                gunners, mountIndex, in mount, ghostAim, dist, fireDir, ghostId);
+            float rampStep = math.max(dt, 1f / rate);
+            WriteLaserRamp(
+                gunners,
+                mountIndex,
+                CannonLaserMath.StepRampSeconds(rampSeconds, rampStep, reset: false, charging: true));
+        }
+
+        /// <summary>Hides every cannon beam and drops lockout on a hull that is not firing.</summary>
+        void Quench(Entity mega)
+        {
+            int mountCount = 0;
+            if (EntityManager.HasBuffer<ShipWeaponMountElement>(mega))
+            {
+                var mounts = EntityManager.GetBuffer<ShipWeaponMountElement>(mega);
+                var gunners = EntityManager.HasBuffer<MegaShipGunnerSlotElement>(mega)
+                    ? EntityManager.GetBuffer<MegaShipGunnerSlotElement>(mega)
+                    : default;
+                ShipWeaponKind.RestoreMountKindsFromGhostedSlots(mounts, gunners);
+                mountCount = mounts.Length;
+                for (int m = 0; m < mountCount; m++)
+                {
+                    if (ShipWeaponKind.IsCannonLaser(mounts[m], gunners, m))
+                        WriteLaserOff(gunners, m, mounts[m]);
+                }
+            }
+
+            ForgetLaserLocks(mega, mountCount);
+            if (!EntityManager.HasComponent<MegaShipState>(mega))
+                return;
+
+            var megaState = EntityManager.GetComponentData<MegaShipState>(mega);
+            if (!megaState.CannonLaserLockout && !megaState.CannonLaserPulseOn)
+                return;
+
+            megaState.CannonLaserLockout = false;
+            megaState.CannonLaserPulseOn = false;
             EntityManager.SetComponentData(mega, megaState);
-            if (!cycleActive)
-                ForgetLaserLocks(mega, mountCount);
+        }
+
+        /// <summary>Restarts this barrel's ready delay after a paid laser pulse.</summary>
+        void RestartReadyDelay(Entity mega, int mountIndex, float fireRate)
+        {
+            if (!EntityManager.HasBuffer<ShipWeaponMountElement>(mega))
+                return;
+
+            var mounts = EntityManager.GetBuffer<ShipWeaponMountElement>(mega);
+            if (mountIndex < 0 || mountIndex >= mounts.Length)
+                return;
+
+            var mount = mounts[mountIndex];
+            mount.FireCooldown = 1f / math.max(0.1f, fireRate);
+            mounts[mountIndex] = mount;
         }
 
         /// <summary>Sticky lock still exists, is a valid team, and stays in keep-range.</summary>

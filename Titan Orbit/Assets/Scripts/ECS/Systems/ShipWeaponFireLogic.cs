@@ -6,30 +6,23 @@ using Unity.Mathematics;
 namespace TitanOrbit.ECS
 {
     /// <summary>
-    /// Shared multi-mount fire planner for server bullets and client anticipation VFX.
+    /// Shared multi-mount fire planner for server bullets.
     /// <para>
-    /// [TITAN-ORBIT] Shared energy pool, one clip at a time, in arsenal-strip
-    /// order (gun, laser, missile, sniper — same walk as <c>ShipWeaponArmHUD</c>).
-    /// The energy-queue cursor (<see cref="ShipWeaponState.NextMountIndex"/>) is
-    /// whose bar is charging. That clip fills, fires, then the cursor steps to
-    /// the next square and wraps from the last weapon back to the first. Leftover
-    /// energy stays in the hull tank until the current clip fires — it does not
-    /// pre-fill later squares. When the pool can pay every armed clip at once,
-    /// Energy Hybrid still volleys the whole bank and the cursor returns to the
-    /// first square.
-    /// <see cref="ShipWeaponFireMode"/> still special-cases:
-    /// <list type="bullet">
-    /// <item><b>Energy Hybrid</b> — volley when the pool covers the whole bank; otherwise one clip, then wrap.</item>
-    /// <item><b>Always Fire Together</b> — fire only when every armed clip is full and ready.</item>
-    /// <item><b>Always Round-Robin</b> — always one clip, then the next, wrapping at the end.</item>
-    /// </list>
-    /// Each mount still keeps its own <see cref="ShipWeaponMountElement.FirePower"/> /
-    /// <see cref="ShipWeaponMountElement.FireRate"/> / cooldown.
+    /// [TITAN-ORBIT] Each barrel's arsenal square fills on a timer of
+    /// <c>1 / fireRate</c>. Filling does not take energy from the hull pool.
+    /// When the timer hits zero and Fire is held, the shot is allowed only if
+    /// <c>ShipState.CurrentEnergy</c> can pay that barrel's shot cost. A paid
+    /// shot subtracts the cost and restarts the timer. A full square with a
+    /// short pool stays full and waits. Several ready squares in one tick are
+    /// walked in arsenal-strip order (gun, laser, missile, sniper); each one
+    /// the pool can still afford fires.
     /// </para>
-    /// MEGA hulls use the same clip stack; cannon lasers reserve energy in the stack
-    /// but burn via <see cref="CannonLaserCombatSystem"/> (no bullet spawn).
-    /// Paired with <see cref="BulletSimulationSystem"/> (server) and
-    /// <c>ClientLocalBulletVfxBridge</c> (client cosmetics).
+    /// Lasers use the same timer in <see cref="CannonLaserCombatSystem"/> and
+    /// are skipped by <see cref="TryPlanReadyShots"/> so the MEGA walk can
+    /// pay them in strip order between guns and missiles.
+    /// The timer the HUD reads is <see cref="ShipWeaponReadyElement"/>, copied
+    /// from <see cref="ShipWeaponMountElement.FireCooldown"/> by
+    /// <see cref="PublishReadyTimers"/>.
     /// </summary>
     public static class ShipWeaponFireLogic
     {
@@ -132,10 +125,6 @@ namespace TitanOrbit.ECS
             if (mounts.Length <= 0 || shots == null || shots.Length <= 0)
                 return false;
 
-            // chargeCooldown is leftover from the old drip gate. The clip stack already
-            // refuses a barrel that does not have a full clip — do not block a ready one.
-            _ = chargeCooldown;
-
             Span<int> order = stackalloc int[MaxShotsPerTick];
             int orderCount = BuildArmedStripOrder(mounts, in arm, order, skipCannonLasers: false);
             if (orderCount <= 0)
@@ -145,7 +134,7 @@ namespace TitanOrbit.ECS
                 currentEnergy, mounts, in arm, order, orderCount, nextMountIndex,
                 lastFiredMountIndex,
                 fallbackDamage, fallbackFireRate, abilityEnergyPerShot,
-                fireMode, skipCannonLaserShots: false,
+                fireMode, skipCannonLaserShots: false, chargeCooldown,
                 shots, out shotCount, out totalEnergySpend, out nextMountIndexAfter);
         }
 
@@ -196,8 +185,6 @@ namespace TitanOrbit.ECS
             if (mounts.Length <= 0 || shots == null || shots.Length <= 0)
                 return false;
 
-            _ = chargeCooldown;
-
             Span<int> order = stackalloc int[MaxShotsPerTick];
             int orderCount = BuildArmedStripOrder(mounts, in arm, order, skipCannonLasers: false);
             if (orderCount <= 0)
@@ -207,7 +194,7 @@ namespace TitanOrbit.ECS
                 currentEnergy, mounts, in arm, order, orderCount, nextMountIndex,
                 lastFiredMountIndex,
                 fallbackDamage: 0f, fallbackFireRate, abilityEnergyPerShot: 0f,
-                ShipWeaponFireMode.EnergyHybrid, skipCannonLaserShots: true,
+                ShipWeaponFireMode.EnergyHybrid, skipCannonLaserShots: true, chargeCooldown,
                 shots, out shotCount, out totalEnergySpend, out nextMountIndexAfter);
         }
 
@@ -362,10 +349,10 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// Plans shots for the current energy. A full bank volleys. A dry ship
-        /// charges only the cursor clip, fires that one barrel, then steps the
-        /// cursor to the next square — last weapon wraps to the first. Leftover
-        /// energy stays in the tank until that fire so later bars start empty.
+        /// Plans shots for the current square. Always Fire Together can volley.
+        /// Every other mode energizes only the cursor square, fires that barrel,
+        /// then steps to the next square. A charge clock still running, a barrel
+        /// cadence, or a short tank all wait on that same square.
         /// </summary>
         static bool TryPlanClipStack(
             float currentEnergy,
@@ -380,12 +367,14 @@ namespace TitanOrbit.ECS
             float abilityEnergyPerShot,
             ShipWeaponFireMode fireMode,
             bool skipCannonLaserShots,
+            float chargeCooldown,
             MountShot[] shots,
             out int shotCount,
             out float totalEnergySpend,
             out int nextMountIndexAfter)
         {
             _ = arm;
+            _ = lastFiredMountIndex;
             shotCount = 0;
             totalEnergySpend = 0f;
             int cycleSlot = ResolveCycleSlot(
@@ -394,24 +383,12 @@ namespace TitanOrbit.ECS
 
             float abilityAdd = math.max(0f, abilityEnergyPerShot);
             bool together = fireMode == ShipWeaponFireMode.AlwaysFireTogether;
-            // Once any barrel has dripped, stay on the one-at-a-time walk.
-            // A mid-cycle volley was resetting the cursor to square 0 and
-            // firing that same chip again.
-            bool dripOnly = !together
-                            && (fireMode == ShipWeaponFireMode.AlwaysRoundRobin
-                                || lastFiredMountIndex >= 0
-                                || !CanAffordEveryArmedClip(
-                                    currentEnergy, mounts, order, orderCount,
-                                    fallbackDamage, fallbackFireRate, abilityAdd,
-                                    skipCannonLaserShots));
-
-            if (dripOnly)
+            if (!together)
             {
                 return TryPlanCycleDrip(
                     currentEnergy, mounts, order, orderCount, cycleSlot,
-                    lastFiredMountIndex,
                     fallbackDamage, fallbackFireRate, abilityAdd,
-                    skipCannonLaserShots, shots,
+                    skipCannonLaserShots, chargeCooldown, shots,
                     out shotCount, out totalEnergySpend, out nextMountIndexAfter);
             }
 
@@ -423,11 +400,9 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// One clip: walk the strip from the cursor, skip the barrel that just
-        /// fired and any still on cooldown, charge the first that needs energy,
-        /// fire the first that is full and ready. After a shot the cursor is
-        /// the next square (last wraps to first). Same square cannot fire twice
-        /// in a row while another armed barrel exists.
+        /// One square only — the cursor. Does not skip a cooling barrel to a
+        /// later chip; that was handing regen back to whichever gun came off
+        /// cooldown first. After a shot the cursor is the next square.
         /// </summary>
         static bool TryPlanCycleDrip(
             float currentEnergy,
@@ -435,11 +410,11 @@ namespace TitanOrbit.ECS
             Span<int> order,
             int orderCount,
             int cycleSlot,
-            int lastFiredMountIndex,
             float fallbackDamage,
             float fallbackFireRate,
             float abilityAdd,
             bool skipCannonLaserShots,
+            float chargeCooldown,
             MountShot[] shots,
             out int shotCount,
             out float totalEnergySpend,
@@ -450,51 +425,41 @@ namespace TitanOrbit.ECS
             nextMountIndexAfter = orderCount > 0 ? order[cycleSlot] : 0;
             if (orderCount <= 0 || shots == null || shots.Length <= 0)
                 return false;
+            if (cycleSlot < 0 || cycleSlot >= orderCount)
+                return false;
 
-            // --- Walk the ring once ---
-            // [TITAN-ORBIT] A stale cursor on the barrel that just fired used
-            // to dump leftover energy into that same square. Skip it, skip a
-            // cooling clip, and stop on the first square that should charge.
-            for (int step = 0; step < orderCount; step++)
-            {
-                int slot = (cycleSlot + step) % orderCount;
-                int i = order[slot];
-                ShipWeaponMountElement mount = mounts[i];
-                bool laser = ShipWeaponKind.IsCannonLaser(mount);
-                if (skipCannonLaserShots && laser)
-                    continue;
-                if (orderCount > 1 && i == lastFiredMountIndex)
-                    continue;
-                if (mount.FireCooldown > 0.001f)
-                    continue;
+            // Still energizing this square. Later chips stay dark.
+            if (chargeCooldown > 0.001f)
+                return false;
 
-                ResolveMountCombat(mount, fallbackDamage, fallbackFireRate,
-                    out float damage, out float fireRate, out float energyCost, abilityAdd);
+            int i = order[cycleSlot];
+            ShipWeaponMountElement mount = mounts[i];
+            if (skipCannonLaserShots && ShipWeaponKind.IsCannonLaser(mount))
+                return false;
+            // This barrel's own shot cadence. Wait here instead of firing the next gun.
+            if (mount.FireCooldown > 0.001f)
+                return false;
 
-                // This square is next — leave the cursor here while it fills.
-                if (currentEnergy + 0.001f < energyCost)
+            ResolveMountCombat(mount, fallbackDamage, fallbackFireRate,
+                out float damage, out float fireRate, out float energyCost, abilityAdd);
+
+            if (currentEnergy + 0.001f < energyCost)
+                return false;
+
+            shots[0] = skipCannonLaserShots
+                ? BuildMegaShot(i, mount, fallbackFireRate)
+                : new MountShot
                 {
-                    nextMountIndexAfter = i;
-                    return false;
-                }
-
-                shots[0] = skipCannonLaserShots
-                    ? BuildMegaShot(i, mount, fallbackFireRate)
-                    : new MountShot
-                    {
-                        MountIndex = i,
-                        Damage = damage,
-                        EnergyCost = energyCost,
-                        CooldownSeconds = 1f / fireRate,
-                    };
-                shotCount = 1;
-                totalEnergySpend = shots[0].EnergyCost;
-                nextMountIndexAfter = order[NextCycleSlot(
-                    order, orderCount, slot, mounts, skipCannonLaserShots)];
-                return true;
-            }
-
-            return false;
+                    MountIndex = i,
+                    Damage = damage,
+                    EnergyCost = energyCost,
+                    CooldownSeconds = 1f / fireRate,
+                };
+            shotCount = 1;
+            totalEnergySpend = shots[0].EnergyCost;
+            nextMountIndexAfter = order[NextCycleSlot(
+                order, orderCount, cycleSlot, mounts, skipCannonLaserShots)];
+            return true;
         }
 
         /// <summary>
@@ -594,14 +559,285 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// Seconds the next drip barrel must charge at hull regen. Zero when regen
-        /// is unset. Callers skip this wait when a full-bank volley is affordable.
+        /// Cost of one laser pulse: one fire interval of beam DPS
+        /// (<c>DPS / fireRate</c>). <see cref="CannonLaserMath.ComputeDps"/> is
+        /// fire power times fire rate, so the pulse cost is that barrel's fire power.
+        /// </summary>
+        public static float LaserPulseCost(in ShipWeaponMountElement mount)
+        {
+            return math.max(0.01f, mount.FirePower);
+        }
+
+        /// <summary>
+        /// Seconds for this barrel's square to go from empty to ready.
+        /// </summary>
+        public static float ReadyInterval(in ShipWeaponMountElement mount, float fallbackFireRate)
+        {
+            float rate = mount.FireRate > 0.01f ? mount.FireRate : fallbackFireRate;
+            rate = math.max(0.1f, rate);
+            return 1f / rate;
+        }
+
+        /// <summary>
+        /// Copies each mount's ready delay into the ghosted
+        /// <see cref="ShipWeaponReadyElement"/> buffer so the owner's HUD
+        /// matches the server. Resizes when the chassis mount count changes.
+        /// </summary>
+        public static void PublishReadyTimers(
+            DynamicBuffer<ShipWeaponMountElement> mounts,
+            DynamicBuffer<ShipWeaponReadyElement> ready)
+        {
+            if (!mounts.IsCreated || !ready.IsCreated)
+                return;
+
+            int count = mounts.Length;
+            if (ready.Length != count)
+                ready.ResizeUninitialized(count);
+
+            for (int i = 0; i < count; i++)
+            {
+                float cooldown = mounts[i].FireCooldown;
+                if (!math.isfinite(cooldown) || cooldown < 0f)
+                    cooldown = 0f;
+                ready[i] = new ShipWeaponReadyElement { FireCooldown = cooldown };
+            }
+        }
+
+        /// <summary>
+        /// Armed projectile barrels whose ready delay has finished. Walks
+        /// arsenal-strip order and fires each one <paramref name="currentEnergy"/>
+        /// can still pay. A paid shot subtracts its cost and restarts that
+        /// barrel's <see cref="ShipWeaponMountElement.FireCooldown"/>. A ready
+        /// barrel the pool cannot afford is skipped and stays ready. Cannon
+        /// lasers are left for the MEGA strip walk.
+        /// </summary>
+        public static bool TryPlanReadyShots(
+            ref float currentEnergy,
+            DynamicBuffer<ShipWeaponMountElement> mounts,
+            in ShipWeaponArmState arm,
+            bool isMega,
+            float fallbackDamage,
+            float fallbackFireRate,
+            float abilityEnergy,
+            MountShot[] shots,
+            out int shotCount)
+        {
+            shotCount = 0;
+            if (!mounts.IsCreated || mounts.Length <= 0 || shots == null || shots.Length <= 0)
+                return false;
+
+            Span<int> order = stackalloc int[MaxShotsPerTick];
+            int orderCount = BuildArmedStripOrder(mounts, in arm, order, skipCannonLasers: false);
+            float abilityAdd = math.max(0f, abilityEnergy);
+            float energy = math.max(0f, currentEnergy);
+            int capacity = math.min(shots.Length, MaxShotsPerTick);
+            for (int n = 0; n < orderCount && shotCount < capacity; n++)
+            {
+                int i = order[n];
+                ShipWeaponMountElement mount = mounts[i];
+                if (isMega && ShipWeaponKind.IsCannonLaser(mount))
+                    continue;
+                if (mount.FireCooldown > 0.001f)
+                    continue;
+
+                float damage;
+                float fireRate;
+                float cost;
+                if (isMega)
+                {
+                    fireRate = math.max(0.15f, mount.FireRate > 0.01f ? mount.FireRate : fallbackFireRate);
+                    cost = math.max(0.01f, mount.FirePower);
+                    damage = mount.FirePower;
+                }
+                else
+                {
+                    ResolveMountCombat(mount, fallbackDamage, fallbackFireRate,
+                        out damage, out fireRate, out cost, abilityAdd);
+                }
+
+                if (energy + 0.001f < cost)
+                    continue;
+
+                float interval = 1f / math.max(0.1f, fireRate);
+                mount.FireCooldown = interval;
+                mounts[i] = mount;
+                energy -= cost;
+                shots[shotCount++] = new MountShot
+                {
+                    MountIndex = i,
+                    Damage = damage,
+                    EnergyCost = cost,
+                    CooldownSeconds = interval,
+                };
+            }
+
+            currentEnergy = math.max(0f, energy);
+            return shotCount > 0;
+        }
+
+        /// <summary>Spends a full bar. The pool already paid for this charge.</summary>
+        public static void ConsumeWeaponCharge(DynamicBuffer<ShipWeaponMountElement> mounts, int mountIndex)
+        {
+            if (!mounts.IsCreated || mountIndex < 0 || mountIndex >= mounts.Length)
+                return;
+            ShipWeaponMountElement mount = mounts[mountIndex];
+            if (mount.EnergyCharge == 0f)
+                return;
+            mount.EnergyCharge = 0f;
+            mounts[mountIndex] = mount;
+        }
+
+        /// <summary>How much this bar can still accept this tick, capped at one fire interval of energy.</summary>
+        static void ResolveChargeStep(
+            in ShipWeaponMountElement mount,
+            bool isMega,
+            float fallbackDamage,
+            float fallbackFireRate,
+            float abilityAdd,
+            float dt,
+            out float step)
+        {
+            float cost = ResolveShotCost(mount, isMega, fallbackDamage, fallbackFireRate, abilityAdd);
+            float charge = mount.EnergyCharge;
+            if (!math.isfinite(charge) || charge < 0f)
+                charge = 0f;
+            float room = cost - charge;
+            if (room <= 0.001f)
+            {
+                step = 0f;
+                return;
+            }
+
+            ResolveMountCombat(mount, fallbackDamage, fallbackFireRate,
+                out _, out float fireRate, out _, abilityAdd);
+            if (isMega)
+                fireRate = math.max(0.15f, mount.FireRate > 0.01f ? mount.FireRate : fallbackFireRate);
+            // One full bar per fire interval: energy per second = shotCost × shots per second.
+            float perSecond = cost * math.max(0.1f, fireRate);
+            step = math.min(room, perSecond * math.max(0f, dt));
+        }
+
+        /// <summary>Energy one full bar holds for this barrel.</summary>
+        static float ResolveShotCost(
+            in ShipWeaponMountElement mount,
+            bool isMega,
+            float fallbackDamage,
+            float fallbackFireRate,
+            float abilityAdd)
+        {
+            if (isMega)
+                return math.max(0.01f, mount.FirePower);
+            ResolveMountCombat(mount, fallbackDamage, fallbackFireRate,
+                out _, out _, out float cost, abilityAdd);
+            return cost;
+        }
+
+        /// <summary>Adds pool energy into one bar and clamps it to a full shot.</summary>
+        static void AddCharge(DynamicBuffer<ShipWeaponMountElement> mounts, int mountIndex, float add)
+        {
+            if (add <= 0f || mountIndex < 0 || mountIndex >= mounts.Length)
+                return;
+            ShipWeaponMountElement mount = mounts[mountIndex];
+            float charge = mount.EnergyCharge;
+            if (!math.isfinite(charge) || charge < 0f)
+                charge = 0f;
+            mount.EnergyCharge = charge + add;
+            mounts[mountIndex] = mount;
+        }
+
+        /// <summary>
+        /// Seconds this square takes to fill at hull regen. Zero when regen is unset
+        /// (the tank gate alone decides the shot).
         /// </summary>
         public static float ComputeEnergyChargeSeconds(float nextShotCost, float energyRegenPerSecond)
         {
             if (nextShotCost <= 0.01f || energyRegenPerSecond < 0.01f)
                 return 0f;
             return nextShotCost / energyRegenPerSecond;
+        }
+
+        /// <summary>
+        /// Counts the current square's energize clock down. Call only while Fire is held
+        /// so releasing the button pauses the bar instead of emptying it.
+        /// </summary>
+        public static void TickSquareCharge(ref float chargeRemaining, float dt)
+        {
+            if (chargeRemaining <= 0f || dt <= 0f)
+                return;
+            chargeRemaining = math.max(0f, chargeRemaining - dt);
+        }
+
+        /// <summary>
+        /// Starts this square's energize clock the first time it is the cursor.
+        /// A running clock (<paramref name="chargeRemaining"/> &gt; 0) and a finished
+        /// clock (<paramref name="chargeDuration"/> &gt; 0) are left alone so a full
+        /// bar can wait for energy without restarting.
+        /// </summary>
+        /// <returns>True when a new clock was armed this call.</returns>
+        public static bool TryBeginSquareCharge(
+            ref float chargeRemaining,
+            ref float chargeDuration,
+            float shotCost,
+            float energyRegenPerSecond)
+        {
+            if (chargeDuration > 0.0001f || chargeRemaining > 0.0001f)
+                return false;
+
+            ArmNextSquareCharge(ref chargeRemaining, ref chargeDuration, shotCost, energyRegenPerSecond);
+            return true;
+        }
+
+        /// <summary>
+        /// Restarts the energize clock for the square that just became current.
+        /// The arsenal bar reads this as empty and fills until the barrel fires.
+        /// </summary>
+        public static void ArmNextSquareCharge(
+            ref float chargeRemaining,
+            ref float chargeDuration,
+            float shotCost,
+            float energyRegenPerSecond)
+        {
+            float dur = ComputeEnergyChargeSeconds(shotCost, energyRegenPerSecond);
+            if (dur <= 0.001f)
+            {
+                // No regen clock — the tank check is the only gate, so the bar is already full.
+                chargeDuration = 0.001f;
+                chargeRemaining = 0f;
+                return;
+            }
+
+            chargeDuration = dur;
+            chargeRemaining = dur;
+        }
+
+        /// <summary>
+        /// Energy the cursor square must hold before its barrel may fire.
+        /// Uses the same strip slot as <see cref="TryPlanFire"/> so the bar and the shot match.
+        /// </summary>
+        public static float GetArmedCursorShotCost(
+            DynamicBuffer<ShipWeaponMountElement> mounts,
+            in ShipWeaponArmState arm,
+            int cursorMountIndex,
+            bool isMega,
+            float fallbackDamage,
+            float fallbackFireRate,
+            float abilityEnergyPerShot)
+        {
+            Span<int> order = stackalloc int[MaxShotsPerTick];
+            int orderCount = BuildArmedStripOrder(mounts, in arm, order, skipCannonLasers: false);
+            if (orderCount <= 0)
+                return 0f;
+
+            int slot = ResolveCycleSlot(order, orderCount, cursorMountIndex, mounts, skipCannonLasers: isMega);
+            int mountIndex = order[slot];
+            if (mountIndex < 0 || mountIndex >= mounts.Length)
+                return 0f;
+
+            if (isMega || ShipWeaponKind.IsCannonLaser(mounts[mountIndex]))
+                return math.max(0.01f, mounts[mountIndex].FirePower);
+
+            return GetMountEnergyCost(
+                mounts[mountIndex], fallbackDamage, fallbackFireRate, abilityEnergyPerShot);
         }
 
         /// <summary>Energy cost of one regular-hull barrel (firePower + ability drain).</summary>
@@ -815,9 +1051,10 @@ namespace TitanOrbit.ECS
             for (int i = 0; i < mounts.Length; i++)
             {
                 ShipWeaponMountElement m = mounts[i];
-                if (m.FireCooldown == 0f)
+                if (m.FireCooldown == 0f && m.EnergyCharge == 0f)
                     continue;
                 m.FireCooldown = 0f;
+                m.EnergyCharge = 0f;
                 mounts[i] = m;
             }
         }
@@ -834,9 +1071,12 @@ namespace TitanOrbit.ECS
             for (int i = 0; i < mounts.Length; i++)
             {
                 ShipWeaponMountElement m = mounts[i];
-                if (m.FireCooldown == 0f || ShipWeaponKind.KeepsAuthoredBulletBank(m.WeaponKind))
+                if (ShipWeaponKind.KeepsAuthoredBulletBank(m.WeaponKind))
+                    continue;
+                if (m.FireCooldown == 0f && m.EnergyCharge == 0f)
                     continue;
                 m.FireCooldown = 0f;
+                m.EnergyCharge = 0f;
                 mounts[i] = m;
             }
         }

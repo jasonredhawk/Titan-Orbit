@@ -113,6 +113,13 @@ namespace TitanOrbit.ECS
                 ShipWeaponFireLogic.ResetCycledBulletMountCooldowns(mounts);
             else
                 ShipWeaponFireLogic.ResetMountCooldowns(mounts);
+
+            if (em.HasComponent<ShipWeaponState>(ship))
+            {
+                var weaponState = em.GetComponentData<ShipWeaponState>(ship);
+                weaponState.NextMountIndex = 0;
+                em.SetComponentData(ship, weaponState);
+            }
         }
     }
 }

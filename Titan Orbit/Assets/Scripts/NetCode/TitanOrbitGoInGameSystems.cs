@@ -75,8 +75,72 @@ namespace TitanOrbit.NetCode
     }
 
     /// <summary>
+    /// Marks connections that were already in the match when it was won.
+    /// Later connections are dropped so a finished game cannot be rejoined.
+    /// </summary>
+    public struct FinishedMatchParticipant : IComponentData
+    {
+    }
+
+    /// <summary>
+    /// After a winner is declared, keeps the players who are already in the match
+    /// (they still need the congrats card) and disconnects anyone who connects later.
+    /// Runs before <see cref="TitanOrbitGoInGameServerSystem"/> so a late join is
+    /// not accepted on the finished map.
+    /// </summary>
+    [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation)]
+    [UpdateInGroup(typeof(SimulationSystemGroup))]
+    [UpdateBefore(typeof(TitanOrbitGoInGameServerSystem))]
+    public partial struct FinishedMatchJoinGateSystem : ISystem
+    {
+        /// <summary>1 after the in-match connections have been tagged.</summary>
+        byte _sealed;
+
+        /// <summary>Tags current players once, then disconnects every connection that appears after the win.</summary>
+        public void OnUpdate(ref SystemState state)
+        {
+            if (!MatchEndServerSignal.IsMatchWon)
+                return;
+
+            var em = state.EntityManager;
+            if (_sealed == 0)
+            {
+                var keep = new NativeList<Entity>(8, Allocator.Temp);
+                foreach (var (_, entity) in SystemAPI.Query<RefRO<NetworkStreamConnection>>()
+                             .WithAll<NetworkStreamInGame>()
+                             .WithNone<FinishedMatchParticipant>()
+                             .WithEntityAccess())
+                    keep.Add(entity);
+
+                for (int i = 0; i < keep.Length; i++)
+                    em.AddComponent<FinishedMatchParticipant>(keep[i]);
+                keep.Dispose();
+                _sealed = 1;
+            }
+
+            var drop = new NativeList<Entity>(4, Allocator.Temp);
+            foreach (var (_, entity) in SystemAPI.Query<RefRO<NetworkStreamConnection>>()
+                         .WithNone<FinishedMatchParticipant>()
+                         .WithEntityAccess())
+                drop.Add(entity);
+
+            for (int i = 0; i < drop.Length; i++)
+            {
+                Entity entity = drop[i];
+                if (em.HasComponent<NetworkStreamRequestDisconnect>(entity))
+                    continue;
+                em.AddComponent<NetworkStreamRequestDisconnect>(entity);
+                Debug.Log("[FinishedMatchJoinGate] Disconnected a join — this match is already over.");
+            }
+
+            drop.Dispose();
+        }
+    }
+
+    /// <summary>
     /// [NETCODE] Server accepts <see cref="GoInGameRequest"/> and marks the source connection in-game.
     /// Recipe meta is sent earlier by <see cref="MapSessionMetaServerCatchUpSystem"/> (pre-InGame).
+    /// A finished match refuses the request and disconnects the connection.
     /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation)]
     [UpdateInGroup(typeof(SimulationSystemGroup))]
@@ -106,6 +170,19 @@ namespace TitanOrbit.NetCode
                          .WithAll<GoInGameRequest>().WithEntityAccess())
             {
                 Entity connection = reqSrc.ValueRO.SourceConnection;
+
+                // Finished map: do not stream ghosts to a new joiner. The dedicated host
+                // is already publishing a fresh lobby for the next game.
+                if (MatchEndServerSignal.IsMatchWon &&
+                    !state.EntityManager.HasComponent<FinishedMatchParticipant>(connection))
+                {
+                    if (!state.EntityManager.HasComponent<NetworkStreamRequestDisconnect>(connection))
+                        commandBuffer.AddComponent<NetworkStreamRequestDisconnect>(connection);
+                    commandBuffer.DestroyEntity(reqEntity);
+                    Debug.Log("[TitanOrbitGoInGame] Rejected GoInGame — match already finished.");
+                    continue;
+                }
+
                 if (!state.EntityManager.HasComponent<NetworkStreamInGame>(connection))
                     commandBuffer.AddComponent<NetworkStreamInGame>(connection);
 

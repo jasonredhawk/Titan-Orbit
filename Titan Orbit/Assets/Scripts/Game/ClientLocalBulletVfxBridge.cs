@@ -12,21 +12,9 @@ using UnityEngine;
 namespace TitanOrbit.Game
 {
     /// <summary>
-    /// Local-owner bullet anticipation: enqueues cosmetic tracers into <see cref="BulletVfxBridge"/>
-    /// from live weapon component transforms (<see cref="BulletMuzzlePresentation"/>) so muzzle
-    /// flash matches the drawn barrel (including BankPivot). Server remains authoritative for
-    /// damage (<see cref="BulletSimulationSystem"/>).
-    /// <para>
-    /// [TITAN-ORBIT] Mirrors <see cref="ShipWeaponFireLogic"/> with the same
-    /// <see cref="ShipWeaponConfig.FireMode"/> the server uses (family weaponFireMode). When
-    /// <see cref="BulletSpawnRpc"/> arrives, <see cref="BulletVfxDriver"/> binds Sequence without
-    /// snapping pose back to the lagged server muzzle.
-    /// </para>
-    /// <para>
-    /// [TITAN-ORBIT] Anticipation deducts a <b>local predicted energy</b> pool (mirrors server
-    /// spend). Using only replicated <c>ShipState.CurrentEnergy</c> over-fired cosmetics while
-    /// ghost energy lagged — optimistic “HP Left: 0” on asteroids the server had not killed.
-    /// </para>
+    /// Local-owner presentation hook. Tracers come from <see cref="BulletSpawnRpc"/>
+    /// so the barrel that fires is the one the server chose. This bridge does not
+    /// pick a weapon or spend a second energy pool.
     /// <para>
     /// [TITAN-ORBIT] No anticipation while <see cref="ShipOrbitState.InOrbitRing"/> — matches
     /// server <see cref="BulletSimulationSystem"/> weapons lock in planet orbit rings.
@@ -39,12 +27,6 @@ namespace TitanOrbit.Game
     [DefaultExecutionOrder(66100)]
     public class ClientLocalBulletVfxBridge : MonoBehaviour
     {
-        /// <summary>
-        /// Reused shot plan — mirrors server <c>BulletSimulationSystem</c> scratch (no per-frame alloc).
-        /// </summary>
-        static readonly ShipWeaponFireLogic.MountShot[] s_ShotScratch =
-            new ShipWeaponFireLogic.MountShot[ShipWeaponFireLogic.MaxShotsPerTick];
-
         /// <summary>
         /// Local energy estimate after anticipation spends. Snaps down when ghost energy is lower;
         /// snaps up when ghost energy rises (regen / refill).
@@ -77,10 +59,16 @@ namespace TitanOrbit.Game
         int _lastFiredMountIndex = -1;
 
         /// <summary>
-        /// After a drip shot, the next barrel charges at hull regen. A full-bank
-        /// volley ignores this so leftover pool cannot dump every gun across frames.
+        /// Seconds left on the arsenal square that is energizing. Counts down
+        /// only while Fire is held. The HUD bar is this clock, not the whole tank.
         /// </summary>
         float _energyChargeCooldown;
+
+        /// <summary>
+        /// Full energize time of <see cref="_energyChargeCooldown"/> so the bar
+        /// can draw <c>1 - remaining / duration</c> and start empty on each square.
+        /// </summary>
+        float _energyChargeDuration;
 
         /// <summary>
         /// Last fire bank we planned against. B-key changes reset predicted energy
@@ -130,6 +118,7 @@ namespace TitanOrbit.Game
             _nextMountIndex = 0;
             _lastFiredMountIndex = -1;
             _energyChargeCooldown = 0f;
+            _energyChargeDuration = 0f;
             _lastFireBankIndex = int.MinValue;
         }
 
@@ -137,26 +126,30 @@ namespace TitanOrbit.Game
         /// Predicted energy-queue the arsenal HUD should paint. False when this
         /// bridge has not synced a local ship yet — HUD then uses ghost energy.
         /// </summary>
-        /// <param name="nextMountIndex">Barrel that may spend next (round-robin cursor).</param>
+        /// <param name="nextMountIndex">Barrel whose square is energizing.</param>
         /// <param name="predictedEnergy">Local pool after anticipation spends.</param>
-        /// <param name="chargeCooldown">Seconds the next drip barrel is still charging.</param>
+        /// <param name="chargeRemaining">Seconds left before that square may fire.</param>
+        /// <param name="chargeDuration">Full energize time for the fill bar (remaining / duration).</param>
         /// <returns>True when the values are live for this frame.</returns>
         public static bool TryGetLocalEnergyQueue(
             out int nextMountIndex,
             out float predictedEnergy,
-            out float chargeCooldown,
+            out float chargeRemaining,
+            out float chargeDuration,
             out int lastFiredMountIndex)
         {
             nextMountIndex = 0;
             predictedEnergy = 0f;
-            chargeCooldown = 0f;
+            chargeRemaining = 0f;
+            chargeDuration = 0f;
             lastFiredMountIndex = -1;
             if (_instance == null || !_instance._energyPrimed)
                 return false;
 
             nextMountIndex = _instance._nextMountIndex;
             predictedEnergy = _instance._predictedEnergy;
-            chargeCooldown = _instance._energyChargeCooldown;
+            chargeRemaining = _instance._energyChargeCooldown;
+            chargeDuration = _instance._energyChargeDuration;
             lastFiredMountIndex = _instance._lastFiredMountIndex;
             return true;
         }
@@ -191,294 +184,9 @@ namespace TitanOrbit.Game
             if (PlanetaryDefenseTurretClientState.IsControlling)
                 return;
 
-            if (!TryGetLocalShipCombatState(world.EntityManager, out Entity shipEntity, out ShipWeaponConfig weaponCfg,
-                    out ShipState shipState, out int ownerNetworkId, out int bankIndex, out bool fireHeld))
-                return;
-
-            if (shipState.IsDead || shipState.AwaitingTeamSelection)
-                return;
-
-            float dt = Time.deltaTime;
-
-            // --- Need ECS mounts for per-barrel cooldown + damage (live GO count alone is not enough) ---
-            if (!world.EntityManager.HasBuffer<ShipWeaponMountElement>(shipEntity))
-                return;
-
-            var mounts = world.EntityManager.GetBuffer<ShipWeaponMountElement>(shipEntity);
-            if (mounts.Length <= 0)
-                return;
-
-            // B-key / HUD bank change — drop leftover client timers and adopt ghost energy
-            // so a Lightning / heal clip cannot mute anticipation for every owned gun.
-            bool isMega = world.EntityManager.HasComponent<MegaShipState>(shipEntity)
-                          && world.EntityManager.GetComponentData<MegaShipState>(shipEntity).IsMega;
-
-            if (_lastFireBankIndex != bankIndex)
-            {
-                _lastFireBankIndex = bankIndex;
-                _nextMountIndex = 0;
-                _lastFiredMountIndex = -1;
-                _energyChargeCooldown = 0f;
-                _predictedEnergy = shipState.CurrentEnergy;
-                _lastGhostEnergy = shipState.CurrentEnergy;
-                _predictedBelowGhostStableTime = 0f;
-                if (isMega)
-                {
-                    var resetGunners = world.EntityManager.HasBuffer<MegaShipGunnerSlotElement>(shipEntity)
-                        ? world.EntityManager.GetBuffer<MegaShipGunnerSlotElement>(shipEntity)
-                        : default;
-                    ShipWeaponKind.RestoreMountKindsFromGhostedSlots(mounts, resetGunners);
-                    ShipWeaponFireLogic.ResetCycledBulletMountCooldowns(mounts);
-                }
-                else
-                    ShipWeaponFireLogic.ResetMountCooldowns(mounts);
-            }
-
-            // Tick cooldowns even when Fire is released so barrels stay in sync with server cadence.
-            ShipWeaponFireLogic.TickMountCooldowns(mounts, dt);
-            if (_energyChargeCooldown > 0f)
-                _energyChargeCooldown = math.max(0f, _energyChargeCooldown - dt);
-
-            // Keep predicted energy aligned every frame — otherwise a stuck 0 pool
-            // (MEGA Shift cosmetics the server never spent) never reconciles.
-            SyncPredictedEnergy(shipState.CurrentEnergy, dt);
-
-            if (!fireHeld)
-            {
-                _lastFiredMountIndex = -1;
-                return;
-            }
-
-            // --- Orbit ring: no cosmetic tracers ---
-            // [TITAN-ORBIT] Server rejects Fire while InOrbitRing. Skip anticipation so the player
-            // does not see muzzle flashes / tracers the authority will never spawn.
-            if (world.EntityManager.HasComponent<ShipOrbitState>(shipEntity) &&
-                world.EntityManager.GetComponentData<ShipOrbitState>(shipEntity).InOrbitRing)
-                return;
-
-            if (world.EntityManager.HasComponent<ShipElectricShockState>(shipEntity) &&
-                world.EntityManager.GetComponentData<ShipElectricShockState>(shipEntity)
-                    .IsActive(world.Time.ElapsedTime))
-                return;
-
-            // [TITAN-ORBIT] MEGA Phase B only spends when ghosted Fire.IsSet. The
-            // ShootPressed fallback would dump every ready barrel of predicted energy
-            // on a tick the server ignores — after Shift-redirect that looks like a jam.
-            if (isMega
-                && (!world.EntityManager.HasComponent<ShipInput>(shipEntity)
-                    || !world.EntityManager.GetComponentData<ShipInput>(shipEntity).Fire.IsSet))
-                return;
-
-            int firePowerAbilityLv = 0;
-            if (world.EntityManager.HasComponent<ShipAttributeUpgradeState>(shipEntity))
-                firePowerAbilityLv = world.EntityManager.GetComponentData<ShipAttributeUpgradeState>(shipEntity).FirePower;
-            int firePowerExtras = isMega
-                ? 0
-                : BulletBankCombatLogic.CountFirePowerExtraLevels(
-                    shipState.ShipLevel, firePowerAbilityLv);
-            float abilityEnergy = isMega
-                ? 0f
-                : BulletBankCombatLogic.GetAbilityEnergyDrain(bankIndex, firePowerExtras);
-            if (!isMega && shipState.MaxEnergy > 1.05f)
-                abilityEnergy = math.min(abilityEnergy, shipState.MaxEnergy - 1.05f);
-
-            int shotCount;
-            float energySpend;
-            int nextMountIndexAfter = _nextMountIndex;
-            var gunners = isMega && world.EntityManager.HasBuffer<MegaShipGunnerSlotElement>(shipEntity)
-                ? world.EntityManager.GetBuffer<MegaShipGunnerSlotElement>(shipEntity)
-                : default;
-            var arm = ShipWeaponArmState.Resolve(world.EntityManager, shipEntity);
-            if (isMega)
-            {
-                ShipWeaponKind.RestoreMountKindsFromGhostedSlots(mounts, gunners);
-                if (!ShipWeaponFireLogic.TryPlanMegaFire(
-                        _predictedEnergy,
-                        mounts,
-                        _nextMountIndex,
-                        weaponCfg.FireRate,
-                        s_ShotScratch,
-                        out shotCount,
-                        out energySpend,
-                        out nextMountIndexAfter,
-                        _energyChargeCooldown,
-                        in arm,
-                        _lastFiredMountIndex))
-                    return;
-            }
-            else if (!ShipWeaponFireLogic.TryPlanFire(
-                    _predictedEnergy,
-                    mounts,
-                    _nextMountIndex,
-                    weaponCfg.BulletDamage,
-                    weaponCfg.FireRate,
-                    weaponCfg.FireMode,
-                    s_ShotScratch,
-                    out shotCount,
-                    out energySpend,
-                    out nextMountIndexAfter,
-                    abilityEnergy,
-                    _energyChargeCooldown,
-                    in arm,
-                    _lastFiredMountIndex))
-            {
-                return;
-            }
-
-            // --- Cap pending anticipations — fire what fits ---
-            int room = BulletVfxBridge.AnticipationSlotsRemaining;
-            if (room <= 0)
-                return;
-            if (shotCount > room)
-                shotCount = room;
-
-            float fallbackRefDamage = weaponCfg.ReferenceBulletDamage > 0f
-                ? weaponCfg.ReferenceBulletDamage
-                : BulletVisualScale.DefaultReferenceBulletDamage;
-            float refSpeed = weaponCfg.ReferenceBulletSpeed > 0f
-                ? weaponCfg.ReferenceBulletSpeed
-                : BulletVisualScale.DefaultReferenceBulletSpeed;
-
-            // [TITAN-ORBIT] Per-category Upgrade Visual Scale (default 1 = same as bank).
-            float categoryUpgradeScale = 1f;
-            var vfxBank = TitanOrbit.Data.BulletVfxBank.LoadDefault();
-            if (vfxBank != null)
-                categoryUpgradeScale = vfxBank.GetCategoryUpgradeVisualScaleMultiplier(bankIndex);
-
-            int enqueued = 0;
-            float spent = 0f;
-            bool topKiller = ShipTopOfTeamRoles.IsKiller(shipState.Team, ownerNetworkId);
-
-            // --- Enqueue planned mounts from live weapon transforms ---
-            for (int shot = 0; shot < shotCount; shot++)
-            {
-                var planned = s_ShotScratch[shot];
-                planned.Damage = TeamCommandRoleRules.ScaleFirePower(planned.Damage, topKiller);
-                int mountIdx = planned.MountIndex;
-                // MEGA auto-aim is server-only. Hull-forward anticipation steals the
-                // SpawnRpc (adopt keeps that wrong velocity) so the turret takes
-                // damage while tracers fly straight. Wait for a ghosted / Shift heading.
-                if (isMega
-                    && !BulletMuzzlePresentation.MegaMountHasClientFireHeading(
-                        world.EntityManager, shipEntity, mountIdx))
-                    continue;
-
-                if (!BulletMuzzlePresentation.TryResolveMuzzle(
-                        world.EntityManager, shipEntity, mountIdx,
-                        out float3 fireOrigin, out float3 fireForward, out _,
-                        out float3 shipVel))
-                    continue;
-
-                ShipWeaponMountElement mount = mounts[mountIdx];
-                if (isMega && ShipWeaponKind.IsCannonLaser(mount, gunners, mountIdx))
-                    continue;
-                int shotBank = isMega
-                    ? BulletBankFireResolve.ResolveMegaMountFireBank(in mount, bankIndex)
-                    : bankIndex;
-                float shotCategoryScale = vfxBank != null
-                    ? vfxBank.GetCategoryUpgradeVisualScaleMultiplier(shotBank)
-                    : categoryUpgradeScale;
-                float refDamage = mount.ReferenceFirePower > 0.01f
-                    ? mount.ReferenceFirePower
-                    : fallbackRefDamage;
-                float muzzleSpeed = BulletShotMath.ResolveMuzzleSpeed(mount.BulletSpeed, weaponCfg.BulletSpeed);
-                float refMuzzleSpeed = mount.BulletSpeed > 0.01f ? mount.BulletSpeed : refSpeed;
-                float maxDistanceForLife = BulletShotMath.ResolveMaxDistance(
-                    mount.BulletRange, weaponCfg.BulletMaxDistance);
-                float lifetime = mount.BulletSpeed > 0.01f
-                    ? math.max(0.25f, maxDistanceForLife / math.max(1f, muzzleSpeed))
-                    : weaponCfg.BulletLifetime;
-                var plan = BulletShotMath.Build(
-                    fireOrigin,
-                    fireForward,
-                    shipVel,
-                    planned.Damage,
-                    muzzleSpeed,
-                    weaponCfg.BulletMaxDistance,
-                    lifetime,
-                    weaponCfg.FireRate,
-                    mount.BulletRange,
-                    ShipWeaponMountElement.ResolveAuthoredScale(in mount, weaponCfg.BulletScale),
-                    refDamage,
-                    refMuzzleSpeed,
-                    shotBank,
-                    firePowerExtras,
-                    shotCategoryScale);
-                byte homing = 0;
-                float turnSpeedDeg = 0f;
-                float acquireRange = 0f;
-                if (RocketHomingFire.TryApply(
-                        shotBank, shipState.ShipLevel, fireForward, ref plan,
-                        out turnSpeedDeg, out acquireRange,
-                        isMega ? mount.BulletSpeed : 0f))
-                    homing = 1;
-
-                if (!BulletVfxBridge.TryEnqueueSpawn(new BulletVfxBridge.SpawnRequest
-                {
-                    Sequence = 0,
-                    SpawnPosition = plan.Origin,
-                    Velocity = plan.Velocity,
-                    Lifetime = plan.Lifetime,
-                    MaxDistance = plan.MaxDistance,
-                    Damage = plan.Damage,
-                    FirePowerLive = mount.FirePower,
-                    FirePowerBase = mount.ReferenceFirePower,
-                    FirePowerPerExtra = mount.FirePowerPerExtraLevel,
-                    OwnerTeam = (byte)shipState.Team,
-                    OwnerNetworkId = ownerNetworkId,
-                    BankIndex = shotBank,
-                    ScaleMultiplier = plan.VisualScale,
-                    MountIndex = mountIdx,
-                    IsAnticipation = true,
-                    IsDisplaySpace = false,
-                    Homing = homing,
-                    TurnSpeedDeg = turnSpeedDeg,
-                    AcquireRange = acquireRange,
-                }))
-                    break;
-
-                // Arm this barrel’s client-side cooldown so we do not spam tracers faster than server.
-                float clientCooldown = planned.CooldownSeconds / math.max(0.05f, plan.FireRateMul);
-                mount.FireCooldown = math.isfinite(clientCooldown)
-                    ? math.clamp(clientCooldown, 0f, 60f)
-                    : planned.CooldownSeconds;
-                mounts[mountIdx] = mount;
-                spent += planned.EnergyCost;
-                enqueued++;
-            }
-
-            if (enqueued > 0)
-            {
-                // Spend only what actually queued — a clipped MEGA volley must not drain the
-                // full plan or predicted energy sticks at 0 and later shots never plan.
-                _predictedEnergy = math.max(0f, _predictedEnergy - spent);
-                _nextMountIndex = nextMountIndexAfter;
-                _lastFiredMountIndex = s_ShotScratch[enqueued - 1].MountIndex;
-
-                if (shotCount == 1)
-                {
-                    float regen = 0f;
-                    if (world.EntityManager.HasComponent<ShipVitalsConfig>(shipEntity))
-                        regen = world.EntityManager.GetComponentData<ShipVitalsConfig>(shipEntity)
-                            .EnergyRegenPerSecond;
-                    float nextCost = isMega
-                        ? ShipWeaponFireLogic.GetNextArmedMegaShotCost(mounts, in arm, _nextMountIndex)
-                        : (_nextMountIndex >= 0 && _nextMountIndex < mounts.Length
-                            ? ShipWeaponFireLogic.GetMountEnergyCost(
-                                mounts[_nextMountIndex],
-                                weaponCfg.BulletDamage,
-                                weaponCfg.FireRate,
-                                abilityEnergy)
-                            : 0f);
-                    _energyChargeCooldown = ShipWeaponFireLogic.ComputeEnergyChargeSeconds(
-                        nextCost, regen);
-                }
-                else
-                {
-                    _energyChargeCooldown = 0f;
-                }
-            }
+            // Server BulletSpawnRpc is the tracer. Do not pick a barrel here.
         }
+
 
         /// <summary>
         /// Keeps <see cref="_predictedEnergy"/> aligned with replicated energy without allowing

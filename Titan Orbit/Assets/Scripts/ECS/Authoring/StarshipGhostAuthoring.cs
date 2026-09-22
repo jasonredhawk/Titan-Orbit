@@ -248,6 +248,13 @@ namespace TitanOrbit.ECS.Authoring
                     EnsureUniqueBakedCannonIndices(mounts);
                 }
                 // [TITAN-ORBIT] Intentionally no MuzzleOffset fallback — unarmed ships stay empty.
+
+                // [NETCODE] Ready timers must bake or the arsenal squares never see
+                // the server delay. Same length as the mount buffer; runtime chassis
+                // swaps resize it in PublishReadyTimers.
+                var ready = AddBuffer<ShipWeaponReadyElement>(shipEntity);
+                for (int i = 0; i < mounts.Length; i++)
+                    ready.Add(default);
             }
 
             /// <summary>

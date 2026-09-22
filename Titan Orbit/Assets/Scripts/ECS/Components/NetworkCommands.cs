@@ -685,6 +685,16 @@ namespace TitanOrbit.ECS
     }
 
     /// <summary>
+    /// [NETCODE] Server → clients still on the congrats card: the finished match is closed
+    /// and the next game is published. The card stays up until this arrives, then the
+    /// client disconnects and the main menu is allowed on screen.
+    /// Wire layout must match Linux headless.
+    /// </summary>
+    public struct MatchCloseCompletedRpc : IRpcCommand
+    {
+    }
+
+    /// <summary>
     /// [NETCODE] Server → all clients: planet ownership flipped (capture or starting claim).
     /// Planet ghosts use low Importance / MaxSendRate under MaxSendChunks caps, so territory
     /// lines would lag several seconds on ghost snapshots alone. Clients apply this immediately

@@ -2,6 +2,7 @@ using TitanOrbit.Simulation;
 using Unity.Burst;
 using Unity.Entities;
 using Unity.Mathematics;
+using Unity.NetCode;
 using Unity.Transforms;
 
 namespace TitanOrbit.ECS
@@ -55,10 +56,20 @@ namespace TitanOrbit.ECS
         public float FireRate;
 
         /// <summary>
-        /// [TITAN-ORBIT] Seconds until this barrel may fire again. Ticked per mount so mixed
-        /// calibers keep different cadences while Fire is held.
+        /// Seconds until this barrel's arsenal square is ready. Counts down from
+        /// <c>1 / FireRate</c> after a paid shot. Zero means the square is full
+        /// and the next shot only needs the hull pool to cover that shot's cost.
+        /// Not a GhostField — this pose buffer must stay local or prediction
+        /// rollback wipes <see cref="LocalPosition"/>. The replicated copy is
+        /// <see cref="ShipWeaponReadyElement.FireCooldown"/>.
         /// </summary>
         public float FireCooldown;
+
+        /// <summary>
+        /// Unused. Bars no longer store energy moved out of the hull pool.
+        /// Kept so existing mount initializers stay source-compatible.
+        /// </summary>
+        public float EnergyCharge;
 
         /// <summary>
         /// [TITAN-ORBIT] Level-1 firePower for this barrel (before attributes) — bullet VFX
@@ -125,6 +136,20 @@ namespace TitanOrbit.ECS
         {
             return mount.BulletScale > 0.01f ? mount.BulletScale : math.max(0.1f, hullBulletScale);
         }
+    }
+
+    /// <summary>
+    /// One arsenal ready-timer per weapon mount, same index as
+    /// <see cref="ShipWeaponMountElement"/>. Ghosted so the owner's squares
+    /// show the server's delay. A sibling buffer, not a field on the pose
+    /// buffer: ghosting that buffer would roll local muzzle poses back to zero.
+    /// Quantized to centiseconds — one timer per barrel, not a second energy pool.
+    /// </summary>
+    public struct ShipWeaponReadyElement : IBufferElementData
+    {
+        /// <summary>Seconds left until this barrel may fire. 0 = square is full.</summary>
+        [GhostField(Quantization = 100, Smoothing = SmoothingAction.Clamp)]
+        public float FireCooldown;
     }
 
     /// <summary>

@@ -390,21 +390,30 @@ namespace TitanOrbit.ECS
     /// </summary>
     public struct ShipWeaponState : IComponentData
     {
-        /// <summary>[LEGACY] Unused — prefer per-mount <see cref="ShipWeaponMountElement.FireCooldown"/>.</summary>
+        /// <summary>
+        /// Seconds left until the current arsenal square finishes energizing.
+        /// Counts down only while Fire is held. The shot waits for this and for
+        /// enough energy, then the cursor steps and this clock restarts on the next square.
+        /// </summary>
         public float FireCooldown;
 
         /// <summary>
-        /// [TITAN-ORBIT] Energy-queue index for round-robin drip. When
-        /// <see cref="ShipWeaponConfig.FireMode"/> allows drip and the shared pool cannot cover
-        /// every mount at once, only this barrel may fire; after it shoots the cursor advances
-        /// 0→1→2→…→0. Reset to 0 after a full same-tick volley.
+        /// Full energize time of the square now charging (<c>shot cost / regen</c>).
+        /// The arsenal bar is <c>1 - FireCooldown / ChargeDuration</c>. Zero means
+        /// this square has not started a charge yet.
+        /// </summary>
+        public float ChargeDuration;
+
+        /// <summary>
+        /// [TITAN-ORBIT] Which barrel’s square is energizing. After it fires, this
+        /// steps to the next armed square and wraps from the last weapon to the first.
         /// </summary>
         public int NextMountIndex;
 
         /// <summary>
-        /// Mount that fired last. The drip walker skips it so the same square
-        /// cannot shoot twice in a row when more than one barrel is armed.
-        /// −1 means nobody has fired yet this cycle (full-bank volley is still allowed).
+        /// Mount that fired last. The energize cursor already stepped to the next
+        /// square when the shot was taken, so this is not used to skip a chip.
+        /// −1 means nobody has fired yet this hold.
         /// </summary>
         public int LastFiredMountIndex;
     }

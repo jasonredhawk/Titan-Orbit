@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using TitanOrbit;
 using TitanOrbit.Core;
@@ -20,13 +21,12 @@ namespace TitanOrbit.ECS
     /// <see cref="PredictedFixedStepSimulationSystemGroup"/> (which contains
     /// <see cref="ShipPhysicsDriveSystem"/>) so muzzle positions use current transforms.
     /// <para>
-    /// Multi-cannon fire uses <see cref="ShipWeaponFireLogic"/>: shared energy pool with
-    /// per-barrel firePower / fireRate. Regular hulls follow <see cref="ShipWeaponConfig.FireMode"/>
-    /// (from <see cref="ShipFamilyDefinition.weaponFireMode"/>): Energy Hybrid volleys when
-    /// affordable else round-robins; Always Fire Together waits for a full bank; Always Round-Robin
-    /// never volleys. MEGAs use <see cref="ShipWeaponFireLogic.TryPlanMegaFire"/> —
-    /// volley when the pool covers the whole bank, else cycle one gun. A drip then
-    /// charges the next barrel at regen (regular and MEGA). Empty mount buffer = unarmed.
+    /// Multi-cannon fire uses <see cref="ShipWeaponFireLogic"/>. Each barrel's
+    /// square fills on a <c>1 / fireRate</c> timer and does not draw from the
+    /// hull pool while it fills. A finished timer fires only when
+    /// <see cref="ShipState.CurrentEnergy"/> can pay that shot. Several ready
+    /// barrels in one tick walk gun, laser, missile, sniper, and each one the
+    /// pool can still afford fires. Empty mount buffer = unarmed.
     /// </para>
     /// <para>
     /// [TITAN-ORBIT] Ships cannot fire while <see cref="ShipOrbitState.InOrbitRing"/> is true —
@@ -338,12 +338,11 @@ namespace TitanOrbit.ECS
                 if (mounts.Length == 0)
                     continue;
 
-                // --- Per-barrel cooldown tick (independent cadences) ---
-                // [TITAN-ORBIT] Cooldowns keep ticking in the ring so leaving orbit does not dump
-                // a stale "all barrels ready" volley the moment Fire becomes legal again.
+                // --- Per-barrel ready delay (independent cadences) ---
+                // [TITAN-ORBIT] The delay keeps ticking in orbit, while shocked, and while
+                // Fire is up, so a square can be full before the next legal shot.
+                // It does not spend hull energy. A shot spends energy only when it fires.
                 ShipWeaponFireLogic.TickMountCooldowns(mounts, dt);
-                if (weaponState.ValueRO.FireCooldown > 0f)
-                    weaponState.ValueRW.FireCooldown = math.max(0f, weaponState.ValueRO.FireCooldown - dt);
 
                 bool isMega = SystemAPI.HasComponent<MegaShipState>(entity) &&
                               SystemAPI.GetComponentRO<MegaShipState>(entity).ValueRO.IsMega;
@@ -354,26 +353,12 @@ namespace TitanOrbit.ECS
                                     SystemAPI.GetComponentRO<ShipOrbitState>(entity).ValueRO.InOrbitRing;
                 bool ownerMayFire = input.ValueRO.Fire.IsSet && !ownerShocked && !ownerInOrbit;
 
-                if (!isMega)
+                // The square fills on its own timer even when Fire is up, in orbit, or shocked.
+                // Only the shot is blocked.
+                if (!isMega && !input.ValueRO.Fire.IsSet)
                 {
-                    if (!input.ValueRO.Fire.IsSet)
-                    {
-                        // New trigger pull may volley again; do not keep the last drip lock.
-                        if (weaponState.ValueRO.LastFiredMountIndex >= 0)
-                            weaponState.ValueRW.LastFiredMountIndex = -1;
-                        continue;
-                    }
-
-                    // --- Electric shock: cannot fire while stunned ---
-                    if (ownerShocked)
-                        continue;
-
-                    // --- Orbit ring: weapons locked ---
-                    // [TITAN-ORBIT] InOrbitRing is written by ShipPhysicsDriveLogic (toroidal annulus).
-                    // Fire input may still be held (player mashing shoot) — ignore it here; thrust
-                    // remains the only way to leave the passive orbit motor.
-                    if (ownerInOrbit)
-                        continue;
+                    if (weaponState.ValueRO.LastFiredMountIndex >= 0)
+                        weaponState.ValueRW.LastFiredMountIndex = -1;
                 }
 
                 // [TITAN-ORBIT] Family bank from ghosted loadout (ShipStatApplyLogic writes it).
@@ -412,11 +397,14 @@ namespace TitanOrbit.ECS
                 float3 shipVel = kinematics.ValueRO.Velocity;
                 shipVel.y = 0f;
 
+                // Ready delay already ticked. Pay shot cost only when a square is full.
+                var arm = ShipWeaponArmState.Resolve(state.EntityManager, entity);
                 if (isMega)
                 {
                     bool megaKiller = SystemAPI.TryGetSingleton<ShipCommandRoleSnapshot>(out var megaRoles)
                                       && megaRoles.IsKiller(
                                           shipState.ValueRO.Team, ghostOwner.ValueRO.NetworkId);
+                    var laser = state.World.GetExistingSystemManaged<CannonLaserCombatSystem>();
                     FireMegaReadyMountsAlongBarrel(
                         ref state, ref ecb, bulletEntity, entity,
                         mounts, ownerMayFire, input.ValueRO, weaponCfg.ValueRO,
@@ -425,29 +413,35 @@ namespace TitanOrbit.ECS
                         bankIndex, vfxBankForScale, shipVel,
                         dt, mapW, mapH, moonElapsed, serverElapsed,
                         gemPrefab, gemSpawnServerTime, energyRegen,
-                        megaKiller);
+                        megaKiller, laser);
+                    PublishShipReady(ref state, entity);
                     continue;
                 }
 
-                // --- Volley / round-robin / hybrid per ShipWeaponConfig.FireMode ---
-                // [TITAN-ORBIT] Arsenal HUD mute mask drops disabled barrels from the bank.
-                var arm = ShipWeaponArmState.Resolve(state.EntityManager, entity);
-                if (!ShipWeaponFireLogic.TryPlanFire(
-                        shipState.ValueRO.CurrentEnergy,
+                if (!ownerMayFire)
+                {
+                    PublishShipReady(ref state, entity);
+                    continue;
+                }
+
+                float pooledEnergy = shipState.ValueRO.CurrentEnergy;
+                if (!ShipWeaponFireLogic.TryPlanReadyShots(
+                        ref pooledEnergy,
                         mounts,
-                        weaponState.ValueRO.NextMountIndex,
+                        in arm,
+                        isMega: false,
                         weaponCfg.ValueRO.BulletDamage,
                         weaponCfg.ValueRO.FireRate,
-                        weaponCfg.ValueRO.FireMode,
-                        s_ShotScratch,
-                        out int shotCount,
-                        out float energySpend,
-                        out int nextMountIndexAfter,
                         abilityEnergy,
-                        weaponState.ValueRO.FireCooldown,
-                        in arm,
-                        weaponState.ValueRO.LastFiredMountIndex))
+                        s_ShotScratch,
+                        out int shotCount))
+                {
+                    shipState.ValueRW.CurrentEnergy = pooledEnergy;
+                    PublishShipReady(ref state, entity);
                     continue;
+                }
+
+                shipState.ValueRW.CurrentEnergy = pooledEnergy;
 
                 // [TITAN-ORBIT] Top killer: +5% damage, same energy. Snapshot rebuilt this tick.
                 bool topKiller = SystemAPI.TryGetSingleton<ShipCommandRoleSnapshot>(out var killerRoles)
@@ -473,40 +467,12 @@ namespace TitanOrbit.ECS
                         dt, gemPrefab, gemSpawnServerTime, mapW, mapH,
                         moonElapsed, serverElapsed);
 
-                    // --- Arm this barrel’s own cooldown (independent of other mounts) ---
-                    mount.FireCooldown = planned.CooldownSeconds / math.max(0.05f, fireRateMul);
-                    mounts[mountIdx] = mount;
+                    // The planner already spent the shot and restarted this barrel's delay.
+                    _ = fireRateMul;
                 }
 
-                // Energy equals sum of each firing barrel’s firePower this tick.
-                shipState.ValueRW.CurrentEnergy = math.max(0f, shipState.ValueRO.CurrentEnergy - energySpend);
-                // Advance energy-queue cursor (0 after full volley; +1 after a drip shot).
-                weaponState.ValueRW.NextMountIndex = nextMountIndexAfter;
                 weaponState.ValueRW.LastFiredMountIndex = s_ShotScratch[shotCount - 1].MountIndex;
-                if (shotCount == 1)
-                {
-                    int chargeMount = nextMountIndexAfter;
-                    if (chargeMount < 0 || chargeMount >= mounts.Length
-                        || !ShipWeaponArmState.IsArmed(in arm, chargeMount))
-                    {
-                        ShipWeaponFireLogic.TryGetNextArmedRegularMount(
-                            mounts, in arm, nextMountIndexAfter, out chargeMount);
-                    }
-
-                    float nextCost = chargeMount >= 0 && chargeMount < mounts.Length
-                        ? ShipWeaponFireLogic.GetMountEnergyCost(
-                            mounts[chargeMount],
-                            weaponCfg.ValueRO.BulletDamage,
-                            weaponCfg.ValueRO.FireRate,
-                            abilityEnergy)
-                        : 0f;
-                    weaponState.ValueRW.FireCooldown = ShipWeaponFireLogic.ComputeEnergyChargeSeconds(
-                        nextCost, energyRegen);
-                }
-                else
-                {
-                    weaponState.ValueRW.FireCooldown = 0f;
-                }
+                PublishShipReady(ref state, entity);
             }
 
             ecb.Playback(state.EntityManager);
@@ -527,11 +493,11 @@ namespace TitanOrbit.ECS
         /// Owner Shift aims each muzzle at the mouse point here — not only in
         /// <see cref="MegaShipAutoFireSystem"/> — so tracers and damage stay on the
         /// same ray when auto-aim is isolated. The mouse yaw is applied to a spawn
-        /// copy only (mount pose / FireCooldown stay independent). Energy uses
-        /// <see cref="ShipWeaponFireLogic.TryPlanMegaFire"/> — full volley when the
-        /// pool covers every armed gun, otherwise one gun in cycle. Lead intercept
-        /// distance from <see cref="MegaShipAutoAimSlotElement"/> (or muzzle→mouse
-        /// while Shift is held) grows <c>MaxDistance</c> so shots are not culled early.
+        /// copy only (mount pose stays independent). Ready squares walk gun, laser,
+        /// missile, sniper; a laser pulse is paid in that order before later barrels.
+        /// Lead intercept distance from <see cref="MegaShipAutoAimSlotElement"/> (or
+        /// muzzle→mouse while Shift is held) grows <c>MaxDistance</c> so shots are
+        /// not culled early.
         /// </summary>
         void FireMegaReadyMountsAlongBarrel(
             ref SystemState state,
@@ -557,7 +523,8 @@ namespace TitanOrbit.ECS
             Entity gemPrefab,
             float gemSpawnServerTime,
             float energyRegen,
-            bool topKiller)
+            bool topKiller,
+            CannonLaserCombatSystem laser)
         {
             if (!ownerMayFire)
             {
@@ -572,18 +539,70 @@ namespace TitanOrbit.ECS
             ShipWeaponKind.RestoreMountKindsFromGhostedSlots(mounts, gunners);
 
             var arm = ShipWeaponArmState.Resolve(state.EntityManager, mega);
-            if (!ShipWeaponFireLogic.TryPlanMegaFire(
-                    shipState.CurrentEnergy,
-                    mounts,
-                    weaponState.NextMountIndex,
-                    weaponCfg.FireRate,
-                    s_ShotScratch,
-                    out int shotCount,
-                    out float energySpend,
-                    out int nextMountIndexAfter,
-                    weaponState.FireCooldown,
-                    in arm,
-                    weaponState.LastFiredMountIndex))
+            _ = energyRegen;
+
+            Span<int> order = stackalloc int[ShipWeaponFireLogic.MaxShotsPerTick];
+            int orderCount = ShipWeaponFireLogic.BuildArmedStripOrder(
+                mounts, in arm, order, skipCannonLasers: false);
+            float energy = shipState.CurrentEnergy;
+            bool anyLaser = false;
+            for (int n = 0; n < orderCount; n++)
+            {
+                if (ShipWeaponKind.IsCannonLaser(mounts[order[n]], gunners, order[n]))
+                {
+                    anyLaser = true;
+                    break;
+                }
+            }
+
+            if (anyLaser && laser != null)
+                laser.BeginLaserTick(mega, energy, shipState.MaxEnergy);
+
+            int shotCount = 0;
+            for (int n = 0; n < orderCount && shotCount < s_ShotScratch.Length; n++)
+            {
+                int i = order[n];
+                var mount = mounts[i];
+                if (ShipWeaponKind.IsCannonLaser(mount, gunners, i))
+                {
+                    if (laser != null)
+                    {
+                        laser.TryReadyPulse(
+                            mega, i, in mount, ref energy, dt, mapW, mapH,
+                            moonElapsed, serverElapsed, gemPrefab, gemSpawnServerTime,
+                            topKiller, ref ecb);
+                    }
+
+                    continue;
+                }
+
+                if (mount.FireCooldown > 0.001f)
+                    continue;
+
+                float fireRate = math.max(
+                    0.15f, mount.FireRate > 0.01f ? mount.FireRate : weaponCfg.FireRate);
+                float cost = math.max(0.01f, mount.FirePower);
+                if (energy + 0.001f < cost)
+                    continue;
+
+                float interval = 1f / fireRate;
+                mount.FireCooldown = interval;
+                mounts[i] = mount;
+                energy -= cost;
+                s_ShotScratch[shotCount++] = new ShipWeaponFireLogic.MountShot
+                {
+                    MountIndex = i,
+                    Damage = mount.FirePower,
+                    EnergyCost = cost,
+                    CooldownSeconds = interval,
+                };
+            }
+
+            shipState.CurrentEnergy = math.max(0f, energy);
+            if (anyLaser && laser != null)
+                laser.EndLaserTick(mega, shipState.CurrentEnergy);
+
+            if (shotCount <= 0)
                 return;
 
             int megaOwnerNet = ghostOwner.NetworkId;
@@ -659,27 +678,25 @@ namespace TitanOrbit.ECS
                 if (!math.isfinite(fireRateMul) || fireRateMul < 0.05f)
                     fireRateMul = 0.05f;
 
-                float armedCooldown = planned.CooldownSeconds / fireRateMul;
-                mount.FireCooldown = math.isfinite(armedCooldown)
-                    ? math.clamp(armedCooldown, 0f, 60f)
-                    : planned.CooldownSeconds;
-                mounts[m] = mount;
+                _ = fireRateMul;
             }
 
-            shipState.CurrentEnergy = math.max(0f, shipState.CurrentEnergy - energySpend);
-            weaponState.NextMountIndex = nextMountIndexAfter;
             weaponState.LastFiredMountIndex = s_ShotScratch[shotCount - 1].MountIndex;
-            if (shotCount == 1)
-            {
-                float nextCost = ShipWeaponFireLogic.GetNextArmedMegaShotCost(
-                    mounts, in arm, nextMountIndexAfter);
-                weaponState.FireCooldown = ShipWeaponFireLogic.ComputeEnergyChargeSeconds(
-                    nextCost, energyRegen);
-            }
-            else
-            {
-                weaponState.FireCooldown = 0f;
-            }
+        }
+
+        /// <summary>
+        /// Writes the server ready timers into the ghost buffer the arsenal HUD reads.
+        /// Re-reads the mount buffer so a laser pulse written earlier this tick is included.
+        /// </summary>
+        static void PublishShipReady(ref SystemState state, Entity ship)
+        {
+            if (!state.EntityManager.HasBuffer<ShipWeaponMountElement>(ship)
+                || !state.EntityManager.HasBuffer<ShipWeaponReadyElement>(ship))
+                return;
+
+            var mounts = state.EntityManager.GetBuffer<ShipWeaponMountElement>(ship);
+            var ready = state.EntityManager.GetBuffer<ShipWeaponReadyElement>(ship);
+            ShipWeaponFireLogic.PublishReadyTimers(mounts, ready);
         }
 
         /// <summary>

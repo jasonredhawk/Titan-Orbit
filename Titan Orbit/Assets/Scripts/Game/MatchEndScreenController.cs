@@ -117,6 +117,15 @@ namespace TitanOrbit.Game
         /// <summary>True while <see cref="TitanOrbitSessionManager.ReturnToMainMenuAsync"/> is in flight.</summary>
         bool _leaving;
 
+        /// <summary>
+        /// True after Return is clicked until the match close finishes and the menu may appear.
+        /// Update must not dismiss the card during this window.
+        /// </summary>
+        bool _holdingForClose;
+
+        /// <summary>Button caption. Switches to CLOSING MATCH while the server close runs.</summary>
+        TextMeshProUGUI _returnLabel;
+
         /// <summary>Same GameObject as this component. Clears menu latches before disconnect.</summary>
         NceGameFlowController _flow;
 
@@ -193,6 +202,16 @@ namespace TitanOrbit.Game
         /// </summary>
         void Update()
         {
+            // Close is still running. Keep this card up and leave the main menu hidden.
+            if (_holdingForClose)
+            {
+                EnsureUi();
+                if (overlayRoot != null && !overlayRoot.activeSelf)
+                    overlayRoot.SetActive(true);
+                IsShowing = true;
+                return;
+            }
+
             // --- No winner ---
             // Also clears the leave latch. Disconnect keeps this component alive on
             // the menu root; if _leaving stayed true, the next match could never open.
@@ -679,8 +698,8 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Menu button: same disconnect as the eliminated overlay and the Escape menu.
-        /// Hides the card first so a slow leave does not leave the roster up.
+        /// Menu button. Stays on this card until the server has finished closing the match,
+        /// then disconnects. The main menu is allowed only after that.
         /// </summary>
         async void OnReturnToMenuClicked()
         {
@@ -688,35 +707,90 @@ namespace TitanOrbit.Game
                 return;
 
             _leaving = true;
+            _holdingForClose = true;
+            MatchCloseGate.BeginClientWait();
             if (continueButton != null)
                 continueButton.interactable = false;
-            Hide();
-
-            if (_flow != null)
-                _flow.NotifyReturningToMainMenu();
+            if (_returnLabel != null)
+                _returnLabel.text = "CLOSING MATCH";
+            if (_boardStatus != null)
+            {
+                _boardStatus.gameObject.SetActive(true);
+                _boardStatus.text = "CLOSING MATCH";
+            }
 
             var session = TitanOrbitSessionManager.Instance;
             if (session == null)
             {
-                _leaving = false;
+                FinishCloseLeave(restoreCard: true);
                 return;
             }
 
             try
             {
+                await WaitForDedicatedMatchCloseAsync();
                 await session.ReturnToMainMenuAsync();
+                if (_flow != null)
+                    _flow.NotifyReturningToMainMenu();
+                Hide();
+                FinishCloseLeave(restoreCard: false);
             }
             catch (System.Exception ex)
             {
                 Debug.LogError("[MatchEnd] Leave failed: " + ex.Message);
-                _leaving = false;
-                if (continueButton != null)
-                    continueButton.interactable = true;
-                if (_shownWinner != TeamId.None && overlayRoot != null)
+                FinishCloseLeave(restoreCard: true);
+            }
+        }
+
+        /// <summary>
+        /// Dedicated clients stay on the card until the server reports the finished game
+        /// is closed. A dropped connection counts as closed. Local play skips this —
+        /// disposing the server world happens inside the leave call that follows.
+        /// </summary>
+        async System.Threading.Tasks.Task WaitForDedicatedMatchCloseAsync()
+        {
+            if (!TitanOrbitSessionManager.IsDedicatedOnlineClient)
+                return;
+            if (MatchCloseGate.ServerCloseCompleted)
+                return;
+
+            // Server handoff polls a successor for up to five 120s attempts.
+            const float timeoutSeconds = 660f;
+            float start = Time.unscaledTime;
+            while (!MatchCloseGate.ServerCloseCompleted)
+            {
+                if (!EcsGameBridge.HasClientNetworkId())
+                    return;
+                if (Time.unscaledTime - start >= timeoutSeconds)
                 {
-                    overlayRoot.SetActive(true);
-                    IsShowing = true;
+                    Debug.LogWarning("[MatchEnd] Match close did not confirm before timeout — showing the main menu.");
+                    return;
                 }
+
+                await System.Threading.Tasks.Task.Delay(200);
+            }
+        }
+
+        /// <summary>Drops the menu hold. Optionally puts the card back if leave failed early.</summary>
+        void FinishCloseLeave(bool restoreCard)
+        {
+            _holdingForClose = false;
+            MatchCloseGate.Release();
+            if (!restoreCard)
+            {
+                _leaving = false;
+                return;
+            }
+
+            _leaving = false;
+            if (continueButton != null)
+                continueButton.interactable = true;
+            if (_returnLabel != null)
+                _returnLabel.text = "RETURN TO MAIN MENU";
+            if (_shownWinner != TeamId.None && overlayRoot != null)
+            {
+                overlayRoot.SetActive(true);
+                IsShowing = true;
             }
         }
 
@@ -1057,6 +1131,7 @@ namespace TitanOrbit.Game
             label.text = "RETURN TO MAIN MENU";
             label.color = IceCaption;
             label.characterSpacing = 1.8f;
+            _returnLabel = label;
         }
 
         /// <summary>Solid-color UI image. Raycasts off unless a caller turns them on.</summary>

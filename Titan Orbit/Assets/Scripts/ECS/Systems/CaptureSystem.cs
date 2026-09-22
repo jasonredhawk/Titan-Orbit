@@ -98,7 +98,54 @@ namespace TitanOrbit.ECS
                 return;
 
             MatchWinNetNotify.Broadcast(match.WinningTeam, match.MatchTimer);
+            // Dedicated host reads this and closes the lobby. Local host disposes
+            // ServerWorld when the player returns to the menu. A new play is a new map.
+            MatchEndServerSignal.MarkWon();
             _announced = 1;
+        }
+    }
+
+    /// <summary>
+    /// Set once when <see cref="CaptureSystem"/> declares a winner. The dedicated host
+    /// and the menu leave path read it. Cleared only when a local host tears the
+    /// finished server world down; a dedicated process exits instead of clearing it.
+    /// </summary>
+    public static class MatchEndServerSignal
+    {
+        /// <summary>True after this process's server has declared a winner.</summary>
+        public static bool IsMatchWon { get; private set; }
+
+        /// <summary>Latches the win for lobby close / local world dispose.</summary>
+        public static void MarkWon() => IsMatchWon = true;
+
+        /// <summary>Drops the latch after a local host destroys the finished server world.</summary>
+        public static void Clear() => IsMatchWon = false;
+    }
+
+    /// <summary>
+    /// Client gate for the post-win leave. The main menu stays hidden while
+    /// <see cref="SuppressMainMenu"/> is set. Dedicated clients also wait until
+    /// <see cref="ServerCloseCompleted"/> (the server finished closing this game).
+    /// </summary>
+    public static class MatchCloseGate
+    {
+        /// <summary>True from the return click until disconnect and world close have finished.</summary>
+        public static bool SuppressMainMenu { get; private set; }
+
+        /// <summary>True after the dedicated server reports the finished match is closed.</summary>
+        public static bool ServerCloseCompleted { get; private set; }
+
+        /// <summary>Hides the main menu for the rest of this leave.</summary>
+        public static void BeginClientWait() => SuppressMainMenu = true;
+
+        /// <summary>Dedicated close finished (RPC or in-process broadcast).</summary>
+        public static void MarkServerCloseCompleted() => ServerCloseCompleted = true;
+
+        /// <summary>Allows the main menu. Called once the leave has finished.</summary>
+        public static void Release()
+        {
+            SuppressMainMenu = false;
+            ServerCloseCompleted = false;
         }
     }
 
@@ -129,6 +176,39 @@ namespace TitanOrbit.ECS
                 if (cmd.WinningTeam != 0)
                     MatchWinNetNotify.Apply(state.EntityManager, (TeamId)cmd.WinningTeam, cmd.MatchTimer);
 
+                ecb.DestroyEntity(rpcEntity);
+            }
+
+            ecb.Playback(state.EntityManager);
+            ecb.Dispose();
+        }
+    }
+
+    /// <summary>
+    /// Client: the dedicated server finished closing the won match. The congrats card
+    /// waits on <see cref="MatchCloseGate.ServerCloseCompleted"/> before it disconnects
+    /// and lets the main menu appear.
+    /// </summary>
+    [WorldSystemFilter(WorldSystemFilterFlags.ClientSimulation)]
+    [UpdateInGroup(typeof(SimulationSystemGroup))]
+    public partial struct MatchCloseCompletedRpcClientSystem : ISystem
+    {
+        /// <summary>Requires the incoming RPC queue.</summary>
+        public void OnCreate(ref SystemState state)
+        {
+            state.RequireForUpdate<ReceiveRpcCommandRequest>();
+        }
+
+        /// <summary>Latches close-complete, then destroys the request so it cannot replay.</summary>
+        public void OnUpdate(ref SystemState state)
+        {
+            var ecb = new EntityCommandBuffer(Unity.Collections.Allocator.Temp);
+            foreach (var (_, rpcEntity) in SystemAPI
+                         .Query<RefRO<MatchCloseCompletedRpc>>()
+                         .WithAll<ReceiveRpcCommandRequest>()
+                         .WithEntityAccess())
+            {
+                MatchCloseGate.MarkServerCloseCompleted();
                 ecb.DestroyEntity(rpcEntity);
             }
 
@@ -212,6 +292,29 @@ namespace TitanOrbit.ECS
                 MatchTimer = matchTimer,
                 WinningTeam = team,
                 GameState = 2,
+            });
+        }
+    }
+
+    /// <summary>
+    /// Tells every still-connected client that this won match is closed and the next
+    /// game is the one to join. Sent once, after the dedicated close handoff finishes.
+    /// </summary>
+    public static class MatchCloseNetNotify
+    {
+        /// <summary>Queues <see cref="MatchCloseCompletedRpc"/> for every server connection.</summary>
+        public static void BroadcastCompleted()
+        {
+            var server = Unity.NetCode.ClientServerBootstrap.ServerWorld;
+            if (server == null || !server.IsCreated)
+                return;
+
+            var em = server.EntityManager;
+            Entity rpcEntity = em.CreateEntity();
+            em.AddComponentData(rpcEntity, new MatchCloseCompletedRpc());
+            em.AddComponentData(rpcEntity, new Unity.NetCode.SendRpcCommandRequest
+            {
+                TargetConnection = Entity.Null,
             });
         }
     }

@@ -245,11 +245,27 @@ namespace TitanOrbit.NetCode
             if (server == null || !server.IsCreated)
                 return;
 
-            Debug.Log("[TitanOrbitSessionManager] Disposing local ServerWorld for dedicated Relay join (client-only).");
+            DisposeEditorLocalServerWorld("dedicated Relay join (client-only)");
+#endif
+        }
 
-            // [NETCODE] World.Dispose removes it from the player loop and clears bootstrap ServerWorld.
+        /// <summary>
+        /// Disposes the Editor ServerWorld. The next Local play creates a new one, so map
+        /// generation runs again. Used for dedicated-join client-only and for a finished match.
+        /// </summary>
+        /// <param name="reason">Logged reason.</param>
+        static void DisposeEditorLocalServerWorld(string reason)
+        {
+#if UNITY_EDITOR
+            var server = ClientServerBootstrap.ServerWorld;
+            if (server == null || !server.IsCreated)
+                return;
+
+            Debug.Log("[TitanOrbitSessionManager] Disposing local ServerWorld (" + reason + ").");
             server.Dispose();
             s_EditorLocalServerSuspendedForOnline = false;
+            // The finished-match latch belongs to this world. A new ServerWorld starts clean.
+            MatchEndServerSignal.Clear();
 #endif
         }
 
@@ -1151,6 +1167,15 @@ namespace TitanOrbit.NetCode
             if (_recreateDedicatedMatchInProgress)
                 return null;
 
+            // [TITAN-ORBIT] A won match must not be republished. The host spawns a new
+            // process and exits; recreating here would put the finished map back in Join Game.
+            if (MatchEndServerSignal.IsMatchWon)
+            {
+                Debug.LogWarning("[TitanOrbitSessionManager] Recreate skipped — match already won.");
+                DedicatedServerFileLog.Append("match", "Recreate skipped; match already won");
+                return null;
+            }
+
             // [TITAN-ORBIT] Occupied match — never wipe ships/map or delete the live lobby.
             int connectedPlayers = GetServerConnectedPlayerCount();
             if (connectedPlayers > 0)
@@ -1690,6 +1715,49 @@ namespace TitanOrbit.NetCode
         }
 
         /// <summary>
+        /// True when the authoritative server has already declared a winner.
+        /// </summary>
+        public bool IsServerMatchWon()
+        {
+            if (MatchEndServerSignal.IsMatchWon)
+                return true;
+
+            var server = ClientServerBootstrap.ServerWorld;
+            if (server == null || !server.IsCreated)
+                return false;
+
+            using var query = server.EntityManager.CreateEntityQuery(typeof(MatchStateSingleton));
+            if (!query.TryGetSingleton<MatchStateSingleton>(out var match))
+                return false;
+            return match.WinningTeam != TeamId.None;
+        }
+
+        /// <summary>
+        /// Clears a latched win on the client world so the congrats card does not
+        /// reopen on the menu or on the next match.
+        /// </summary>
+        static void ClearClientMatchWinLatch()
+        {
+            var client = ClientServerBootstrap.ClientWorld;
+            if (client == null || !client.IsCreated)
+                return;
+
+            var em = client.EntityManager;
+            using var query = em.CreateEntityQuery(typeof(MatchStateSingleton));
+            if (query.CalculateEntityCount() != 1)
+                return;
+
+            Entity entity = query.GetSingletonEntity();
+            var match = em.GetComponentData<MatchStateSingleton>(entity);
+            if (match.WinningTeam == TeamId.None && match.GameState == 0)
+                return;
+
+            match.WinningTeam = TeamId.None;
+            match.GameState = 0;
+            em.SetComponentData(entity, match);
+        }
+
+        /// <summary>
         /// Disconnects this client and returns UI to the Main Menu.
         /// Called from the Escape command overlay. Dedicated Relay clients leave the lobby
         /// and reset the driver; a local host also parks ServerWorld so the leftover match
@@ -1719,8 +1787,14 @@ namespace TitanOrbit.NetCode
                 }
 
                 bool dedicated = IsDedicatedOnlineClient;
+                // Read before we tear worlds down. A won local host must not resume this map.
+                bool matchWon = MatchEndServerSignal.IsMatchWon || IsServerMatchWon();
                 IsInGame = false;
                 ClientTeamFlowState.Reset();
+                // Drop the client win latch and planet-count inference so the menu
+                // (and the next match) do not reopen the congrats card.
+                MapSessionMetaCache.Clear();
+                ClearClientMatchWinLatch();
 
                 if (dedicated)
                 {
@@ -1755,8 +1829,16 @@ namespace TitanOrbit.NetCode
                     ClearNetworkStreamInGame(server);
                     await ClearNetworkConnectionsAsync(server);
                     ResetServerDriverIfNeeded();
-                    // [TITAN-ORBIT] Same park as boot-to-menu: QuitUpdate so map/match sim stops.
-                    SuspendEditorLocalServerUntilLocalPlay();
+                    if (matchWon)
+                    {
+                        // Next Local play creates a new ServerWorld and rolls a new map.
+                        DisposeEditorLocalServerWorld("match finished — next play is a new game");
+                    }
+                    else
+                    {
+                        // [TITAN-ORBIT] Same park as boot-to-menu: QuitUpdate so map/match sim stops.
+                        SuspendEditorLocalServerUntilLocalPlay();
+                    }
                 }
 
                 LastStatusMessage = "Returned to main menu.";
