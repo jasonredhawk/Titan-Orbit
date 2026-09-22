@@ -45,6 +45,12 @@ namespace TitanOrbit.Core
         public static TeamId LastRequestedTeam { get; private set; } = TeamId.None;
 
         /// <summary>
+        /// Server rejection text from the last failed Join Team click (no planets, full, invalid).
+        /// Cleared on the next pick request and on session reset. Null when there is no rejection.
+        /// </summary>
+        public static string LastPickRejection { get; private set; }
+
+        /// <summary>
         /// Team the server assigned on the last successful TeamChoice / Local Host apply.
         /// Used to tint the hull when <c>ShipState.Team</c> is still None (GhostOwner snapshot lag).
         /// </summary>
@@ -149,6 +155,7 @@ namespace TitanOrbit.Core
             _rejoinEligibilityLocked = false;
             _deferredConfirmPending = false;
             LastRequestedTeam = TeamId.None;
+            LastPickRejection = null;
             AssignedTeam = TeamId.None;
             HasTeamChoiceSpawnPos = false;
             TeamChoiceSpawnPos = float3.zero;
@@ -160,9 +167,26 @@ namespace TitanOrbit.Core
         {
             // --- Optimistic team pick — block late rejoin prompts ---
             _teamPickRequested = true;
+            LastPickRejection = null;
             if (team != TeamId.None)
                 LastRequestedTeam = team;
             LockRejoinEligibility();
+        }
+
+        /// <summary>
+        /// Server refused the pick. Clears the in-flight latch so Join Team buttons work again
+        /// and stores <paramref name="message"/> for the status line.
+        /// </summary>
+        /// <param name="message">Rejection text from <c>TeamChoiceResultRpc</c>. Empty uses a fallback.</param>
+        public static void NotifyTeamPickRejected(string message)
+        {
+            // --- Failed assign: stay on Join Team and show why ---
+            if (TeamChoiceConfirmed)
+                return;
+            _teamPickRequested = false;
+            LastPickRejection = string.IsNullOrWhiteSpace(message)
+                ? "Could not join that team."
+                : message;
         }
 
         /// <summary>Allow retry after a failed team RPC without treating the spawned ship as a rejoin.</summary>

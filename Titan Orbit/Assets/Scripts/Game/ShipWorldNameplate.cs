@@ -11,8 +11,8 @@ namespace TitanOrbit.Game
 {
     /// <summary>
     /// World-space nameplate locked to world orientation so it does <b>not</b> spin when the hull yaws.
-    /// Regular ships sit <b>screen-below</b> the hull (world −Z); MEGA hulls sit <b>above mid-center</b>
-    /// (world +Y):
+    /// Regular ships sit <b>screen-below</b> the hull (world −Z). Titan (MEGA) hulls lift the plate
+    /// in world +Y and shift it so the profile badge sits on the hull center:
     /// <code>
     /// [Name] .............. [Lv N]
     /// [Score] ............. [#Rank]
@@ -27,8 +27,9 @@ namespace TitanOrbit.Game
     /// content width. Long names are truncated by cutting characters.
     /// <para>
     /// [HYBRID] Client presentation only — fed by <see cref="EcsWorldVisualizer"/>. Regular-ship
-    /// clearance is half the widest local footprint (+ padding); MEGA clearance is half-height
-    /// above mid-center. Both are frozen until ability-upgrade growth; yaw must not move the plate.
+    /// clearance is half the widest local footprint (+ padding). Titan clearance is half-height
+    /// above the hull, with the profile badge pinned to the hull center. Both are frozen until
+    /// ability-upgrade growth; yaw must not move the plate.
     /// The label root is unparented so text/bars stay world-upright. Fully moon-docked ships hide
     /// the plate until takeoff.
     /// </para>
@@ -326,7 +327,8 @@ namespace TitanOrbit.Game
         /// True when <c>ShipTurretControlState.IsControlling</c> — hull is hidden on a pad.
         /// </param>
         /// <param name="isMega">
-        /// True when this hull is a purchased MEGA — plate sits above mid-center instead of under the ship.
+        /// True when this hull is a Titan — plate lifts above the hull and the profile badge
+        /// is pinned to the hull center instead of sitting under the ship.
         /// </param>
         /// <param name="badgeId">Filename-stable profile badge id, or 0 for none.</param>
         public void ApplyPresentation(
@@ -509,7 +511,8 @@ namespace TitanOrbit.Game
 
         /// <summary>
         /// Regular ships: screen-below the hull footprint by half the widest world dimension.
-        /// MEGA hulls: above the geometric mid-center by measured half-height.
+        /// Titan hulls: lift above the geometric center by measured half-height, then shift the
+        /// plate so the profile badge (not the top of the stack) sits on that center.
         /// Clearance is frozen until ability-upgrade growth changes the signature.
         /// </summary>
         void RefreshAnchorPose()
@@ -518,6 +521,17 @@ namespace TitanOrbit.Game
                 return;
 
             RefreshCachedHullFootprintIfGrown();
+
+            // [TITAN-ORBIT] World rotation — plate stays upright while the hull turns.
+            // Theatrical: face the orbiting camera; gameplay: flat −90. Always rewritten
+            // here so leaving theatrical cannot leave a leftover billboard rotation.
+            bool theatrical = TitanOrbit.UI.TheatricalWorldSpaceLabelRotation.IsTheatricalEngaged();
+            Quaternion rot = theatrical
+                ? TitanOrbit.UI.TheatricalWorldSpaceLabelRotation.BillboardRotationFacingCamera()
+                : Quaternion.Euler(-90f, 0f, 0f);
+            float scale = _studioPreview ? StudioLabelWorldScale : LabelWorldScale;
+            _labelRoot.localScale = new Vector3(scale, -scale, scale);
+            _labelRoot.rotation = rot;
 
             Vector3 worldPos;
             if (_isMega)
@@ -528,8 +542,9 @@ namespace TitanOrbit.Game
                     MaxHeightWorld);
 
                 Vector3 centerWorld = transform.TransformPoint(_cachedLocalCenter);
-                worldPos = centerWorld;
-                worldPos.y = centerWorld.y + lift + HeightAbovePlane;
+                Vector3 badgeAnchor = centerWorld;
+                badgeAnchor.y = centerWorld.y + lift + HeightAbovePlane;
+                worldPos = WorldPosForBadgeOnAnchor(badgeAnchor);
             }
             else
             {
@@ -548,16 +563,22 @@ namespace TitanOrbit.Game
                 worldPos.y = centerWorld.y + HeightAbovePlane;
             }
 
-            // [TITAN-ORBIT] World rotation — plate stays upright while the hull turns.
-            // Theatrical: face the orbiting camera; gameplay: flat −90. Always rewritten
-            // here so leaving theatrical cannot leave a leftover billboard rotation.
-            bool theatrical = TitanOrbit.UI.TheatricalWorldSpaceLabelRotation.IsTheatricalEngaged();
-            Quaternion rot = theatrical
-                ? TitanOrbit.UI.TheatricalWorldSpaceLabelRotation.BillboardRotationFacingCamera()
-                : Quaternion.Euler(-90f, 0f, 0f);
             _labelRoot.SetPositionAndRotation(worldPos, rot);
-            float scale = _studioPreview ? StudioLabelWorldScale : LabelWorldScale;
-            _labelRoot.localScale = new Vector3(scale, -scale, scale);
+        }
+
+        /// <summary>
+        /// Label-root world position that puts the profile badge on <paramref name="badgeAnchor"/>.
+        /// The stack grows in label-local −Y, so the root itself sits off the badge.
+        /// Scale and rotation must already be applied on <see cref="_labelRoot"/>.
+        /// </summary>
+        Vector3 WorldPosForBadgeOnAnchor(Vector3 badgeAnchor)
+        {
+            if (_playerBadge == null)
+                return badgeAnchor;
+
+            _labelRoot.position = badgeAnchor;
+            Vector3 badgeWorld = _playerBadge.transform.position;
+            return badgeAnchor + (badgeAnchor - badgeWorld);
         }
 
         /// <summary>

@@ -83,8 +83,8 @@ namespace TitanOrbit.ECS
             }
             else
             {
-                // [TITAN-ORBIT] Server rejected pick (full team, invalid team) — allow retry.
-                ClientTeamFlowState.ClearTeamPickRequest();
+                // [TITAN-ORBIT] Server rejected pick (no planets, full team, invalid team) — allow retry.
+                ClientTeamFlowState.NotifyTeamPickRejected(rpc.Message.ToString());
                 UnityEngine.Debug.LogWarning($"[TeamChoiceResult] Failed: {rpc.Message}");
             }
         }

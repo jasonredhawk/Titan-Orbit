@@ -75,7 +75,7 @@ namespace TitanOrbit.ECS
                 }
 
                 var teamState = SystemAPI.GetSingletonRW<TeamStateSingleton>();
-                bool ok = TryAssignTeam(ref teamState.ValueRW, requested, out var message);
+                bool ok = TryAssignTeam(em, ref teamState.ValueRW, requested, out var message);
                 float3 spawnedPos = float3.zero;
                 bool hasSpawnedPos = false;
 
@@ -216,7 +216,7 @@ namespace TitanOrbit.ECS
             }
             else
             {
-                ClientTeamFlowState.ClearTeamPickRequest();
+                ClientTeamFlowState.NotifyTeamPickRejected(message.ToString());
                 Debug.LogWarning(
                     $"[TeamManagementSystem] Local Host TeamChoiceResult failed networkId={networkId}: {message}");
             }
@@ -244,14 +244,29 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// [TITAN-ORBIT] Validates team choice against ActiveTeamCount and MaxPlayersPerTeam cap.
+        /// [TITAN-ORBIT] Validates team choice against ActiveTeamCount, live planet ownership,
+        /// and MaxPlayersPerTeam. A team with zero owned planets stays listed on Join Team
+        /// but cannot be joined — there is nowhere to spawn.
         /// </summary>
-        static bool TryAssignTeam(ref TeamStateSingleton team, TeamId requested, out FixedString128Bytes message)
+        static bool TryAssignTeam(
+            EntityManager em,
+            ref TeamStateSingleton team,
+            TeamId requested,
+            out FixedString128Bytes message)
         {
             message = default;
             if (requested == TeamId.None || (int)requested > team.ActiveTeamCount)
             {
                 message = "Invalid team.";
+                return false;
+            }
+
+            // --- No friendly world: reject before the roster count increments ---
+            // [TITAN-ORBIT] Join Team still shows the card. Ownership is live PlanetState,
+            // not the baked home slot (a captured home with other worlds still allows join).
+            if (!ShipHomeSpawnLogic.TeamOwnsAnyPlanet(em, requested))
+            {
+                message = "This team has no planets.";
                 return false;
             }
 

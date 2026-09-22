@@ -54,8 +54,8 @@ namespace TitanOrbit.ECS
         [GhostField] public float MatchTimer;
 
         /// <summary>
-        /// [TITAN-ORBIT] Non-<see cref="TeamId.None"/> when <see cref="CaptureSystem"/> detects all
-        /// planets owned by one team.
+        /// [TITAN-ORBIT] Non-<see cref="TeamId.None"/> when <see cref="CaptureSystem"/> sees only
+        /// one team color still owning planets. Neutral worlds may remain uncaptured.
         /// </summary>
         [GhostField] public TeamId WinningTeam;
 

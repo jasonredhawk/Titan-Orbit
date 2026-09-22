@@ -532,29 +532,139 @@ namespace TitanOrbit.Game
         static EntityQuery s_MatchStateQuery;
         static bool s_MatchQueryValid;
 
-        /// <summary>Match timer and started flag from <see cref="MatchStateSingleton"/>.</summary>
+        static World s_ServerMatchQueryWorld;
+        static EntityQuery s_ServerMatchStateQuery;
+        static bool s_ServerMatchQueryValid;
+
+        /// <summary>
+        /// Match timer and win flag. A local host keeps the real
+        /// <see cref="MatchStateSingleton"/> on the server world — the client world
+        /// often has no copy — so a server winner wins over an empty client read.
+        /// If neither world has recorded a winner yet, a complete planet list that
+        /// shows only one team color (neutrals ignored) still counts. That is the
+        /// board the player is already looking at.
+        /// </summary>
         public static bool TryGetMatchState(out MatchStateSingleton match)
         {
             match = default;
-            var world = ClientWorld ?? ServerWorld;
-            if (world == null || !world.IsCreated)
+            bool haveServer = TryReadMatchSingleton(ServerWorld, server: true, out var serverMatch);
+            bool haveClient = TryReadMatchSingleton(ClientWorld, server: false, out var clientMatch);
+
+            // --- Authoritative win ---
+            // [TITAN-ORBIT] CaptureSystem writes the server singleton. Reading ClientWorld
+            // first hid the congrats card on a local host after the last enemy planet fell.
+            if (haveServer && serverMatch.WinningTeam != TeamId.None)
+            {
+                match = serverMatch;
+                return true;
+            }
+
+            if (haveClient && clientMatch.WinningTeam != TeamId.None)
+            {
+                match = clientMatch;
+                return true;
+            }
+
+            if (TryInferSolePlanetOwner(out TeamId inferred))
+            {
+                match = haveServer ? serverMatch : (haveClient ? clientMatch : default);
+                match.WinningTeam = inferred;
+                match.GameState = 2;
+                match.MatchStarted = true;
+                return true;
+            }
+
+            if (haveClient)
+            {
+                match = clientMatch;
+                return true;
+            }
+
+            if (haveServer)
+            {
+                match = serverMatch;
+                return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// True when this frame's planet cache covers the whole map recipe and every
+        /// owned world belongs to one team. Neutral worlds do not count as a second color.
+        /// </summary>
+        /// <param name="owner">The only team that still holds a planet.</param>
+        static bool TryInferSolePlanetOwner(out TeamId owner)
+        {
+            owner = TeamId.None;
+
+            // Incomplete cache (join, or meta not in yet) must not declare a win.
+            int expected = MapSessionMetaCache.LivePlanetCount;
+            if (expected <= 0)
                 return false;
 
-            // --- Cached singleton query ---
-            // [TITAN-ORBIT] HUD / flow called this every frame with a fresh CreateEntityQuery.
-            // That allocates and walks archetypes — keep one query per world.
-            if (!TryGetCachedMatchQuery(world, out var query))
+            EnsurePlanetStateCacheForFrame();
+            if (s_PlanetStateByIdCache.Count < expected)
+                return false;
+
+            bool anyOwned = false;
+            foreach (var pair in s_PlanetStateByIdCache)
+            {
+                TeamId team = pair.Value.Ownership;
+                if (team == TeamId.None)
+                    continue;
+
+                if (!anyOwned)
+                {
+                    owner = team;
+                    anyOwned = true;
+                    continue;
+                }
+
+                if (team != owner)
+                {
+                    owner = TeamId.None;
+                    return false;
+                }
+            }
+
+            return anyOwned;
+        }
+
+        /// <summary>Reads <see cref="MatchStateSingleton"/> from one world. Cached query, no alloc per frame.</summary>
+        static bool TryReadMatchSingleton(World world, bool server, out MatchStateSingleton match)
+        {
+            match = default;
+            if (world == null || !world.IsCreated)
+                return false;
+            if (!TryGetCachedMatchQuery(world, server, out var query))
                 return false;
             return query.TryGetSingleton(out match);
         }
 
-        static bool TryGetCachedMatchQuery(World world, out EntityQuery query)
+        static bool TryGetCachedMatchQuery(World world, bool server, out EntityQuery query)
         {
             query = default;
             if (world == null || !world.IsCreated)
                 return false;
 
-            if (s_MatchQueryValid && s_MatchQueryWorld == world && world.IsCreated)
+            if (server)
+            {
+                if (s_ServerMatchQueryValid && s_ServerMatchQueryWorld == world)
+                {
+                    query = s_ServerMatchStateQuery;
+                    return true;
+                }
+
+                DisposeServerMatchQuery();
+                s_ServerMatchQueryWorld = world;
+                s_ServerMatchStateQuery = world.EntityManager.CreateEntityQuery(typeof(MatchStateSingleton));
+                s_ServerMatchQueryValid = true;
+                query = s_ServerMatchStateQuery;
+                return true;
+            }
+
+            if (s_MatchQueryValid && s_MatchQueryWorld == world)
             {
                 query = s_MatchStateQuery;
                 return true;
@@ -575,6 +685,15 @@ namespace TitanOrbit.Game
 
             s_MatchQueryValid = false;
             s_MatchQueryWorld = null;
+        }
+
+        static void DisposeServerMatchQuery()
+        {
+            if (s_ServerMatchQueryValid && s_ServerMatchQueryWorld != null && s_ServerMatchQueryWorld.IsCreated)
+                s_ServerMatchStateQuery.Dispose();
+
+            s_ServerMatchQueryValid = false;
+            s_ServerMatchQueryWorld = null;
         }
 
         /// <summary>Death / respawn timer state for the local ship — drives death screen UI.</summary>

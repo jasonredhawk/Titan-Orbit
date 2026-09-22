@@ -16,8 +16,8 @@ namespace TitanOrbit.ECS
     /// LOADOUT slots add PerExtra × shipLevel only (no Base) onto those frozen totals.
     /// Gem cap stays 0. Cannon / missile / sniper mounts fire the catalog unique-component
     /// (or type-table) bank. Titan Bullet mounts follow the B-key hull cycle
-    /// (<see cref="ShipLoadoutState.RuntimeBulletIndex"/>): family fleet weapon first
-    /// (Laserbolt on Astro Eagle), then the catalog "Bullets" type.
+    /// (<see cref="ShipLoadoutState.RuntimeBulletIndex"/>): original catalog
+    /// "Bullets" first, then the ship-family weapon (Laserbolt on Astro Eagle).
     /// Fire mode is Energy Hybrid;
     /// Phase B uses <see cref="ShipWeaponFireLogic.TryPlanMegaFire"/>.
     /// Paired with <see cref="ShipStatApplyLogic.ApplyToShip"/> which routes here when
@@ -120,15 +120,15 @@ namespace TitanOrbit.ECS
             }
 
             // --- Loadout cycle bank (Titan Bullet mounts only) ---
-            // [TITAN-ORBIT] B-key / HUD walk family fleet first, then the Titan's
-            // original catalog gun. Only WeaponKind.Gun barrels adopt
-            // RuntimeBulletIndex. Cannons, missiles, and snipers keep the catalog
-            // banks written on each mount. Reset the index on chassis / slot
-            // change; keep B-key across extra-part applies.
+            // [TITAN-ORBIT] Spawn on the original catalog Bullets type. B-key / HUD
+            // then reach the ship-family weapon, then purchases. Only
+            // WeaponKind.Gun barrels adopt RuntimeBulletIndex. Cannons, missiles,
+            // and snipers keep the catalog banks written on each mount. Reset the
+            // index on chassis / slot change; keep B-key across extra-part applies.
             if (writeGhostedShipState && em.HasComponent<ShipLoadoutState>(shipEntity))
             {
                 var loadout = em.GetComponentData<ShipLoadoutState>(shipEntity);
-                int defaultBank = BulletBankOwnership.ResolveHullDefaultBank(em, shipEntity);
+                int defaultBank = BulletBankOwnership.ResolveDefaultSelectedBank(em, shipEntity);
 
                 bool adoptMegaGunDefault = true;
                 if (em.HasComponent<ShipChassisState>(shipEntity))

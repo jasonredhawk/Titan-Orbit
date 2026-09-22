@@ -670,6 +670,21 @@ namespace TitanOrbit.ECS
     }
 
     /// <summary>
+    /// [NETCODE] Server → all clients: one team is the only color left on the map.
+    /// Neutral worlds may remain. <see cref="MatchStateSingleton"/> is not a ghost, so
+    /// clients never see <c>WinningTeam</c> unless this RPC (or the host in-process
+    /// mirror) writes it. Opens the congrats card. Wire layout must match Linux headless.
+    /// </summary>
+    public struct MatchWonRpc : IRpcCommand
+    {
+        /// <summary>Winning team as a byte (<see cref="TeamId"/>).</summary>
+        public byte WinningTeam;
+
+        /// <summary>Server match clock in seconds at the moment the win was decided.</summary>
+        public float MatchTimer;
+    }
+
+    /// <summary>
     /// [NETCODE] Server → all clients: planet ownership flipped (capture or starting claim).
     /// Planet ghosts use low Importance / MaxSendRate under MaxSendChunks caps, so territory
     /// lines would lag several seconds on ghost snapshots alone. Clients apply this immediately

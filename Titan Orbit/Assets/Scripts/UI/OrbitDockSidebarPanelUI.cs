@@ -493,8 +493,8 @@ namespace TitanOrbit.UI
         static readonly VisibleBankRow[] s_OwnedWeaponRows = new VisibleBankRow[16];
 
         /// <summary>
-        /// Family fleet gun, a Titan's original catalog gun, plus each purchased
-        /// weapon type the local ship can B-key.
+        /// A Titan's original catalog gun, then the family fleet gun, plus each
+        /// purchased weapon type the local ship can B-key.
         /// False when the ghost has not hydrated yet.
         /// </summary>
         static bool TryFormatOwnedWeaponsGlance(int shipLevel, out string glance, out string tip)

@@ -15,8 +15,8 @@ namespace TitanOrbit.UI
     /// <summary>
     /// Compact top-left in-flight list of fire types the local ship can shoot. Each tile
     /// names the <see cref="BulletVfxBank"/> category (LASERBOLT) and the ship family
-    /// that authored it (ASTRO EAGLE). Production shows the family fleet gun, a Titan's
-    /// original catalog gun, plus purchased foreign weapons. GameManager cycle-all
+    /// that authored it (ASTRO EAGLE). Production shows a Titan's original catalog
+    /// gun first, then the family fleet gun, plus purchased foreign weapons. GameManager cycle-all
     /// (Test) lists every non-reserved catalog bank so testers can click types they
     /// have not bought. B walks the same list; a tile click jumps to that bank.
     /// <para>
@@ -27,7 +27,7 @@ namespace TitanOrbit.UI
     /// immediately. <see cref="ShipCycleBulletSystem"/> then writes the ghosted
     /// <see cref="ShipLoadoutState.RuntimeBulletIndex"/> on the predicted tick.
     /// Hidden on the main menu, Join Team, Orbit Menu, and while the local
-    /// ship is dead. MEGA hulls show family fleet + original Titan gun; only
+    /// ship is dead. MEGA hulls show original Titan gun, then family fleet; only
     /// Titan Bullet mounts adopt the selected bank. Holds last paint during
     /// <see cref="ClientJoinSettleCache.ShouldSkipShipEntityQueries"/> so MEGA plow gem
     /// Instantiates do not blink the panel off.
@@ -298,9 +298,9 @@ namespace TitanOrbit.UI
             }
 
             // Family-fleet tile uses THIS ship's family (Astro Eagle), not the
-            // first config row that shares Laserbolt. Titans keep that family
-            // caption on the default row and put the catalog hull name on the
-            // original "Bullets" tile.
+            // first config row that shares Laserbolt. Titans put the catalog hull
+            // name on the default "Bullets" tile and this family caption on the
+            // second row.
             if (em.HasComponent<ShipState>(ship))
             {
                 if (_familyConfig == null)
@@ -342,7 +342,8 @@ namespace TitanOrbit.UI
             // --- Caret ---
             // [TITAN-ORBIT] B / click latch an optimistic bank so this strip moves on
             // the same Unity frame. Heal / Test can still fire a bank that is not in
-            // this owned list — park on the hull default so a row stays live.
+            // this owned list — park on the first row (Titan Bullets, or the family
+            // gun) so a tile stays live.
             int caretBank = BulletBankSelection.ResolveCaretBank(selectedBank);
             bool caretInList = false;
             for (int i = 0; i < rowCount; i++)
@@ -431,8 +432,8 @@ namespace TitanOrbit.UI
                 PanelPad,
                 -PanelPad - HeaderHeight - row * (TileHeight + TileGap));
 
-            // Family fleet (Laserbolt / Astro Eagle) first. Titan original
-            // (Bullets / Craizan Star) second. Purchased types fall back to
+            // Titan original (Bullets / Craizan Star) first. Family fleet
+            // (Laserbolt / Astro Eagle) second. Purchased types fall back to
             // whoever uniquely authored that bank.
             string family;
             if (data.IsTitanOriginal && !string.IsNullOrEmpty(titanDisplayName))
