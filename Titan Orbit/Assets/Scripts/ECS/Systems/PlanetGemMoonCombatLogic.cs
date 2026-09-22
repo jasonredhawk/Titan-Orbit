@@ -25,8 +25,8 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// Near-side aim on a non-friendly gem moon. Shield shell while the barrier
-        /// is up, moon body once it is down. Friendly moons return false.
+        /// Near-side aim on an enemy gem moon. Shield shell while the barrier
+        /// is up, moon body once it is down. Friendly and unowned moons return false.
         /// <paramref name="mapW"/> / <paramref name="mapH"/> come from <see cref="MapStateSingleton"/>.
         /// </summary>
         public static bool TryGetNonFriendlyMoonAim(
@@ -47,7 +47,9 @@ namespace TitanOrbit.ECS
         {
             aim = default;
             orbitalVelocity = float3.zero;
-            if (IsTeamFriendlyToMoon(moonOwner, attackerTeam))
+            // Unowned moons stay out of auto-aim. Bullets that physically hit them
+            // still use <see cref="IsTeamFriendlyToMoon"/>.
+            if (moonOwner == TeamId.None || IsTeamFriendlyToMoon(moonOwner, attackerTeam))
                 return false;
 
             float scale = math.max(0.25f, planetScale);

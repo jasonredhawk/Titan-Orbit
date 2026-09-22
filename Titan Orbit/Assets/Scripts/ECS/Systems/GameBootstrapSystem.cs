@@ -468,6 +468,7 @@ namespace TitanOrbit.ECS
 
                     // [TITAN-ORBIT] Starting claims get fresh empty defense pads, then optional
                     // random starter turrets from Map Generation Settings (0 = leave empty).
+                    // Homes skip this path — they spawn with every pad at max turret level.
                     PlanetaryDefenseSlotSyncSystem.WipeSlotsForOwnershipChange(
                         state.EntityManager, planetEntity, claim.Team, claimedLevel);
 
@@ -709,23 +710,20 @@ namespace TitanOrbit.ECS
             SetOrAddComponent(em, e, moonState);
 
             // --- Planetary defense pads for owned homes (neutrals wait for claim wipe) ---
-            // [TITAN-ORBIT] Homes spawn already owned — seed empty slots immediately so pads
-            // appear without waiting on SlotSync's first tick. Optional random starter turrets
-            // use the same Map Generation Settings knob as starting owned neutrals.
+            // [TITAN-ORBIT] Homes spawn already owned — size pads immediately so they appear
+            // without waiting on SlotSync's first tick, then fill every pad at the home
+            // planet's max turret level (starting HomePlanetLevel, not crown Lv7).
             if (team != TeamId.None)
             {
                 int planetLevel = math.max(1, level);
                 PlanetaryDefenseSlotSyncSystem.WipeSlotsForOwnershipChange(
                     em, e, team, planetLevel);
 
-                if (_config.StartingRandomDefenseTurretsMax > 0 &&
-                    em.HasBuffer<PlanetaryDefenseSlotElement>(e))
+                if (isHome && em.HasBuffer<PlanetaryDefenseSlotElement>(e))
                 {
                     var defenseBuffer = em.GetBuffer<PlanetaryDefenseSlotElement>(e);
-                    PlanetaryDefenseLogic.SeedRandomStartingTurrets(
+                    PlanetaryDefenseLogic.SeedMaxLevelStartingTurrets(
                         defenseBuffer,
-                        ref _rng,
-                        _config.StartingRandomDefenseTurretsMax,
                         planetLevel,
                         PlanetaryDefenseConfig.LoadDefault());
                 }

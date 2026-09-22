@@ -19,8 +19,8 @@ namespace TitanOrbit.ECS
     /// there is no remote Take Control path. Cannon barrels stay parked and lock anyone
     /// Cannon lasers use the same in-range auto-aim, then the turret slews onto
     /// that lock; <see cref="CannonLaserCombatSystem"/> burns once the barrel faces it.
-    /// Damage mode treats enemy ships, planetary defense turrets, and non-friendly
-    /// moon shields (enemy and neutral) as one priority — closest in range wins. Asteroids are second
+    /// Damage mode treats enemy ships, enemy planetary defense turrets, and enemy
+    /// moon shields as one priority — closest in range wins. Unowned worlds are skipped. Asteroids are second
     /// (only when no combat target is in that gun's range). Heal mode aims at the
     /// nearest friendly ship. Cannon lasers also acquire asteroids (lowest
     /// priority) so a destroyed rock does not leave the beam stuck. Projectile
@@ -767,7 +767,7 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// Closest in-range target from this muzzle. Ships, hostile pads, and non-friendly
+        /// Closest in-range target from this muzzle. Enemy ships, enemy pads, and enemy
         /// moon shields compete by toroidal distance; (debug) asteroids are only used when
         /// none of those are in range. Two guns may lock the same entity.
         /// Used when a barrel has no live lock (first press, or the last target died / left range).
@@ -936,10 +936,10 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// Best hostile pad or non-friendly moon shield on one planet — they compete
+        /// Best enemy pad or enemy moon shield on one planet — they compete
         /// by distance to the pad or the near side of the shield (body when the
-        /// barrier is down). Returns false when the planet is friendly, empty, or
-        /// out of range. Neutral planets have no pads; their moon shields still lock.
+        /// barrier is down). Returns false when the planet is friendly, unowned,
+        /// empty, or out of range.
         /// </summary>
         bool TryResolvePlanetAim(
             Entity planet,
@@ -960,7 +960,7 @@ namespace TitanOrbit.ECS
 
             var planetState = EntityManager.GetComponentData<PlanetState>(planet);
             var planetXf = EntityManager.GetComponentData<LocalTransform>(planet);
-            if (planetState.Ownership == ownerTeam)
+            if (planetState.Ownership == ownerTeam || planetState.Ownership == TeamId.None)
                 return false;
 
             float best = range;

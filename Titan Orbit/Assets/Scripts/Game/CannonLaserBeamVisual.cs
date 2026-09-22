@@ -907,10 +907,13 @@ namespace TitanOrbit.Game
                     return (TeamId)o.TeamOrOwnership != team
                            && (TeamId)o.TeamOrOwnership != TeamId.None;
                 case BulletCosmeticHitQuery.ObstacleKind.Moon:
+                {
                     if (heal)
                         return false;
-                    return !PlanetGemMoonCombatLogic.IsTeamFriendlyToMoon(
-                        (TeamId)o.TeamOrOwnership, team);
+                    var moonOwner = (TeamId)o.TeamOrOwnership;
+                    return moonOwner != TeamId.None
+                           && !PlanetGemMoonCombatLogic.IsTeamFriendlyToMoon(moonOwner, team);
+                }
                 default:
                     return false;
             }

@@ -70,7 +70,9 @@ namespace TitanOrbit.ECS
                 // --- First tick: size for current ownership without inventing a false "capture" ---
                 if (!cache.Initialized)
                 {
-                    // Homes spawn already owned — create empty pads. Neutrals stay length 0.
+                    // Uninitialized owned planets get empty pads. Neutrals stay length 0.
+                    // Homes / starting claims stamp the cache in WipeSlotsForOwnershipChange
+                    // after seeding so this first-tick wipe does not run.
                     ApplyOwnershipAndLevel(em, entity, buffer, ownership, level, wipe: true);
                     cache.LastOwnership = ownership;
                     cache.LastPlanetLevel = level;

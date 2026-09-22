@@ -440,8 +440,8 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// Closest hostile pad or non-friendly moon shield on one planet
-        /// (same rule as AutoFire). Neutral shields lock; friendly ones do not.
+        /// Closest enemy pad or enemy moon shield on one planet
+        /// (same rule as AutoFire). Unowned and friendly worlds do not lock.
         /// </summary>
         bool TryResolvePlanetAim(
             Entity planet,
@@ -460,7 +460,7 @@ namespace TitanOrbit.ECS
 
             var planetState = EntityManager.GetComponentData<PlanetState>(planet);
             var planetXf = EntityManager.GetComponentData<LocalTransform>(planet);
-            if (planetState.Ownership == ownerTeam)
+            if (planetState.Ownership == ownerTeam || planetState.Ownership == TeamId.None)
                 return false;
 
             float best = range;

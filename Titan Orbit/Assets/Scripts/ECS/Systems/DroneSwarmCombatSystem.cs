@@ -521,7 +521,7 @@ namespace TitanOrbit.ECS
             {
                 Entity e = entities[i];
                 var shipState = EntityManager.GetComponentData<ShipState>(e);
-                if (shipState.IsDead)
+                if (shipState.IsDead || shipState.Team == TeamId.None)
                     continue;
                 if (shipState.Team == ownerTeam)
                     continue;

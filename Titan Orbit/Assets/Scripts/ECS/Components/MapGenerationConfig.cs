@@ -59,8 +59,9 @@ namespace TitanOrbit.ECS
         public int StartingOwnedNeutralPlanetsPerTeam;
 
         /// <summary>
-        /// Per home planet and starting owned neutral: randomly place 0..N defense turrets at
-        /// random levels 1..N (0 = seed none). Also capped by planet slot count / max turret level.
+        /// Per starting owned neutral: randomly place 0..N defense turrets at random levels 1..N
+        /// (0 = seed none). Also capped by planet slot count / max turret level. Home worlds
+        /// ignore this and start every pad at <see cref="HomePlanetLevel"/> turret level.
         /// </summary>
         public int StartingRandomDefenseTurretsMax;
 

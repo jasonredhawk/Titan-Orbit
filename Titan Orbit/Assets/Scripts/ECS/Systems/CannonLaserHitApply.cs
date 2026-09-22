@@ -194,7 +194,7 @@ namespace TitanOrbit.ECS
         {
             var planetState = em.GetComponentData<PlanetState>(planet);
             var planetXf = em.GetComponentData<LocalTransform>(planet);
-            if (planetState.Ownership == attackerTeam)
+            if (planetState.Ownership == attackerTeam || planetState.Ownership == TeamId.None)
                 return;
 
             float best = range;
