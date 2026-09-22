@@ -20,9 +20,9 @@ namespace TitanOrbit.Game
     /// Shift mouse-aim follows the cursor, then clips to the first collider along
     /// that segment via <see cref="BulletCosmeticHitQuery"/> (same spheres / MEGA
     /// parts as tracers) so the line stops on the hull instead of tunneling through
-    /// to the mouse. While a lock is burning, this driver also reports <c>DPS × dt</c>
-    /// to <see cref="EcsFloatingCountPresenter"/> so laser hull / rock hits show the
-    /// same floating damage numbers as <c>BulletHitRpc</c> (lasers never send that RPC).
+    /// to the mouse. While a lock is burning, this driver reports <c>DPS × dt</c>
+    /// to <see cref="EcsFloatingCountPresenter"/>. Lasers stay hidden while the
+    /// 10% recharge lockout is latched.
     /// Beam width tracks the 50%→300% DPS ramp so the line starts thin and fattens.
     /// Beams stay on while a live lock (or Shift mouse-aim) is burning.
     /// <para>
@@ -287,7 +287,8 @@ namespace TitanOrbit.Game
             bool localOwner = em.HasComponent<LocalPlayerShipTag>(binding.ShipEntity);
             bool energyLockout = localOwner
                 ? StepLocalEnergyLockout(in shipState, megaState.CannonLaserLockout)
-                : megaState.CannonLaserLockout || shipState.CurrentEnergy <= 0.0001f;
+                : megaState.CannonLaserLockout
+                  || CannonLaserMath.IsLaserPoolEmpty(shipState.CurrentEnergy);
             var localInput = localOwner && em.HasComponent<ShipInput>(binding.ShipEntity)
                 ? em.GetComponentData<ShipInput>(binding.ShipEntity)
                 : default;
@@ -304,11 +305,6 @@ namespace TitanOrbit.Game
             if (energyLockout)
             {
                 ResetRampsForShip(binding.ShipEntity.Index);
-                ClearStickyForShip(binding.ShipEntity.Index);
-                return;
-            }
-            if (!localOwner && !megaState.CannonLaserPulseOn)
-            {
                 ClearStickyForShip(binding.ShipEntity.Index);
                 return;
             }
@@ -406,7 +402,7 @@ namespace TitanOrbit.Game
             if (target == Entity.Null)
                 return;
 
-            // --- Slice = firePower × fireRate × ramp × dt (same DPS the server applies) ---
+            // Slice = firePower × fireRate × ramp × dt (same DPS the server applies).
             float slice = ResolveLaserSlice(in mount, rampSeconds) * Time.deltaTime;
             if (slice <= 0.01f)
                 return;
@@ -614,10 +610,10 @@ namespace TitanOrbit.Game
         bool StepLocalEnergyLockout(in ShipState ship, bool serverLockout)
         {
             float maxEnergy = math.max(1f, ship.MaxEnergy);
-            if (serverLockout || ship.CurrentEnergy <= 0.0001f)
+            if (serverLockout || CannonLaserMath.IsLaserPoolEmpty(ship.CurrentEnergy))
                 _localEnergyLockout = true;
             if (_localEnergyLockout && !serverLockout
-                && ship.CurrentEnergy >= maxEnergy * CannonLaserMath.RechargeRatio)
+                && CannonLaserMath.IsLaserPoolReady(ship.CurrentEnergy, maxEnergy))
                 _localEnergyLockout = false;
             return _localEnergyLockout;
         }

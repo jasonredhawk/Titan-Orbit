@@ -59,9 +59,9 @@ namespace TitanOrbit.ECS
         [GhostField] public int PreviousBranch;
 
         /// <summary>
-        /// Cannon lasers emptied the energy pool. Cleared at
-        /// ≥ <c>CannonLaserMath.RechargeRatio</c> of MaxEnergy. Ghosted so
-        /// client beams (including Shift mouse-aim) hide during the wait.
+        /// Cannon lasers went inactive. Cleared only when the pool is strictly
+        /// above <c>CannonLaserMath.RechargeRatio</c> of MaxEnergy. Releasing
+        /// Fire does not reset it. Ghosted so client beams hide during the wait.
         /// </summary>
         [GhostField] public bool CannonLaserLockout;
 

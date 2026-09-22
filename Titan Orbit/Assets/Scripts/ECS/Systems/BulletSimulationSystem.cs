@@ -558,17 +558,22 @@ namespace TitanOrbit.ECS
             if (anyLaser && laser != null)
                 laser.BeginLaserTick(mega, energy, shipState.MaxEnergy);
 
+            float walk = math.max(0f, energy);
+            float spend = walk;
             int shotCount = 0;
             for (int n = 0; n < orderCount && shotCount < s_ShotScratch.Length; n++)
             {
                 int i = order[n];
                 var mount = mounts[i];
+                float cost = ShipWeaponFireLogic.GetShotCost(
+                    mount, isMega: true, 0f, weaponCfg.FireRate, 0f);
                 if (ShipWeaponKind.IsCannonLaser(mount, gunners, i))
                 {
+                    ShipWeaponFireLogic.TryTakeSequentialSlot(ref walk, cost);
                     if (laser != null)
                     {
-                        laser.TryReadyPulse(
-                            mega, i, in mount, ref energy, dt, mapW, mapH,
+                        laser.TryContinuousBurn(
+                            mega, i, in mount, ref spend, dt, mapW, mapH,
                             moonElapsed, serverElapsed, gemPrefab, gemSpawnServerTime,
                             topKiller, ref ecb);
                     }
@@ -576,19 +581,18 @@ namespace TitanOrbit.ECS
                     continue;
                 }
 
+                if (!ShipWeaponFireLogic.TryTakeSequentialSlot(ref walk, cost))
+                    break;
+
                 if (mount.FireCooldown > 0.001f)
                     continue;
 
                 float fireRate = math.max(
                     0.15f, mount.FireRate > 0.01f ? mount.FireRate : weaponCfg.FireRate);
-                float cost = math.max(0.01f, mount.FirePower);
-                if (energy + 0.001f < cost)
-                    continue;
-
                 float interval = 1f / fireRate;
                 mount.FireCooldown = interval;
                 mounts[i] = mount;
-                energy -= cost;
+                spend -= cost;
                 s_ShotScratch[shotCount++] = new ShipWeaponFireLogic.MountShot
                 {
                     MountIndex = i,
@@ -598,7 +602,7 @@ namespace TitanOrbit.ECS
                 };
             }
 
-            shipState.CurrentEnergy = math.max(0f, energy);
+            shipState.CurrentEnergy = math.max(0f, spend);
             if (anyLaser && laser != null)
                 laser.EndLaserTick(mega, shipState.CurrentEnergy);
 

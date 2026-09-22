@@ -16,11 +16,10 @@ namespace TitanOrbit.UI
     /// <summary>
     /// Compact arsenal strip under the ship stats, stacked with WEAPONS: every barrel on the local ship, grouped by
     /// combat class (gun / laser / missile / sniper). Click a cell to mute that
-    /// barrel; click the class header to mute or arm the whole group. Each square
-    /// fills over that barrel's fire interval (<c>1 / fireRate</c>) from the
-    /// server's ready timer. Filling does not spend energy. A full square that
-    /// the hull pool can pay is bright and ready. A full square the pool cannot
-    /// pay stays full and waits. User-off is a muted slate chip.
+    /// barrel; click the class header to mute or arm the whole group. Each chip
+    /// has two bars: the inner square is sequential hull energy (left to right
+    /// across the strip), and the border is that barrel's fire-rate timer.
+    /// Both full means the square can fire. User-off is a muted slate chip.
     /// <para>
     /// Regular family hulls show one GUN (or live bullet-type name) group.
     /// MEGA / Titan hulls show whichever classes the catalog actually mounted.
@@ -86,8 +85,12 @@ namespace TitanOrbit.UI
         static readonly Color UserOffFill = new Color(0.26f, 0.28f, 0.34f, 0.88f);
         static readonly Color UserOffTint = new Color(0.40f, 0.43f, 0.50f, 0.82f);
         static readonly Color CooldownFill = new Color(0.22f, 0.28f, 0.36f, 0.7f);
+        static readonly Color RoFTrack = new Color(0.10f, 0.16f, 0.24f, 0.95f);
+        static readonly Color RoFCharging = new Color(0.95f, 0.72f, 0.28f, 0.96f);
+        static readonly Color RoFReady = new Color(0.55f, 0.98f, 0.62f, 1f);
         static readonly Color KeycapFill = new Color(0.04f, 0.10f, 0.16f, 0.96f);
         static readonly Color KeycapOff = new Color(0.12f, 0.06f, 0.06f, 0.9f);
+        const float BorderThickness = 2f;
 
         /// <summary>What the player sees on one energy chip.</summary>
         enum CellLook : byte
@@ -113,7 +116,7 @@ namespace TitanOrbit.UI
             public bool AnyArmed;
         }
 
-        /// <summary>One barrel chip — fill bar + click to mute.</summary>
+        /// <summary>One barrel chip — inner energy bar, border fire-rate bar, click to mute.</summary>
         sealed class BarrelCell
         {
             public GameObject Root;
@@ -123,6 +126,14 @@ namespace TitanOrbit.UI
             public Image Fill;
             public Image Caret;
             public Outline Outline;
+            public Image RoFTop;
+            public Image RoFRight;
+            public Image RoFBottom;
+            public Image RoFLeft;
+            public Image RoFTrackTop;
+            public Image RoFTrackRight;
+            public Image RoFTrackBottom;
+            public Image RoFTrackLeft;
             public int MountIndex;
             public byte Kind;
         }
@@ -145,13 +156,16 @@ namespace TitanOrbit.UI
         readonly int[] _kindCounts = new int[MaxGroups];
         readonly int[] _kindArmed = new int[MaxGroups];
 
-        /// <summary>Per-mount clip fill (0–1). Written by <see cref="ComputeMountCharges"/> each paint.</summary>
+        /// <summary>Per-mount energy fill (0–1). Sequential hull pool, left to right.</summary>
         readonly float[] _mountFill = new float[ShipWeaponArmState.MaxTrackedMounts];
+
+        /// <summary>Per-mount fire-rate border fill (0–1). 1 = delay finished.</summary>
+        readonly float[] _mountRoFFill = new float[ShipWeaponArmState.MaxTrackedMounts];
 
         /// <summary>Displayed ready delay, counted down between ghost snapshots.</summary>
         readonly float[] _shownCooldown = new float[ShipWeaponArmState.MaxTrackedMounts];
 
-        /// <summary>Last ghost ready delay, so a new snapshot can resync the bar.</summary>
+        /// <summary>Last ghost ready delay, so a new snapshot can resync the border.</summary>
         readonly float[] _lastGhostCooldown = new float[ShipWeaponArmState.MaxTrackedMounts];
 
         bool _cooldownSmoothInit;
@@ -327,9 +341,6 @@ namespace TitanOrbit.UI
 
             bool isMega = em.HasComponent<MegaShipState>(ship)
                           && em.GetComponentData<MegaShipState>(ship).IsMega;
-            bool laserLockout = isMega
-                                && em.HasComponent<MegaShipState>(ship)
-                                && em.GetComponentData<MegaShipState>(ship).CannonLaserLockout;
 
             var shipState = em.HasComponent<ShipState>(ship)
                 ? em.GetComponentData<ShipState>(ship)
@@ -339,6 +350,9 @@ namespace TitanOrbit.UI
                 : default;
 
             float energy = shipState.CurrentEnergy;
+            bool laserLockout = isMega
+                                && em.HasComponent<MegaShipState>(ship)
+                                && em.GetComponentData<MegaShipState>(ship).CannonLaserLockout;
 
             float abilityEnergy = 0f;
             if (!isMega && em.HasComponent<ShipLoadoutState>(ship))
@@ -454,13 +468,14 @@ namespace TitanOrbit.UI
 
                     BarrelCell cell = _cells[cellCursor++];
                     float fill = i < _mountFill.Length ? _mountFill[i] : 0f;
+                    float rof = i < _mountRoFFill.Length ? _mountRoFFill[i] : 0f;
                     CellLook look = i < _mountLook.Length ? _mountLook[i] : CellLook.Starved;
 
                     int row = shown / CellsPerRow;
                     int col = shown % CellsPerRow;
                     float cellX = PanelPad + col * (CellWidth + CellGap);
                     float cellY = y - row * (CellHeight + CellGap);
-                    PaintCell(cell, i, mountKind, fill, look, cellX, cellY, layoutDirty);
+                    PaintCell(cell, i, mountKind, fill, rof, look, cellX, cellY, layoutDirty);
                     shown++;
                 }
 
@@ -520,12 +535,16 @@ namespace TitanOrbit.UI
                 group.Chip.color = anyArmed ? KeycapFill : KeycapOff;
         }
 
-        /// <summary>Writes one barrel chip fill, color, and caret.</summary>
+        /// <summary>
+        /// Inner square is sequential energy. Border is the fire-rate timer,
+        /// drawn clockwise from the top edge.
+        /// </summary>
         void PaintCell(
             BarrelCell cell,
             int mountIndex,
             byte kind,
             float fill,
+            float rof,
             CellLook look,
             float x,
             float y,
@@ -543,28 +562,27 @@ namespace TitanOrbit.UI
                 cell.Rect.anchoredPosition = new Vector2(x, y);
             }
 
-            bool charging = look == CellLook.Charging;
+            bool userOff = look == CellLook.UserOff;
             if (cell.Fill != null)
             {
-                // [TITAN-ORBIT] User-off is a muted slate chip, not a black hole
-                // and not the ice energy bar.
-                cell.Fill.fillAmount = look == CellLook.UserOff ? 1f : Mathf.Clamp01(fill);
-                cell.Fill.color = ColorForLook(look);
+                cell.Fill.fillAmount = userOff ? 1f : Mathf.Clamp01(fill);
+                cell.Fill.color = ColorForEnergy(look, fill);
             }
 
             if (cell.Background != null)
-                cell.Background.color = look == CellLook.UserOff ? UserOffFill : CellBack;
+                cell.Background.color = userOff ? UserOffFill : CellBack;
             if (cell.Caret != null)
-                cell.Caret.enabled = charging && cell.Fill != null && cell.Fill.fillAmount < 0.999f;
+                cell.Caret.enabled = !userOff && fill > 0.001f && fill < 0.999f;
             if (cell.Outline != null)
-                cell.Outline.enabled = charging || look == CellLook.Ready;
+                cell.Outline.enabled = false;
+
+            PaintRoFBorder(cell, userOff ? 0f : Mathf.Clamp01(rof), userOff);
         }
 
         /// <summary>
-        /// Paints each square from the server ready timer. Fill is
-        /// <c>1 - cooldown / (1/fireRate)</c>, moved between snapshots so the
-        /// bar does not sit still until the next ghost. Full and affordable is
-        /// ready. Full and short on energy stays waiting. Muted stays muted.
+        /// Inner fill is the hull pool left to right. Border fill is
+        /// <c>1 - cooldown / (1/fireRate)</c>, moved between snapshots.
+        /// Both full and not lockout is ready.
         /// </summary>
         void ComputeMountCharges(
             DynamicBuffer<ShipWeaponMountElement> mounts,
@@ -584,6 +602,7 @@ namespace TitanOrbit.UI
             for (int i = 0; i < ShipWeaponArmState.MaxTrackedMounts; i++)
             {
                 _mountFill[i] = 0f;
+                _mountRoFFill[i] = 0f;
                 _mountLook[i] = CellLook.Starved;
                 _cascadeOrder[i] = -1;
             }
@@ -596,6 +615,7 @@ namespace TitanOrbit.UI
 
             int orderCount = ShipWeaponFireLogic.BuildArmedStripOrder(
                 mounts, in arm, _cascadeOrder, skipCannonLasers: false);
+            float remaining = energy;
 
             for (int n = 0; n < orderCount; n++)
             {
@@ -606,28 +626,28 @@ namespace TitanOrbit.UI
                     continue;
 
                 ShipWeaponMountElement mount = mounts[i];
+                float cost = ResolveMountShotCost(mount, isMega, in weaponCfg, abilityEnergy);
+                float fill = ShipWeaponFireLogic.SequentialSquareFill(remaining, cost);
+                _mountFill[i] = fill;
+                bool energyFull = ShipWeaponFireLogic.TryTakeSequentialSlot(ref remaining, cost);
+
                 float ghost = mount.FireCooldown;
                 if (ready.IsCreated && i < ready.Length)
                     ghost = ready[i].FireCooldown;
                 if (float.IsNaN(ghost) || ghost < 0f)
                     ghost = 0f;
 
-                float rate = mount.FireRate > 0.01f ? mount.FireRate : weaponCfg.FireRate;
-                if (rate < 0.1f)
-                    rate = 0.1f;
-                float interval = 1f / rate;
+                float interval = ShipWeaponFireLogic.ReadyInterval(mount, weaponCfg.FireRate);
                 float shown = SmoothReady(i, ghost);
-                float fill = 1f - Mathf.Clamp01(shown / interval);
-                _mountFill[i] = fill;
+                float rof = 1f - Mathf.Clamp01(shown / interval);
+                _mountRoFFill[i] = rof;
 
-                bool full = shown <= 0.001f;
-                float cost = ResolveMountShotCost(mount, isMega, in weaponCfg, abilityEnergy);
-                bool canPay = energy + 0.001f >= cost;
+                bool rofReady = shown <= 0.001f;
                 bool laserWaiting = ShipWeaponKind.IsCannonLaser(mount) && laserLockout;
-                if (!full)
-                    _mountLook[i] = CellLook.Charging;
-                else if (!canPay || laserWaiting)
-                    _mountLook[i] = CellLook.Charging;
+                if (!energyFull)
+                    _mountLook[i] = fill > 0.001f ? CellLook.Charging : CellLook.Starved;
+                else if (!rofReady || laserWaiting)
+                    _mountLook[i] = CellLook.Cooldown;
                 else
                     _mountLook[i] = CellLook.Ready;
             }
@@ -650,7 +670,7 @@ namespace TitanOrbit.UI
 
         /// <summary>
         /// Counts the ready delay down between snapshots. A new ghost value
-        /// (including a shot that restarts the timer) snaps the bar back.
+        /// (including a shot that restarts the timer) snaps the border back.
         /// </summary>
         float SmoothReady(int index, float ghost)
         {
@@ -673,24 +693,61 @@ namespace TitanOrbit.UI
             in ShipWeaponConfig weaponCfg,
             float abilityEnergy)
         {
-            if (isMega || ShipWeaponKind.IsCannonLaser(mount))
-                return Mathf.Max(0.01f, mount.FirePower);
-            return ShipWeaponFireLogic.GetMountEnergyCost(
-                mount, weaponCfg.BulletDamage, weaponCfg.FireRate, abilityEnergy);
+            return ShipWeaponFireLogic.GetShotCost(
+                mount, isMega, weaponCfg.BulletDamage, weaponCfg.FireRate, abilityEnergy);
         }
 
 
-        /// <summary>Fill color for each look. Dim ice ≠ muted slate mute ≠ bright ready.</summary>
-        static Color ColorForLook(CellLook look)
+        /// <summary>Inner-square color from energy only. RoF lives on the border.</summary>
+        static Color ColorForEnergy(CellLook look, float fill)
         {
-            switch (look)
-            {
-                case CellLook.UserOff: return UserOffTint;
-                case CellLook.Starved: return EnergyDim;
-                case CellLook.Charging: return EnergyCharging;
-                case CellLook.Ready: return EnergyReady;
-                default: return CooldownFill;
-            }
+            if (look == CellLook.UserOff)
+                return UserOffTint;
+            if (fill >= 0.999f)
+                return EnergyReady;
+            if (fill > 0.001f)
+                return EnergyCharging;
+            return EnergyDim;
+        }
+
+        /// <summary>Clockwise fire-rate ring. Dark track stays; bright fill grows.</summary>
+        static void PaintRoFBorder(BarrelCell cell, float rof, bool userOff)
+        {
+            Color fill = userOff
+                ? UserOffTint
+                : (rof >= 0.999f ? RoFReady : RoFCharging);
+            Color track = userOff ? UserOffFill : RoFTrack;
+            SetRoFTrack(cell.RoFTrackTop, track);
+            SetRoFTrack(cell.RoFTrackRight, track);
+            SetRoFTrack(cell.RoFTrackBottom, track);
+            SetRoFTrack(cell.RoFTrackLeft, track);
+            SetRoFEdge(cell.RoFTop, EdgeFill(rof, 0), fill);
+            SetRoFEdge(cell.RoFRight, EdgeFill(rof, 1), fill);
+            SetRoFEdge(cell.RoFBottom, EdgeFill(rof, 2), fill);
+            SetRoFEdge(cell.RoFLeft, EdgeFill(rof, 3), fill);
+        }
+
+        /// <summary>How much of this quarter of the ring is lit (0–1).</summary>
+        static float EdgeFill(float rof, int edge)
+        {
+            return Mathf.Clamp01((rof - edge * 0.25f) / 0.25f);
+        }
+
+        static void SetRoFTrack(Image img, Color track)
+        {
+            if (img == null)
+                return;
+            img.enabled = true;
+            img.color = track;
+        }
+
+        static void SetRoFEdge(Image img, float amount, Color fill)
+        {
+            if (img == null)
+                return;
+            img.enabled = true;
+            img.fillAmount = Mathf.Clamp01(amount);
+            img.color = fill;
         }
 
         /// <summary>ALL-CAPS class line, e.g. <c>LASERBOLT ×4</c>.</summary>
@@ -952,7 +1009,9 @@ namespace TitanOrbit.UI
             return group;
         }
 
-        /// <summary>One energy chip: dark well, left-to-right fill, cyan caret when charging.</summary>
+        /// <summary>
+        /// One chip: dark well, inner energy fill, clockwise fire-rate border.
+        /// </summary>
         BarrelCell BuildCell(RectTransform parent, int index)
         {
             int captured = index;
@@ -977,13 +1036,22 @@ namespace TitanOrbit.UI
             cell.Background = img;
             cell.Outline = AddFocusOutline(go);
 
+            cell.RoFTrackTop = AddRoFEdge(rt, "RoFTrackTop", 0, filled: false);
+            cell.RoFTrackRight = AddRoFEdge(rt, "RoFTrackRight", 1, filled: false);
+            cell.RoFTrackBottom = AddRoFEdge(rt, "RoFTrackBottom", 2, filled: false);
+            cell.RoFTrackLeft = AddRoFEdge(rt, "RoFTrackLeft", 3, filled: false);
+            cell.RoFTop = AddRoFEdge(rt, "RoFTop", 0, filled: true);
+            cell.RoFRight = AddRoFEdge(rt, "RoFRight", 1, filled: true);
+            cell.RoFBottom = AddRoFEdge(rt, "RoFBottom", 2, filled: true);
+            cell.RoFLeft = AddRoFEdge(rt, "RoFLeft", 3, filled: true);
+
             var fillGo = new GameObject("Fill", typeof(RectTransform), typeof(Image));
             fillGo.transform.SetParent(rt, false);
             var fillRt = fillGo.GetComponent<RectTransform>();
             fillRt.anchorMin = Vector2.zero;
             fillRt.anchorMax = Vector2.one;
-            fillRt.offsetMin = new Vector2(1f, 1f);
-            fillRt.offsetMax = new Vector2(-1f, -1f);
+            fillRt.offsetMin = new Vector2(BorderThickness, BorderThickness);
+            fillRt.offsetMax = new Vector2(-BorderThickness, -BorderThickness);
             var fillImg = fillGo.GetComponent<Image>();
             fillImg.sprite = s_fillSprite;
             fillImg.type = Image.Type.Filled;
@@ -1001,7 +1069,9 @@ namespace TitanOrbit.UI
             caretRt.anchorMax = new Vector2(0f, 1f);
             caretRt.pivot = new Vector2(0f, 0.5f);
             caretRt.sizeDelta = new Vector2(2f, 0f);
-            caretRt.anchoredPosition = Vector2.zero;
+            caretRt.anchoredPosition = new Vector2(BorderThickness, 0f);
+            caretRt.offsetMin = new Vector2(caretRt.offsetMin.x, BorderThickness);
+            caretRt.offsetMax = new Vector2(caretRt.offsetMax.x, -BorderThickness);
             var caretImg = caretGo.GetComponent<Image>();
             caretImg.color = CaretColor;
             caretImg.raycastTarget = false;
@@ -1010,6 +1080,84 @@ namespace TitanOrbit.UI
 
             go.SetActive(false);
             return cell;
+        }
+
+        /// <summary>
+        /// One edge of the fire-rate ring. 0 top, 1 right, 2 bottom, 3 left.
+        /// Filled edges grow clockwise.
+        /// </summary>
+        static Image AddRoFEdge(RectTransform parent, string name, int edge, bool filled)
+        {
+            var go = new GameObject(name, typeof(RectTransform), typeof(Image));
+            go.transform.SetParent(parent, false);
+            var rt = go.GetComponent<RectTransform>();
+            float t = BorderThickness;
+            switch (edge)
+            {
+                case 0:
+                    rt.anchorMin = new Vector2(0f, 1f);
+                    rt.anchorMax = new Vector2(1f, 1f);
+                    rt.pivot = new Vector2(0.5f, 1f);
+                    rt.sizeDelta = new Vector2(0f, t);
+                    rt.anchoredPosition = Vector2.zero;
+                    break;
+                case 1:
+                    rt.anchorMin = new Vector2(1f, 0f);
+                    rt.anchorMax = new Vector2(1f, 1f);
+                    rt.pivot = new Vector2(1f, 0.5f);
+                    rt.sizeDelta = new Vector2(t, 0f);
+                    rt.anchoredPosition = Vector2.zero;
+                    break;
+                case 2:
+                    rt.anchorMin = new Vector2(0f, 0f);
+                    rt.anchorMax = new Vector2(1f, 0f);
+                    rt.pivot = new Vector2(0.5f, 0f);
+                    rt.sizeDelta = new Vector2(0f, t);
+                    rt.anchoredPosition = Vector2.zero;
+                    break;
+                default:
+                    rt.anchorMin = new Vector2(0f, 0f);
+                    rt.anchorMax = new Vector2(0f, 1f);
+                    rt.pivot = new Vector2(0f, 0.5f);
+                    rt.sizeDelta = new Vector2(t, 0f);
+                    rt.anchoredPosition = Vector2.zero;
+                    break;
+            }
+
+            var img = go.GetComponent<Image>();
+            img.sprite = s_fillSprite;
+            img.raycastTarget = false;
+            if (filled)
+            {
+                img.type = Image.Type.Filled;
+                img.fillAmount = 0f;
+                switch (edge)
+                {
+                    case 0:
+                        img.fillMethod = Image.FillMethod.Horizontal;
+                        img.fillOrigin = (int)Image.OriginHorizontal.Left;
+                        break;
+                    case 1:
+                        img.fillMethod = Image.FillMethod.Vertical;
+                        img.fillOrigin = (int)Image.OriginVertical.Top;
+                        break;
+                    case 2:
+                        img.fillMethod = Image.FillMethod.Horizontal;
+                        img.fillOrigin = (int)Image.OriginHorizontal.Right;
+                        break;
+                    default:
+                        img.fillMethod = Image.FillMethod.Vertical;
+                        img.fillOrigin = (int)Image.OriginVertical.Bottom;
+                        break;
+                }
+            }
+            else
+            {
+                img.type = Image.Type.Simple;
+                img.color = RoFTrack;
+            }
+
+            return img;
         }
 
         static Outline AddFocusOutline(GameObject rowGo)

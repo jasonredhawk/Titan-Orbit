@@ -19,10 +19,26 @@ namespace TitanOrbit.Simulation
         public const float ConeHalfAngleDeg = 33f;
 
         /// <summary>
-        /// After the pool hits empty, cannons stay off until energy reaches this
-        /// fraction of <c>MaxEnergy</c> (stops floor chatter).
+        /// After lasers go inactive, the hull pool must rise above this
+        /// fraction of <c>MaxEnergy</c> before they can burn again.
         /// </summary>
         public const float RechargeRatio = 0.10f;
+
+        /// <summary>
+        /// Unlock line after a dry pool. A live burn may keep draining through
+        /// this mark down to empty. Lockout clears only when energy is above it.
+        /// </summary>
+        public static bool IsLaserPoolReady(float currentEnergy, float maxEnergy)
+        {
+            float max = math.max(1f, maxEnergy);
+            return math.max(0f, currentEnergy) > max * RechargeRatio;
+        }
+
+        /// <summary>True when the hull pool is spent. Lasers latch lockout here.</summary>
+        public static bool IsLaserPoolEmpty(float currentEnergy)
+        {
+            return math.max(0f, currentEnergy) <= 0.0001f;
+        }
 
         /// <summary>
         /// Extra keep radius past acquire range. Muzzle motion on a wide Titan
