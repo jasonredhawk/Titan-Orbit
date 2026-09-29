@@ -66,6 +66,11 @@ namespace TitanOrbit.Game
         /// <summary><see cref="Time.frameCount"/> of the last worker tick (dedupe dual callers).</summary>
         static int s_LastTickFrame = -1;
 
+#if UNITY_WEBGL && !UNITY_EDITOR
+        static bool s_WebGlLoggedWarmupTick;
+        static bool s_WebGlLoggedWarmupRenderBefore;
+#endif
+
         /// <summary>Realtime when warmup first ran this session. −1 = not started.</summary>
         static float s_StartedRealtime = -1f;
 
@@ -194,6 +199,16 @@ namespace TitanOrbit.Game
             }
 
             EnsureWarmupRig();
+#if UNITY_WEBGL && !UNITY_EDITOR
+            // #region agent log
+            if (!s_WebGlLoggedWarmupTick)
+            {
+                s_WebGlLoggedWarmupTick = true;
+                TitanOrbit.Diagnostics.WebGlBootDebugProbe.Emit("AC", "PresentationJoinWarmup.Tick",
+                    "warmup-tick", "{\"frame\":" + Time.frameCount + "}");
+            }
+            // #endregion
+#endif
 
             // --- Collect (budgeted) then draw ---
             CollectGemTintsOnce();
@@ -665,7 +680,7 @@ namespace TitanOrbit.Game
                     continue;
 
                 s_QuadRenderer.sharedMaterial = material;
-                s_Camera.Render();
+                TryRenderWarmupCamera();
                 s_MaterialsRendered++;
                 drawn++;
             }
@@ -700,7 +715,7 @@ namespace TitanOrbit.Game
 
             shell.transform.position = WarmupOrigin;
             SetLayerRecurse(shell, WarmupLayer);
-            s_Camera.Render();
+            TryRenderWarmupCamera();
             // [UNITY] Combat cameras render the Default layer — put the shell back before Return.
             SetLayerRecurse(shell, 0);
             BulletOneShotVfxPool.ReturnNow(shell);
@@ -715,8 +730,39 @@ namespace TitanOrbit.Game
 
             float previous = s_Camera.orthographicSize;
             s_Camera.orthographicSize = 8f;
-            s_Camera.Render();
+            TryRenderWarmupCamera();
             s_Camera.orthographicSize = previous;
+        }
+
+        /// <summary>
+        /// Unity 6 URP Render Graph: <c>Camera.Render()</c> from Update races
+        /// <c>ZBinningJob</c> and Shapes' attachment pass. Editor and WebGL skip the
+        /// manual draw (Chrome join 2026-09-24: <c>warmup-render-before</c> then WASM OOB).
+        /// Standalone still draws.
+        /// </summary>
+        static void TryRenderWarmupCamera()
+        {
+            if (s_Camera == null)
+                return;
+#if UNITY_EDITOR
+            return;
+#elif UNITY_WEBGL
+            // Chrome 2026-09-24: warmup-render-before then Uncaught exception; no
+            // warmup-render-after. Same Camera.Render / URP path the Editor already skips.
+            // #region agent log
+            if (!s_WebGlLoggedWarmupRenderBefore)
+            {
+                s_WebGlLoggedWarmupRenderBefore = true;
+                TitanOrbit.Diagnostics.WebGlBootDebugProbe.Emit("AC", "PresentationJoinWarmup.TryRenderWarmupCamera",
+                    "warmup-render-before", "{}");
+                TitanOrbit.Diagnostics.WebGlBootDebugProbe.Emit("AC", "PresentationJoinWarmup.TryRenderWarmupCamera",
+                    "warmup-render-skipped", "{}");
+            }
+            // #endregion
+            return;
+#else
+            s_Camera.Render();
+#endif
         }
 
         /// <summary>Queues <paramref name="material"/> once (InstanceID dedupe).</summary>

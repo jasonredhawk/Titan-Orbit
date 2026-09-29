@@ -51,6 +51,12 @@ namespace TitanOrbit.Editor.Build
 
         static BuildTarget? s_buildTargetToRestore;
 
+        /// <summary>
+        /// Fast Iterate sets this so preprocess validates textures but does not ForceUpdate every
+        /// gameplay albedo. Production leaves it false (Play Mode can leave stale WebGL variants).
+        /// </summary>
+        internal static bool SkipForcedGameplayTextureReimport;
+
         /// <summary>Unity 6 stores <c>m_BuildTarget</c> as a string in ProjectSettings; older assets use the enum int.</summary>
         static bool IsWebGlBuildTargetProperty(SerializedProperty buildTarget)
         {
@@ -159,7 +165,8 @@ namespace TitanOrbit.Editor.Build
 
             // Always refresh WebGL texture variants before packaging — meta can look correct while the
             // Library still holds stale Standalone/Editor variants after Play Mode (recurring invisible meshes).
-            int fixedCount = ApplyWebGlGameplayTextureImports(log: log, forceReimport: true);
+            int fixedCount = ApplyWebGlGameplayTextureImports(
+                log: log, forceReimport: !SkipForcedGameplayTextureReimport);
 
             ValidateGameplayTextureWebGlImports();
 

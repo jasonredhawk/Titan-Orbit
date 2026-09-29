@@ -42,6 +42,13 @@ namespace Unity.NetCode
     {
         protected override void OnUpdate()
         {
+#if UNITY_WEBGL && !UNITY_EDITOR
+            // Chrome join 2026-09-24: first OnUpdate WASM-OOBs (nested-child-before
+            // GhostAdapterEntityToGameObjectTransformSystem, no after). WebGL uses hybrid
+            // EcsWorldVisualizer proxies, not NetCode GhostAdapter TransformAccess jobs.
+            // TransformSystemGroup is already forced off on this path.
+            return;
+#endif
             var transformTracking = this.GetEntityQuery(ComponentType.ReadOnly<PerWorldIndexedTransformTrackingSingleton>()).GetSingleton<PerWorldIndexedTransformTrackingSingleton>();
 
             var transformJob = new TransformUpdateEntityToGameObjectJob

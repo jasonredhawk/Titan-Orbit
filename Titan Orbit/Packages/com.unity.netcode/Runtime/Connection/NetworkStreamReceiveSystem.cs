@@ -291,6 +291,9 @@ namespace Unity.NetCode
         NativeList<uint> m_ConnectionUniqueIds;
 
         EntityQuery m_RefreshTickRateQuery;
+#if UNITY_WEBGL && !UNITY_EDITOR
+        EntityQuery m_WebGlConnectionQuery;
+#endif
 
         IntPtr m_DriverPointers;
         ComponentLookup<ConnectionState> m_ConnectionStateFromEntity;
@@ -345,6 +348,9 @@ namespace Unity.NetCode
             m_CmdBufferFromEntity = state.GetBufferLookup<IncomingCommandDataStreamBuffer>();
             m_SnapshotBufferFromEntity = state.GetBufferLookup<IncomingSnapshotDataStreamBuffer>();
             m_reliableSequencedPipelineStageId = NetworkPipelineStageId.Get<ReliableSequencedPipelineStage>();
+#if UNITY_WEBGL && !UNITY_EDITOR
+            m_WebGlConnectionQuery = state.GetEntityQuery(ComponentType.ReadOnly<NetworkStreamConnection>());
+#endif
 
             AttemptCreateFakeHostConnection(ref state);
 
@@ -456,8 +462,19 @@ namespace Unity.NetCode
         [BurstCompile]
         public void OnUpdate(ref SystemState state)
         {
-            var networkTime = SystemAPI.GetSingleton<NetworkTime>();
+#if UNITY_WEBGL && !UNITY_EDITOR
+            // WebGL ClientWorld strips EntityCommandBufferSystem subclasses (OnCreate OOB,
+            // including NetworkGroupCommandBufferSystem). Use a local ECB played back here.
+            EntityCommandBuffer commandBuffer;
+            bool webGlLocalEcb = !SystemAPI.HasSingleton<NetworkGroupCommandBufferSystem.Singleton>();
+            if (webGlLocalEcb)
+                commandBuffer = new EntityCommandBuffer(Allocator.Temp);
+            else
+                commandBuffer = SystemAPI.GetSingleton<NetworkGroupCommandBufferSystem.Singleton>().CreateCommandBuffer(state.WorldUnmanaged);
+#else
             var commandBuffer = SystemAPI.GetSingleton<NetworkGroupCommandBufferSystem.Singleton>().CreateCommandBuffer(state.WorldUnmanaged);
+#endif
+            var networkTime = SystemAPI.GetSingleton<NetworkTime>();
             var netDebug = SystemAPI.GetSingleton<NetDebug>();
             FixedString128Bytes debugPrefix = $"[{state.WorldUnmanaged.Name}][Connection]";
 
@@ -477,7 +494,13 @@ namespace Unity.NetCode
                 // NetworkProtocolVersion with GhostCollection:0.
                 var data = SystemAPI.GetSingleton<GhostComponentSerializerCollectionData>();
                 if (data.CollectionFinalized.Value != 2)
+                {
+#if UNITY_WEBGL && !UNITY_EDITOR
+                    if (webGlLocalEcb && commandBuffer.IsCreated)
+                        commandBuffer.Dispose();
+#endif
                     return;
+                }
 
                 // RW is required because this call marks the collection as final, which means no further rpcs can be registered.
                 ref var rpcCollection = ref SystemAPI.GetSingletonRW<RpcCollection>().ValueRW;
@@ -632,7 +655,57 @@ namespace Unity.NetCode
             k_Scheduling.Begin();
             state.Dependency = handleJob.ScheduleByRef(state.Dependency);
             k_Scheduling.End();
+#if UNITY_WEBGL && !UNITY_EDITOR
+            if (webGlLocalEcb && commandBuffer.IsCreated)
+            {
+                state.Dependency.Complete();
+                commandBuffer.Playback(state.EntityManager);
+                commandBuffer.Dispose();
+                PublishWebGlConnectionEvents(ref state);
+            }
+#endif
         }
+
+#if UNITY_WEBGL && !UNITY_EDITOR
+        /// <summary>
+        /// NGCBS normally remaps deferred ECB entities and publishes ConnectionEventsForTick.
+        /// WebGL plays the local ECB immediately, then remaps here.
+        /// </summary>
+        void PublishWebGlConnectionEvents(ref SystemState state)
+        {
+            if (!SystemAPI.HasSingleton<NetworkStreamDriver>())
+                return;
+            ref var networkStreamDriver = ref SystemAPI.GetSingletonRW<NetworkStreamDriver>().ValueRW;
+            var connectionEvents = networkStreamDriver.ConnectionEventsList;
+            NativeArray<NetworkStreamConnection> connections = default;
+            NativeArray<Entity> entities = default;
+            for (var i = 0; i < connectionEvents.Length; i++)
+            {
+                ref var connectionEvent = ref connectionEvents.ElementAt(i);
+                if (connectionEvent.ConnectionEntity.Index >= 0)
+                    continue;
+                if (!connections.IsCreated)
+                {
+                    connections = m_WebGlConnectionQuery.ToComponentDataArray<NetworkStreamConnection>(Allocator.Temp);
+                    entities = m_WebGlConnectionQuery.ToEntityArray(Allocator.Temp);
+                }
+                bool found = false;
+                for (int c = 0; c < connections.Length; c++)
+                {
+                    if (connections[c].Value.ConnectionId == connectionEvent.ConnectionId.ConnectionId)
+                    {
+                        connectionEvent.ConnectionEntity = entities[c];
+                        found = true;
+                        break;
+                    }
+                }
+                if (!found)
+                    connectionEvent.ConnectionEntity = Entity.Null;
+            }
+            networkStreamDriver = ref SystemAPI.GetSingletonRW<NetworkStreamDriver>().ValueRW;
+            networkStreamDriver.ConnectionEventsForTick = connectionEvents.AsReadOnly();
+        }
+#endif
 
 
         [BurstCompile]

@@ -97,6 +97,52 @@ namespace TitanOrbit.NetCode
         /// <summary>[UNITY] Editor-only: local ServerWorld sim suspended while joining dedicated online.</summary>
         static bool s_EditorLocalServerSuspendedForOnline;
 
+#if UNITY_WEBGL && !UNITY_EDITOR
+        /// <summary>Join 30-loop ticks that finished SafeUpdate (0 = none). Debug breadcrumb only.</summary>
+        static int s_WebGlJoinTicksCompleted;
+
+        /// <summary>True after SessionManager.Update logged once past the first join tick.</summary>
+        static bool s_WebGlLoggedJoinUpdate;
+#endif
+
+        // #region agent log
+        static int s_ConnectTryGet; // 0=not called 1=fail 2=ok
+        static int s_ConnectExisting;
+        static int s_ConnectResultIndex;
+        static int s_ConnectAfterCount;
+        static int s_ConnectFamily;
+        static int s_ConnectPort;
+        static int s_ConnectValid;
+        static int s_ConnectDrivers;
+        static int s_MaxConnectionsSeen;
+        static int s_ConnectThrew; // 0=no 1=yes
+        static int s_ConnectExists;
+        static int s_ConnectVersion;
+        static int s_ConnectHasNsc;
+        static int s_ConnectHasAck;
+        static int s_ConnectGamePath; // 1 = game-code WebGL connect, 0 = NetworkStreamDriver.Connect
+        // #endregion
+
+        /// <summary>Compact Connect() telemetry for handshake snapshots (debug only).</summary>
+        public static string ConnectTelemetryJsonFragment()
+        {
+            return "\"tryGet\":" + s_ConnectTryGet +
+                   ",\"existing\":" + s_ConnectExisting +
+                   ",\"resultIndex\":" + s_ConnectResultIndex +
+                   ",\"afterConnect\":" + s_ConnectAfterCount +
+                   ",\"epValid\":" + s_ConnectValid +
+                   ",\"family\":" + s_ConnectFamily +
+                   ",\"port\":" + s_ConnectPort +
+                   ",\"drivers\":" + s_ConnectDrivers +
+                   ",\"maxConn\":" + s_MaxConnectionsSeen +
+                   ",\"threw\":" + s_ConnectThrew +
+                   ",\"exists\":" + s_ConnectExists +
+                   ",\"ver\":" + s_ConnectVersion +
+                   ",\"hasNSC\":" + s_ConnectHasNsc +
+                   ",\"hasAck\":" + s_ConnectHasAck +
+                   ",\"gamePath\":" + s_ConnectGamePath;
+        }
+
         /// <summary>
         /// [UNITY] Registers singleton, DontDestroyOnLoad. Destroys duplicate instances.
         /// </summary>
@@ -188,12 +234,40 @@ namespace TitanOrbit.NetCode
             // frame so a later Quality/UI change cannot leave tearing on.
             if (!IsDedicatedOnlineClient)
                 return;
+#if UNITY_WEBGL && !UNITY_EDITOR
+            // #region agent log
+            if (!s_WebGlLoggedJoinUpdate && s_WebGlJoinTicksCompleted > 0)
+            {
+                s_WebGlLoggedJoinUpdate = true;
+                WebGlBootDebugProbe.Emit("AC", "TitanOrbitSessionManager.Update",
+                    "session-update-after-first-tick",
+                    "{\"ticks\":" + s_WebGlJoinTicksCompleted + ",\"frame\":" + Time.frameCount + "}");
+            }
+            // #endregion
+#endif
             if (QualitySettings.vSyncCount != 1)
                 QualitySettings.vSyncCount = 1;
             // Fallback soft cap only if something clears VSync — harmless while vSyncCount > 0.
             if (Application.targetFrameRate != 60)
                 Application.targetFrameRate = 60;
         }
+
+#if UNITY_WEBGL && !UNITY_EDITOR
+        static bool s_WebGlLoggedJoinLateUpdate;
+
+        void LateUpdate()
+        {
+            // #region agent log
+            if (!s_WebGlLoggedJoinLateUpdate && s_WebGlJoinTicksCompleted > 0)
+            {
+                s_WebGlLoggedJoinLateUpdate = true;
+                WebGlBootDebugProbe.Emit("AC", "TitanOrbitSessionManager.LateUpdate",
+                    "session-lateupdate-after-first-tick",
+                    "{\"ticks\":" + s_WebGlJoinTicksCompleted + ",\"frame\":" + Time.frameCount + "}");
+            }
+            // #endregion
+        }
+#endif
 #endif
 
         /// <summary>Stops the editor's local ServerWorld sim until local play/host/client is started.</summary>
@@ -1071,9 +1145,11 @@ namespace TitanOrbit.NetCode
             if (world == null || !world.IsCreated)
                 return;
 #if UNITY_WEBGL && !UNITY_EDITOR
+            // WebGL ClientWorld is removed from the player loop at boot.
             TitanOrbitWebGlClientTick.SafeUpdate(world);
 #else
-            world.Update();
+            // Editor and standalone ClientWorld are already in the player loop.
+            // A second World.Update from the join coroutine leaves Relay stuck Connecting.
 #endif
         }
 
@@ -1670,9 +1746,37 @@ namespace TitanOrbit.NetCode
                 await TitanOrbitLobbyService.TryUpdatePlayerRelayAllocationAsync(
                     lobby.Id, joinAllocation.AllocationId.ToString());
 
+#if UNITY_WEBGL && !UNITY_EDITOR
+                // #region agent log
+                TitanOrbit.Diagnostics.WebGlBootDebugProbe.Emit("AH", "TitanOrbitSessionManager.JoinDedicatedLobby",
+                    "after-register-before-set-relay", "{}");
+                // #endregion
+#endif
                 TitanOrbitRelayState.SetClientRelay(clientRelay);
+#if UNITY_WEBGL && !UNITY_EDITOR
+                // #region agent log
+                TitanOrbit.Diagnostics.WebGlBootDebugProbe.Emit("AH", "TitanOrbitSessionManager.JoinDedicatedLobby",
+                    "after-set-client-relay", "{}");
+                TitanOrbit.Diagnostics.WebGlBootDebugProbe.Emit("AJ", "TitanOrbitSessionManager.JoinDedicatedLobby",
+                    "before-ensure-ready", "{}");
+                // #endregion
+#endif
                 await EnsureClientReadyForRelayDriverResetAsync();
+#if UNITY_WEBGL && !UNITY_EDITOR
+                // #region agent log
+                TitanOrbit.Diagnostics.WebGlBootDebugProbe.Emit("AJ", "TitanOrbitSessionManager.JoinDedicatedLobby",
+                    "after-ensure-ready", "{}");
+                TitanOrbit.Diagnostics.WebGlBootDebugProbe.Emit("AF", "TitanOrbitSessionManager.JoinDedicatedLobby",
+                    "before-reset-driver", "{}");
+                // #endregion
+#endif
                 ResetClientDriverIfNeeded();
+#if UNITY_WEBGL && !UNITY_EDITOR
+                // #region agent log
+                TitanOrbit.Diagnostics.WebGlBootDebugProbe.Emit("AF", "TitanOrbitSessionManager.JoinDedicatedLobby",
+                    "after-reset-driver", "{}");
+                // #endregion
+#endif
 
                 var clientWorld = ClientServerBootstrap.ClientWorld;
                 if (clientWorld == null || !clientWorld.IsCreated)
@@ -1682,13 +1786,57 @@ namespace TitanOrbit.NetCode
                     return false;
                 }
 
+#if UNITY_WEBGL && !UNITY_EDITOR
+                // #region agent log
+                TitanOrbit.Diagnostics.WebGlBootDebugProbe.Emit("AI", "TitanOrbitSessionManager.JoinDedicatedLobby",
+                    "before-connect-relay", "{}");
+                // #endregion
+#endif
                 ConnectRelayClient(clientWorld);
+#if UNITY_WEBGL && !UNITY_EDITOR
+                // #region agent log
+                TitanOrbit.Diagnostics.WebGlBootDebugProbe.Emit("AI", "TitanOrbitSessionManager.JoinDedicatedLobby",
+                    "after-connect-relay", "{}");
+                // #endregion
+#endif
+                // #region agent log
+                TitanOrbit.Diagnostics.WebGlBootDebugProbe.Emit("L", "TitanOrbitSessionManager.JoinDedicatedLobby",
+                    "before-first-join-ticks", "{}");
+                // #endregion
                 for (int i = 0; i < 30; i++)
                 {
+#if UNITY_WEBGL && !UNITY_EDITOR
+                    if (i < 3)
+                    {
+                        TitanOrbit.Diagnostics.WebGlBootDebugProbe.Emit("AA",
+                            "TitanOrbitSessionManager.JoinDedicatedLobby",
+                            "join-loop-before-tick", "{\"i\":" + i + "}");
+                    }
+#endif
                     TickClientWorld(clientWorld);
+#if UNITY_WEBGL && !UNITY_EDITOR
+                    s_WebGlJoinTicksCompleted = i + 1;
+                    if (i < 3)
+                    {
+                        TitanOrbit.Diagnostics.WebGlBootDebugProbe.Emit("AA",
+                            "TitanOrbitSessionManager.JoinDedicatedLobby",
+                            "join-loop-after-tick", "{\"i\":" + i + "}");
+                    }
+#endif
                     await Task.Yield();
+#if UNITY_WEBGL && !UNITY_EDITOR
+                    if (i < 3)
+                    {
+                        TitanOrbit.Diagnostics.WebGlBootDebugProbe.Emit("AA",
+                            "TitanOrbitSessionManager.JoinDedicatedLobby",
+                            "join-loop-after-yield", "{\"i\":" + i + "}");
+                    }
+#endif
                 }
 
+#if UNITY_WEBGL && !UNITY_EDITOR
+                Debug.Log("CONNECT_JOIN join-loop-done ticks=" + s_WebGlJoinTicksCompleted);
+#endif
                 _activeLobbyId = lobby.Id;
                 LastStatusMessage = "Connecting to " + (lobby.Name ?? "match") + "...";
                 Debug.Log("[TitanOrbitSessionManager] Joining dedicated lobby " + lobby.Id + " via Relay.");
@@ -2247,6 +2395,16 @@ namespace TitanOrbit.NetCode
             float lastDiag = 0f;
             const float zombieFailSeconds = 20f;
             var client = ClientServerBootstrap.ClientWorld;
+#if UNITY_WEBGL && !UNITY_EDITOR
+            // #region agent log
+            WebGlBootDebugProbe.Emit("D", "TitanOrbitSessionManager.ClientConnectWatch",
+                "connect-watch-start",
+                "{\"timeout\":" + timeoutSeconds.ToString("F0") +
+                ",\"dedicated\":" + (dedicatedJoin ? "true" : "false") + "}");
+            // #endregion
+#endif
+            if (dedicatedJoin && client != null && client.IsCreated)
+                LogClientConnectDiagnostics(client);
             while (Time.realtimeSinceStartup < deadline)
             {
                 if (client != null && client.IsCreated)
@@ -2272,6 +2430,15 @@ namespace TitanOrbit.NetCode
                                        "Relay join code=" + (_lastRelayJoinCodeAttempt ?? "(none)") +
                                        " lobby=" + (_activeLobbyId ?? "(none)") +
                                        ". Compare Relay= in Docker logs; stop stale containers/GCE servers.");
+                        Debug.Log("CONNECT_JOIN zombie-fail elapsed=" +
+                                  (Time.realtimeSinceStartup - started).ToString("F1"));
+#if UNITY_WEBGL && !UNITY_EDITOR
+                        // #region agent log
+                        WebGlBootDebugProbe.Emit("E", "TitanOrbitSessionManager.ClientConnectWatch",
+                            "zombie-fail",
+                            "{\"elapsed\":" + (Time.realtimeSinceStartup - started).ToString("F1") + "}");
+                        // #endregion
+#endif
                         LogClientConnectDiagnostics(client);
                         StartCoroutine(ResetDedicatedClientSessionAfterTimeoutCoroutine());
                         yield break;
@@ -2297,6 +2464,13 @@ namespace TitanOrbit.NetCode
             if (dedicatedJoin)
             {
                 LastStatusMessage = "Connection timed out — dedicated server may be offline or needs redeploy.";
+#if UNITY_WEBGL && !UNITY_EDITOR
+                // #region agent log
+                WebGlBootDebugProbe.Emit("D", "TitanOrbitSessionManager.ClientConnectWatch",
+                    "connect-timeout",
+                    "{\"elapsed\":" + (Time.realtimeSinceStartup - started).ToString("F1") + "}");
+                // #endregion
+#endif
                 StartCoroutine(ResetDedicatedClientSessionAfterTimeoutCoroutine());
             }
 
@@ -2313,9 +2487,80 @@ namespace TitanOrbit.NetCode
             int withNetworkId = em.CreateEntityQuery(typeof(NetworkStreamConnection), typeof(NetworkId))
                 .CalculateEntityCount();
             int inGame = em.CreateEntityQuery(typeof(NetworkStreamInGame)).CalculateEntityCount();
+            string state = "(none)";
+            using (var q = em.CreateEntityQuery(typeof(NetworkStreamConnection)))
+            {
+                if (q.CalculateEntityCount() > 0)
+                    state = q.GetSingleton<NetworkStreamConnection>().CurrentState.ToString();
+            }
+
             Debug.Log("[TitanOrbitSessionManager] Client connect diag: connections=" + connections +
                       " withNetworkId=" + withNetworkId + " inGame=" + inGame +
+                      " state=" + state +
                       " relay=" + TitanOrbitRelayState.TryGetClientRelay(out _));
+            Debug.Log("CONNECT_JOIN watch connections=" + connections +
+                      " nid=" + withNetworkId +
+                      " inGame=" + inGame +
+                      " state=" + state);
+#if UNITY_WEBGL && !UNITY_EDITOR
+            // #region agent log
+            if (connections > s_MaxConnectionsSeen)
+                s_MaxConnectionsSeen = connections;
+            bool hasEcb = false;
+            bool hasGhost = false;
+            bool hasNetworkTime = false;
+            using (var ecbQ = em.CreateEntityQuery(typeof(NetworkGroupCommandBufferSystem.Singleton)))
+                hasEcb = !ecbQ.IsEmptyIgnoreFilter;
+            using (var ghostQ = em.CreateEntityQuery(typeof(GhostCollection)))
+                hasGhost = !ghostQ.IsEmptyIgnoreFilter;
+            using (var timeQ = em.CreateEntityQuery(typeof(NetworkTime)))
+                hasNetworkTime = !timeQ.IsEmptyIgnoreFilter;
+            WebGlBootDebugProbe.Emit("A", "TitanOrbitSessionManager.LogClientConnectDiagnostics",
+                "connect-diag",
+                "{\"connections\":" + connections +
+                ",\"withNetworkId\":" + withNetworkId +
+                ",\"inGame\":" + inGame +
+                ",\"state\":\"" + state + "\"" +
+                ",\"hasEcb\":" + (hasEcb ? "true" : "false") +
+                ",\"hasGhostCollection\":" + (hasGhost ? "true" : "false") +
+                ",\"hasNetworkTime\":" + (hasNetworkTime ? "true" : "false") +
+                ",\"hasRecipe\":" + (ClientMapHydrateCache.HasFullRecipe ? "true" : "false") +
+                ",\"recvSeen\":" + (TitanOrbitWebGlClientTick.LastRecvSeen ? "true" : "false") +
+                ",\"recvEnabled\":" + (TitanOrbitWebGlClientTick.LastRecvEnabled ? "true" : "false") +
+                ",\"recvShouldRun\":" + (TitanOrbitWebGlClientTick.LastRecvShouldRun ? "true" : "false") +
+                ",\"recvUpdates\":" + TitanOrbitWebGlClientTick.RecvManagedUpdates +
+                ",\"tryGet\":" + s_ConnectTryGet +
+                ",\"existing\":" + s_ConnectExisting +
+                ",\"resultIndex\":" + s_ConnectResultIndex +
+                ",\"afterConnect\":" + s_ConnectAfterCount +
+                ",\"epValid\":" + s_ConnectValid +
+                ",\"family\":" + s_ConnectFamily +
+                ",\"port\":" + s_ConnectPort +
+                ",\"drivers\":" + s_ConnectDrivers +
+                ",\"maxConn\":" + s_MaxConnectionsSeen +
+                ",\"threw\":" + s_ConnectThrew +
+                ",\"exists\":" + s_ConnectExists +
+                ",\"ver\":" + s_ConnectVersion +
+                ",\"hasNSC\":" + s_ConnectHasNsc +
+                ",\"hasAck\":" + s_ConnectHasAck +
+                ",\"gamePath\":" + s_ConnectGamePath +
+                "}");
+            // #endregion
+#endif
+            Debug.Log("CONNECT_TELEMETRY connect-diag " +
+                      "tryGet=" + s_ConnectTryGet +
+                      " existing=" + s_ConnectExisting +
+                      " resultIndex=" + s_ConnectResultIndex +
+                      " afterConnect=" + s_ConnectAfterCount +
+                      " connections=" + connections +
+                      " maxConn=" + s_MaxConnectionsSeen +
+                      " recvShouldRun=" + TitanOrbitWebGlClientTick.LastRecvShouldRun +
+                      " recvUpdates=" + TitanOrbitWebGlClientTick.RecvManagedUpdates +
+                      " threw=" + s_ConnectThrew +
+                      " exists=" + s_ConnectExists +
+                      " hasNSC=" + s_ConnectHasNsc +
+                      " hasAck=" + s_ConnectHasAck +
+                      " gamePath=" + s_ConnectGamePath);
         }
 
         /// <summary>Resets client worlds and UI after dedicated connect timeout.</summary>
@@ -2502,15 +2747,163 @@ namespace TitanOrbit.NetCode
             driver.ValueRW.Connect(em, endpoint);
         }
 
+#if UNITY_WEBGL && !UNITY_EDITOR
+        /// <summary>
+        /// WebGL-only: NetworkStreamDriver.Connect returned an entity index with 0
+        /// NetworkStreamConnection in the world (afterConnect=0). One AddComponent(TypeSet)
+        /// including the ICleanupComponentData, then SetComponentData — same pattern as the
+        /// outgoing-buffer workaround. Does not call NetworkStreamDriver.Connect.
+        /// </summary>
+        static Entity ConnectRelayClientWebGl(EntityManager em, ref NetworkStreamDriver driver, NetworkEndpoint endpoint)
+        {
+            ref var utp = ref driver.DriverStore.GetDriverRW(NetworkDriverStore.FirstDriverId);
+            var connection = utp.Connect(endpoint);
+            var state = utp.GetConnectionState(connection).ToNetcodeState(hasHandshaked: false, hasApproval: false);
+            return TitanOrbitWebGlClientConnect.CreateConnectionEntity(em, connection, state);
+        }
+#endif
+
         static void ConnectRelayClient(World world)
         {
+            // #region agent log
+            s_ConnectTryGet = 0;
+            s_ConnectExisting = 0;
+            s_ConnectResultIndex = -1;
+            s_ConnectAfterCount = -1;
+            s_ConnectFamily = 0;
+            s_ConnectPort = 0;
+            s_ConnectValid = 0;
+            s_ConnectDrivers = -1;
+            s_MaxConnectionsSeen = 0;
+            s_ConnectThrew = 0;
+            s_ConnectExists = -1;
+            s_ConnectVersion = 0;
+            s_ConnectHasNsc = -1;
+            s_ConnectHasAck = -1;
+            s_ConnectGamePath = 0;
+            TitanOrbitWebGlClientTick.ResetJoinRecvCounters();
+            // #endregion
             if (!TitanOrbitRelayState.TryGetClientRelay(out var relay))
+            {
+                // #region agent log
+                s_ConnectTryGet = 1;
+#if UNITY_WEBGL && !UNITY_EDITOR
+                WebGlBootDebugProbe.Emit("H10", "TitanOrbitSessionManager.ConnectRelayClient",
+                    "connect-tryget-failed", "{}");
+#endif
+                Debug.Log("CONNECT_TELEMETRY connect-tryget-failed");
+                // #endregion
                 return;
+            }
             var em = world.EntityManager;
-            if (em.CreateEntityQuery(typeof(NetworkStreamConnection)).CalculateEntityCount() > 0)
+            // #region agent log
+            s_ConnectTryGet = 2;
+            s_ConnectValid = relay.Endpoint.IsValid ? 1 : 0;
+            s_ConnectFamily = (int)relay.Endpoint.Family;
+            s_ConnectPort = relay.Endpoint.Port;
+#if UNITY_WEBGL && !UNITY_EDITOR
+            WebGlBootDebugProbe.Emit("AI", "TitanOrbitSessionManager.ConnectRelayClient",
+                "connect-after-tryget",
+                "{\"valid\":" + (relay.Endpoint.IsValid ? "true" : "false") +
+                ",\"family\":" + (int)relay.Endpoint.Family +
+                ",\"port\":" + relay.Endpoint.Port + "}");
+#endif
+            // #endregion
+            int existing = em.CreateEntityQuery(typeof(NetworkStreamConnection)).CalculateEntityCount();
+            // #region agent log
+            s_ConnectExisting = existing;
+            if (existing > s_MaxConnectionsSeen)
+                s_MaxConnectionsSeen = existing;
+#if UNITY_WEBGL && !UNITY_EDITOR
+            WebGlBootDebugProbe.Emit("AI", "TitanOrbitSessionManager.ConnectRelayClient",
+                "connect-after-count", "{\"n\":" + existing + "}");
+#endif
+            // #endregion
+            if (existing > 0)
+            {
+                Debug.Log("CONNECT_TELEMETRY connect-skipped-existing n=" + existing);
                 return;
+            }
             var driver = em.CreateEntityQuery(typeof(NetworkStreamDriver)).GetSingletonRW<NetworkStreamDriver>();
-            driver.ValueRW.Connect(world.EntityManager, relay.Endpoint);
+            // #region agent log
+            s_ConnectDrivers = driver.ValueRO.DriverStore.DriversCount;
+#if UNITY_WEBGL && !UNITY_EDITOR
+            WebGlBootDebugProbe.Emit("AI", "TitanOrbitSessionManager.ConnectRelayClient",
+                "connect-after-get-driver",
+                "{\"created\":" + (driver.ValueRO.DriverStore.IsCreated ? "true" : "false") +
+                ",\"drivers\":" + driver.ValueRO.DriverStore.DriversCount + "}");
+#endif
+            // #endregion
+            Entity connected = Entity.Null;
+            int afterCount = -2;
+            try
+            {
+#if UNITY_WEBGL && !UNITY_EDITOR
+                // CONNECT_TELEMETRY: NetworkStreamDriver.Connect returned index 250 with
+                // afterConnect=0 for the whole ClientConnectWatch. Do not call it on WebGL —
+                // a second UTP Connect would burn the Relay allocation. Build the entity here.
+                s_ConnectGamePath = 1;
+                connected = ConnectRelayClientWebGl(em, ref driver.ValueRW, relay.Endpoint);
+#else
+                s_ConnectGamePath = 0;
+                connected = driver.ValueRW.Connect(world.EntityManager, relay.Endpoint);
+#endif
+                afterCount = em.CreateEntityQuery(typeof(NetworkStreamConnection)).CalculateEntityCount();
+                s_ConnectExists = (connected != Entity.Null && em.Exists(connected)) ? 1 : 0;
+                s_ConnectVersion = connected != Entity.Null ? connected.Version : 0;
+                s_ConnectHasNsc = (s_ConnectExists == 1 && em.HasComponent<NetworkStreamConnection>(connected)) ? 1 : 0;
+                s_ConnectHasAck = (s_ConnectExists == 1 && em.HasComponent<NetworkSnapshotAck>(connected)) ? 1 : 0;
+            }
+            catch (Exception ex)
+            {
+                s_ConnectThrew = 1;
+                s_ConnectResultIndex = -2;
+                s_ConnectAfterCount = afterCount;
+#if UNITY_WEBGL && !UNITY_EDITOR
+                WebGlBootDebugProbe.Emit("H11", "TitanOrbitSessionManager.ConnectRelayClient",
+                    "connect-threw",
+                    "{\"ex\":\"" + ex.GetType().Name + "\"}");
+#endif
+                Debug.Log("CONNECT_TELEMETRY connect-threw ex=" + ex.GetType().Name);
+                throw;
+            }
+            // #region agent log
+            s_ConnectResultIndex = connected != Entity.Null ? connected.Index : 0;
+            s_ConnectAfterCount = afterCount;
+            if (afterCount > s_MaxConnectionsSeen)
+                s_MaxConnectionsSeen = afterCount;
+#if UNITY_WEBGL && !UNITY_EDITOR
+            WebGlBootDebugProbe.Emit("H11", "TitanOrbitSessionManager.ConnectRelayClient",
+                "connect-result",
+                "{\"index\":" + s_ConnectResultIndex +
+                ",\"after\":" + afterCount +
+                ",\"exists\":" + s_ConnectExists +
+                ",\"ver\":" + s_ConnectVersion +
+                ",\"hasNSC\":" + s_ConnectHasNsc +
+                ",\"hasAck\":" + s_ConnectHasAck +
+                ",\"gamePath\":" + s_ConnectGamePath +
+                ",\"valid\":" + s_ConnectValid +
+                ",\"family\":" + s_ConnectFamily +
+                ",\"port\":" + s_ConnectPort +
+                ",\"drivers\":" + s_ConnectDrivers + "}");
+#endif
+            Debug.Log("CONNECT_TELEMETRY connect-result index=" + s_ConnectResultIndex +
+                      " after=" + afterCount +
+                      " exists=" + s_ConnectExists +
+                      " ver=" + s_ConnectVersion +
+                      " hasNSC=" + s_ConnectHasNsc +
+                      " hasAck=" + s_ConnectHasAck +
+                      " gamePath=" + s_ConnectGamePath +
+                      " existing=" + s_ConnectExisting +
+                      " tryGet=" + s_ConnectTryGet +
+                      " epValid=" + s_ConnectValid +
+                      " family=" + s_ConnectFamily +
+                      " port=" + s_ConnectPort +
+                      " drivers=" + s_ConnectDrivers);
+#if UNITY_WEBGL && !UNITY_EDITOR
+            TitanOrbitWebGlClientTick.LogPostConnectSystems = afterCount > 0;
+#endif
+            // #endregion
         }
 
         static void ResetServerDriverIfNeeded()
@@ -2535,8 +2928,29 @@ namespace TitanOrbit.NetCode
             var driver = world.EntityManager.GetComponentData<NetworkStreamDriver>(entity);
             var store = new NetworkDriverStore();
             var netDebug = world.EntityManager.CreateEntityQuery(typeof(NetDebug)).GetSingleton<NetDebug>();
+#if UNITY_WEBGL && !UNITY_EDITOR
+            // #region agent log
+            WebGlBootDebugProbe.Emit("AF", "TitanOrbitSessionManager.ResetClientDriverIfNeeded",
+                "reset-create-before",
+                "{\"hasRelay\":" + (TitanOrbitRelayState.HasClientRelay ? "true" : "false") + "}");
+            // #endregion
+#endif
             new TitanOrbitRelayDriverConstructor().CreateClientDriver(world, ref store, netDebug);
+#if UNITY_WEBGL && !UNITY_EDITOR
+            // #region agent log
+            WebGlBootDebugProbe.Emit("AF", "TitanOrbitSessionManager.ResetClientDriverIfNeeded",
+                "reset-create-after", "{}");
+            WebGlBootDebugProbe.Emit("AG", "TitanOrbitSessionManager.ResetClientDriverIfNeeded",
+                "reset-store-before", "{}");
+            // #endregion
+#endif
             driver.ResetDriverStore(world.Unmanaged, ref store);
+#if UNITY_WEBGL && !UNITY_EDITOR
+            // #region agent log
+            WebGlBootDebugProbe.Emit("AG", "TitanOrbitSessionManager.ResetClientDriverIfNeeded",
+                "reset-store-after", "{}");
+            // #endregion
+#endif
         }
 
         /// <summary>

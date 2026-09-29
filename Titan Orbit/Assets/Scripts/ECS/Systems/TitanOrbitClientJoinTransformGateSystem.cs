@@ -1,3 +1,4 @@
+using TitanOrbit.Diagnostics;
 using Unity.Entities;
 using Unity.NetCode;
 using Unity.Transforms;
@@ -32,6 +33,9 @@ namespace TitanOrbit.ECS
         EntityQuery _inGameQuery;
         EntityQuery _placeholderQuery;
         int _lastGroupEnabled;
+#if UNITY_WEBGL && !UNITY_EDITOR
+        static int s_JoinGateTicks;
+#endif
 
         /// <summary>Builds queries and settle singleton.</summary>
         public void OnCreate(ref SystemState state)
@@ -68,6 +72,15 @@ namespace TitanOrbit.ECS
             // (2026-08-13 join: last C# line was TransformSystemGroup ENABLED, then WASM OOB).
 #if UNITY_WEBGL && !UNITY_EDITOR
             SetTransformGroupEnabled(ref state, enabled: false);
+            // #region agent log
+            s_JoinGateTicks++;
+            bool gateLog = s_JoinGateTicks <= 3 || (s_JoinGateTicks % 120) == 0;
+            if (gateLog)
+            {
+                WebGlBootDebugProbe.Emit("M", "TitanOrbitClientJoinTransformGateSystem.OnUpdate", "join-gate-after-transform",
+                    "{\"inGame\":" + (inGame ? "true" : "false") + "}");
+            }
+            // #endregion
 #else
             SetTransformGroupEnabled(ref state, enabled: true);
 #endif
@@ -87,6 +100,15 @@ namespace TitanOrbit.ECS
                     inGameFrames: 0,
                     joinSettleCompleted: false,
                     ghostSpawnBacklog: false);
+                // #region agent log
+#if UNITY_WEBGL && !UNITY_EDITOR
+                if (gateLog)
+                {
+                    WebGlBootDebugProbe.Emit("O", "TitanOrbitClientJoinTransformGateSystem.OnUpdate", "join-gate-exit",
+                        "{\"hydrating\":" + (hydrating ? "true" : "false") + "}");
+                }
+#endif
+                // #endregion
                 // --- Proxy-ready is owned by the hybrid visualizer / EcsGameBridge ---
                 // [TITAN-ORBIT] Do not treat hydrate-complete as GO-ready — Join Team waits on
                 // MapLoadingProxyCount separately (second loading bar).

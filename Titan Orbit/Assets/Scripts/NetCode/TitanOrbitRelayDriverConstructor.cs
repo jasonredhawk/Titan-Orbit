@@ -25,10 +25,21 @@ namespace TitanOrbit.NetCode
                 var settings = TitanOrbitRelayUtility.ApplyRelayFriendlyNetworkSettings(
                     DefaultDriverBuilder.GetNetworkClientSettings());
                 settings = settings.WithRelayParameters(ref relay);
-                // Pair with TitanOrbitRelayUtility.ClientConnectionTypeForPlatform: MPS 2.2
-                // ToRelayServerData is wss-only whenever UNITY_WEBGL is defined (incl. Editor).
-#if UNITY_WEBGL
+                // Editor Play Mode is a desktop player (UDP/DTLS), including when the WebGL
+                // build target is selected. WebSocket in that Editor never finishes the Relay
+                // handshake: NetworkStreamConnection exists, NetworkId never arrives.
+#if UNITY_WEBGL && !UNITY_EDITOR
+                // #region agent log
+                TitanOrbit.Diagnostics.WebGlBootDebugProbe.Emit("AF",
+                    "TitanOrbitRelayDriverConstructor.CreateClientDriver",
+                    "register-ws-relay-before", "{}");
+                // #endregion
                 DefaultDriverBuilder.RegisterClientWebSocketDriver(world, ref driverStore, netDebug, settings);
+                // #region agent log
+                TitanOrbit.Diagnostics.WebGlBootDebugProbe.Emit("AF",
+                    "TitanOrbitRelayDriverConstructor.CreateClientDriver",
+                    "register-ws-relay-after", "{}");
+                // #endregion
 #else
                 DefaultDriverBuilder.RegisterClientUdpDriver(world, ref driverStore, netDebug, settings);
 #endif

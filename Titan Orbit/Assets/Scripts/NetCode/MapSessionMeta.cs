@@ -1,8 +1,11 @@
 using System.Text;
+using AOT;
 using TitanOrbit.Core;
 using TitanOrbit.Data;
 using TitanOrbit.ECS;
 using TitanOrbit.Generation;
+using Unity.Burst;
+using Unity.Burst.Intrinsics;
 using Unity.Collections;
 using Unity.Entities;
 using Unity.Mathematics;
@@ -21,8 +24,17 @@ namespace TitanOrbit.NetCode
     /// then culls rocks the server already destroyed.
     /// Loading bar tracks local hydrate progress, not hybrid Instantiates=1.
     /// </para>
+    /// <para>
+    /// Manual serializer. A dedicated build that stops after <see cref="AsteroidVisualScaleAtMaxSize"/>
+    /// does not include <see cref="LivePlanetCount"/>, <see cref="LiveShipCount"/>, or
+    /// <see cref="AsteroidSizeSmallBias"/>. Reading those anyway logs "Trying to read 4 bytes"
+    /// and drops the rest of that RPC packet.
+    /// </para>
     /// </summary>
-    public struct MapSessionMetaRpc : IRpcCommand
+    // No [BurstCompile] on this struct. The static function-pointer field is a static
+    // constructor; Burst AOT rejects external calls there (BC1091) on the Linux player.
+    [NetCodeDisableCommandCodeGen]
+    public struct MapSessionMetaRpc : IRpcCommand, IRpcCommandSerializer<MapSessionMetaRpc>
     {
         /// <summary>
         /// [TITAN-ORBIT] How many planet+asteroid bodies the client should build (loading "/ N").
@@ -83,9 +95,199 @@ namespace TitanOrbit.NetCode
 
         /// <summary>
         /// Power-law Size bias used during BuildAsteroids (1 = uniform, 2+ = more small).
-        /// Last on the recipe so older payloads deserialize this as 0 → client falls back to 2.
+        /// Last on the recipe. Payloads that end before this field leave it 0 and the client uses 2.
         /// </summary>
         public float AsteroidSizeSmallBias;
+
+        /// <summary>Writes the same field order the generated serializer used, including the live-count tail.</summary>
+        [BurstCompile]
+        public void Serialize(ref DataStreamWriter writer, in RpcSerializerState state, in MapSessionMetaRpc data)
+        {
+            writer.WriteInt(data.LoadingTotalSteps);
+            writer.WriteInt(data.TeamCount);
+            writer.WriteInt(data.NeutralPlanetCount);
+            writer.WriteInt(data.AsteroidCount);
+            writer.WriteFloat(data.MapWidth);
+            writer.WriteFloat(data.MapHeight);
+            writer.WriteUInt(data.MatchSeed);
+            writer.WriteByte(data.HasFullRecipe);
+            writer.WriteInt(data.RecipeConfig.Seed);
+            writer.WriteFloat(data.RecipeConfig.MinMapSize);
+            writer.WriteFloat(data.RecipeConfig.MaxMapSize);
+            writer.WriteInt(data.RecipeConfig.MinTeamsPerMatch);
+            writer.WriteInt(data.RecipeConfig.MaxTeamsPerMatch);
+            writer.WriteInt(data.RecipeConfig.MaxPlayersPerTeam);
+            writer.WriteFloat(data.RecipeConfig.HomePlanetSize);
+            writer.WriteInt(data.RecipeConfig.HomePlanetLevel);
+            writer.WriteFloat(data.RecipeConfig.HomePlanetDistance);
+            writer.WriteFloat(data.RecipeConfig.MinHomePlanetPairSeparation);
+            writer.WriteFloat(data.RecipeConfig.ClearanceRadiusAroundHomePlanet);
+            writer.WriteInt(data.RecipeConfig.MinNeutralPlanets);
+            writer.WriteInt(data.RecipeConfig.MaxNeutralPlanets);
+            writer.WriteInt(data.RecipeConfig.StartingOwnedNeutralPlanetsPerTeam);
+            writer.WriteInt(data.RecipeConfig.StartingRandomDefenseTurretsMax);
+            writer.WriteFloat(data.RecipeConfig.MinPlanetSize);
+            writer.WriteFloat(data.RecipeConfig.MaxPlanetSize);
+            writer.WriteByte(data.RecipeConfig.RandomizeNeutralStartingLevel);
+            writer.WriteInt(data.RecipeConfig.MinNeutralStartingLevel);
+            writer.WriteInt(data.RecipeConfig.MaxNeutralStartingLevel);
+            writer.WriteFloat(data.RecipeConfig.PlanetRingPlacementMargin);
+            writer.WriteInt(data.RecipeConfig.AsteroidsAtMinMapSize);
+            writer.WriteInt(data.RecipeConfig.AsteroidsAtMaxMapSize);
+            writer.WriteInt(data.RecipeConfig.MinAsteroidClusters);
+            writer.WriteInt(data.RecipeConfig.MaxAsteroidClusters);
+            writer.WriteFloat(data.RecipeConfig.MinAsteroidGemValue);
+            writer.WriteFloat(data.RecipeConfig.MaxAsteroidGemValue);
+            writer.WriteFloat(data.RecipeConfig.MinAsteroidSpacing);
+            writer.WriteFloat(data.AsteroidMinSize);
+            writer.WriteFloat(data.AsteroidMaxSize);
+            writer.WriteFloat(data.AsteroidHealthPerSize);
+            writer.WriteFloat(data.AsteroidGemsPerSize);
+            writer.WriteFloat(data.AsteroidVisualScaleAtMinSize);
+            writer.WriteFloat(data.AsteroidVisualScaleAtMaxSize);
+            writer.WriteInt(data.LivePlanetCount);
+            writer.WriteInt(data.LiveShipCount);
+            writer.WriteFloat(data.AsteroidSizeSmallBias);
+        }
+
+        /// <summary>
+        /// Reads the recipe, stopping at <see cref="RpcDeserializerState.PayloadEndByte"/> so a
+        /// shorter dedicated-server payload does not read past the buffer.
+        /// </summary>
+        [BurstCompile]
+        public void Deserialize(ref DataStreamReader reader, in RpcDeserializerState state, ref MapSessionMetaRpc data)
+        {
+            int end = state.PayloadEndByte;
+            if (end <= 0 || end > reader.Length)
+                end = reader.Length;
+
+            data.LoadingTotalSteps = ReadIntBounded(ref reader, end);
+            data.TeamCount = ReadIntBounded(ref reader, end);
+            data.NeutralPlanetCount = ReadIntBounded(ref reader, end);
+            data.AsteroidCount = ReadIntBounded(ref reader, end);
+            data.MapWidth = ReadFloatBounded(ref reader, end);
+            data.MapHeight = ReadFloatBounded(ref reader, end);
+            data.MatchSeed = ReadUIntBounded(ref reader, end);
+            data.HasFullRecipe = ReadByteBounded(ref reader, end);
+            data.RecipeConfig.Seed = ReadIntBounded(ref reader, end);
+            data.RecipeConfig.MinMapSize = ReadFloatBounded(ref reader, end);
+            data.RecipeConfig.MaxMapSize = ReadFloatBounded(ref reader, end);
+            data.RecipeConfig.MinTeamsPerMatch = ReadIntBounded(ref reader, end);
+            data.RecipeConfig.MaxTeamsPerMatch = ReadIntBounded(ref reader, end);
+            data.RecipeConfig.MaxPlayersPerTeam = ReadIntBounded(ref reader, end);
+            data.RecipeConfig.HomePlanetSize = ReadFloatBounded(ref reader, end);
+            data.RecipeConfig.HomePlanetLevel = ReadIntBounded(ref reader, end);
+            data.RecipeConfig.HomePlanetDistance = ReadFloatBounded(ref reader, end);
+            data.RecipeConfig.MinHomePlanetPairSeparation = ReadFloatBounded(ref reader, end);
+            data.RecipeConfig.ClearanceRadiusAroundHomePlanet = ReadFloatBounded(ref reader, end);
+            data.RecipeConfig.MinNeutralPlanets = ReadIntBounded(ref reader, end);
+            data.RecipeConfig.MaxNeutralPlanets = ReadIntBounded(ref reader, end);
+            data.RecipeConfig.StartingOwnedNeutralPlanetsPerTeam = ReadIntBounded(ref reader, end);
+            data.RecipeConfig.StartingRandomDefenseTurretsMax = ReadIntBounded(ref reader, end);
+            data.RecipeConfig.MinPlanetSize = ReadFloatBounded(ref reader, end);
+            data.RecipeConfig.MaxPlanetSize = ReadFloatBounded(ref reader, end);
+            data.RecipeConfig.RandomizeNeutralStartingLevel = ReadByteBounded(ref reader, end);
+            data.RecipeConfig.MinNeutralStartingLevel = ReadIntBounded(ref reader, end);
+            data.RecipeConfig.MaxNeutralStartingLevel = ReadIntBounded(ref reader, end);
+            data.RecipeConfig.PlanetRingPlacementMargin = ReadFloatBounded(ref reader, end);
+            data.RecipeConfig.AsteroidsAtMinMapSize = ReadIntBounded(ref reader, end);
+            data.RecipeConfig.AsteroidsAtMaxMapSize = ReadIntBounded(ref reader, end);
+            data.RecipeConfig.MinAsteroidClusters = ReadIntBounded(ref reader, end);
+            data.RecipeConfig.MaxAsteroidClusters = ReadIntBounded(ref reader, end);
+            data.RecipeConfig.MinAsteroidGemValue = ReadFloatBounded(ref reader, end);
+            data.RecipeConfig.MaxAsteroidGemValue = ReadFloatBounded(ref reader, end);
+            data.RecipeConfig.MinAsteroidSpacing = ReadFloatBounded(ref reader, end);
+            data.AsteroidMinSize = ReadFloatBounded(ref reader, end);
+            data.AsteroidMaxSize = ReadFloatBounded(ref reader, end);
+            data.AsteroidHealthPerSize = ReadFloatBounded(ref reader, end);
+            data.AsteroidGemsPerSize = ReadFloatBounded(ref reader, end);
+            data.AsteroidVisualScaleAtMinSize = ReadFloatBounded(ref reader, end);
+            data.AsteroidVisualScaleAtMaxSize = ReadFloatBounded(ref reader, end);
+            data.LivePlanetCount = ReadIntBounded(ref reader, end);
+            data.LiveShipCount = ReadIntBounded(ref reader, end);
+            data.AsteroidSizeSmallBias = ReadFloatBounded(ref reader, end);
+        }
+
+        /// <inheritdoc/>
+        public PortableFunctionPointer<RpcExecutor.ExecuteDelegate> CompileExecute()
+        {
+            return InvokeExecuteFunctionPointer;
+        }
+
+        [BurstCompile(DisableDirectCall = true)]
+        [MonoPInvokeCallback(typeof(RpcExecutor.ExecuteDelegate))]
+        private static void InvokeExecute(ref RpcExecutor.Parameters parameters)
+        {
+            RpcExecutor.ExecuteCreateRequestComponent<MapSessionMetaRpc, MapSessionMetaRpc>(ref parameters);
+        }
+
+        static readonly PortableFunctionPointer<RpcExecutor.ExecuteDelegate> InvokeExecuteFunctionPointer =
+            new PortableFunctionPointer<RpcExecutor.ExecuteDelegate>(InvokeExecute);
+
+        static int ReadIntBounded(ref DataStreamReader reader, int end)
+        {
+            if (reader.GetBytesRead() + 4 > end)
+                return 0;
+            return reader.ReadInt();
+        }
+
+        static uint ReadUIntBounded(ref DataStreamReader reader, int end)
+        {
+            if (reader.GetBytesRead() + 4 > end)
+                return 0;
+            return reader.ReadUInt();
+        }
+
+        static float ReadFloatBounded(ref DataStreamReader reader, int end)
+        {
+            if (reader.GetBytesRead() + 4 > end)
+                return 0f;
+            return reader.ReadFloat();
+        }
+
+        static byte ReadByteBounded(ref DataStreamReader reader, int end)
+        {
+            if (reader.GetBytesRead() + 1 > end)
+                return 0;
+            return reader.ReadByte();
+        }
+    }
+
+    /// <summary>
+    /// Sends <see cref="MapSessionMetaRpc"/>. Replaces the generated request system, which
+    /// source-gen skips once the RPC implements <see cref="IRpcCommandSerializer{T}"/>.
+    /// </summary>
+    [BurstCompile]
+    [UpdateInGroup(typeof(RpcCommandRequestSystemGroup))]
+    [CreateAfter(typeof(RpcSystem))]
+    internal partial struct MapSessionMetaRpcSendSystem : ISystem
+    {
+        RpcCommandRequest<MapSessionMetaRpc, MapSessionMetaRpc> m_Request;
+
+        [BurstCompile]
+        struct SendRpc : IJobChunk
+        {
+            public RpcCommandRequest<MapSessionMetaRpc, MapSessionMetaRpc>.SendRpcData data;
+
+            public void Execute(in ArchetypeChunk chunk, int unfilteredChunkIndex, bool useEnabledMask, in v128 chunkEnabledMask)
+            {
+                data.Execute(chunk, unfilteredChunkIndex);
+            }
+        }
+
+        // Managed on purpose. OnCreate builds entity queries (Allocator.Temp / NativeText).
+        // Burst-compiling it fails the Linux player with BC1091 inside NativeText dispose.
+        public void OnCreate(ref SystemState state)
+        {
+            m_Request.OnCreate(ref state);
+        }
+
+        [BurstCompile]
+        public void OnUpdate(ref SystemState state)
+        {
+            var sendJob = new SendRpc { data = m_Request.InitJobData(ref state) };
+            state.Dependency = sendJob.Schedule(m_Request.Query, state.Dependency);
+        }
     }
 
     /// <summary>
@@ -505,6 +707,14 @@ namespace TitanOrbit.NetCode
                     " asteroids=" + MapSessionMetaCache.AsteroidCount +
                     " map=" + MapSessionMetaCache.MapWidth.ToString("F0") + "x" +
                     MapSessionMetaCache.MapHeight.ToString("F0"));
+#if UNITY_WEBGL && !UNITY_EDITOR
+                // #region agent log
+                TitanOrbit.Diagnostics.WebGlBootDebugProbe.Emit("F", "MapSessionMetaClientSystem.OnUpdate",
+                    "recipe-latched",
+                    "{\"seed\":" + rpc.ValueRO.MatchSeed +
+                    ",\"full\":" + rpc.ValueRO.HasFullRecipe + "}");
+                // #endregion
+#endif
                 commandBuffer.DestroyEntity(reqEntity);
             }
 

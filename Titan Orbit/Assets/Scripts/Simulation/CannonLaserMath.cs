@@ -115,7 +115,8 @@ namespace TitanOrbit.Simulation
         /// True when <paramref name="targetPos"/> is inside acquire range (toroidal).
         /// Overlap (almost on top of the target) counts as in range.
         /// </summary>
-        [BurstCompile]
+        // Not a [BurstCompile] entry point. `in float3` is still a by-value vector on the
+        // Linux / WebGL direct-call ABI (BC1064 / BC1067). Burst callers compile this inline.
         public static bool IsInRange(
             in float3 muzzle,
             in float3 targetPos,
@@ -137,7 +138,7 @@ namespace TitanOrbit.Simulation
         /// </summary>
         /// <param name="mapW">From <see cref="TitanOrbit.ECS.MapStateSingleton"/>.</param>
         /// <param name="mapH">From <see cref="TitanOrbit.ECS.MapStateSingleton"/>.</param>
-        [BurstCompile]
+        // Same ABI limit as <see cref="IsInRange"/> — no direct-call export.
         public static bool IsInRangeAndCone(
             in float3 muzzle,
             in float3 barrelFwd,

@@ -1,5 +1,6 @@
 using System;
 using TitanOrbit.Data;
+using TitanOrbit.Diagnostics;
 using Unity.Collections;
 using Unity.Entities;
 using Unity.NetCode;
@@ -93,6 +94,9 @@ namespace TitanOrbit.NetCode
 #if UNITY_WEBGL && !UNITY_EDITOR
                 // [TITAN-ORBIT] WebGL needs a filtered ClientWorld — stock CreateClientWorld OOBs
                 // during system OnCreate / first Update (Chrome 2026-08-09 / 2026-08-10).
+                // #region agent log
+                WebGlBootDebugProbe.Emit("E", "TitanOrbitBootstrap.Initialize", "before-create-webgl-client-world", "{}");
+                // #endregion
                 CreateWebGlClientWorld();
 #else
                 CreateClientWorld("ClientWorld");
@@ -143,40 +147,110 @@ namespace TitanOrbit.NetCode
         /// Uses stock <see cref="ClientServerBootstrap.CreateClientWorld(string, NativeList{SystemTypeIndex})"/>
         /// so <c>Netcode.Client.Init()</c> still runs. Join ticks via
         /// <see cref="TitanOrbitWebGlClientTick.SafeUpdate"/> (Transform forced OFF). GhostSpawn
-        /// + CommandBuffers stay excluded until a WebGL-safe OnCreate path exists.
+        /// + CommandBuffers stay excluded. WebGL receive uses a local ECB instead of
+        /// <c>NetworkGroupCommandBufferSystem</c> (that system's OnCreate WASM-OOBs).
         /// </summary>
         static void CreateWebGlClientWorld()
         {
             // --- Collect + filter ClientSimulation | Presentation systems ---
+            // #region agent log
+            WebGlBootDebugProbe.Emit("E", "TitanOrbitBootstrap.CreateWebGlClientWorld", "before-get-system-indices", "{}");
+            // #endregion
             NativeList<SystemTypeIndex> all = DefaultWorldInitialization.GetAllSystemTypeIndices(
                 WorldSystemFilterFlags.ClientSimulation | WorldSystemFilterFlags.Presentation);
+            // #region agent log
+            WebGlBootDebugProbe.Emit("E", "TitanOrbitBootstrap.CreateWebGlClientWorld", "after-get-system-indices",
+                "{\"count\":" + all.Length + "}");
+            // #endregion
 
             var filtered = new NativeList<SystemTypeIndex>(all.Length, Allocator.Temp);
+            var groups = new NativeList<SystemTypeIndex>(all.Length, Allocator.Temp);
+            var leaves = new NativeList<SystemTypeIndex>(all.Length, Allocator.Temp);
             try
             {
+                int excluded = 0;
+                int ghostSpawnExcluded = 0;
+                int commandBufferExcluded = 0;
                 for (int i = 0; i < all.Length; i++)
                 {
                     SystemTypeIndex index = all[i];
                     string systemName = TypeManager.GetSystemName(index).ToString();
-                    if (IsWebGlExcludedSystemName(systemName))
+                    bool excludedNow = TitanOrbitWebGlSystemFilter.IsExcluded(systemName);
+                    // #region agent log
+                    if (systemName.IndexOf("NetworkGroupCommandBufferSystem", StringComparison.Ordinal) >= 0)
+                    {
+                        WebGlBootDebugProbe.Emit("H1", "TitanOrbitBootstrap.CreateWebGlClientWorld",
+                            excludedNow ? "filter-network-group-ecb-excluded" : "filter-network-group-ecb-allowed",
+                            "{\"name\":\"" + EscapeJson(systemName) + "\"}");
+                    }
+                    // #endregion
+                    if (excludedNow)
+                    {
+                        excluded++;
+                        if (systemName == "Unity.NetCode.GhostSpawnSystem")
+                            ghostSpawnExcluded++;
+                        if (systemName.IndexOf("CommandBufferSystem", StringComparison.Ordinal) >= 0)
+                            commandBufferExcluded++;
                         continue;
+                    }
+
                     filtered.Add(index);
+                    if (IsSystemGroupName(systemName))
+                        groups.Add(index);
+                    else
+                        leaves.Add(index);
                 }
 
-                // --- Create world (registers systems + Netcode.Client.Init) ---
-                World world = CreateClientWorld("ClientWorld", filtered);
+                // #region agent log
+                WebGlBootDebugProbe.Emit("H-D", "TitanOrbitBootstrap.CreateWebGlClientWorld", "after-filter",
+                    "{\"kept\":" + filtered.Length + ",\"excluded\":" + excluded +
+                    ",\"groups\":" + groups.Length + ",\"leaves\":" + leaves.Length +
+                    ",\"ghostSpawnExcluded\":" + ghostSpawnExcluded +
+                    ",\"commandBufferExcluded\":" + commandBufferExcluded + "}");
+                // #endregion
 
-                // --- Menu-safe: do not tick ClientWorld from the player loop ---
-                // [TITAN-ORBIT] With CommandBufferSystems excluded, a full Simulation Update can
-                // OOB on the first Browser_mainLoop frames. Untick keeps the main menu alive.
-                // Join uses TitanOrbitWebGlClientTick.SafeUpdate (Transform forced OFF) — do not
-                // re-append this world to the player loop (that would double-tick + re-enable Transform).
+                // Public CreateClientWorld registers groups + Netcode.Client.Init (Netcode is
+                // internal). Leaves are added one-by-one so Chrome names the OnCreate that OOBs.
+                // #region agent log
+                WebGlBootDebugProbe.Emit("E", "TitanOrbitBootstrap.CreateWebGlClientWorld", "before-create-client-world-groups",
+                    "{\"groups\":" + groups.Length + "}");
+                // #endregion
+                World world = CreateClientWorld("ClientWorld", groups);
+                // #region agent log
+                WebGlBootDebugProbe.Emit("E", "TitanOrbitBootstrap.CreateWebGlClientWorld", "after-create-client-world-groups", "{}");
+                // #endregion
+
+                var one = new NativeList<SystemTypeIndex>(1, Allocator.Temp);
+                try
+                {
+                    for (int i = 0; i < leaves.Length; i++)
+                    {
+                        one.Clear();
+                        one.Add(leaves[i]);
+                        DefaultWorldInitialization.AddSystemsToRootLevelSystemGroups(world, one);
+                    }
+                }
+                finally
+                {
+                    if (one.IsCreated)
+                        one.Dispose();
+                }
+
                 TitanOrbitWebGlClientTick.DisableUnsafeGroups(world);
+                TitanOrbitWebGlBeginSimulationEcb.Ensure(world);
+                TitanOrbitWebGlDynamicAssemblyList.Ensure(world);
                 ScriptBehaviourUpdateOrder.RemoveWorldFromCurrentPlayerLoop(world);
-                Debug.Log("[TitanOrbitBootstrap] WebGL ClientWorld created (filtered, unticked for menu boot).");
+                // #region agent log
+                WebGlBootDebugProbe.Emit("E", "TitanOrbitBootstrap.CreateWebGlClientWorld", "after-untick", "{}");
+                // #endregion
+                Debug.Log("[TitanOrbitBootstrap] WebGL ClientWorld created (filtered, leaf-by-leaf, unticked).");
             }
             finally
             {
+                if (leaves.IsCreated)
+                    leaves.Dispose();
+                if (groups.IsCreated)
+                    groups.Dispose();
                 if (filtered.IsCreated)
                     filtered.Dispose();
                 if (all.IsCreated)
@@ -184,54 +258,18 @@ namespace TitanOrbit.NetCode
             }
         }
 
-        /// <summary>
-        /// Systems that must not register on WebGL (proven OnCreate OOB or unsupported without compute).
-        /// </summary>
-        /// <param name="systemName">Full system type name from <see cref="TypeManager.GetSystemName"/>.</param>
-        /// <returns>True when the system must be omitted from the WebGL ClientWorld.</returns>
-        static bool IsWebGlExcludedSystemName(string systemName)
+        static bool IsSystemGroupName(string systemName)
         {
-            if (string.IsNullOrEmpty(systemName))
-                return false;
+            return !string.IsNullOrEmpty(systemName) &&
+                   (systemName.EndsWith("SystemGroup", StringComparison.Ordinal) ||
+                    systemName.IndexOf("SystemGroup+", StringComparison.Ordinal) >= 0);
+        }
 
-            // [UNITY] Entities Graphics — no compute shaders on WebGL.
-            if (systemName.StartsWith("Unity.Rendering.", StringComparison.Ordinal))
-                return true;
-            if (systemName.StartsWith("Unity.Entities.Graphics.", StringComparison.Ordinal))
-                return true;
-
-            // [UNITY] Physics↔EG bridge — hybrid GameObject proxies own visuals on WebGL.
-            if (systemName.StartsWith("Unity.Physics.GraphicsIntegration.", StringComparison.Ordinal))
-                return true;
-
-            // [TITAN-ORBIT] Proven WASM OOB on BeginVariableRateSimulationEntityCommandBufferSystem
-            // OnCreate. Titan Orbit uses NetCode predicted fixed-step, not VariableRateSimulation.
-            if (systemName.IndexOf("VariableRateSimulation", StringComparison.Ordinal) >= 0)
-                return true;
-
-            // [TITAN-ORBIT] Proven WASM OOB on GhostSpawnSystem OnCreate. Join cannot spawn ghosts
-            // until a WebGL-safe OnCreate path exists — keep excluded with the menu-untick policy.
-            if (systemName == "Unity.NetCode.GhostSpawnSystem")
-                return true;
-
-            // [TITAN-ORBIT] Proven WASM OOB on every *CommandBufferSystem* OnCreate hit on WebGL
-            // (VariableRate, FixedStep, Presentation, Initialization, PredictedSimulation,
-            // PreLateUpdate, BeginSimulation). Strip all until OnCreate is WebGL-safe.
-            if (systemName.IndexOf("CommandBufferSystem", StringComparison.Ordinal) >= 0)
-                return true;
-
-            // [TITAN-ORBIT] Multiplayer Center NetcodeForEntities example systems are not used by
-            // Titan Orbit gameplay — omit from WebGL ClientWorld.
-            if (systemName.IndexOf("Unity.Multiplayer.Center", StringComparison.Ordinal) >= 0
-                || systemName.IndexOf("Unity_Multiplayer_Center", StringComparison.Ordinal) >= 0)
-                return true;
-
-            // [TITAN-ORBIT] People-transport spawn RPC client — omitted on WebGL menu boot path
-            // (not required until ClientWorld is re-ticked for in-game join).
-            if (systemName == "TitanOrbit.ECS.PeopleTransportSpawnRpcClientSystem")
-                return true;
-
-            return false;
+        static string EscapeJson(string value)
+        {
+            if (string.IsNullOrEmpty(value))
+                return "";
+            return value.Replace("\\", "\\\\").Replace("\"", "\\\"");
         }
 
 #endif

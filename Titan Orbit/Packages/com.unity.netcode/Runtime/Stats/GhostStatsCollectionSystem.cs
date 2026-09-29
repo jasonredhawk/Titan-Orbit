@@ -568,7 +568,8 @@ namespace Unity.NetCode
             m_DiscardedPackets += stats;
         }
 
-        [BurstCompile]
+        // Managed on purpose. Burst AOT of this method allocates NativeText, and the
+        // player build then fails with BC1091 inside NativeTextDisposeJob (Linux and WebGL).
         public void OnCreate(ref SystemState state)
         {
             m_SnapshotTicks = new NativeList<NetworkTick>(16, Allocator.Persistent);
@@ -624,7 +625,8 @@ namespace Unity.NetCode
             m_Recorders = new NativeList<ProfilerRecorder>(Allocator.Persistent);
         }
 
-        [BurstCompile]
+        // Managed on purpose. Disposing the NativeText from a Burst entry point is the
+        // same BC1091 player-build failure as OnCreate.
         public void OnDestroy(ref SystemState state)
         {
             m_LastNameAndErrorArray.Dispose();

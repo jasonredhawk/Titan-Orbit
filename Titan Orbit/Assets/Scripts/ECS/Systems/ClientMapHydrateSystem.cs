@@ -1,4 +1,5 @@
 using TitanOrbit.Core;
+using TitanOrbit.Diagnostics;
 using TitanOrbit.Generation;
 using Unity.Collections;
 using Unity.Entities;
@@ -97,9 +98,38 @@ namespace TitanOrbit.ECS
                     {
                         _loggedWaitingPrefabs = true;
                         _nextPrefabWaitLogRealtime = now + 3f;
+                        int gpCount = 0;
+                        int ast = -1;
+                        int ship = -1;
+                        int planet = -1;
+                        int gem = -1;
+                        using (var q = em.CreateEntityQuery(typeof(GamePrefabs)))
+                        {
+                            gpCount = q.CalculateEntityCount();
+                            if (gpCount == 1)
+                            {
+                                var gp = q.GetSingleton<GamePrefabs>();
+                                ast = gp.Asteroid.Index;
+                                ship = gp.Ship.Index;
+                                planet = gp.Planet.Index;
+                                gem = gp.Gem.Index;
+                            }
+                        }
                         Debug.Log(
                             "[ClientMapHydrate] Waiting for GamePrefabs.Asteroid on ClientWorld " +
-                            "(SubScene streaming). World bar stays at 0 until prefabs exist.");
+                            "(SubScene streaming). gpCount=" + gpCount +
+                            " ast=" + ast + " ship=" + ship + " planet=" + planet +
+                            " gem=" + gem + " gen=" + generation);
+                        // #region agent log
+                        WebGlBootDebugProbe.Emit("H-A", "ClientMapHydrateSystem.OnUpdate", "waiting-prefabs",
+                            "{\"gpCount\":" + gpCount +
+                            ",\"ast\":" + ast +
+                            ",\"ship\":" + ship +
+                            ",\"planet\":" + planet +
+                            ",\"gem\":" + gem +
+                            ",\"gen\":" + generation +
+                            ",\"recipe\":" + (ClientMapHydrateCache.HasFullRecipe ? "true" : "false") + "}");
+                        // #endregion
                     }
 
                     return;
@@ -151,6 +181,12 @@ namespace TitanOrbit.ECS
                     " gen=" + generation +
                     " seed=" + ClientMapHydrateCache.MatchSeed +
                     " map=" + _rolled.MapWidth.ToString("F0") + "x" + _rolled.MapHeight.ToString("F0"));
+                // #region agent log
+                WebGlBootDebugProbe.Emit("H-A", "ClientMapHydrateSystem.OnUpdate", "prefabs-ready",
+                    "{\"bodies\":" + _bodies.Length +
+                    ",\"asteroids\":" + asteroidCount +
+                    ",\"gen\":" + generation + "}");
+                // #endregion
             }
 
             if (!_bodies.IsCreated)

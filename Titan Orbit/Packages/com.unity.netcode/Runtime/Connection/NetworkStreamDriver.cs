@@ -313,9 +313,18 @@ namespace Unity.NetCode
                 });
             }
             entityManager.AddComponentData(ent, new NetworkSnapshotAck());
+#if UNITY_WEBGL && !UNITY_EDITOR
+            // Chrome 2026-09-25: AddBuffer<T> WASM-OOBs on WebGL in this Connect path.
+            // AddComponent(TypeSet) of the same buffer types does not.
+            entityManager.AddComponent(ent, new ComponentTypeSet(
+                ComponentType.ReadWrite<OutgoingRpcDataStreamBuffer>(),
+                ComponentType.ReadWrite<OutgoingCommandDataStreamBuffer>(),
+                ComponentType.ReadWrite<IncomingSnapshotDataStreamBuffer>()));
+#else
             entityManager.AddBuffer<OutgoingRpcDataStreamBuffer>(ent);
             entityManager.AddBuffer<OutgoingCommandDataStreamBuffer>(ent);
             entityManager.AddBuffer<IncomingSnapshotDataStreamBuffer>(ent);
+#endif
             entityManager.GetBuffer<LinkedEntityGroup>(ent).Add(new LinkedEntityGroup{Value = ent});
             netDebug.DebugLog($"[{entityManager.WorldUnmanaged.Name}][Connection] Connect called: Connection={connection.ToFixedString()}, State={state}.");
             return ent;

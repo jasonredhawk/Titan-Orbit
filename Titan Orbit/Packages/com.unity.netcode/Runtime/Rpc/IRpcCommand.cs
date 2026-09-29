@@ -121,6 +121,14 @@ namespace Unity.NetCode
         /// Read-only map for retrieving the <see cref="StreamCompressionModel"/> assigned to be used for RPCs.
         /// </summary>
         public StreamCompressionModel CompressionModel;
+
+        /// <summary>
+        /// Absolute <see cref="DataStreamReader.GetBytesRead"/> end of this RPC's declared payload.
+        /// 0 means the caller did not set a bound (use the reader's full length).
+        /// [TITAN-ORBIT] Set by <c>RpcSystem</c> so a deserializer can stop at a short payload
+        /// instead of reading into the next RPC or off the end of the buffer.
+        /// </summary>
+        public int PayloadEndByte;
     }
 
     /// <summary>

@@ -1396,6 +1396,13 @@ namespace Unity.NetCode
         [BurstCompile]
         public void OnUpdate(ref SystemState state)
         {
+#if UNITY_WEBGL && !UNITY_EDITOR
+            // WebGL ClientWorld strips *CommandBufferSystem* (OnCreate OOB). First GetSingleton
+            // of BeginSimulationEntityCommandBufferSystem.Singleton WASM-OOBs (Chrome 2026-09-24:
+            // nested-child-before GhostReceiveSystem, no after). Receive already no-ops the same way.
+            if (!SystemAPI.HasSingleton<BeginSimulationEntityCommandBufferSystem.Singleton>())
+                return;
+#endif
             var serverTick = SystemAPI.GetSingleton<NetworkTime>().ServerTick;
 
 #if UNITY_EDITOR || NETCODE_DEBUG

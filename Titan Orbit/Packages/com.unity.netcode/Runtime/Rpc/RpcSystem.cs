@@ -425,6 +425,14 @@ namespace Unity.NetCode
                         }
 
                         var rpcBitStart = parameters.Reader.GetBitsRead();
+                        // [TITAN-ORBIT] Bound deserializers to the wire-declared payload. A short
+                        // MapSessionMetaRpc (older dedicated build, no LivePlanetCount tail) otherwise
+                        // ReadInt's past the buffer, sets HasFailedReads, and drops every later RPC
+                        // in this packet.
+                        int payloadEndByte = parameters.Reader.GetBytesRead() + rpcSizeBytes;
+                        if (payloadEndByte > parameters.Reader.Length)
+                            payloadEndByte = parameters.Reader.Length;
+                        deserializeState.PayloadEndByte = payloadEndByte;
                         if (Hint.Unlikely(rpcIndex >= execute.Length))
                         {
                             // TITAN-ORBIT: skip out-of-range index instead of disconnecting (same skew case).
@@ -436,6 +444,7 @@ namespace Unity.NetCode
                         }
 
                         execute[rpcIndex].Execute.Ptr.Invoke(ref parameters);
+                        deserializeState.PayloadEndByte = 0;
                         // TODO - Possible defensive guard here: We can check to see if execute[rpcIndex].Execute.Ptr.Invoke encountered a fatal error, and early out.
 
                         // Validate rpcSizeBits matches our deserialization:

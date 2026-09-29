@@ -14,10 +14,12 @@ namespace TitanOrbit.ECS
         /// <summary>
         /// End of this step and how many equal segments to sweep.
         /// </summary>
-        [BurstCompile]
+        // Not a [BurstCompile] entry point. A direct-call export passes these float3
+        // arguments by value, and Linux / WebGL AOT rejects that (BC1064 / BC1067).
+        // Burst jobs still compile this body when they call it.
         public static void GetStep(
-            float3 from,
-            float3 velocity,
+            in float3 from,
+            in float3 velocity,
             float dt,
             out float3 to,
             out int substeps)
@@ -26,16 +28,16 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// Same as <see cref="GetStep(float3, float3, float, out float3, out int)"/>, but the
+        /// Same as <see cref="GetStep(in float3, in float3, float, out float3, out int)"/>, but the
         /// Euclidean step cannot exceed <paramref name="maxTravel"/>. Planetary-defense bolts
         /// use Lifetime 0 + MaxDistance; a client frame longer than the 60 Hz sim step was
         /// reaching a hull the server had already expired.
         /// </summary>
         /// <param name="maxTravel">Remaining flight budget (MaxDistance − Traveled).</param>
-        [BurstCompile]
+        // Same as the overload above: no direct-call export (BC1064 / BC1067).
         public static void GetStep(
-            float3 from,
-            float3 velocity,
+            in float3 from,
+            in float3 velocity,
             float dt,
             float maxTravel,
             out float3 to,

@@ -1,0 +1,43 @@
+---
+description: WebGL is the primary Titan Orbit client — never treat Windows/Editor join as WebGL-safe
+alwaysApply: true
+---
+
+# Titan Orbit — WebGL is the ship client
+
+The live game is a **browser client** (IL2CPP/WASM) talking to a dedicated server over Relay **WSS**.
+A Windows player or Editor Play Mode join that works is **not** a WebGL join.
+
+Do **not** ask for a 45-minute WebGL rebuild to “see more logs.” Validate in Editor first.
+One WebGL rebuild only after the change is Editor-checked and is the actual fix.
+
+---
+
+## Proven WASM landmines (do not reintroduce)
+
+| Unsafe on WebGL | Use instead |
+|---|---|
+| `World.Update()` | `TitanOrbitWebGlClientTick.SafeUpdate` |
+| `EntityManager.AddBuffer<T>` in connect / receive / scene OnCreate | `AddComponent(ComponentTypeSet)` + `GetBuffer` |
+| `NetworkStreamDriver.Connect` | `TitanOrbitWebGlClientConnect.CreateConnectionEntity` + UTP `driver.Connect` |
+| `NetworkGroupCommandBufferSystem` OnCreate | Local `EntityCommandBuffer` (already in Receive WebGL path) |
+| Burst `IJobEntity` over `NetworkStreamConnection` | WebGL Burst AOT stays **off** (`BurstAotSettings_WebGL.json`) |
+| Editing `Packages/com.unity.netcode` | Game code only |
+
+`#if UNITY_WEBGL` is **true in the Editor** when the WebGL build target is active. Play Mode is still a desktop player (DTLS, stock `AddBuffer`). Gate player-only paths with `UNITY_WEBGL && !UNITY_EDITOR`.
+
+---
+
+## Before any WebGL rebuild
+
+1. Run **TitanOrbit → WebGL → Validate Connect Entity Recipe** (seconds, no player build).
+2. Do not add per-tick `WebGlBootDebugProbe` / leaf-walk logs. They force another rebuild to read.
+3. If Windows works and WebGL does not, the bug is WASM / WSS / SafeUpdate — not lobby or server sim.
+
+```csharp
+// ❌ BAD — stock Connect; WebGL returns an entity index with 0 NetworkStreamConnection
+driver.Connect(em, relay.Endpoint);
+
+// ✅ GOOD — one TypeSet including ICleanupComponentData, then SetComponentData
+TitanOrbitWebGlClientConnect.CreateConnectionEntity(em, utpConnection, state);
+```

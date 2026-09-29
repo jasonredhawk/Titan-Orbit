@@ -1,3 +1,4 @@
+using TitanOrbit.Diagnostics;
 using TitanOrbit.ECS;
 using Unity.Collections;
 using Unity.Entities;
@@ -26,6 +27,11 @@ namespace TitanOrbit.NetCode
     [UpdateAfter(typeof(MapSessionMetaClientSystem))]
     public partial struct TitanOrbitGoInGameClientSystem : ISystem
     {
+#if UNITY_WEBGL && !UNITY_EDITOR
+        static string s_LastGoInGameGate;
+        static int s_GoInGameGateLogs;
+#endif
+
         /// <summary>Caches the driver query and the not-yet-InGame connection query.</summary>
         public void OnCreate(ref SystemState state)
         {
@@ -42,15 +48,39 @@ namespace TitanOrbit.NetCode
         /// </summary>
         public void OnUpdate(ref SystemState state)
         {
+            bool hasRecipe = ClientMapHydrateCache.HasFullRecipe;
+            bool hydrateDone = ClientMapHydrateCache.IsComplete;
+            bool hasGhosts = SystemAPI.HasSingleton<GhostCollection>();
+#if UNITY_WEBGL && !UNITY_EDITOR
+            string gate = !hasRecipe ? "no-recipe"
+                : !hydrateDone ? "hydrate-incomplete"
+                : !hasGhosts ? "no-ghost-collection"
+                : "ready";
+            if (s_GoInGameGateLogs < 8 && gate != s_LastGoInGameGate)
+            {
+                s_GoInGameGateLogs++;
+                s_LastGoInGameGate = gate;
+                // #region agent log
+                WebGlBootDebugProbe.Emit("K", "TitanOrbitGoInGameClientSystem.OnUpdate", "gate",
+                    "{\"gate\":\"" + gate +
+                    "\",\"built\":" + ClientMapHydrateCache.BuiltBodies +
+                    ",\"expected\":" + ClientMapHydrateCache.ExpectedBodies +
+                    ",\"waitingPrefabs\":" + (ClientMapHydrateCache.WaitingForPrefabs ? "true" : "false") + "}");
+                Debug.Log("CONNECT_JOIN go-in-game gate=" + gate +
+                          " built=" + ClientMapHydrateCache.BuiltBodies +
+                          "/" + ClientMapHydrateCache.ExpectedBodies);
+                // #endregion
+            }
+#endif
             // --- Gate: local map hydrate must finish before ghost stream ---
             // [TITAN-ORBIT] Seed-hydrate join: wait for a full recipe, then IsComplete.
             // Do not treat counts-only / HasMeta as ready — that skipped hydrate, left the
             // loading bar on the 8% crawl with no 0/N, and never spawned local asteroids.
-            if (!ClientMapHydrateCache.HasFullRecipe || !ClientMapHydrateCache.IsComplete)
+            if (!hasRecipe || !hydrateDone)
                 return;
 
             // --- Ghost prefabs registered ---
-            if (!SystemAPI.HasSingleton<GhostCollection>())
+            if (!hasGhosts)
                 return;
 
             var commandBuffer = new EntityCommandBuffer(Allocator.Temp);

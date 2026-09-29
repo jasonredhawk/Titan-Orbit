@@ -1,3 +1,4 @@
+using TitanOrbit.Diagnostics;
 using Unity.Burst;
 using Unity.Collections;
 using Unity.Entities;
@@ -27,15 +28,47 @@ namespace TitanOrbit.ECS
         /// <summary>Create the contact-queue singleton; require the solver event stream.</summary>
         public void OnCreate(ref SystemState state)
         {
+            // #region agent log
+            WebGlBootDebugProbe.Emit("A", "ShipPhysicsContactCollectSystem.OnCreate", "oncreate-entry", "{}");
+            // #endregion
             state.RequireForUpdate<SimulationSingleton>();
             state.RequireForUpdate<PhysicsWorldSingleton>();
+            // #region agent log
+            WebGlBootDebugProbe.Emit("E", "ShipPhysicsContactCollectSystem.OnCreate", "after-require", "{}");
+            // #endregion
 
             if (!SystemAPI.TryGetSingletonEntity<ShipPhysicsContactQueueTag>(out _))
             {
+                // #region agent log
+                WebGlBootDebugProbe.Emit("A", "ShipPhysicsContactCollectSystem.OnCreate", "before-create-entity", "{}");
+                // #endregion
                 var e = state.EntityManager.CreateEntity();
                 state.EntityManager.AddComponentData(e, new ShipPhysicsContactQueueTag());
+                // #region agent log
+                WebGlBootDebugProbe.Emit("A", "ShipPhysicsContactCollectSystem.OnCreate", "after-add-tag",
+                    "{\"index\":" + e.Index + ",\"version\":" + e.Version + "}");
+                // #endregion
+#if UNITY_WEBGL && !UNITY_EDITOR
+                // Chrome WASM OOB: AddBuffer of any type dies here (ShipPhysicsContactElement
+                // and LinkedEntityGroup probe). Tag-only so leaf 58 can finish; queue is unused
+                // until a WebGL-safe buffer path exists (world is unticked at menu).
+                // #region agent log
+                WebGlBootDebugProbe.Emit("F", "ShipPhysicsContactCollectSystem.OnCreate", "skipped-addbuffer-webgl",
+                    "{\"index\":" + e.Index + "}");
+                // #endregion
+#else
+                // #region agent log
+                WebGlBootDebugProbe.Emit("A", "ShipPhysicsContactCollectSystem.OnCreate", "before-add-buffer", "{}");
+                // #endregion
                 state.EntityManager.AddBuffer<ShipPhysicsContactElement>(e);
+                // #region agent log
+                WebGlBootDebugProbe.Emit("A", "ShipPhysicsContactCollectSystem.OnCreate", "after-add-buffer", "{}");
+                // #endregion
+#endif
             }
+            // #region agent log
+            WebGlBootDebugProbe.Emit("A", "ShipPhysicsContactCollectSystem.OnCreate", "oncreate-exit", "{}");
+            // #endregion
         }
 
         /// <summary>

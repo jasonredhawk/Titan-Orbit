@@ -1,6 +1,7 @@
 using System;
 using TitanOrbit.Core;
 using TitanOrbit.Data;
+using TitanOrbit.Diagnostics;
 using TitanOrbit.ECS;
 using TitanOrbit.Simulation;
 using TMPro;
@@ -120,9 +121,19 @@ namespace TitanOrbit.Game
         public void Show(TeamId team)
         {
             _team = team == TeamId.None ? TeamId.TeamA : team;
+            // #region agent log
+            WebGlBootDebugProbe.Emit("H-E", "ShipCustomizeScreen.Show", "show-enter",
+                "{\"team\":" + (int)_team + "}");
+            // #endregion
             // Free players may cycle every look here; nothing is kept until they buy.
             TitanOrbitCosmeticGate.BeginHangarPreview();
             EnsureChrome();
+            // #region agent log
+            WebGlBootDebugProbe.Emit("H-E", "ShipCustomizeScreen.Show", "after-ensure-chrome",
+                "{\"hasPreviewRoot\":" + (_previewRoot != null ? "true" : "false") +
+                ",\"hasPreviewCam\":" + (_previewCam != null ? "true" : "false") +
+                ",\"hasPreviewRt\":" + (_previewRt != null ? "true" : "false") + "}");
+            // #endregion
             SetPreviewWorldActive(true);
             ApplyTeamToPreview();
             RefreshFromStore();
@@ -130,6 +141,10 @@ namespace TitanOrbit.Game
             RefreshUnlockBanner();
             gameObject.SetActive(true);
             transform.SetAsLastSibling();
+            // #region agent log
+            WebGlBootDebugProbe.Emit("H-E", "ShipCustomizeScreen.Show", "show-complete",
+                "{\"hasPreviewHull\":" + (_previewHull != null ? "true" : "false") + "}");
+            // #endregion
         }
 
         /// <summary>Hides the studio and tears down the leftover preview camera / hull.</summary>
@@ -468,6 +483,11 @@ namespace TitanOrbit.Game
             if (_previewRt != null && _previewRt.width == 512 && _previewRt.height == 512)
                 return;
 
+            // #region agent log
+            WebGlBootDebugProbe.Emit("H-E3", "ShipCustomizeScreen.EnsurePreviewRenderTexture", "rt-create",
+                "{\"hadRt\":" + (_previewRt != null ? "true" : "false") + "}");
+            // #endregion
+
             if (_previewRt != null)
             {
                 if (_previewCam != null)
@@ -482,6 +502,10 @@ namespace TitanOrbit.Game
                 antiAliasing = 1,
                 filterMode = FilterMode.Bilinear,
             };
+            // #region agent log
+            WebGlBootDebugProbe.Emit("H-E3", "ShipCustomizeScreen.EnsurePreviewRenderTexture", "rt-created",
+                "{\"w\":" + _previewRt.width + ",\"h\":" + _previewRt.height + "}");
+            // #endregion
         }
 
         void BindChromeRefs()
@@ -1526,12 +1550,38 @@ namespace TitanOrbit.Game
                 _previewFamily = config.families[0].shipFamilyDefinition;
 
             GameObject hull = null;
-            if (_previewFamily != null && _previewFamily.TryGetVisualPrefabForLevel(1, out GameObject prefab) && prefab != null)
+            GameObject prefab = null;
+            bool hasPrefab = _previewFamily != null &&
+                             _previewFamily.TryGetVisualPrefabForLevel(1, out prefab) &&
+                             prefab != null;
+            // #region agent log
+            WebGlBootDebugProbe.Emit("H-E", "ShipCustomizeScreen.ApplyTeamToPreview", "apply-before-instantiate",
+                "{\"hasFamily\":" + (_previewFamily != null ? "true" : "false") +
+                ",\"hasPrefab\":" + (hasPrefab ? "true" : "false") +
+                ",\"hasPreviewRoot\":" + (_previewRoot != null ? "true" : "false") + "}");
+            // #endregion
+            if (hasPrefab)
             {
+                // #region agent log
+                WebGlBootDebugProbe.Emit("H-E1", "ShipCustomizeScreen.ApplyTeamToPreview", "before-instantiate",
+                    "{\"prefab\":\"" + prefab.name + "\"}");
+                // #endregion
                 hull = Instantiate(prefab);
                 hull.name = "CustomizePreviewHull";
+                // #region agent log
+                WebGlBootDebugProbe.Emit("H-E1", "ShipCustomizeScreen.ApplyTeamToPreview", "after-instantiate",
+                    "{\"hull\":true}");
+                // #endregion
                 ShipVisualApplier.StripPhysicsAndNetworking(hull, keepColliders: false);
+                // #region agent log
+                WebGlBootDebugProbe.Emit("H-E2", "ShipCustomizeScreen.ApplyTeamToPreview", "after-strip",
+                    "{\"hull\":true}");
+                // #endregion
                 ShipVisualApplier.ApplyTeamMaterials(_previewFamily, hull, _team);
+                // #region agent log
+                WebGlBootDebugProbe.Emit("H-E", "ShipCustomizeScreen.ApplyTeamToPreview", "apply-after-strip-materials",
+                    "{\"hull\":true}");
+                // #endregion
             }
             else
             {

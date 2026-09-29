@@ -1,3 +1,4 @@
+using System;
 using Unity.Networking.Transport;
 using Unity.Networking.Transport.Relay;
 using Unity.Services.Relay.Models;
@@ -103,8 +104,48 @@ namespace TitanOrbit.NetCode
         /// <summary>[NETCODE] Converts client join allocation to UTP RelayServerData.</summary>
         public static RelayServerData FromJoinAllocation(JoinAllocation allocation, string connectionType = null)
         {
-            return allocation.ToRelayServerData(SanitizeRelayProtocolForRelaySdk(connectionType));
+            string protocol = SanitizeRelayProtocolForRelaySdk(connectionType);
+#if UNITY_EDITOR
+            // AllocationUtils.ToRelayServerData rejects dtls while the WebGL build target is
+            // active (UNITY_WEBGL is defined in the Editor). The Editor player is still desktop
+            // and must use the allocation's dtls endpoint over UDP.
+            if (protocol == "dtls" || protocol == "udp")
+                return FromJoinAllocationDesktop(allocation, "dtls");
+#endif
+            return allocation.ToRelayServerData(protocol);
         }
+
+#if UNITY_EDITOR
+        static RelayServerData FromJoinAllocationDesktop(JoinAllocation allocation, string connectionType)
+        {
+            if (allocation?.ServerEndpoints == null)
+                throw new InvalidOperationException("Join allocation has no Relay endpoints.");
+
+            RelayServerEndpoint match = null;
+            for (int i = 0; i < allocation.ServerEndpoints.Count; i++)
+            {
+                RelayServerEndpoint ep = allocation.ServerEndpoints[i];
+                if (ep != null && string.Equals(ep.ConnectionType, connectionType, StringComparison.OrdinalIgnoreCase))
+                {
+                    match = ep;
+                    break;
+                }
+            }
+
+            if (match == null)
+                throw new InvalidOperationException("Join allocation has no " + connectionType + " endpoint.");
+
+            return new RelayServerData(
+                match.Host,
+                (ushort)match.Port,
+                allocation.AllocationIdBytes,
+                allocation.ConnectionData,
+                allocation.HostConnectionData,
+                allocation.Key,
+                match.Secure,
+                isWebSocket: false);
+        }
+#endif
 
         /// <summary>True when Relay endpoint parsed successfully from allocation.</summary>
         public static bool IsRelayEndpointValid(RelayServerData relay)
@@ -113,13 +154,12 @@ namespace TitanOrbit.NetCode
         }
 
         /// <summary>
-        /// True when Relay SDK <c>ToRelayServerData</c> only accepts <c>wss</c>.
-        /// Matches MPS 2.2 <c>AllocationUtils.GetValidProtocols</c>: <c>#if UNITY_WEBGL</c>
-        /// (WebGL player <b>and</b> Editor with WebGL as the active build target).
+        /// True for a WebGL player build. The Editor stays false: Play Mode is a desktop
+        /// player and uses DTLS even when the active build target defines <c>UNITY_WEBGL</c>.
         /// </summary>
         public static bool PlatformRequiresWebSocketRelay()
         {
-#if UNITY_WEBGL
+#if UNITY_WEBGL && !UNITY_EDITOR
             return true;
 #else
             return false;
@@ -129,17 +169,13 @@ namespace TitanOrbit.NetCode
         /// <summary>Relay connection type for joining clients (not the host listen type).</summary>
         public static string ClientConnectionTypeForPlatform()
         {
-            // Must match GetValidProtocols() — do not exclude UNITY_EDITOR.
-            // Editor + WebGL target still defines UNITY_WEBGL; dtls throws
-            // Invalid connection type: "DTLS". Connection type must be one of:  or "wss".
             return PlatformRequiresWebSocketRelay() ? "wss" : "dtls";
         }
 
         /// <summary>
         /// Relay connection type for the dedicated host allocation. GCE may pass <c>--relayProtocol=udp</c>;
         /// that is normalized to <c>dtls</c> for MPS 2.0 (same as legacy NGO dedicated bootstrap).
-        /// On WebGL / Editor-with-WebGL-target this is coerced to <c>wss</c> so CreateAllocation
-        /// conversion does not throw; Linux dedicated (<c>UNITY_SERVER</c>) stays dtls.
+        /// A WebGL player is coerced to <c>wss</c>. The Editor and Linux dedicated stay <c>dtls</c>.
         /// </summary>
         public static string HostConnectionTypeForPlatform(string commandLineOverride = null)
         {

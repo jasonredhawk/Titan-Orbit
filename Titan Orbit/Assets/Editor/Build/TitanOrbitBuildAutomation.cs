@@ -60,11 +60,29 @@ namespace TitanOrbit.Editor.Build
             // --- Ensure active Editor platform is WebGL (not leftover Linux Server) ---
             if (!IsWebGlActiveTarget())
             {
-                QueueWebGlBuildAfterPlatformSwitch();
+                QueueWebGlBuildAfterPlatformSwitch(fastIterate: false);
                 return;
             }
 
             ExecuteWebGlProductionBuild(restoreTargetAfter: null);
+        }
+
+        /// <summary>
+        /// Local WebGL player for join debugging. Development + Gzip, same output path as
+        /// production so <c>tools/gcs/deploy_webgl_gcs.bat</c> can upload it. No
+        /// <c>bundleVersion</c> stamp, no forced texture reimport. Incremental IL2CPP can reuse Bee
+        /// artifacts. Ship a real production build before a public release (Brotli + hashed names).
+        /// </summary>
+        [MenuItem("TitanOrbit/Build/WebGL Fast Iterate")]
+        public static void BuildWebGLFastIterate()
+        {
+            if (!IsWebGlActiveTarget())
+            {
+                QueueWebGlBuildAfterPlatformSwitch(fastIterate: true);
+                return;
+            }
+
+            ExecuteWebGlFastIterateBuild();
         }
 
         /// <summary>True when the Editor has already switched to WebGL.</summary>
@@ -77,13 +95,14 @@ namespace TitanOrbit.Editor.Build
         /// Saves a pending WebGL build request (plus optional restore target), switches to WebGL,
         /// and returns. <see cref="ResumePendingWebGlBuildIfAny"/> runs BuildPlayer after reload.
         /// </summary>
-        static void QueueWebGlBuildAfterPlatformSwitch()
+        static void QueueWebGlBuildAfterPlatformSwitch(bool fastIterate)
         {
             // --- Persist request + prior target across domain reload ---
             // [STANDARD] SwitchActiveBuildTarget reloads assemblies; static locals die. Temp JSON survives.
             var pending = new PendingWebGlBuild
             {
                 requested = true,
+                fastIterate = fastIterate,
                 previousTarget = (int)EditorUserBuildSettings.activeBuildTarget,
                 previousSubtarget = (int)EditorUserBuildSettings.standaloneBuildSubtarget
             };
@@ -104,7 +123,8 @@ namespace TitanOrbit.Editor.Build
                 "[TitanOrbitBuild] Active Editor target is not WebGL " +
                 $"(now: {EditorUserBuildSettings.activeBuildTarget} / {EditorUserBuildSettings.standaloneBuildSubtarget}). " +
                 "Switching platform so EntityScenes bake for the WebGL client, then resuming the " +
-                "WebGL production build after scripts recompile.");
+                (fastIterate ? "WebGL Fast Iterate" : "WebGL production") +
+                " build after scripts recompile.");
 
             // --- Switch platform (triggers domain reload) ---
             // [UNITY] WebGL is a client Player target — not Dedicated Server — so UNITY_SERVER
@@ -182,6 +202,13 @@ namespace TitanOrbit.Editor.Build
                 restoreAfter = previousTarget;
             }
 
+            if (pending.fastIterate)
+            {
+                Debug.Log("[TitanOrbitBuild] Resuming queued WebGL Fast Iterate after platform switch.");
+                ExecuteWebGlFastIterateBuild();
+                return;
+            }
+
             Debug.Log("[TitanOrbitBuild] Resuming queued WebGL production build after platform switch.");
             ExecuteWebGlProductionBuild(restoreAfter);
         }
@@ -207,12 +234,14 @@ namespace TitanOrbit.Editor.Build
             //   256 MiB initial heap left almost no room for ECS/NetCode boot inside that budget.
             //   128 MiB initial + geometric growth + 8 MiB stack. Keep decompressionFallback ON so
             //   Build/* stay *.unityweb (GCS deploy / Content-Encoding:br pipeline).
-            PlayerSettings.WebGL.nameFilesAsHashes = true;
-            PlayerSettings.WebGL.dataCaching = false;
-            PlayerSettings.WebGL.initialMemorySize = 128;
-            PlayerSettings.WebGL.maximumMemorySize = 2048;
-            PlayerSettings.WebGL.decompressionFallback = true;
-            PlayerSettings.WebGL.emscriptenArgs = "-sSTACK_SIZE=8388608";
+            //
+            // Do NOT stamp bundleVersion every build — that dirties ProjectSettings.asset and
+            // forces Bee to redo IL2CPP. Hashed Build/* names already cache-bust the CDN.
+            ApplyWebGlSharedPlayerSettings();
+            ApplyWebGlPlayerSetting(PlayerSettings.WebGL.nameFilesAsHashes, true, v => PlayerSettings.WebGL.nameFilesAsHashes = v);
+            ApplyWebGlPlayerSetting(PlayerSettings.WebGL.compressionFormat, WebGLCompressionFormat.Brotli,
+                v => PlayerSettings.WebGL.compressionFormat = v);
+            ApplyWebGlIl2CppConfiguration(Il2CppCompilerConfiguration.Release);
             // [TITAN-ORBIT] App UI ships via com.unity.ai.inference. Standalone strips it with
             // APP_UI_EDITOR_ONLY; WebGL must match (smaller player + no InitializeInPlayer at boot).
             EnsureWebGlScriptingDefine("APP_UI_EDITOR_ONLY");
@@ -222,12 +251,9 @@ namespace TitanOrbit.Editor.Build
             // filters Unity.Rendering.* out of CreateClientWorld (see TitanOrbitBootstrap).
             RemoveWebGlScriptingDefine("HYBRID_RENDERER_DISABLED");
 
-            // --- Stamp bundleVersion so any leftover cache key still misses ---
-            // [UNITY] companyName+productName+productVersion participate in UnityCache identity.
-            string stamp = DateTime.UtcNow.ToString("yyyyMMdd.HHmm");
-            PlayerSettings.bundleVersion = stamp;
             Debug.Log("[TitanOrbitBuild] WebGL PlayerSettings: nameFilesAsHashes=true dataCaching=false " +
-                      "initialMemorySize=128 stack=8MiB APP_UI_EDITOR_ONLY bundleVersion=" + stamp);
+                      "initialMemorySize=128 stack=8MiB Brotli Release APP_UI_EDITOR_ONLY " +
+                      "bundleVersion=" + PlayerSettings.bundleVersion + " (unchanged)");
 
             // --- Wipe prior output so stale Build/* cannot ship beside the new index ---
             CleanWebGlOutputFolder();
@@ -246,7 +272,8 @@ namespace TitanOrbit.Editor.Build
 
             Debug.Log(
                 "[TitanOrbitBuild] WebGL production build: texture subtarget=DXT (desktop browsers), " +
-                "nameFilesAsHashes=true (IndexedDB cache-bust).");
+                "nameFilesAsHashes=true (IndexedDB cache-bust), Brotli. Burst AOT off for WebGL " +
+                "(Receive Burst IJobEntity WASM-OOBs once a NetworkStreamConnection exists).");
 
             // PrepareWebGlBuild runs in IPreprocessBuildWithReport.
             BuildReport report = BuildPipeline.BuildPlayer(options);
@@ -265,6 +292,96 @@ namespace TitanOrbit.Editor.Build
             }
             else
                 Debug.LogError($"[TitanOrbitBuild] WebGL build failed: {report.summary.result} — {report.summary.totalErrors} error(s).");
+        }
+
+        /// <summary>
+        /// Incremental WebGL player for local Chrome. Leaves Development + Gzip + Debug IL2CPP
+        /// in PlayerSettings so the next Fast Iterate does not flip Bee inputs. Production
+        /// writes Brotli + Release + hashed names back when you ship.
+        /// </summary>
+        static void ExecuteWebGlFastIterateBuild()
+        {
+            ApplyWebGlSharedPlayerSettings();
+            ApplyWebGlPlayerSetting(PlayerSettings.WebGL.nameFilesAsHashes, false, v => PlayerSettings.WebGL.nameFilesAsHashes = v);
+            ApplyWebGlPlayerSetting(PlayerSettings.WebGL.compressionFormat, WebGLCompressionFormat.Gzip,
+                v => PlayerSettings.WebGL.compressionFormat = v);
+            ApplyWebGlIl2CppConfiguration(Il2CppCompilerConfiguration.Debug);
+            EnsureWebGlScriptingDefine("APP_UI_EDITOR_ONLY");
+            RemoveWebGlScriptingDefine("HYBRID_RENDERER_DISABLED");
+
+            Debug.Log(
+                "[TitanOrbitBuild] WebGL Fast Iterate: Development + Gzip + Debug IL2CPP, " +
+                "output=" + GetWebGlOutputPath() + " (same as production). " +
+                "Stay on the WebGL Editor target. Deploy with tools/gcs/deploy_webgl_gcs.bat.");
+
+            WebGLTextureImportBuildFix.SkipForcedGameplayTextureReimport = true;
+            try
+            {
+                var options = new BuildPlayerOptions
+                {
+                    scenes = GetEnabledScenes(),
+                    locationPathName = GetWebGlOutputPath(),
+                    target = BuildTarget.WebGL,
+                    options = BuildOptions.Development,
+                    subtarget = (int)WebGLTextureSubtarget.DXT
+                };
+
+                BuildReport report = BuildPipeline.BuildPlayer(options);
+                if (report.summary.result == BuildResult.Succeeded)
+                {
+                    string iterateRoot = GetWebGlOutputPath();
+                    File.WriteAllText(
+                        Path.Combine(iterateRoot, "ITERATE_STAMP.txt"),
+                        "hydrate-probe-h17\nSame folder as production. Deploy with tools/gcs/deploy_webgl_gcs.bat.\n");
+                    StampWebGlIterateIndexHtml(iterateRoot);
+                    WriteLeftoverWebGlRootNotice();
+                    Debug.Log(
+                        "[TitanOrbitBuild] WebGL Fast Iterate OK → " + iterateRoot +
+                        "\nDeploy with tools/gcs/deploy_webgl_gcs.bat. Chrome must show CONNECT_JOIN " +
+                        "player-stamp hydrate-probe-h17 (C# / WASM). The green HTML bar is not enough — " +
+                        "a ~20s iterate that only restamps index.html leaves the old WASM in place.");
+                }
+                else
+                {
+                    Debug.LogError(
+                        $"[TitanOrbitBuild] WebGL Fast Iterate failed: {report.summary.result} — " +
+                        $"{report.summary.totalErrors} error(s).");
+                }
+            }
+            finally
+            {
+                WebGLTextureImportBuildFix.SkipForcedGameplayTextureReimport = false;
+            }
+        }
+
+        /// <summary>
+        /// Memory / stack / cache flags shared by production and Fast Iterate.
+        /// Writes only when a value actually changed so Bee can keep IL2CPP artifacts.
+        /// </summary>
+        static void ApplyWebGlSharedPlayerSettings()
+        {
+            ApplyWebGlPlayerSetting(PlayerSettings.WebGL.dataCaching, false, v => PlayerSettings.WebGL.dataCaching = v);
+            ApplyWebGlPlayerSetting(PlayerSettings.WebGL.initialMemorySize, 128, v => PlayerSettings.WebGL.initialMemorySize = v);
+            ApplyWebGlPlayerSetting(PlayerSettings.WebGL.maximumMemorySize, 2048, v => PlayerSettings.WebGL.maximumMemorySize = v);
+            ApplyWebGlPlayerSetting(PlayerSettings.WebGL.decompressionFallback, true, v => PlayerSettings.WebGL.decompressionFallback = v);
+            ApplyWebGlPlayerSetting(PlayerSettings.WebGL.emscriptenArgs, "-sSTACK_SIZE=8388608",
+                v => PlayerSettings.WebGL.emscriptenArgs = v);
+        }
+
+        static void ApplyWebGlPlayerSetting<T>(T current, T next, Action<T> setter)
+        {
+            if (EqualityComparer<T>.Default.Equals(current, next))
+                return;
+            setter(next);
+        }
+
+        static void ApplyWebGlIl2CppConfiguration(Il2CppCompilerConfiguration configuration)
+        {
+            var current = PlayerSettings.GetIl2CppCompilerConfiguration(NamedBuildTarget.WebGL);
+            if (current == configuration)
+                return;
+            PlayerSettings.SetIl2CppCompilerConfiguration(NamedBuildTarget.WebGL, configuration);
+            Debug.Log("[TitanOrbitBuild] WebGL IL2CPP compiler configuration → " + configuration);
         }
 
         /// <summary>
@@ -1100,6 +1217,63 @@ namespace TitanOrbit.Editor.Build
             return Path.Combine(WebBuildFolder, "TitanOrbitWebGL");
         }
 
+        /// <summary>
+        /// Visible + console stamp so a leftover hashed player cannot be mistaken for Fast Iterate.
+        /// </summary>
+        static void StampWebGlIterateIndexHtml(string iterateRoot)
+        {
+            string indexPath = Path.Combine(iterateRoot, "index.html");
+            if (!File.Exists(indexPath))
+                return;
+            string html = File.ReadAllText(indexPath);
+            const string banner =
+                "<div id=\"titan-orbit-iterate-banner\" style=\"position:fixed;top:0;left:0;right:0;z-index:2147483646;background:#1a5f2a;color:#e8ffe8;font:14px/1.4 monospace;padding:8px 12px;text-align:center;\">FAST ITERATE h17 — if this bar is missing you are on the wrong player</div>";
+            const string stampScript =
+                "<script>console.log(\"CONNECT_JOIN html-stamp hydrate-probe-h17 href=\" + location.href);</script>";
+            if (html.IndexOf("titan-orbit-iterate-banner", StringComparison.Ordinal) >= 0)
+            {
+                html = System.Text.RegularExpressions.Regex.Replace(
+                    html,
+                    @"FAST ITERATE h\d+",
+                    "FAST ITERATE h17");
+                html = html.Replace("fast-iterate-h14", "hydrate-probe-h17");
+                html = html.Replace("fast-iterate-h15", "hydrate-probe-h17");
+                html = html.Replace("fast-iterate-h16", "hydrate-probe-h17");
+                File.WriteAllText(indexPath, html);
+                return;
+            }
+            const string marker = "<body>";
+            int body = html.IndexOf(marker, StringComparison.OrdinalIgnoreCase);
+            if (body < 0)
+                return;
+            string stamp = "<body>\n    " + banner + "\n    " + stampScript + "\n";
+            html = html.Substring(0, body) + stamp + html.Substring(body + marker.Length);
+            File.WriteAllText(indexPath, html);
+        }
+
+        /// <summary>
+        /// Old Unity output lived at BuildOutput/WebGL/index.html (hashed loader). Serving that
+        /// folder looks like a join but is a previous WASM. Replace the leftover entry page.
+        /// </summary>
+        static void WriteLeftoverWebGlRootNotice()
+        {
+            string projectRoot = Path.GetDirectoryName(Application.dataPath);
+            if (string.IsNullOrEmpty(projectRoot))
+                return;
+            string leftoverDir = Path.Combine(projectRoot, "BuildOutput", "WebGL");
+            if (!Directory.Exists(leftoverDir))
+                return;
+            File.WriteAllText(
+                Path.Combine(leftoverDir, "index.html"),
+                "<!DOCTYPE html><html><head><meta charset=\"utf-8\"><title>Wrong WebGL folder</title></head>" +
+                "<body style=\"background:#1a1010;color:#ffd0d0;font:16px/1.5 sans-serif;padding:2rem;\">" +
+                "<h1>Wrong folder</h1>" +
+                "<p>This leftover <code>BuildOutput/WebGL</code> player is the old hashed WASM.</p>" +
+                "<p>Serve <code>BuildOutput/WebGL/production/TitanOrbitWebGL</code> (Fast Iterate and production share this folder).</p>" +
+                "<script>console.error(\"CONNECT_JOIN html-stamp WRONG-FOLDER leftover BuildOutput/WebGL\");</script>" +
+                "</body></html>\n");
+        }
+
         private static string GetWindowsServerOutputPath()
         {
             // --- Compute value ---
@@ -1159,6 +1333,9 @@ namespace TitanOrbit.Editor.Build
         {
             /// <summary>True when a WebGL BuildPlayer should run after platform switch.</summary>
             public bool requested;
+
+            /// <summary>True resumes Fast Iterate; false resumes production.</summary>
+            public bool fastIterate;
 
             /// <summary>
             /// <see cref="BuildTarget"/> the Editor was on before the switch (cast to int for JSON).
