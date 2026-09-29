@@ -13,6 +13,7 @@ using Unity.Collections;
 using Unity.Entities;
 using Unity.NetCode;
 using Unity.Networking.Transport;
+using Unity.Transforms;
 using Unity.Scenes;
 using Unity.Networking.Transport.Relay;
 using Unity.Services.Authentication;
@@ -1062,16 +1063,23 @@ namespace TitanOrbit.NetCode
             world.Update();
         }
 
+        static bool s_LoggedWebGlPlayerLoopTick;
+
         /// <summary>
-        /// Ticks ClientWorld. WebGL uses <see cref="TitanOrbitWebGlClientTick.SafeUpdate"/> so
-        /// Transform / predicted-fixed Burst never run (Chrome WASM OOB on join).
+        /// Ticks ClientWorld on desktop. On WebGL the ClientWorld stays on the player loop, so
+        /// this does not call <c>World.Update</c> (that would double-tick and was the old
+        /// SafeUpdate bypass).
         /// </summary>
         static void TickClientWorld(World world)
         {
             if (world == null || !world.IsCreated)
                 return;
 #if UNITY_WEBGL && !UNITY_EDITOR
-            TitanOrbitWebGlClientTick.SafeUpdate(world);
+            if (!s_LoggedWebGlPlayerLoopTick)
+            {
+                s_LoggedWebGlPlayerLoopTick = true;
+                Debug.Log("[WebGLClient] Player loop owns ClientWorld.Update.");
+            }
 #else
             world.Update();
 #endif
@@ -1667,12 +1675,14 @@ namespace TitanOrbit.NetCode
                     return false;
                 }
 
+                Debug.Log("[TitanOrbitSessionManager] Relay endpoint ready clientProtocol=" + clientProtocol +
+                          " endpointValid=True");
+
                 await TitanOrbitLobbyService.TryUpdatePlayerRelayAllocationAsync(
                     lobby.Id, joinAllocation.AllocationId.ToString());
 
                 TitanOrbitRelayState.SetClientRelay(clientRelay);
                 await EnsureClientReadyForRelayDriverResetAsync();
-                ResetClientDriverIfNeeded();
 
                 var clientWorld = ClientServerBootstrap.ClientWorld;
                 if (clientWorld == null || !clientWorld.IsCreated)
@@ -1682,7 +1692,14 @@ namespace TitanOrbit.NetCode
                     return false;
                 }
 
+#if UNITY_WEBGL && !UNITY_EDITOR
+                // Player loop owns ClientWorld. The init-group system resets the driver and
+                // connects before NetworkStreamReceiveSystem polls the WebSocket.
+                TitanOrbitWebGlRelayConnect.Request();
+#else
+                ResetClientDriverIfNeeded();
                 ConnectRelayClient(clientWorld);
+#endif
                 for (int i = 0; i < 30; i++)
                 {
                     TickClientWorld(clientWorld);
@@ -2244,7 +2261,8 @@ namespace TitanOrbit.NetCode
         {
             float started = Time.realtimeSinceStartup;
             float deadline = started + timeoutSeconds;
-            float lastDiag = 0f;
+            // First diagnostic runs on the opening frame, then every 5s.
+            float lastDiag = started - 5f;
             const float zombieFailSeconds = 20f;
             var client = ClientServerBootstrap.ClientWorld;
             while (Time.realtimeSinceStartup < deadline)
@@ -2260,6 +2278,12 @@ namespace TitanOrbit.NetCode
                     {
                         lastDiag = Time.realtimeSinceStartup;
                         LogClientConnectDiagnostics(client);
+#if UNITY_WEBGL && !UNITY_EDITOR
+                        // A failed WebSocket removes the connection entity. Ask for another
+                        // connect on the next initialization tick instead of waiting out the minute.
+                        if (!HasClientConnection(client) && TitanOrbitRelayState.TryGetClientRelay(out _))
+                            TitanOrbitWebGlRelayConnect.Request();
+#endif
                     }
 
                     if (dedicatedJoin && Time.realtimeSinceStartup - started >= zombieFailSeconds &&
@@ -2309,13 +2333,44 @@ namespace TitanOrbit.NetCode
                 return;
 
             var em = client.EntityManager;
-            int connections = em.CreateEntityQuery(typeof(NetworkStreamConnection)).CalculateEntityCount();
-            int withNetworkId = em.CreateEntityQuery(typeof(NetworkStreamConnection), typeof(NetworkId))
-                .CalculateEntityCount();
-            int inGame = em.CreateEntityQuery(typeof(NetworkStreamInGame)).CalculateEntityCount();
+            using var connectionsQuery = em.CreateEntityQuery(typeof(NetworkStreamConnection));
+            using var idQuery = em.CreateEntityQuery(typeof(NetworkStreamConnection), typeof(NetworkId));
+            using var inGameQuery = em.CreateEntityQuery(typeof(NetworkStreamInGame));
+            using var protocolQuery = em.CreateEntityQuery(typeof(NetworkProtocolVersion));
+            int connections = connectionsQuery.CalculateEntityCount();
+            int withNetworkId = idQuery.CalculateEntityCount();
+            int inGame = inGameQuery.CalculateEntityCount();
+            int spawnBuf = CountGhostSpawnBuffer(em);
+            string connState = "(none)";
+            if (connections == 1 && connectionsQuery.TryGetSingleton<NetworkStreamConnection>(out var conn))
+                connState = conn.CurrentState.ToString();
+            var transform = client.GetExistingSystemManaged<TransformSystemGroup>();
+            bool transformOn = transform != null && transform.Enabled;
+            var predicted = client.GetExistingSystemManaged<PredictedSimulationSystemGroup>();
+            bool predictedOn = predicted != null && predicted.Enabled;
+            bool relayReady = TitanOrbitRelayState.TryGetClientRelay(out var relay);
             Debug.Log("[TitanOrbitSessionManager] Client connect diag: connections=" + connections +
+                      " state=" + connState +
                       " withNetworkId=" + withNetworkId + " inGame=" + inGame +
-                      " relay=" + TitanOrbitRelayState.TryGetClientRelay(out _));
+                      " spawnBuf=" + spawnBuf +
+                      " protocolReady=" + (protocolQuery.CalculateEntityCount() > 0) +
+                      " transformOn=" + transformOn +
+                      " predictedOn=" + predictedOn +
+                      " clientProtocol=" + TitanOrbitRelayUtility.ClientConnectionTypeForPlatform() +
+                      " relay=" + relayReady +
+                      (relayReady ? " endpoint=" + relay.Endpoint + " wss=" + relay.IsWebSocket + " secure=" + relay.IsSecure : ""));
+        }
+
+        /// <summary>Ghost spawn queue length, or -1 when GhostSpawn has not created the queue.</summary>
+        static int CountGhostSpawnBuffer(EntityManager em)
+        {
+            using var spawnQueue = em.CreateEntityQuery(typeof(GhostSpawnQueue));
+            if (spawnQueue.CalculateEntityCount() != 1)
+                return -1;
+            Entity queue = spawnQueue.GetSingletonEntity();
+            if (!em.HasBuffer<GhostSpawnBuffer>(queue))
+                return -1;
+            return em.GetBuffer<GhostSpawnBuffer>(queue).Length;
         }
 
         /// <summary>Resets client worlds and UI after dedicated connect timeout.</summary>
@@ -2502,15 +2557,21 @@ namespace TitanOrbit.NetCode
             driver.ValueRW.Connect(em, endpoint);
         }
 
-        static void ConnectRelayClient(World world)
+        /// <summary>
+        /// Opens the Relay connection on an already-reset client driver.
+        /// Returns the connection entity, or <see cref="Entity.Null"/> when connect was skipped.
+        /// </summary>
+        internal static Entity ConnectRelayClient(World world)
         {
             if (!TitanOrbitRelayState.TryGetClientRelay(out var relay))
-                return;
+                return Entity.Null;
             var em = world.EntityManager;
-            if (em.CreateEntityQuery(typeof(NetworkStreamConnection)).CalculateEntityCount() > 0)
-                return;
-            var driver = em.CreateEntityQuery(typeof(NetworkStreamDriver)).GetSingletonRW<NetworkStreamDriver>();
-            driver.ValueRW.Connect(world.EntityManager, relay.Endpoint);
+            using var connections = em.CreateEntityQuery(typeof(NetworkStreamConnection));
+            if (connections.CalculateEntityCount() > 0)
+                return Entity.Null;
+            using var driverQuery = em.CreateEntityQuery(typeof(NetworkStreamDriver));
+            var driver = driverQuery.GetSingletonRW<NetworkStreamDriver>();
+            return driver.ValueRW.Connect(em, relay.Endpoint);
         }
 
         static void ResetServerDriverIfNeeded()
@@ -2526,7 +2587,7 @@ namespace TitanOrbit.NetCode
             driver.ResetDriverStore(world.Unmanaged, ref store);
         }
 
-        static void ResetClientDriverIfNeeded()
+        internal static void ResetClientDriverIfNeeded()
         {
             var world = ClientServerBootstrap.ClientWorld;
             if (world == null || !world.IsCreated) return;
