@@ -8,6 +8,14 @@ namespace Shapes {
 	/// <summary>A helper type to inherit from when you want a component that draws immediate mode shapes</summary>
 	public class ImmediateModeShapeDrawer : MonoBehaviour {
 
+		/// <summary>
+		/// When set, this camera does not receive immediate-mode draws.
+		/// Titan Orbit's join-load warmup camera calls <c>Camera.Render</c> several times a frame
+		/// into a tiny RenderTexture. Drawers must not submit commands for it: that replays every
+		/// shape pass per warmup draw, and those passes used to abort URP before Forward+ could finish.
+		/// </summary>
+		public static Camera skipDrawCamera;
+
 		/// <summary>Whether or not to only draw in cameras that can see the layer of this GameObject</summary>
 		[Tooltip( "When enabled, shapes will only draw in cameras that can see the layer of this GameObject" )]
 		public bool useCullingMasks = false;
@@ -26,6 +34,8 @@ namespace Shapes {
 			}
 			if( useCullingMasks && ( cam.cullingMask & ( 1 << gameObject.layer ) ) == 0 )
 				return; // scene & game view cameras should respect culling layer settings if you tell them to
+			if( skipDrawCamera != null && cam == skipDrawCamera )
+				return;
 
 			DrawShapes( cam );
 		}

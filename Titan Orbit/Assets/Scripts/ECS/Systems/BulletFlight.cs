@@ -14,7 +14,11 @@ namespace TitanOrbit.ECS
         /// <summary>
         /// End of this step and how many equal segments to sweep.
         /// </summary>
-        [BurstCompile]
+        /// <remarks>
+        /// No <c>[BurstCompile]</c> on this method. That attribute makes a direct-call
+        /// entry point, and Burst rejects <c>float3</c> passed by value (BC1064 / BC1067).
+        /// Jobs still inline the body from <c>BulletAdvanceJob</c> and the cosmetic sweep.
+        /// </remarks>
         public static void GetStep(
             float3 from,
             float3 velocity,
@@ -32,7 +36,6 @@ namespace TitanOrbit.ECS
         /// reaching a hull the server had already expired.
         /// </summary>
         /// <param name="maxTravel">Remaining flight budget (MaxDistance − Traveled).</param>
-        [BurstCompile]
         public static void GetStep(
             float3 from,
             float3 velocity,

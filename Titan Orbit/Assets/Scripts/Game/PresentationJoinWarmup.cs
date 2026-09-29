@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using Shapes;
 using SpaceGraphicsToolkit;
 using TitanOrbit.Core;
 using TitanOrbit.Data;
@@ -393,6 +394,10 @@ namespace TitanOrbit.Game
             }
 
             s_Camera.targetTexture = s_WarmupRt;
+            // Shapes immediate mode subscribes to every camera. This one has no intermediate
+            // color target, so those passes used to abort the render graph and leave Forward+
+            // ZBinningJob unfinished (every later Camera.Render and the Game view then failed).
+            ImmediateModeShapeDrawer.skipDrawCamera = s_Camera;
 
             var urp = camGo.GetComponent<UniversalAdditionalCameraData>();
             if (urp == null)
@@ -426,6 +431,8 @@ namespace TitanOrbit.Game
             }
 
             s_QuadRenderer = null;
+            if (ImmediateModeShapeDrawer.skipDrawCamera == s_Camera)
+                ImmediateModeShapeDrawer.skipDrawCamera = null;
             if (s_Camera != null)
                 s_Camera.targetTexture = null;
             s_Camera = null;

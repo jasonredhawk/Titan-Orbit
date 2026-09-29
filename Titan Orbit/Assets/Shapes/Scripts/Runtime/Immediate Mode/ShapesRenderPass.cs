@@ -37,11 +37,21 @@ namespace Shapes {
 		}
 
 		public override void RecordRenderGraph( RenderGraph renderGraph, ContextContainer frameData ) {
+			// cameraColor exists only when URP allocates an intermediate target. Cameras that
+			// draw straight into a RenderTexture (join-load warmup) leave it empty.
+			// SetRenderAttachment then NREs, the graph never executes, and Forward+
+			// leaves ZBinningJob unfinished so every later camera render fails.
+			UniversalResourceData resourceData = frameData.Get<UniversalResourceData>();
+			TextureHandle color = resourceData.activeColorTexture;
+			if( !color.IsValid() )
+				color = resourceData.backBufferColor;
+			if( !color.IsValid() )
+				return;
+
 			using IRasterRenderGraphBuilder builder = renderGraph.AddRasterRenderPass<PassData>( "Render Shapes", out PassData data );
 			data.drawCommand = drawCommand;
 			builder.AllowPassCulling( false );
-			UniversalResourceData resourceData = frameData.Get<UniversalResourceData>();
-			builder.SetRenderAttachment( resourceData.cameraColor, 0, AccessFlags.Write );
+			builder.SetRenderAttachment( color, 0, AccessFlags.Write );
 			builder.SetRenderFunc(
 				( PassData dataParam, RasterGraphContext context ) => {
 					dataParam.drawCommand.AppendToBuffer( context.cmd );
