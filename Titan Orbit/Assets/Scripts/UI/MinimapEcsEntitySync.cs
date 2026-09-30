@@ -613,12 +613,12 @@ namespace TitanOrbit.UI
                                      em.IsComponentEnabled<GhostOwnerIsLocal>(entity)));
             anchor.BodySize = math.max(0.25f, lt.Scale);
 
-            // --- Chassis ladder (minimap scales the regular-ship Cross from ShipLevel; MEGA stays a triangle) ---
+            // --- Chassis ladder (minimap scales the regular-ship X-in-square from ShipLevel; MEGA stays a triangle) ---
             anchor.ShipLevel = ship.ShipLevel;
             anchor.BranchIndex = ship.BranchIndex;
             anchor.ShipFamilyConfigIndex = ship.ShipFamilyConfigIndex;
 
-            // --- MEGA hull flag (hex vs Cross on the minimap) ---
+            // --- MEGA hull flag (triangle vs X-in-square on the minimap) ---
             // [NETCODE] MegaShipState is baked on StarshipGhost and ghosted, so late joiners
             // already see IsMega. Per-entity HasComponent matches ShipMatchStats below —
             // not a map-body gather, so this stays quarantine-safe.

@@ -1,10 +1,12 @@
+using TitanOrbit.Data;
+
 namespace TitanOrbit.Simulation
 {
     /// <summary>
     /// Crystal colour on a loose gem. Pickup, tractor, and deposit ignore tint — any ship
-    /// may scoop red, yellow, or blue. Tint is a teaching colour only:
+    /// may scoop any tint. Tint is a teaching colour only:
     /// <list type="bullet">
-    /// <item><see cref="Standard"/> — red mined / destroy leftover.</item>
+    /// <item><see cref="Standard"/> — ordinary mined / destroy leftover (<c>AsteroidSettings.DefaultGemColor</c>).</item>
     /// <item><see cref="TerritoryBonus"/> — yellow extra yield from a friendly triangle.</item>
     /// <item><see cref="MinerCommander"/> — blue extra yield from that team's top miner (5%).</item>
     /// </list>
@@ -13,7 +15,7 @@ namespace TitanOrbit.Simulation
     /// </summary>
     public enum GemVisualTint : byte
     {
-        /// <summary>Default red crystal (base mine / destroy leftover).</summary>
+        /// <summary>Ordinary crystal (base mine / destroy leftover). Colour is <c>AsteroidSettings.DefaultGemColor</c>.</summary>
         Standard = 0,
 
         /// <summary>Yellow — triangle territory bonus. Separate spawn from the red base.</summary>
@@ -32,8 +34,12 @@ namespace TitanOrbit.Simulation
     /// </summary>
     public static class GemVisualTintColors
     {
-        /// <summary>Semi-transparent red — same family as the pooled standard material.</summary>
-        public static readonly UnityEngine.Color Standard = new UnityEngine.Color(1f, 0.2f, 0.2f, 0.55f);
+        /// <summary>
+        /// Ordinary crystal — <see cref="AsteroidSettings.DefaultGemColor"/> (built-in red when unset).
+        /// Same family as the pooled standard material.
+        /// </summary>
+        public static UnityEngine.Color Standard =>
+            AsteroidSettingsCache.ResolveOrDefault().ResolveDefaultGemColor();
 
         /// <summary>Yellow — triangle bonus (NGO bonusGemTintColor).</summary>
         public static readonly UnityEngine.Color TerritoryBonus = new UnityEngine.Color(1f, 0.9f, 0.15f, 0.55f);
@@ -51,7 +57,9 @@ namespace TitanOrbit.Simulation
                 case GemVisualTint.MinerCommander:
                     return new UnityEngine.Color(0.25f, 0.55f, 1f, 1f);
                 default:
-                    return UnityEngine.Color.red;
+                    var standard = Standard;
+                    standard.a = 1f;
+                    return standard;
             }
         }
     }

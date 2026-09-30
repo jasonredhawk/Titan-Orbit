@@ -1,4 +1,5 @@
 using TitanOrbit.Core;
+using TitanOrbit.Data;
 using TMPro;
 using UnityEngine;
 using UnityEngine.Serialization;
@@ -36,10 +37,12 @@ namespace TitanOrbit.Game
         [Header("Colors")]
         public Color damageColor = new Color(1f, 0.3f, 0.3f, 1f);
         public Color healthColor = new Color(0.2f, 0.9f, 0.3f, 1f);
-        public Color peopleColor = new Color(1f, 0.9f, 0.25f, 1f);
+        [Tooltip("Inspector mirror of Troop Cap purple. Live troop popups read ShipStatPalette, not this swatch.")]
+        public Color peopleColor = new Color(0.507f, 0.312f, 0.702f, 1f);
         [Tooltip("Used when the popup has no team color (gems use team color when available).")]
         public Color gemFallbackColor = new Color(0.85f, 0.95f, 1f, 1f);
-        public Color energyColor = new Color(0.35f, 0.75f, 1f, 1f);
+        [Tooltip("Inspector mirror of Energy Cap yellow. Live energy popups read ShipStatPalette, not this swatch. Blue is Move / Turn.")]
+        public Color energyColor = new Color(0.964f, 0.856f, 0.424f, 1f);
         public Color upgradeColor = new Color(0.95f, 0.85f, 0.35f, 1f);
 
         [Header("Type")]
@@ -168,9 +171,11 @@ namespace TitanOrbit.Game
                     return healthColor;
                 case FloatingCountChannel.PeopleLoad:
                 case FloatingCountChannel.PeopleUnload:
-                    return peopleColor;
+                    // Troop Cap purple — the serialized swatch can drift; the palette cannot.
+                    return ShipStatPalette.GetVitalBarColor(3);
                 case FloatingCountChannel.Energy:
-                    return energyColor;
+                    // Energy Cap yellow. Blue is Move / Turn.
+                    return ShipStatPalette.GetVitalBarColor(1);
                 case FloatingCountChannel.Upgrades:
                     return upgradeColor;
                 default:

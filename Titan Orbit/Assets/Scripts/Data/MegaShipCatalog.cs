@@ -107,8 +107,8 @@ namespace TitanOrbit.Data
         /// <summary>Player-facing class name (HUD, store cards, toasts). Internal ids stay <c>MEGA_###</c>.</summary>
         public const string DisplayClassName = "Titan";
 
-        /// <summary>Uppercase HUD / tree caption for a Titan hull slot.</summary>
-        public const string DisplayClassCaption = "TITAN SHIP";
+        /// <summary>Uppercase Orbit Menu tree caption for a Titan hull slot.</summary>
+        public const string DisplayClassCaption = "TITAN";
 
         /// <summary>Short pool tag when a visual family is missing (RANK 1 fallback).</summary>
         public const string DisplayClassShort = "TITAN";

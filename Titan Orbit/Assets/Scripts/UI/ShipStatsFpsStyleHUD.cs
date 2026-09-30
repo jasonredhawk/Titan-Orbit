@@ -9,7 +9,10 @@ using UnityEngine.UI;
 namespace TitanOrbit.UI
 {
     /// <summary>
-    /// Top-left FPS-style ship vitals HUD (health, energy, gems, people). Reads local ship state from
+    /// Top-left FPS-style ship vitals HUD (health, energy, gems, people). Bar colors come from
+    /// <see cref="ShipAbilityCategoryColors.GetShipVitalBarColor"/> so they match the ability
+    /// buttons and the orbit-menu power bar (energy yellow, gems light purple, troops dark purple).
+    /// Reads local ship state from
     /// <see cref="EcsGameBridge"/> each <c>LateUpdate</c> — presentation only, not authoritative sim.
     /// Auto-binds Row0..Row3 child sliders when inspector references are empty.
     /// <para>
@@ -316,7 +319,34 @@ namespace TitanOrbit.UI
                 CacheRows();
             for (int i = 0; i < _rows.Length; i++)
                 ApplySquareBarStyle(_rows[i].Bar);
+            ApplyVitalColors();
             _barsStyled = true;
+        }
+
+        /// <summary>
+        /// Paints each fill (and the current/max digits) with the matching power-bar slot:
+        /// Health Cap, Energy Cap, Gem Cap, Troop Cap. Scene colors are only a fallback
+        /// until this runs — play mode always follows the shared stat palette.
+        /// </summary>
+        void ApplyVitalColors()
+        {
+            if (_rows == null)
+                return;
+
+            for (int i = 0; i < _rows.Length; i++)
+            {
+                Color statColor = ShipAbilityCategoryColors.GetShipVitalBarColor(i);
+                Slider bar = _rows[i].Bar;
+                if (bar != null && bar.fillRect != null)
+                {
+                    Image fill = bar.fillRect.GetComponent<Image>();
+                    if (fill != null)
+                        fill.color = statColor;
+                }
+
+                if (_rows[i].Value != null)
+                    _rows[i].Value.color = statColor;
+            }
         }
 
         static void ApplySquareBarStyle(Slider slider)

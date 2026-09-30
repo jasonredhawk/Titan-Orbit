@@ -15,7 +15,7 @@ namespace TitanOrbit.UI
     /// scaling and price-button chrome.
     /// The family line sits under the hull name; the weapon roster sits under the family
     /// and just above the buy chip (CosmicShark → Cosmic Shark, smaller than the ship name).
-    /// Level-7 Titan cards use a separate bronze-void fill, gold frame, and "TITAN SHIP" caption
+    /// Level-7 Titan cards use a separate bronze-void fill, gold frame, and "TITAN" caption
     /// so they read as boss hulls next to the navy L1–L6 family cards.
     /// Regular L1–L6 cards swap caption ink with <see cref="ApplyRegularCardInk"/> so cyan
     /// available / debug-free fills do not keep ice-blue type (blue on blue).
@@ -68,7 +68,7 @@ namespace TitanOrbit.UI
             /// <summary>Weapon roster under the family — compact telemetry (FIREBALLS ×4).</summary>
             public const float WeaponLoadoutFontSize = 7f;
             public const float WeaponLoadoutLineHeight = 10f;
-            /// <summary>TITAN SHIP overlay — 2pt above the ship name so it reads as the card rank.</summary>
+            /// <summary>TITAN overlay — 2pt above the ship name so it reads as the card rank.</summary>
             public const float MegaCaptionFontExtra = 2f;
             /// <summary>Tight tray inset — a few pixels so lanes sit inside the dark well.</summary>
             public const float PowerBarTrackPadX = 3f;
@@ -882,7 +882,7 @@ namespace TitanOrbit.UI
                 _weaponLoadoutText.color = CaptionColorForRegularInk(_regularInk);
         }
 
-        /// <summary>Puts Lv N / TITAN SHIP back in the left-column stack (not a card overlay).</summary>
+        /// <summary>Puts Lv N / TITAN back in the left-column stack (not a card overlay).</summary>
         void RestoreInFlowLevelLabel()
         {
             if (levelText == null)
@@ -1745,7 +1745,7 @@ namespace TitanOrbit.UI
 
         /// <summary>
         /// Orbit Menu tree caption for one slot. Regular hulls stay "Lv 3"; Titan slots
-        /// show <c>TITAN SHIP</c> instead of "Lv 7".
+        /// show <c>TITAN</c> instead of "Lv 7".
         /// </summary>
         public static string FormatTreeLevelCaption(int level, bool moonHorizontal)
         {
@@ -1808,7 +1808,7 @@ namespace TitanOrbit.UI
 
         /// <summary>
         /// Sidebar hero only: drop the in-flow level so the hull name sits above the art.
-        /// Tree cards keep Lv N / TITAN SHIP in the left column.
+        /// Tree cards keep Lv N / TITAN in the left column.
         /// </summary>
         void CollapseInFlowLevelLabel()
         {

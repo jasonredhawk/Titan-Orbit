@@ -1106,6 +1106,9 @@ namespace TitanOrbit.Game
             s_GlobalVisualSyncFrame = Time.frameCount;
             _lastVisualSyncFrame = Time.frameCount;
 
+            // One colour compare per frame so AsteroidSettings.DefaultGemColor updates live crystals.
+            GemVisualApplier.RefreshStandardTintFromSettings();
+
             var world = PickVisualizationWorld();
             if (world == null || !world.IsCreated)
                 return;

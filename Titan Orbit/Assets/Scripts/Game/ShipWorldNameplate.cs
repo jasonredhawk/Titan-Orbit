@@ -148,8 +148,10 @@ namespace TitanOrbit.Game
         static readonly Color HealthFillFull = new Color(0.15f, 1f, 0.25f, 0.98f);
         static readonly Color HealthFillMid = new Color(1f, 0.55f, 0.05f, 0.98f);
         static readonly Color HealthFillEmpty = new Color(1f, 0.15f, 0.12f, 0.98f);
-        static readonly Color GemsFill = new Color(0.95f, 0.35f, 0.35f, 0.98f);
-        static readonly Color PeopleFill = new Color(0.95f, 0.85f, 0.25f, 0.98f);
+        // Gem cargo and troops use Gem Cap / Troop Cap — not fire-power red or energy yellow.
+        // Health stays a traffic light (green / amber / red) so low hull still reads as danger.
+        static readonly Color GemsFill = VitalFill(2);
+        static readonly Color PeopleFill = VitalFill(3);
         static readonly Color FullVersionBadgeColor = new Color(1f, 0.82f, 0.25f, 0.95f);
         static readonly Color MetaRightColor = new Color(0.85f, 0.90f, 1f, 0.95f);
         static readonly Color ScoreColor = new Color(0.95f, 0.86f, 0.55f, 1f);
@@ -1077,6 +1079,17 @@ namespace TitanOrbit.Game
                 slot.Bg.enabled = active;
             if (slot.Letter != null)
                 slot.Letter.enabled = active;
+        }
+
+        /// <summary>
+        /// Gem Cap or Troop Cap at nameplate opacity. <paramref name="vitalIndex"/> is the
+        /// top-left row: 2 = gems, 3 = troops.
+        /// </summary>
+        static Color VitalFill(int vitalIndex)
+        {
+            Color c = ShipStatPalette.GetVitalBarColor(vitalIndex);
+            c.a = 0.98f;
+            return c;
         }
 
         static Color HealthFillColor(float ratio)

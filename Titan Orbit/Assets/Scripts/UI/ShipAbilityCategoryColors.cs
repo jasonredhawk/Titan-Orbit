@@ -1,32 +1,26 @@
+using TitanOrbit.Data;
 using UnityEngine;
 
 namespace TitanOrbit.UI
 {
     /// <summary>
-    /// Canonical two-tone color palette for the ten ship power-bar stats (offense through capacity).
-    /// Shared by upgrade-tree nodes, equipment cards, and attribute HUD buttons via
-    /// <see cref="GetPowerBreakdownStatColor"/> / <see cref="GetPowerBreakdownStatColorForHud"/>.
+    /// UI-facing names for <see cref="ShipStatPalette"/>. Upgrade-tree nodes, equipment cards,
+    /// and attribute HUD buttons all ask this class so they cannot invent a second set of hues.
+    /// Energy stays yellow. Move / Turn stay blue. Gem Cap and Troop Cap stay the two purples.
     /// </summary>
     public static class ShipAbilityCategoryColors
     {
         // --- HUD category shortcuts (five tabs) ---
-        public const int PowerBreakdownStatCount = 10;
+        public const int PowerBreakdownStatCount = ShipStatPalette.StatCount;
 
-        public static readonly Color WeaponForHud = new Color(0.9f, 0.35f, 0.2f, 0.9f);
-        public static readonly Color HealthForHud = new Color(0.2f, 0.85f, 0.4f, 0.9f);
-        public static readonly Color EnergyForHud = new Color(0.95f, 0.8f, 0.2f, 0.9f);
-        public static readonly Color ShipForHud = new Color(0.2f, 0.7f, 0.95f, 0.9f);
-        public static readonly Color CargoForHud = new Color(0.65f, 0.4f, 0.9f, 0.9f);
+        public static readonly Color WeaponForHud = WithHudAlpha(ShipStatPalette.Offense);
+        public static readonly Color HealthForHud = WithHudAlpha(ShipStatPalette.Defense);
+        public static readonly Color EnergyForHud = WithHudAlpha(ShipStatPalette.Energy);
+        public static readonly Color ShipForHud = WithHudAlpha(ShipStatPalette.Mobility);
+        public static readonly Color CargoForHud = WithHudAlpha(ShipStatPalette.Capacity);
 
         /// <summary>Offense, Defense, Energy, Mobility, Capacity — full alpha for bars/text on dark UI.</summary>
-        public static readonly Color[] PowerBreakdownOdEmc =
-        {
-            new Color(0.9f, 0.35f, 0.2f, 1f),
-            new Color(0.2f, 0.85f, 0.4f, 1f),
-            new Color(0.95f, 0.8f, 0.2f, 1f),
-            new Color(0.2f, 0.7f, 0.95f, 1f),
-            new Color(0.65f, 0.4f, 0.9f, 1f)
-        };
+        public static readonly Color[] PowerBreakdownOdEmc = CopyCategoryColors();
 
         /// <summary>Short labels for orbit ship-tree stat columns (matches ship upgrade menu order).</summary>
         public static readonly string[] PowerBreakdownStatLabels =
@@ -67,12 +61,15 @@ namespace TitanOrbit.UI
         /// <summary>Two tones per category pair — lighter primary stat, darker secondary stat.</summary>
         public static readonly Color[] PowerBreakdownStatColors = BuildPowerBreakdownStatColors();
 
-        public static Color GetPowerBreakdownStatColor(int statIndex)
-        {
-            if (statIndex < 0 || statIndex >= PowerBreakdownStatColors.Length)
-                return Color.white;
-            return PowerBreakdownStatColors[statIndex];
-        }
+        public static Color GetPowerBreakdownStatColor(int statIndex) =>
+            ShipStatPalette.GetStatColor(statIndex);
+
+        /// <summary>
+        /// Top-left vital row (0 health, 1 energy, 2 gems, 3 troops).
+        /// Same hues as Health Cap, Energy Cap, Gem Cap, and Troop Cap on the power bar.
+        /// </summary>
+        public static Color GetShipVitalBarColor(int vitalIndex) =>
+            ShipStatPalette.GetVitalBarColor(vitalIndex);
 
         /// <summary>Same two-tone stat colors as the upgrade-tree power bar, with HUD button alpha.</summary>
         public static Color GetPowerBreakdownStatColorForHud(int statIndex, float alpha = 0.9f)
@@ -82,17 +79,29 @@ namespace TitanOrbit.UI
             return c;
         }
 
-        private static Color[] BuildPowerBreakdownStatColors()
+        /// <summary>Own array so a caller writing one slot cannot retint the shared palette.</summary>
+        static Color[] CopyCategoryColors()
         {
-            // --- Two tones per ODEMC category pair ---
-            var colors = new Color[PowerBreakdownStatCount];
-            for (int category = 0; category < PowerBreakdownOdEmc.Length; category++)
-            {
-                Color baseColor = PowerBreakdownOdEmc[category];
-                colors[category * 2] = Color.Lerp(baseColor, Color.white, 0.28f);
-                colors[category * 2 + 1] = Color.Lerp(baseColor, Color.black, 0.22f);
-            }
+            Color[] src = ShipStatPalette.CategoryColors;
+            var copy = new Color[src.Length];
+            for (int i = 0; i < src.Length; i++)
+                copy[i] = src[i];
+            return copy;
+        }
 
+        /// <summary>Category hue at the ability-button alpha. RGB stays the palette color.</summary>
+        static Color WithHudAlpha(Color category)
+        {
+            category.a = 0.9f;
+            return category;
+        }
+
+        static Color[] BuildPowerBreakdownStatColors()
+        {
+            // --- Copy so callers can index the array without going through the palette each time ---
+            var colors = new Color[PowerBreakdownStatCount];
+            for (int i = 0; i < colors.Length; i++)
+                colors[i] = ShipStatPalette.GetStatColor(i);
             return colors;
         }
     }

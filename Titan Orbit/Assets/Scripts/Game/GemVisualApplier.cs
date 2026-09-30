@@ -24,11 +24,17 @@ namespace TitanOrbit.Game
         const string DefaultGemResourcesName = "Gem";
 
         /// <summary>
-        /// Semi-transparent red so gems read on busy backgrounds.
+        /// Ordinary crystal colour from <see cref="AsteroidSettings.DefaultGemColor"/>.
         /// Alpha is only correct when URP Lit keywords/blend state are set together — see
         /// <see cref="ApplyGemTint"/>.
         /// </summary>
-        static readonly Color GemTintColor = new Color(1f, 0.2f, 0.2f, 0.55f);
+        static Color StandardGemTintColor => GemVisualTintColors.Standard;
+
+        /// <summary>Last ordinary tint written onto the shared standard materials.</summary>
+        static Color s_appliedStandardTint;
+
+        /// <summary>True after <see cref="SyncStandardGemTint"/> has written a colour.</summary>
+        static bool s_standardTintApplied;
 
         /// <summary>
         /// [TITAN-ORBIT] Extra-yield gem tint (NGO bonusGemTintColor ≈ yellow). Cosmetic only —
@@ -97,6 +103,8 @@ namespace TitanOrbit.Game
             s_readyBonus = null;
             s_readyMiner = null;
             s_tintReady = false;
+            s_standardTintApplied = false;
+            s_appliedStandardTint = default;
         }
 
         /// <summary>
@@ -369,7 +377,9 @@ namespace TitanOrbit.Game
                     {
                         name = "TitanOrbit_GemTinted_Shared",
                     };
-                    ConfigureUrpTransparentTint(s_sharedTintedGemMaterial, GemTintColor);
+                    ConfigureUrpTransparentTint(s_sharedTintedGemMaterial, StandardGemTintColor);
+                    s_appliedStandardTint = StandardGemTintColor;
+                    s_standardTintApplied = true;
                 }
 
                 if (s_sharedBonusTintedGemMaterial == null)
@@ -392,6 +402,9 @@ namespace TitanOrbit.Game
 
                 EnsureConsumeAlphaMaterials(renderer);
             }
+
+            // Inspector edits on AsteroidSettings retint every ordinary crystal that shares this material.
+            SyncStandardGemTint();
 
             // [UNITY] sharedMaterial — all gems of a tint class share one Material.
             if (tint == GemVisualTint.MinerCommander)
@@ -418,13 +431,13 @@ namespace TitanOrbit.Game
                 return;
 
             if (s_blockedStandard == null)
-                s_blockedStandard = CreateSharedTint(source, "TitanOrbit_GemTinted_SelfBlocked", WithAlpha(GemTintColor, SelfPickupBlockedAlpha));
+                s_blockedStandard = CreateSharedTint(source, "TitanOrbit_GemTinted_SelfBlocked", WithAlpha(StandardGemTintColor, SelfPickupBlockedAlpha));
             if (s_blockedBonus == null)
                 s_blockedBonus = CreateSharedTint(source, "TitanOrbit_GemBonusTinted_SelfBlocked", WithAlpha(BonusGemTintColor, SelfPickupBlockedAlpha));
             if (s_blockedMiner == null)
                 s_blockedMiner = CreateSharedTint(source, "TitanOrbit_GemMinerTinted_SelfBlocked", WithAlpha(MinerCommanderTintColor, SelfPickupBlockedAlpha));
             if (s_readyStandard == null)
-                s_readyStandard = CreateSharedTint(source, "TitanOrbit_GemTinted_SelfReady", WithAlpha(GemTintColor, SelfPickupReadyAlpha));
+                s_readyStandard = CreateSharedTint(source, "TitanOrbit_GemTinted_SelfReady", WithAlpha(StandardGemTintColor, SelfPickupReadyAlpha));
             if (s_readyBonus == null)
                 s_readyBonus = CreateSharedTint(source, "TitanOrbit_GemBonusTinted_SelfReady", WithAlpha(BonusGemTintColor, SelfPickupReadyAlpha));
             if (s_readyMiner == null)
@@ -447,6 +460,36 @@ namespace TitanOrbit.Game
             if (tint == GemVisualTint.TerritoryBonus)
                 return s_readyBonus;
             return s_readyStandard;
+        }
+
+        /// <summary>
+        /// Writes <see cref="AsteroidSettings.DefaultGemColor"/> onto the shared ordinary-gem
+        /// materials when the Inspector value changed. No-op until those materials exist,
+        /// and a colour compare when they already match — safe to call once per visual frame.
+        /// </summary>
+        public static void RefreshStandardTintFromSettings()
+        {
+            if (s_sharedTintedGemMaterial == null)
+                return;
+            SyncStandardGemTint();
+        }
+
+        /// <summary>Reconfigures shared ordinary-gem materials in place when the authored colour differs.</summary>
+        static void SyncStandardGemTint()
+        {
+            Color tint = StandardGemTintColor;
+            if (s_standardTintApplied && s_appliedStandardTint == tint)
+                return;
+
+            if (s_sharedTintedGemMaterial != null)
+                ConfigureUrpTransparentTint(s_sharedTintedGemMaterial, tint);
+            if (s_blockedStandard != null)
+                ConfigureUrpTransparentTint(s_blockedStandard, WithAlpha(tint, SelfPickupBlockedAlpha));
+            if (s_readyStandard != null)
+                ConfigureUrpTransparentTint(s_readyStandard, WithAlpha(tint, SelfPickupReadyAlpha));
+
+            s_appliedStandardTint = tint;
+            s_standardTintApplied = true;
         }
 
         static Material CreateSharedTint(Material source, string name, Color tint)

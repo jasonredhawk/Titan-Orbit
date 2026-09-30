@@ -16,13 +16,13 @@ namespace TitanOrbit.UI
 {
     /// <summary>
     /// Minimap showing a larger region around the player (not full map).
-    /// Displays: player/remote ships as team-colored Cross (X) blips that grow with
+    /// Displays: player/remote ships as a team-colored X that grows with
     /// <see cref="MinimapBlipAnchor.ShipLevel"/> (9px at level 1, +0.5px per level;
-    /// local player and remotes share that ladder),
-    /// or a team-colored triangle outline when that hull is a purchased MEGA
-    /// (<see cref="MinimapBlipAnchor.IsMega"/> — triangle size stays fixed).
-    /// MEGA triangles fill yellow from the base like a troop progress bar
-    /// (<c>CurrentPeople / PeopleCapacity</c>). Small colored
+    /// local player and remotes share that ladder). Troop Cap purple fills the square
+    /// behind that X as troops load (<c>CurrentPeople / PeopleCapacity</c>) — no square stroke.
+    /// A purchased MEGA swaps that mark for a team-colored triangle outline
+    /// (<see cref="MinimapBlipAnchor.IsMega"/> — triangle size stays fixed) that fills
+    /// the same way. Small colored
     /// circles mark a team's top killer (blue) / gem miner (red) / transporter (yellow).
     /// Also planets, home planets, gem moons, and asteroids. Each team has its own color.
     /// Planet blips also draw a thin orbit ring at the gem-moon / ship orbit radius
@@ -53,9 +53,9 @@ namespace TitanOrbit.UI
         [SerializeField] private float displaySize = 150f;
         [SerializeField] private RectTransform minimapContent;
         [SerializeField] private float sizeScaleFactor = 1.2f; // Increased from 0.5f - makes entities more visible when zoomed in
-        [Tooltip("Pixel size of a purchased MEGA on the minimap (other players). Larger than the regular Cross so capital hulls read immediately.")]
+        [Tooltip("Pixel size of a purchased MEGA on the minimap (other players). Larger than the regular X-in-square so capital hulls read immediately.")]
         [SerializeField] private float megaShipBlipSize = 16f;
-        [Tooltip("Pixel size of the local player's MEGA Cross-replacement triangle.")]
+        [Tooltip("Pixel size of the local player's MEGA triangle (replaces the X-in-square).")]
         [SerializeField] private float megaPlayerBlipSize = 14f;
         [SerializeField] private float asteroidBlipScaleFactor = 1f; // Asteroids use physical scale for blip size
         [SerializeField] private float moonBlipScaleFactor = 0.85f;
@@ -222,18 +222,37 @@ namespace TitanOrbit.UI
         static readonly Color RoleDotMiner = new Color(1f, 0.28f, 0.28f, 0.95f);
         static readonly Color RoleDotTransporter = new Color(1f, 0.88f, 0.25f, 0.95f);
         /// <summary>
-        /// Yellow troop fill inside MEGA triangles — same hue as
-        /// <c>ShipWorldNameplate.PeopleFill</c> so minimap and nameplates agree.
+        /// Troop Cap purple inside MEGA triangles — same hue as the nameplate troop bar
+        /// and the Troop Cap ability, so a full transport does not read as energy yellow.
         /// </summary>
-        static readonly Color MegaTroopFillYellow = new Color(0.95f, 0.85f, 0.25f, 0.98f);
-        /// <summary>Child Image on each MEGA triangle; <c>fillAmount</c> tracks people aboard.</summary>
-        readonly Dictionary<Transform, Image> _megaTroopFillImages = new Dictionary<Transform, Image>();
+        static readonly Color MegaTroopFill = MegaTroopFillColor();
+        /// <summary>Child Image on each ship icon; <c>fillAmount</c> tracks people aboard.</summary>
+        readonly Dictionary<Transform, Image> _shipTroopFillImages = new Dictionary<Transform, Image>();
+        /// <summary>X drawn above the regular-ship square fill so the mark stays readable as troops load.</summary>
+        readonly Dictionary<Transform, Image> _shipCrossImages = new Dictionary<Transform, Image>();
         /// <summary>Shared stroke-only MEGA triangle (white; Image.color tints team).</summary>
         Sprite _megaTriangleOutlineSpriteCache;
-        /// <summary>Shared inset solid MEGA triangle (white; Image.color tints yellow).</summary>
+        /// <summary>Shared inset solid MEGA triangle (white; Image.color tints Troop Cap purple).</summary>
         Sprite _megaTriangleFillSpriteCache;
+        /// <summary>Shared solid square behind the X (white; Image.color tints Troop Cap purple).</summary>
+        Sprite _shipSquareFillSpriteCache;
+        /// <summary>Shared X drawn above the square fill (white; Image.color tints team).</summary>
+        Sprite _shipSquareCrossSpriteCache;
         const string MegaTriangleOutlineSpriteName = "MegaTriangleOutline_v1";
         const string MegaTriangleFillSpriteName = "MegaTriangleFill_v1";
+        const string ShipSquareFillSpriteName = "ShipSquareFill_v2";
+        const string ShipSquareCrossSpriteName = "ShipSquareCross_v3";
+
+        /// <summary>
+        /// Troop Cap color at minimap opacity. Kept beside the role-dot yellow so a
+        /// transporter medal and the troop meter are not the same hue.
+        /// </summary>
+        static Color MegaTroopFillColor()
+        {
+            Color c = ShipStatPalette.GetVitalBarColor(3);
+            c.a = 0.98f;
+            return c;
+        }
 
         // Edge markers for planets outside visible area
         private Dictionary<Transform, RectTransform> edgeMarkers = new Dictionary<Transform, RectTransform>();
@@ -314,9 +333,12 @@ namespace TitanOrbit.UI
             Circle,      // Planets, Gems
             Capsule,     // (legacy sprite shape)
             Triangle,    // (legacy directional blip)
-            Cross,       // Regular ships (player + others) — diagonal X
+            Cross,       // Legacy solid X — regular ships rebuild into ShipSquare
+            ShipSquare,       // Regular ship — X on top, square troop fill behind, no border
+            ShipSquareFill,   // Inset solid square — Troop Cap purple troop meter
+            ShipSquareCross,  // X drawn above the square fill so it stays visible while troops load
             MegaTriangle,     // MEGA outline — team-color stroke, hollow until troops load
-            MegaTriangleFill, // MEGA troop fill stamp — inset solid, yellow via Image.color
+            MegaTriangleFill, // MEGA troop fill stamp — inset solid, Troop Cap purple via Image.color
             Irregular,   // Asteroids
             Bullseye,    // Legacy sprite id — comms Here ping uses CreateBullseyeSprite
             Ring,        // Thin annulus — planet moon-orbit path on the minimap
@@ -458,7 +480,7 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// Pixel size of a regular-ship Cross (X) on the minimap.
+        /// Pixel size of a regular-ship X-in-square on the minimap.
         /// Same ladder for the local player and every other ship: 9px at level 1,
         /// then +0.5px per level (11.5px at level 6).
         /// MEGA triangles skip this and keep <see cref="megaShipBlipSize"/> / <see cref="megaPlayerBlipSize"/>.
@@ -2846,7 +2868,8 @@ namespace TitanOrbit.UI
                 planetBlipLayoutState.Remove(t);
                 _shipRoleDotRoots.Remove(t);
                 _shipRoleDotMask.Remove(t);
-                _megaTroopFillImages.Remove(t);
+                _shipTroopFillImages.Remove(t);
+                _shipCrossImages.Remove(t);
 
                 // Also remove edge markers
                 if (edgeMarkers.TryGetValue(t, out var edgeRt) && edgeRt != null) Destroy(edgeRt.gameObject);
@@ -2874,7 +2897,7 @@ namespace TitanOrbit.UI
             // --- Top-of-team leaders (O(ships)) before drawing role dots ---
             RecomputeTopOfTeamFromCachedShips();
 
-            // --- Local player ship (Cross, or triangle while flying a MEGA) ---
+            // --- Local player ship (X-in-square, or triangle while flying a MEGA) ---
             TeamId playerTeam = playerAnchor.Team;
             Color playerColor = playerTeam == TeamId.None ? Color.white : GetTeamColor(playerTeam);
             // Regular X uses the shared L1–L6 ladder; MEGA triangle stays at the authored capital size.
@@ -2886,8 +2909,7 @@ namespace TitanOrbit.UI
             {
                 playerRt.localEulerAngles = Vector3.zero;
                 UpdateBlip(playerTransform, playerColor, localShipSize);
-                if (playerAnchor.IsMega)
-                    UpdateMegaTroopFill(playerAnchor);
+                UpdateShipTroopFill(playerAnchor);
                 UpdateShipRoleDots(playerAnchor);
             }
 
@@ -2920,8 +2942,7 @@ namespace TitanOrbit.UI
                         : GetRegularShipCrossSize(ship.ShipLevel);
                     EnsureShipBlip(ship.transform, shipColor, shipSize, ship.IsMega);
                     UpdateBlip(ship.transform, shipColor, shipSize);
-                    if (ship.IsMega)
-                        UpdateMegaTroopFill(ship);
+                    UpdateShipTroopFill(ship);
                     UpdateShipRoleDots(ship);
                     // Remove any old ship edge marker (markers only for planets)
                     RemoveShipEdgeMarker(ship.transform);
@@ -3211,6 +3232,13 @@ namespace TitanOrbit.UI
                     if (planetFill != null)
                         img = planetFill.GetComponent<Image>();
                 }
+                // Regular ships have no root Image — the X is the tinted mark.
+                if (img == null)
+                {
+                    var cross = newBlipRect.Find("ShipCross");
+                    if (cross != null)
+                        img = cross.GetComponent<Image>();
+                }
                 if (img != null)
                 {
                     blipImages[t] = img;
@@ -3218,6 +3246,7 @@ namespace TitanOrbit.UI
                     if (img.sprite != null && img.sprite.name.Contains("Circle")) blipTypes[t] = BlipType.Circle;
                     else if (img.sprite != null && img.sprite.name.Contains("Capsule")) blipTypes[t] = BlipType.Capsule;
                     else if (img.sprite != null && img.sprite.name.Contains("MegaTriangle")) blipTypes[t] = BlipType.MegaTriangle;
+                    else if (img.sprite != null && img.sprite.name.Contains("ShipSquare")) blipTypes[t] = BlipType.ShipSquare;
                     else if (img.sprite != null && img.sprite.name.Contains("Cross")) blipTypes[t] = BlipType.Cross;
                     else if (img.sprite != null && img.sprite.name.Contains("Irregular")) blipTypes[t] = BlipType.Irregular;
                     else if (img.sprite != null && img.sprite.name.Contains("Bullseye")) blipTypes[t] = BlipType.Bullseye;
@@ -3234,6 +3263,9 @@ namespace TitanOrbit.UI
                 {
                     img.color = color;
                 }
+                // X sits on a child Image so the square fill can rise behind it.
+                if (_shipCrossImages.TryGetValue(t, out var cross) && cross != null)
+                    cross.color = color;
             }
         }
 
@@ -3264,10 +3296,10 @@ namespace TitanOrbit.UI
 
         /// <summary>
         /// Creates or replaces a ship blip so the icon matches hull class.
-        /// Regular ships stay a Cross; a purchased MEGA swaps to a hollow triangle
-        /// (team-color stroke + yellow troop fill). Mid-match MEGA buy / death-restore
-        /// rebuilds the UGUI Image so we do not keep drawing an X after the hull changes.
-        /// Also rebuilds if the sprite name is stale (old solid MegaTriangle stamp).
+        /// Regular ships are a team-colored X. Troop Cap purple fills the square behind it, with no border.
+        /// A purchased MEGA swaps to a hollow triangle with the same troop meter.
+        /// Mid-match MEGA buy / death-restore rebuilds the UGUI Image so the shape follows the hull.
+        /// Also rebuilds if the sprite name is stale (old solid Cross or MegaTriangle stamp).
         /// </summary>
         /// <param name="shipTransform">World-space <see cref="MinimapBlipAnchor"/> transform used as the blip dictionary key.</param>
         /// <param name="color">Team tint already resolved by the caller (friendly vs enemy).</param>
@@ -3277,14 +3309,14 @@ namespace TitanOrbit.UI
         void EnsureShipBlip(Transform shipTransform, Color color, float size, bool isMega, bool isPlayer = false)
         {
             // --- Wanted shape ---
-            // [TITAN-ORBIT] MEGA = triangle; everyone else = Cross. Same team color either way.
-            BlipType wanted = isMega ? BlipType.MegaTriangle : BlipType.Cross;
-            string wantedSprite = isMega ? MegaTriangleOutlineSpriteName : "Cross";
+            // [TITAN-ORBIT] MEGA = triangle; everyone else = X with a borderless square fill behind it.
+            BlipType wanted = isMega ? BlipType.MegaTriangle : BlipType.ShipSquare;
+            string wantedSprite = isMega ? MegaTriangleOutlineSpriteName : ShipSquareCrossSpriteName;
 
             // --- Rebuild if hull class or sprite stamp changed ---
             // EnsureBlip is create-once. Buying a MEGA keeps the same ECS entity / anchor,
-            // so we must destroy the old Cross ourselves or the icon never changes.
-            // Sprite-name check also catches a leftover hex stamp after this shape swap.
+            // so we must destroy the old square ourselves or the icon never changes.
+            // Sprite-name check also catches a leftover solid Cross after this shape swap.
             bool typeOk = blipTypes.TryGetValue(shipTransform, out var existing) && existing == wanted;
             bool spriteOk = blipImages.TryGetValue(shipTransform, out var img)
                             && img != null && img.sprite != null
@@ -3317,29 +3349,37 @@ namespace TitanOrbit.UI
             blipTypes.Remove(t);
             _shipRoleDotRoots.Remove(t);
             _shipRoleDotMask.Remove(t);
-            _megaTroopFillImages.Remove(t);
+            _shipTroopFillImages.Remove(t);
+            _shipCrossImages.Remove(t);
         }
 
         /// <summary>
-        /// Team-colored ship blip (Cross or MEGA outline+fill) plus an empty role-dot stack
+        /// Team-colored ship blip (X-in-square or MEGA outline+fill) plus an empty role-dot stack
         /// (filled later when this ship leads killer / miner / transporter on their team).
         /// </summary>
         RectTransform CreateShipBlip(Transform shipTransform, Color color, float size, BlipType blipType)
         {
-            var rt = blipType == BlipType.MegaTriangle
-                ? CreateMegaTriangleBlip(color, size)
-                : CreateBlip(color, size, blipType);
+            RectTransform rt;
+            if (blipType == BlipType.MegaTriangle)
+                rt = CreateMegaTriangleBlip(color, size);
+            else if (blipType == BlipType.ShipSquare)
+                rt = CreateShipSquareBlip(color, size);
+            else
+                rt = CreateBlip(color, size, blipType);
             if (rt == null || shipTransform == null)
                 return rt;
 
             if (blipType == BlipType.MegaTriangle)
+                RegisterTroopFillImage(shipTransform, rt, "MegaTroopFill");
+            else if (blipType == BlipType.ShipSquare)
             {
-                var fillTf = rt.Find("MegaTroopFill");
-                if (fillTf != null)
+                RegisterTroopFillImage(shipTransform, rt, "ShipTroopFill");
+                var crossTf = rt.Find("ShipCross");
+                if (crossTf != null)
                 {
-                    var fillImg = fillTf.GetComponent<Image>();
-                    if (fillImg != null)
-                        _megaTroopFillImages[shipTransform] = fillImg;
+                    var crossImg = crossTf.GetComponent<Image>();
+                    if (crossImg != null)
+                        _shipCrossImages[shipTransform] = crossImg;
                 }
             }
 
@@ -3347,9 +3387,74 @@ namespace TitanOrbit.UI
             return rt;
         }
 
+        /// <summary>Caches the troop-fill child so <see cref="UpdateShipTroopFill"/> can set <c>fillAmount</c>.</summary>
+        void RegisterTroopFillImage(Transform shipTransform, RectTransform rt, string childName)
+        {
+            var fillTf = rt.Find(childName);
+            if (fillTf == null)
+                return;
+            var fillImg = fillTf.GetComponent<Image>();
+            if (fillImg != null)
+                _shipTroopFillImages[shipTransform] = fillImg;
+        }
+
+        /// <summary>
+        /// Regular-ship icon: Troop Cap purple square rising from the bottom, X drawn on top.
+        /// No square stroke — an empty ship is only the X.
+        /// Sprites are generated once and reused — per-frame work is only <c>fillAmount</c>.
+        /// </summary>
+        RectTransform CreateShipSquareBlip(Color teamColor, float size)
+        {
+            if (minimapContent == null)
+                return null;
+
+            var go = new GameObject("ShipBlip", typeof(RectTransform));
+            go.transform.SetParent(minimapContent, false);
+            go.SetActive(false);
+
+            var rt = go.GetComponent<RectTransform>();
+            rt.sizeDelta = new Vector2(size, size);
+            rt.anchorMin = new Vector2(0.5f, 0.5f);
+            rt.anchorMax = new Vector2(0.5f, 0.5f);
+            rt.pivot = new Vector2(0.5f, 0.5f);
+
+            // Fill is the first child so the X (added next) draws above the rising meter.
+            var fillGo = new GameObject("ShipTroopFill", typeof(RectTransform));
+            fillGo.transform.SetParent(rt, false);
+            var fillRt = fillGo.GetComponent<RectTransform>();
+            fillRt.anchorMin = Vector2.zero;
+            fillRt.anchorMax = Vector2.one;
+            fillRt.offsetMin = Vector2.zero;
+            fillRt.offsetMax = Vector2.zero;
+
+            var fillImg = fillGo.AddComponent<Image>();
+            fillImg.raycastTarget = false;
+            fillImg.sprite = GetShipSquareFillSprite();
+            fillImg.color = MegaTroopFill;
+            fillImg.type = Image.Type.Filled;
+            fillImg.fillMethod = Image.FillMethod.Vertical;
+            fillImg.fillOrigin = (int)Image.OriginVertical.Bottom;
+            fillImg.fillAmount = 0f;
+
+            var crossGo = new GameObject("ShipCross", typeof(RectTransform));
+            crossGo.transform.SetParent(rt, false);
+            var crossRt = crossGo.GetComponent<RectTransform>();
+            crossRt.anchorMin = Vector2.zero;
+            crossRt.anchorMax = Vector2.one;
+            crossRt.offsetMin = Vector2.zero;
+            crossRt.offsetMax = Vector2.zero;
+
+            var crossImg = crossGo.AddComponent<Image>();
+            crossImg.raycastTarget = false;
+            crossImg.sprite = GetShipSquareCrossSprite();
+            crossImg.color = teamColor;
+
+            return rt;
+        }
+
         /// <summary>
         /// MEGA icon: shared outline sprite (team tint on the root Image) plus a child
-        /// yellow <see cref="Image.Type.Filled"/> triangle. Sprites are generated once
+        /// Troop Cap purple <see cref="Image.Type.Filled"/> triangle. Sprites are generated once
         /// and reused — per-frame work is only <c>fillAmount</c>, not a new Texture2D.
         /// </summary>
         RectTransform CreateMegaTriangleBlip(Color outlineColor, float size)
@@ -3384,7 +3489,7 @@ namespace TitanOrbit.UI
             var fillImg = fillGo.AddComponent<Image>();
             fillImg.raycastTarget = false;
             fillImg.sprite = GetMegaTriangleFillSprite();
-            fillImg.color = MegaTroopFillYellow;
+            fillImg.color = MegaTroopFill;
             fillImg.type = Image.Type.Filled;
             fillImg.fillMethod = Image.FillMethod.Vertical;
             fillImg.fillOrigin = (int)Image.OriginVertical.Bottom;
@@ -3394,14 +3499,15 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// Sets the MEGA triangle's yellow fill from people aboard / people cap.
+        /// Sets a ship icon's Troop Cap purple fill from people aboard / people cap.
+        /// Used by both the regular-ship square and the MEGA triangle.
         /// Unity's Image setter no-ops when the value is unchanged, so this is cheap.
         /// </summary>
-        void UpdateMegaTroopFill(MinimapBlipAnchor ship)
+        void UpdateShipTroopFill(MinimapBlipAnchor ship)
         {
             if (ship == null || ship.transform == null)
                 return;
-            if (!_megaTroopFillImages.TryGetValue(ship.transform, out var fill) || fill == null)
+            if (!_shipTroopFillImages.TryGetValue(ship.transform, out var fill) || fill == null)
                 return;
 
             float amount = ship.PeopleCapacity > 0
@@ -3422,7 +3528,7 @@ namespace TitanOrbit.UI
             return _megaTriangleOutlineSpriteCache;
         }
 
-        /// <summary>Shared inset solid MEGA triangle used as the yellow troop fill mask.</summary>
+        /// <summary>Shared inset solid MEGA triangle used as the Troop Cap purple fill mask.</summary>
         Sprite GetMegaTriangleFillSprite()
         {
             if (_megaTriangleFillSpriteCache != null
@@ -3434,7 +3540,31 @@ namespace TitanOrbit.UI
             return _megaTriangleFillSpriteCache;
         }
 
-        /// <summary>Attaches the RoleDots child under a ship blip (Cross or MEGA triangle) if missing.</summary>
+        /// <summary>Shared solid square used as the Troop Cap purple fill behind the X.</summary>
+        Sprite GetShipSquareFillSprite()
+        {
+            if (_shipSquareFillSpriteCache != null
+                && _shipSquareFillSpriteCache.name == ShipSquareFillSpriteName)
+                return _shipSquareFillSpriteCache;
+            _shipSquareFillSpriteCache = CreateBlipSprite(64, BlipType.ShipSquareFill);
+            if (_shipSquareFillSpriteCache != null)
+                _shipSquareFillSpriteCache.name = ShipSquareFillSpriteName;
+            return _shipSquareFillSpriteCache;
+        }
+
+        /// <summary>Shared X drawn inside the square, above the troop fill.</summary>
+        Sprite GetShipSquareCrossSprite()
+        {
+            if (_shipSquareCrossSpriteCache != null
+                && _shipSquareCrossSpriteCache.name == ShipSquareCrossSpriteName)
+                return _shipSquareCrossSpriteCache;
+            _shipSquareCrossSpriteCache = CreateBlipSprite(64, BlipType.ShipSquareCross);
+            if (_shipSquareCrossSpriteCache != null)
+                _shipSquareCrossSpriteCache.name = ShipSquareCrossSpriteName;
+            return _shipSquareCrossSpriteCache;
+        }
+
+        /// <summary>Attaches the RoleDots child under a ship blip (X-in-square or MEGA triangle) if missing.</summary>
         void EnsureShipRoleDotRoot(Transform shipTransform, RectTransform blipRt)
         {
             if (shipTransform == null || blipRt == null)
@@ -4135,7 +4265,7 @@ namespace TitanOrbit.UI
         /// to the team / body color. Called once per newly created blip (not every frame).
         /// </summary>
         /// <param name="size">Requested pixel size; textures are at least 32 (64 for discs).</param>
-        /// <param name="blipType">Which silhouette to stamp (Cross, MegaTriangle outline/fill, Circle, …).</param>
+        /// <param name="blipType">Which silhouette to stamp (ShipSquare, MegaTriangle outline/fill, Circle, …).</param>
         private Sprite CreateBlipSprite(int size, BlipType blipType)
         {
             // --- Texture resolution ---
@@ -4245,10 +4375,59 @@ namespace TitanOrbit.UI
                     break;
                 }
 
+                case BlipType.ShipSquareFill:
+                {
+                    // Solid square behind the X. No stroke — the purple area is the whole mark.
+                    GetShipSquareEdges(textureSize, out float outerMin, out float outerMax, out _, out _);
+                    float aa = Mathf.Max(0.75f, textureSize * 0.04f);
+                    for (int y = 0; y < textureSize; y++)
+                    {
+                        for (int x = 0; x < textureSize; x++)
+                        {
+                            float outside = OutsideAabb(x, y, outerMin, outerMax);
+                            float alpha = outside <= 0f
+                                ? 1f
+                                : (outside < aa ? 1f - Mathf.SmoothStep(0f, aa, outside) : 0f);
+                            pixels[y * textureSize + x] = new Color(1f, 1f, 1f, alpha);
+                        }
+                    }
+                    break;
+                }
+
+                case BlipType.ShipSquareCross:
+                {
+                    // Thinner than the old 0.13 cross so the troop fill shows between the arms.
+                    // Clipped to the fill square so the arms do not stick out past the troop color.
+                    GetShipSquareEdges(textureSize, out float outerMin, out float outerMax, out _, out _);
+                    float halfStroke = Mathf.Max(1f, textureSize * 0.07f);
+                    float invSqrt2 = 0.70710678f;
+                    float aa = Mathf.Max(0.75f, textureSize * 0.04f);
+                    for (int y = 0; y < textureSize; y++)
+                    {
+                        for (int x = 0; x < textureSize; x++)
+                        {
+                            float dx = x - centerX;
+                            float dy = y - centerY;
+                            float d1 = Mathf.Abs(dx - dy) * invSqrt2;
+                            float d2 = Mathf.Abs(dx + dy) * invSqrt2;
+                            float crossOutside = Mathf.Min(d1, d2) - halfStroke;
+                            float boxOutside = OutsideAabb(x, y, outerMin, outerMax);
+                            float crossAlpha = crossOutside <= 0f
+                                ? 1f
+                                : (crossOutside < aa ? 1f - Mathf.SmoothStep(0f, aa, crossOutside) : 0f);
+                            float boxAlpha = boxOutside <= 0f
+                                ? 1f
+                                : (boxOutside < aa ? 1f - Mathf.SmoothStep(0f, aa, boxOutside) : 0f);
+                            pixels[y * textureSize + x] = new Color(1f, 1f, 1f, crossAlpha * boxAlpha);
+                        }
+                    }
+                    break;
+                }
+
                 case BlipType.MegaTriangle:
                 {
                     // --- Point-up triangle outline (MEGA capital-ship mark) ---
-                    // [TITAN-ORBIT] Hollow stroke so the yellow troop fill can sit inside.
+                    // [TITAN-ORBIT] Hollow stroke so the Troop Cap purple fill can sit inside.
                     // Regular ships are an X; asteroids are a diamond; planets are a disc.
                     GetMegaTriangleVerts(textureSize, 0f, out Vector2 oTip, out Vector2 oLeft, out Vector2 oRight);
                     float stroke = MegaTriangleStrokePixels(textureSize);
@@ -4447,6 +4626,8 @@ namespace TitanOrbit.UI
                 case BlipType.Capsule: spriteName = "Capsule"; break;
                 case BlipType.Triangle: spriteName = "Triangle"; break;
                 case BlipType.Cross: spriteName = "Cross"; break;
+                case BlipType.ShipSquareFill: spriteName = "ShipSquareFill"; break;
+                case BlipType.ShipSquareCross: spriteName = "ShipSquareCross"; break;
                 case BlipType.MegaTriangle: spriteName = "MegaTriangle"; break;
                 case BlipType.MegaTriangleFill: spriteName = "MegaTriangleFill"; break;
                 case BlipType.Irregular: spriteName = "Irregular"; break;
@@ -4750,6 +4931,33 @@ namespace TitanOrbit.UI
             bool hasNeg = (d1 < 0) || (d2 < 0) || (d3 < 0);
             bool hasPos = (d1 > 0) || (d2 > 0) || (d3 > 0);
             return !(hasNeg && hasPos);
+        }
+
+        /// <summary>
+        /// Square bounds for the regular-ship troop fill and the X clipped to that same area.
+        /// </summary>
+        static void GetShipSquareEdges(
+            int textureSize,
+            out float outerMin,
+            out float outerMax,
+            out float innerMin,
+            out float innerMax)
+        {
+            float margin = Mathf.Max(1f, textureSize * 0.04f);
+            outerMin = margin;
+            outerMax = (textureSize - 1f) - margin;
+            innerMin = outerMin;
+            innerMax = outerMax;
+        }
+
+        /// <summary>
+        /// Chebyshev distance outside an axis-aligned square. Negative when <paramref name="x"/>,<paramref name="y"/> is inside.
+        /// </summary>
+        static float OutsideAabb(float x, float y, float min, float max)
+        {
+            float dx = Mathf.Max(min - x, x - max);
+            float dy = Mathf.Max(min - y, y - max);
+            return Mathf.Max(dx, dy);
         }
 
         /// <summary>Stroke width in texture pixels so the MEGA outline stays readable at 14–16 UI px.</summary>

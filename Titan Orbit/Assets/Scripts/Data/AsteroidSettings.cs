@@ -17,6 +17,8 @@ namespace TitanOrbit.Data
     /// lerps from VisualScaleAtMinSize → VisualScaleAtMaxSize. Example: Size 50,
     /// HealthPerSize 3, GemsPerSize 0.5 → 150 HP and 25 gem capacity.
     /// Contact <see cref="Friction"/> controls how sticky rams/grinds feel against the rock.
+    /// <see cref="DefaultGemColor"/> is the ordinary crystal tint (yellow triangle and blue
+    /// top-miner bonuses stay their own colours). Client visuals only.
     /// <see cref="GrindPulseIntervalSeconds"/> is how often a thrusting hull chips the rock
     /// (0.25 = 4 Hz; each pulse spawns one gem worth that pulse's ship damage).
     /// <see cref="BounceRestitution"/> is the wall coefficient for ship↔asteroid rebound
@@ -67,6 +69,21 @@ namespace TitanOrbit.Data
             "Mining empties RemainingGems; destroy spill uses whatever is left.")]
         [Min(0f)]
         public float GemsPerSize = 1f;
+
+        /// <summary>
+        /// Ordinary gem colour when an old asset has no tint (Unity deserializes a missing
+        /// <see cref="Color"/> as clear black). Matches the previous hardcoded crystal.
+        /// </summary>
+        public static readonly Color BuiltInDefaultGemColor = new Color(1f, 0.2f, 0.2f, 0.55f);
+
+        [Header("Gem appearance")]
+        [Tooltip(
+            "Colour of ordinary gems (mined chips and destroy leftovers). " +
+            "Alpha is how see-through the crystal is — 0.55 is the previous look. " +
+            "Yellow triangle bonuses and blue top-miner bonuses keep their own colours. " +
+            "Client visuals only. A fully clear black value is treated as unset and falls back " +
+            "to the built-in red so old assets stay the same.")]
+        public Color DefaultGemColor = new Color(1f, 0.2f, 0.2f, 0.55f);
 
         [Header("Visual scale (LocalTransform)")]
         [Tooltip(
@@ -180,6 +197,8 @@ namespace TitanOrbit.Data
             SizeSmallBias = Mathf.Clamp(SizeSmallBias, 1f, 6f);
             HealthPerSize = Mathf.Max(0.01f, HealthPerSize);
             GemsPerSize = Mathf.Max(0f, GemsPerSize);
+            if (IsUnsetDefaultGemColor(DefaultGemColor))
+                DefaultGemColor = BuiltInDefaultGemColor;
             VisualScaleAtMinSize = Mathf.Max(0.01f, VisualScaleAtMinSize);
             VisualScaleAtMaxSize = Mathf.Max(0.01f, VisualScaleAtMaxSize);
             Friction = Mathf.Max(0f, Friction);
@@ -218,6 +237,21 @@ namespace TitanOrbit.Data
             ClampValues();
             return Mathf.Max(1f, size * HealthPerSize);
         }
+
+        /// <summary>
+        /// Ordinary crystal colour. Clear black (missing field on old assets) returns
+        /// <see cref="BuiltInDefaultGemColor"/>.
+        /// </summary>
+        public Color ResolveDefaultGemColor()
+        {
+            if (IsUnsetDefaultGemColor(DefaultGemColor))
+                return BuiltInDefaultGemColor;
+            return DefaultGemColor;
+        }
+
+        /// <summary>True when every channel is ~0 — Unity's default for a Color missing from the asset.</summary>
+        static bool IsUnsetDefaultGemColor(Color color) =>
+            color.r <= 0.001f && color.g <= 0.001f && color.b <= 0.001f && color.a <= 0.001f;
 
         /// <summary>Gem capacity from designer Size (floored to economy minimum).</summary>
         public float ComputeGemValue(float size)
