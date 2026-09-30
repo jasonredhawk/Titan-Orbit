@@ -82,7 +82,21 @@ namespace TitanOrbit.Game
             _green = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(GreenPath);
             _modular = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(ModularPath);
 #endif
-            // [UNITY] Player builds have no AssetDatabase — Resources copies win if present.
+            // [UNITY] Player builds have no AssetDatabase. The catalog asset lives in
+            // Resources and references the Archanor prefabs so WebGL includes them.
+            GemMoonShieldCatalog catalog = Resources.Load<GemMoonShieldCatalog>(GemMoonShieldCatalog.ResourcesLoadName);
+            if (catalog != null)
+            {
+                if (_red == null)
+                    _red = catalog.red;
+                if (_blue == null)
+                    _blue = catalog.blue;
+                if (_green == null)
+                    _green = catalog.green;
+                if (_modular == null)
+                    _modular = catalog.modular;
+            }
+
             if (_red == null)
                 _red = Resources.Load<GameObject>(RedResourcesName);
             if (_blue == null)

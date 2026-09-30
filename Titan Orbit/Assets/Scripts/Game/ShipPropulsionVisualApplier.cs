@@ -1178,10 +1178,30 @@ namespace TitanOrbit.Game
                 return;
 
             Vector3 authoredScale = prefab.transform.localScale;
-            GameObject go = Instantiate(prefab, transform);
+            // An active Instantiate runs ParticleSystem.Awake and reserves maxParticles
+            // (1000 per system) before we can cap it. WebGL parents under an inactive
+            // holder so the smaller cap is what gets allocated.
+            GameObject hold = null;
+            GameObject go;
+            if (Application.platform == RuntimePlatform.WebGLPlayer)
+            {
+                hold = new GameObject("JetHold");
+                hold.SetActive(false);
+                go = Instantiate(prefab, hold.transform);
+            }
+            else
+            {
+                go = Instantiate(prefab, transform);
+            }
+
             go.name = ThrusterVfxBank.JetInstanceName;
             VfxUrpCompat.PrepareVfxInstance(go, playParticles: false);
             ConfigureThrusterParticles(go, worldSpace: false, previewSteady: _previewMode);
+            if (hold != null)
+            {
+                go.transform.SetParent(transform, false);
+                Destroy(hold);
+            }
             CopyLayerRecursive(go, gameObject.layer);
 
             var bind = new JetBind
@@ -1693,7 +1713,13 @@ namespace TitanOrbit.Game
                 var main = ps.main;
                 main.playOnAwake = false;
                 main.loop = true;
-                main.cullingMode = ParticleSystemCullingMode.AlwaysSimulate;
+                // Each JetFlame system reserves 1000 mesh particles. A mega hull
+                // times that count exhausts the WebGL heap. Cap before the first Play.
+                if (Application.platform == RuntimePlatform.WebGLPlayer && main.maxParticles > 96)
+                    main.maxParticles = 96;
+                main.cullingMode = Application.platform == RuntimePlatform.WebGLPlayer
+                    ? ParticleSystemCullingMode.Automatic
+                    : ParticleSystemCullingMode.AlwaysSimulate;
                 main.simulationSpace = worldSpace
                     ? ParticleSystemSimulationSpace.World
                     : ParticleSystemSimulationSpace.Local;

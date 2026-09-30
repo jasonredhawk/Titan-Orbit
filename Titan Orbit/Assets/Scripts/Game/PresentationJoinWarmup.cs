@@ -781,6 +781,14 @@ namespace TitanOrbit.Game
             if (s_MoonShieldsQueued)
                 return;
 
+            // WebGL moons use a shared sphere. Warming the Sci-Fi prefab allocates
+            // 1000-particle mesh systems that the live shields no longer need.
+            if (Application.platform == RuntimePlatform.WebGLPlayer)
+            {
+                s_MoonShieldsQueued = true;
+                return;
+            }
+
             GemMoonShieldPrefabLibrary.CopyUniquePrefabs(s_MoonShieldPrefabs);
             s_MoonShieldsQueued = true;
         }

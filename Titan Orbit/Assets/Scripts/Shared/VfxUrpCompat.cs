@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.Rendering;
 
 namespace TitanOrbit.Core
 {
@@ -17,6 +19,12 @@ namespace TitanOrbit.Core
         private static Shader s_allIn1SrpBatch;
         private static Shader s_urpParticlesUnlit;
         private static Shader s_legacyParticlesUnlit;
+
+        /// <summary>
+        /// One URP stand-in per source material. WebGL clones are session-lived;
+        /// thrusters and moon shields share the same Sci-Fi materials.
+        /// </summary>
+        static readonly Dictionary<int, Material> s_WebGlParticleMaterials = new Dictionary<int, Material>(16);
 
         /// <summary>
         /// Marks a pooled muzzle/impact shell that already paid FixAllIn1 + light strip +
@@ -172,12 +180,151 @@ namespace TitanOrbit.Core
             if (marker == null)
             {
                 FixAllIn1MaterialsForUrp(root);
+                RetargetBuiltInParticlesForWebGl(root);
                 StripSceneFlashLights(root);
                 marker = root.AddComponent<VfxPreparedMarker>();
             }
 
             if (playParticles)
                 PlayParticleSystemsInHierarchy(root);
+        }
+
+        /// <summary>
+        /// WebGL's mobile URP asset has no camera depth texture. Sci-Fi Arsenal flames and
+        /// matrix shields use built-in <c>Particles/Standard Unlit</c> with soft-particle
+        /// fading, so the mesh flame and the shield shell multiply to zero alpha (or never
+        /// draw — that shader has no Universal Forward pass). Swap those materials to URP
+        /// Particles/Unlit, additive, with the authored texture and no depth fade.
+        /// Desktop keeps the built-in materials.
+        /// </summary>
+        /// <param name="root">Spawned jet, shield, or other Sci-Fi VFX instance.</param>
+        public static void RetargetBuiltInParticlesForWebGl(GameObject root)
+        {
+            if (root == null || Application.platform != RuntimePlatform.WebGLPlayer)
+                return;
+
+            if (s_urpParticlesUnlit == null)
+                s_urpParticlesUnlit = Shader.Find("Universal Render Pipeline/Particles/Unlit");
+            if (s_urpParticlesUnlit == null)
+                return;
+
+            Renderer[] renderers = root.GetComponentsInChildren<Renderer>(true);
+            for (int r = 0; r < renderers.Length; r++)
+            {
+                Renderer renderer = renderers[r];
+                if (renderer == null)
+                    continue;
+
+                Material[] shared = renderer.sharedMaterials;
+                if (shared == null || shared.Length == 0)
+                    continue;
+
+                bool changed = false;
+                for (int i = 0; i < shared.Length; i++)
+                {
+                    Material src = shared[i];
+                    if (src == null || src.shader == null)
+                        continue;
+                    if (!NeedsWebGlParticleRetarget(src))
+                        continue;
+
+                    int id = src.GetInstanceID();
+                    if (!s_WebGlParticleMaterials.TryGetValue(id, out Material edit) || edit == null)
+                    {
+                        edit = CreateWebGlParticleMaterial(src, s_urpParticlesUnlit);
+                        s_WebGlParticleMaterials[id] = edit;
+                    }
+
+                    shared[i] = edit;
+                    changed = true;
+                }
+
+                if (changed)
+                    renderer.sharedMaterials = shared;
+            }
+        }
+
+        /// <summary>True for built-in / missing particle shaders. URP particle shaders stay.</summary>
+        static bool NeedsWebGlParticleRetarget(Material mat)
+        {
+            string name = mat.shader.name;
+            if (name.IndexOf("Universal Render Pipeline/Particles", StringComparison.Ordinal) >= 0)
+                return false;
+            if (!mat.shader.isSupported)
+                return true;
+            if (name.StartsWith("Particles/", StringComparison.Ordinal))
+                return true;
+            if (name.StartsWith("Legacy Shaders/Particles", StringComparison.Ordinal))
+                return true;
+            if (name.StartsWith("Mobile/Particles", StringComparison.Ordinal))
+                return true;
+            return name == "Hidden/InternalErrorShader";
+        }
+
+        /// <summary>
+        /// Additive transparent stand-in. Copies <c>_MainTex</c> onto <c>_BaseMap</c>.
+        /// Legacy Particles/Additive doubles <c>_TintColor</c> in the shader; Standard Unlit
+        /// already stores the multiply color in <c>_Color</c>.
+        /// </summary>
+        static Material CreateWebGlParticleMaterial(Material src, Shader urp)
+        {
+            var edit = new Material(urp);
+            edit.name = src.name + "_WebGL";
+
+            Texture tex = src.HasProperty("_MainTex") ? src.GetTexture("_MainTex") : null;
+            if (tex == null)
+                tex = src.mainTexture;
+            if (tex != null)
+            {
+                edit.SetTexture("_BaseMap", tex);
+                if (src.HasProperty("_MainTex"))
+                {
+                    edit.SetTextureScale("_BaseMap", src.GetTextureScale("_MainTex"));
+                    edit.SetTextureOffset("_BaseMap", src.GetTextureOffset("_MainTex"));
+                }
+            }
+
+            Color tint = Color.white;
+            string shaderName = src.shader != null ? src.shader.name : string.Empty;
+            bool legacyAdditive = shaderName.IndexOf("Additive", StringComparison.Ordinal) >= 0
+                && shaderName.IndexOf("Standard", StringComparison.Ordinal) < 0;
+            if (legacyAdditive && src.HasProperty("_TintColor"))
+            {
+                Color doubled = src.GetColor("_TintColor") * 2f;
+                doubled.a = Mathf.Clamp01(src.GetColor("_TintColor").a * 2f);
+                tint = doubled;
+            }
+            else if (src.HasProperty("_Color"))
+            {
+                tint = src.GetColor("_Color");
+            }
+
+            edit.SetColor("_BaseColor", tint);
+            if (edit.HasProperty("_Color"))
+                edit.SetColor("_Color", tint);
+
+            edit.SetFloat("_Surface", 1f);
+            edit.SetFloat("_Blend", 2f);
+            edit.EnableKeyword("_SURFACE_TYPE_TRANSPARENT");
+            edit.DisableKeyword("_ALPHAPREMULTIPLY_ON");
+            edit.DisableKeyword("_ALPHAMODULATE_ON");
+            edit.DisableKeyword("_ALPHATEST_ON");
+            edit.SetOverrideTag("RenderType", "Transparent");
+            edit.SetFloat("_SrcBlend", (float)BlendMode.SrcAlpha);
+            edit.SetFloat("_DstBlend", (float)BlendMode.One);
+            edit.SetFloat("_SrcBlendAlpha", (float)BlendMode.SrcAlpha);
+            edit.SetFloat("_DstBlendAlpha", (float)BlendMode.One);
+            edit.SetFloat("_ZWrite", 0f);
+            edit.SetFloat("_AlphaClip", 0f);
+            edit.SetFloat("_Cull", src.HasProperty("_Cull") ? src.GetFloat("_Cull") : 0f);
+            edit.SetFloat("_ColorMode", 0f);
+            edit.SetFloat("_SoftParticlesEnabled", 0f);
+            edit.DisableKeyword("_SOFTPARTICLES_ON");
+            edit.DisableKeyword("_FADING_ON");
+            edit.SetFloat("_CameraFadingEnabled", 0f);
+            edit.DisableKeyword("_DISTORTION_ON");
+            edit.renderQueue = (int)RenderQueue.Transparent;
+            return edit;
         }
 
         /// <summary>
