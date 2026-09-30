@@ -199,6 +199,8 @@ namespace TitanOrbit.UI
 
         private MinimapBlipAnchor playerAnchor;
         private Transform playerTransform;
+        /// <summary>Last play session whose center we accepted. A new join must not keep the exited hull.</summary>
+        int _playSessionGeneration = -1;
         private Dictionary<Transform, RectTransform> blips = new Dictionary<Transform, RectTransform>();
         private Dictionary<Transform, Image> blipImages = new Dictionary<Transform, Image>();
         private Dictionary<Transform, BlipType> blipTypes = new Dictionary<Transform, BlipType>();
@@ -2190,12 +2192,34 @@ namespace TitanOrbit.UI
 
             RefreshMapSizeLabelText();
 
+            if (ClientTeamFlowState.PlaySessionGeneration != _playSessionGeneration)
+            {
+                _playSessionGeneration = ClientTeamFlowState.PlaySessionGeneration;
+                playerAnchor = null;
+                playerTransform = null;
+            }
+
             // Clear stale reference if player ship was destroyed
             if (playerAnchor == null)
                 playerTransform = null;
 
-            bool needResolvePlayer = playerAnchor == null || playerTransform == null;
-            if (needResolvePlayer)
+            // Always follow the sync's current local hull. A cached anchor from the ship
+            // you exited stays valid until that ghost despawns, and used to pin the radar there.
+            var sync = MinimapEcsEntitySync.Instance;
+            if (sync != null && sync.TryGetLocalPlayer(out var resolvedLocal) && resolvedLocal != null)
+            {
+                playerAnchor = resolvedLocal;
+                playerTransform = resolvedLocal.transform;
+            }
+            else if (sync != null)
+            {
+                // Sync already rebuilt this frame and has no local hull. Drop the exited ship.
+                playerAnchor = null;
+                playerTransform = null;
+                SetMinimapVisible(false);
+                return;
+            }
+            else if (playerAnchor == null || playerTransform == null)
             {
                 // --- Cheap resolve first (no list copy) ---
                 // [TITAN-ORBIT] Join warmup and the first spawn frames have no local ship.
@@ -2203,11 +2227,7 @@ namespace TitanOrbit.UI
                 playerAnchor = null;
                 playerTransform = null;
 
-                var sync = MinimapEcsEntitySync.Instance;
-                if (sync != null && sync.TryGetLocalPlayer(out playerAnchor) && playerAnchor != null)
-                    playerTransform = playerAnchor.transform;
-
-                if (playerAnchor == null && Time.frameCount >= _nextNoShipCacheFrame)
+                if (Time.frameCount >= _nextNoShipCacheFrame)
                 {
                     _nextNoShipCacheFrame = Time.frameCount + 15;
                     RefreshEntityCache(true);

@@ -34,6 +34,12 @@ namespace TitanOrbit.Core
         public static bool TeamChoiceConfirmed { get; private set; }
         public static RejoinShipChoice RejoinChoice { get; private set; } = RejoinShipChoice.NotApplicable;
 
+        /// <summary>
+        /// Bumps on every <see cref="Reset"/> (leave match, new join). Minimap drops anchors from
+        /// the previous hull when this changes.
+        /// </summary>
+        public static int PlaySessionGeneration { get; private set; }
+
         /// <summary>True after the player clicks Join Team — blocks late ship ghosts from triggering rejoin UI.</summary>
         static bool _teamPickRequested;
         static bool _rejoinEligibilityLocked;
@@ -149,6 +155,7 @@ namespace TitanOrbit.Core
         public static void Reset()
         {
             // --- Full session reset (disconnect, return to menu) ---
+            PlaySessionGeneration++;
             TeamChoiceConfirmed = false;
             RejoinChoice = RejoinShipChoice.NotApplicable;
             _teamPickRequested = false;

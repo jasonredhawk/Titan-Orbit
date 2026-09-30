@@ -87,35 +87,22 @@ namespace TitanOrbit.ECS
 
             int localNetworkId = GetLocalNetworkId(ref state);
 
-            // --- Path 1: CommandTarget on the in-game connection ---
-            // After settle, require GhostOwner.NetworkId so a stale CommandTarget cannot
-            // tag Player 2. Path 2 strips extras when owner does not match.
-            foreach (var cmd in SystemAPI.Query<RefRO<CommandTarget>>().WithAll<NetworkStreamInGame>())
-            {
-                var target = cmd.ValueRO.targetEntity;
-                if (target == Entity.Null || !state.EntityManager.Exists(target))
-                    continue;
-                if (!state.EntityManager.HasComponent<ShipTag>(target))
-                    continue;
-                // After settle: only the owned hull. Owner 0 / missing GhostOwner is P2 arriving late.
-                if (localNetworkId <= 0 ||
-                    !state.EntityManager.HasComponent<GhostOwner>(target) ||
-                    state.EntityManager.GetComponentData<GhostOwner>(target).NetworkId != localNetworkId)
-                    continue;
-                if (!state.EntityManager.HasComponent<LocalPlayerShipTag>(target))
-                    ecb.AddComponent<LocalPlayerShipTag>(target);
-            }
-
             // --- Path 2: GhostOwner.NetworkId matches local client ---
+            // [TITAN-ORBIT] Rejoin can leave the exited hull and a new hull on the same id.
+            // Tag only the newest so the minimap and HUD follow the ship you just spawned.
+            var em = state.EntityManager;
             var ships = _shipOwnerQuery.ToEntityArray(Allocator.Temp);
             var owners = _shipOwnerQuery.ToComponentDataArray<GhostOwner>(Allocator.Temp);
+            int newestIndex = localNetworkId > 0
+                ? ShipGhostAge.IndexOfNewest(em, ships, owners, localNetworkId)
+                : -1;
             for (int i = 0; i < ships.Length; i++)
             {
                 Entity entity = ships[i];
-                bool isLocal = localNetworkId > 0 && owners[i].NetworkId == localNetworkId;
-                if (isLocal && !state.EntityManager.HasComponent<LocalPlayerShipTag>(entity))
+                bool isLocal = i == newestIndex;
+                if (isLocal && !em.HasComponent<LocalPlayerShipTag>(entity))
                     ecb.AddComponent<LocalPlayerShipTag>(entity);
-                else if (!isLocal && state.EntityManager.HasComponent<LocalPlayerShipTag>(entity))
+                else if (!isLocal && em.HasComponent<LocalPlayerShipTag>(entity))
                     ecb.RemoveComponent<LocalPlayerShipTag>(entity);
             }
 
@@ -123,11 +110,20 @@ namespace TitanOrbit.ECS
             owners.Dispose();
 
             // --- Path 3: NetCode GhostOwnerIsLocal tag (fallback) ---
+            // The component exists on every owned ship ghost. Only the enabled one is ours.
             var localOwned = _shipLocalOwnerQuery.ToEntityArray(Allocator.Temp);
             for (int i = 0; i < localOwned.Length; i++)
             {
                 Entity entity = localOwned[i];
-                if (!state.EntityManager.HasComponent<LocalPlayerShipTag>(entity))
+                if (!em.IsComponentEnabled<GhostOwnerIsLocal>(entity))
+                    continue;
+                if (newestIndex >= 0)
+                    continue;
+                if (localNetworkId > 0 &&
+                    em.HasComponent<GhostOwner>(entity) &&
+                    em.GetComponentData<GhostOwner>(entity).NetworkId != localNetworkId)
+                    continue;
+                if (!em.HasComponent<LocalPlayerShipTag>(entity))
                     ecb.AddComponent<LocalPlayerShipTag>(entity);
             }
 

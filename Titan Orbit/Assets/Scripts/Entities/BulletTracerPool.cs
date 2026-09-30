@@ -20,6 +20,12 @@ namespace TitanOrbit.Entities
         /// <summary>Key used when bank has no projectile prefab (procedural sphere/trail).</summary>
         const int ProceduralKey = 1;
 
+        /// <summary>
+        /// WebGL particle shells stay in the heap after Destroy. Cap how many this
+        /// session may create; further shots reuse an idle shell or draw nothing.
+        /// </summary>
+        const int WebGlHardMaxCreated = 64;
+
         static readonly Dictionary<int, Stack<GameObject>> s_available =
             new Dictionary<int, Stack<GameObject>>(16);
 
@@ -101,6 +107,10 @@ namespace TitanOrbit.Entities
             }
             else
             {
+                if (Application.platform == RuntimePlatform.WebGLPlayer &&
+                    s_createdTotal >= WebGlHardMaxCreated)
+                    return false;
+
                 root = CreateShell(projectilePrefab, key);
                 grew = true;
             }

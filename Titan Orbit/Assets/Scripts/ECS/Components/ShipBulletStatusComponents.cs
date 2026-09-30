@@ -6,11 +6,13 @@ namespace TitanOrbit.ECS
 {
     /// <summary>
     /// Timed electric-shock disable. Ghosted so owner prediction freezes with the server.
-    /// <see cref="ExpiresAt"/> is ECS elapsed seconds; 0 = not shocked.
+    /// <see cref="ExpiresAt"/> is server sim elapsed seconds; 0 = not shocked.
+    /// The server writes 0 again when the window ends so a late-join client does not
+    /// keep the impact loop against its own world clock.
     /// </summary>
     public struct ShipElectricShockState : IComponentData
     {
-        /// <summary>World elapsed time when move / turn / fire unlock. 0 = inactive.</summary>
+        /// <summary>Server sim elapsed when move / turn / fire unlock. 0 = inactive.</summary>
         [GhostField(Quantization = 100)]
         public float ExpiresAt;
 

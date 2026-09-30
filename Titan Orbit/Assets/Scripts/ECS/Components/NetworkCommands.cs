@@ -350,6 +350,12 @@ namespace TitanOrbit.ECS
     public struct AbandonShipForRejoinCommand : IRpcCommand { }
 
     /// <summary>
+    /// [NETCODE] Client is leaving to the main menu. Server destroys that connection's hull
+    /// immediately and frees a titan (MEGA) bay. Handled by <see cref="OrphanPlayerShipCleanupSystem"/>.
+    /// </summary>
+    public struct LeaveMatchDespawnShipCommand : IRpcCommand { }
+
+    /// <summary>
     /// [NETCODE] Dead player picks a friendly planet on the expanded minimap after the 10s
     /// death beat. Server: <see cref="ShipRespawnSystem"/> validates ownership + timer, then
     /// teleports the hull into that planet's interior rings. Adding fields changes RPC layout:

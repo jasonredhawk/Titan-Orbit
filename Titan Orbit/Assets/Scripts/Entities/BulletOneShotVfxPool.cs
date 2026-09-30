@@ -43,6 +43,12 @@ namespace TitanOrbit.Entities
         /// Raised: budgeted prewarm intentionally creates hundreds of prepared shells.
         const int SoftMaxCreated = 2500;
 
+        /// <summary>
+        /// WebGL cannot return particle-buffer pages to the browser. Stop Instantiates
+        /// past this many shells and skip the flash instead of growing until OOM.
+        /// </summary>
+        const int WebGlHardMaxCreated = 64;
+
         static bool s_loggedSoftCap;
 
         /// <summary>One deferred return: when <see cref="ReturnAt"/> elapses we park the GO.</summary>
@@ -246,6 +252,10 @@ namespace TitanOrbit.Entities
             }
             else
             {
+                if (Application.platform == RuntimePlatform.WebGLPlayer &&
+                    s_createdTotal >= WebGlHardMaxCreated)
+                    return false;
+
                 // --- Cold path: Instantiates once, then reuse forever for this prefab ---
                 instance = Object.Instantiate(prefab);
                 instance.name = prefab.name + "_Pooled";

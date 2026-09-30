@@ -23,6 +23,12 @@ namespace TitanOrbit.Game
         readonly Slot _shock = new Slot();
         readonly Slot _burn = new Slot();
 
+        /// <summary>Frame of the cached ServerTick sample. One query pair per presentation frame.</summary>
+        static int s_SharedClockFrame = -1;
+
+        static double s_SharedClockElapsed;
+        static bool s_SharedClockValid;
+
         /// <summary>Links this proxy to the ship ghost that owns burn / shock state.</summary>
         public void Bind(Entity shipEntity)
         {
@@ -66,7 +72,15 @@ namespace TitanOrbit.Game
                 return;
             }
 
-            double elapsed = world.Time.ElapsedTime;
+            // ExpiresAt is server sim elapsed. ClientWorld.Time starts at join, so a
+            // late joiner's world clock stays behind that timestamp and the lightning
+            // impact (loop forced on for the stun) never reaches ReleaseSlot.
+            // ServerTick seconds are the same timeline on server and client.
+            if (!TryGetSharedStatusElapsed(em, out double elapsed))
+            {
+                ReleaseAll();
+                return;
+            }
 
             bool shockActive = false;
             int shockBank = 0;
@@ -168,6 +182,25 @@ namespace TitanOrbit.Game
             VfxUrpCompat.SetParticleSystemsLooping(go, false);
             RestoreAudio(go);
             BulletOneShotVfxPool.ReturnNow(go);
+        }
+
+        /// <summary>
+        /// ServerTick seconds for this presentation frame. Cached so each ship proxy does not
+        /// allocate a NetworkTime query. No World.Time fallback — that clock is join-local.
+        /// </summary>
+        static bool TryGetSharedStatusElapsed(EntityManager em, out double elapsed)
+        {
+            int frame = Time.frameCount;
+            if (frame != s_SharedClockFrame)
+            {
+                s_SharedClockFrame = frame;
+                s_SharedClockValid = PlanetGemMoonOrbitClock.TryGetElapsedSeconds(
+                    em, out float tickElapsed, includeTickFraction: true);
+                s_SharedClockElapsed = tickElapsed;
+            }
+
+            elapsed = s_SharedClockElapsed;
+            return s_SharedClockValid;
         }
 
         static void MuteAudio(GameObject root)

@@ -976,11 +976,10 @@ namespace TitanOrbit.Game
             using var query = em.CreateEntityQuery(typeof(ShipTag), typeof(GhostOwner));
             using var owners = query.ToComponentDataArray<GhostOwner>(Allocator.Temp);
             using var entities = query.ToEntityArray(Allocator.Temp);
-            for (int i = 0; i < owners.Length; i++)
+            int newest = ShipGhostAge.IndexOfNewest(em, entities, owners, localId);
+            if (newest >= 0)
             {
-                if (owners[i].NetworkId != localId)
-                    continue;
-                shipEntity = entities[i];
+                shipEntity = entities[newest];
                 return true;
             }
 
@@ -1721,11 +1720,10 @@ namespace TitanOrbit.Game
                 using var query = em.CreateEntityQuery(typeof(ShipTag), typeof(GhostOwner));
                 using var owners = query.ToComponentDataArray<GhostOwner>(Allocator.Temp);
                 using var entities = query.ToEntityArray(Allocator.Temp);
-                for (int i = 0; i < owners.Length; i++)
+                int newest = ShipGhostAge.IndexOfNewest(em, entities, owners, localId);
+                if (newest >= 0)
                 {
-                    if (owners[i].NetworkId != localId)
-                        continue;
-                    shipEntity = entities[i];
+                    shipEntity = entities[newest];
                     return true;
                 }
             }
@@ -1814,11 +1812,11 @@ namespace TitanOrbit.Game
             using var query = em.CreateEntityQuery(typeof(ShipTag), typeof(GhostOwner), typeof(LocalTransform));
             using var owners = query.ToComponentDataArray<GhostOwner>(Allocator.Temp);
             using var transforms = query.ToComponentDataArray<LocalTransform>(Allocator.Temp);
-            for (int i = 0; i < owners.Length; i++)
+            using var entities = query.ToEntityArray(Allocator.Temp);
+            int newest = ShipGhostAge.IndexOfNewest(em, entities, owners, networkId);
+            if (newest >= 0)
             {
-                if (owners[i].NetworkId != networkId)
-                    continue;
-                transform = transforms[i];
+                transform = transforms[newest];
                 return true;
             }
 
@@ -1834,11 +1832,11 @@ namespace TitanOrbit.Game
             using var query = em.CreateEntityQuery(typeof(ShipTag), typeof(GhostOwner), typeof(ShipState));
             using var owners = query.ToComponentDataArray<GhostOwner>(Allocator.Temp);
             using var states = query.ToComponentDataArray<ShipState>(Allocator.Temp);
-            for (int i = 0; i < owners.Length; i++)
+            using var entities = query.ToEntityArray(Allocator.Temp);
+            int newest = ShipGhostAge.IndexOfNewest(em, entities, owners, networkId);
+            if (newest >= 0)
             {
-                if (owners[i].NetworkId != networkId)
-                    continue;
-                state = states[i];
+                state = states[newest];
                 return true;
             }
 
@@ -1854,11 +1852,11 @@ namespace TitanOrbit.Game
             using var query = em.CreateEntityQuery(typeof(ShipTag), typeof(GhostOwner), typeof(ShipOrbitState));
             using var owners = query.ToComponentDataArray<GhostOwner>(Allocator.Temp);
             using var states = query.ToComponentDataArray<ShipOrbitState>(Allocator.Temp);
-            for (int i = 0; i < owners.Length; i++)
+            using var entities = query.ToEntityArray(Allocator.Temp);
+            int newest = ShipGhostAge.IndexOfNewest(em, entities, owners, networkId);
+            if (newest >= 0)
             {
-                if (owners[i].NetworkId != networkId)
-                    continue;
-                orbitState = states[i];
+                orbitState = states[newest];
                 return true;
             }
 
@@ -1900,16 +1898,15 @@ namespace TitanOrbit.Game
             using var orbits = query.ToComponentDataArray<ShipOrbitState>(Allocator.Temp);
             using var docks = query.ToComponentDataArray<ShipMoonDockState>(Allocator.Temp);
             using var transforms = query.ToComponentDataArray<LocalTransform>(Allocator.Temp);
-            for (int i = 0; i < owners.Length; i++)
+            using var entities = query.ToEntityArray(Allocator.Temp);
+            int newest = ShipGhostAge.IndexOfNewest(em, entities, owners, networkId);
+            if (newest >= 0)
             {
-                if (owners[i].NetworkId != networkId)
-                    continue;
-
-                shipState = states[i];
-                shipInput = inputs[i];
-                shipOrbit = orbits[i];
-                moonDock = docks[i];
-                shipTransform = transforms[i];
+                shipState = states[newest];
+                shipInput = inputs[newest];
+                shipOrbit = orbits[newest];
+                moonDock = docks[newest];
+                shipTransform = transforms[newest];
                 return true;
             }
 

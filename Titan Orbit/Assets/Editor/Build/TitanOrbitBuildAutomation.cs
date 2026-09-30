@@ -207,10 +207,18 @@ namespace TitanOrbit.Editor.Build
             //   256 MiB initial heap left almost no room for ECS/NetCode boot inside that budget.
             //   128 MiB initial + geometric growth + 8 MiB stack. Keep decompressionFallback ON so
             //   Build/* stay *.unityweb (GCS deploy / Content-Encoding:br pipeline).
+            //
+            // Growth cap (Chrome abort("OOM") / abortOnCannotGrowMemory in the main loop):
+            //   A 128 MiB geometric step cannot satisfy one large alloc (ship mesh, native buffer)
+            //   while the heap is still under the maximum. Once the heap is near 2048, a 512 MiB
+            //   step does not fit in the remaining room and Emscripten aborts the whole grow
+            //   (played fine, then OOM). 4096 maximum leaves room for that step. Initial stays
+            //   128 so a ~360 MB tab can boot.
             PlayerSettings.WebGL.nameFilesAsHashes = true;
             PlayerSettings.WebGL.dataCaching = false;
             PlayerSettings.WebGL.initialMemorySize = 128;
-            PlayerSettings.WebGL.maximumMemorySize = 2048;
+            PlayerSettings.WebGL.maximumMemorySize = 4096;
+            PlayerSettings.WebGL.memoryGeometricGrowthCap = 512;
             PlayerSettings.WebGL.decompressionFallback = true;
             PlayerSettings.WebGL.emscriptenArgs = "-sSTACK_SIZE=8388608";
             // [TITAN-ORBIT] App UI ships via com.unity.ai.inference. Standalone strips it with
@@ -227,7 +235,8 @@ namespace TitanOrbit.Editor.Build
             string stamp = DateTime.UtcNow.ToString("yyyyMMdd.HHmm");
             PlayerSettings.bundleVersion = stamp;
             Debug.Log("[TitanOrbitBuild] WebGL PlayerSettings: nameFilesAsHashes=true dataCaching=false " +
-                      "initialMemorySize=128 stack=8MiB APP_UI_EDITOR_ONLY bundleVersion=" + stamp);
+                      "initialMemorySize=128 maximumMemorySize=4096 memoryGeometricGrowthCap=512 " +
+                      "stack=8MiB APP_UI_EDITOR_ONLY bundleVersion=" + stamp);
 
             // --- Wipe prior output so stale Build/* cannot ship beside the new index ---
             CleanWebGlOutputFolder();

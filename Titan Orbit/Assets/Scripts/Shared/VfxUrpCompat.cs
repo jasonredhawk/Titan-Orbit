@@ -19,6 +19,28 @@ namespace TitanOrbit.Core
         private static Shader s_allIn1SrpBatch;
         private static Shader s_urpParticlesUnlit;
         private static Shader s_legacyParticlesUnlit;
+        static Material s_UrpParticleTemplate;
+
+        /// <summary>
+        /// Resources material that already uses the additive transparent URP Particles/Unlit
+        /// variant. Shader.Find alone is stripped from the WebGL player when no asset
+        /// references that variant, so the retarget used to no-op and the built-in
+        /// soft-particle materials stayed invisible.
+        /// </summary>
+        const string UrpParticleTemplateResource = "WebGlParticleUnlit";
+
+        /// <summary>
+        /// URP Particles/Unlit reads Position, Normal, Color, UV. Sci-Fi mesh flames and
+        /// matrix shells ship custom streams (Position, Color, UV only). That mismatch
+        /// puts the UV in the wrong interpolator, so the additive sprite stays invisible.
+        /// </summary>
+        static readonly List<ParticleSystemVertexStream> s_UrpParticleStreams = new List<ParticleSystemVertexStream>(4)
+        {
+            ParticleSystemVertexStream.Position,
+            ParticleSystemVertexStream.Normal,
+            ParticleSystemVertexStream.Color,
+            ParticleSystemVertexStream.UV,
+        };
 
         /// <summary>
         /// One URP stand-in per source material. WebGL clones are session-lived;
@@ -190,22 +212,19 @@ namespace TitanOrbit.Core
         }
 
         /// <summary>
-        /// WebGL's mobile URP asset has no camera depth texture. Sci-Fi Arsenal flames and
-        /// matrix shields use built-in <c>Particles/Standard Unlit</c> with soft-particle
-        /// fading, so the mesh flame and the shield shell multiply to zero alpha (or never
-        /// draw — that shader has no Universal Forward pass). Swap those materials to URP
-        /// Particles/Unlit, additive, with the authored texture and no depth fade.
-        /// Desktop keeps the built-in materials.
+        /// Sci-Fi Arsenal flames and matrix shields use built-in <c>Particles/Standard Unlit</c>
+        /// with soft-particle fading. That shader has no Universal Forward pass, and WebGL's
+        /// mobile URP asset has no camera depth texture, so the mesh flame and the shield
+        /// shell either never draw or multiply to zero alpha. Swap those materials to the
+        /// Resources URP Particles/Unlit additive template (so the player build keeps the
+        /// transparent variant) and align vertex streams with that shader.
         /// </summary>
         /// <param name="root">Spawned jet, shield, or other Sci-Fi VFX instance.</param>
         public static void RetargetBuiltInParticlesForWebGl(GameObject root)
         {
-            if (root == null || Application.platform != RuntimePlatform.WebGLPlayer)
+            if (root == null || !ShouldRetargetBuiltInParticles())
                 return;
-
-            if (s_urpParticlesUnlit == null)
-                s_urpParticlesUnlit = Shader.Find("Universal Render Pipeline/Particles/Unlit");
-            if (s_urpParticlesUnlit == null)
+            if (!EnsureUrpParticleUnlit())
                 return;
 
             Renderer[] renderers = root.GetComponentsInChildren<Renderer>(true);
@@ -215,33 +234,86 @@ namespace TitanOrbit.Core
                 if (renderer == null)
                     continue;
 
-                Material[] shared = renderer.sharedMaterials;
-                if (shared == null || shared.Length == 0)
-                    continue;
-
-                bool changed = false;
-                for (int i = 0; i < shared.Length; i++)
+                bool changed = RetargetSharedMaterials(renderer);
+                if (renderer is ParticleSystemRenderer particles)
                 {
-                    Material src = shared[i];
-                    if (src == null || src.shader == null)
-                        continue;
-                    if (!NeedsWebGlParticleRetarget(src))
-                        continue;
-
-                    int id = src.GetInstanceID();
-                    if (!s_WebGlParticleMaterials.TryGetValue(id, out Material edit) || edit == null)
+                    Material trail = particles.trailMaterial;
+                    if (trail != null && NeedsWebGlParticleRetarget(trail))
                     {
-                        edit = CreateWebGlParticleMaterial(src, s_urpParticlesUnlit);
-                        s_WebGlParticleMaterials[id] = edit;
+                        particles.trailMaterial = GetOrCreateUrpParticleMaterial(trail);
+                        changed = true;
                     }
 
-                    shared[i] = edit;
-                    changed = true;
+                    if (changed)
+                        particles.SetActiveVertexStreams(s_UrpParticleStreams);
                 }
-
-                if (changed)
-                    renderer.sharedMaterials = shared;
             }
+        }
+
+        /// <summary>
+        /// URP projects cannot draw built-in particle shaders. WebGL always retargets;
+        /// any other player does too while a scriptable render pipeline is active.
+        /// </summary>
+        static bool ShouldRetargetBuiltInParticles()
+        {
+            if (Application.platform == RuntimePlatform.WebGLPlayer)
+                return true;
+            return GraphicsSettings.currentRenderPipeline != null;
+        }
+
+        /// <summary>
+        /// Prefer the Resources template so the additive transparent variant is in the build.
+        /// Shader.Find is the editor fallback before that asset has imported.
+        /// </summary>
+        static bool EnsureUrpParticleUnlit()
+        {
+            if (s_urpParticlesUnlit != null)
+                return true;
+
+            if (s_UrpParticleTemplate == null)
+                s_UrpParticleTemplate = Resources.Load<Material>(UrpParticleTemplateResource);
+            if (s_UrpParticleTemplate != null && s_UrpParticleTemplate.shader != null)
+                s_urpParticlesUnlit = s_UrpParticleTemplate.shader;
+
+            if (s_urpParticlesUnlit == null)
+                s_urpParticlesUnlit = Shader.Find("Universal Render Pipeline/Particles/Unlit");
+            return s_urpParticlesUnlit != null;
+        }
+
+        static bool RetargetSharedMaterials(Renderer renderer)
+        {
+            Material[] shared = renderer.sharedMaterials;
+            if (shared == null || shared.Length == 0)
+                return false;
+
+            bool changed = false;
+            for (int i = 0; i < shared.Length; i++)
+            {
+                Material src = shared[i];
+                if (src == null || src.shader == null)
+                    continue;
+                if (!NeedsWebGlParticleRetarget(src))
+                    continue;
+
+                shared[i] = GetOrCreateUrpParticleMaterial(src);
+                changed = true;
+            }
+
+            if (changed)
+                renderer.sharedMaterials = shared;
+            return changed;
+        }
+
+        static Material GetOrCreateUrpParticleMaterial(Material src)
+        {
+            int id = src.GetInstanceID();
+            if (!s_WebGlParticleMaterials.TryGetValue(id, out Material edit) || edit == null)
+            {
+                edit = CreateWebGlParticleMaterial(src, s_urpParticlesUnlit);
+                s_WebGlParticleMaterials[id] = edit;
+            }
+
+            return edit;
         }
 
         /// <summary>True for built-in / missing particle shaders. URP particle shaders stay.</summary>
@@ -268,7 +340,11 @@ namespace TitanOrbit.Core
         /// </summary>
         static Material CreateWebGlParticleMaterial(Material src, Shader urp)
         {
-            var edit = new Material(urp);
+            // Clone the included template so keywords (_SURFACE_TYPE_TRANSPARENT) survive
+            // player shader stripping. A fresh Material(shader) plus runtime keywords does not.
+            Material edit = s_UrpParticleTemplate != null
+                ? new Material(s_UrpParticleTemplate)
+                : new Material(urp);
             edit.name = src.name + "_WebGL";
 
             Texture tex = src.HasProperty("_MainTex") ? src.GetTexture("_MainTex") : null;

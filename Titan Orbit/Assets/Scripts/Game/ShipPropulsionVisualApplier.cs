@@ -1717,9 +1717,9 @@ namespace TitanOrbit.Game
                 // times that count exhausts the WebGL heap. Cap before the first Play.
                 if (Application.platform == RuntimePlatform.WebGLPlayer && main.maxParticles > 96)
                     main.maxParticles = 96;
-                main.cullingMode = Application.platform == RuntimePlatform.WebGLPlayer
-                    ? ParticleSystemCullingMode.Automatic
-                    : ParticleSystemCullingMode.AlwaysSimulate;
+                // Automatic culling keeps the renderer bounds at the spawn pose. Once the
+                // ship moves, the jet is frustum-culled and the Default flame disappears.
+                main.cullingMode = ParticleSystemCullingMode.AlwaysSimulate;
                 main.simulationSpace = worldSpace
                     ? ParticleSystemSimulationSpace.World
                     : ParticleSystemSimulationSpace.Local;

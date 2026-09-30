@@ -78,6 +78,24 @@ namespace SpaceGraphicsToolkit
 		[System.NonSerialized]
 		private bool dirtyMesh;
 
+		// Same water level and night vector were pushed into the property block every
+		// LateUpdate (once per planet and asteroid). On WebGL those native uploads are
+		// not returned to the browser, so a long flight grows the WASM heap until OOM.
+		[System.NonSerialized]
+		private float sentWaterLevel = float.NaN;
+
+		[System.NonSerialized]
+		private bool nightCached;
+
+		[System.NonSerialized]
+		private bool hasNight;
+
+		[System.NonSerialized]
+		private Vector3 sentNightDir;
+
+		[System.NonSerialized]
+		private bool sentNightValid;
+
 		[System.NonSerialized]
 		private Texture2D lastHeightmap;
 
@@ -305,30 +323,47 @@ namespace SpaceGraphicsToolkit
 				Rebuild();
 			}
 
-			if (generatedMesh != null && material != null)
+			if (generatedMesh == null || material == null)
+				return;
+
+			// Skip the upload when nothing changed. Bodies do not move, so a constant
+			// water level and light direction must not allocate a new block each frame.
+			if (sentWaterLevel != waterLevel)
 			{
 				Properties.SetFloat(_WaterLevel, waterLevel);
+				sentWaterLevel = waterLevel;
+			}
 
-				// Write direction of nearest light?
-				if (material.GetFloat(_HasNight) == 1.0f)
-				{
-					var mask   = 1 << gameObject.layer;
-					var lights = SgtLight.Find(mask, transform.position);
+			if (nightCached == false)
+			{
+				hasNight = material.GetFloat(_HasNight) == 1.0f;
+				nightCached = true;
+			}
 
-					SgtLight.FilterOut(transform.position);
+			if (hasNight == false)
+				return;
 
-					if (lights.Count > 0)
-					{
-						var position  = Vector3.zero;
-						var direction = Vector3.forward;
-						var color     = Color.white;
-						var intensity = 0.0f;
+			var mask   = 1 << gameObject.layer;
+			var lights = SgtLight.Find(mask, transform.position);
 
-						SgtLight.Calculate(lights[0], transform.position, 0.0f, default(Transform), default(Transform), ref position, ref direction, ref color, ref intensity);
+			SgtLight.FilterOut(transform.position);
 
-						properties.SetVector(_NightDirection, -direction);
-					}
-				}
+			if (lights.Count > 0)
+			{
+				var position  = Vector3.zero;
+				var direction = Vector3.forward;
+				var color     = Color.white;
+				var intensity = 0.0f;
+
+				SgtLight.Calculate(lights[0], transform.position, 0.0f, default(Transform), default(Transform), ref position, ref direction, ref color, ref intensity);
+
+				Vector3 night = -direction;
+				if (sentNightValid && (night - sentNightDir).sqrMagnitude < 0.00000001f)
+					return;
+
+				properties.SetVector(_NightDirection, night);
+				sentNightDir = night;
+				sentNightValid = true;
 			}
 		}
 

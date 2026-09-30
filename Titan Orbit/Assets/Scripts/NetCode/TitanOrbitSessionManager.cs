@@ -1503,8 +1503,9 @@ namespace TitanOrbit.NetCode
             var em = serverWorld.EntityManager;
 
             // --- Destroy all ship ghosts (orphan reconnect targets) ---
-            // [NETCODE] GhostOwner ships survive disconnect by design for mid-match rejoin;
-            // empty / recreate must cancel that so NetworkId reuse cannot fake a rescue.
+            // [NETCODE] Disconnect does not despawn owned ghosts. OrphanPlayerShipCleanupSystem
+            // removes a hull once its owner connection is gone; this wipe is the empty-match
+            // backstop so a reused NetworkId cannot still point at a leftover ship.
             using (var ships = em.CreateEntityQuery(typeof(ShipTag), typeof(GhostOwner)))
             using (var entities = ships.ToEntityArray(Allocator.Temp))
             {
@@ -1804,6 +1805,17 @@ namespace TitanOrbit.NetCode
                 }
 
                 bool dedicated = IsDedicatedOnlineClient;
+                var client = ClientServerBootstrap.ClientWorld;
+
+                // Destroy the hull before the connection times out. Local host parks ServerWorld
+                // on the next lines, so a later sim tick never gets a chance to reap the ship.
+                // A titan bay is freed the same way death releases it.
+                bool sentLeaveRpc = ReleaseShipOnExit(client, dedicated);
+                if (sentLeaveRpc)
+                    await FlushClientSoLeaveRpcSends();
+                // Drop client copies now so the minimap cannot keep the hull through the disconnect.
+                ClearClientShipPresentation(client);
+
                 // Read before we tear worlds down. A won local host must not resume this map.
                 bool matchWon = MatchEndServerSignal.IsMatchWon || IsServerMatchWon();
                 IsInGame = false;
@@ -1817,6 +1829,7 @@ namespace TitanOrbit.NetCode
                 {
                     // ResetDedicatedClientSessionAsync clears Relay, NetworkStreamInGame, and connections.
                     await ResetDedicatedClientSessionAsync("Returned to main menu.");
+                    ClearClientShipPresentation(client);
                     _activeLobbyId = null;
                     await TitanOrbitLobbyService.TryLeaveAllJoinedLobbiesAsync("return_to_menu");
                     LastStatusMessage = "Returned to main menu.";
@@ -1825,11 +1838,11 @@ namespace TitanOrbit.NetCode
 
                 // --- Local host / local LAN client ---
                 // [NETCODE] Drop GoInGame on the client first so HUD / flow see "not in game".
-                var client = ClientServerBootstrap.ClientWorld;
                 if (client != null && client.IsCreated)
                 {
                     ClearNetworkStreamInGame(client);
                     await ClearNetworkConnectionsAsync(client);
+                    ClearClientShipPresentation(client);
                 }
 
                 ResetClientDriverIfNeeded();
@@ -1865,6 +1878,69 @@ namespace TitanOrbit.NetCode
             {
                 _returningToMenu = false;
             }
+        }
+
+        /// <summary>
+        /// Destroys the leaving player's hull now. In-process host: every parked hull goes,
+        /// because this process is about to stop simulating. A client of a remote server
+        /// sends a leave RPC so that host frees the titan bay on its next tick.
+        /// </summary>
+        /// <returns>True when a leave RPC was queued and still needs a few client ticks to send.</returns>
+        static bool ReleaseShipOnExit(World client, bool dedicated)
+        {
+            bool mppmClient = TitanOrbitPlayModeUtility.IsMppmAdditionalEditorInstance();
+            var server = ClientServerBootstrap.ServerWorld;
+            bool serverAlive = !dedicated && !mppmClient && server != null && server.IsCreated;
+            bool localHost = IsLocalHostWorldsReady();
+            if (serverAlive && (localHost || ServerHasPlayerShips(server)))
+            {
+                int removed = PlayerShipExit.DespawnAllPlayerShips(server.EntityManager);
+                Debug.Log("[TitanOrbitSessionManager] Exit destroyed " + removed +
+                          " server ship(s) before parking the match.");
+            }
+
+            // This process is the match. The hulls are already gone; do not wait on an RPC.
+            if (localHost)
+                return false;
+
+            if (client == null || !client.IsCreated)
+                return false;
+
+            var em = client.EntityManager;
+            var entity = em.CreateEntity();
+            em.AddComponentData(entity, new LeaveMatchDespawnShipCommand());
+            em.AddComponentData(entity, new SendRpcCommandRequest { TargetConnection = Entity.Null });
+            Debug.Log("[TitanOrbitSessionManager] Sent leave-despawn RPC.");
+            return true;
+        }
+
+        static bool ServerHasPlayerShips(World server)
+        {
+            using var query = server.EntityManager.CreateEntityQuery(ComponentType.ReadOnly<ShipTag>());
+            return !query.IsEmptyIgnoreFilter;
+        }
+
+        /// <summary>Gives the reliable leave RPC a few client ticks to leave the machine.</summary>
+        async Task FlushClientSoLeaveRpcSends()
+        {
+            var client = ClientServerBootstrap.ClientWorld;
+            for (int i = 0; i < 20; i++)
+            {
+                if (client != null && client.IsCreated)
+                    TickClientWorld(client);
+                await Task.Yield();
+            }
+        }
+
+        /// <summary>
+        /// Drops client ship ghosts and the local-ship seed so the minimap cannot keep the hull
+        /// from the match you just left.
+        /// </summary>
+        static void ClearClientShipPresentation(World client)
+        {
+            if (client != null && client.IsCreated)
+                PlayerShipExit.DestroyClientShipGhosts(client.EntityManager);
+            LocalShipEntitySeed.Clear();
         }
 
         public async Task ResetDedicatedClientSessionAsync(string reason = null)
