@@ -121,7 +121,7 @@ MonoBehaviour:
       tractorBeamPower: 0
       tractorBeamPowerPerExtraLevel: 0
       maxPeople: 10
-      maxPeoplePerExtraLevel: 5
+      maxPeoplePerExtraLevel: 2
     bulletPrefabIndex: -1
     menuPreviewSprite: {fileID: 21300000, guid: 692d808f4f13c994f9ee4a7d47111fe4, type: 3}
     theatricalMenuPreviewSprite: {fileID: 21300000, guid: 692d808f4f13c994f9ee4a7d47111fe4, type: 3}
@@ -198,7 +198,7 @@ MonoBehaviour:
       tractorBeamPower: 0
       tractorBeamPowerPerExtraLevel: 0
       maxPeople: 10
-      maxPeoplePerExtraLevel: 5
+      maxPeoplePerExtraLevel: 2
     bulletPrefabIndex: -1
     menuPreviewSprite: {fileID: 21300000, guid: 4d942961c2a83e448abb8b3c44dd8117, type: 3}
     theatricalMenuPreviewSprite: {fileID: 21300000, guid: 4d942961c2a83e448abb8b3c44dd8117, type: 3}
@@ -274,8 +274,8 @@ MonoBehaviour:
       tractorBeamDistancePerExtraLevel: 0
       tractorBeamPower: 0
       tractorBeamPowerPerExtraLevel: 0
-      maxPeople: 14
-      maxPeoplePerExtraLevel: 7
+      maxPeople: 13
+      maxPeoplePerExtraLevel: 3
     bulletPrefabIndex: -1
     menuPreviewSprite: {fileID: 21300000, guid: 8cd944900f049034091ecc79f5f2b73b, type: 3}
     theatricalMenuPreviewSprite: {fileID: 21300000, guid: 8cd944900f049034091ecc79f5f2b73b, type: 3}
@@ -1121,8 +1121,8 @@ MonoBehaviour:
       tractorBeamDistancePerExtraLevel: 0.75
       tractorBeamPower: 4
       tractorBeamPowerPerExtraLevel: 1
-      maxPeople: 5
-      maxPeoplePerExtraLevel: 2
+      maxPeople: 4
+      maxPeoplePerExtraLevel: 1
     bulletPrefabIndex: -1
     menuPreviewSprite: {fileID: 21300000, guid: 205cbab1f644ac24e89539ea80bcad55, type: 3}
     theatricalMenuPreviewSprite: {fileID: 21300000, guid: 205cbab1f644ac24e89539ea80bcad55, type: 3}
@@ -1198,8 +1198,8 @@ MonoBehaviour:
       tractorBeamDistancePerExtraLevel: 1.5
       tractorBeamPower: 8
       tractorBeamPowerPerExtraLevel: 2
-      maxPeople: 8
-      maxPeoplePerExtraLevel: 3
+      maxPeople: 6
+      maxPeoplePerExtraLevel: 2
     bulletPrefabIndex: -1
     menuPreviewSprite: {fileID: 21300000, guid: 8dd908c445fa0594aa179ec79738d545, type: 3}
     theatricalMenuPreviewSprite: {fileID: 21300000, guid: 8dd908c445fa0594aa179ec79738d545, type: 3}
@@ -1275,8 +1275,8 @@ MonoBehaviour:
       tractorBeamDistancePerExtraLevel: 2.25
       tractorBeamPower: 12
       tractorBeamPowerPerExtraLevel: 3
-      maxPeople: 11
-      maxPeoplePerExtraLevel: 4
+      maxPeople: 8
+      maxPeoplePerExtraLevel: 3
     bulletPrefabIndex: -1
     menuPreviewSprite: {fileID: 21300000, guid: 642f9c9366760454bbd93b46ac3ec41d, type: 3}
     theatricalMenuPreviewSprite: {fileID: 21300000, guid: 642f9c9366760454bbd93b46ac3ec41d, type: 3}
@@ -1352,8 +1352,8 @@ MonoBehaviour:
       tractorBeamDistancePerExtraLevel: 3
       tractorBeamPower: 16
       tractorBeamPowerPerExtraLevel: 4
-      maxPeople: 14
-      maxPeoplePerExtraLevel: 5
+      maxPeople: 10
+      maxPeoplePerExtraLevel: 4
     bulletPrefabIndex: -1
     menuPreviewSprite: {fileID: 21300000, guid: aaf2f33934965bc449563f748b3debde, type: 3}
     theatricalMenuPreviewSprite: {fileID: 21300000, guid: aaf2f33934965bc449563f748b3debde, type: 3}
@@ -1429,8 +1429,8 @@ MonoBehaviour:
       tractorBeamDistancePerExtraLevel: 3.75
       tractorBeamPower: 20
       tractorBeamPowerPerExtraLevel: 5
-      maxPeople: 17
-      maxPeoplePerExtraLevel: 6
+      maxPeople: 12
+      maxPeoplePerExtraLevel: 5
     bulletPrefabIndex: -1
     menuPreviewSprite: {fileID: 21300000, guid: 8b815e3d0c7d6f046a22b027c46b2459, type: 3}
     theatricalMenuPreviewSprite: {fileID: 21300000, guid: 8b815e3d0c7d6f046a22b027c46b2459, type: 3}
@@ -1508,13 +1508,13 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: 946bb57c1f23be346894add2c0e59210, type: 3}
     minHomePlanetLevel: 1
     powerScore: 189.607
-    powerScoreAtMaxLevel: 334.0442
+    powerScoreAtMaxLevel: 323.0442
     powerScoreBreakdown:
       offense: 42.25
       defense: 45.34196
       energy: 80
       mobility: 43.850002
-      capacity: 66
+      capacity: 59
       firePower: 3.75
       bulletSpeed: 10
       fireRate: 3
@@ -1527,13 +1527,13 @@ MonoBehaviour:
       moveSpeed: 7.4500003
       turnSpeed: 27.5
       gemCap: 36
-      peopleCap: 30
+      peopleCap: 23
     powerScoreBreakdownAtShipLevel:
       offense: 44.5
       defense: 69.644196
       energy: 114
       mobility: 52.7
-      capacity: 83
+      capacity: 72
       firePower: 4.5
       bulletSpeed: 11
       fireRate: 3
@@ -1546,7 +1546,7 @@ MonoBehaviour:
       moveSpeed: 7.9000006
       turnSpeed: 35
       gemCap: 44
-      peopleCap: 39
+      peopleCap: 28
     componentMass: 12.895858
     lockedInUpgradeTree: 1
   - chassisId: AstroEagle_01
@@ -1587,14 +1587,14 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 2b0d19f4e6b3b7b48a2de30affeb74a6, type: 3}
     minHomePlanetLevel: 2
-    powerScore: 228.01456
-    powerScoreAtMaxLevel: 528.9005
+    powerScore: 216.27809
+    powerScoreAtMaxLevel: 485.69376
     powerScoreBreakdown:
       offense: 22.5
       defense: 62.02352
       energy: 46.040474
       mobility: 39.9
-      capacity: 67.65056
+      capacity: 55.914093
       firePower: 3
       bulletSpeed: 12
       fireRate: 3
@@ -1607,13 +1607,13 @@ MonoBehaviour:
       moveSpeed: 7.3
       turnSpeed: 24
       gemCap: 33.194817
-      peopleCap: 34.45574
+      peopleCap: 22.719278
     powerScoreBreakdownAtShipLevel:
       offense: 27
       defense: 188.15712
       energy: 97.57832
       mobility: 54.6
-      capacity: 177.96509
+      capacity: 134.75833
       firePower: 3
       bulletSpeed: 12
       fireRate: 3
@@ -1626,7 +1626,7 @@ MonoBehaviour:
       moveSpeed: 8.2
       turnSpeed: 36
       gemCap: 83.85208
-      peopleCap: 94.113014
+      peopleCap: 50.906242
     componentMass: 10.99703
     lockedInUpgradeTree: 0
   - chassisId: AstroEagle_09
@@ -1667,14 +1667,14 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 95eb03a835aca5f428da4d96445ca87c, type: 3}
     minHomePlanetLevel: 2
-    powerScore: 276.3675
-    powerScoreAtMaxLevel: 630.72504
+    powerScore: 262.5675
+    powerScoreAtMaxLevel: 581.5251
     powerScoreBreakdown:
       offense: 43.25
       defense: 66.21604
       energy: 71.601456
       mobility: 42.9
-      capacity: 83
+      capacity: 69.2
       firePower: 3.75
       bulletSpeed: 10
       fireRate: 3
@@ -1687,13 +1687,13 @@ MonoBehaviour:
       moveSpeed: 7.3
       turnSpeed: 27
       gemCap: 42
-      peopleCap: 41
+      peopleCap: 27.199999
     powerScoreBreakdownAtShipLevel:
       offense: 54
       defense: 197.79662
       energy: 148.52844
       mobility: 66.6
-      capacity: 198.2
+      capacity: 149
       firePower: 6
       bulletSpeed: 12
       fireRate: 3
@@ -1706,7 +1706,7 @@ MonoBehaviour:
       moveSpeed: 8.2
       turnSpeed: 48
       gemCap: 94.2
-      peopleCap: 104
+      peopleCap: 54.800003
     componentMass: 14.692268
     lockedInUpgradeTree: 0
   - chassisId: AstroEagle_05
@@ -1747,14 +1747,14 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: cf6eda4777767a94eaf3cca2f71bc5f8, type: 3}
     minHomePlanetLevel: 3
-    powerScore: 277.16577
-    powerScoreAtMaxLevel: 786.68024
+    powerScore: 269.87546
+    powerScoreAtMaxLevel: 756.4178
     powerScoreBreakdown:
       offense: 49
       defense: 60.219673
       energy: 89.49358
       mobility: 40.9
-      capacity: 69.229126
+      capacity: 61.93882
       firePower: 7.5
       bulletSpeed: 10
       fireRate: 6
@@ -1767,13 +1767,13 @@ MonoBehaviour:
       moveSpeed: 6.1
       turnSpeed: 26.5
       gemCap: 36.82139
-      peopleCap: 32.40774
+      peopleCap: 25.117434
     powerScoreBreakdownAtShipLevel:
       offense: 66
       defense: 252.30351
       energy: 223.86055
       mobility: 75.4
-      capacity: 193.95105
+      capacity: 163.68854
       firePower: 15
       bulletSpeed: 13
       fireRate: 6
@@ -1786,7 +1786,7 @@ MonoBehaviour:
       moveSpeed: 6.6
       turnSpeed: 59
       gemCap: 96.68234
-      peopleCap: 97.2687
+      peopleCap: 67.006195
     componentMass: 11.927991
     lockedInUpgradeTree: 0
   - chassisId: AstroEagle_13
@@ -1827,14 +1827,14 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 47d8c1c3b21257c478fe4ec0a2731d4c, type: 3}
     minHomePlanetLevel: 3
-    powerScore: 287.8757
-    powerScoreAtMaxLevel: 990.9544
+    powerScore: 273.88077
+    powerScoreAtMaxLevel: 921.013
     powerScoreBreakdown:
       offense: 50
       defense: 93.87772
       energy: 57
       mobility: 27.8
-      capacity: 94.24796
+      capacity: 80.25303
       firePower: 7.5
       bulletSpeed: 10
       fireRate: 6
@@ -1847,13 +1847,13 @@ MonoBehaviour:
       moveSpeed: 9
       turnSpeed: 14
       gemCap: 48.481735
-      peopleCap: 45.766228
+      peopleCap: 31.771292
     powerScoreBreakdownAtShipLevel:
       offense: 72
       defense: 448.24155
       energy: 147
       mobility: 27.8
-      capacity: 338.71283
+      capacity: 268.77142
       firePower: 15
       bulletSpeed: 13
       fireRate: 6
@@ -1866,88 +1866,88 @@ MonoBehaviour:
       moveSpeed: 9
       turnSpeed: 14
       gemCap: 163.21417
-      peopleCap: 175.49867
+      peopleCap: 105.55725
     componentMass: 12.2864
     lockedInUpgradeTree: 0
-  - chassisId: AstroEagle_06
-    upgradeTreeShipName: Astro Eagle 30
-    prefab: {fileID: 6147271879303682273, guid: da9da16fb1fc07049b4e251a87342064, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: 02aaf44515453054f9a426a864f1e73c, type: 3}
+  - chassisId: AstroEagle_08
+    upgradeTreeShipName: Astro Eagle 26
+    prefab: {fileID: 7717490586213074037, guid: ae424a56f224d0744be4780449cce16a, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 0b1bfc09565afe149b8de9140b7a3dc8, type: 3}
     teamMenuPreviewSprites:
     - variantName: Red
       team: 1
-      sprite: {fileID: 21300000, guid: 02aaf44515453054f9a426a864f1e73c, type: 3}
+      sprite: {fileID: 21300000, guid: 0b1bfc09565afe149b8de9140b7a3dc8, type: 3}
     - variantName: Blue
       team: 2
-      sprite: {fileID: 21300000, guid: 89c424ffb54074c408affd3754ee04cf, type: 3}
+      sprite: {fileID: 21300000, guid: fa3ad49bf5a529144aaff15a3c5f406a, type: 3}
     - variantName: Green
       team: 3
-      sprite: {fileID: 21300000, guid: 96e2d3b725940894b82d917b4c0b4c65, type: 3}
+      sprite: {fileID: 21300000, guid: 18e34ae22592e5e4685737aea17c4304, type: 3}
     - variantName: Orange
       team: 4
-      sprite: {fileID: 21300000, guid: 73a9c73a5dc6b5c49bdec777be747c93, type: 3}
+      sprite: {fileID: 21300000, guid: ff7931b3aacfce146a1e9f369602a44e, type: 3}
     - variantName: Purple
       team: 5
-      sprite: {fileID: 21300000, guid: 140bcf2638a52e34084a8d71de0646b3, type: 3}
-    theatricalMenuPreviewSprite: {fileID: 21300000, guid: 02aaf44515453054f9a426a864f1e73c, type: 3}
+      sprite: {fileID: 21300000, guid: 4e36ec28031666c4aadb40a414b8d549, type: 3}
+    theatricalMenuPreviewSprite: {fileID: 21300000, guid: 0b1bfc09565afe149b8de9140b7a3dc8, type: 3}
     teamTheatricalMenuPreviewSprites:
     - variantName: Red
       team: 1
-      sprite: {fileID: 21300000, guid: 02aaf44515453054f9a426a864f1e73c, type: 3}
+      sprite: {fileID: 21300000, guid: 0b1bfc09565afe149b8de9140b7a3dc8, type: 3}
     - variantName: Blue
       team: 2
-      sprite: {fileID: 21300000, guid: 89c424ffb54074c408affd3754ee04cf, type: 3}
+      sprite: {fileID: 21300000, guid: fa3ad49bf5a529144aaff15a3c5f406a, type: 3}
     - variantName: Green
       team: 3
-      sprite: {fileID: 21300000, guid: 96e2d3b725940894b82d917b4c0b4c65, type: 3}
+      sprite: {fileID: 21300000, guid: 18e34ae22592e5e4685737aea17c4304, type: 3}
     - variantName: Orange
       team: 4
-      sprite: {fileID: 21300000, guid: 73a9c73a5dc6b5c49bdec777be747c93, type: 3}
+      sprite: {fileID: 21300000, guid: ff7931b3aacfce146a1e9f369602a44e, type: 3}
     - variantName: Purple
       team: 5
-      sprite: {fileID: 21300000, guid: 140bcf2638a52e34084a8d71de0646b3, type: 3}
+      sprite: {fileID: 21300000, guid: 4e36ec28031666c4aadb40a414b8d549, type: 3}
     minHomePlanetLevel: 3
-    powerScore: 284.93576
-    powerScoreAtMaxLevel: 782.7688
+    powerScore: 278.03632
+    powerScoreAtMaxLevel: 828.6081
     powerScoreBreakdown:
-      offense: 49.787037
-      defense: 56.742138
-      energy: 98.666664
-      mobility: 45.9
-      capacity: 64.06032
-      firePower: 4.6879425
+      offense: 49.445038
+      defense: 63.440292
+      energy: 89
+      mobility: 35
+      capacity: 69.89602
+      firePower: 6.2840405
       bulletSpeed: 10
-      fireRate: 9.599094
+      fireRate: 7.1609983
       sustainedDps: 22.500002
-      rammingPower: 3.5
-      healthCap: 54.78551
-      healthRegen: 1.9566255
-      energyCap: 92
-      energyRegen: 6.666667
-      moveSpeed: 7.3
-      turnSpeed: 30
-      gemCap: 35.13792
-      peopleCap: 28.9224
+      rammingPower: 4
+      healthCap: 61.252697
+      healthRegen: 2.1875963
+      energyCap: 84
+      energyRegen: 5
+      moveSpeed: 6.2
+      turnSpeed: 24
+      gemCap: 42.74732
+      peopleCap: 27.148703
     powerScoreBreakdownAtShipLevel:
-      offense: 63.97498
-      defense: 218.14128
-      energy: 272
-      mobility: 100.4
-      capacity: 145.82751
-      firePower: 9.375885
+      offense: 67.72908
+      defense: 256.78192
+      energy: 249
+      mobility: 81
+      capacity: 189.37611
+      firePower: 12.568081
       bulletSpeed: 13
-      fireRate: 9.599094
+      fireRate: 7.1609983
       sustainedDps: 45.000004
-      rammingPower: 6
-      healthCap: 210.61917
-      healthRegen: 7.5221143
-      energyCap: 252
-      energyRegen: 20
-      moveSpeed: 8.8
-      turnSpeed: 80
-      gemCap: 73.70112
-      peopleCap: 72.1264
-    componentMass: 12.518486
+      rammingPower: 9
+      healthCap: 247.92738
+      healthRegen: 8.854549
+      energyCap: 234
+      energyRegen: 15
+      moveSpeed: 7.2
+      turnSpeed: 69
+      gemCap: 116.4839
+      peopleCap: 72.89221
+    componentMass: 11.681849
     lockedInUpgradeTree: 0
   - chassisId: AstroEagle_03
     upgradeTreeShipName: Astro Eagle Bat
@@ -1987,14 +1987,14 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: a8079371a9053ff4899461e2351c3cd5, type: 3}
     minHomePlanetLevel: 4
-    powerScore: 282.77133
-    powerScoreAtMaxLevel: 1074.9998
+    powerScore: 272.5995
+    powerScoreAtMaxLevel: 1011.4293
     powerScoreBreakdown:
       offense: 50.21923
       defense: 52.561825
       energy: 98.24
       mobility: 46.9
-      capacity: 65.5595
+      capacity: 55.38764
       firePower: 7.7999997
       bulletSpeed: 10
       fireRate: 5.769231
@@ -2007,13 +2007,13 @@ MonoBehaviour:
       moveSpeed: 6.1
       turnSpeed: 32.5
       gemCap: 35.108776
-      peopleCap: 30.450726
+      peopleCap: 20.278868
     powerScoreBreakdownAtShipLevel:
       offense: 81.84923
       defense: 306.9452
       energy: 301.66
       mobility: 137.2
-      capacity: 272.67953
+      capacity: 209.10916
       firePower: 18.72
       bulletSpeed: 14
       fireRate: 5.769231
@@ -2026,7 +2026,7 @@ MonoBehaviour:
       moveSpeed: 6.8
       turnSpeed: 120
       gemCap: 132.73645
-      peopleCap: 139.94308
+      peopleCap: 76.3727
     componentMass: 14.635678
     lockedInUpgradeTree: 0
   - chassisId: AstroEagle_12
@@ -2067,14 +2067,14 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 785334a711e57e240bff0d13b20873fb, type: 3}
     minHomePlanetLevel: 4
-    powerScore: 302.62796
-    powerScoreAtMaxLevel: 1181.5751
+    powerScore: 286.32794
+    powerScoreAtMaxLevel: 1079.175
     powerScoreBreakdown:
       offense: 43.52823
       defense: 70.93607
       energy: 77.941895
       mobility: 39.9
-      capacity: 101.2
+      capacity: 84.899994
       firePower: 4.1990514
       bulletSpeed: 10
       fireRate: 2.6791766
@@ -2087,13 +2087,13 @@ MonoBehaviour:
       moveSpeed: 7.3
       turnSpeed: 24
       gemCap: 52.6
-      peopleCap: 48.6
+      peopleCap: 32.3
     powerScoreBreakdownAtShipLevel:
       offense: 70.1169
       defense: 394.5761
       energy: 273.99905
       mobility: 74.2
-      capacity: 410.59998
+      capacity: 308.19998
       firePower: 10.077723
       bulletSpeed: 14
       fireRate: 2.6791766
@@ -2106,88 +2106,8 @@ MonoBehaviour:
       moveSpeed: 9.4
       turnSpeed: 52
       gemCap: 196.79999
-      peopleCap: 213.79999
+      peopleCap: 111.399994
     componentMass: 13.709967
-    lockedInUpgradeTree: 0
-  - chassisId: AstroEagle_08
-    upgradeTreeShipName: Astro Eagle 26
-    prefab: {fileID: 7717490586213074037, guid: ae424a56f224d0744be4780449cce16a, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: 0b1bfc09565afe149b8de9140b7a3dc8, type: 3}
-    teamMenuPreviewSprites:
-    - variantName: Red
-      team: 1
-      sprite: {fileID: 21300000, guid: 0b1bfc09565afe149b8de9140b7a3dc8, type: 3}
-    - variantName: Blue
-      team: 2
-      sprite: {fileID: 21300000, guid: fa3ad49bf5a529144aaff15a3c5f406a, type: 3}
-    - variantName: Green
-      team: 3
-      sprite: {fileID: 21300000, guid: 18e34ae22592e5e4685737aea17c4304, type: 3}
-    - variantName: Orange
-      team: 4
-      sprite: {fileID: 21300000, guid: ff7931b3aacfce146a1e9f369602a44e, type: 3}
-    - variantName: Purple
-      team: 5
-      sprite: {fileID: 21300000, guid: 4e36ec28031666c4aadb40a414b8d549, type: 3}
-    theatricalMenuPreviewSprite: {fileID: 21300000, guid: 0b1bfc09565afe149b8de9140b7a3dc8, type: 3}
-    teamTheatricalMenuPreviewSprites:
-    - variantName: Red
-      team: 1
-      sprite: {fileID: 21300000, guid: 0b1bfc09565afe149b8de9140b7a3dc8, type: 3}
-    - variantName: Blue
-      team: 2
-      sprite: {fileID: 21300000, guid: fa3ad49bf5a529144aaff15a3c5f406a, type: 3}
-    - variantName: Green
-      team: 3
-      sprite: {fileID: 21300000, guid: 18e34ae22592e5e4685737aea17c4304, type: 3}
-    - variantName: Orange
-      team: 4
-      sprite: {fileID: 21300000, guid: ff7931b3aacfce146a1e9f369602a44e, type: 3}
-    - variantName: Purple
-      team: 5
-      sprite: {fileID: 21300000, guid: 4e36ec28031666c4aadb40a414b8d549, type: 3}
-    minHomePlanetLevel: 4
-    powerScore: 288.54672
-    powerScoreAtMaxLevel: 1109.97
-    powerScoreBreakdown:
-      offense: 49.445038
-      defense: 63.440292
-      energy: 89
-      mobility: 35
-      capacity: 80.40642
-      firePower: 6.2840405
-      bulletSpeed: 10
-      fireRate: 7.1609983
-      sustainedDps: 22.500002
-      rammingPower: 4
-      healthCap: 61.252697
-      healthRegen: 2.1875963
-      energyCap: 84
-      energyRegen: 5
-      moveSpeed: 6.2
-      turnSpeed: 24
-      gemCap: 42.74732
-      peopleCap: 37.659103
-    powerScoreBreakdownAtShipLevel:
-      offense: 75.24269
-      defense: 334.11862
-      energy: 313
-      mobility: 99.4
-      capacity: 300.25134
-      firePower: 15.0816965
-      bulletSpeed: 14
-      fireRate: 7.1609983
-      sustainedDps: 54
-      rammingPower: 11
-      healthCap: 322.5973
-      healthRegen: 11.521331
-      energyCap: 294
-      energyRegen: 19
-      moveSpeed: 7.6000004
-      turnSpeed: 87
-      gemCap: 145.97853
-      peopleCap: 154.27281
-    componentMass: 11.681849
     lockedInUpgradeTree: 0
   - chassisId: AstroEagle_10
     upgradeTreeShipName: Astro Eagle 25
@@ -2227,14 +2147,14 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 45d7935d32ac481499591858a23eb0c4, type: 3}
     minHomePlanetLevel: 4
-    powerScore: 295.74646
-    powerScoreAtMaxLevel: 1355.1716
+    powerScore: 287.6948
+    powerScoreAtMaxLevel: 1312.2754
     powerScoreBreakdown:
       offense: 21.5
       defense: 66.631645
       energy: 94.666664
       mobility: 46.2
-      capacity: 76.74814
+      capacity: 68.69648
       firePower: 3
       bulletSpeed: 12
       fireRate: 3
@@ -2247,13 +2167,13 @@ MonoBehaviour:
       moveSpeed: 8.2
       turnSpeed: 28.5
       gemCap: 41.10064
-      peopleCap: 35.647503
+      peopleCap: 27.59584
     powerScoreBreakdownAtShipLevel:
       offense: 25
       defense: 390.04465
       energy: 561.3333
       mobility: 124.6
-      capacity: 278.19366
+      capacity: 235.29744
       firePower: 3
       bulletSpeed: 12
       fireRate: 3
@@ -2266,7 +2186,7 @@ MonoBehaviour:
       moveSpeed: 16.599998
       turnSpeed: 88
       gemCap: 138.3234
-      peopleCap: 139.87027
+      peopleCap: 96.974045
     componentMass: 21.515121
     lockedInUpgradeTree: 0
   - chassisId: AstroEagle_04
@@ -2306,15 +2226,15 @@ MonoBehaviour:
     - variantName: Purple
       team: 5
       sprite: {fileID: 21300000, guid: 0a8a9aec80e86c84a9ecc03caf8a800c, type: 3}
-    minHomePlanetLevel: 5
-    powerScore: 294.18665
-    powerScoreAtMaxLevel: 1495.398
+    minHomePlanetLevel: 4
+    powerScore: 283.0384
+    powerScoreAtMaxLevel: 1155.9023
     powerScoreBreakdown:
       offense: 57.987503
       defense: 59.61158
       energy: 101.22996
       mobility: 40.1
-      capacity: 73.0858
+      capacity: 61.937565
       firePower: 16.800001
       bulletSpeed: 10
       fireRate: 4.6875
@@ -2327,27 +2247,107 @@ MonoBehaviour:
       moveSpeed: 7.5
       turnSpeed: 24
       gemCap: 38.074978
-      peopleCap: 35.010826
+      peopleCap: 23.862587
     powerScoreBreakdownAtShipLevel:
-      offense: 114.7275
-      defense: 446.0854
-      energy: 484.9029
-      mobility: 86
-      capacity: 381.16617
-      firePower: 47.04
-      bulletSpeed: 15
+      offense: 102.0075
+      defense: 360.2023
+      energy: 399.6422
+      mobility: 75.8
+      capacity: 240.03299
+      firePower: 40.32
+      bulletSpeed: 14
       fireRate: 4.6875
-      sustainedDps: 110.25
-      rammingPower: 18
-      healthCap: 430.70312
-      healthRegen: 15.382254
-      energyCap: 444.1821
-      energyRegen: 40.720783
-      moveSpeed: 12
-      turnSpeed: 60
-      gemCap: 181.29102
-      peopleCap: 199.87515
+      sustainedDps: 94.5
+      rammingPower: 15
+      healthCap: 347.78152
+      healthRegen: 12.420769
+      energyCap: 366.4199
+      energyRegen: 33.22233
+      moveSpeed: 11
+      turnSpeed: 52
+      gemCap: 149.46524
+      peopleCap: 90.56775
     componentMass: 16.40188
+    lockedInUpgradeTree: 0
+  - chassisId: AstroEagle_06
+    upgradeTreeShipName: Astro Eagle 30
+    prefab: {fileID: 6147271879303682273, guid: da9da16fb1fc07049b4e251a87342064, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 02aaf44515453054f9a426a864f1e73c, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: Red
+      team: 1
+      sprite: {fileID: 21300000, guid: 02aaf44515453054f9a426a864f1e73c, type: 3}
+    - variantName: Blue
+      team: 2
+      sprite: {fileID: 21300000, guid: 89c424ffb54074c408affd3754ee04cf, type: 3}
+    - variantName: Green
+      team: 3
+      sprite: {fileID: 21300000, guid: 96e2d3b725940894b82d917b4c0b4c65, type: 3}
+    - variantName: Orange
+      team: 4
+      sprite: {fileID: 21300000, guid: 73a9c73a5dc6b5c49bdec777be747c93, type: 3}
+    - variantName: Purple
+      team: 5
+      sprite: {fileID: 21300000, guid: 140bcf2638a52e34084a8d71de0646b3, type: 3}
+    theatricalMenuPreviewSprite: {fileID: 21300000, guid: 02aaf44515453054f9a426a864f1e73c, type: 3}
+    teamTheatricalMenuPreviewSprites:
+    - variantName: Red
+      team: 1
+      sprite: {fileID: 21300000, guid: 02aaf44515453054f9a426a864f1e73c, type: 3}
+    - variantName: Blue
+      team: 2
+      sprite: {fileID: 21300000, guid: 89c424ffb54074c408affd3754ee04cf, type: 3}
+    - variantName: Green
+      team: 3
+      sprite: {fileID: 21300000, guid: 96e2d3b725940894b82d917b4c0b4c65, type: 3}
+    - variantName: Orange
+      team: 4
+      sprite: {fileID: 21300000, guid: 73a9c73a5dc6b5c49bdec777be747c93, type: 3}
+    - variantName: Purple
+      team: 5
+      sprite: {fileID: 21300000, guid: 140bcf2638a52e34084a8d71de0646b3, type: 3}
+    minHomePlanetLevel: 5
+    powerScore: 278.15128
+    powerScoreAtMaxLevel: 1136.3239
+    powerScoreBreakdown:
+      offense: 49.787037
+      defense: 56.742138
+      energy: 98.666664
+      mobility: 45.9
+      capacity: 57.27584
+      firePower: 4.6879425
+      bulletSpeed: 10
+      fireRate: 9.599094
+      sustainedDps: 22.500002
+      rammingPower: 3.5
+      healthCap: 54.78551
+      healthRegen: 1.9566255
+      energyCap: 92
+      energyRegen: 6.666667
+      moveSpeed: 7.3
+      turnSpeed: 30
+      gemCap: 35.13792
+      peopleCap: 22.13792
+    powerScoreBreakdownAtShipLevel:
+      offense: 75.725334
+      defense: 347.26065
+      energy: 410.66666
+      mobility: 144
+      capacity: 170.39648
+      firePower: 13.126239
+      bulletSpeed: 15
+      fireRate: 9.599094
+      sustainedDps: 63.000004
+      rammingPower: 8
+      healthCap: 335.28613
+      healthRegen: 11.974504
+      energyCap: 380
+      energyRegen: 30.666668
+      moveSpeed: 10
+      turnSpeed: 120
+      gemCap: 104.55168
+      peopleCap: 65.8448
+    componentMass: 12.518486
     lockedInUpgradeTree: 0
   - chassisId: AstroEagle_11
     upgradeTreeShipName: Astro Eagle Stringray
@@ -2387,14 +2387,14 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: dbc4cbfc36527694eaf6a4415c32217f, type: 3}
     minHomePlanetLevel: 5
-    powerScore: 323.9226
-    powerScoreAtMaxLevel: 1389.3087
+    powerScore: 313.00546
+    powerScoreAtMaxLevel: 1327.6401
     powerScoreBreakdown:
       offense: 49.006424
       defense: 61.019344
       energy: 98.601456
       mobility: 39.9
-      capacity: 104.85181
+      capacity: 93.93468
       firePower: 7.5315785
       bulletSpeed: 10
       fireRate: 5.974846
@@ -2407,13 +2407,13 @@ MonoBehaviour:
       moveSpeed: 7.3
       turnSpeed: 24
       gemCap: 58.183277
-      peopleCap: 46.668533
+      peopleCap: 35.7514
     powerScoreBreakdownAtShipLevel:
       offense: 80.06326
       defense: 407.5604
       energy: 410.38245
       mobility: 84
-      capacity: 423.3658
+      capacity: 361.69727
       firePower: 21.08842
       bulletSpeed: 15
       fireRate: 5.974846
@@ -2426,7 +2426,7 @@ MonoBehaviour:
       moveSpeed: 10
       turnSpeed: 60
       gemCap: 212.94028
-      peopleCap: 210.42554
+      peopleCap: 148.757
     componentMass: 10.883494
     lockedInUpgradeTree: 0
   - chassisId: AstroEagle_16
@@ -2467,14 +2467,14 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 31d0a844748284847983a50aabfe117e, type: 3}
     minHomePlanetLevel: 5
-    powerScore: 341.92484
-    powerScoreAtMaxLevel: 1737.244
+    powerScore: 326.54575
+    powerScoreAtMaxLevel: 1614.8438
     powerScoreBreakdown:
       offense: 50.376663
       defense: 79.015305
       energy: 98.666664
       mobility: 39.9
-      capacity: 104.7762
+      capacity: 89.39711
       firePower: 8.314279
       bulletSpeed: 10
       fireRate: 5.412383
@@ -2487,13 +2487,13 @@ MonoBehaviour:
       moveSpeed: 7.3
       turnSpeed: 24
       gemCap: 53.53138
-      peopleCap: 51.24482
+      peopleCap: 35.865734
     powerScoreBreakdownAtShipLevel:
       offense: 92.112366
       defense: 608.56915
       energy: 410.66666
       mobility: 84
-      capacity: 570.0082
+      capacity: 447.60788
       firePower: 23.27998
       bulletSpeed: 15
       fireRate: 5.412383
@@ -2506,7 +2506,7 @@ MonoBehaviour:
       moveSpeed: 10
       turnSpeed: 60
       gemCap: 273.82745
-      peopleCap: 296.18073
+      peopleCap: 173.78043
     componentMass: 15.716746
     lockedInUpgradeTree: 0
   - chassisId: AstroEagle_27
@@ -2547,14 +2547,14 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 4e923365d5cc15643b9dfc5639170f80, type: 3}
     minHomePlanetLevel: 5
-    powerScore: 351.48526
-    powerScoreAtMaxLevel: 1888.4156
+    powerScore: 332.7501
+    powerScoreAtMaxLevel: 1727.9572
     powerScoreBreakdown:
       offense: 51.5
       defense: 95.93886
       energy: 90.333336
       mobility: 47.95
-      capacity: 99.60472
+      capacity: 80.869545
       firePower: 9
       bulletSpeed: 10
       fireRate: 5
@@ -2567,13 +2567,13 @@ MonoBehaviour:
       moveSpeed: 7.15
       turnSpeed: 32.5
       gemCap: 50.411053
-      peopleCap: 49.193665
+      peopleCap: 30.45849
     powerScoreBreakdownAtShipLevel:
       offense: 103.2
       defense: 764.661
       energy: 327.33334
       mobility: 164.5
-      capacity: 571.8379
+      capacity: 411.37936
       firePower: 25.2
       bulletSpeed: 15
       fireRate: 5
@@ -2586,7 +2586,7 @@ MonoBehaviour:
       moveSpeed: 8.5
       turnSpeed: 145
       gemCap: 264.02762
-      peopleCap: 307.81024
+      peopleCap: 147.35175
     componentMass: 19.28631
     lockedInUpgradeTree: 0
   - chassisId: AstroEagle_18
@@ -2627,14 +2627,14 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: cd44e81bed007a542820d98130027bd5, type: 3}
     minHomePlanetLevel: 5
-    powerScore: 333.8882
-    powerScoreAtMaxLevel: 1578.362
+    powerScore: 319.90457
+    powerScoreAtMaxLevel: 1474.5259
     powerScoreBreakdown:
       offense: 50.003788
       defense: 80.81188
       energy: 99.45682
       mobility: 39.9
-      capacity: 93.95087
+      capacity: 79.96724
       firePower: 7.5187497
       bulletSpeed: 10
       fireRate: 5.985038
@@ -2647,13 +2647,13 @@ MonoBehaviour:
       moveSpeed: 7.3
       turnSpeed: 24
       gemCap: 49.97816
-      peopleCap: 43.972702
+      peopleCap: 29.98908
     powerScoreBreakdownAtShipLevel:
       offense: 90.03754
       defense: 589.74316
       energy: 414.11032
       mobility: 84
-      capacity: 426.5086
+      capacity: 322.6724
       firePower: 21.0525
       bulletSpeed: 15
       fireRate: 5.985038
@@ -2666,7 +2666,7 @@ MonoBehaviour:
       moveSpeed: 10
       turnSpeed: 60
       gemCap: 202.7816
-      peopleCap: 223.727
+      peopleCap: 119.8908
     componentMass: 17.933876
     lockedInUpgradeTree: 0
   - chassisId: AstroEagle_07
@@ -2707,14 +2707,14 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: e8d1bd222e086eb459fa177c5d6917c1, type: 3}
     minHomePlanetLevel: 6
-    powerScore: 315.0253
-    powerScoreAtMaxLevel: 1733.2693
+    powerScore: 301.41632
+    powerScoreAtMaxLevel: 1599.7357
     powerScoreBreakdown:
       offense: 50
       defense: 71.78067
       energy: 94.41454
       mobility: 41.95
-      capacity: 88.18739
+      capacity: 74.57843
       firePower: 7.5
       bulletSpeed: 10
       fireRate: 6
@@ -2727,13 +2727,13 @@ MonoBehaviour:
       moveSpeed: 7.15
       turnSpeed: 26.5
       gemCap: 45.65378
-      peopleCap: 42.533615
+      peopleCap: 28.924652
     powerScoreBreakdownAtShipLevel:
       offense: 99
       defense: 594.74396
       energy: 394.37787
       mobility: 118.4
-      capacity: 552.5846
+      capacity: 419.051
       firePower: 24
       bulletSpeed: 16
       fireRate: 6
@@ -2746,7 +2746,7 @@ MonoBehaviour:
       moveSpeed: 8.8
       turnSpeed: 98
       gemCap: 261.3524
-      peopleCap: 291.2322
+      peopleCap: 157.69861
     componentMass: 12.656829
     lockedInUpgradeTree: 0
   - chassisId: AstroEagle_23
@@ -2787,14 +2787,14 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: b325552ae8449d84eb969ecb1b011077, type: 3}
     minHomePlanetLevel: 6
-    powerScore: 376.16492
-    powerScoreAtMaxLevel: 2215.3286
+    powerScore: 360.18127
+    powerScoreAtMaxLevel: 2078.5251
     powerScoreBreakdown:
       offense: 50
       defense: 96.47344
       energy: 103.132484
       mobility: 39.9
-      capacity: 115.95087
+      capacity: 99.96725
       firePower: 7.5
       bulletSpeed: 10
       fireRate: 6
@@ -2807,13 +2807,13 @@ MonoBehaviour:
       moveSpeed: 7.3
       turnSpeed: 24
       gemCap: 61.978165
-      peopleCap: 53.972706
+      peopleCap: 37.989082
     powerScoreBreakdownAtShipLevel:
       offense: 99
       defense: 869.5226
       energy: 502.7956
       mobility: 93.8
-      capacity: 676.41046
+      capacity: 539.60693
       firePower: 24
       bulletSpeed: 16
       fireRate: 6
@@ -2826,7 +2826,7 @@ MonoBehaviour:
       moveSpeed: 10.6
       turnSpeed: 68
       gemCap: 325.73798
-      peopleCap: 350.6725
+      peopleCap: 213.86899
     componentMass: 18.65636
     lockedInUpgradeTree: 0
   - chassisId: AstroEagle_25
@@ -2867,14 +2867,14 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 065739a02346aeb44ac306eec458bc9a, type: 3}
     minHomePlanetLevel: 6
-    powerScore: 366.03094
-    powerScoreAtMaxLevel: 2209.442
+    powerScore: 355.22223
+    powerScoreAtMaxLevel: 2124.0942
     powerScoreBreakdown:
       offense: 49.010014
       defense: 86.01981
       energy: 111.70648
       mobility: 41.800003
-      capacity: 104.079185
+      capacity: 93.270454
       firePower: 7.548814
       bulletSpeed: 10
       fireRate: 5.961201
@@ -2887,13 +2887,13 @@ MonoBehaviour:
       moveSpeed: 7.6000004
       turnSpeed: 25
       gemCap: 56.08422
-      peopleCap: 47.994965
+      peopleCap: 37.186234
     powerScoreBreakdownAtShipLevel:
       offense: 87.11741
       defense: 769.9081
       energy: 638.8649
       mobility: 116.600006
-      capacity: 618.469
+      capacity: 533.1213
       firePower: 24.156204
       bulletSpeed: 16
       fireRate: 5.961201
@@ -2906,7 +2906,7 @@ MonoBehaviour:
       moveSpeed: 14.200001
       turnSpeed: 80
       gemCap: 307.77914
-      peopleCap: 310.68988
+      peopleCap: 225.34215
     componentMass: 17.532612
     lockedInUpgradeTree: 0
   - chassisId: AstroEagle_17
@@ -2947,14 +2947,14 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 5d8c8a0ff822fd144a95cf8f71ac73f1, type: 3}
     minHomePlanetLevel: 6
-    powerScore: 351.77338
-    powerScoreAtMaxLevel: 2042.2156
+    powerScore: 335.15097
+    powerScoreAtMaxLevel: 1887.8776
     powerScoreBreakdown:
       offense: 50.665348
       defense: 73.09689
       energy: 112.08668
       mobility: 44.600002
-      capacity: 99.63753
+      capacity: 83.01512
       firePower: 6.0617886
       bulletSpeed: 10
       fireRate: 7.4235606
@@ -2967,13 +2967,13 @@ MonoBehaviour:
       moveSpeed: 7.4
       turnSpeed: 28
       gemCap: 52.33029
-      peopleCap: 47.30724
+      peopleCap: 30.684828
     powerScoreBreakdownAtShipLevel:
       offense: 102.661285
       defense: 632.1364
       energy: 603.3329
       mobility: 150.2
-      capacity: 590.94617
+      capacity: 436.60815
       firePower: 19.397724
       bulletSpeed: 16
       fireRate: 7.4235606
@@ -2986,7 +2986,7 @@ MonoBehaviour:
       moveSpeed: 11.8
       turnSpeed: 116
       gemCap: 279.9923
-      peopleCap: 310.95386
+      peopleCap: 156.61584
     componentMass: 20.11691
     lockedInUpgradeTree: 0
   - chassisId: AstroEagle_26
@@ -3027,14 +3027,14 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: d88eba8c19cfafc44887d010d0228175, type: 3}
     minHomePlanetLevel: 6
-    powerScore: 358.25693
-    powerScoreAtMaxLevel: 2406.3845
+    powerScore: 338.27332
+    powerScoreAtMaxLevel: 2188.581
     powerScoreBreakdown:
       offense: 50.15
       defense: 104.36439
       energy: 90.333336
       mobility: 41.95
-      capacity: 103.95087
+      capacity: 83.96724
       firePower: 7.5
       bulletSpeed: 10
       fireRate: 6
@@ -3047,13 +3047,13 @@ MonoBehaviour:
       moveSpeed: 7.15
       turnSpeed: 26.5
       gemCap: 51.97816
-      peopleCap: 51.972702
+      peopleCap: 31.98908
     powerScoreBreakdownAtShipLevel:
       offense: 99.479996
       defense: 1042.1741
       energy: 380
       mobility: 118.4
-      capacity: 796.4103
+      capacity: 578.6069
       firePower: 24
       bulletSpeed: 16
       fireRate: 6
@@ -3066,7 +3066,7 @@ MonoBehaviour:
       moveSpeed: 8.8
       turnSpeed: 98
       gemCap: 381.7379
-      peopleCap: 414.6724
+      peopleCap: 196.86896
     componentMass: 19.99454
     lockedInUpgradeTree: 0
   - chassisId: AstroEagle_19
@@ -3107,14 +3107,14 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 44b8cfb2bc34c944993fb24b1244c681, type: 3}
     minHomePlanetLevel: 6
-    powerScore: 364.40286
-    powerScoreAtMaxLevel: 2386.646
+    powerScore: 343.52054
+    powerScoreAtMaxLevel: 2161.6785
     powerScoreBreakdown:
       offense: 51.18
       defense: 81.20181
       energy: 109.902565
       mobility: 48.9
-      capacity: 101.95995
+      capacity: 81.077614
       firePower: 7.5
       bulletSpeed: 10
       fireRate: 6
@@ -3127,13 +3127,13 @@ MonoBehaviour:
       moveSpeed: 7.3
       turnSpeed: 33
       gemCap: 49.20786
-      peopleCap: 52.752094
+      peopleCap: 31.869757
     powerScoreBreakdownAtShipLevel:
       offense: 111.84
       defense: 774.6062
       energy: 537.3534
       mobility: 201.8
-      capacity: 800.0864
+      capacity: 575.1189
       firePower: 24
       bulletSpeed: 16
       fireRate: 6
@@ -3146,7 +3146,7 @@ MonoBehaviour:
       moveSpeed: 10.6
       turnSpeed: 176
       gemCap: 370.77112
-      peopleCap: 429.31534
+      peopleCap: 204.34781
     componentMass: 19.688217
     lockedInUpgradeTree: 0
   - chassisId: AstroEagle_14
@@ -3187,14 +3187,14 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 301ec01c0ac84534e8d3f48c345cdf3d, type: 3}
     minHomePlanetLevel: 7
-    powerScore: 362.77335
-    powerScoreAtMaxLevel: 2084.527
+    powerScore: 352.1659
+    powerScoreAtMaxLevel: 1988.023
     powerScoreBreakdown:
       offense: 63.93705
       defense: 54.704926
       energy: 152.60146
       mobility: 45.9
-      capacity: 83.26698
+      capacity: 72.659546
       firePower: 12.049274
       bulletSpeed: 10
       fireRate: 15.887777
@@ -3207,13 +3207,13 @@ MonoBehaviour:
       moveSpeed: 7.3
       turnSpeed: 30
       gemCap: 45.22977
-      peopleCap: 38.037216
+      peopleCap: 27.429771
     powerScoreBreakdownAtShipLevel:
       offense: 127.26517
       defense: 486.68527
       energy: 836.95184
       mobility: 187.6
-      capacity: 431.95724
+      capacity: 335.45306
       firePower: 43.377388
       bulletSpeed: 17
       fireRate: 15.887777
@@ -3226,7 +3226,7 @@ MonoBehaviour:
       moveSpeed: 11.200001
       turnSpeed: 160
       gemCap: 207.42545
-      peopleCap: 224.5318
+      peopleCap: 128.0276
     componentMass: 15.395744
     lockedInUpgradeTree: 0
   - chassisId: AstroEagle_22
@@ -3267,14 +3267,14 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 6ebd9a7d05febaf4abb354728c45d41a, type: 3}
     minHomePlanetLevel: 7
-    powerScore: 449.0531
-    powerScoreAtMaxLevel: 2205.4292
+    powerScore: 433.0531
+    powerScoreAtMaxLevel: 2085.4292
     powerScoreBreakdown:
       offense: 62.512844
       defense: 74.57143
       energy: 170.49335
       mobility: 20.95
-      capacity: 152
+      capacity: 136
       firePower: 15.063157
       bulletSpeed: 10
       fireRate: 11.949686
@@ -3287,13 +3287,13 @@ MonoBehaviour:
       moveSpeed: 7.15
       turnSpeed: 5.5
       gemCap: 84
-      peopleCap: 68
+      peopleCap: 52
     powerScoreBreakdownAtShipLevel:
       offense: 127.17705
       defense: 559.2857
       energy: 824.8267
       mobility: 33.3
-      capacity: 646
+      capacity: 526
       firePower: 54.22736
       bulletSpeed: 17
       fireRate: 11.949686
@@ -3306,7 +3306,7 @@ MonoBehaviour:
       moveSpeed: 9.1
       turnSpeed: 12
       gemCap: 318
-      peopleCap: 328
+      peopleCap: 208
     componentMass: 11.456842
     lockedInUpgradeTree: 0
   - chassisId: AstroEagle_29
@@ -3347,14 +3347,14 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 3eebc15e45c4a7545821dacd1206cbeb, type: 3}
     minHomePlanetLevel: 7
-    powerScore: 431.50015
-    powerScoreAtMaxLevel: 3076.3098
+    powerScore: 418.50015
+    powerScoreAtMaxLevel: 2946.3098
     powerScoreBreakdown:
       offense: 62.512844
       defense: 97.87499
       energy: 144.28029
       mobility: 38.95
-      capacity: 126
+      capacity: 113
       firePower: 15.063157
       bulletSpeed: 10
       fireRate: 11.949686
@@ -3367,13 +3367,13 @@ MonoBehaviour:
       moveSpeed: 7.15
       turnSpeed: 23.5
       gemCap: 67
-      peopleCap: 59
+      peopleCap: 46
     powerScoreBreakdownAtShipLevel:
       offense: 127.17705
       defense: 1127.8928
       energy: 720.45544
       mobility: 90.3
-      capacity: 1023
+      capacity: 893
       firePower: 54.22736
       bulletSpeed: 17
       fireRate: 11.949686
@@ -3386,7 +3386,7 @@ MonoBehaviour:
       moveSpeed: 9.1
       turnSpeed: 69
       gemCap: 509
-      peopleCap: 514
+      peopleCap: 384
     componentMass: 14.013922
     lockedInUpgradeTree: 0
   - chassisId: AstroEagle_24
@@ -3427,14 +3427,14 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: de05dab081395b14bbdd0aef729dd720, type: 3}
     minHomePlanetLevel: 7
-    powerScore: 445.0376
-    powerScoreAtMaxLevel: 3535.8582
+    powerScore: 426.2804
+    powerScoreAtMaxLevel: 3304.4575
     powerScoreBreakdown:
       offense: 64.426094
       defense: 95.29267
       energy: 166.45703
       mobility: 43.3
-      capacity: 110.27283
+      capacity: 91.51564
       firePower: 12.343502
       bulletSpeed: 10
       fireRate: 14.582591
@@ -3447,13 +3447,13 @@ MonoBehaviour:
       moveSpeed: 7.7000003
       turnSpeed: 27
       gemCap: 55.843815
-      peopleCap: 54.42901
+      peopleCap: 35.671825
     powerScoreBreakdownAtShipLevel:
       offense: 148.0192
       defense: 1100.3824
       energy: 1102.0483
       mobility: 151.2
-      capacity: 1019.62695
+      capacity: 788.22644
       firePower: 44.436607
       bulletSpeed: 17
       fireRate: 14.582591
@@ -3466,7 +3466,7 @@ MonoBehaviour:
       moveSpeed: 16.800001
       turnSpeed: 118
       gemCap: 484.12778
-      peopleCap: 535.4992
+      peopleCap: 304.09863
     componentMass: 21.87723
     lockedInUpgradeTree: 0
   - chassisId: AstroEagle_28
@@ -3507,14 +3507,14 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 5dff7a7bcf33dea449486d2c675838d5, type: 3}
     minHomePlanetLevel: 7
-    powerScore: 390.15128
-    powerScoreAtMaxLevel: 2571.967
+    powerScore: 375.10233
+    powerScoreAtMaxLevel: 2400.2817
     powerScoreBreakdown:
       offense: 63.662857
       defense: 66.702995
       energy: 152.60146
       mobility: 52.7
-      capacity: 92.146835
+      capacity: 77.097885
       firePower: 15.06316
       bulletSpeed: 10
       fireRate: 11.949699
@@ -3527,13 +3527,13 @@ MonoBehaviour:
       moveSpeed: 7.3
       turnSpeed: 36.5
       gemCap: 47.065258
-      peopleCap: 45.081573
+      peopleCap: 30.032629
     powerScoreBreakdownAtShipLevel:
       offense: 141.71707
       defense: 662.0265
       energy: 836.95184
       mobility: 282.8
-      capacity: 653.05566
+      capacity: 481.37042
       firePower: 54.227375
       bulletSpeed: 17
       fireRate: 11.949699
@@ -3546,7 +3546,7 @@ MonoBehaviour:
       moveSpeed: 11.200001
       turnSpeed: 251
       gemCap: 307.9136
-      peopleCap: 345.14203
+      peopleCap: 173.4568
     componentMass: 21.034119
     lockedInUpgradeTree: 0
   - chassisId: AstroEagle_20
@@ -3587,14 +3587,14 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: f7be100420c6b3844ba308d39887e112, type: 3}
     minHomePlanetLevel: 7
-    powerScore: 376.90692
-    powerScoreAtMaxLevel: 2513.2808
+    powerScore: 360.9233
+    powerScoreAtMaxLevel: 2315.51
     powerScoreBreakdown:
       offense: 63.65
       defense: 78.26437
       energy: 144.33333
       mobility: 41.95
-      capacity: 87.95087
+      capacity: 71.96724
       firePower: 15
       bulletSpeed: 10
       fireRate: 12
@@ -3607,13 +3607,13 @@ MonoBehaviour:
       moveSpeed: 7.15
       turnSpeed: 26.5
       gemCap: 43.97816
-      peopleCap: 43.972702
+      peopleCap: 27.98908
     powerScoreBreakdownAtShipLevel:
       offense: 141.54
       defense: 847.2852
       energy: 720.6667
       mobility: 132.3
-      capacity: 698.312
+      capacity: 500.54138
       firePower: 54
       bulletSpeed: 17
       fireRate: 12
@@ -3626,7 +3626,7 @@ MonoBehaviour:
       moveSpeed: 9.1
       turnSpeed: 111
       gemCap: 329.69424
-      peopleCap: 368.6178
+      peopleCap: 170.84712
     componentMass: 17.99454
     lockedInUpgradeTree: 0
   - chassisId: AstroEagle_21
@@ -3667,14 +3667,14 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 94398b877bc7e8c4fa78d6bcdc7981f0, type: 3}
     minHomePlanetLevel: 7
-    powerScore: 382.02765
-    powerScoreAtMaxLevel: 2662.5151
+    powerScore: 366.04346
+    powerScoreAtMaxLevel: 2461.9758
     powerScoreBreakdown:
       offense: 64.8273
       defense: 75.92886
       energy: 154.715
       mobility: 42.9
-      capacity: 81.643555
+      capacity: 65.65936
       firePower: 11.513563
       bulletSpeed: 10
       fireRate: 15.633736
@@ -3687,13 +3687,13 @@ MonoBehaviour:
       moveSpeed: 7.3
       turnSpeed: 27
       gemCap: 40.763924
-      peopleCap: 40.879627
+      peopleCap: 24.895443
     powerScoreBreakdownAtShipLevel:
       offense: 147.04256
       defense: 841.21985
       energy: 849.31775
       mobility: 145.6
-      capacity: 681.7875
+      capacity: 481.24817
       firePower: 41.448826
       bulletSpeed: 17
       fireRate: 15.633736
@@ -3706,7 +3706,7 @@ MonoBehaviour:
       moveSpeed: 11.200001
       turnSpeed: 118
       gemCap: 317.82312
-      peopleCap: 363.96432
+      peopleCap: 163.42505
     componentMass: 20.322084
     lockedInUpgradeTree: 0
   - chassisId: AstroEagle_15
@@ -3747,14 +3747,14 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: f338b7299d98357499ec1417fe5f7624, type: 3}
     minHomePlanetLevel: 8
-    powerScore: 394.34
-    powerScoreAtMaxLevel: 2850.5862
+    powerScore: 386.927
+    powerScoreAtMaxLevel: 2758.466
     powerScoreBreakdown:
       offense: 75.75141
       defense: 73.27485
       energy: 198.28043
       mobility: 20.95
-      capacity: 70.68977
+      capacity: 63.2768
       firePower: 20.335035
       bulletSpeed: 10
       fireRate: 19.916378
@@ -3767,13 +3767,13 @@ MonoBehaviour:
       moveSpeed: 7.15
       turnSpeed: 5.5
       gemCap: 36.273647
-      peopleCap: 34.416122
+      peopleCap: 27.00315
     powerScoreBreakdownAtShipLevel:
       offense: 166.25652
       defense: 910.39044
       energy: 1133.0985
       mobility: 35.2
-      capacity: 602.9256
+      capacity: 510.8053
       firePower: 81.34014
       bulletSpeed: 18
       fireRate: 19.916378
@@ -3786,7 +3786,7 @@ MonoBehaviour:
       moveSpeed: 9.4
       turnSpeed: 13
       gemCap: 294.89545
-      peopleCap: 308.03015
+      peopleCap: 215.90985
     componentMass: 15.590564
     lockedInUpgradeTree: 0
   - chassisId: AstroEagle_30
@@ -3827,14 +3827,14 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 16a83243cfb0e444fb4a660688171f1c, type: 3}
     minHomePlanetLevel: 8
-    powerScore: 459.81918
-    powerScoreAtMaxLevel: 3921.644
+    powerScore: 440.7696
+    powerScoreAtMaxLevel: 3673.5396
     powerScoreBreakdown:
       offense: 63.816948
       defense: 97.699715
       energy: 170.41821
       mobility: 41.800003
-      capacity: 119.487885
+      capacity: 100.43826
       firePower: 15.635914
       bulletSpeed: 10
       fireRate: 11.531033
@@ -3847,13 +3847,13 @@ MonoBehaviour:
       moveSpeed: 7.6000004
       turnSpeed: 25
       gemCap: 60.85975
-      peopleCap: 58.62813
+      peopleCap: 39.578518
     powerScoreBreakdownAtShipLevel:
       offense: 155.67468
       defense: 1257.8551
       energy: 1219.2628
       mobility: 143.8
-      capacity: 1129.926
+      capacity: 881.82166
       firePower: 62.543655
       bulletSpeed: 18
       fireRate: 11.531033
@@ -3866,7 +3866,7 @@ MonoBehaviour:
       moveSpeed: 16.599998
       turnSpeed: 100
       gemCap: 543.6198
-      peopleCap: 586.3063
+      peopleCap: 338.20184
     componentMass: 23.518192
     lockedInUpgradeTree: 0
   - chassisId: AstroEagle_31
@@ -3907,14 +3907,14 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 2a35a36c92dd1fa4ea8dda83e1ba52e6, type: 3}
     minHomePlanetLevel: 8
-    powerScore: 468.5311
-    powerScoreAtMaxLevel: 3982.9312
+    powerScore: 447.68362
+    powerScoreAtMaxLevel: 3699.7615
     powerScoreBreakdown:
       offense: 64.66994
       defense: 89.173325
       energy: 186.53409
       mobility: 46.600002
-      capacity: 112.41406
+      capacity: 91.56662
       firePower: 13.425003
       bulletSpeed: 10
       fireRate: 13.594936
@@ -3927,13 +3927,13 @@ MonoBehaviour:
       moveSpeed: 7.8
       turnSpeed: 29
       gemCap: 56.55029
-      peopleCap: 55.863773
+      peopleCap: 35.016335
     powerScoreBreakdownAtShipLevel:
       offense: 164.89494
       defense: 1117.0583
       energy: 1441.1383
       mobility: 220.6
-      capacity: 1042.9346
+      capacity: 759.7649
       firePower: 53.700012
       bulletSpeed: 18
       fireRate: 13.594936
@@ -3946,7 +3946,7 @@ MonoBehaviour:
       moveSpeed: 19.8
       turnSpeed: 164
       gemCap: 488.87527
-      peopleCap: 554.05927
+      peopleCap: 270.88962
     componentMass: 28.411789
     lockedInUpgradeTree: 0
   teamMaterials:

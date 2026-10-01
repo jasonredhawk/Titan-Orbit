@@ -701,13 +701,9 @@ namespace TitanOrbit.UI
                     costLabels[i].fontSize = F(11f);
                 if (_chipValueTexts[i] != null)
                     _chipValueTexts[i].fontSize = F(12f);
-                if (_resetHoldRects[i] != null)
-                {
-                    _resetHoldRects[i].offsetMin = new Vector2(E(22f), -E(18f));
-                    _resetHoldRects[i].offsetMax = new Vector2(-E(tickColumnRightInset), -E(4f));
-                }
+                LayoutAbilityResetChip(_resetHoldRects[i]);
                 if (_resetHoldLabels[i] != null)
-                    _resetHoldLabels[i].fontSize = F(8f);
+                    _resetHoldLabels[i].fontSize = F(7f);
             }
 
             RefreshStatsToggleVisual();
@@ -2089,19 +2085,15 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// Small top-row RESET chip to the right of the key. Hold 3s to zero that ability.
-        /// Hidden until the slot has at least one Extra Level.
+        /// Compact RESET chip centered on the top of the slot.
+        /// Hold 3s to zero that ability. Hidden until the slot has at least one Extra Level.
         /// </summary>
         (GameObject root, RectTransform rect, Image fill, TextMeshProUGUI label) CreateAbilityResetHold(Transform parent, int index)
         {
             GameObject root = new GameObject("ResetHold");
             root.transform.SetParent(parent, false);
             RectTransform rect = root.AddComponent<RectTransform>();
-            rect.anchorMin = new Vector2(0f, 1f);
-            rect.anchorMax = new Vector2(1f, 1f);
-            rect.pivot = new Vector2(1f, 1f);
-            rect.offsetMin = new Vector2(E(22f), -E(18f));
-            rect.offsetMax = new Vector2(-E(tickColumnRightInset), -E(4f));
+            LayoutAbilityResetChip(rect);
 
             Image bg = root.AddComponent<Image>();
             bg.color = new Color(0.18f, 0.05f, 0.07f, 0.92f);
@@ -2133,8 +2125,10 @@ namespace TitanOrbit.UI
             labelRt.offsetMax = Vector2.zero;
             TextMeshProUGUI label = labelGo.AddComponent<TextMeshProUGUI>();
             label.text = "RESET";
-            label.fontSize = F(8f);
+            label.fontSize = F(7f);
             label.fontStyle = FontStyles.Bold;
+            label.enableWordWrapping = false;
+            label.overflowMode = TextOverflowModes.Overflow;
             label.alignment = TextAlignmentOptions.Center;
             label.color = new Color(0.96f, 0.74f, 0.74f, 1f);
             label.raycastTarget = false;
@@ -2145,6 +2139,21 @@ namespace TitanOrbit.UI
             relay.Bind(this, index);
             root.SetActive(false);
             return (root, rect, fill, label);
+        }
+
+        /// <summary>
+        /// Top-center hold chip. Fixed size so the ability name stays readable.
+        /// </summary>
+        void LayoutAbilityResetChip(RectTransform rect)
+        {
+            if (rect == null)
+                return;
+
+            rect.anchorMin = new Vector2(0.5f, 1f);
+            rect.anchorMax = new Vector2(0.5f, 1f);
+            rect.pivot = new Vector2(0.5f, 1f);
+            rect.anchoredPosition = new Vector2(0f, -E(3f));
+            rect.sizeDelta = new Vector2(E(40f), E(12f));
         }
 
         /// <summary>1×1 white sprite so the RESET hold fill can clip.</summary>

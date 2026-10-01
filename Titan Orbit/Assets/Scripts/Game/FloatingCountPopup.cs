@@ -28,6 +28,16 @@ namespace TitanOrbit.Game
         const float FadeInDuration = 0.08f;
         const float FadeRiseSpeed = 1.15f;
 
+        /// <summary>Gap past the hull edge so ship numbers sit aft of the nose.</summary>
+        const float ShipAftPad = 0.85f;
+
+        /// <summary>
+        /// Low play-plane height. A tall world-Y lift pulls top-down text back over the hull.
+        /// </summary>
+        const float LocalShipPopupHeight = 0.4f;
+        const float LocalShipTextClearanceMin = 0.45f;
+        const float LocalShipTextClearanceMax = 2.4f;
+
         enum Phase
         {
             Hot = 0,
@@ -640,7 +650,12 @@ namespace TitanOrbit.Game
                 transform.rotation = Quaternion.LookRotation(cam.transform.forward, cam.transform.up);
 
             if (_phase == Phase.Fading)
-                worldMotionOffset += GetRiseDirectionOnPlayPlane(cam) * FadeRiseSpeed * Time.deltaTime;
+            {
+                Vector3 drift = _clearShipHull && IsUsableAnchor(followAnchor)
+                    ? ResolveShipAftDirection(followAnchor)
+                    : GetRiseDirectionOnPlayPlane(cam);
+                worldMotionOffset += drift * FadeRiseSpeed * Time.deltaTime;
+            }
 
             ApplyZoomScale();
 
@@ -684,16 +699,109 @@ namespace TitanOrbit.Game
                 _cachedCamera = Camera.main;
 
             Vector3 pos = followAnchor.position + followWorldOffset + _worldOffset;
+            bool parkAft = TryGetShipAftOffset(out Vector3 aftOffset, out Vector3 aftDir);
             if (stackLane > 0 && stackSpacing > 0.001f)
             {
                 float zoom = WorldFloatingCountManager.ResolveCameraZoomScale();
-                pos += GetRiseDirectionOnPlayPlane(_cachedCamera) * (stackLane * stackSpacing * zoom);
+                Vector3 stackDir = parkAft ? aftDir : GetRiseDirectionOnPlayPlane(_cachedCamera);
+                pos += stackDir * (stackLane * stackSpacing * zoom);
             }
 
             pos += worldMotionOffset;
-            pos.y = followAnchor.position.y + ResolveLiftY() + _worldOffset.y;
-            pos.y = LiftAboveLocalShipIfOverlapping(pos);
+
+            // [TITAN-ORBIT] Ship numbers sit aft of the nose on the play plane. A world-Y
+            // lift still lands on the mesh from the top-down camera, and a fixed screen
+            // side disappears into the asteroid the ship is grinding.
+            if (parkAft)
+            {
+                pos += aftOffset;
+                pos.y = followAnchor.position.y + LocalShipPopupHeight + _worldOffset.y;
+            }
+            else
+            {
+                pos.y = followAnchor.position.y + ResolveLiftY() + _worldOffset.y;
+                pos.y = LiftAboveLocalShipIfOverlapping(pos);
+            }
+
             transform.position = pos;
+        }
+
+        /// <summary>
+        /// Aft of the hull on the play plane, opposite <see cref="Transform.forward"/>.
+        /// False when this popup is not following a ship.
+        /// </summary>
+        bool TryGetShipAftOffset(out Vector3 offset, out Vector3 aftDir)
+        {
+            offset = Vector3.zero;
+            aftDir = Vector3.back;
+            if (!_clearShipHull || !IsUsableAnchor(followAnchor))
+                return false;
+
+            aftDir = ResolveShipAftDirection(followAnchor);
+
+            Vector3 center = followAnchor.position;
+            float radius = Mathf.Max(0.35f, _bodyRadius);
+            if (ShipWeaponProxyRegistry.TryGetCachedHullFootprint(
+                    followAnchor, out float xzRadius, out Vector3 localCenter))
+            {
+                Vector3 parked = followAnchor.TransformPoint(localCenter);
+                parked.y = followAnchor.position.y;
+                center = parked;
+                radius = Mathf.Max(radius, xzRadius);
+            }
+
+            float reach = radius + EstimateGroupExtentAlong(aftDir) + ShipAftPad;
+            offset = center - followAnchor.position;
+            offset.y = 0f;
+            offset += aftDir * reach;
+            return true;
+        }
+
+        /// <summary>Unit XZ direction opposite the hull nose. Falls back to screen-above.</summary>
+        Vector3 ResolveShipAftDirection(Transform hull)
+        {
+            Vector3 aft = Vector3.zero;
+            if (hull != null)
+            {
+                aft = -hull.forward;
+                aft.y = 0f;
+            }
+
+            if (aft.sqrMagnitude < 1e-6f)
+                return GetRiseDirectionOnPlayPlane(_cachedCamera);
+            return aft.normalized;
+        }
+
+        /// <summary>How far the billboard reaches back toward the ship along <paramref name="aftDir"/>.</summary>
+        float EstimateGroupExtentAlong(Vector3 aftDir)
+        {
+            float halfW = 0f;
+            float halfH = 0f;
+            if (tmpText != null)
+            {
+                Vector3 size = tmpText.textBounds.size;
+                halfW = Mathf.Max(0f, size.x) * 0.5f;
+                halfH = Mathf.Max(0f, size.y) * 0.5f;
+            }
+
+            if (iconRenderer != null && iconRenderer.enabled && iconRenderer.sprite != null)
+            {
+                Vector3 ext = iconRenderer.sprite.bounds.extents;
+                halfW += ext.x * _iconScale + _iconLeftPadding * 0.5f;
+                halfH = Mathf.Max(halfH, ext.y * _iconScale);
+            }
+
+            if (halfW < 0.01f && halfH < 0.01f)
+            {
+                float fallback = Mathf.Max(4f, _fontSize * 0.5f);
+                halfW = fallback;
+                halfH = fallback;
+            }
+
+            float scale = _baseWorldScale * Mathf.Max(0.01f, WorldFloatingCountManager.ResolveCameraZoomScale());
+            float along = Mathf.Abs(Vector3.Dot(aftDir, transform.right)) * halfW * scale
+                        + Mathf.Abs(Vector3.Dot(aftDir, transform.up)) * halfH * scale;
+            return Mathf.Clamp(along, LocalShipTextClearanceMin, LocalShipTextClearanceMax);
         }
 
         float LiftAboveLocalShipIfOverlapping(Vector3 worldPos)

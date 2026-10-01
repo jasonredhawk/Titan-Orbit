@@ -687,7 +687,8 @@ namespace TitanOrbit.UI
 
         /// <summary>
         /// Fingerprint for shared LiveContext rebuilds.
-        /// Changes when the player buys a ship, upgrades an ability, or swaps store parts.
+        /// Changes when the player buys a ship, upgrades an ability, swaps store parts,
+        /// or cargo mass changes (that mass is inside the RAM cruise-damage line).
         /// </summary>
         static int ComputeTooltipSnapshotKey(
             in ShipState ship,
@@ -717,6 +718,10 @@ namespace TitanOrbit.UI
                 // Chassis id — rare rebuild; GetHashCode is acceptable here.
                 h = h * 31 + (chassisId != null ? chassisId.GetHashCode() : 0);
                 h = h * 31 + fireBankKey;
+                // Cargo mass scales ram. Without this, the "full cruise" damage line stays
+                // at the empty-hull number while a loaded ram hits several times harder.
+                h = h * 31 + (int)ship.CurrentGems;
+                h = h * 31 + (int)ship.CurrentPeople;
                 return h;
             }
         }

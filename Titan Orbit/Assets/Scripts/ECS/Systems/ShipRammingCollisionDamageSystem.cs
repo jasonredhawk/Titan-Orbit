@@ -50,6 +50,14 @@ namespace TitanOrbit.ECS
         /// <summary>Keep grind sticky this many ticks after the last real collision event.</summary>
         const byte MaxMissedTicks = 3;
 
+        /// <summary>
+        /// After an impact, ignore another impact on that same target until this many
+        /// seconds have passed. Compound hulls raise several PhysX events per rock, and a
+        /// bounce often drops the contact for a few ticks — each one used to apply a full
+        /// cruise ram (the stat-sheet hit) again, so one collision showed 250+ damage.
+        /// </summary>
+        const double ImpactRearmSeconds = 0.75;
+
         /// <summary>Minimum closing speed (u/s) to fire an impact pulse on contact enter.</summary>
         const float ImpactMinClosingSpeed = 0.35f;
 
@@ -109,6 +117,9 @@ namespace TitanOrbit.ECS
 
             // --- Mark which (ship, target) pairs collided this tick ---
             var hitThisTick = new NativeHashSet<long>(math.max(8, queue.Length * 2), Allocator.Temp);
+            // One impact per pair per tick. A compound hull can emit several events
+            // against the same rock; each one used to be a full ram.
+            var impactedThisTick = new NativeHashSet<long>(math.max(8, queue.Length), Allocator.Temp);
 
             var ecb = new EntityCommandBuffer(Allocator.Temp);
 
@@ -177,6 +188,18 @@ namespace TitanOrbit.ECS
                     pending.EstimatedImpulse,
                     totalMass);
 
+                // Bounce leftover can be several times cruise (drive allows 3× before it bleeds).
+                // The RAM stat's "full cruise" line is the motor cap, including territory and
+                // overdrive. Asteroid rams must not exceed that cap.
+                if (!otherIsShip &&
+                    state.EntityManager.HasComponent<ShipTerritoryBoostLatch>(shipEntity))
+                {
+                    float speedCap = state.EntityManager
+                        .GetComponentData<ShipTerritoryBoostLatch>(shipEntity).LastAppliedMaxSpeed;
+                    if (speedCap > ImpactMinClosingSpeed && closing > speedCap)
+                        closing = speedCap;
+                }
+
                 long key = PackKey(shipEntity, other);
                 hitThisTick.Add(key);
                 if (otherIsShip)
@@ -213,7 +236,7 @@ namespace TitanOrbit.ECS
                 // elsewhere. Self-damage is remaining rock Health × catalog plow slider (default 1).
                 if (isMega && !otherIsShip)
                 {
-                    if (isNewContact && !IsDeadAsteroid(ref state, other))
+                    if (isNewContact && impactedThisTick.Add(key) && !IsDeadAsteroid(ref state, other))
                     {
                         float remainingHp = 0f;
                         if (state.EntityManager.HasComponent<AsteroidState>(other))
@@ -256,6 +279,7 @@ namespace TitanOrbit.ECS
                             impulsePower: selfDamage,
                             sourceEntity: other);
                         state.EntityManager.SetComponentData(shipEntity, ship);
+                        contact.LastImpactTime = now;
                     }
 
                     contact.WasColliding = 1;
@@ -265,7 +289,13 @@ namespace TitanOrbit.ECS
                 }
 
                 // --- Impact on contact enter: grindDps × (1 + closing / ram-double speed) ---
-                if (isNewContact && closing >= ImpactMinClosingSpeed)
+                // Rearm hold keeps the contact after a short separation so the next PhysX
+                // event is not a brand-new pair. impactedThisTick covers extra manifolds
+                // in this same step, before that contact write is visible.
+                bool impactReady = isNewContact
+                    && closing >= ImpactMinClosingSpeed
+                    && impactedThisTick.Add(key);
+                if (impactReady)
                 {
                     if (!otherIsShip)
                     {
@@ -298,6 +328,7 @@ namespace TitanOrbit.ECS
                             impulsePower: selfDamage,
                             sourceEntity: other);
                         state.EntityManager.SetComponentData(shipEntity, ship);
+                        contact.LastImpactTime = now;
                     }
                     else
                     {
@@ -305,6 +336,7 @@ namespace TitanOrbit.ECS
                         ApplyShipVsShipImpact(
                             ref state, shipEntity, other, closing, fixedDt,
                             gemPrefab, spawnServerTime, ecb, now);
+                        contact.LastImpactTime = now;
                         ship = state.EntityManager.GetComponentData<ShipState>(shipEntity);
                         // Sticky bookkeeping on the other hull too.
                         MarkColliding(ref state, other, shipEntity, now);
@@ -366,7 +398,11 @@ namespace TitanOrbit.ECS
                     }
 
                     contact.MissedTicks = (byte)math.min(255, contact.MissedTicks + 1);
-                    if (contact.MissedTicks > MaxMissedTicks)
+                    // Hold the pair through the impact rearm window. Removing it after three
+                    // quiet ticks let the next bounce event count as a new ram.
+                    bool holdForImpactRearm = contact.LastImpactTime > 0.0
+                        && now - contact.LastImpactTime < ImpactRearmSeconds;
+                    if (contact.MissedTicks > MaxMissedTicks && !holdForImpactRearm)
                     {
                         contacts.RemoveAt(c);
                         continue;
@@ -381,6 +417,7 @@ namespace TitanOrbit.ECS
             ecb.Playback(state.EntityManager);
             ecb.Dispose();
             hitThisTick.Dispose();
+            impactedThisTick.Dispose();
         }
 
         /// <summary>
@@ -1001,9 +1038,9 @@ namespace TitanOrbit.ECS
             bool isDead = ship.IsDead;
 
             // --- Hull then cargo ---
-            // [TITAN-ORBIT] Hull absorbs first. Asteroid self-chips spill leftover only so the
-            // pulse that breaks hull does not also dump the hold at full ram damage (that
-            // one-shot high-level ships once Health hit 0).
+            // [TITAN-ORBIT] Hull absorbs first. Asteroid self-chips spill only the leftover
+            // (damage past remaining HP) so a 10 HP hull hit for 100 loses 10 hull and
+            // expels 90 gems, instead of swallowing the whole hit on the hull.
             bool asteroidSelf = damagerNetworkId == 0;
             var result = ShipDamageLogic.ApplyHullAndGemDamage(
                 ref health,

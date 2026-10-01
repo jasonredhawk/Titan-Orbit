@@ -198,7 +198,7 @@ MonoBehaviour:
       tractorBeamPower: 0
       tractorBeamPowerPerExtraLevel: 0
       maxPeople: 10
-      maxPeoplePerExtraLevel: 5
+      maxPeoplePerExtraLevel: 2
     bulletPrefabIndex: -1
     menuPreviewSprite: {fileID: 21300000, guid: a374378df3a2b1a45b93cb1b5036e85e, type: 3}
     theatricalMenuPreviewSprite: {fileID: 21300000, guid: a374378df3a2b1a45b93cb1b5036e85e, type: 3}
@@ -736,8 +736,8 @@ MonoBehaviour:
       tractorBeamDistancePerExtraLevel: 0.75
       tractorBeamPower: 4
       tractorBeamPowerPerExtraLevel: 1
-      maxPeople: 5
-      maxPeoplePerExtraLevel: 2
+      maxPeople: 4
+      maxPeoplePerExtraLevel: 1
     bulletPrefabIndex: -1
     menuPreviewSprite: {fileID: 21300000, guid: 9ed375990ef29a94b8c6745a15b100c9, type: 3}
     theatricalMenuPreviewSprite: {fileID: 21300000, guid: 9ed375990ef29a94b8c6745a15b100c9, type: 3}
@@ -814,14 +814,14 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: b0590fcba3108954bbbcdcf8c3b7a729, type: 3}
     minHomePlanetLevel: 1
-    powerScore: 147.63249
-    powerScoreAtMaxLevel: 197.57388
+    powerScore: 141.68816
+    powerScoreAtMaxLevel: 186.1852
     powerScoreBreakdown:
       offense: 42.618877
       defense: 26.045902
       energy: 37.145794
       mobility: 22.5
-      capacity: 48.2697
+      capacity: 42.325356
       firePower: 2.3998308
       bulletSpeed: 10
       fireRate: 4.219047
@@ -834,13 +834,13 @@ MonoBehaviour:
       moveSpeed: 6.1
       turnSpeed: 14
       gemCap: 26.259851
-      peopleCap: 22.00985
+      peopleCap: 16.065506
     powerScoreBreakdownAtShipLevel:
       offense: 45.098843
       defense: 42.23735
       energy: 48.682243
       mobility: 22.6
-      capacity: 67.58418
+      capacity: 56.195496
       firePower: 2.879797
       bulletSpeed: 11
       fireRate: 4.219047
@@ -853,7 +853,7 @@ MonoBehaviour:
       moveSpeed: 6.2
       turnSpeed: 14
       gemCap: 36.16709
-      peopleCap: 31.417091
+      peopleCap: 20.028402
     componentMass: 3.547257
     lockedInUpgradeTree: 0
   - chassisId: ProtonLegacy_04
@@ -894,14 +894,14 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 3592246b5f154c84cabc92da9818ba9a, type: 3}
     minHomePlanetLevel: 2
-    powerScore: 168.94676
-    powerScoreAtMaxLevel: 344.2246
+    powerScore: 165.94676
+    powerScoreAtMaxLevel: 332.2246
     powerScoreBreakdown:
       offense: 48.25
       defense: 31.296772
       energy: 57.45
       mobility: 32.4
-      capacity: 30
+      capacity: 27
       firePower: 6.75
       bulletSpeed: 10
       fireRate: 6
@@ -914,13 +914,13 @@ MonoBehaviour:
       moveSpeed: 9
       turnSpeed: 21
       gemCap: 15
-      peopleCap: 15
+      peopleCap: 12
     powerScoreBreakdownAtShipLevel:
       offense: 57.8
       defense: 95.82459
       energy: 111.45
       mobility: 50.4
-      capacity: 60
+      capacity: 48
       firePower: 10.799999
       bulletSpeed: 12
       fireRate: 6
@@ -933,7 +933,7 @@ MonoBehaviour:
       moveSpeed: 9
       turnSpeed: 39
       gemCap: 30
-      peopleCap: 30
+      peopleCap: 18
     componentMass: 9.59288
     lockedInUpgradeTree: 0
   - chassisId: ProtonLegacy_03
@@ -974,14 +974,14 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 9122d975f8e9c624fa1b597c26262317, type: 3}
     minHomePlanetLevel: 2
-    powerScore: 156.22765
-    powerScoreAtMaxLevel: 314.2546
+    powerScore: 153.6935
+    powerScoreAtMaxLevel: 304.11798
     powerScoreBreakdown:
       offense: 41.875
       defense: 20.81108
       energy: 62.75
       mobility: 29.6
-      capacity: 25.341572
+      capacity: 22.807413
       firePower: 3.375
       bulletSpeed: 10
       fireRate: 3
@@ -994,13 +994,13 @@ MonoBehaviour:
       moveSpeed: 6.2
       turnSpeed: 21
       gemCap: 12.670785
-      peopleCap: 12.670786
+      peopleCap: 10.136628
     powerScoreBreakdownAtShipLevel:
       offense: 49.4
       defense: 56.92146
       energy: 132.65
       mobility: 48.2
-      capacity: 50.683144
+      capacity: 40.546513
       firePower: 5.3999996
       bulletSpeed: 12
       fireRate: 3
@@ -1013,7 +1013,7 @@ MonoBehaviour:
       moveSpeed: 6.8
       turnSpeed: 39
       gemCap: 25.34157
-      peopleCap: 25.341572
+      peopleCap: 15.204943
     componentMass: 7.844719
     lockedInUpgradeTree: 0
   - chassisId: ProtonLegacy_05
@@ -1054,14 +1054,14 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 3e1c2ebee1e62584994ca1c5f02a2fdf, type: 3}
     minHomePlanetLevel: 3
-    powerScore: 170.37605
-    powerScoreAtMaxLevel: 527.5189
+    powerScore: 166.17606
+    powerScoreAtMaxLevel: 504.31888
     powerScoreBreakdown:
       offense: 42.565758
       defense: 59.50106
       energy: 30.45
       mobility: 25.4
-      capacity: 40.6
+      capacity: 36.399998
       firePower: 5.067883
       bulletSpeed: 10
       fireRate: 1.9978756
@@ -1074,13 +1074,13 @@ MonoBehaviour:
       moveSpeed: 9
       turnSpeed: 14
       gemCap: 21.999998
-      peopleCap: 18.599998
+      peopleCap: 14.4
     powerScoreBreakdownAtShipLevel:
       offense: 57.13364
       defense: 295.01886
       energy: 75.45
       mobility: 25.4
-      capacity: 108.6
+      capacity: 85.4
       firePower: 10.135766
       bulletSpeed: 13
       fireRate: 1.9978756
@@ -1093,7 +1093,7 @@ MonoBehaviour:
       moveSpeed: 9
       turnSpeed: 14
       gemCap: 57
-      peopleCap: 51.6
+      peopleCap: 28.4
     componentMass: 14.139466
     lockedInUpgradeTree: 0
   - chassisId: ProtonLegacy_06
@@ -1134,14 +1134,14 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 198edea5e897a774b9d5011d07f83af5, type: 3}
     minHomePlanetLevel: 3
-    powerScore: 184.83406
-    powerScoreAtMaxLevel: 585.5746
+    powerScore: 181.27861
+    powerScoreAtMaxLevel: 565.49194
     powerScoreBreakdown:
       offense: 41.875
       defense: 52.857765
       energy: 50.481884
       mobility: 29.6
-      capacity: 34.67947
+      capacity: 31.124023
       firePower: 3.375
       bulletSpeed: 10
       fireRate: 3
@@ -1154,13 +1154,13 @@ MonoBehaviour:
       moveSpeed: 6.2
       turnSpeed: 21
       gemCap: 18.402235
-      peopleCap: 16.277235
+      peopleCap: 12.721788
     powerScoreBreakdownAtShipLevel:
       offense: 54.75
       defense: 258.99203
       energy: 142.44565
       mobility: 60.6
-      capacity: 92.68692
+      capacity: 72.60424
       firePower: 6.75
       bulletSpeed: 13
       fireRate: 3
@@ -1173,7 +1173,7 @@ MonoBehaviour:
       moveSpeed: 7.2
       turnSpeed: 51
       gemCap: 48.03096
-      peopleCap: 44.65596
+      peopleCap: 24.573278
     componentMass: 14.444475
     lockedInUpgradeTree: 0
   - chassisId: ProtonLegacy_01
@@ -1214,14 +1214,14 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 634d58f6f95799842acd71388ad2647f, type: 3}
     minHomePlanetLevel: 3
-    powerScore: 185.55644
-    powerScoreAtMaxLevel: 650.12604
+    powerScore: 182.55644
+    powerScoreAtMaxLevel: 632.12604
     powerScoreBreakdown:
       offense: 21.2
       defense: 79.50644
       energy: 35.75
       mobility: 22.6
-      capacity: 30
+      capacity: 27
       firePower: 2.6999998
       bulletSpeed: 12
       fireRate: 3
@@ -1234,13 +1234,13 @@ MonoBehaviour:
       moveSpeed: 6.2
       turnSpeed: 14
       gemCap: 15
-      peopleCap: 15
+      peopleCap: 12
     powerScoreBreakdownAtShipLevel:
       offense: 23.7
       defense: 421.57608
       energy: 107.25
       mobility: 23.6
-      capacity: 80
+      capacity: 62
       firePower: 2.6999998
       bulletSpeed: 12
       fireRate: 3
@@ -1253,7 +1253,7 @@ MonoBehaviour:
       moveSpeed: 7.2
       turnSpeed: 14
       gemCap: 40
-      peopleCap: 40
+      peopleCap: 22
     componentMass: 21.969788
     lockedInUpgradeTree: 0
   - chassisId: ProtonLegacy_09
@@ -1294,14 +1294,14 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 86f655b7e5a99af4c9f6f0533e282dfa, type: 3}
     minHomePlanetLevel: 4
-    powerScore: 211.97824
-    powerScoreAtMaxLevel: 750.687
+    powerScore: 205.97824
+    powerScoreAtMaxLevel: 709.687
     powerScoreBreakdown:
       offense: 48.25
       defense: 44.828247
       energy: 57.45
       mobility: 35.4
-      capacity: 56.5
+      capacity: 50.5
       firePower: 6.75
       bulletSpeed: 10
       fireRate: 6
@@ -1314,13 +1314,13 @@ MonoBehaviour:
       moveSpeed: 9
       turnSpeed: 24
       gemCap: 32.5
-      peopleCap: 24
+      peopleCap: 18
     powerScoreBreakdownAtShipLevel:
       offense: 71.2
       defense: 241.78703
       energy: 183.45
       mobility: 98.4
-      capacity: 189.5
+      capacity: 148.5
       firePower: 16.199999
       bulletSpeed: 14
       fireRate: 6
@@ -1333,7 +1333,7 @@ MonoBehaviour:
       moveSpeed: 9
       turnSpeed: 87
       gemCap: 102.5
-      peopleCap: 87
+      peopleCap: 46
     componentMass: 10.158516
     lockedInUpgradeTree: 0
   - chassisId: ProtonLegacy_14
@@ -1374,14 +1374,14 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 5de31bb58d18dab4d8de94f96fb5a98f, type: 3}
     minHomePlanetLevel: 4
-    powerScore: 237.2649
-    powerScoreAtMaxLevel: 911.3251
+    powerScore: 231.5052
+    powerScoreAtMaxLevel: 872.2475
     powerScoreBreakdown:
       offense: 48.25
       defense: 55.679787
       energy: 77.33675
       mobility: 29.6
-      capacity: 54.097
+      capacity: 48.3373
       firePower: 6.75
       bulletSpeed: 10
       fireRate: 6
@@ -1394,13 +1394,13 @@ MonoBehaviour:
       moveSpeed: 6.2
       turnSpeed: 21
       gemCap: 31.2985
-      peopleCap: 22.7985
+      peopleCap: 17.0388
     powerScoreBreakdownAtShipLevel:
       offense: 71.2
       defense: 330.49026
       energy: 268.67963
       mobility: 73
-      capacity: 181.49002
+      capacity: 142.41241
       firePower: 16.199999
       bulletSpeed: 14
       fireRate: 6
@@ -1413,7 +1413,7 @@ MonoBehaviour:
       moveSpeed: 7.6000004
       turnSpeed: 63
       gemCap: 98.49501
-      peopleCap: 82.995
+      peopleCap: 43.9174
     componentMass: 13.684374
     lockedInUpgradeTree: 0
   - chassisId: ProtonLegacy_10
@@ -1454,14 +1454,14 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 3ec8f6dda99158e4fb9ad7015cd563a0, type: 3}
     minHomePlanetLevel: 4
-    powerScore: 221.42947
-    powerScoreAtMaxLevel: 836.41077
+    powerScore: 216.2167
+    powerScoreAtMaxLevel: 802.54865
     powerScoreBreakdown:
       offense: 48.25
       defense: 51.447834
       energy: 75.19242
       mobility: 26.6
-      capacity: 48.20767
+      capacity: 42.9949
       firePower: 6.75
       bulletSpeed: 10
       fireRate: 6
@@ -1474,13 +1474,13 @@ MonoBehaviour:
       moveSpeed: 6.2
       turnSpeed: 18
       gemCap: 28.863832
-      peopleCap: 19.343836
+      peopleCap: 14.131068
     powerScoreBreakdownAtShipLevel:
       offense: 71.2
       defense: 309.38077
       energy: 260.5312
       mobility: 49
-      capacity: 161.9989
+      capacity: 128.13676
       firePower: 16.199999
       bulletSpeed: 14
       fireRate: 6
@@ -1493,7 +1493,7 @@ MonoBehaviour:
       moveSpeed: 7.6000004
       turnSpeed: 39
       gemCap: 89.67945
-      peopleCap: 72.31945
+      peopleCap: 38.457314
     componentMass: 12.340081
     lockedInUpgradeTree: 0
   - chassisId: ProtonLegacy_08
@@ -1534,14 +1534,14 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 5088d8625f338c14198101100669fd5e, type: 3}
     minHomePlanetLevel: 4
-    powerScore: 208.95483
-    powerScoreAtMaxLevel: 808.4228
+    powerScore: 203.03293
+    powerScoreAtMaxLevel: 767.3476
     powerScoreBreakdown:
       offense: 48.428642
       defense: 58.835796
       energy: 57.45
       mobility: 25.4
-      capacity: 49.46904
+      capacity: 43.547134
       firePower: 7.5989814
       bulletSpeed: 10
       fireRate: 5.329662
@@ -1554,13 +1554,13 @@ MonoBehaviour:
       moveSpeed: 9
       turnSpeed: 14
       gemCap: 28.85952
-      peopleCap: 20.60952
+      peopleCap: 14.687616
     powerScoreBreakdownAtShipLevel:
       offense: 72.567215
       defense: 370.87598
       energy: 183.45
       mobility: 25.4
-      capacity: 191.14682
+      capacity: 150.07158
       firePower: 18.237555
       bulletSpeed: 14
       fireRate: 5.329662
@@ -1573,7 +1573,7 @@ MonoBehaviour:
       moveSpeed: 9
       turnSpeed: 14
       gemCap: 104.94841
-      peopleCap: 86.1984
+      peopleCap: 45.12317
     componentMass: 12.241082
     lockedInUpgradeTree: 0
   - chassisId: ProtonLegacy_20
@@ -1614,14 +1614,14 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 6be553d3ed5eb6a4d9cabab80f7c0ecb, type: 3}
     minHomePlanetLevel: 5
-    powerScore: 285.8776
-    powerScoreAtMaxLevel: 1423.3986
+    powerScore: 276.9776
+    powerScoreAtMaxLevel: 1344.2986
     powerScoreBreakdown:
       offense: 48.25
       defense: 67.01185
       energy: 93.554695
       mobility: 29.6
-      capacity: 70.85
+      capacity: 61.949997
       firePower: 6.75
       bulletSpeed: 10
       fireRate: 6
@@ -1634,13 +1634,13 @@ MonoBehaviour:
       moveSpeed: 6.2
       turnSpeed: 21
       gemCap: 40.75
-      peopleCap: 30.099998
+      peopleCap: 21.199999
     powerScoreBreakdownAtShipLevel:
       offense: 77.9
       defense: 515.4971
       energy: 397.9516
       mobility: 85.4
-      capacity: 355.25
+      capacity: 276.15
       firePower: 18.9
       bulletSpeed: 15
       fireRate: 6
@@ -1653,7 +1653,7 @@ MonoBehaviour:
       moveSpeed: 8
       turnSpeed: 75
       gemCap: 193.75
-      peopleCap: 161.5
+      peopleCap: 82.4
     componentMass: 14.646112
     lockedInUpgradeTree: 0
   - chassisId: ProtonLegacy_15
@@ -1694,14 +1694,14 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: e1425275647072d488372a9e9d040eac, type: 3}
     minHomePlanetLevel: 5
-    powerScore: 257.54538
-    powerScoreAtMaxLevel: 1296.3063
+    powerScore: 249.20198
+    powerScoreAtMaxLevel: 1223.2222
     powerScoreBreakdown:
       offense: 48.25
       defense: 71.40134
       energy: 76.89977
       mobility: 22.6
-      capacity: 66.20902
+      capacity: 57.86562
       firePower: 6.75
       bulletSpeed: 10
       fireRate: 6
@@ -1714,13 +1714,13 @@ MonoBehaviour:
       moveSpeed: 6.2
       turnSpeed: 14
       gemCap: 38.59201
-      peopleCap: 27.617012
+      peopleCap: 19.27361
     powerScoreBreakdownAtShipLevel:
       offense: 77.9
       defense: 551.6141
       energy: 321.33893
       mobility: 24.4
-      capacity: 331.36108
+      capacity: 258.27707
       firePower: 18.9
       bulletSpeed: 15
       fireRate: 6
@@ -1733,7 +1733,7 @@ MonoBehaviour:
       moveSpeed: 8
       turnSpeed: 14
       gemCap: 181.74304
-      peopleCap: 149.61804
+      peopleCap: 76.53402
     componentMass: 14.104599
     lockedInUpgradeTree: 0
   - chassisId: ProtonLegacy_11
@@ -1774,14 +1774,14 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 15f0fa8ec89e5aa4e9e8463bb25343f5, type: 3}
     minHomePlanetLevel: 5
-    powerScore: 267.3125
-    powerScoreAtMaxLevel: 1096.7124
+    powerScore: 261.3125
+    powerScoreAtMaxLevel: 1045.7125
     powerScoreBreakdown:
       offense: 61
       defense: 42.412502
       energy: 111.45
       mobility: 32.4
-      capacity: 56.5
+      capacity: 50.5
       firePower: 13.5
       bulletSpeed: 10
       fireRate: 12
@@ -1794,13 +1794,13 @@ MonoBehaviour:
       moveSpeed: 9
       turnSpeed: 21
       gemCap: 32.5
-      peopleCap: 24
+      peopleCap: 18
     powerScoreBreakdownAtShipLevel:
       offense: 102.8
       defense: 277.3125
       energy: 435.45
       mobility: 86.4
-      capacity: 227.5
+      capacity: 176.5
       firePower: 37.8
       bulletSpeed: 15
       fireRate: 12
@@ -1813,7 +1813,7 @@ MonoBehaviour:
       moveSpeed: 9
       turnSpeed: 75
       gemCap: 122.5
-      peopleCap: 105
+      peopleCap: 54
     componentMass: 10.58576
     lockedInUpgradeTree: 0
   - chassisId: ProtonLegacy_07
@@ -1854,14 +1854,14 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 3dcc8ba0a132ebc4796a285a466486a4, type: 3}
     minHomePlanetLevel: 5
-    powerScore: 252.51875
-    powerScoreAtMaxLevel: 979.9431
+    powerScore: 247.11874
+    powerScoreAtMaxLevel: 933.1431
     powerScoreBreakdown:
       offense: 62.577293
       defense: 39.918743
       energy: 111.45
       mobility: 25.4
-      capacity: 51.2
+      capacity: 45.8
       firePower: 8.924
       bulletSpeed: 10
       fireRate: 18.153296
@@ -1874,13 +1874,13 @@ MonoBehaviour:
       moveSpeed: 9
       turnSpeed: 14
       gemCap: 29
-      peopleCap: 22.2
+      peopleCap: 16.8
     powerScoreBreakdownAtShipLevel:
       offense: 96.140495
       defense: 243.0431
       energy: 435.45
       mobility: 25.4
-      capacity: 206
+      capacity: 159.2
       firePower: 24.9872
       bulletSpeed: 15
       fireRate: 18.153296
@@ -1893,7 +1893,7 @@ MonoBehaviour:
       moveSpeed: 9
       turnSpeed: 14
       gemCap: 110
-      peopleCap: 96
+      peopleCap: 49.2
     componentMass: 6.961963
     lockedInUpgradeTree: 0
   - chassisId: ProtonLegacy_12
@@ -1934,14 +1934,14 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 56a39dc916a1d3f439157ada378060cb, type: 3}
     minHomePlanetLevel: 5
-    powerScore: 278.90213
-    powerScoreAtMaxLevel: 1155.876
+    powerScore: 273.9108
+    powerScoreAtMaxLevel: 1114.9626
     powerScoreBreakdown:
       offense: 61
       defense: 40.93674
       energy: 139.4853
       mobility: 22.6
-      capacity: 46.41337
+      capacity: 41.42203
       firePower: 13.5
       bulletSpeed: 10
       fireRate: 12
@@ -1954,13 +1954,13 @@ MonoBehaviour:
       moveSpeed: 6.2
       turnSpeed: 14
       gemCap: 27.456684
-      peopleCap: 18.956684
+      peopleCap: 13.965348
     powerScoreBreakdownAtShipLevel:
       offense: 102.8
       defense: 262.4032
       energy: 576.83246
       mobility: 24.4
-      capacity: 187.15347
+      capacity: 146.24011
       firePower: 37.8
       bulletSpeed: 15
       fireRate: 12
@@ -1973,7 +1973,7 @@ MonoBehaviour:
       moveSpeed: 8
       turnSpeed: 14
       gemCap: 102.32674
-      peopleCap: 84.82674
+      peopleCap: 43.91337
     componentMass: 10.640129
     lockedInUpgradeTree: 0
   - chassisId: ProtonLegacy_18
@@ -2014,14 +2014,14 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 9ac344f034d997944b5ae452b00309b8, type: 3}
     minHomePlanetLevel: 6
-    powerScore: 331.31528
-    powerScoreAtMaxLevel: 1916.7275
+    powerScore: 322.91525
+    powerScoreAtMaxLevel: 1827.8075
     powerScoreBreakdown:
       offense: 61.73697
       defense: 77.22582
       energy: 134.90094
       mobility: 22.6
-      capacity: 68.34
+      capacity: 59.94
       firePower: 9.941278
       bulletSpeed: 10
       fireRate: 16.29569
@@ -2034,13 +2034,13 @@ MonoBehaviour:
       moveSpeed: 6.2
       turnSpeed: 14
       gemCap: 39.3
-      peopleCap: 29.04
+      peopleCap: 20.64
     powerScoreBreakdownAtShipLevel:
       offense: 105.10778
       defense: 735.2806
       energy: 649.2651
       mobility: 24.8
-      capacity: 392.18
+      capacity: 303.25998
       firePower: 31.81209
       bulletSpeed: 16
       fireRate: 16.29569
@@ -2053,7 +2053,7 @@ MonoBehaviour:
       moveSpeed: 8.4
       turnSpeed: 14
       gemCap: 213.09999
-      peopleCap: 179.08
+      peopleCap: 90.159996
     componentMass: 17.467112
     lockedInUpgradeTree: 0
   - chassisId: ProtonLegacy_13
@@ -2094,14 +2094,14 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 918f5768f6359e841895aaa585b0598d, type: 3}
     minHomePlanetLevel: 6
-    powerScore: 291.49042
-    powerScoreAtMaxLevel: 1476.7775
+    powerScore: 284.497
+    powerScoreAtMaxLevel: 1409.3567
     powerScoreBreakdown:
       offense: 61
       defense: 58.406372
       energy: 111.45
       mobility: 32.4
-      capacity: 64.68402
+      capacity: 57.69062
       firePower: 13.5
       bulletSpeed: 10
       fireRate: 12
@@ -2114,13 +2114,13 @@ MonoBehaviour:
       moveSpeed: 9
       turnSpeed: 21
       gemCap: 38.71701
-      peopleCap: 25.96701
+      peopleCap: 18.973608
     powerScoreBreakdownAtShipLevel:
       offense: 112.2
       defense: 486.26874
       energy: 507.45
       mobility: 98.4
-      capacity: 304.60876
+      capacity: 237.18794
       firePower: 43.199997
       bulletSpeed: 16
       fireRate: 12
@@ -2133,7 +2133,7 @@ MonoBehaviour:
       moveSpeed: 9
       turnSpeed: 87
       gemCap: 166.92938
-      peopleCap: 137.67938
+      peopleCap: 70.25856
     componentMass: 14.091189
     lockedInUpgradeTree: 0
   - chassisId: ProtonLegacy_19
@@ -2174,14 +2174,14 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: ea7b32e9145953345bf282db823d8b4c, type: 3}
     minHomePlanetLevel: 6
-    powerScore: 382.29236
-    powerScoreAtMaxLevel: 2314.681
+    powerScore: 372.3972
+    powerScoreAtMaxLevel: 2205.3162
     powerScoreBreakdown:
       offense: 75.210014
       defense: 68.14189
       energy: 189.58408
       mobility: 23
-      capacity: 66.38635
+      capacity: 56.49118
       firePower: 15.172826
       bulletSpeed: 10
       fireRate: 24.037188
@@ -2194,13 +2194,13 @@ MonoBehaviour:
       moveSpeed: 6.5999994
       turnSpeed: 14
       gemCap: 37.540604
-      peopleCap: 28.84575
+      peopleCap: 18.950577
     powerScoreBreakdownAtShipLevel:
       offense: 135.59023
       defense: 673.01324
       energy: 985.8673
       mobility: 29.599998
-      capacity: 457.0168
+      capacity: 347.65207
       firePower: 48.553043
       bulletSpeed: 16
       fireRate: 24.037188
@@ -2213,7 +2213,7 @@ MonoBehaviour:
       moveSpeed: 13.199999
       turnSpeed: 14
       gemCap: 245.51266
-      peopleCap: 211.50415
+      peopleCap: 102.1394
     componentMass: 17.839695
     lockedInUpgradeTree: 0
   - chassisId: ProtonLegacy_16
@@ -2254,14 +2254,14 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: e739dc88a4b34cd4193658254cba91da, type: 3}
     minHomePlanetLevel: 6
-    powerScore: 358.22433
-    powerScoreAtMaxLevel: 1837.5592
+    powerScore: 352.5364
+    powerScoreAtMaxLevel: 1780.304
     powerScoreBreakdown:
       offense: 74.5984
       defense: 50.8425
       energy: 189.29842
       mobility: 29.6
-      capacity: 53.37931
+      capacity: 47.69138
       firePower: 17.905643
       bulletSpeed: 10
       fireRate: 21.192753
@@ -2274,13 +2274,13 @@ MonoBehaviour:
       moveSpeed: 6.2
       turnSpeed: 21
       gemCap: 30.939655
-      peopleCap: 22.439655
+      peopleCap: 16.751724
     powerScoreBreakdownAtShipLevel:
       offense: 135.49081
       defense: 438.13876
       energy: 903.41144
       mobility: 97.8
-      capacity: 250.93677
+      capacity: 193.68161
       firePower: 57.29806
       bulletSpeed: 16
       fireRate: 21.192753
@@ -2293,7 +2293,7 @@ MonoBehaviour:
       moveSpeed: 8.4
       turnSpeed: 87
       gemCap: 135.21838
-      peopleCap: 115.71839
+      peopleCap: 58.46322
     componentMass: 16.584858
     lockedInUpgradeTree: 0
   - chassisId: ProtonLegacy_16B
@@ -2334,14 +2334,14 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 452cd6591283bbf409e11775619fe699, type: 3}
     minHomePlanetLevel: 6
-    powerScore: 358.22433
-    powerScoreAtMaxLevel: 1837.5592
+    powerScore: 352.5364
+    powerScoreAtMaxLevel: 1780.304
     powerScoreBreakdown:
       offense: 74.5984
       defense: 50.8425
       energy: 189.29842
       mobility: 29.6
-      capacity: 53.37931
+      capacity: 47.69138
       firePower: 17.905643
       bulletSpeed: 10
       fireRate: 21.192753
@@ -2354,13 +2354,13 @@ MonoBehaviour:
       moveSpeed: 6.2
       turnSpeed: 21
       gemCap: 30.939655
-      peopleCap: 22.439655
+      peopleCap: 16.751724
     powerScoreBreakdownAtShipLevel:
       offense: 135.49081
       defense: 438.13876
       energy: 903.41144
       mobility: 97.8
-      capacity: 250.93677
+      capacity: 193.68161
       firePower: 57.29806
       bulletSpeed: 16
       fireRate: 21.192753
@@ -2373,7 +2373,7 @@ MonoBehaviour:
       moveSpeed: 8.4
       turnSpeed: 87
       gemCap: 135.21838
-      peopleCap: 115.71839
+      peopleCap: 58.46322
     componentMass: 16.584858
     lockedInUpgradeTree: 0
   - chassisId: ProtonLegacy_17
@@ -2414,14 +2414,14 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: b209017e333a99f40b10096dcbf84634, type: 3}
     minHomePlanetLevel: 6
-    powerScore: 303.84033
-    powerScoreAtMaxLevel: 1502.3645
+    powerScore: 298.17548
+    powerScoreAtMaxLevel: 1445.3866
     powerScoreBreakdown:
       offense: 61
       defense: 37.692017
       energy: 150.9
       mobility: 29.6
-      capacity: 53.148308
+      capacity: 47.483482
       firePower: 13.5
       bulletSpeed: 10
       fireRate: 12
@@ -2434,13 +2434,13 @@ MonoBehaviour:
       moveSpeed: 6.2
       turnSpeed: 21
       gemCap: 30.824156
-      peopleCap: 22.324154
+      peopleCap: 16.659325
     powerScoreBreakdownAtShipLevel:
       offense: 112.2
       defense: 280.8856
       energy: 735.66003
       mobility: 97.8
-      capacity: 249.85878
+      capacity: 192.88081
       firePower: 43.199997
       bulletSpeed: 16
       fireRate: 12
@@ -2453,7 +2453,7 @@ MonoBehaviour:
       moveSpeed: 8.4
       turnSpeed: 87
       gemCap: 134.6794
-      peopleCap: 115.17938
+      peopleCap: 58.201416
     componentMass: 12.288277
     lockedInUpgradeTree: 0
   teamMaterials:

@@ -204,7 +204,7 @@ namespace TitanOrbit.ECS
                 // SumFromEntry already resolved catalog defaults/mins. Do not clamp to the
                 // old 22–50 band — that made every Titan read 22/s.
                 EnergyRegenPerSecond = Mathf.Max(0f, effective.energyRegen),
-                HealthRegenDelayAfterDamage = 0.35f,
+                HealthRegenDelayAfterDamage = ShipVitalsSettingsCache.HealthRegenDelayAfterDamage,
             };
             if (em.HasComponent<ShipVitalsConfig>(shipEntity))
                 em.SetComponentData(shipEntity, vitals);

@@ -39,7 +39,7 @@ namespace TitanOrbit.Game
         public Color healthColor = new Color(0.2f, 0.9f, 0.3f, 1f);
         [Tooltip("Inspector mirror of Troop Cap purple. Live troop popups read ShipStatPalette, not this swatch.")]
         public Color peopleColor = new Color(0.507f, 0.312f, 0.702f, 1f);
-        [Tooltip("Used when the popup has no team color (gems use team color when available).")]
+        [Tooltip("Inspector mirror of Gem Cap purple. Live gem popups read ShipStatPalette, not this swatch.")]
         public Color gemFallbackColor = new Color(0.85f, 0.95f, 1f, 1f);
         [Tooltip("Inspector mirror of Energy Cap yellow. Live energy popups read ShipStatPalette, not this swatch. Blue is Move / Turn.")]
         public Color energyColor = new Color(0.964f, 0.856f, 0.424f, 1f);
@@ -160,7 +160,8 @@ namespace TitanOrbit.Game
             {
                 case FloatingCountChannel.GemPickup:
                 case FloatingCountChannel.GemDeposit:
-                    return team != TeamId.None ? team.ToColor() : gemFallbackColor;
+                    // Gem Cap purple — same slot as the top-left gem bar. Team color made pickups hard to read as cargo.
+                    return ShipStatPalette.GetVitalBarColor(2);
                 case FloatingCountChannel.DamageAsteroid:
                 case FloatingCountChannel.DamageShipOrDrone:
                 case FloatingCountChannel.DamageMoon:

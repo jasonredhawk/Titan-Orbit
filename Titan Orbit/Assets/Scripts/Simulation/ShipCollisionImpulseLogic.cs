@@ -360,5 +360,47 @@ namespace TitanOrbit.Simulation
             posA.y = 0f;
             posB.y = 0f;
         }
+
+        /// <summary>
+        /// Client predicted hull vs a static interpolated remote: PhysX assigns the whole
+        /// positional correction to the dynamic ship. The server splits that same depth by
+        /// movement mass. Keeps only the local share along <paramref name="normalShipFromRemote"/>
+        /// so a ram does not yo-yo the owner back to the contact skin every tick.
+        /// Tangential shove (other contacts) is left on <paramref name="solvedPosition"/>.
+        /// </summary>
+        /// <param name="integratedPosition">Pre-solve pose: snapshot position + snapshot velocity × dt.</param>
+        /// <param name="solvedPosition">Post-PhysX pose (full static-body depenetration).</param>
+        /// <param name="normalShipFromRemote">Unit normal from the remote toward the local ship.</param>
+        /// <param name="movementMassLocal">Local movement mass (same scalar the solver uses).</param>
+        /// <param name="movementMassRemote">Remote movement mass.</param>
+        public static float3 KeepLocalShareOfStaticDepenetration(
+            float3 integratedPosition,
+            float3 solvedPosition,
+            float3 normalShipFromRemote,
+            float movementMassLocal,
+            float movementMassRemote)
+        {
+            float3 shove = solvedPosition - integratedPosition;
+            shove.y = 0f;
+            float3 n = normalShipFromRemote;
+            n.y = 0f;
+            if (math.lengthsq(shove) < 1e-8f || math.lengthsq(n) < 1e-8f)
+                return solvedPosition;
+            n = math.normalize(n);
+
+            float along = math.dot(shove, n);
+            // Not pushed out along the separation normal, or a teleport-sized delta — leave PhysX.
+            if (along <= 1e-4f || along > 12f)
+                return solvedPosition;
+
+            float mLocal = math.max(MinCollisionMass, movementMassLocal);
+            float mRemote = math.max(MinCollisionMass, movementMassRemote);
+            // [STANDARD] Inverse-mass split: local moves by mRemote / (mLocal + mRemote).
+            float localShare = mRemote / (mLocal + mRemote);
+            float3 tangent = shove - n * along;
+            float3 corrected = integratedPosition + n * (along * localShare) + tangent;
+            corrected.y = solvedPosition.y;
+            return corrected;
+        }
     }
 }

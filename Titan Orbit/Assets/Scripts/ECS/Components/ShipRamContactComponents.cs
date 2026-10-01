@@ -55,5 +55,12 @@ namespace TitanOrbit.ECS
 
         /// <summary>Missed collision ticks while sticky-grinding; cleared on a fresh event.</summary>
         public byte MissedTicks;
+
+        /// <summary>
+        /// Server ElapsedTime of the last impact burst against this target.
+        /// 0 means this contact has not impacted yet. Held so a bounce or a quiet
+        /// PhysX gap cannot re-arm a full ram a few ticks later.
+        /// </summary>
+        public double LastImpactTime;
     }
 }

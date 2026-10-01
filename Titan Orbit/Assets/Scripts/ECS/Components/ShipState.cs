@@ -369,7 +369,11 @@ namespace TitanOrbit.ECS
         /// <summary>[TITAN-ORBIT] Energy regen per second.</summary>
         public float EnergyRegenPerSecond;
 
-        /// <summary>[TITAN-ORBIT] Seconds after hull damage before health regen resumes.</summary>
+        /// <summary>
+        /// [TITAN-ORBIT] Seconds after hull damage before health regen resumes.
+        /// Stamped from <see cref="TitanOrbit.Data.ShipVitalsSettings"/>; the regen system
+        /// reads that asset live so Inspector edits apply on the next tick.
+        /// </summary>
         public float HealthRegenDelayAfterDamage;
     }
 

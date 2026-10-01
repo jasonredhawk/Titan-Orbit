@@ -674,7 +674,7 @@ namespace TitanOrbit.ECS
             {
                 HealthRegenPerSecond = Mathf.Max(0f, effective.healthRegen),
                 EnergyRegenPerSecond = Mathf.Max(0f, effective.energyRegen),
-                HealthRegenDelayAfterDamage = 0.35f,
+                HealthRegenDelayAfterDamage = ShipVitalsSettingsCache.HealthRegenDelayAfterDamage,
             };
             if (em.HasComponent<ShipVitalsConfig>(shipEntity))
                 em.SetComponentData(shipEntity, vitals);

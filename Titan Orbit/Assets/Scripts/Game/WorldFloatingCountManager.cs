@@ -795,6 +795,9 @@ namespace TitanOrbit.Game
                 case FloatingCountChannel.GemPickup:
                 case FloatingCountChannel.GemDeposit:
                     return 2;
+                case FloatingCountChannel.PeopleLoad:
+                case FloatingCountChannel.PeopleUnload:
+                    return 3;
                 default:
                     return 0;
             }

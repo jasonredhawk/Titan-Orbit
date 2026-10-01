@@ -22,6 +22,7 @@ namespace TitanOrbit.Game
             public Transform Hull;
             public float LiftFromPivot;
             public float XzRadius;
+            public Vector3 LocalXzCenter;
             public bool Measured;
             public bool DeferredRetryDone;
         }
@@ -286,6 +287,29 @@ namespace TitanOrbit.Game
             return TryGetCachedHullClearance(networkId, out liftFromPivot, out xzRadius);
         }
 
+        /// <summary>
+        /// Cached XZ radius and mesh-center offset (hull local, y = 0). Measured once at spawn.
+        /// Own-ship and other hull popups park aft of this center, opposite the nose.
+        /// </summary>
+        public static bool TryGetCachedHullFootprint(
+            Transform hullRoot,
+            out float xzRadius,
+            out Vector3 localXzCenter)
+        {
+            xzRadius = 0f;
+            localXzCenter = Vector3.zero;
+            if (hullRoot == null || !s_NetworkIdByHull.TryGetValue(hullRoot, out int networkId))
+                return false;
+            if (!s_ClearanceByNetworkId.TryGetValue(networkId, out HullClearance clearance) ||
+                clearance.Hull == null)
+                return false;
+
+            EnsureMeasured(networkId, ref clearance);
+            xzRadius = clearance.XzRadius;
+            localXzCenter = clearance.LocalXzCenter;
+            return xzRadius > 0.001f;
+        }
+
         static void EnsureMeasured(int networkId, ref HullClearance clearance)
         {
             if (clearance.Measured)
@@ -308,11 +332,12 @@ namespace TitanOrbit.Game
 
             float fallback = ResolveFallbackRadius(clearance.Hull);
             if (WorldBodyLabelLayout.TryMeasureBodyClearance(
-                    clearance.Hull, out float lift, out float xz) &&
+                    clearance.Hull, out float lift, out float xz, out Vector3 localCenter) &&
                 (lift > 0.001f || xz > 0.001f))
             {
                 clearance.LiftFromPivot = Mathf.Max(fallback, lift);
                 clearance.XzRadius = Mathf.Max(fallback, xz);
+                clearance.LocalXzCenter = localCenter;
                 clearance.Measured = true;
                 return;
             }

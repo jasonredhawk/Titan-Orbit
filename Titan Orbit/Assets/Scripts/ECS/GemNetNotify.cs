@@ -123,6 +123,7 @@ namespace TitanOrbit.ECS
             {
                 Position = rpc.Position,
                 Value = rpc.Value,
+                SpawnIdOverride = rpc.SpawnId,
                 Salt = rpc.Salt,
                 SpawnServerTime = rpc.SpawnServerTime,
                 BurstIndex = rpc.BurstIndex,

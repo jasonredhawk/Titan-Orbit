@@ -275,7 +275,7 @@ MonoBehaviour:
       tractorBeamPower: 0
       tractorBeamPowerPerExtraLevel: 0
       maxPeople: 10
-      maxPeoplePerExtraLevel: 5
+      maxPeoplePerExtraLevel: 2
     bulletPrefabIndex: -1
     menuPreviewSprite: {fileID: 21300000, guid: ddc9338fc5889f84cbdbfcc4bad1a2db, type: 3}
     theatricalMenuPreviewSprite: {fileID: 21300000, guid: ddc9338fc5889f84cbdbfcc4bad1a2db, type: 3}
@@ -813,8 +813,8 @@ MonoBehaviour:
       tractorBeamDistancePerExtraLevel: 0.75
       tractorBeamPower: 4
       tractorBeamPowerPerExtraLevel: 1
-      maxPeople: 5
-      maxPeoplePerExtraLevel: 2
+      maxPeople: 4
+      maxPeoplePerExtraLevel: 1
     bulletPrefabIndex: -1
     menuPreviewSprite: {fileID: 21300000, guid: e26fb7fedca5cb04183ee1b2ffaadf81, type: 3}
     theatricalMenuPreviewSprite: {fileID: 21300000, guid: e26fb7fedca5cb04183ee1b2ffaadf81, type: 3}
@@ -891,14 +891,14 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 855d5d0a2669dc741aa56882a778c450, type: 3}
     minHomePlanetLevel: 1
-    powerScore: 164.38663
-    powerScoreAtMaxLevel: 247.42796
+    powerScore: 158.96906
+    powerScoreAtMaxLevel: 237.39865
     powerScoreBreakdown:
       offense: 21.95
       defense: 63.90447
       energy: 27.389772
       mobility: 21
-      capacity: 42.042473
+      capacity: 36.624893
       firePower: 3.4499998
       bulletSpeed: 12
       fireRate: 3
@@ -911,13 +911,13 @@ MonoBehaviour:
       moveSpeed: 6.3999996
       turnSpeed: 6
       gemCap: 19.789734
-      peopleCap: 22.252739
+      peopleCap: 16.835161
     powerScoreBreakdownAtShipLevel:
       offense: 22.45
       defense: 111.83104
       energy: 43.04107
       mobility: 23
-      capacity: 56.405838
+      capacity: 46.37654
       firePower: 3.4499998
       bulletSpeed: 12
       fireRate: 3
@@ -930,7 +930,7 @@ MonoBehaviour:
       moveSpeed: 6.799999
       turnSpeed: 7
       gemCap: 25.929659
-      peopleCap: 30.476181
+      peopleCap: 20.44688
     componentMass: 15.841888
     lockedInUpgradeTree: 0
   - chassisId: StarForce_04
@@ -971,14 +971,14 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 3c1db1482ca0a8940b737a577ab014f7, type: 3}
     minHomePlanetLevel: 2
-    powerScore: 178.95941
-    powerScoreAtMaxLevel: 409.35822
+    powerScore: 172.0972
+    powerScoreAtMaxLevel: 384.80603
     powerScoreBreakdown:
       offense: 21.95
       defense: 55.43395
       energy: 40.04932
       mobility: 21.7
-      capacity: 48.952633
+      capacity: 42.090416
       firePower: 3.4499998
       bulletSpeed: 12
       fireRate: 3
@@ -991,13 +991,13 @@ MonoBehaviour:
       moveSpeed: 6.2999997
       turnSpeed: 6.5
       gemCap: 23.331537
-      peopleCap: 25.621096
+      peopleCap: 18.758879
     powerScoreBreakdownAtShipLevel:
       offense: 23.45
       defense: 162.37935
       energy: 100.1233
       mobility: 29.8
-      capacity: 106.30559
+      capacity: 81.75338
       firePower: 3.4499998
       bulletSpeed: 12
       fireRate: 3
@@ -1010,7 +1010,7 @@ MonoBehaviour:
       moveSpeed: 7.2000003
       turnSpeed: 11
       gemCap: 48.304516
-      peopleCap: 58.00107
+      peopleCap: 33.448864
     componentMass: 12.70307
     lockedInUpgradeTree: 0
   - chassisId: StarForce_01
@@ -1051,14 +1051,14 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 4e10b450f6abb8d47af4384a0e86a7fc, type: 3}
     minHomePlanetLevel: 2
-    powerScore: 221.89922
-    powerScoreAtMaxLevel: 492.51816
+    powerScore: 215.89922
+    powerScoreAtMaxLevel: 471.51816
     powerScoreBreakdown:
       offense: 21.95
       defense: 45.191883
       energy: 87.85733
       mobility: 22.8
-      capacity: 46.1
+      capacity: 40.1
       firePower: 3.4499998
       bulletSpeed: 12
       fireRate: 3
@@ -1071,13 +1071,13 @@ MonoBehaviour:
       moveSpeed: 6.3999996
       turnSpeed: 14
       gemCap: 22.1
-      peopleCap: 24
+      peopleCap: 18
     powerScoreBreakdownAtShipLevel:
       offense: 23.45
       defense: 131.83002
       energy: 223.23814
       mobility: 24
-      capacity: 93.5
+      capacity: 72.5
       firePower: 3.4499998
       bulletSpeed: 12
       fireRate: 3
@@ -1090,7 +1090,7 @@ MonoBehaviour:
       moveSpeed: 7.6000004
       turnSpeed: 14
       gemCap: 42.5
-      peopleCap: 51
+      peopleCap: 30
     componentMass: 11.275827
     lockedInUpgradeTree: 0
   - chassisId: StarForce_13
@@ -1131,14 +1131,14 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: a0677317087b6c842b5e57c90fb6a6bb, type: 3}
     minHomePlanetLevel: 3
-    powerScore: 236.0143
-    powerScoreAtMaxLevel: 814.501
+    powerScore: 230.67259
+    powerScoreAtMaxLevel: 786.3536
     powerScoreBreakdown:
       offense: 21.95
       defense: 72.73741
       energy: 84.91294
       mobility: 23.7
-      capacity: 41.513943
+      capacity: 36.172226
       firePower: 3.4499998
       bulletSpeed: 12
       fireRate: 3
@@ -1151,13 +1151,13 @@ MonoBehaviour:
       moveSpeed: 7.5
       turnSpeed: 7
       gemCap: 19.4888
-      peopleCap: 22.025143
+      peopleCap: 16.683428
     powerScoreBreakdownAtShipLevel:
       offense: 24.45
       defense: 357.3603
       energy: 295.39563
       mobility: 42.2
-      capacity: 112.39508
+      capacity: 84.24766
       firePower: 3.4499998
       bulletSpeed: 12
       fireRate: 3
@@ -1170,7 +1170,7 @@ MonoBehaviour:
       moveSpeed: 10
       turnSpeed: 17
       gemCap: 49.758514
-      peopleCap: 62.63657
+      peopleCap: 34.489143
     componentMass: 9.2887125
     lockedInUpgradeTree: 0
   - chassisId: StarForce_14
@@ -1211,14 +1211,14 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: aba5010cb2454d544966cc65bf3611d0, type: 3}
     minHomePlanetLevel: 3
-    powerScore: 238.07712
-    powerScoreAtMaxLevel: 937.61334
+    powerScore: 232.74567
+    powerScoreAtMaxLevel: 908.7059
     powerScoreBreakdown:
       offense: 21.95
       defense: 63.33584
       energy: 98.325745
       mobility: 23.4
-      capacity: 39.865524
+      capacity: 34.534073
       firePower: 3.4499998
       bulletSpeed: 12
       fireRate: 3
@@ -1231,13 +1231,13 @@ MonoBehaviour:
       moveSpeed: 7.1999993
       turnSpeed: 7
       gemCap: 18.3539
-      peopleCap: 21.511621
+      peopleCap: 16.180174
     powerScoreBreakdownAtShipLevel:
       offense: 24.45
       defense: 306.31207
       energy: 465.15442
       mobility: 45.4
-      capacity: 113.59688
+      capacity: 84.68939
       firePower: 3.4499998
       bulletSpeed: 12
       fireRate: 3
@@ -1250,7 +1250,7 @@ MonoBehaviour:
       moveSpeed: 13.200003
       turnSpeed: 17
       gemCap: 49.933174
-      peopleCap: 63.6637
+      peopleCap: 34.756214
     componentMass: 9.39875
     lockedInUpgradeTree: 0
   - chassisId: StarForce_10
@@ -1291,14 +1291,14 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 267ecdc8006170c44a0287679041e410, type: 3}
     minHomePlanetLevel: 3
-    powerScore: 251.03908
-    powerScoreAtMaxLevel: 820.12396
+    powerScore: 246.59302
+    powerScoreAtMaxLevel: 795.85767
     powerScoreBreakdown:
       offense: 52.33109
       defense: 69.46484
       energy: 106.4
       mobility: 20
-      capacity: 35.27423
+      capacity: 30.828167
       firePower: 12.782625
       bulletSpeed: 10
       fireRate: 4.048464
@@ -1311,13 +1311,13 @@ MonoBehaviour:
       moveSpeed: 6.2
       turnSpeed: 5.5
       gemCap: 15.936045
-      peopleCap: 19.338184
+      peopleCap: 14.892123
     powerScoreBreakdownAtShipLevel:
       offense: 74.613716
       defense: 347.4649
       energy: 297.6
       mobility: 25
-      capacity: 95.10899
+      capacity: 70.84273
       firePower: 25.56525
       bulletSpeed: 13
       fireRate: 4.048464
@@ -1330,7 +1330,7 @@ MonoBehaviour:
       moveSpeed: 7.2
       turnSpeed: 8
       gemCap: 41.130398
-      peopleCap: 53.9786
+      peopleCap: 29.71233
     componentMass: 14.928128
     lockedInUpgradeTree: 0
   - chassisId: StarForce_02
@@ -1371,14 +1371,14 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 41ecaed0cb7f4d04c8263fb120d01b68, type: 3}
     minHomePlanetLevel: 4
-    powerScore: 282.05286
-    powerScoreAtMaxLevel: 987.76697
+    powerScore: 276.05286
+    powerScoreAtMaxLevel: 946.76697
     powerScoreBreakdown:
       offense: 50.125
       defense: 47.897625
       energy: 133.0781
       mobility: 22.7
-      capacity: 46.1
+      capacity: 40.1
       firePower: 8.625
       bulletSpeed: 10
       fireRate: 6
@@ -1391,13 +1391,13 @@ MonoBehaviour:
       moveSpeed: 6.2999997
       turnSpeed: 14
       gemCap: 22.1
-      peopleCap: 24
+      peopleCap: 18
     powerScoreBreakdownAtShipLevel:
       offense: 75.7
       defense: 256.19492
       energy: 476.37207
       mobility: 24.800001
-      capacity: 156.70001
+      capacity: 115.700005
       firePower: 20.699999
       bulletSpeed: 14
       fireRate: 6
@@ -1410,7 +1410,7 @@ MonoBehaviour:
       moveSpeed: 8.400001
       turnSpeed: 14
       gemCap: 69.700005
-      peopleCap: 87
+      peopleCap: 46
     componentMass: 10.725639
     lockedInUpgradeTree: 0
   - chassisId: StarForce_12
@@ -1451,14 +1451,14 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: b23cd4388510f034ea6cca28ad75f419, type: 3}
     minHomePlanetLevel: 4
-    powerScore: 261.3985
-    powerScoreAtMaxLevel: 1087.3336
+    powerScore: 255.29805
+    powerScoreAtMaxLevel: 1043.7756
     powerScoreBreakdown:
       offense: 50.125
       defense: 70.56612
       energy: 106.81601
       mobility: 20
-      capacity: 44.01537
+      capacity: 37.91493
       firePower: 8.625
       bulletSpeed: 10
       fireRate: 6
@@ -1471,13 +1471,13 @@ MonoBehaviour:
       moveSpeed: 6.2
       turnSpeed: 5.5
       gemCap: 20.566402
-      peopleCap: 23.448967
+      peopleCap: 17.348526
     powerScoreBreakdownAtShipLevel:
       offense: 75.7
       defense: 455.26437
       energy: 375.66083
       mobility: 27
-      capacity: 163.70842
+      capacity: 120.15039
       firePower: 20.699999
       bulletSpeed: 14
       fireRate: 6
@@ -1490,7 +1490,7 @@ MonoBehaviour:
       moveSpeed: 7.6000004
       turnSpeed: 9
       gemCap: 72.34429
-      peopleCap: 91.36413
+      peopleCap: 47.806103
     componentMass: 18.417202
     lockedInUpgradeTree: 0
   - chassisId: StarForce_09
@@ -1531,14 +1531,14 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: c1315984b9cbd8541b9e51f03b87d81a, type: 3}
     minHomePlanetLevel: 4
-    powerScore: 267.44534
-    powerScoreAtMaxLevel: 1114.9183
+    powerScore: 261.9636
+    powerScoreAtMaxLevel: 1075.6296
     powerScoreBreakdown:
       offense: 49.927696
       defense: 51.591908
       energy: 128.99156
       mobility: 21.9
-      capacity: 40.176895
+      capacity: 34.695137
       firePower: 7.751978
       bulletSpeed: 10
       fireRate: 6.6757164
@@ -1551,13 +1551,13 @@ MonoBehaviour:
       moveSpeed: 6.4999995
       turnSpeed: 6.5
       gemCap: 18.637987
-      peopleCap: 21.53891
+      peopleCap: 16.057152
     powerScoreBreakdownAtShipLevel:
       offense: 74.280464
       defense: 309.8429
       energy: 554.81256
       mobility: 42.2
-      capacity: 147.16284
+      capacity: 107.87424
       firePower: 18.604746
       bulletSpeed: 14
       fireRate: 6.6757164
@@ -1570,7 +1570,7 @@ MonoBehaviour:
       moveSpeed: 10.000001
       turnSpeed: 17
       gemCap: 64.713715
-      peopleCap: 82.44913
+      peopleCap: 43.160522
     componentMass: 9.558767
     lockedInUpgradeTree: 0
   - chassisId: StarForce_15
@@ -1611,14 +1611,14 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: f195966cf60cebb47ab6f9534455f851, type: 3}
     minHomePlanetLevel: 4
-    powerScore: 313.0391
-    powerScoreAtMaxLevel: 1279.8499
+    powerScore: 308.52148
+    powerScoreAtMaxLevel: 1247.25
     powerScoreBreakdown:
       offense: 50.125
       defense: 62.581055
       energy: 164.31035
       mobility: 23.7
-      capacity: 35.772682
+      capacity: 31.255074
       firePower: 8.625
       bulletSpeed: 10
       fireRate: 6
@@ -1631,13 +1631,13 @@ MonoBehaviour:
       moveSpeed: 7.5
       turnSpeed: 7
       gemCap: 16.219852
-      peopleCap: 19.55283
+      peopleCap: 15.03522
     powerScoreBreakdownAtShipLevel:
       offense: 75.7
       defense: 402.6869
       energy: 648.28613
       mobility: 49.6
-      capacity: 120.77675
+      capacity: 88.176956
       firePower: 20.699999
       bulletSpeed: 14
       fireRate: 6
@@ -1650,7 +1650,7 @@ MonoBehaviour:
       moveSpeed: 11
       turnSpeed: 21
       gemCap: 52.05956
-      peopleCap: 68.717186
+      peopleCap: 36.117397
     componentMass: 10.12263
     lockedInUpgradeTree: 0
   - chassisId: StarForce_16
@@ -1691,14 +1691,14 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: d34db99de7811e247ab34a4008b95d8a, type: 3}
     minHomePlanetLevel: 5
-    powerScore: 328.5633
-    powerScoreAtMaxLevel: 1726.4
+    powerScore: 317.5384
+    powerScoreAtMaxLevel: 1629.0688
     powerScoreBreakdown:
       offense: 50.788723
       defense: 88.643524
       energy: 125.03672
       mobility: 22.400002
-      capacity: 68.95827
+      capacity: 57.933357
       firePower: 5.0585804
       bulletSpeed: 10
       fireRate: 10.230143
@@ -1711,13 +1711,13 @@ MonoBehaviour:
       moveSpeed: 6.2
       turnSpeed: 7
       gemCap: 33.6025
-      peopleCap: 35.355766
+      peopleCap: 24.330858
     powerScoreBreakdownAtShipLevel:
       offense: 77.394165
       defense: 705.6695
       energy: 536.28894
       mobility: 53
-      capacity: 363.9917
+      capacity: 266.66043
       firePower: 14.164024
       bulletSpeed: 15
       fireRate: 10.230143
@@ -1730,7 +1730,7 @@ MonoBehaviour:
       moveSpeed: 8
       turnSpeed: 25
       gemCap: 165.02325
-      peopleCap: 198.96843
+      peopleCap: 101.637184
     componentMass: 20.570522
     lockedInUpgradeTree: 0
   - chassisId: StarForce_18
@@ -1771,14 +1771,14 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 623588b7aa9539b4fbafa424d6a56817, type: 3}
     minHomePlanetLevel: 5
-    powerScore: 353.58905
-    powerScoreAtMaxLevel: 2389.107
+    powerScore: 344.80518
+    powerScoreAtMaxLevel: 2307.0518
     powerScoreBreakdown:
       offense: 21.95
       defense: 112.734955
       energy: 148.60567
       mobility: 27.400002
-      capacity: 52.89845
+      capacity: 44.114555
       firePower: 3.4499998
       bulletSpeed: 12
       fireRate: 3
@@ -1791,13 +1791,13 @@ MonoBehaviour:
       moveSpeed: 8
       turnSpeed: 9
       gemCap: 24.402685
-      peopleCap: 28.495764
+      peopleCap: 19.71187
     powerScoreBreakdownAtShipLevel:
       offense: 26.45
       defense: 993.1336
       energy: 1011.92126
       mobility: 94
-      capacity: 299.70184
+      capacity: 217.64676
       firePower: 3.4499998
       bulletSpeed: 12
       fireRate: 3
@@ -1810,7 +1810,7 @@ MonoBehaviour:
       moveSpeed: 17
       turnSpeed: 45
       gemCap: 133.66371
-      peopleCap: 166.03815
+      peopleCap: 83.983055
     componentMass: 14.976198
     lockedInUpgradeTree: 0
   - chassisId: StarForce_11
@@ -1851,14 +1851,14 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 9447607cba7ed5041b53991dd1adf073, type: 3}
     minHomePlanetLevel: 5
-    powerScore: 352.2097
-    powerScoreAtMaxLevel: 1672.0994
+    powerScore: 344.9473
+    powerScoreAtMaxLevel: 1608.4753
     powerScoreBreakdown:
       offense: 64.82817
       defense: 56.310417
       energy: 191.98262
       mobility: 20.1
-      capacity: 50.7709
+      capacity: 43.508495
       firePower: 11.829406
       bulletSpeed: 10
       fireRate: 17.498766
@@ -1871,13 +1871,13 @@ MonoBehaviour:
       moveSpeed: 6.2999997
       turnSpeed: 5.5
       gemCap: 24.24609
-      peopleCap: 26.52481
+      peopleCap: 19.262405
     powerScoreBreakdownAtShipLevel:
       offense: 103.6211
       defense: 407.90234
       energy: 850.288
       mobility: 30
-      capacity: 235.009
+      capacity: 171.38495
       firePower: 33.122334
       bulletSpeed: 15
       fireRate: 17.498766
@@ -1890,7 +1890,7 @@ MonoBehaviour:
       moveSpeed: 9
       turnSpeed: 10
       gemCap: 104.760895
-      peopleCap: 130.24811
+      peopleCap: 66.624054
     componentMass: 14.6764965
     lockedInUpgradeTree: 0
   - chassisId: StarForce_19
@@ -1931,14 +1931,14 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 45c84d9b7da99d6459927df0166d45ad, type: 3}
     minHomePlanetLevel: 5
-    powerScore: 335.0771
-    powerScoreAtMaxLevel: 1704.0613
+    powerScore: 328.56265
+    powerScoreAtMaxLevel: 1646.1234
     powerScoreBreakdown:
       offense: 50.125
       defense: 70.99549
       energy: 167.65616
       mobility: 23.7
-      capacity: 46.050438
+      capacity: 39.53601
       firePower: 8.625
       bulletSpeed: 10
       fireRate: 6
@@ -1951,13 +1951,13 @@ MonoBehaviour:
       moveSpeed: 7.5
       turnSpeed: 7
       gemCap: 21.619421
-      peopleCap: 24.431015
+      peopleCap: 17.916588
     powerScoreBreakdownAtShipLevel:
       offense: 83.15
       defense: 566.4559
       energy: 801.1385
       mobility: 57
-      capacity: 212.01694
+      capacity: 154.07912
       firePower: 24.15
       bulletSpeed: 15
       fireRate: 6
@@ -1970,7 +1970,7 @@ MonoBehaviour:
       moveSpeed: 12
       turnSpeed: 25
       gemCap: 93.73916
-      peopleCap: 118.27777
+      peopleCap: 60.339962
     componentMass: 10.810431
     lockedInUpgradeTree: 0
   - chassisId: StarForce_06
@@ -2011,14 +2011,14 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 54b297408c1e94a4e8781b251f7cbcce, type: 3}
     minHomePlanetLevel: 5
-    powerScore: 363.38934
-    powerScoreAtMaxLevel: 1784.9683
+    powerScore: 357.4992
+    powerScoreAtMaxLevel: 1731.2692
     powerScoreBreakdown:
       offense: 64.766014
       defense: 52.602036
       energy: 210.0877
       mobility: 22.6
-      capacity: 41.558136
+      capacity: 35.668007
       firePower: 14.5891
       bulletSpeed: 10
       fireRate: 14.676917
@@ -2031,13 +2031,13 @@ MonoBehaviour:
       moveSpeed: 6.3999996
       turnSpeed: 7
       gemCap: 19.043798
-      peopleCap: 22.514338
+      peopleCap: 16.624208
     powerScoreBreakdownAtShipLevel:
       offense: 108.5264
       defense: 383.09268
       energy: 1012.82434
       mobility: 55
-      capacity: 194.15123
+      capacity: 140.45215
       firePower: 40.84948
       bulletSpeed: 15
       fireRate: 14.676917
@@ -2050,7 +2050,7 @@ MonoBehaviour:
       moveSpeed: 10
       turnSpeed: 25
       gemCap: 85.019005
-      peopleCap: 109.132225
+      peopleCap: 55.43315
     componentMass: 20.25368
     lockedInUpgradeTree: 0
   - chassisId: StarForce_17
@@ -2091,14 +2091,14 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 8557b5dbff333e14f8cd5cb85c760ea7, type: 3}
     minHomePlanetLevel: 6
-    powerScore: 631.9044
-    powerScoreAtMaxLevel: 4102.4385
+    powerScore: 622.0304
+    powerScoreAtMaxLevel: 3999.0723
     powerScoreBreakdown:
       offense: 94
       defense: 115.8193
       energy: 366.06186
       mobility: 27.400002
-      capacity: 64.10746
+      capacity: 54.23335
       firePower: 34.5
       bulletSpeed: 10
       fireRate: 24
@@ -2111,13 +2111,13 @@ MonoBehaviour:
       moveSpeed: 8
       turnSpeed: 9
       gemCap: 31.234774
-      peopleCap: 32.872684
+      peopleCap: 22.998575
     powerScoreBreakdownAtShipLevel:
       offense: 191.4
       defense: 1180.7084
       energy: 2122.2017
       mobility: 108.8
-      capacity: 380.32843
+      capacity: 276.96216
       firePower: 110.399994
       bulletSpeed: 16
       fireRate: 24
@@ -2130,7 +2130,7 @@ MonoBehaviour:
       moveSpeed: 19
       turnSpeed: 53
       gemCap: 171.47144
-      peopleCap: 208.85698
+      peopleCap: 105.49072
     componentMass: 20.347391
     lockedInUpgradeTree: 0
   - chassisId: StarForce_07
@@ -2171,14 +2171,14 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 815f0823da0e42241b7d6b8eae728eea, type: 3}
     minHomePlanetLevel: 6
-    powerScore: 440.9981
-    powerScoreAtMaxLevel: 2322.8943
+    powerScore: 433.9981
+    powerScoreAtMaxLevel: 2249.8943
     powerScoreBreakdown:
       offense: 79.375
       defense: 55.956024
       energy: 270.23114
       mobility: 20.9
-      capacity: 49.800003
+      capacity: 42.800003
       firePower: 25.875
       bulletSpeed: 10
       fireRate: 18
@@ -2191,13 +2191,13 @@ MonoBehaviour:
       moveSpeed: 6.2999997
       turnSpeed: 6
       gemCap: 23.800001
-      peopleCap: 26
+      peopleCap: 19
     powerScoreBreakdownAtShipLevel:
       offense: 157.79999
       defense: 471.37665
       energy: 1328.8468
       mobility: 41.8
-      capacity: 264.3
+      capacity: 191.3
       firePower: 82.799995
       bulletSpeed: 16
       fireRate: 18
@@ -2210,7 +2210,7 @@ MonoBehaviour:
       moveSpeed: 9.599999
       turnSpeed: 17
       gemCap: 117.3
-      peopleCap: 147
+      peopleCap: 74
     componentMass: 18.38861
     lockedInUpgradeTree: 0
   - chassisId: StarForce_03
@@ -2251,14 +2251,14 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: dbb84e5d500870a4f89d32fc82ede2b7, type: 3}
     minHomePlanetLevel: 6
-    powerScore: 397.73297
-    powerScoreAtMaxLevel: 2045.0885
+    powerScore: 389.65152
+    powerScoreAtMaxLevel: 1955.7432
     powerScoreBreakdown:
       offense: 79.875
       defense: 47.99821
       energy: 236.83202
       mobility: 22.6
-      capacity: 48.100758
+      capacity: 40.01931
       firePower: 25.875
       bulletSpeed: 10
       fireRate: 18
@@ -2271,13 +2271,13 @@ MonoBehaviour:
       moveSpeed: 6.2
       turnSpeed: 14
       gemCap: 21.856413
-      peopleCap: 26.244345
+      peopleCap: 18.162899
     powerScoreBreakdownAtShipLevel:
       offense: 163.79999
       defense: 411.9476
       energy: 1136.3329
       mobility: 24.8
-      capacity: 289.37738
+      capacity: 200.03198
       firePower: 82.799995
       bulletSpeed: 16
       fireRate: 18
@@ -2290,7 +2290,7 @@ MonoBehaviour:
       moveSpeed: 8.4
       turnSpeed: 14
       gemCap: 122.60513
-      peopleCap: 166.77225
+      peopleCap: 77.42685
     componentMass: 14.267958
     lockedInUpgradeTree: 0
   - chassisId: StarForce_05
@@ -2331,14 +2331,14 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: e3faa86b5ad8fc1469281f21a1b5bb5a, type: 3}
     minHomePlanetLevel: 6
-    powerScore: 384.1437
-    powerScoreAtMaxLevel: 2039.1245
+    powerScore: 378.23538
+    powerScoreAtMaxLevel: 1975.1277
     powerScoreBreakdown:
       offense: 82.178635
       defense: 53.432816
       energy: 226.18332
       mobility: 22.8
-      capacity: 42.11094
+      capacity: 36.202602
       firePower: 17.590734
       bulletSpeed: 10
       fireRate: 29.087898
@@ -2351,13 +2351,13 @@ MonoBehaviour:
       moveSpeed: 6.3999996
       turnSpeed: 14
       gemCap: 19.411583
-      peopleCap: 22.699358
+      peopleCap: 16.79102
     powerScoreBreakdownAtShipLevel:
       offense: 142.37825
       defense: 478.23468
       energy: 1126.1843
       mobility: 27.199999
-      capacity: 227.33868
+      capacity: 163.34177
       firePower: 56.290356
       bulletSpeed: 16
       fireRate: 29.087898
@@ -2370,7 +2370,7 @@ MonoBehaviour:
       moveSpeed: 10.799999
       turnSpeed: 14
       gemCap: 99.462166
-      peopleCap: 127.87651
+      peopleCap: 63.879593
     componentMass: 13.749235
     lockedInUpgradeTree: 0
   - chassisId: StarForce_20
@@ -2411,14 +2411,14 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 512830cea482320448f6378d2d732d9f, type: 3}
     minHomePlanetLevel: 6
-    powerScore: 396.93433
-    powerScoreAtMaxLevel: 2856.0566
+    powerScore: 391.82007
+    powerScoreAtMaxLevel: 2800.4998
     powerScoreBreakdown:
       offense: 50.044235
       defense: 98.49863
       energy: 207.358
       mobility: 27.400002
-      capacity: 38.202698
+      capacity: 33.088436
       firePower: 8.336863
       bulletSpeed: 10
       fireRate: 6.207371
@@ -2431,13 +2431,13 @@ MonoBehaviour:
       moveSpeed: 8
       turnSpeed: 9
       gemCap: 17.388483
-      peopleCap: 20.814213
+      peopleCap: 15.699953
     powerScoreBreakdownAtShipLevel:
       offense: 89.88533
       defense: 1026.1302
       energy: 1463.986
       mobility: 108.8
-      capacity: 195.1405
+      capacity: 139.58359
       firePower: 26.677961
       bulletSpeed: 16
       fireRate: 6.207371
@@ -2450,7 +2450,7 @@ MonoBehaviour:
       moveSpeed: 19
       turnSpeed: 53
       gemCap: 84.44099
-      peopleCap: 110.69951
+      peopleCap: 55.1426
     componentMass: 15.426006
     lockedInUpgradeTree: 0
   teamMaterials:

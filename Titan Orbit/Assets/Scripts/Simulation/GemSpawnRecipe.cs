@@ -32,6 +32,13 @@ namespace TitanOrbit.Simulation
         public float3 AddVelocity;
         public float LaunchSpeedMul;
 
+        /// <summary>
+        /// Server spawn id copied from the spawn RPC. Non-zero on client hydrate so
+        /// tractor and consume events find this crystal even if a local rehash would differ.
+        /// Server recipes leave this 0 and use <see cref="GemSpawnMath.ComputeSpawnId"/>.
+        /// </summary>
+        public int SpawnIdOverride;
+
         public bool Burst => (Flags & FlagBurst) != 0;
 
         /// <summary>True when this crystal is the yellow triangle extra (not the blue miner extra).</summary>
@@ -97,12 +104,25 @@ namespace TitanOrbit.Simulation
     public static class GemSpawnMath
     {
         /// <summary>
+        /// Play-plane origin. Client hydrate forces Y to 0 before it rebuilds the crystal.
+        /// Hashing or launching from a hull Y left by PhysX (grind contact, often below the
+        /// planar clamp) gave the client a different SpawnId and flight path — the mesh
+        /// appeared, never received tractor / consume, and timed out.
+        /// </summary>
+        public static float3 PlanarOrigin(float3 position)
+        {
+            position.y = 0f;
+            return position;
+        }
+
+        /// <summary>
         /// Stable session id from recipe fields (not a monotonic counter). 0 is reserved.
+        /// Position is flattened to Y = 0 so server and client hash the same point.
         /// </summary>
         public static int ComputeSpawnId(in GemSpawnRecipe recipe)
         {
             uint h = math.hash(new uint4(
-                math.hash(recipe.Position),
+                math.hash(PlanarOrigin(recipe.Position)),
                 recipe.Salt,
                 math.asuint(recipe.SpawnServerTime),
                 (uint)recipe.BurstIndex
@@ -133,7 +153,7 @@ namespace TitanOrbit.Simulation
         {
             return new GemSpawnRecipe
             {
-                Position = position,
+                Position = PlanarOrigin(position),
                 Value = value,
                 Salt = salt,
                 SpawnServerTime = spawnServerTime,
@@ -161,7 +181,9 @@ namespace TitanOrbit.Simulation
                 return false;
 
             settings ??= GemExplosionSettingsCache.ResolveOrDefault();
-            var rng = Random.CreateFromIndex(math.hash(recipe.Position) + recipe.Salt + 17u);
+            // Same planar point the client hashes — see PlanarOrigin.
+            float3 origin = PlanarOrigin(recipe.Position);
+            var rng = Random.CreateFromIndex(math.hash(origin) + recipe.Salt + 17u);
 
             float3 planarLaunch = new float3(recipe.LaunchDir.x, 0f, recipe.LaunchDir.z);
             bool useForward = math.lengthsq(planarLaunch) > 0.01f;
@@ -201,10 +223,13 @@ namespace TitanOrbit.Simulation
                 vel.y = 0f;
             }
 
+            int spawnId = recipe.SpawnIdOverride != 0
+                ? recipe.SpawnIdOverride
+                : ComputeSpawnId(recipe);
             resolved = new GemSpawnResolved
             {
-                SpawnId = ComputeSpawnId(recipe),
-                Position = recipe.Position + offset,
+                SpawnId = spawnId,
+                Position = origin + offset,
                 Scale = scale,
                 Velocity = vel,
                 AngularVelocity = ang,

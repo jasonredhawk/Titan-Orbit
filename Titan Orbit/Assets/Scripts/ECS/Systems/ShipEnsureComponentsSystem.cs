@@ -73,7 +73,7 @@ namespace TitanOrbit.ECS
                 {
                     HealthRegenPerSecond = 6f,
                     EnergyRegenPerSecond = 5f,
-                    HealthRegenDelayAfterDamage = 0.35f,
+                    HealthRegenDelayAfterDamage = ShipVitalsSettingsCache.HealthRegenDelayAfterDamage,
                 });
             }
 
