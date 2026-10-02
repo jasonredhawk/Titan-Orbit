@@ -37,9 +37,9 @@ namespace TitanOrbit
         public static bool CycleAllBulletBanks;
 
         /// <summary>
-        /// When true (GameManager Test), T-key walks every <c>ThrusterVfxBank</c> family
-        /// flame on live ship proxies so you can compare / tune jets. When false, mounts
-        /// keep their purchased or host-family look. Dedicated server is forced false.
+        /// When true (GameManager Test), T-key walks every <c>ThrusterVfxBank</c> type
+        /// (V1, V2, V3, Soft) on live ship proxies so you can compare jets. When false,
+        /// mounts keep the player's chosen type in their team color. Dedicated server is forced false.
         /// </summary>
         public static bool CycleAllThrusterVfx;
 
@@ -82,8 +82,9 @@ namespace TitanOrbit
             SelfHarmRocketsAndMines && now >= placeTime + SelfHarmArmDelaySeconds;
 
         /// <summary>
-        /// When true, unoccupied MEGA mounts auto-aim and fire on living asteroids (damage mode
-        /// only). Local Editor / MPPM host only; dedicated server stays false.
+        /// When true, Titan projectile mounts auto-aim and fire on living asteroids (damage mode
+        /// only, after ships / pads / moon shields). Published from GameManager on the Editor
+        /// host and on the dedicated server. Cannon lasers acquire rocks even when this is false.
         /// </summary>
         public static bool MegaShipsAutoFireAsteroids;
 

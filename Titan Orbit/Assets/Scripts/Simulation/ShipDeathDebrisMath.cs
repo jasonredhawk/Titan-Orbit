@@ -27,10 +27,10 @@ namespace TitanOrbit.Simulation
         static readonly List<SeamPair> s_pairScratch = new List<SeamPair>(128);
 
         /// <summary>
-        /// Partitions part XZ offsets into <paramref name="minClusters"/>–
+        /// Partitions part offsets into <paramref name="minClusters"/>–
         /// <paramref name="maxClusters"/> spatially local groups. Farthest-point seeds
         /// from a random start, then a few k-means passes. Same seed + offsets → same
-        /// labels on every client.
+        /// labels on every client. <paramref name="planar"/> ignores height.
         /// </summary>
         /// <returns>Cluster count (1 when there is only one part).</returns>
         public static int AssignSpatialClusters(
@@ -38,7 +38,8 @@ namespace TitanOrbit.Simulation
             List<float3> partOffsets,
             int minClusters,
             int maxClusters,
-            List<int> clusterOfPart)
+            List<int> clusterOfPart,
+            bool planar)
         {
             clusterOfPart.Clear();
             if (partOffsets == null || partOffsets.Count == 0)
@@ -62,7 +63,7 @@ namespace TitanOrbit.Simulation
             // --- Farthest-point seeds from a random first part ---
             // A different start (per death seed) splits the hull along a new seam.
             seedPart[0] = rng.NextInt(0, partCount);
-            centroids[0] = FlattenXz(partOffsets[seedPart[0]]);
+            centroids[0] = Project(partOffsets[seedPart[0]], planar);
             for (int c = 1; c < k; c++)
             {
                 int best = -1;
@@ -72,10 +73,10 @@ namespace TitanOrbit.Simulation
                     if (AlreadySeeded(seedPart, c, i))
                         continue;
 
-                    float3 p = FlattenXz(partOffsets[i]);
-                    float nearest = DistSqXz(p, centroids[0]);
+                    float3 p = Project(partOffsets[i], planar);
+                    float nearest = DistSq(p, centroids[0], planar);
                     for (int s = 1; s < c; s++)
-                        nearest = math.min(nearest, DistSqXz(p, centroids[s]));
+                        nearest = math.min(nearest, DistSq(p, centroids[s], planar));
 
                     if (nearest > bestMin)
                     {
@@ -91,7 +92,7 @@ namespace TitanOrbit.Simulation
                 }
 
                 seedPart[c] = best;
-                centroids[c] = FlattenXz(partOffsets[best]);
+                centroids[c] = Project(partOffsets[best], planar);
             }
 
             // --- k-means: pull each centroid to the mean of its nearby parts ---
@@ -99,14 +100,14 @@ namespace TitanOrbit.Simulation
             Span<int> clusterSize = stackalloc int[MaxSupportedClusters];
             for (int iter = 0; iter < KMeansIterations; iter++)
             {
-                AssignNearest(partOffsets, centroids, k, clusterOfPart);
-                RecomputeCentroids(partOffsets, clusterOfPart, k, newCentroids, clusterSize);
-                RepairEmptyClusters(partOffsets, clusterOfPart, k, newCentroids, clusterSize);
+                AssignNearest(partOffsets, centroids, k, clusterOfPart, planar);
+                RecomputeCentroids(partOffsets, clusterOfPart, k, newCentroids, clusterSize, planar);
+                RepairEmptyClusters(partOffsets, clusterOfPart, k, newCentroids, clusterSize, planar);
                 for (int c = 0; c < k; c++)
                     centroids[c] = newCentroids[c];
             }
 
-            AssignNearest(partOffsets, centroids, k, clusterOfPart);
+            AssignNearest(partOffsets, centroids, k, clusterOfPart, planar);
             return k;
         }
 
@@ -117,7 +118,7 @@ namespace TitanOrbit.Simulation
         /// </summary>
         /// <param name="seed">16-bit seed from <c>ShipDeathVfxState</c>.</param>
         /// <param name="clusterIndex">Stable index of this chunk (0..k-1).</param>
-        /// <param name="clusterOffsetFromCenter">Chunk COM XZ minus ship center XZ.</param>
+        /// <param name="clusterOffsetFromCenter">Chunk COM minus ship center. Planar mode ignores Y.</param>
         /// <param name="impulseDir">Unit XZ kill direction (bullet velocity / ram normal).</param>
         /// <param name="power01">Packed power 0–1.</param>
         /// <param name="hullRadius">Approx hull radius for blast falloff.</param>
@@ -135,15 +136,16 @@ namespace TitanOrbit.Simulation
             out float3 velocity,
             out float3 spinDegPerSec)
         {
+            bool full3D = settings.ExplodeInFull3D;
             float intensity = SampleDeathIntensity(seed, settings);
             var rng = new Random(MixSeed(seed, clusterIndex + 53));
 
-            float3 offset = FlattenXz(clusterOffsetFromCenter);
+            float3 offset = full3D ? clusterOffsetFromCenter : FlattenXz(clusterOffsetFromCenter);
             float3 radial = math.lengthsq(offset) > 1e-6f
                 ? math.normalize(offset)
-                : RandomUnitXz(ref rng);
+                : (full3D ? RandomUnitSphere(ref rng) : RandomUnitXz(ref rng));
 
-            float3 travel = FlattenXz(shipVelocity);
+            float3 travel = full3D ? shipVelocity : FlattenXz(shipVelocity);
             if (math.lengthsq(travel) > 1e-6f)
                 travel = math.normalize(travel);
 
@@ -170,11 +172,24 @@ namespace TitanOrbit.Simulation
 
             float spread = settings.BreakSpread * rng.NextFloat(0.45f, 1f);
             float chaos = settings.DirectionChaos * rng.NextFloat(0.1f, 0.85f) * (1f - 0.45f * power01);
-            float3 dir = crash + radial * spread + RandomUnitXz(ref rng) * chaos;
-            if (math.lengthsq(dir) > 1e-8f)
-                dir = math.normalize(dir);
+            float3 dir;
+            if (full3D)
+            {
+                // Sphere owns the burst so a flat hull still throws pieces up and down.
+                // The chunk's side of the ship and the kill heading only bias that sphere.
+                float3 sphere = RandomUnitSphere(ref rng);
+                float3 mixed = sphere + radial * spread;
+                mixed += crash * (settings.KillAimWeight * 0.22f * power01);
+                dir = math.lengthsq(mixed) > 1e-8f ? math.normalize(mixed) : sphere;
+            }
             else
-                dir = crash;
+            {
+                dir = crash + radial * spread + RandomUnitXz(ref rng) * chaos;
+                if (math.lengthsq(dir) > 1e-8f)
+                    dir = math.normalize(dir);
+                else
+                    dir = crash;
+            }
 
             float speedMul = rng.NextFloat(
                 settings.RadialSpeedRandomMin,
@@ -186,8 +201,13 @@ namespace TitanOrbit.Simulation
                                * math.lerp(0.5f, 1f, falloff);
             float3 contactKick = kill * (settings.ImpulseSpeed * power01 * falloff * intensity);
 
-            velocity = FlattenXz(shipVelocity) + crash * crashBoost + dir * breakSpeed + contactKick;
-            velocity.y = 0f;
+            if (full3D)
+                velocity = shipVelocity + dir * (breakSpeed + crashBoost) + contactKick;
+            else
+            {
+                velocity = FlattenXz(shipVelocity) + crash * crashBoost + dir * breakSpeed + contactKick;
+                velocity.y = 0f;
+            }
 
             float spinMul = rng.NextFloat(
                 settings.ClusterSpinRandomMin,
@@ -219,7 +239,8 @@ namespace TitanOrbit.Simulation
             List<int> clusterOfPart,
             int maxPairs,
             List<int> partA,
-            List<int> partB)
+            List<int> partB,
+            bool planar)
         {
             partA.Clear();
             partB.Clear();
@@ -240,16 +261,16 @@ namespace TitanOrbit.Simulation
 
             for (int i = 0; i < partCount; i++)
             {
-                float3 a = FlattenXz(partOffsets[i]);
+                float3 a = Project(partOffsets[i], planar);
                 int ca = clusterOfPart[i];
                 for (int j = i + 1; j < partCount; j++)
                 {
-                    float3 b = FlattenXz(partOffsets[j]);
+                    float3 b = Project(partOffsets[j], planar);
                     s_pairScratch.Add(new SeamPair
                     {
                         PartA = i,
                         PartB = j,
-                        DistSq = DistSqXz(a, b),
+                        DistSq = DistSq(a, b, planar),
                         CrossCluster = ca != clusterOfPart[j],
                     });
                 }
@@ -297,7 +318,7 @@ namespace TitanOrbit.Simulation
             scale = rng.NextFloat(scaleMin, scaleMax);
 
             float jitter = rng.NextFloat(0.02f, 0.08f);
-            jitterXz = RandomUnitXz(ref rng) * jitter;
+            jitterXz = (settings.ExplodeInFull3D ? RandomUnitSphere(ref rng) : RandomUnitXz(ref rng)) * jitter;
         }
 
         /// <summary>Applies linear / angular drag for one frame.</summary>
@@ -316,7 +337,8 @@ namespace TitanOrbit.Simulation
 
         /// <summary>
         /// Client-only sphere bounce. <paramref name="bodyToChunkOffset"/> must already be the
-        /// toroidal shortest XZ vector (or Euclidean when map size is unset). No physics bodies.
+        /// toroidal shortest XZ vector (Y is the real height delta in 3D). No physics bodies.
+        /// <paramref name="planar"/> locks the chunk back onto the map after the push.
         /// </summary>
         /// <returns>True when the chunk was overlapping and got pushed / reflected.</returns>
         public static bool ResolveVisualSphere(
@@ -327,7 +349,8 @@ namespace TitanOrbit.Simulation
             float chunkRadius,
             float bodyRadius,
             float bounce,
-            float hitSpinPerSpeed)
+            float hitSpinPerSpeed,
+            bool planar)
         {
             float minDist = math.max(0.05f, chunkRadius) + math.max(0.05f, bodyRadius);
             float distSq = math.lengthsq(bodyToChunkOffset);
@@ -337,12 +360,17 @@ namespace TitanOrbit.Simulation
             float dist = math.sqrt(math.max(1e-8f, distSq));
             float3 n = bodyToChunkOffset / dist;
             chunkPos += n * (minDist - dist);
-            chunkPos.y = 0f;
+            if (planar)
+            {
+                chunkPos.y = 0f;
+                velocity.y = 0f;
+            }
 
             float vn = math.dot(velocity, n);
             if (vn < 0f)
                 velocity -= n * ((1f + math.saturate(bounce)) * vn);
-            velocity.y = 0f;
+            if (planar)
+                velocity.y = 0f;
 
             float3 graze = math.cross(n, velocity);
             spinDegPerSec += graze * math.max(0f, hitSpinPerSpeed);
@@ -361,17 +389,18 @@ namespace TitanOrbit.Simulation
             List<float3> partOffsets,
             Span<float3> centroids,
             int k,
-            List<int> clusterOfPart)
+            List<int> clusterOfPart,
+            bool planar)
         {
             int partCount = partOffsets.Count;
             for (int i = 0; i < partCount; i++)
             {
-                float3 p = FlattenXz(partOffsets[i]);
+                float3 p = Project(partOffsets[i], planar);
                 int best = 0;
-                float bestD = DistSqXz(p, centroids[0]);
+                float bestD = DistSq(p, centroids[0], planar);
                 for (int c = 1; c < k; c++)
                 {
-                    float d = DistSqXz(p, centroids[c]);
+                    float d = DistSq(p, centroids[c], planar);
                     if (d < bestD)
                     {
                         bestD = d;
@@ -388,7 +417,8 @@ namespace TitanOrbit.Simulation
             List<int> clusterOfPart,
             int k,
             Span<float3> centroids,
-            Span<int> clusterSize)
+            Span<int> clusterSize,
+            bool planar)
         {
             for (int c = 0; c < k; c++)
             {
@@ -400,7 +430,7 @@ namespace TitanOrbit.Simulation
             for (int i = 0; i < partCount; i++)
             {
                 int c = clusterOfPart[i];
-                centroids[c] += FlattenXz(partOffsets[i]);
+                centroids[c] += Project(partOffsets[i], planar);
                 clusterSize[c]++;
             }
 
@@ -420,7 +450,8 @@ namespace TitanOrbit.Simulation
             List<int> clusterOfPart,
             int k,
             Span<float3> centroids,
-            Span<int> clusterSize)
+            Span<int> clusterSize,
+            bool planar)
         {
             for (int empty = 0; empty < k; empty++)
             {
@@ -431,15 +462,15 @@ namespace TitanOrbit.Simulation
                 if (donor < 0 || clusterSize[donor] <= 1)
                     continue;
 
-                int steal = FarthestInCluster(partOffsets, clusterOfPart, donor, centroids[donor]);
+                int steal = FarthestInCluster(partOffsets, clusterOfPart, donor, centroids[donor], planar);
                 if (steal < 0)
                     continue;
 
                 clusterOfPart[steal] = empty;
                 clusterSize[donor]--;
                 clusterSize[empty] = 1;
-                centroids[empty] = FlattenXz(partOffsets[steal]);
-                RecenterOne(partOffsets, clusterOfPart, donor, centroids);
+                centroids[empty] = Project(partOffsets[steal], planar);
+                RecenterOne(partOffsets, clusterOfPart, donor, centroids, planar);
             }
         }
 
@@ -447,7 +478,8 @@ namespace TitanOrbit.Simulation
             List<float3> partOffsets,
             List<int> clusterOfPart,
             int cluster,
-            Span<float3> centroids)
+            Span<float3> centroids,
+            bool planar)
         {
             float3 sum = float3.zero;
             int n = 0;
@@ -456,7 +488,7 @@ namespace TitanOrbit.Simulation
             {
                 if (clusterOfPart[i] != cluster)
                     continue;
-                sum += FlattenXz(partOffsets[i]);
+                sum += Project(partOffsets[i], planar);
                 n++;
             }
 
@@ -484,7 +516,8 @@ namespace TitanOrbit.Simulation
             List<float3> partOffsets,
             List<int> clusterOfPart,
             int cluster,
-            float3 centroid)
+            float3 centroid,
+            bool planar)
         {
             int best = -1;
             float bestD = -1f;
@@ -493,7 +526,7 @@ namespace TitanOrbit.Simulation
             {
                 if (clusterOfPart[i] != cluster)
                     continue;
-                float d = DistSqXz(FlattenXz(partOffsets[i]), centroid);
+                float d = DistSq(Project(partOffsets[i], planar), centroid, planar);
                 if (d > bestD)
                 {
                     bestD = d;
@@ -528,11 +561,23 @@ namespace TitanOrbit.Simulation
             return v;
         }
 
+        static float3 Project(float3 v, bool planar)
+        {
+            return planar ? FlattenXz(v) : v;
+        }
+
         static float DistSqXz(float3 a, float3 b)
         {
             float dx = a.x - b.x;
             float dz = a.z - b.z;
             return dx * dx + dz * dz;
+        }
+
+        static float DistSq(float3 a, float3 b, bool planar)
+        {
+            if (planar)
+                return DistSqXz(a, b);
+            return math.lengthsq(a - b);
         }
 
         static uint MixSeed(uint seed, int partIndex)
@@ -548,6 +593,15 @@ namespace TitanOrbit.Simulation
         {
             float angle = rng.NextFloat(0f, 2f * math.PI);
             return new float3(math.sin(angle), 0f, math.cos(angle));
+        }
+
+        /// <summary>Uniform direction on the unit sphere. Two rng draws.</summary>
+        static float3 RandomUnitSphere(ref Random rng)
+        {
+            float y = rng.NextFloat(-1f, 1f);
+            float angle = rng.NextFloat(0f, 2f * math.PI);
+            float ring = math.sqrt(math.max(0f, 1f - y * y));
+            return new float3(ring * math.cos(angle), y, ring * math.sin(angle));
         }
     }
 }

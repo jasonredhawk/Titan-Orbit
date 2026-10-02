@@ -63,6 +63,25 @@ namespace TitanOrbit.Services
             TitanOrbitEntitlements.RegisterOrbitUnlockedProductId(orbitUnlockedProductId);
         }
 
+        void OnEnable()
+        {
+            UnityGameServicesBootstrap.AuthStateChanged += OnAuthStateChanged;
+        }
+
+        void OnDisable()
+        {
+            UnityGameServicesBootstrap.AuthStateChanged -= OnAuthStateChanged;
+        }
+
+        /// <summary>After a Unity sign-in, attach any store receipt to that player.</summary>
+        void OnAuthStateChanged()
+        {
+            // --- Rebind receipt ---
+            if (!UnityGameServicesBootstrap.HasUnityPlayerAccountLinked())
+                return;
+            ReconcileNonConsumableEntitlements();
+        }
+
         /// <summary>
         /// [UNITY] Start is async so we can wait for a UGS guest session. IAP can
         /// initialize without auth, but the player id in logs is nicer with it.
@@ -197,6 +216,12 @@ namespace TitanOrbit.Services
         public void InitiatePurchase(string productId)
         {
             // --- InitiatePurchase ---
+            if (!UnityGameServicesBootstrap.HasUnityPlayerAccountLinked())
+            {
+                Debug.LogWarning("[TitanOrbitIapManager] InitiatePurchase ignored (Unity account required).");
+                return;
+            }
+
             if (_controller == null)
             {
                 Debug.LogWarning("[TitanOrbitIapManager] InitiatePurchase ignored (store not ready).");

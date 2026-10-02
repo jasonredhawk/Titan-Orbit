@@ -53,6 +53,9 @@
     <script>
       // Google IMA player used by TitanOrbitImaBridge.jslib.
       // Status strings: complete | skipped | error | sdk-not-loaded
+      // Cancel must tear the ad down fully. IMA's sample placeholder injects
+      // click-catcher iframes on document.body; if those survive, the planet
+      // picker is visible but every world click hits the leftover ad instead.
       window.TitanOrbitImaPlay = function (adTagUrl, onStatus) {
         var overlay = document.getElementById("titan-orbit-ima-overlay");
         var adContainer = document.getElementById("titan-orbit-ima-ad-container");
@@ -60,18 +63,65 @@
         var cancel = document.getElementById("titan-orbit-ima-cancel");
         var finished = false;
         var adsManager = null;
+        var adDisplayContainer = null;
+        var adsLoader = null;
+
+        function releasePointerToGame() {
+          // Pull the video out before wiping the slot. IMA sometimes reparents it
+          // into the ad container, and innerHTML = "" would delete that element.
+          if (video && overlay && video.parentNode !== overlay)
+            overlay.appendChild(video);
+          if (adContainer) adContainer.innerHTML = "";
+          if (video) {
+            try { video.pause(); } catch (e) {}
+            video.removeAttribute("src");
+            try { video.load(); } catch (e2) {}
+            video.style.width = "1px";
+            video.style.height = "1px";
+            video.style.opacity = "0";
+            video.style.pointerEvents = "none";
+            video.style.position = "absolute";
+          }
+          if (overlay) {
+            overlay.style.display = "none";
+            overlay.style.pointerEvents = "none";
+          }
+
+          // Sample VAST creatives often leave a fixed iframe outside our overlay.
+          var stray = document.querySelectorAll(
+            "iframe[id*='google_ads'], iframe[name*='google_ads'], iframe[src*='doubleclick'], iframe[src*='googlesyndication'], iframe[src*='2mdn.net'], .videoAdUi, div[id^='googima']"
+          );
+          for (var i = 0; i < stray.length; i++) {
+            var node = stray[i];
+            if (!node || node === overlay) continue;
+            if (node.closest && node.closest("#unity-container")) continue;
+            if (overlay && overlay.contains(node)) continue;
+            try { node.parentNode.removeChild(node); } catch (e3) {}
+          }
+
+          var canvas = document.getElementById("unity-canvas");
+          if (canvas) {
+            canvas.style.pointerEvents = "auto";
+            try { canvas.focus(); } catch (e4) {}
+          }
+        }
+
+        function destroyIma() {
+          try { if (adsManager) adsManager.destroy(); } catch (e) {}
+          adsManager = null;
+          // destroy() only. contentComplete() asks IMA for a post-roll and would
+          // put another click-catcher over the respawn map.
+          try { if (adsLoader && adsLoader.destroy) adsLoader.destroy(); } catch (e2) {}
+          adsLoader = null;
+          try { if (adDisplayContainer && adDisplayContainer.destroy) adDisplayContainer.destroy(); } catch (e4) {}
+          adDisplayContainer = null;
+        }
 
         function finish(status) {
           if (finished) return;
           finished = true;
-          try { if (adsManager) adsManager.destroy(); } catch (e) {}
-          adsManager = null;
-          if (overlay) overlay.style.display = "none";
-          if (video) {
-            try { video.pause(); } catch (e2) {}
-            video.removeAttribute("src");
-            try { video.load(); } catch (e3) {}
-          }
+          destroyIma();
+          releasePointerToGame();
           if (typeof onStatus === "function") onStatus(status);
         }
 
@@ -81,15 +131,31 @@
         }
 
         overlay.style.display = "flex";
-        cancel.onclick = function () { finish("skipped"); };
+        overlay.style.pointerEvents = "auto";
+        // Defer teardown so this click's pointerup finishes before we delete the
+        // button. Destroying mid-click leaves the browser's pointer capture on a
+        // removed node and the next planet clicks never reach the Unity canvas.
+        cancel.onclick = function (ev) {
+          if (ev && ev.preventDefault) ev.preventDefault();
+          if (ev && ev.stopPropagation) ev.stopPropagation();
+          window.setTimeout(function () { finish("skipped"); }, 0);
+        };
 
-        var adDisplayContainer = new google.ima.AdDisplayContainer(adContainer, video);
+        adDisplayContainer = new google.ima.AdDisplayContainer(adContainer, video);
         try { adDisplayContainer.initialize(); } catch (e) {}
 
-        var adsLoader = new google.ima.AdsLoader(adDisplayContainer);
+        adsLoader = new google.ima.AdsLoader(adDisplayContainer);
         adsLoader.addEventListener(
           google.ima.AdsManagerLoadedEvent.Type.ADS_MANAGER_LOADED,
           function (event) {
+            // Player already hit CANCEL while the Google placeholder was loading.
+            // Starting now would cover the respawn map with an invisible ad slot.
+            if (finished) {
+              try { event.getAdsManager(video).destroy(); } catch (e) {}
+              releasePointerToGame();
+              return;
+            }
+
             adsManager = event.getAdsManager(video);
             adsManager.addEventListener(google.ima.AdEvent.Type.COMPLETE, function () { finish("complete"); });
             adsManager.addEventListener(google.ima.AdEvent.Type.SKIPPED, function () { finish("skipped"); });

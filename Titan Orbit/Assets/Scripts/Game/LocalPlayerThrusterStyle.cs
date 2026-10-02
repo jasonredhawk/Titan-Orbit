@@ -8,8 +8,8 @@ namespace TitanOrbit.Game
 {
     /// <summary>
     /// Client-side thruster type for the hull studio.
-    /// Four JetFlame types (Ribbon, Default, Heavy, Soft). Color is always
-    /// the match team's Color1 — players only pick the type.
+    /// Four JetFlame types (V1, V2, V3, Soft). Color is always the match
+    /// team's color — players only pick the type. Team D uses the yellow flame.
     /// Free players present the default jet in a match. Customize Ship may hold an
     /// in-memory preview while <see cref="TitanOrbitCosmeticGate.IsHangarPreviewActive"/>.
     /// </summary>
@@ -208,12 +208,12 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Authored flame name (Blue / Green / Purple / Red / Yellow).
-        /// Always the nearest authored variant to team Color1.
+        /// Team flame name (Red / Blue / Green / Orange / Purple).
+        /// Orange is Team D and uses the yellow JetFlame prefab.
         /// </summary>
         public static string ResolveFlameColorName(in Style style, TeamId team)
         {
-            return ThrusterVfxBank.NearestFlameColorName(ResolveRawTint(team));
+            return ThrusterVfxBank.FlameColorNameForTeam(team);
         }
 
         /// <summary>Well / gradient body color — always team Color1.</summary>

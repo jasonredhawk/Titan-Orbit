@@ -208,17 +208,19 @@ namespace TitanOrbit.Editor.Build
             //   128 MiB initial + geometric growth + 8 MiB stack. Keep decompressionFallback ON so
             //   Build/* stay *.unityweb (GCS deploy / Content-Encoding:br pipeline).
             //
-            // Growth cap (Chrome abort("OOM") / abortOnCannotGrowMemory in the main loop):
-            //   A 128 MiB geometric step cannot satisfy one large alloc (ship mesh, native buffer)
-            //   while the heap is still under the maximum. Once the heap is near 2048, a 512 MiB
-            //   step does not fit in the remaining room and Emscripten aborts the whole grow
-            //   (played fine, then OOM). 4096 maximum leaves room for that step. Initial stays
-            //   128 so a ~360 MB tab can boot.
+            // Growth (Chrome abort("OOM") / abortOnCannotGrowMemory in the main loop):
+            //   Geometric growth asks the browser for a large contiguous extension (up to the
+            //   512 MiB cap). A live WebGL session died at reserved ~2378 MB / mono ~1028 MB
+            //   with maximum still 4096 — the browser refused that jump, then every later
+            //   mouse event faulted. Linear 32 MiB steps extend only as far as the alloc needs.
+            //   Initial stays 128 so a ~360 MB tab can boot. Asteroid meshes are shared on
+            //   WebGL so the heap should not climb to that wall in the first place.
             PlayerSettings.WebGL.nameFilesAsHashes = true;
             PlayerSettings.WebGL.dataCaching = false;
             PlayerSettings.WebGL.initialMemorySize = 128;
             PlayerSettings.WebGL.maximumMemorySize = 4096;
-            PlayerSettings.WebGL.memoryGeometricGrowthCap = 512;
+            PlayerSettings.WebGL.memoryGrowthMode = WebGLMemoryGrowthMode.Linear;
+            PlayerSettings.WebGL.linearMemoryGrowthStep = 32;
             PlayerSettings.WebGL.decompressionFallback = true;
             PlayerSettings.WebGL.emscriptenArgs = "-sSTACK_SIZE=8388608";
             // [TITAN-ORBIT] App UI ships via com.unity.ai.inference. Standalone strips it with
@@ -235,7 +237,7 @@ namespace TitanOrbit.Editor.Build
             string stamp = DateTime.UtcNow.ToString("yyyyMMdd.HHmm");
             PlayerSettings.bundleVersion = stamp;
             Debug.Log("[TitanOrbitBuild] WebGL PlayerSettings: nameFilesAsHashes=true dataCaching=false " +
-                      "initialMemorySize=128 maximumMemorySize=4096 memoryGeometricGrowthCap=512 " +
+                      "initialMemorySize=128 maximumMemorySize=4096 memoryGrowth=Linear step=32MB " +
                       "stack=8MiB APP_UI_EDITOR_ONLY bundleVersion=" + stamp);
 
             // --- Wipe prior output so stale Build/* cannot ship beside the new index ---

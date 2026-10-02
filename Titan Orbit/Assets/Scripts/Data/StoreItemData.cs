@@ -15,7 +15,7 @@ namespace TitanOrbit.Data
     /// fire power scale with that purchase level — they do <b>not</b> copy the ship's live
     /// <c>BulletDamage</c>. Combat fire power and fighter/mining HP lerp Level 1 → Level 6
     /// (same style as planetary-defense turrets). Level 6 is 4× Level 1 on both ladders.
-    /// Visual size tracks the fire-power curve with level 6 = prefab scale 1.0.
+    /// Visual size is a separate ladder: 0.25 of prefab scale at level 1, 0.75 at level 6 (3×).
     /// </para>
     /// </summary>
     public static class StoreItemData
@@ -161,8 +161,9 @@ namespace TitanOrbit.Data
         }
 
         /// <summary>
-        /// Shared level power used for cost and visual size. 1.0 at level 1; grows with the
-        /// combat damage curve so all drone kinds stay on one price / size ladder.
+        /// Shared level power used for cost. 1.0 at level 1; grows with the
+        /// combat damage curve so all drone kinds stay on one price ladder.
+        /// Visual size uses <see cref="GetDroneVisualScale"/> (3× from level 1 to 6).
         /// HP uses <see cref="GetDroneMaxHp(StoreItemType, int)"/> (its own 4× lerp).
         /// </summary>
         public static float GetDroneLevelPowerMul(int itemLevel)
@@ -175,16 +176,29 @@ namespace TitanOrbit.Data
         }
 
         /// <summary>
+        /// Mesh scale at purchase level 1, as a fraction of the drone prefab localScale.
+        /// This is the 1× end of the visual ladder.
+        /// </summary>
+        public const float DroneVisualScaleAtLevel1 = 0.25f;
+
+        /// <summary>
+        /// Mesh scale at <see cref="DroneReferenceMaxLevel"/>, as a fraction of prefab localScale.
+        /// 3× <see cref="DroneVisualScaleAtLevel1"/>. Levels above 6 stay at this cap.
+        /// </summary>
+        public const float DroneVisualScaleAtLevel6 = 0.75f;
+
+        /// <summary>
         /// Level size multiplier applied on top of the drone prefab's authored localScale.
-        /// 1.0 at <see cref="DroneReferenceMaxLevel"/> (same visual size as before leveling);
-        /// smaller at lower levels (0.25 at level 1 — the clamp floor). Levels above
-        /// reference clamp at 1.0.
+        /// 0.25 at level 1 and 0.75 at level 6 (3×, not the 4× fire-power ladder).
+        /// Levels above <see cref="DroneReferenceMaxLevel"/> stay at the level-6 size.
         /// </summary>
         public static float GetDroneVisualScale(int itemLevel)
         {
-            float power = GetCombatDroneDamage(itemLevel);
-            float powerMax = GetCombatDroneDamage(DroneReferenceMaxLevel);
-            return Mathf.Clamp(power / Mathf.Max(0.01f, powerMax), 0.25f, 1f);
+            float t = GetDroneLevelT(itemLevel);
+            return Mathf.Clamp(
+                Mathf.LerpUnclamped(DroneVisualScaleAtLevel1, DroneVisualScaleAtLevel6, t),
+                DroneVisualScaleAtLevel1,
+                DroneVisualScaleAtLevel6);
         }
 
         /// <summary>

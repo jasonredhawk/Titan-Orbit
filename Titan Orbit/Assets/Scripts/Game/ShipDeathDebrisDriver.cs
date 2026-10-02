@@ -98,6 +98,12 @@ namespace TitanOrbit.Game
         float _mapW;
         float _mapH;
 
+        /// <summary>
+        /// Map-plane breakup. Full 3D is <see cref="ShipDeathDebrisSettings.ExplosionSpace"/>
+        /// on Resources/ShipDeathDebrisSettings.
+        /// </summary>
+        bool PlanarExplosion => _settings == null || !_settings.ExplodeInFull3D;
+
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         static void Bootstrap()
         {
@@ -257,15 +263,18 @@ namespace TitanOrbit.Game
 
             CompactPartScratch();
             var collected = new HashSet<Transform>(s_partScratch);
+            bool planar = PlanarExplosion;
 
             // --- Spatial chunks ---
             // Nearby modules share a root so they tumble as wreckage, not as a bag of
             // equal-force parts. Cluster count and seams come from the death seed.
+            // Planar mode drops height so a tall hull still splits on the map.
             s_offsetScratch.Clear();
             for (int i = 0; i < s_partScratch.Count; i++)
             {
                 float3 offset = (float3)s_partScratch[i].position - center;
-                offset.y = 0f;
+                if (planar)
+                    offset.y = 0f;
                 s_offsetScratch.Add(offset);
             }
 
@@ -274,7 +283,8 @@ namespace TitanOrbit.Game
                 s_offsetScratch,
                 _settings.ClusterCountMin,
                 _settings.ClusterCountMax,
-                s_clusterScratch);
+                s_clusterScratch,
+                planar);
 
             BuildChunkCenters(center, clusterCount);
 
@@ -285,7 +295,8 @@ namespace TitanOrbit.Game
 
                 float3 com = s_chunkComScratch[c];
                 float3 offset = com - center;
-                offset.y = 0f;
+                if (planar)
+                    offset.y = 0f;
                 ShipDeathDebrisMath.ComputeClusterLaunch(
                     seed,
                     c,
@@ -353,7 +364,9 @@ namespace TitanOrbit.Game
                     Chunk sized = wreck.Chunks[chunkIndex];
                     float3 com = sized.LogicalPos;
                     float3 part = (float3)src.position;
-                    float radial = math.length(new float2(part.x - com.x, part.z - com.z));
+                    float radial = planar
+                        ? math.length(new float2(part.x - com.x, part.z - com.z))
+                        : math.length(part - com);
                     sized.Radius = math.max(sized.Radius, radial + 0.3f);
                     wreck.Chunks[chunkIndex] = sized;
                 }
@@ -441,7 +454,8 @@ namespace TitanOrbit.Game
                         _settings.AngularDrag);
 
                     chunk.LogicalPos += chunk.Velocity * dt;
-                    chunk.LogicalPos.y = 0f;
+                    if (PlanarExplosion)
+                        chunk.LogicalPos.y = 0f;
                     chunk.Rotation = math.mul(
                         chunk.Rotation,
                         quaternion.Euler(math.radians(chunk.SpinDegPerSec * dt)));
@@ -486,7 +500,8 @@ namespace TitanOrbit.Game
                 s_clusterScratch,
                 maxPairs,
                 s_seamAScratch,
-                s_seamBScratch);
+                s_seamBScratch,
+                PlanarExplosion);
 
             int emitter = 0;
             for (int i = 0; i < s_seamAScratch.Count && emitter < maxEmitters; i++)
@@ -526,7 +541,8 @@ namespace TitanOrbit.Game
             float3 com = wreck.Chunks[chunkIndex].LogicalPos;
             float3 world = (float3)src.position;
             float3 local = world - com;
-            local.y = 0f;
+            if (PlanarExplosion)
+                local.y = 0f;
             local += jitter * math.max(0.35f, hullRadius);
 
             wreck.SeamFires.Add(new SeamFire
@@ -563,13 +579,15 @@ namespace TitanOrbit.Game
                     continue;
 
                 float3 logical = chunk.LogicalPos + math.mul(chunk.Rotation, fire.LocalOffset);
-                logical.y = 0f;
+                if (PlanarExplosion)
+                    logical.y = 0f;
                 float3 display = logical;
                 if (hasRef && ToroidalMapEcs.IsValidMapSize(_mapW, _mapH))
                     display = ToroidalMapEcs.GetDisplayPosition(logical, reference, _mapW, _mapH);
 
+                float displayY = PlanarExplosion ? 0f : display.y;
                 PlaySeamBurst(
-                    new Vector3(display.x, 0f, display.z),
+                    new Vector3(display.x, displayY, display.z),
                     prefab,
                     fire.Scale,
                     chunk.Root.transform);
@@ -619,8 +637,9 @@ namespace TitanOrbit.Game
             float scale = (_settings.BurstScale + _settings.BurstScaleFromPower * power01)
                           * math.max(0.5f, hullRadius / 1.5f);
             float pitch = BulletVisualFactory.GetImpactSoundPitch(power01 * ShipDeathVfxState.PowerReference);
+            float displayY = PlanarExplosion ? 0f : display.y;
             BulletVisualFactory.SpawnImpactAt(
-                new Vector3(display.x, 0f, display.z),
+                new Vector3(display.x, displayY, display.z),
                 prefab,
                 pitch,
                 scale,
@@ -948,6 +967,9 @@ namespace TitanOrbit.Game
                         chunk.LogicalPos.x - body.LogicalPos.x,
                         0f,
                         chunk.LogicalPos.z - body.LogicalPos.z);
+                // ShortestOffsetXZ zeros Y. In 3D the height delta is the real separation.
+                if (!PlanarExplosion)
+                    offset.y = chunk.LogicalPos.y - body.LogicalPos.y;
 
                 ShipDeathDebrisMath.ResolveVisualSphere(
                     ref chunk.LogicalPos,
@@ -957,7 +979,8 @@ namespace TitanOrbit.Game
                     chunk.Radius,
                     body.Radius,
                     _settings.VisualBounce,
-                    _settings.VisualHitSpin);
+                    _settings.VisualHitSpin,
+                    PlanarExplosion);
             }
         }
 

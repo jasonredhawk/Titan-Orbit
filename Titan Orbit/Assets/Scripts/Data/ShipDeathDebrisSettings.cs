@@ -3,6 +3,16 @@ using UnityEngine;
 
 namespace TitanOrbit.Data
 {
+    /// <summary>Whether a dying ship's wreckage stays on the map or flies in every direction.</summary>
+    public enum ShipDeathExplosionSpace
+    {
+        [InspectorName("2D (map plane)")]
+        Planar2D = 0,
+
+        [InspectorName("3D (all directions)")]
+        Full3D = 1,
+    }
+
     /// <summary>
     /// [UNITY] Designer knobs for the cosmetic ship-death breakup. Loaded from
     /// <c>Resources/ShipDeathDebrisSettings</c> when present; otherwise field defaults.
@@ -15,6 +25,13 @@ namespace TitanOrbit.Data
     public class ShipDeathDebrisSettings : ScriptableObject
     {
         public const string ResourcesLoadName = "ShipDeathDebrisSettings";
+
+        [Header("Space")]
+        [Tooltip("2D keeps chunks on the map plane. 3D throws them up, down, and sideways. Lives on this asset (Resources/ShipDeathDebrisSettings).")]
+        public ShipDeathExplosionSpace ExplosionSpace = ShipDeathExplosionSpace.Full3D;
+
+        /// <summary>True when wreckage should leave the map plane.</summary>
+        public bool ExplodeInFull3D => ExplosionSpace == ShipDeathExplosionSpace.Full3D;
 
         [Header("Clusters")]
         [Tooltip("Fewest rigid chunks the hull can split into (clamped by part count).")]

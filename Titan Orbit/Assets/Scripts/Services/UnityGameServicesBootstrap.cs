@@ -572,6 +572,7 @@ namespace TitanOrbit.Services
                 AuthenticationService.Instance.SignOut(clearAuthenticationSession);
             PlayerAccountService.Instance.SignOut();
             TitanOrbitFriendsCoordinator.ResetAfterAuthChange();
+            TitanOrbitEntitlements.ClearSessionView();
             AuthStateChanged?.Invoke();
         }
 
@@ -604,7 +605,10 @@ namespace TitanOrbit.Services
 
         static void OnAuthenticationPlayerInfoChanged(PlayerInfo _)
         {
+            // PlayerInfo is what tells us the session is a Unity account, not a guest.
+            TitanOrbitEntitlements.LoadSessionForCurrentPlayer();
             AuthStateChanged?.Invoke();
+            TitanOrbitAccountEntitlementSync.RefreshForCurrentPlayerAsync();
         }
 
         static void RegisterPlayerAccountHooksOnce()
@@ -618,12 +622,14 @@ namespace TitanOrbit.Services
 
         static void OnAuthenticationSignedIn()
         {
+            TitanOrbitEntitlements.LoadSessionForCurrentPlayer();
             AuthStateChanged?.Invoke();
         }
 
         static void OnAuthenticationSignedOut()
         {
             TitanOrbitFriendsCoordinator.ResetAfterAuthChange();
+            TitanOrbitEntitlements.ClearSessionView();
             AuthStateChanged?.Invoke();
         }
 

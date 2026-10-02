@@ -2072,7 +2072,8 @@ namespace TitanOrbit.UI
             if (TMP_Settings.defaultFontAsset != null) costLabel.font = TMP_Settings.defaultFontAsset;
             // Same warm gold as gemCostIconColor so icon + digits match.
             costLabel.color = gemCostIconColor;
-            costLabel.alignment = TextAlignmentOptions.MidlineLeft;
+            // Midline (not MidlineLeft): the row sizes to the glyphs, and MAX has no gem beside it.
+            costLabel.alignment = TextAlignmentOptions.Midline;
             costLabel.overflowMode = TextOverflowModes.Overflow;
             ContentSizeFitter costCsf = costObj.AddComponent<ContentSizeFitter>();
             costCsf.horizontalFit = ContentSizeFitter.FitMode.PreferredSize;
@@ -2389,7 +2390,13 @@ namespace TitanOrbit.UI
                         Sprite gemSprite = ResolveGemCostIcon();
                         if (costGemIcons[i].sprite == null && gemSprite != null)
                             costGemIcons[i].sprite = gemSprite;
-                        costGemIcons[i].enabled = showGemIcon && costGemIcons[i].sprite != null;
+                        bool gemOn = showGemIcon && costGemIcons[i].sprite != null;
+                        costGemIcons[i].enabled = gemOn;
+                        // Hiding the Image still leaves its LayoutElement width, which shoves
+                        // MAX (and the MEGA dash) right of the button center.
+                        LayoutElement gemLayout = costGemIcons[i].GetComponent<LayoutElement>();
+                        if (gemLayout != null)
+                            gemLayout.ignoreLayout = !gemOn;
                     }
                 }
 

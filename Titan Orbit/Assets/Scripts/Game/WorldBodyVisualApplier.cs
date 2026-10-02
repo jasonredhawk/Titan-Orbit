@@ -450,9 +450,47 @@ namespace TitanOrbit.Game
                 sgt.Properties.SetFloat(ShaderIdDetailTiling, detailTiling);
             }
 
+            // Geosphere50 is ~25k vertices. SgtPlanet.Rebuild copies that mesh and keeps the
+            // vertex lists on every rock. Hundreds of asteroids filled the WebGL heap
+            // (allocated ~2.1 GB, managed ~1 GB) until the browser abort("OOM").
+            // Six shared shapes keep the lumpiness; size and shader tiling still vary per rock.
+            if (Application.platform == RuntimePlatform.WebGLPlayer)
+            {
+                AssignSharedAsteroidMesh(sgt, rng);
+                return;
+            }
+
             sgt.Displacement = Mathf.Lerp(
                 DisplacementMin, BodyCollisionMath.AsteroidVisualDisplacementLocal, (float)rng.NextDouble());
             sgt.DirtyMesh();
+        }
+
+        const int WebGlAsteroidMeshBuckets = 6;
+
+        static Mesh[] s_WebGlAsteroidMeshes;
+
+        /// <summary>
+        /// Reuses one displaced mesh per bucket. <see cref="SgtPlanet.Displacement"/> marks the
+        /// mesh dirty, so this must run after spin migration and must not be followed by another
+        /// displacement write.
+        /// </summary>
+        static void AssignSharedAsteroidMesh(SgtPlanet sgt, System.Random rng)
+        {
+            if (s_WebGlAsteroidMeshes == null)
+                s_WebGlAsteroidMeshes = new Mesh[WebGlAsteroidMeshBuckets];
+
+            int bucket = rng.Next(WebGlAsteroidMeshBuckets);
+            Mesh shared = s_WebGlAsteroidMeshes[bucket];
+            if (shared != null)
+            {
+                sgt.AssignSharedGeneratedMesh(shared);
+                return;
+            }
+
+            float t = bucket / (float)(WebGlAsteroidMeshBuckets - 1);
+            sgt.Displacement = Mathf.Lerp(
+                DisplacementMin, BodyCollisionMath.AsteroidVisualDisplacementLocal, t);
+            s_WebGlAsteroidMeshes[bucket] = sgt.RebuildAsSharedMesh();
         }
 
         public static void ApplyPlanetMaterial(

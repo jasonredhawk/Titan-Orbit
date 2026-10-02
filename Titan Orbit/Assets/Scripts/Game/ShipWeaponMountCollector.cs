@@ -21,6 +21,7 @@ namespace TitanOrbit.Game
                 return;
 
             bool taggedAny = false;
+            int liveIndex = 0;
             var assemblies = new System.Collections.Generic.List<Transform>(16);
             MegaShipPartClassifier.CollectWeaponAssemblies(hullRoot, assemblies);
             for (int i = 0; i < assemblies.Count; i++)
@@ -28,9 +29,16 @@ namespace TitanOrbit.Game
                 Transform t = assemblies[i];
                 if (t == null || t == hullRoot)
                     continue;
+                // Hidden B-key stash copies sit on the same side as the gun they came from.
+                // Tagging them makes the second shot reuse the first barrel.
+                if (!t.gameObject.activeInHierarchy || IsUnderOriginalStash(t))
+                    continue;
 
-                if (t.GetComponent<ShipWeaponMountAuthoring>() == null)
-                    t.gameObject.AddComponent<ShipWeaponMountAuthoring>();
+                var auth = t.GetComponent<ShipWeaponMountAuthoring>();
+                if (auth == null)
+                    auth = t.gameObject.AddComponent<ShipWeaponMountAuthoring>();
+                auth.CannonIndex = liveIndex;
+                liveIndex++;
                 taggedAny = true;
             }
 
@@ -55,6 +63,20 @@ namespace TitanOrbit.Game
             weaponGo.transform.localPosition = new Vector3(0f, 0f, Mathf.Max(0.5f, muzzleOffset));
             weaponGo.transform.localRotation = Quaternion.identity;
             weaponGo.AddComponent<ShipWeaponMountAuthoring>();
+        }
+
+        /// <summary>True when this transform sits under the hidden original-part stash.</summary>
+        static bool IsUnderOriginalStash(Transform t)
+        {
+            Transform walk = t;
+            while (walk != null)
+            {
+                if (walk.name == ShipFamilyPartMatch.OriginalStashName)
+                    return true;
+                walk = walk.parent;
+            }
+
+            return false;
         }
 
         /// <summary>

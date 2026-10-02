@@ -27,7 +27,8 @@ namespace TitanOrbit.Game
         /// </summary>
         /// <param name="planetId">Stable <see cref="PlanetState.PlanetId"/> from the clicked blip.</param>
         /// <param name="keepLoadout">
-        /// True after a completed keep-loadout ad (or remove-ads). False strips cards + gear.
+        /// True after a completed keep-loadout ad, or when Orbit Unlocked auto-keeps gear.
+        /// False strips cards + gear.
         /// </param>
         public static bool TryRequestRespawnAtPlanet(int planetId, bool keepLoadout = false)
         {

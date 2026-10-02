@@ -99,6 +99,14 @@ namespace SpaceGraphicsToolkit
 		[System.NonSerialized]
 		private Texture2D lastHeightmap;
 
+		// [TITAN-ORBIT] WebGL asteroid proxies share a handful of displaced meshes.
+		// A private Geosphere50 copy per rock (~25k verts, plus the vertex lists below)
+		// filled the WASM heap (~2 GB native + ~1 GB managed) and abort("OOM") froze the tab.
+		[System.NonSerialized]
+		private bool usesSharedGeneratedMesh;
+
+		private static Dictionary<Mesh, int> sharedGeneratedUsers = new Dictionary<Mesh, int>();
+
 		private static Dictionary<Mesh, Geom> meshToGeom = new Dictionary<Mesh, Geom>();
 
 		private static Dictionary<Vector3, Seam> tempPoints = new Dictionary<Vector3, Seam>();
@@ -138,6 +146,80 @@ namespace SpaceGraphicsToolkit
 			dirtyMesh = true;
 		}
 
+		/// <summary>
+		/// Builds this planet's mesh once and records it as shared. Later proxies should call
+		/// <see cref="AssignSharedGeneratedMesh"/> instead of <see cref="Rebuild"/>.
+		/// </summary>
+		public Mesh RebuildAsSharedMesh()
+		{
+			ReleaseSharedGeneratedMesh();
+			Rebuild();
+			if (generatedMesh == null)
+				return null;
+
+			usesSharedGeneratedMesh = true;
+			if (sharedGeneratedUsers.TryGetValue(generatedMesh, out int users))
+				sharedGeneratedUsers[generatedMesh] = users + 1;
+			else
+				sharedGeneratedUsers[generatedMesh] = 1;
+			return generatedMesh;
+		}
+
+		/// <summary>
+		/// Points this body at <paramref name="shared"/> and skips <see cref="Rebuild"/>.
+		/// Destroying one proxy does not destroy the mesh while other proxies still use it.
+		/// </summary>
+		public void AssignSharedGeneratedMesh(Mesh shared)
+		{
+			if (shared == null)
+				return;
+
+			if (usesSharedGeneratedMesh && generatedMesh == shared)
+			{
+				dirtyMesh = false;
+				return;
+			}
+
+			ReleaseSharedGeneratedMesh();
+			if (generatedMesh != null && generatedMesh != shared)
+				generatedMesh = CwHelper.Destroy(generatedMesh);
+
+			generatedMesh = shared;
+			dirtyMesh = false;
+			usesSharedGeneratedMesh = true;
+			if (sharedGeneratedUsers.TryGetValue(shared, out int users))
+				sharedGeneratedUsers[shared] = users + 1;
+			else
+				sharedGeneratedUsers[shared] = 1;
+		}
+
+		private void ReleaseSharedGeneratedMesh()
+		{
+			if (usesSharedGeneratedMesh == false)
+				return;
+
+			usesSharedGeneratedMesh = false;
+			Mesh shared = generatedMesh;
+			generatedMesh = null;
+			dirtyMesh = false;
+			if (shared == null)
+				return;
+
+			if (sharedGeneratedUsers.TryGetValue(shared, out int users) == false)
+				return;
+
+			users--;
+			if (users <= 0)
+			{
+				sharedGeneratedUsers.Remove(shared);
+				CwHelper.Destroy(shared);
+			}
+			else
+			{
+				sharedGeneratedUsers[shared] = users;
+			}
+		}
+
 		public void RegisterSharedMaterialOverride(SgtSharedMaterial.OverrideSharedMaterialSignature e)
 		{
 			OnOverrideSharedMaterial += e;
@@ -152,8 +234,11 @@ namespace SpaceGraphicsToolkit
 		[ContextMenu("Rebuild")]
 		public void Rebuild()
 		{
-			dirtyMesh     = false;
-			generatedMesh = CwHelper.Destroy(generatedMesh);
+			dirtyMesh = false;
+			if (usesSharedGeneratedMesh == true)
+				ReleaseSharedGeneratedMesh();
+			else
+				generatedMesh = CwHelper.Destroy(generatedMesh);
 
 			if (mesh != null)
 			{
@@ -396,6 +481,12 @@ namespace SpaceGraphicsToolkit
 
 		protected virtual void OnDestroy()
 		{
+			if (usesSharedGeneratedMesh == true)
+			{
+				ReleaseSharedGeneratedMesh();
+				return;
+			}
+
 			CwHelper.Destroy(generatedMesh);
 		}
 

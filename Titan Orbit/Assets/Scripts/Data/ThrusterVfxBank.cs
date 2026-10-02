@@ -1,15 +1,15 @@
 using System;
 using System.Collections.Generic;
+using TitanOrbit.Core;
 using UnityEngine;
 
 namespace TitanOrbit.Data
 {
     /// <summary>
-    /// Single source of truth for client thruster jet flames.
-    /// One asset at <c>Assets/Resources/ThrusterVfxBank.asset</c> lists every family
-    /// prefab (and optional team-color variants). Placement and size are computed
-    /// from the live thruster component — this asset does not store offsets,
-    /// eulers, insets, or idle scales. Presentation only.
+    /// Client thruster jets. <c>Assets/Resources/ThrusterVfxBank.asset</c> lists
+    /// four types (V1, V2, V3, Soft). Each type has one prefab per team color.
+    /// Team D is orange and uses the yellow flame, because that folder has no
+    /// orange prefab. Placement and size come from the live mount.
     /// </summary>
     [CreateAssetMenu(
         fileName = "ThrusterVfxBank",
@@ -20,30 +20,25 @@ namespace TitanOrbit.Data
         public const string ResourcesLoadName = "ThrusterVfxBank";
         public const string ResourcesAssetPath = "Assets/Resources/ThrusterVfxBank.asset";
 
-        /// <summary>
-        /// Shared starter flame (Modular / V2). Families no longer own a unique jet —
-        /// the player picks one of the four types in Customize Ship.
-        /// </summary>
-        public const string DefaultFamilyId = "AstroEagle";
-
-        /// <summary>Ribbon V1, Default V2, Heavy V3, Soft. Index 1 is Default.</summary>
+        /// <summary>V1, V2, V3, Soft. Index 1 is V2, the unmatched default.</summary>
         public const int StyleCount = 4;
 
-        /// <summary>Default (V2 / AstroEagle signature).</summary>
+        /// <summary>V2.</summary>
         public const int DefaultStyleIndex = 1;
 
-        /// <summary>Soft folder (JetFlameSoftWhite + color variants).</summary>
+        /// <summary>Soft folder.</summary>
         public const int SoftStyleIndex = 3;
 
-        /// <summary>Soft white fallback when no team Color1 variant is authored.</summary>
+        /// <summary>Soft white fallback when a team color prefab is missing.</summary>
         public const string NeutralFlameColorName = "White";
 
-        static readonly string[] StyleDisplayNames = { "Ribbon", "Default", "Heavy", "Soft" };
+        /// <summary>Stored style index → folder name. Customize Ship shows these names.</summary>
+        static readonly string[] StyleIds = { "V1", "V2", "V3", "Soft" };
 
-        /// <summary>UI cycle: Default first, then Ribbon / Heavy / Soft. Stored indices stay 0–3.</summary>
-        static readonly int[] StyleUiOrder = { DefaultStyleIndex, 0, 2, 3 };
+        /// <summary>UI cycle follows folder order. Stored indices stay 0–3.</summary>
+        static readonly int[] StyleUiOrder = { 0, 1, 2, 3 };
 
-        /// <summary>Ribbon = V1, Modular = V2, Heavy = V3, Soft = Soft folder.</summary>
+        /// <summary>V1, V2, V3, then the Soft folder. Index order matches saved style picks.</summary>
         public const string JetFlameFolder =
             "Assets/Archanor/Sci-Fi Arsenal/Sci-Fi Effects/Prefabs/Interactive/JetFlame";
 
@@ -63,7 +58,7 @@ namespace TitanOrbit.Data
             "JetFlameSoftWhite",
         };
 
-        /// <summary>Ribbon / Modular / Heavy / Soft color-variant paths in the JetFlame folders.</summary>
+        /// <summary>V1 / V2 / V3 / Soft color-variant paths. Orange files are named Yellow.</summary>
         static readonly string[] StyleColorEditorFormats =
         {
             JetFlameFolder + "/V1/{0}JetFlame.prefab",
@@ -80,19 +75,19 @@ namespace TitanOrbit.Data
             "JetFlameSoft{0}",
         };
 
-        /// <summary>Authored Archanor colors. There is no black flame — dark picks snap here.</summary>
-        public static readonly string[] FlameColorNames = { "Blue", "Green", "Purple", "Red", "Yellow" };
+        /// <summary>Team color words. Orange is Team D and points at the yellow prefab.</summary>
+        public static readonly string[] FlameColorNames = { "Red", "Blue", "Green", "Orange", "Purple" };
 
         static readonly Color[] FlameDisplayColors =
         {
-            new Color(0.22f, 0.48f, 1.00f, 1f),
-            new Color(0.20f, 0.88f, 0.28f, 1f),
-            new Color(0.72f, 0.28f, 0.95f, 1f),
-            new Color(0.98f, 0.18f, 0.16f, 1f),
-            new Color(1.00f, 0.86f, 0.18f, 1f),
+            new Color(0.90f, 0.25f, 0.25f, 1f),
+            new Color(0.25f, 0.40f, 0.90f, 1f),
+            new Color(0.20f, 0.70f, 0.28f, 1f),
+            new Color(0.95f, 0.55f, 0.12f, 1f),
+            new Color(0.65f, 0.25f, 0.85f, 1f),
         };
 
-        static readonly float[] FlameHues = { 0.60f, 0.33f, 0.80f, 0.00f, 0.14f };
+        static readonly float[] FlameHues = { 0.00f, 0.60f, 0.33f, 0.08f, 0.80f };
 
         /// <summary>
         /// Child name for Instantiated jet instances so stash/restore can strip them
@@ -100,62 +95,38 @@ namespace TitanOrbit.Data
         /// </summary>
         public const string JetInstanceName = "_ThrusterJetVfx";
 
-        /// <summary>One team-color slot in <see cref="Entry.colorPrefabs"/>.</summary>
+        /// <summary>One team-color prefab on a thruster type.</summary>
         [Serializable]
-        public class ColorPrefab
+        public class TeamColorFlame
         {
-            public string colorName = "Blue";
+            public TeamId team;
+            [Tooltip("Team color word. Team D is Orange and uses the yellow flame prefab.")]
+            public string colorName;
             public GameObject prefab;
         }
 
-        /// <summary>One family row — prefab only. Pose comes from the mount at runtime.</summary>
+        /// <summary>One jet type: V1, V2, V3, or Soft, with a prefab for each team.</summary>
         [Serializable]
-        public class Entry
+        public class ThrusterType
         {
-            public string familyId;
-            public string displayName;
+            [Tooltip("V1, V2, V3, or Soft.")]
+            public string name;
 
-            [Tooltip("Signature flame when the mount name has no color match.")]
-            public GameObject prefab;
+            public List<TeamColorFlame> teamColors = new List<TeamColorFlame>();
 
-            [Tooltip("Optional Blue / Green / Purple / Red / Yellow variants of this family's style.")]
-            public List<ColorPrefab> colorPrefabs = new List<ColorPrefab>();
-
-            public GameObject ResolvePrefab(string mountName)
-            {
-                if (colorPrefabs != null && colorPrefabs.Count > 0)
-                {
-                    string color = ExtractColorNameFromText(mountName);
-                    if (!string.IsNullOrEmpty(color))
-                    {
-                        for (int i = 0; i < colorPrefabs.Count; i++)
-                        {
-                            ColorPrefab slot = colorPrefabs[i];
-                            if (slot == null || slot.prefab == null || string.IsNullOrEmpty(slot.colorName))
-                                continue;
-                            if (string.Equals(slot.colorName, color, StringComparison.OrdinalIgnoreCase))
-                                return slot.prefab;
-                        }
-                    }
-                }
-
-                return prefab;
-            }
+            [HideInInspector]
+            public GameObject fallbackPrefab;
         }
 
-        [Tooltip("Family rows hold the four JetFlame types (V1 / V2 / V3 / Soft) via signature prefabs.")]
-        public List<Entry> entries = new List<Entry>();
-
-        [Tooltip("Ribbon V1, Modular V2, Heavy V3, Soft. Used before family-row lookup.")]
-        public GameObject[] stylePrefabs = new GameObject[StyleCount];
+        [Tooltip("Four jet types. Each row lists Team A–E and the prefab for that color.")]
+        public List<ThrusterType> thrusters = new List<ThrusterType>();
 
         /// <summary>Client debug cycle index (T-key). Not serialized; not a ghost field.</summary>
         public static int DebugCycleIndex;
 
         static ThrusterVfxBank s_Cached;
-        static readonly string[] ColorNames = { "Blue", "Green", "Orange", "Purple", "Red", "White", "Yellow" };
 
-        public int EntryCount => entries != null ? entries.Count : 0;
+        public int EntryCount => thrusters != null && thrusters.Count > 0 ? thrusters.Count : StyleCount;
 
         public static ThrusterVfxBank LoadDefault()
         {
@@ -165,51 +136,41 @@ namespace TitanOrbit.Data
             return s_Cached;
         }
 
-        public Entry GetEntry(int index)
-        {
-            if (entries == null || entries.Count == 0)
-                return null;
-            int i = ((index % entries.Count) + entries.Count) % entries.Count;
-            return entries[i];
-        }
-
-        public Entry GetEntryByFamilyId(string familyId)
-        {
-            if (entries == null || string.IsNullOrWhiteSpace(familyId))
-                return null;
-
-            for (int i = 0; i < entries.Count; i++)
-            {
-                Entry e = entries[i];
-                if (e != null && string.Equals(e.familyId, familyId, StringComparison.OrdinalIgnoreCase))
-                    return e;
-            }
-
-            return null;
-        }
-
-        /// <summary>Modular V2 row, or the first authored entry if that id is missing.</summary>
-        public Entry GetDefaultEntry()
-        {
-            return GetStyleEntry(DefaultStyleIndex) ?? GetEntry(0);
-        }
-
-        /// <summary>Wraps 0..3 for the four JetFlame types.</summary>
+        /// <summary>Wraps 0..3 for V1 / V2 / V3 / Soft.</summary>
         public static int WrapStyleIndex(int index)
         {
             int i = index % StyleCount;
             return i < 0 ? i + StyleCount : i;
         }
 
-        /// <summary>Signature row for Ribbon / Modular / Heavy / Soft.</summary>
-        public Entry GetStyleEntry(int styleIndex)
+        public static string GetStyleId(int styleIndex)
         {
-            return GetEntryByFamilyId(DefaultFamilyId) ?? GetEntry(0);
+            return StyleIds[WrapStyleIndex(styleIndex)];
+        }
+
+        /// <summary>Row whose <see cref="ThrusterType.name"/> is V1, V2, V3, or Soft.</summary>
+        public ThrusterType GetThruster(int styleIndex)
+        {
+            if (thrusters == null || thrusters.Count == 0)
+                return null;
+
+            string id = GetStyleId(styleIndex);
+            for (int i = 0; i < thrusters.Count; i++)
+            {
+                ThrusterType row = thrusters[i];
+                if (row != null && string.Equals(row.name, id, StringComparison.OrdinalIgnoreCase))
+                    return row;
+            }
+
+            int wrapped = WrapStyleIndex(styleIndex);
+            if (wrapped < thrusters.Count)
+                return thrusters[wrapped];
+            return null;
         }
 
         /// <summary>
-        /// Instantiable flame for Ribbon / Modular / Heavy / Soft.
-        /// Same four JetFlame prefabs the T-key debug cycle shows.
+        /// Instantiable flame for V1 / V2 / V3 / Soft.
+        /// Same four JetFlame types the T-key debug cycle shows.
         /// </summary>
         public static GameObject LoadStylePrefab(int styleIndex)
         {
@@ -217,12 +178,21 @@ namespace TitanOrbit.Data
         }
 
         /// <summary>
-        /// Loads the authored color variant for a type (RedJetFlame, JetFlameSoftBlue, …).
-        /// Falls back to the signature prefab when the color is empty or missing.
+        /// Team-colored flame for a type (RedJetFlame, JetFlameSoftBlue, …).
+        /// Orange resolves to the yellow prefab. Falls back to the type's
+        /// neutral flame when the color is empty or missing.
         /// </summary>
         public static GameObject LoadStylePrefab(int styleIndex, string colorName)
         {
             int i = WrapStyleIndex(styleIndex);
+            ThrusterVfxBank bank = LoadDefault();
+            if (bank != null)
+            {
+                GameObject fromBank = bank.ResolvePrefab(i, colorName);
+                if (fromBank != null)
+                    return fromBank;
+            }
+
             if (!string.IsNullOrEmpty(colorName))
             {
                 GameObject colored = LoadColoredStylePrefab(i, colorName);
@@ -236,40 +206,73 @@ namespace TitanOrbit.Data
                 return fromFolder;
 #endif
 
-            GameObject fromResources = Resources.Load<GameObject>(StyleResourceNames[i]);
-            if (fromResources != null)
-                return fromResources;
+            return Resources.Load<GameObject>(StyleResourceNames[i]);
+        }
 
-            ThrusterVfxBank bank = LoadDefault();
-            if (bank != null
-                && bank.stylePrefabs != null
-                && i < bank.stylePrefabs.Length
-                && bank.stylePrefabs[i] != null)
+        /// <summary>Team color word for a faction. Team D is Orange.</summary>
+        public static string FlameColorNameForTeam(TeamId team)
+        {
+            switch (team == TeamId.None ? TeamId.TeamA : team)
             {
-                return bank.stylePrefabs[i];
+                case TeamId.TeamB: return "Blue";
+                case TeamId.TeamC: return "Green";
+                case TeamId.TeamD: return "Orange";
+                case TeamId.TeamE: return "Purple";
+                default: return "Red";
+            }
+        }
+
+        GameObject ResolvePrefab(int styleIndex, string colorName)
+        {
+            ThrusterType type = GetThruster(styleIndex);
+            if (type == null)
+                return null;
+
+            if (!string.IsNullOrEmpty(colorName) && type.teamColors != null)
+            {
+                string asked = CanonicalFlameColorName(colorName);
+                for (int i = 0; i < type.teamColors.Count; i++)
+                {
+                    TeamColorFlame slot = type.teamColors[i];
+                    if (slot == null || slot.prefab == null)
+                        continue;
+                    if (string.Equals(CanonicalFlameColorName(slot.colorName), asked, StringComparison.OrdinalIgnoreCase))
+                        return slot.prefab;
+                }
             }
 
-            return null;
+            return type.fallbackPrefab;
         }
 
         static GameObject LoadColoredStylePrefab(int styleIndex, string colorName)
         {
-            string safe = CanonicalFlameColorName(colorName);
-            if (string.IsNullOrEmpty(safe))
+            string token = PrefabFileColorToken(colorName);
+            if (string.IsNullOrEmpty(token))
                 return null;
 
 #if UNITY_EDITOR
-            string editorPath = string.Format(StyleColorEditorFormats[styleIndex], safe);
+            string editorPath = string.Format(StyleColorEditorFormats[styleIndex], token);
             GameObject fromFolder = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(editorPath);
             if (fromFolder != null)
                 return fromFolder;
 #endif
 
-            string resourceName = string.Format(StyleColorResourceFormats[styleIndex], safe);
+            string resourceName = string.Format(StyleColorResourceFormats[styleIndex], token);
             return Resources.Load<GameObject>(resourceName);
         }
 
-        /// <summary>Maps a picker / team swatch onto the nearest authored flame name.</summary>
+        /// <summary>Folder token. Orange has no file; those prefabs are named Yellow.</summary>
+        public static string PrefabFileColorToken(string colorName)
+        {
+            string safe = CanonicalFlameColorName(colorName);
+            if (string.IsNullOrEmpty(safe))
+                return null;
+            if (string.Equals(safe, "Orange", StringComparison.OrdinalIgnoreCase))
+                return "Yellow";
+            return safe;
+        }
+
+        /// <summary>Maps a picker / team swatch onto the nearest team flame name.</summary>
         public static string NearestFlameColorName(Color color)
         {
             Color.RGBToHSV(color, out float hue, out float sat, out float val);
@@ -278,7 +281,7 @@ namespace TitanOrbit.Data
             if (sat < 0.12f)
                 return val > 0.65f ? "White" : "Blue";
 
-            int best = 3;
+            int best = 0;
             float bestDist = 2f;
             for (int i = 0; i < FlameHues.Length; i++)
             {
@@ -295,7 +298,7 @@ namespace TitanOrbit.Data
             return FlameColorNames[best];
         }
 
-        /// <summary>Bright well / HUD color for an authored flame name. Never black.</summary>
+        /// <summary>Bright well / HUD color for a team flame name.</summary>
         public static Color32 GetFlameDisplayColor(string colorName)
         {
             string safe = CanonicalFlameColorName(colorName);
@@ -305,9 +308,13 @@ namespace TitanOrbit.Data
                     return FlameDisplayColors[i];
             }
 
-            return FlameDisplayColors[3];
+            return FlameDisplayColors[0];
         }
 
+        /// <summary>
+        /// Red, Blue, Green, Orange, Purple, or White.
+        /// Yellow is the orange team's file name, so it canonicalizes to Orange.
+        /// </summary>
         public static string CanonicalFlameColorName(string colorName)
         {
             if (string.IsNullOrEmpty(colorName))
@@ -316,24 +323,30 @@ namespace TitanOrbit.Data
             if (string.Equals(colorName, "White", StringComparison.OrdinalIgnoreCase))
                 return "White";
 
+            if (colorName.IndexOf("Orange", StringComparison.OrdinalIgnoreCase) >= 0
+                || colorName.IndexOf("Yellow", StringComparison.OrdinalIgnoreCase) >= 0)
+                return "Orange";
+
             for (int i = 0; i < FlameColorNames.Length; i++)
             {
-                if (string.Equals(FlameColorNames[i], colorName, StringComparison.OrdinalIgnoreCase))
+                if (string.Equals(FlameColorNames[i], colorName, StringComparison.OrdinalIgnoreCase)
+                    || colorName.IndexOf(FlameColorNames[i], StringComparison.OrdinalIgnoreCase) >= 0)
                     return FlameColorNames[i];
             }
 
-            if (colorName.IndexOf("Orange", StringComparison.OrdinalIgnoreCase) >= 0)
-                return "Yellow";
-
-            return ExtractColorNameFromText(colorName);
+            return null;
         }
 
         public static string GetStyleDisplayName(int styleIndex)
         {
-            return StyleDisplayNames[WrapStyleIndex(styleIndex)];
+            ThrusterVfxBank bank = LoadDefault();
+            ThrusterType type = bank != null ? bank.GetThruster(styleIndex) : null;
+            if (type != null && !string.IsNullOrWhiteSpace(type.name))
+                return type.name;
+            return GetStyleId(styleIndex);
         }
 
-        /// <summary>Steps the Customize Ship TYPE row (Default is first).</summary>
+        /// <summary>Steps the Customize Ship type row (V1, V2, V3, Soft).</summary>
         public static int CycleStyleIndex(int current, int delta)
         {
             int wrapped = WrapStyleIndex(current);
@@ -347,7 +360,12 @@ namespace TitanOrbit.Data
                 }
             }
 
-            return StyleUiOrder[WrapStyleIndex(pos + delta)];
+            int next = pos + delta;
+            int count = StyleUiOrder.Length;
+            int wrappedPos = next % count;
+            if (wrappedPos < 0)
+                wrappedPos += count;
+            return StyleUiOrder[wrappedPos];
         }
 
         public string GetDisplayName(int index) => GetStyleDisplayName(index);
@@ -366,21 +384,6 @@ namespace TitanOrbit.Data
         {
             DebugCycleIndex = WrapStyleIndex(DebugCycleIndex + 1);
             return DebugCycleIndex;
-        }
-
-        public static string ExtractColorNameFromText(string value)
-        {
-            if (string.IsNullOrEmpty(value))
-                return null;
-
-            for (int i = 0; i < ColorNames.Length; i++)
-            {
-                string color = ColorNames[i];
-                if (value.IndexOf(color, StringComparison.OrdinalIgnoreCase) >= 0)
-                    return color;
-            }
-
-            return null;
         }
     }
 }

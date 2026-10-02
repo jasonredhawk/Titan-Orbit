@@ -29,8 +29,8 @@ namespace TitanOrbit.Game
         static int s_ScanScrollFrame = -1;
 
         /// <summary>
-        /// Particle start size on MatrixShield. The mesh is drawn directly on WebGL,
-        /// so this scale replaces that particle size.
+        /// Particle start size on MatrixShield. The mesh is drawn directly, so this
+        /// scale replaces that particle size.
         /// </summary>
         const float ScanShellParticleSize = 2f;
 
@@ -90,10 +90,9 @@ namespace TitanOrbit.Game
                 return;
 
             // The prefab's shell is one mesh (scan-line texture on scifi_shield). Its other
-            // systems are soft round glow sprites, which is the circle WebGL was showing
-            // once the mesh particle failed to draw. Draw the mesh itself — one shared
-            // surface per moon, no 1000-particle reservation.
-            if (Application.platform == RuntimePlatform.WebGLPlayer && TryCreateScanShell(prefab))
+            // systems are soft round glow sprites. Draw the mesh itself on every client,
+            // including the Editor — one shared surface per moon, no 1000-particle reservation.
+            if (TryCreateScanShell(prefab))
                 return;
 
             // Awake reserves maxParticles immediately. Parent under an inactive holder

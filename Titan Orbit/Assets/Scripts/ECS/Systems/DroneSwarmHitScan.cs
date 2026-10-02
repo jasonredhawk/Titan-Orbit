@@ -38,7 +38,7 @@ namespace TitanOrbit.ECS
 
         /// <summary>
         /// Hit-sphere radius multiplier from purchase level
-        /// (<see cref="StoreItemData.GetDroneVisualScale"/>). Level 6 ≈ 1.0 (authored radius).
+        /// (<see cref="StoreItemData.GetDroneVisualScale"/>). Level 6 = 0.75 of the authored radius (3× level 1).
         /// </summary>
         public float HitRadiusScale;
     }

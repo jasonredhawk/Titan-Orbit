@@ -772,24 +772,17 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Copies unique MatrixShield prefabs once so we can Instantiates + draw each under
-        /// the overlay. Profiler: first <c>GemMoonMatrixShieldVisual</c> Instantiates of
-        /// MatrixShieldRed cost ~95 ms after spawn.
+        /// Marks moon-shield warmup done without Instantiating the Sci-Fi prefab.
+        /// Live moons draw the scan mesh, so the old 1000-particle warmup is unused.
         /// </summary>
         static void QueueMoonShieldPrefabsOnce()
         {
             if (s_MoonShieldsQueued)
                 return;
 
-            // WebGL moons use a shared sphere. Warming the Sci-Fi prefab allocates
-            // 1000-particle mesh systems that the live shields no longer need.
-            if (Application.platform == RuntimePlatform.WebGLPlayer)
-            {
-                s_MoonShieldsQueued = true;
-                return;
-            }
-
-            GemMoonShieldPrefabLibrary.CopyUniquePrefabs(s_MoonShieldPrefabs);
+            // Live moons draw the scan mesh (GemMoonMatrixShieldVisual). Warming the
+            // Sci-Fi prefab allocates 1000-particle mesh systems the live shields no
+            // longer use — Editor and WebGL share that mesh.
             s_MoonShieldsQueued = true;
         }
 

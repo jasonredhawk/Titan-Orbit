@@ -24,9 +24,9 @@ namespace TitanOrbit.ECS
     /// (only when no combat target is in that gun's range). Heal mode aims at the
     /// nearest friendly ship. Cannon lasers also acquire asteroids (lowest
     /// priority) so a destroyed rock does not leave the beam stuck. Projectile
-    /// guns only auto-aim rocks when
-    /// <see cref="TitanOrbitDebugFlags.MegaShipsAutoFireAsteroids"/> is on
-    /// (Editor / MPPM host).
+    /// guns auto-aim rocks when
+    /// <see cref="TitanOrbitDebugFlags.MegaShipsAutoFireAsteroids"/> is on.
+    /// That flag is published on the dedicated server (WebGL does not aim locally).
     /// <para>
     /// Each gun searches from its own muzzle when Fire is pressed. A live lock
     /// sticks — a closer ship will not steal it. If that target dies or leaves
@@ -796,8 +796,9 @@ namespace TitanOrbit.ECS
 
         /// <summary>
         /// Closest in-range target from this muzzle. Enemy ships, enemy pads, and enemy
-        /// moon shields compete by toroidal distance; (debug) asteroids are only used when
-        /// none of those are in range. Two guns may lock the same entity.
+        /// moon shields compete by toroidal distance; asteroids are only used when
+        /// none of those are in range and <paramref name="debugAsteroids"/> is set
+        /// (projectile guns) or this caller is a cannon laser. Two guns may lock the same entity.
         /// Used when a barrel has no live lock (first press, or the last target died / left range).
         /// <paramref name="betterThan"/> is kept so a first search can skip a lower class.
         /// mapW/mapH from <see cref="MapStateSingleton"/>.

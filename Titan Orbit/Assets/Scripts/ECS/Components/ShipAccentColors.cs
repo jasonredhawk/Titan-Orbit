@@ -42,7 +42,7 @@ namespace TitanOrbit.ECS
         /// <summary>1 when the owner picked a thruster style instead of the shared default jet.</summary>
         [GhostField] public byte ThrusterCustom;
 
-        /// <summary>0 Ribbon, 1 Modular, 2 Heavy, 3 Soft.</summary>
+        /// <summary>0 V1, 1 V2, 2 V3, 3 Soft.</summary>
         [GhostField] public byte ThrusterStyle;
 
         /// <summary>Packed RGBA for the locked flame tint. Ignored when following team.</summary>
