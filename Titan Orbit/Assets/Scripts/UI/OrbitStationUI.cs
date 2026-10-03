@@ -4569,7 +4569,10 @@ namespace TitanOrbit.UI
                         ApplyMoonDockGearPowerBar(
                             card.powerBar,
                             ShipComponentStoreData.GetPowerBreakdown(
-                                componentEntry, shipLevel, family, ResolveStoreFamilyBulletBankIndex()));
+                                componentEntry, shipLevel, family, ResolveStoreFamilyBulletBankIndex()),
+                            family != null ? family.familyId : null,
+                            componentEntry.componentId,
+                            shipLevel);
                     }
                     ApplyMoonDockEquipmentTileIcon(
                         card.iconImage,
@@ -4882,18 +4885,42 @@ namespace TitanOrbit.UI
             _cardsContentHeight = contentHeight;
         }
 
-        private void ApplyMoonDockGearPowerBar(ShipUpgradeTreePowerBarUI powerBar, ShipFamilyPowerScoreBreakdown breakdown)
+        /// <summary>
+        /// Paints a gear card’s power bar against every family’s components at
+        /// <paramref name="shipLevel"/>, not against a whole ship.
+        /// </summary>
+        private void ApplyMoonDockGearPowerBar(
+            ShipUpgradeTreePowerBarUI powerBar,
+            ShipFamilyPowerScoreBreakdown breakdown,
+            string familyId,
+            string componentId,
+            int shipLevel)
         {
             if (powerBar == null)
                 return;
 
-            ShipPowerBarStatMaxes maxes = shipUpgradeTree != null
-                ? shipUpgradeTree.GetPowerBarStatMaxes()
-                : ShipFamilyPowerBarNorm.GetGlobalMaxPerStat();
+            // --- Component ceiling ---
+            // [TITAN-ORBIT] Store tiles and owned gear share this ceiling.
+            // Each lane is this part divided by the best part in any family.
+            ShipPowerBarStatMaxes maxes = ShipFamilyPowerBarNorm.GetComponentMaxPerStat(
+                shipLevel,
+                s_ComponentFamilyBankResolver);
             float trackW = Mathf.Max(40f, GetMoonDockItemTileWidth() - 10f);
             powerBar.ConfigureLayoutScale(1f, 1f);
-            powerBar.ApplyBreakdown(breakdown, in maxes, trackW);
+            powerBar.ApplyEquipmentBreakdown(
+                breakdown,
+                in maxes,
+                trackW,
+                ShipFamilyPowerBarNorm.FormatComponentLeaderKey(familyId, componentId),
+                shipLevel);
         }
+
+        /// <summary>
+        /// One delegate for the whole session. Passing the method fresh on every
+        /// card would allocate, and the gear list repaints when gems or the loadout change.
+        /// </summary>
+        static readonly Func<int, int> s_ComponentFamilyBankResolver =
+            EcsGameBridge.ResolvePlanetBulletBankForFamilyConfigIndex;
 
         private void CreateMoonDockEquipmentStoreCard(Transform parent, ShipFamilyComponentEntry entry, int shipLevel)
         {
@@ -4969,7 +4996,10 @@ namespace TitanOrbit.UI
             if (powerBar != null)
                 ApplyMoonDockGearPowerBar(
                     powerBar,
-                    ShipComponentStoreData.GetPowerBreakdown(entry, shipLevel, family, familyBank));
+                    ShipComponentStoreData.GetPowerBreakdown(entry, shipLevel, family, familyBank),
+                    family != null ? family.familyId : null,
+                    entry.componentId,
+                    shipLevel);
 
             _moonDockStoreCards.Add(BindMoonDockEquipmentTile(
                 new MoonDockStoreCardBinding
@@ -5359,33 +5389,6 @@ namespace TitanOrbit.UI
                 if (layoutRoot is RectTransform parentRt)
                     LayoutRebuilder.ForceRebuildLayoutImmediate(parentRt);
             }
-        }
-
-        private float GetMoonDockComponentMaxDisplayPower(
-            ShipFamilyDefinition family,
-            int shipLevel,
-            int planetOrHullBankIndex = -1)
-        {
-            float max = 0.001f;
-            if (family?.components == null)
-                return max;
-
-            int hullBank = planetOrHullBankIndex >= 0
-                ? planetOrHullBankIndex
-                : ResolveEquippedFamilyBulletBankIndex();
-            for (int i = 0; i < family.components.Count; i++)
-            {
-                ShipFamilyComponentEntry entry = family.components[i];
-                if (entry == null)
-                    continue;
-                float total = ShipUpgradeTreePowerBarUI.GetEquipmentBarDisplayTotal(
-                    ShipComponentStoreData.GetPowerBreakdown(
-                        entry, shipLevel, family, hullBank));
-                if (total > max)
-                    max = total;
-            }
-
-            return max;
         }
 
         private void CreateMoonDockEquipmentItemTile(
@@ -6629,9 +6632,6 @@ namespace TitanOrbit.UI
                 ? CardShopSystem.Instance.GetShipFamilyForShip(currentShip)
                 : null;
             int shipLevel = currentShip.ShipLevel;
-            float maxComponentPower = shipFamily != null
-                ? GetMoonDockComponentMaxDisplayPower(shipFamily, shipLevel)
-                : 0.001f;
             float sidebarPowerTrackWidth = Mathf.Max(40f, SidebarSlotCardWidth - 22f);
 
             for (int i = 0; i < equipmentBoxes.Length; i++)
@@ -6667,16 +6667,6 @@ namespace TitanOrbit.UI
 
                 if (_equipmentSlotRichLayoutActive)
                 {
-                    float slotMaxPower = maxComponentPower;
-                    if (componentFamily != null && componentFamily != shipFamily)
-                    {
-                        slotMaxPower = Mathf.Max(
-                            slotMaxPower,
-                            GetMoonDockComponentMaxDisplayPower(
-                                componentFamily,
-                                shipLevel,
-                                ResolveComponentSourceBulletBankIndex(componentFamily)));
-                    }
                     RefreshSidebarEquipmentSlotRich(
                         i,
                         filled,
@@ -6685,7 +6675,6 @@ namespace TitanOrbit.UI
                         componentEntry,
                         componentFamily,
                         shipLevel,
-                        slotMaxPower,
                         sidebarPowerTrackWidth,
                         slotUi,
                         isPermanentBonus: i == bonusIndex);
@@ -6963,7 +6952,6 @@ namespace TitanOrbit.UI
             ShipFamilyComponentEntry componentEntry,
             ShipFamilyDefinition family,
             int shipLevel,
-            float maxComponentPower,
             float trackWidth,
             SidebarEquipmentSlotUi slotUi,
             bool isPermanentBonus)
@@ -7080,7 +7068,11 @@ namespace TitanOrbit.UI
                 slotUi.powerBar.gameObject.SetActive(showComponentPowerBar);
                 if (showComponentPowerBar)
                 {
+                    // Same Extra Level as the numbers on this card, then the all-families part ceiling.
                     int componentLevel = entry.itemLevel > 0 ? entry.itemLevel : shipLevel;
+                    ShipPowerBarStatMaxes componentMaxes = ShipFamilyPowerBarNorm.GetComponentMaxPerStat(
+                        componentLevel,
+                        s_ComponentFamilyBankResolver);
                     slotUi.powerBar.ConfigureLayoutScale(1f, 1f);
                     slotUi.powerBar.ApplyEquipmentBreakdown(
                         ShipComponentStoreData.GetPowerBreakdown(
@@ -7088,8 +7080,12 @@ namespace TitanOrbit.UI
                             componentLevel,
                             family,
                             ResolveComponentSourceBulletBankIndex(family)),
-                        maxComponentPower,
-                        trackWidth);
+                        in componentMaxes,
+                        trackWidth,
+                        ShipFamilyPowerBarNorm.FormatComponentLeaderKey(
+                            family != null ? family.familyId : null,
+                            componentEntry.componentId),
+                        componentLevel);
                 }
             }
 

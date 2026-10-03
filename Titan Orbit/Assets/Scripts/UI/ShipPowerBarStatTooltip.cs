@@ -57,10 +57,12 @@ namespace TitanOrbit.UI
         /// <param name="statIndex">Slot 0–9.</param>
         /// <param name="breakdown">The painted hull or equipment breakdown.</param>
         /// <param name="maxes">Pool maxes used as the fill denominator.</param>
-        /// <param name="megaPool">True when the bar used MEGA catalog maxes.</param>
+        /// <param name="megaPool">True when the bar used Titan catalog maxes. Ignored when <paramref name="pool"/> is set.</param>
         /// <param name="anchor">Slot or bar rect to sit the tip next to.</param>
-        /// <param name="thisChassisId">Optional chassis on this card.</param>
+        /// <param name="thisChassisId">Hull id, or a component leader key on gear cards.</param>
         /// <param name="owner">Hover relay that owns this showing; used so another bar's exit cannot hide it.</param>
+        /// <param name="pool">Regular ships, Titans, or gear components. Unset follows <paramref name="megaPool"/>.</param>
+        /// <param name="componentShipLevel">Gear only. Extra Level of the component ceiling.</param>
         public static void Show(
             int statIndex,
             in ShipFamilyPowerScoreBreakdown breakdown,
@@ -68,10 +70,15 @@ namespace TitanOrbit.UI
             bool megaPool,
             RectTransform anchor,
             string thisChassisId,
-            object owner)
+            object owner,
+            ShipPowerBarComparisonPool pool = ShipPowerBarComparisonPool.Unset,
+            int componentShipLevel = 1)
         {
             if (statIndex < 0 || statIndex >= ShipAbilityCategoryColors.PowerBreakdownStatCount)
                 return;
+
+            if (pool == ShipPowerBarComparisonPool.Unset)
+                pool = megaPool ? ShipPowerBarComparisonPool.Titans : ShipPowerBarComparisonPool.RegularShips;
 
             EnsureOverlay();
             if (s_Chrome.Root == null)
@@ -80,10 +87,14 @@ namespace TitanOrbit.UI
             s_ActiveSlot = statIndex;
             s_ActiveOwner = owner;
 
-            float thisValue = breakdown.GetDisplayStatValue(statIndex);
+            // Gear slot 0 is DPS + ramming. Ship slot 0 is gun DPS. The percent must match the fill.
+            bool componentPool = pool == ShipPowerBarComparisonPool.Components;
+            float thisValue = componentPool
+                ? breakdown.GetComponentCompareStatValue(statIndex)
+                : breakdown.GetDisplayStatValue(statIndex);
             float maxValue = maxes.Get(statIndex);
             string body = ShipPowerBarStatCopy.BuildPowerBarTipBody(
-                statIndex, thisValue, maxValue, megaPool, thisChassisId);
+                statIndex, thisValue, maxValue, pool, thisChassisId, componentShipLevel);
 
             if (s_Chrome.CaptionLabel != null)
                 s_Chrome.CaptionLabel.text = "STAT TELEMETRY";
@@ -94,7 +105,7 @@ namespace TitanOrbit.UI
                 in s_Chrome,
                 ShipStatTooltipChrome.AccentForAbilityIndex(statIndex));
 
-            ApplyRankThumb(statIndex, megaPool, thisChassisId, thisValue);
+            ApplyRankThumb(statIndex, pool, thisChassisId, thisValue, componentShipLevel);
             SizeToBody();
             PositionNear(anchor);
 
@@ -244,13 +255,19 @@ namespace TitanOrbit.UI
                 s_Chrome.Root.SetActive(true);
         }
 
-        /// <summary>Shows the winner's menu sprite when the hovered hull is not RANK 1.</summary>
-        static void ApplyRankThumb(int statIndex, bool megaPool, string thisChassisId, float thisValue)
+        /// <summary>Shows the winner's menu sprite when the hovered hull or part is not RANK 1.</summary>
+        static void ApplyRankThumb(
+            int statIndex,
+            ShipPowerBarComparisonPool pool,
+            string thisChassisId,
+            float thisValue,
+            int componentShipLevel)
         {
             if (s_RankThumb == null)
                 return;
 
-            ShipPowerBarStatLeader leader = ShipFamilyPowerBarNorm.GetStatLeader(statIndex, megaPool);
+            ShipPowerBarStatLeader leader = ShipFamilyPowerBarNorm.GetStatLeader(
+                statIndex, pool, componentShipLevel);
             bool thisIsLeader = leader.MatchesChassis(thisChassisId)
                                 || (thisValue >= 0f && thisValue + 0.0001f >= leader.value);
             if (!leader.IsValid || thisIsLeader || leader.previewSprite == null)

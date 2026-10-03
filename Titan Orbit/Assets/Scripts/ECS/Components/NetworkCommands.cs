@@ -66,6 +66,29 @@ namespace TitanOrbit.ECS
     }
 
     /// <summary>
+    /// [NETCODE] Client publishes a stable player id after GoInGame so the server can
+    /// restore that player's ship for this match only. NetworkId comes from the connection,
+    /// not this payload. Adding fields changes RPC layout: client and Linux headless must
+    /// rebuild together.
+    /// </summary>
+    public struct SetSessionPlayerIdCommand : IRpcCommand
+    {
+        /// <summary>UGS player id, or a local guid when auth is not signed in.</summary>
+        public FixedString128Bytes PlayerId;
+    }
+
+    /// <summary>
+    /// [NETCODE] Server → one client: this match still has their ship, gear, and cargo.
+    /// The hull itself was destroyed on leave so a recycled NetworkId cannot fly it.
+    /// Handled by <see cref="SessionShipOfferClientSystem"/>.
+    /// </summary>
+    public struct SessionShipOfferRpc : IRpcCommand
+    {
+        /// <summary>Summary the continue / start-fresh screen shows.</summary>
+        public ShipState Ship;
+    }
+
+    /// <summary>
     /// [NETCODE] Client publishes the Main Menu display name after GoInGame.
     /// Server: <see cref="PlayerNameServerSystem"/> (NetworkId comes from the connection, not this
     /// payload — clients cannot spoof another player's name). Adding fields changes RPC layout:

@@ -1187,10 +1187,24 @@ namespace TitanOrbit.UI
             int abilityLv)
         {
             _ = attrs;
-            AppendStatCalcGrid(sb, in parts, in live, StatField.MoveSpeed, "Move", abilityLv, live.CruiseMaxSpeed);
-            AppendStatCalcGrid(sb, in parts, in live, StatField.AccelerationCap, "Accel", abilityLv, live.TaxedAccel);
-            AppendMassTaxGrid(sb, in live, StatField.MoveSpeed, live.CruiseMaxSpeed, writeComposition: true);
-            AppendMassTaxGrid(sb, in live, StatField.AccelerationCap, live.TaxedAccel, writeComposition: false);
+            float moveCruise = live.CruiseMaxSpeed;
+            float accelCruise = live.TaxedAccel;
+            if (live.TerritoryMult > 1.001f)
+            {
+                moveCruise /= live.TerritoryMult;
+                accelCruise /= live.TerritoryMult;
+            }
+
+            AppendStatCalcGrid(sb, in parts, in live, StatField.MoveSpeed, "Move", abilityLv, moveCruise);
+            AppendStatCalcGrid(sb, in parts, in live, StatField.AccelerationCap, "Accel", abilityLv, accelCruise);
+            AppendMassTaxGrid(sb, in live, StatField.MoveSpeed, moveCruise, writeComposition: true);
+            AppendMassTaxGrid(sb, in live, StatField.AccelerationCap, accelCruise, writeComposition: false);
+
+            if (live.TerritoryMult > 1.001f)
+            {
+                sb.Append("Friendly territory  x").Append(FResult(live.TerritoryMult))
+                    .Append("  -> ").Append(FResult(live.CruiseMaxSpeed)).AppendLine();
+            }
 
             if (live.OverdriveCapacityMult > 1.001f)
             {

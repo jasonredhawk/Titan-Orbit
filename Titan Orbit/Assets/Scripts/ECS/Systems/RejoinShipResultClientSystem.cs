@@ -39,6 +39,7 @@ namespace TitanOrbit.ECS
         static void ApplyResult(RejoinShipResultRpc rpc)
         {
             // --- Failure path ---
+            SessionShipOfferCache.Clear();
             if (rpc.Success == 0)
             {
                 UnityEngine.Debug.LogWarning("[RejoinShipResult] Failed: " + rpc.Message);

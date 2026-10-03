@@ -1356,7 +1356,8 @@ namespace TitanOrbit.UI
             float componentSize,
             int gemBucket,
             int bankKey,
-            int megaCatalogKey)
+            int megaCatalogKey,
+            int territoryHundredths)
         {
             unchecked
             {
@@ -1380,6 +1381,7 @@ namespace TitanOrbit.UI
                 h = h * 31 + gemBucket;
                 h = h * 31 + bankKey;
                 h = h * 31 + megaCatalogKey;
+                h = h * 31 + territoryHundredths;
                 return h;
             }
         }
@@ -1691,6 +1693,8 @@ namespace TitanOrbit.UI
                         effective = family.ApplySpecialBonuses(effective);
                     }
 
+                    ApplyLocalCardStatModifiers(chassisId, ref effective);
+
                     // --- All-gun DPS for the Fire Power chip ---
                     float allGun = ShipWeaponDpsMath.SumAllGunDps(
                         parts.Ids, parts.Stats, ship.ShipLevel, in abilityCounts);
@@ -1711,6 +1715,7 @@ namespace TitanOrbit.UI
                         levelOneSummed, out float moveStep, out float accelStep, out float odDrainStep);
                     ShipAttributeUpgradeLogic.ApplyMoveSpeedAbilitySteps(
                         ref effective, attrs, moveStep, accelStep, odDrainStep);
+                    ApplyLocalCardStatModifiers(chassisId, ref effective);
                 }
                 else
                 {
@@ -1759,10 +1764,73 @@ namespace TitanOrbit.UI
             if (live.MoveStepPreview <= 0.0001f)
                 live.MoveStepPreview = Mathf.Max(0f, live.EffectiveStats.moveSpeedPerExtraLevel);
 
+            ApplyLocalTerritoryToCruise(ref live);
+
             // [TITAN-ORBIT] SnapshotKey already includes the B-key bank so chips rebuild.
             // Apply the same fire-time muls combat uses or FP / speed / range stay hull-only.
             BulletBankHudCopy.ApplyLiveCombatMuls(ref live);
             return true;
+        }
+
+        /// <summary>
+        /// Same card flats the motor bakes into MaxSpeed. Without this the Move Speed chip
+        /// stays at the pre-card cruise while the ship flies the card-boosted cap.
+        /// </summary>
+        static void ApplyLocalCardStatModifiers(string chassisId, ref ShipComponentAbilityStats effective)
+        {
+            if (string.IsNullOrEmpty(chassisId))
+                return;
+
+            var world = EcsGameBridge.GetLocalPlayerShipWorld();
+            if (world == null || !world.IsCreated)
+                return;
+
+            var em = world.EntityManager;
+            if (!LocalShipEntitySeed.TryGetSeededShip(em, out Entity ship)
+                || ship == Entity.Null
+                || !em.Exists(ship))
+                return;
+
+            ShipStatApplyLogic.ApplyEquippedCardStatModifiers(em, ship, chassisId, ref effective);
+        }
+
+        /// <summary>
+        /// Multiplies chip cruise / accel by the motor's friendly-territory latch.
+        /// The chip used to stay at chassis cruise (6.5) while flight in home space was ~9.
+        /// </summary>
+        static void ApplyLocalTerritoryToCruise(ref ShipSpeedometerStatTooltips.LiveContext live)
+        {
+            if (live.CruiseMaxSpeed <= 0.01f)
+                return;
+
+            float territory = ReadLocalTerritoryMult();
+            live.TerritoryMult = territory;
+            if (territory <= 1.001f)
+                return;
+
+            live.CruiseMaxSpeed *= territory;
+            live.TaxedAccel *= territory;
+            live.LiveMaxSpeed = live.CruiseMaxSpeed;
+        }
+
+        /// <summary>Territory multiplier the predicted motor is holding (1 outside friendly space).</summary>
+        static float ReadLocalTerritoryMult()
+        {
+            var world = EcsGameBridge.GetLocalPlayerShipWorld();
+            if (world == null || !world.IsCreated)
+                return Mathf.Max(1f, PlanetConnectionGraphCache.LocalOwnerTerritoryMult);
+
+            var em = world.EntityManager;
+            if (!LocalShipEntitySeed.TryGetSeededShip(em, out Entity ship)
+                || ship == Entity.Null
+                || !em.Exists(ship)
+                || !em.HasComponent<ShipTerritoryBoostLatch>(ship))
+                return Mathf.Max(1f, PlanetConnectionGraphCache.LocalOwnerTerritoryMult);
+
+            float latched = em.GetComponentData<ShipTerritoryBoostLatch>(ship).LatchedMult;
+            return latched > 0.01f
+                ? Mathf.Max(1f, latched)
+                : 1f;
         }
 
         /// <summary>
@@ -2439,13 +2507,15 @@ namespace TitanOrbit.UI
             int megaKey = 0;
             if (EcsGameBridge.TryGetLocalMegaShipState(out MegaShipState mega))
                 megaKey = mega.CatalogIndex + 1;
+            int territoryKey = Mathf.RoundToInt(ReadLocalTerritoryMult() * 100f);
             int cheapKey = ComputeCheapChipIdentityKey(
                 in ship,
                 in attrs,
                 componentSize,
                 gemBucket,
                 BulletBankHudCopy.SnapshotKey(),
-                megaKey);
+                megaKey,
+                territoryKey);
             bool cheapChanged = cheapKey != _lastCheapIdentityKey;
             bool havePainted = _statsSnapshotKey != int.MinValue;
             if (!cheapChanged && havePainted &&

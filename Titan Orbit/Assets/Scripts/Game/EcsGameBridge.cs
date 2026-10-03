@@ -59,6 +59,8 @@ namespace TitanOrbit.Game
             PlayerNameRosterCache.Clear();
             CommsMuteList.Clear();
             PlayerNameRpcClient.ResetSession();
+            SessionPlayerIdRpcClient.ResetSession();
+            SessionShipOfferCache.Clear();
             ShipAccentColorsRpcClient.ResetSession();
         }
 
@@ -2154,6 +2156,8 @@ namespace TitanOrbit.Game
             PlayerNameRosterCache.Clear();
             CommsMuteList.Clear();
             PlayerNameRpcClient.ResetSession();
+            SessionPlayerIdRpcClient.ResetSession();
+            SessionShipOfferCache.Clear();
             ShipAccentColorsRpcClient.ResetSession();
         }
 

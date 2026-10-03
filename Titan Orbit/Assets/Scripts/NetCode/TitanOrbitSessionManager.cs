@@ -263,6 +263,8 @@ namespace TitanOrbit.NetCode
                 return;
 
             Debug.Log("[TitanOrbitSessionManager] Disposing local ServerWorld (" + reason + ").");
+            // Next play is a new map. Drop match-only ship saves with the world.
+            MatchPlayerShipStore.Clear();
             server.Dispose();
             s_EditorLocalServerSuspendedForOnline = false;
             // The finished-match latch belongs to this world. A new ServerWorld starts clean.
@@ -1222,7 +1224,8 @@ namespace TitanOrbit.NetCode
                 await ClearNetworkConnectionsAsync(serverWorld);
                 // [TITAN-ORBIT] New lobby on the same ServerWorld must not keep orphan ships —
                 // NetCode reuses low NetworkIds, which falsely offered "rescue my ship" to new joiners.
-                WipeOrphanPlayerShipsAndResetRosters(serverWorld);
+                // clearSessionShips drops match-only ship saves. This recreate is a new game.
+                WipeOrphanPlayerShipsAndResetRosters(serverWorld, clearSessionShips: true);
                 ResetServerDriverIfNeeded();
                 ListenServer(serverWorld, config.ServerPort);
                 for (int i = 0; i < 90; i++)
@@ -1487,20 +1490,28 @@ namespace TitanOrbit.NetCode
         /// </summary>
         public void WipeOrphanPlayerShipsAndResetRosters()
         {
-            WipeOrphanPlayerShipsAndResetRosters(ClientServerBootstrap.ServerWorld);
+            // Empty match keeps saved ships so the same players can return before idle recreate.
+            WipeOrphanPlayerShipsAndResetRosters(ClientServerBootstrap.ServerWorld, clearSessionShips: false);
         }
 
         /// <summary>
         /// See <see cref="WipeOrphanPlayerShipsAndResetRosters()"/> — world overload for recreate path.
         /// </summary>
         /// <param name="serverWorld">Dedicated or host ServerWorld; no-op if null/destroyed.</param>
-        static void WipeOrphanPlayerShipsAndResetRosters(World serverWorld)
+        /// <param name="clearSessionShips">
+        /// True on a new game (lobby recreate). False when the same match is only briefly empty.
+        /// </param>
+        static void WipeOrphanPlayerShipsAndResetRosters(World serverWorld, bool clearSessionShips)
         {
             // --- Guard: no server world yet ---
             if (serverWorld == null || !serverWorld.IsCreated)
                 return;
 
             var em = serverWorld.EntityManager;
+            if (clearSessionShips)
+                MatchPlayerShipStore.Clear();
+            else
+                MatchPlayerShipStore.CaptureRemainingShips(em);
 
             // --- Destroy all ship ghosts (orphan reconnect targets) ---
             // [NETCODE] Disconnect does not despawn owned ghosts. OrphanPlayerShipCleanupSystem
@@ -1511,7 +1522,22 @@ namespace TitanOrbit.NetCode
             {
                 int destroyed = entities.Length;
                 for (int i = 0; i < entities.Length; i++)
-                    em.DestroyEntity(entities[i]);
+                {
+                    Entity ship = entities[i];
+                    if (!em.Exists(ship))
+                        continue;
+
+                    // Free the titan bay before the hull is gone so a later resume can reclaim it
+                    // when nobody else bought that slot.
+                    int ownerId = em.HasComponent<GhostOwner>(ship)
+                        ? em.GetComponentData<GhostOwner>(ship).NetworkId
+                        : 0;
+                    if (em.HasComponent<MegaShipState>(ship))
+                        MegaShipStatApplyLogic.ReleaseMegaOccupancy(em, ship);
+                    if (ownerId > 0)
+                        MegaShipPlanetLogic.FreeSlotsOccupiedBy(em, ownerId);
+                    em.DestroyEntity(ship);
+                }
 
                 if (destroyed > 0)
                 {
@@ -1520,6 +1546,9 @@ namespace TitanOrbit.NetCode
                     DedicatedServerFileLog.Append("match", "Wiped orphan ships count=" + destroyed);
                 }
             }
+
+            if (!clearSessionShips)
+                MatchPlayerShipStore.ClearBindings();
 
             // --- Reset roster counts (ActiveTeamCount stays — map still has those teams) ---
             using var teamQuery = em.CreateEntityQuery(typeof(TeamStateSingleton));
@@ -2712,6 +2741,15 @@ namespace TitanOrbit.NetCode
                 return false;
             }
 
+            if (IsLocalHostWorldsReady() &&
+                TryReadLocalHostNetworkId(world, out int networkId) &&
+                TryEnqueueLocalHostRejoinRpc<T>(networkId))
+            {
+                Debug.Log("[TitanOrbitSessionManager] Enqueued rejoin RPC " + typeof(T).Name +
+                          " on ServerWorld (Local Host).");
+                return true;
+            }
+
             var em = world.EntityManager;
             var entity = em.CreateEntity();
             em.AddComponentData(entity, default(T));
@@ -2858,6 +2896,60 @@ namespace TitanOrbit.NetCode
                 RequestedTeam = (byte)team,
             });
             em.AddComponentData(rpcEntity, new ReceiveRpcCommandRequest { SourceConnection = connection });
+            return true;
+        }
+
+        /// <summary>
+        /// Local Host: deliver resume / abandon on ServerWorld without IPC.
+        /// </summary>
+        static bool TryEnqueueLocalHostRejoinRpc<T>(int networkId) where T : unmanaged, IRpcCommand
+        {
+            var server = ClientServerBootstrap.ServerWorld;
+            if (server == null || !server.IsCreated || networkId <= 0)
+                return false;
+
+            var em = server.EntityManager;
+            Entity connection = Entity.Null;
+            using (var query = em.CreateEntityQuery(
+                       ComponentType.ReadOnly<NetworkId>(),
+                       ComponentType.ReadOnly<NetworkStreamInGame>()))
+            using (var entities = query.ToEntityArray(Allocator.Temp))
+            using (var ids = query.ToComponentDataArray<NetworkId>(Allocator.Temp))
+            {
+                for (int i = 0; i < ids.Length; i++)
+                {
+                    if (ids[i].Value != networkId)
+                        continue;
+                    connection = entities[i];
+                    break;
+                }
+            }
+
+            if (connection == Entity.Null)
+                return false;
+
+            Entity rpcEntity = em.CreateEntity();
+            em.AddComponentData(rpcEntity, default(T));
+            em.AddComponentData(rpcEntity, new ReceiveRpcCommandRequest { SourceConnection = connection });
+            return true;
+        }
+
+        static bool TryReadLocalHostNetworkId(World client, out int networkId)
+        {
+            networkId = 0;
+            if (client == null || !client.IsCreated)
+                return false;
+
+            var em = client.EntityManager;
+            using var ids = em.CreateEntityQuery(
+                    ComponentType.ReadOnly<NetworkStreamConnection>(),
+                    ComponentType.ReadOnly<NetworkStreamInGame>(),
+                    ComponentType.ReadOnly<NetworkId>())
+                .ToComponentDataArray<NetworkId>(Allocator.Temp);
+            if (ids.Length == 0 || ids[0].Value <= 0)
+                return false;
+
+            networkId = ids[0].Value;
             return true;
         }
 

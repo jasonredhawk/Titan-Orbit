@@ -70,6 +70,14 @@ namespace TitanOrbit.ECS
                     if (!state.EntityManager.HasBuffer<ShipWeaponMountElement>(entity))
                         continue;
                     var mounts = state.EntityManager.GetBuffer<ShipWeaponMountElement>(entity);
+                    // Mount kinds are not ghosted. After prediction rollback they can
+                    // read as guns, so a LASER header click would match nothing and
+                    // every titan cannon would stay armed. Copy the ghosted slot kind
+                    // first — same restore the fire and beam paths use.
+                    var gunners = state.EntityManager.HasBuffer<MegaShipGunnerSlotElement>(entity)
+                        ? state.EntityManager.GetBuffer<MegaShipGunnerSlotElement>(entity)
+                        : default;
+                    ShipWeaponKind.RestoreMountKindsFromGhostedSlots(mounts, gunners);
                     ShipWeaponArmState.SetKind(ref next, mounts, (byte)index, enabled);
                     arm.ValueRW = next;
                     continue;

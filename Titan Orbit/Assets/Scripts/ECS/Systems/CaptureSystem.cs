@@ -116,7 +116,12 @@ namespace TitanOrbit.ECS
         public static bool IsMatchWon { get; private set; }
 
         /// <summary>Latches the win for lobby close / local world dispose.</summary>
-        public static void MarkWon() => IsMatchWon = true;
+        public static void MarkWon()
+        {
+            IsMatchWon = true;
+            // Win ends the match. Disconnects after this must not write a new saved ship.
+            MatchPlayerShipStore.CloseMatch();
+        }
 
         /// <summary>Drops the latch after a local host destroys the finished server world.</summary>
         public static void Clear() => IsMatchWon = false;

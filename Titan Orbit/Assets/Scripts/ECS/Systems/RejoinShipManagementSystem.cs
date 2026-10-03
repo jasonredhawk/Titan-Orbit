@@ -64,26 +64,31 @@ namespace TitanOrbit.ECS
             // --- Resolve sender and saved ship ---
             if (!TryGetNetworkId(em, connection, out int networkId))
             {
-                SendResult(ecb, connection, success: false, choice: 1, team: TeamId.None, "Missing network id.");
+                SendResult(ecb, connection, networkId, success: false, choice: 1, team: TeamId.None, "Missing network id.", default, false);
                 return;
             }
 
             if (!TryFindShipForNetworkId(ref state, networkId, out Entity ship, out ShipState shipState))
             {
-                SendResult(ecb, connection, success: false, choice: 1, team: TeamId.None, "No saved ship found.");
-                return;
+                if (!TrySpawnSavedShip(ref state, em, connection, networkId, out ship, out shipState, out string fail))
+                {
+                    SendResult(ecb, connection, networkId, success: false, choice: 1, team: TeamId.None, fail, default, false);
+                    return;
+                }
             }
+            else
+                MatchPlayerShipStore.RemoveForNetworkId(networkId);
 
             if (shipState.Team == TeamId.None || shipState.AwaitingTeamSelection)
             {
-                SendResult(ecb, connection, success: false, choice: 1, team: TeamId.None, "Saved ship is not active.");
+                SendResult(ecb, connection, networkId, success: false, choice: 1, team: TeamId.None, "Saved ship is not active.", default, false);
                 return;
             }
 
             // Eliminated players have no friendly worlds — resume would dump them into a dead match.
             if (shipState.IsEliminated)
             {
-                SendResult(ecb, connection, success: false, choice: 1, team: shipState.Team, "No worlds remaining.");
+                SendResult(ecb, connection, networkId, success: false, choice: 1, team: shipState.Team, "No worlds remaining.", default, false);
                 return;
             }
 
@@ -135,8 +140,78 @@ namespace TitanOrbit.ECS
             else
                 ecb.AddComponent(connection, commandTarget);
 
-            SendResult(ecb, connection, success: true, choice: 1, team: shipState.Team, default);
+            SendResult(ecb, connection, networkId, success: true, choice: 1, team: shipState.Team, default, homePos, true);
             LogResume(networkId, shipState.Team, homePos);
+        }
+
+        /// <summary>
+        /// Spawns a home-ring hull from the match snapshot and writes gear, cargo, and upgrades onto it.
+        /// </summary>
+        bool TrySpawnSavedShip(
+            ref SystemState state,
+            EntityManager em,
+            Entity connection,
+            int networkId,
+            out Entity ship,
+            out ShipState shipState,
+            out string fail)
+        {
+            ship = Entity.Null;
+            shipState = default;
+            fail = "No saved ship found.";
+            if (OtherConnectionStillFlying(ref state, networkId))
+            {
+                fail = "Your other connection is still in this match.";
+                return false;
+            }
+
+            if (!MatchPlayerShipStore.TryTake(networkId, out MatchPlayerShipSnapshot snapshot, out string playerId))
+                return false;
+
+            if (snapshot.Ship.Team == TeamId.None || snapshot.Ship.AwaitingTeamSelection || snapshot.Ship.IsEliminated)
+            {
+                MatchPlayerShipStore.ReturnSnapshot(playerId, snapshot);
+                fail = snapshot.Ship.IsEliminated ? "No worlds remaining." : "Saved ship is not active.";
+                return false;
+            }
+
+            int hz = 0;
+            if (SystemAPI.TryGetSingleton<ClientServerTickRate>(out var tickRate))
+                hz = tickRate.SimulationTickRate;
+            double orbitElapsed = SystemAPI.TryGetSingleton<NetworkTime>(out var networkTime)
+                ? PlanetGemMoonOrbitClock.GetElapsedSeconds(networkTime, hz, includeTickFraction: false)
+                : SystemAPI.Time.ElapsedTime;
+
+            if (!PlayerShipSpawn.TrySpawn(
+                    em, connection, networkId, snapshot.Ship.Team, orbitElapsed, out ship, out _))
+            {
+                MatchPlayerShipStore.ReturnSnapshot(playerId, snapshot);
+                fail = "Could not spawn your saved ship.";
+                return false;
+            }
+
+            MatchPlayerShipStore.ApplyToSpawnedShip(em, ship, snapshot, networkId);
+            MatchPlayerShipStore.IncrementTeamCount(em, snapshot.Ship.Team);
+            shipState = em.GetComponentData<ShipState>(ship);
+            return true;
+        }
+
+        /// <summary>
+        /// True when this player id still has a live hull on a different connection.
+        /// </summary>
+        bool OtherConnectionStillFlying(ref SystemState state, int networkId)
+        {
+            var liveOwners = new NativeHashSet<int>(8, Allocator.Temp);
+            foreach (var owner in SystemAPI.Query<RefRO<GhostOwner>>().WithAll<ShipTag>())
+            {
+                int id = owner.ValueRO.NetworkId;
+                if (id > 0)
+                    liveOwners.Add(id);
+            }
+
+            bool flying = MatchPlayerShipStore.OtherConnectionFlying(networkId, liveOwners);
+            liveOwners.Dispose();
+            return flying;
         }
 
         /// <summary>
@@ -147,14 +222,16 @@ namespace TitanOrbit.ECS
             // --- Resolve sender; no ship is still a successful abandon (fresh team pick) ---
             if (!TryGetNetworkId(em, connection, out int networkId))
             {
-                SendResult(ecb, connection, success: false, choice: 2, team: TeamId.None, "Missing network id.");
+                SendResult(ecb, connection, networkId, success: false, choice: 2, team: TeamId.None, "Missing network id.", default, false);
                 return;
             }
+
+            MatchPlayerShipStore.RemoveForNetworkId(networkId);
 
             if (!TryFindShipForNetworkId(ref state, networkId, out Entity ship, out ShipState shipState))
             {
                 ClearCommandTarget(em, ecb, connection);
-                SendResult(ecb, connection, success: true, choice: 2, team: TeamId.None, default);
+                SendResult(ecb, connection, networkId, success: true, choice: 2, team: TeamId.None, default, default, false);
                 return;
             }
 
@@ -169,7 +246,7 @@ namespace TitanOrbit.ECS
 
             ecb.DestroyEntity(ship);
             ClearCommandTarget(em, ecb, connection);
-            SendResult(ecb, connection, success: true, choice: 2, team: TeamId.None, default);
+            SendResult(ecb, connection, networkId, success: true, choice: 2, team: TeamId.None, default, default, false);
             LogAbandon(networkId, shipState.Team);
         }
 
@@ -227,11 +304,17 @@ namespace TitanOrbit.ECS
         static void SendResult(
             EntityCommandBuffer ecb,
             Entity connection,
+            int networkId,
             bool success,
             byte choice,
             TeamId team,
-            FixedString128Bytes message)
+            FixedString128Bytes message,
+            float3 homePos,
+            bool hasHome)
         {
+            if (TryApplyLocalHostRejoinResult(networkId, success, choice, team, message, homePos, hasHome))
+                return;
+
             var resultEntity = ecb.CreateEntity();
             ecb.AddComponent(resultEntity, new RejoinShipResultRpc
             {
@@ -241,6 +324,58 @@ namespace TitanOrbit.ECS
                 Message = message,
             });
             ecb.AddComponent(resultEntity, new SendRpcCommandRequest { TargetConnection = connection });
+        }
+
+        /// <summary>
+        /// Local Host applies the rejoin result on the client flow state directly. SendRpc
+        /// can drop under join load, which left Continue stuck on "Resuming your ship...".
+        /// Remote clients still get the RPC.
+        /// </summary>
+        static bool TryApplyLocalHostRejoinResult(
+            int networkId,
+            bool success,
+            byte choice,
+            TeamId team,
+            FixedString128Bytes message,
+            float3 homePos,
+            bool hasHome)
+        {
+            var client = ClientServerBootstrap.ClientWorld;
+            var server = ClientServerBootstrap.ServerWorld;
+            if (client == null || !client.IsCreated || server == null || !server.IsCreated)
+                return false;
+
+            var clientEm = client.EntityManager;
+            using var ids = clientEm.CreateEntityQuery(
+                    ComponentType.ReadOnly<NetworkStreamConnection>(),
+                    ComponentType.ReadOnly<NetworkStreamInGame>(),
+                    ComponentType.ReadOnly<NetworkId>())
+                .ToComponentDataArray<NetworkId>(Allocator.Temp);
+            if (ids.Length == 0 || ids[0].Value != networkId)
+                return false;
+
+            SessionShipOfferCache.Clear();
+            if (!success)
+            {
+                if (choice == 1)
+                    ClientTeamFlowState.ResetRejoinChoiceToPending();
+                UnityEngine.Debug.LogWarning("[RejoinShipManagement] Local Host rejoin failed: " + message);
+                return true;
+            }
+
+            if (choice == 1)
+            {
+                LocalShipEntitySeed.PrepareForTeamChoiceShip();
+                ClientTeamFlowState.LatchTeamChoiceSuccess(team, homePos, hasHome);
+                ClientTeamFlowState.ChooseUseExistingShip();
+                ClientJoinSettleCache.ArmPostTeamChoiceHold();
+                ClientTeamFlowState.RequestDeferredConfirmTeamChoice();
+                return true;
+            }
+
+            if (choice == 2)
+                ClientTeamFlowState.ChooseStartFreshShip();
+            return true;
         }
 
         [Unity.Burst.BurstDiscard]

@@ -1182,6 +1182,9 @@ namespace TitanOrbit.UI
                             effectiveStats = family.ApplyStatFallbacks(effectiveStats);
                             effectiveStats = family.ApplySpecialBonuses(effectiveStats);
                         }
+
+                        ShipStatApplyLogic.ApplyEquippedCardStatModifiers(
+                            em, shipEntity, chassisId, ref effectiveStats);
                     }
                     else if (ShipStatApplyLogic.TryGetBaseStatsForChassis(
                                  chassisId, ship.ShipLevel, out ShipComponentAbilityStats summed))
@@ -1199,6 +1202,9 @@ namespace TitanOrbit.UI
                             ShipAttributeUpgradeLogic.ApplyMoveSpeedAbilitySteps(
                                 ref effectiveStats, attrs, moveStep, accelStep, odDrainStep);
                         }
+
+                        ShipStatApplyLogic.ApplyEquippedCardStatModifiers(
+                            em, shipEntity, chassisId, ref effectiveStats);
                     }
                 }
             }
@@ -1272,11 +1278,57 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// Sticky friendly-triangle movement multiplier for the local owner (1 when outside).
-        /// Same cache that grows engine/thruster meshes and that predicted drive publishes.
+        /// Friendly-triangle multiplier the motor actually applied this tick
+        /// (<see cref="ShipTerritoryBoostLatch"/>). Falls back to the presentation cache
+        /// when the latch is missing. Using only the cache left cruise at the chassis
+        /// number while the ship flew at the boosted cap — the bar sat in the OVERDRIVE band.
         /// </summary>
-        static float ResolveTerritoryMovementMult() =>
-            Mathf.Max(1f, PlanetConnectionGraphCache.LocalOwnerTerritoryMult);
+        static float ResolveTerritoryMovementMult(EntityManager em, Entity shipEntity)
+        {
+            if (shipEntity != Entity.Null && em.Exists(shipEntity) &&
+                em.HasComponent<ShipTerritoryBoostLatch>(shipEntity))
+            {
+                float latched = em.GetComponentData<ShipTerritoryBoostLatch>(shipEntity).LatchedMult;
+                if (latched > 0.01f)
+                    return Mathf.Max(1f, latched);
+            }
+
+            return Mathf.Max(1f, PlanetConnectionGraphCache.LocalOwnerTerritoryMult);
+        }
+
+        /// <summary>
+        /// When OVERDRIVE is off, the motor's last cruise cap is the speed the hull can hold.
+        /// If the chassis recompute is short of that cap, raise the speedometer mark so the
+        /// needle is not drawn in the overdrive band while flying at the real cruise.
+        /// </summary>
+        static void AlignDisplayedCapWithMotor(
+            EntityManager em,
+            Entity shipEntity,
+            bool overdriveActive,
+            ref float cruiseMax,
+            ref float barMax,
+            ref float liveMax)
+        {
+            if (shipEntity == Entity.Null || !em.Exists(shipEntity) ||
+                !em.HasComponent<ShipTerritoryBoostLatch>(shipEntity))
+                return;
+
+            float motorCap = em.GetComponentData<ShipTerritoryBoostLatch>(shipEntity).LastAppliedMaxSpeed;
+            if (motorCap <= 0.1f)
+                return;
+
+            if (!overdriveActive && motorCap > cruiseMax * 1.02f)
+            {
+                float odSpan = cruiseMax > 0.1f ? barMax / cruiseMax : 1f;
+                cruiseMax = motorCap;
+                barMax = cruiseMax * Mathf.Max(1f, odSpan);
+                liveMax = cruiseMax;
+                return;
+            }
+
+            if (motorCap > liveMax * 1.02f)
+                liveMax = motorCap;
+        }
 
         /// <summary>
         /// Baked OVERDRIVE MaxSpeed multiplier from the motor (always ≥ 1), even when Shift is up.
@@ -1304,20 +1356,23 @@ namespace TitanOrbit.UI
             if (shipEntity == Entity.Null || !em.Exists(shipEntity))
                 return 1f;
 
-            // [TITAN-ORBIT] Prefer ShipPendingInput — ghost ShipInput can lag one tick / skip
-            // under join backlog, which made SPD overdrive flicker independently of the motor.
+            // [TITAN-ORBIT] Ghost ShipInput is what the motor consumed this tick. Pending
+            // input can disagree for a frame and paint cruise while the hull is still
+            // on the boosted cap (or the reverse).
             bool thrustHeld;
             bool shiftHeld;
-            if (ShipPendingInput.HasValue)
-            {
-                thrustHeld = ShipPendingInput.Latest.Thrust;
-                shiftHeld = ShipPendingInput.Latest.Overdrive;
-            }
-            else if (em.HasComponent<ShipInput>(shipEntity))
+            bool useOrbit = em.HasComponent<ShipOrbitState>(shipEntity)
+                && em.GetComponentData<ShipOrbitState>(shipEntity).UsingOrbitMotor;
+            if (em.HasComponent<ShipInput>(shipEntity))
             {
                 var input = em.GetComponentData<ShipInput>(shipEntity);
                 thrustHeld = input.Thrust;
                 shiftHeld = input.Overdrive;
+            }
+            else if (ShipPendingInput.HasValue)
+            {
+                thrustHeld = ShipPendingInput.Latest.Thrust;
+                shiftHeld = ShipPendingInput.Latest.Overdrive;
             }
             else
                 return 1f;
@@ -1330,7 +1385,7 @@ namespace TitanOrbit.UI
             if (!ShipOverdriveTuning.IsBurstActive(
                     shiftHeld,
                     thrustHeld,
-                    useOrbit: false,
+                    useOrbit,
                     ship.CurrentEnergy,
                     ship.OverdriveLockout))
                 return 1f;
@@ -1599,7 +1654,12 @@ namespace TitanOrbit.UI
             // [TITAN-ORBIT] Motor multiplies MaxSpeed / accel at drive time only; chassis
             // ShipMotorConfig stays unboosted. Without this, the bar saturates early and SPD
             // shows e.g. 13.5/13.5 "at max" while kinematics are still climbing past chassis cruise.
-            float territoryMult = ResolveTerritoryMovementMult();
+            float territoryMult = 1f;
+            var territoryWorld = EcsGameBridge.GetVisualizationWorld();
+            if (territoryWorld != null && territoryWorld.IsCreated)
+                territoryMult = ResolveTerritoryMovementMult(territoryWorld.EntityManager, shipEntity);
+            else
+                territoryMult = Mathf.Max(1f, PlanetConnectionGraphCache.LocalOwnerTerritoryMult);
             cruiseMax *= territoryMult;
             maxFwd *= territoryMult;
 
@@ -1627,6 +1687,16 @@ namespace TitanOrbit.UI
             float barMax = cruiseMax * overdriveCapacityMult;
             // Live motor ceiling this frame (cruise when OD off, OD top when on).
             float liveMax = overdriveActive ? barMax : cruiseMax;
+            if (vizWorld != null && vizWorld.IsCreated)
+            {
+                AlignDisplayedCapWithMotor(
+                    vizWorld.EntityManager,
+                    shipEntity,
+                    overdriveActive,
+                    ref cruiseMax,
+                    ref barMax,
+                    ref liveMax);
+            }
             maxFwd *= overdriveActiveMult;
 
             // Fill against full OD scale so unused faint OD headroom stays readable at cruise.

@@ -191,6 +191,8 @@ namespace TitanOrbit.Core
             if (TeamChoiceConfirmed)
                 return;
             _teamPickRequested = false;
+            // Assign failed, so no new hull exists. A saved-ship offer can show again.
+            _rejoinEligibilityLocked = false;
             LastPickRejection = string.IsNullOrWhiteSpace(message)
                 ? "Could not join that team."
                 : message;

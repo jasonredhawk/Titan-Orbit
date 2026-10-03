@@ -430,7 +430,7 @@ namespace TitanOrbit.ECS
                 float t = math.saturate(MoonApproachCoOrbitResponsiveness * dt);
                 vel = math.lerp(vel, moonApproachVel, t);
                 vel.y = 0f;
-                ApplyRecoilDecay(ref vel, maxSpeed, movementMass, motor.RecoilDecayPerSecond, dt);
+                ApplyRecoilDecay(ref vel, maxSpeed, motor.RecoilDecayPerSecond, dt);
                 SnapBoostCapDrop(ref vel, previousMaxSpeed, maxSpeed);
             }
             else
@@ -446,7 +446,7 @@ namespace TitanOrbit.ECS
                     !input.DisableSpaceBrakes,
                     dt);
 
-                ApplyRecoilDecay(ref vel, maxSpeed, movementMass, motor.RecoilDecayPerSecond, dt);
+                ApplyRecoilDecay(ref vel, maxSpeed, motor.RecoilDecayPerSecond, dt);
 
                 // Triangle / OVERDRIVE leftover — not collision overspeed (see SnapBoostCapDrop).
                 SnapBoostCapDrop(ref vel, previousMaxSpeed, maxSpeed);
@@ -616,10 +616,14 @@ namespace TitanOrbit.ECS
                     vel += accel * dt;
                     vel.y = 0f;
 
-                    // Thrust from below MaxSpeed may not cross the cruise cap.
+                    // Thrust may reach the cruise cap, and may steer while a ram is
+                    // still above that cap, but it must not add speed past either.
+                    // A pure side-step (turn while already at cap) used to grow
+                    // magnitude with no clamp — registered 6.5, still flying ~9.
                     float speedOut = math.length(vel);
-                    if (speedIn < maxSpeed && speedOut > maxSpeed)
-                        vel = math.normalize(vel) * maxSpeed;
+                    float thrustCap = speedIn > maxSpeed ? speedIn : maxSpeed;
+                    if (speedOut > thrustCap)
+                        vel = math.normalize(vel) * thrustCap;
                 }
             }
             else if (spaceBrakes && math.lengthsq(vel) > 0.001f)
@@ -947,12 +951,14 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// Bleeds temporary overspeed from recoil / impact bounces back toward MaxSpeed.
+        /// Bleeds temporary overspeed from recoil / impact / takeoff back toward MaxSpeed.
+        /// Rate is world units per second. It is not divided by hull movement mass —
+        /// flight accel is already a taxed rate, and dividing left heavy hulls above
+        /// cruise for a long time (the speedometer still said 6.5 while the ship held ~9).
         /// </summary>
         static void ApplyRecoilDecay(
             ref float3 vel,
             float maxSpeed,
-            float mass,
             float recoilDecayPerSecond,
             float dt)
         {
@@ -961,8 +967,7 @@ namespace TitanOrbit.ECS
                 return;
 
             float decay = recoilDecayPerSecond > 0f ? recoilDecayPerSecond : 6f;
-            float effectiveRecoilDecay = decay / math.max(ShipMassLogic.MinMass, mass);
-            float targetMag = math.clamp(mag - effectiveRecoilDecay * dt, maxSpeed, mag);
+            float targetMag = math.clamp(mag - decay * dt, maxSpeed, mag);
             vel = math.normalize(vel) * targetMag;
         }
 

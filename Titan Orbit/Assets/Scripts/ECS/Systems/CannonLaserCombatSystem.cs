@@ -194,9 +194,10 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// One laser barrel. While unlocked, drains authored DPS this tick and
-        /// applies that slice × the lock ramp. No fire-rate wait — the beam is
-        /// continuous. An empty pool latches lockout until energy is above 10%.
+        /// One laser barrel. While unlocked and armed on the arsenal HUD, drains
+        /// authored DPS this tick and applies that slice × the lock ramp. A muted
+        /// barrel is turned off and does not spend energy. No fire-rate wait — the
+        /// beam is continuous. An empty pool latches lockout until energy is above 10%.
         /// </summary>
         public void TryContinuousBurn(
             Entity mega,
@@ -217,6 +218,15 @@ namespace TitanOrbit.ECS
                 ? EntityManager.GetBuffer<MegaShipGunnerSlotElement>(mega)
                 : default;
             if (!ShipWeaponKind.IsCannonLaser(mount, gunners, mountIndex) || mount.FirePower <= 0.01f)
+            {
+                WriteLaserOff(gunners, mountIndex, in mount);
+                return;
+            }
+
+            // Arsenal mute. The strip walk already skips these, but a silenced
+            // barrel must not spend energy or apply hitscan if it is passed in.
+            var arm = ShipWeaponArmState.Resolve(EntityManager, mega);
+            if (!ShipWeaponArmState.IsArmed(in arm, mountIndex))
             {
                 WriteLaserOff(gunners, mountIndex, in mount);
                 return;

@@ -1269,8 +1269,12 @@ namespace TitanOrbit.Game
             bool mapLoaded = connected && IsMapReadyForTeamSelection();
 
             ShipState rejoinShipState = default;
-            bool hasRejoinableShip = connected &&
+            bool hasLiveRejoinShip = connected &&
                                      EcsGameBridge.TryGetRejoinableShipForLocalPlayer(out rejoinShipState);
+            bool hasSessionOffer = connected && SessionShipOfferCache.HasOffer;
+            if (!hasLiveRejoinShip && hasSessionOffer)
+                rejoinShipState = SessionShipOfferCache.Summary;
+            bool hasRejoinableShip = hasLiveRejoinShip || hasSessionOffer;
             // Only evaluate rejoin once basic map readiness is met — stale ships during galaxy build must not block flow.
             if (mapLoaded)
                 ClientTeamFlowState.TryNotifyRejoinableShip(hasRejoinableShip);

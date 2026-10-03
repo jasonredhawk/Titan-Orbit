@@ -6,14 +6,10 @@ using Unity.NetCode;
 namespace TitanOrbit.ECS
 {
     /// <summary>
-    /// Server-only: a player who leaves and comes back must not keep the hull they exited in,
-    /// and must not fly a second hull while the minimap stays on the first.
-    /// <para>
-    /// NetCode recycles <see cref="NetworkId"/> and does not despawn owned ghosts on disconnect.
-    /// The next join can spawn another ship (new id, or a second hull on the reused id). This
-    /// system deletes ships whose owner is no longer connected, and when one live id owns
-    /// several hulls it keeps the newest and points <see cref="CommandTarget"/> at that one.
-    /// </para>
+    /// Server-only: destroy a hull whose owner is gone so a recycled <see cref="NetworkId"/>
+    /// cannot fly it, after copying that ship into <see cref="MatchPlayerShipStore"/>.
+    /// Coming back to this same match offers the snapshot. A second live hull for one id
+    /// is deleted; the newest stays and <see cref="CommandTarget"/> points at it.
     /// World: ServerSimulation. Group: SimulationSystemGroup, after team spawn.
     /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation)]
@@ -102,6 +98,30 @@ namespace TitanOrbit.ECS
                 else
                     destroy.Add(entity);
             }
+
+            // Snapshot disconnected hulls before roster release frees a titan bay.
+            // A duplicate of someone still connected is not a leave — do not overwrite their save.
+            var captureBest = new NativeHashMap<int, Entity>(16, Allocator.Temp);
+            for (int i = 0; i < destroy.Length; i++)
+            {
+                Entity candidate = destroy[i];
+                if (!em.Exists(candidate) || !em.HasComponent<GhostOwner>(candidate))
+                    continue;
+                int ownerId = em.GetComponentData<GhostOwner>(candidate).NetworkId;
+                if (ownerId <= 0 || liveIds.Contains(ownerId))
+                    continue;
+                if (!captureBest.TryGetValue(ownerId, out Entity incumbent) ||
+                    ShipGhostAge.IsNewerThan(em, candidate, incumbent))
+                    captureBest[ownerId] = candidate;
+            }
+
+            foreach (var pair in captureBest)
+            {
+                MatchPlayerShipStore.TryCapture(em, pair.Value);
+                MatchPlayerShipStore.Unbind(pair.Key);
+            }
+
+            captureBest.Dispose();
 
             // Roster math first. AddComponent / DestroyEntity are structural and would
             // invalidate a singleton ref taken earlier in the tick.

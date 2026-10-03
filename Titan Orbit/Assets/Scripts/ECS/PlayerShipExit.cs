@@ -7,9 +7,10 @@ namespace TitanOrbit.ECS
 {
     /// <summary>
     /// Destroys a player's hull the moment they leave, and frees a titan (MEGA) bay the same
-    /// way death does. NetCode does not despawn owned ghosts on disconnect, and the local
-    /// host parks ServerWorld before the next sim tick, so the exit path has to do this
-    /// itself or the old hull is still in the match when they rejoin.
+    /// way death does. The match snapshot in <see cref="MatchPlayerShipStore"/> keeps their
+    /// ship, gear, and cargo until a new game. NetCode does not despawn owned ghosts on
+    /// disconnect, and the local host parks ServerWorld before the next sim tick, so the
+    /// exit path has to destroy the hull itself.
     /// </summary>
     public static class PlayerShipExit
     {
@@ -38,7 +39,16 @@ namespace TitanOrbit.ECS
                     kill.Add(entities[i]);
             }
 
+            if (releaseRoster)
+            {
+                int best = ShipGhostAge.IndexOfNewest(em, entities, owners, networkId);
+                if (best >= 0)
+                    MatchPlayerShipStore.TryCapture(em, entities[best]);
+            }
+
             int destroyed = DestroyHulls(em, kill, releaseRoster, networkId);
+            if (releaseRoster)
+                MatchPlayerShipStore.Unbind(networkId);
             kill.Dispose();
             return destroyed;
         }

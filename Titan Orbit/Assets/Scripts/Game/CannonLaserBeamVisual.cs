@@ -25,6 +25,8 @@ namespace TitanOrbit.Game
     /// 10% recharge lockout is latched.
     /// Beam width tracks the 50%→300% DPS ramp so the line starts thin and fattens.
     /// Beams stay on while a live lock (or Shift mouse-aim) is burning.
+    /// Barrels the arsenal HUD muted (<see cref="ShipWeaponArmState"/>) stay dark
+    /// even while Fire is held — local auto-lock used to draw every cannon.
     /// <para>
     /// The Archanor line is world-space. Pose the root and snap the
     /// <see cref="LineRenderer"/> after hybrid hulls move — otherwise the beam sits
@@ -311,6 +313,12 @@ namespace TitanOrbit.Game
             if (localFiring)
                 _humFireHeld = true;
 
+            // [TITAN-ORBIT] Same mask the arsenal HUD paints. Overlay the click so a
+            // mute hides the beam this frame, before the predicted ghost write lands.
+            var arm = ShipWeaponArmState.Resolve(em, binding.ShipEntity);
+            if (localOwner)
+                arm = WeaponArmSelection.Overlay(in arm, mounts);
+
             int count = math.min(mounts.Length, gunners.Length);
             for (int m = 0; m < count; m++)
             {
@@ -321,6 +329,13 @@ namespace TitanOrbit.Game
                     ShipIndex = binding.ShipEntity.Index,
                     MountIndex = m,
                 };
+                // Silenced in the arsenal. Local Fire used to auto-lock every cannon
+                // and draw a beam (plus a cosmetic damage float) anyway.
+                if (!ShipWeaponArmState.IsArmed(in arm, m))
+                {
+                    HideMountImmediate(key);
+                    continue;
+                }
                 bool tracking = MegaShipWeaponAim.IsTrackingAim(gunners[m])
                     && MegaShipWeaponVisualTargets.IsLiveLock(
                         em,

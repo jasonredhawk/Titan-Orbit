@@ -12,21 +12,14 @@ namespace TitanOrbit.UI
     /// fill is twice as wide as the old side-by-side 10% lanes. Small catalog
     /// increments stay visible on that wider fill. The ship's value is a solid fill
     /// and the rest of the lane is a dimmed matching color.
-    /// Equipment cards keep the older proportional widths (one or two stats side by
-    /// side, hide empty pairs). Hovering a slot opens
-    /// <see cref="ShipPowerBarStatTooltip"/> (stat details + small RANK 1 hull).
+    /// Equipment cards use the same five stacked columns, but each lane fills against
+    /// other components from every ship family — not against a whole hull. Hovering a
+    /// slot opens <see cref="ShipPowerBarStatTooltip"/> (stat details + small RANK 1).
     /// Built at runtime by <see cref="Create"/> /
     /// <see cref="CreateInTrack"/>, or upgraded in place from the serialized node prefab.
     /// </summary>
     public class ShipUpgradeTreePowerBarUI : MonoBehaviour
     {
-        /// <summary>
-        /// Gem Cap (8) and Troop Cap (9) bar widths use this fraction of raw stat power
-        /// on equipment cards only, so high gem capacity does not dominate those bars.
-        /// Moon-tree equal slots no longer need this — each stat has its own stacked lane.
-        /// </summary>
-        public const float MoonTreeCapacityStatBarScale = 0.5f;
-
         /// <summary>Live empty-track tint: keep the stat hue, but lift it so the lane stays readable.</summary>
         const float DimRgbScale = 0.62f;
         const float DimWhiteMix = 0.22f;
@@ -54,6 +47,8 @@ namespace TitanOrbit.UI
         ShipFamilyPowerScoreBreakdown _hoverBreakdown;
         ShipPowerBarStatMaxes _hoverMaxes;
         bool _hoverMegaPool;
+        ShipPowerBarComparisonPool _hoverPool;
+        int _hoverComparisonLevel = 1;
         string _hoverChassisId;
         /// <summary>
         /// True after one ForceRebuild attempt this enable. Hide() SetActive(false) the
@@ -171,8 +166,8 @@ namespace TitanOrbit.UI
             {
                 var pairGo = new GameObject("Pair_" + pair);
                 pairGo.transform.SetParent(barRow.transform, false);
-                // Equipment cards keep this pair side-by-side. Orbit Menu tree bars
-                // swap it for a VerticalLayoutGroup in ApplyMoonTreeFlexLayout.
+                // Built side-by-side, then the first paint stacks the two lanes
+                // (ApplyMoonTreeFlexLayout). Gear and the ship tree share that stack.
                 var pairHlg = pairGo.AddComponent<HorizontalLayoutGroup>();
                 pairHlg.spacing = 0f;
                 pairHlg.childAlignment = TextAnchor.MiddleLeft;
@@ -271,44 +266,6 @@ namespace TitanOrbit.UI
             return new Color(mixed.r * DimRgbScale, mixed.g * DimRgbScale, mixed.b * DimRgbScale, DimAlpha);
         }
 
-        public static float GetMoonTreeBarStatValue(ShipFamilyPowerScoreBreakdown breakdown, int statIndex)
-        {
-            float value = breakdown.GetDisplayStatValue(statIndex);
-            if (statIndex == 8 || statIndex == 9)
-                return value * MoonTreeCapacityStatBarScale;
-            return value;
-        }
-
-        /// <summary>
-        /// Equipment cards: offense pair is sustained DPS plus ramming, then bullet speed.
-        /// Fire Rate is already inside DPS — do not add it again on the Bullet Speed lane.
-        /// </summary>
-        public static float GetEquipmentBarStatValue(ShipFamilyPowerScoreBreakdown breakdown, int statIndex)
-        {
-            switch (statIndex)
-            {
-                case 0: return breakdown.GetDisplayDps() + breakdown.rammingPower;
-                case 1: return breakdown.bulletSpeed;
-                default: return GetMoonTreeBarStatValue(breakdown, statIndex);
-            }
-        }
-
-        public static float GetEquipmentBarDisplayTotal(ShipFamilyPowerScoreBreakdown breakdown)
-        {
-            float total = 0f;
-            for (int i = 0; i < ShipFamilyPowerScoreBreakdown.DisplayStatCount; i++)
-                total += GetEquipmentBarStatValue(breakdown, i);
-            return total;
-        }
-
-        public static float GetMoonTreeBarDisplayTotal(ShipFamilyPowerScoreBreakdown breakdown)
-        {
-            float total = 0f;
-            for (int i = 0; i < ShipFamilyPowerScoreBreakdown.DisplayStatCount; i++)
-                total += GetMoonTreeBarStatValue(breakdown, i);
-            return total;
-        }
-
         float _widthScale = 1f;
         float _heightScale = 1f;
 
@@ -324,27 +281,39 @@ namespace TitanOrbit.UI
 
         /// <summary>
         /// Moon / Orbit Menu layout: full track width, five equal category columns,
-        /// two abilities stacked in each column. Fill amount = value / pool max
-        /// (regular-family maxes on L1–L6, MEGA catalog maxes on L7).
-        /// Slot 0 is sustained DPS (<c>firePower × fireRate</c>), not raw Fire Power.
-        /// Called when a tree node or store tile paints its colourful stats bar.
+        /// two abilities stacked in each column. Fill amount = value / pool max.
+        /// Regular hulls use the L1–L6 ceiling. Titans use the Titan catalog.
+        /// Gear passes <see cref="ShipPowerBarComparisonPool.Components"/> so each
+        /// lane is this part divided by the best part in any family.
+        /// Slot 0 on a ship is sustained DPS. On gear it is DPS plus ramming.
+        /// Called when a tree node or gear tile paints its colourful stats bar.
         /// </summary>
-        /// <param name="megaPool">True when <paramref name="globalMaxes"/> came from the MEGA catalog (RANK 1 must match).</param>
-        /// <param name="chassisId">Optional hull id so RANK 1 can say "this hull" on the hover card.</param>
+        /// <param name="megaPool">True when <paramref name="globalMaxes"/> came from the Titan catalog (RANK 1 must match).</param>
+        /// <param name="chassisId">Hull id, or a component leader key, so RANK 1 can say “this hull” / “this part”.</param>
+        /// <param name="pool">Which catalog the maxes belong to. Unset follows <paramref name="megaPool"/>.</param>
+        /// <param name="comparisonShipLevel">Gear only. Extra Level of the component ceiling.</param>
         public void ApplyBreakdown(
             ShipFamilyPowerScoreBreakdown breakdown,
             in ShipPowerBarStatMaxes globalMaxes,
             float trackWidth,
             bool megaPool = false,
-            string chassisId = null)
+            string chassisId = null,
+            ShipPowerBarComparisonPool pool = ShipPowerBarComparisonPool.Unset,
+            int comparisonShipLevel = 1)
         {
             EnsureSlotLayers();
-            // Hover tips must use this paint's breakdown, pool (regular vs MEGA), and hull id.
-            BindHoverContext(breakdown, in globalMaxes, megaPool, chassisId);
+            if (pool == ShipPowerBarComparisonPool.Unset)
+                pool = megaPool ? ShipPowerBarComparisonPool.Titans : ShipPowerBarComparisonPool.RegularShips;
+
+            // Hover tips must use this paint's breakdown, pool, and hull or part id.
+            BindHoverContext(breakdown, in globalMaxes, pool, chassisId, comparisonShipLevel);
             TrackWidth = Mathf.Max(0f, trackWidth);
             float nodeW = TrackWidth > 0.01f ? TrackWidth : 100f;
             float scaledBarHeight = barHeight * _heightScale;
-            bool hasData = breakdown.HasDisplayStats;
+            bool componentPool = pool == ShipPowerBarComparisonPool.Components;
+            bool hasData = componentPool
+                ? breakdown.HasComponentCompareStats
+                : breakdown.HasDisplayStats;
 
             // --- Stack each ODEMC pair, then paint fills ---
             ApplyMoonTreeFlexLayout(scaledBarHeight);
@@ -352,7 +321,10 @@ namespace TitanOrbit.UI
 
             for (int i = 0; i < ShipAbilityCategoryColors.PowerBreakdownStatCount; i++)
             {
-                float val = breakdown.GetDisplayStatValue(i);
+                // Gear slot 0 includes ramming. Ship slot 0 is gun DPS only.
+                float val = componentPool
+                    ? breakdown.GetComponentCompareStatValue(i)
+                    : breakdown.GetDisplayStatValue(i);
                 float max = globalMaxes.Get(i);
                 bool slotLive = hasData && val > 0.0001f;
                 float ratio = slotLive && max > ShipPowerBarStatMaxes.MinDenominator
@@ -365,22 +337,28 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// Equipment cards usually contribute one or two stats. Hide empty category pairs and
-        /// scale the active segments across the full track width for readability.
+        /// Gear cards: same five stacked lanes as the ship tree, but
+        /// <paramref name="componentMaxes"/> must be the all-families component ceiling
+        /// at <paramref name="shipLevel"/>, not a whole-ship ceiling.
         /// </summary>
+        /// <param name="componentLeaderKey">
+        /// <see cref="ShipFamilyPowerBarNorm.FormatComponentLeaderKey"/> for this part.
+        /// </param>
         public void ApplyEquipmentBreakdown(
             ShipFamilyPowerScoreBreakdown breakdown,
-            float strongestComponentTotalPower,
-            float trackWidth)
+            in ShipPowerBarStatMaxes componentMaxes,
+            float trackWidth,
+            string componentLeaderKey,
+            int shipLevel)
         {
-            EnsureSlotLayers();
-            // Gear tiles still explain the ten stats + RANK 1 from the regular-family pool.
-            BindHoverContext(
+            ApplyBreakdown(
                 breakdown,
-                ShipFamilyPowerBarNorm.GetGlobalMaxPerStat(),
+                in componentMaxes,
+                trackWidth,
                 megaPool: false,
-                chassisId: null);
-            ApplyBreakdownInternal(breakdown, strongestComponentTotalPower, trackWidth, equipmentLayout: true);
+                componentLeaderKey,
+                ShipPowerBarComparisonPool.Components,
+                shipLevel);
         }
 
         /// <summary>
@@ -459,132 +437,9 @@ namespace TitanOrbit.UI
             ApplySlotFlex(statIndex, slotHeight);
         }
 
-        void ApplyBreakdownInternal(
-            ShipFamilyPowerScoreBreakdown breakdown,
-            float strongestTotalPower,
-            float trackWidth,
-            bool equipmentLayout)
-        {
-            TrackWidth = Mathf.Max(0f, trackWidth);
-            float total = GetEquipmentBarDisplayTotal(breakdown);
-            bool hasData = total > 0.01f;
-            float maxDen = Mathf.Max(strongestTotalPower, 0.001f);
-            float nodeW = TrackWidth > 0.01f ? TrackWidth : 100f;
-            float scaledBarHeight = barHeight * _heightScale;
-            float barFillW = hasData ? nodeW * total / maxDen : nodeW;
-
-            int pairCount = ShipAbilityCategoryColors.PowerBreakdownPairCount;
-            var barHlg = GetComponent<HorizontalLayoutGroup>();
-            if (barHlg != null)
-            {
-                barHlg.childForceExpandWidth = false;
-                barHlg.spacing = pairGap * _widthScale;
-            }
-
-            float gap = barHlg != null ? barHlg.spacing : pairGap * _widthScale;
-
-            float activePairSum = 0f;
-            int activePairCount = 0;
-            if (hasData)
-            {
-                for (int pair = 0; pair < pairCount; pair++)
-                {
-                    float pairSum = GetEquipmentBarStatValue(breakdown, pair * 2) +
-                                    GetEquipmentBarStatValue(breakdown, pair * 2 + 1);
-                    if (pairSum > 0.01f)
-                    {
-                        activePairSum += pairSum;
-                        activePairCount++;
-                    }
-                }
-            }
-
-            if (hasData && activePairCount > 0)
-                barFillW = nodeW * activePairSum / maxDen;
-
-            float totalGap = gap * Mathf.Max(0, activePairCount - 1);
-            float usableW = Mathf.Max(0f, barFillW - totalGap);
-            float widthDenominator = hasData && activePairSum > 0.01f ? activePairSum : total;
-
-            for (int pair = 0; pair < pairCount; pair++)
-            {
-                int statA = pair * 2;
-                int statB = statA + 1;
-                float valA = GetEquipmentBarStatValue(breakdown, statA);
-                float valB = GetEquipmentBarStatValue(breakdown, statB);
-                float pairSum = valA + valB;
-                bool pairActive = pairSum > 0.01f || !hasData;
-
-                float pairWidth;
-                float segWA;
-                float segWB;
-                if (hasData && widthDenominator > 0.01f && pairActive && pairSum > 0.01f)
-                {
-                    pairWidth = usableW * pairSum / widthDenominator;
-                    segWA = pairWidth * valA / pairSum;
-                    segWB = pairWidth * valB / pairSum;
-                }
-                else if (!hasData)
-                {
-                    pairWidth = usableW / pairCount;
-                    segWA = segWB = pairWidth * 0.5f;
-                }
-                else
-                {
-                    pairWidth = 0f;
-                    segWA = segWB = 0f;
-                }
-
-                ApplyEquipmentSegment(statA, segWA, hasData && pairActive, scaledBarHeight);
-                ApplyEquipmentSegment(statB, segWB, hasData && pairActive, scaledBarHeight);
-                ApplyPairWidth(statA, pairWidth, scaledBarHeight, flexible: false, stackVertically: false, stackGap: 0f);
-                SetPairActive(statA, pairActive || !hasData);
-            }
-
-            ApplyBarRowSize(nodeW, scaledBarHeight);
-        }
-
-        void ApplyEquipmentSegment(int statIndex, float segW, bool hasData, float scaledBarHeight)
-        {
-            if (segments == null || statIndex < 0 || statIndex >= segments.Length || segments[statIndex] == null)
-                return;
-
-            if (_remainders != null && statIndex < _remainders.Length && _remainders[statIndex] != null)
-                _remainders[statIndex].enabled = false;
-
-            Image fill = segments[statIndex];
-            fill.sprite = GetFillSprite();
-            fill.type = Image.Type.Simple;
-            fill.fillAmount = 1f;
-            fill.enabled = segW > 0.01f;
-            fill.color = hasData
-                ? ShipAbilityCategoryColors.GetPowerBreakdownStatColor(statIndex)
-                : DisabledSlotFill;
-
-            var fillLe = fill.GetComponent<LayoutElement>();
-            if (fillLe != null)
-                fillLe.ignoreLayout = true;
-            StretchRect(fill.rectTransform);
-
-            Transform slot = fill.transform.parent;
-            if (slot == null)
-                return;
-
-            var slotLe = slot.GetComponent<LayoutElement>();
-            if (slotLe == null)
-                slotLe = slot.gameObject.AddComponent<LayoutElement>();
-
-            float rounded = segW > 0.01f ? Mathf.Max(1f, Mathf.Round(segW)) : 0f;
-            slotLe.preferredWidth = rounded;
-            slotLe.flexibleWidth = 0f;
-            slotLe.minWidth = 0f;
-            slotLe.preferredHeight = scaledBarHeight;
-            slotLe.minHeight = scaledBarHeight;
-        }
-
         /// <summary>
-        /// Sizes one ODEMC pair column and chooses side-by-side vs stacked children.
-        /// <paramref name="flexible"/> true = Orbit Menu equal columns; false = equipment pixel width.
+        /// Sizes one ODEMC pair column and stacks its two ability lanes.
+        /// <paramref name="flexible"/> true shares the track equally across the five groups.
         /// </summary>
         void ApplyPairWidth(
             int statIndex,
@@ -663,10 +518,10 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// Switches a category pair between side-by-side (equipment) and stacked (Orbit Menu).
-        /// [UNITY] <see cref="LayoutGroup"/> is <c>DisallowMultipleComponent</c>. A pair
-        /// GameObject can hold Horizontal <em>or</em> Vertical, never both — adding the
-        /// second type returns null. We remove the old group the same frame, then add
+        /// Switches a category pair to stacked lanes (ship tree and gear) or back to
+        /// side-by-side. [UNITY] <see cref="LayoutGroup"/> is <c>DisallowMultipleComponent</c>.
+        /// A pair GameObject can hold Horizontal <em>or</em> Vertical, never both — adding
+        /// the second type returns null. We remove the old group the same frame, then add
         /// the one we need. After the first refresh the right group is already there.
         /// </summary>
         static void SetPairOrientation(Transform pairTransform, bool stackVertically, float stackGap, bool expandWidth)
@@ -860,13 +715,19 @@ namespace TitanOrbit.UI
         void BindHoverContext(
             in ShipFamilyPowerScoreBreakdown breakdown,
             in ShipPowerBarStatMaxes maxes,
-            bool megaPool,
-            string chassisId)
+            ShipPowerBarComparisonPool pool,
+            string chassisId,
+            int comparisonShipLevel)
         {
             _hoverBreakdown = breakdown;
             _hoverMaxes = maxes;
-            _hoverMegaPool = megaPool;
+            _hoverPool = pool == ShipPowerBarComparisonPool.Unset
+                ? ShipPowerBarComparisonPool.RegularShips
+                : pool;
+            // Kept so older call sites that only stored the Titan flag still match RANK 1.
+            _hoverMegaPool = _hoverPool == ShipPowerBarComparisonPool.Titans;
             _hoverChassisId = chassisId;
+            _hoverComparisonLevel = Mathf.Max(1, comparisonShipLevel);
             EnsureHoverRelay();
         }
 
@@ -1340,7 +1201,9 @@ namespace TitanOrbit.UI
                 _hoverMegaPool,
                 anchor,
                 _hoverChassisId,
-                _hoverRelay);
+                _hoverRelay,
+                _hoverPool,
+                _hoverComparisonLevel);
         }
 
         /// <summary>Slot wrapper rect (fill + dim). Null when the segment was never built.</summary>

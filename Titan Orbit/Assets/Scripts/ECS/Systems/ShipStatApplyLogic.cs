@@ -868,6 +868,18 @@ namespace TitanOrbit.ECS
 
         /// <summary>
         /// Adds flat CardData stat modifiers from equipped upgrade cards onto the chassis baseline.
+        /// The motor writes this result onto <see cref="ShipMotorConfig.MaxSpeed"/>. HUD cruise
+        /// must call the same method or the chip stays at the pre-card number while the ship flies faster.
+        /// </summary>
+        public static void ApplyEquippedCardStatModifiers(
+            EntityManager em,
+            Entity shipEntity,
+            string chassisId,
+            ref ShipComponentAbilityStats baseline) =>
+            TryAddEquippedCardStatModifiers(em, shipEntity, chassisId, ref baseline);
+
+        /// <summary>
+        /// Adds flat CardData stat modifiers from equipped upgrade cards onto the chassis baseline.
         /// </summary>
         static void TryAddEquippedCardStatModifiers(
             EntityManager em,

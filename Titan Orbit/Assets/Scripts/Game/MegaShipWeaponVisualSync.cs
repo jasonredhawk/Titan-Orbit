@@ -230,11 +230,15 @@ namespace TitanOrbit.Game
     /// Hybrid presentation: while a MEGA gun is tracking, LookAt the lock's <b>live</b>
     /// display pose from the current muzzle. Do not yaw to the lead intercept — that
     /// heading swings away from the target while the hull accelerates or turns.
-    /// Idle guns park at ship-forward + hull-local yaw.
+    /// Idle guns park at ship-forward + hull-local yaw. Barrels muted in the arsenal
+    /// HUD park on the hull and do not follow the cursor or a lock.
     /// </summary>
     public static class MegaShipWeaponVisualSync
     {
-        /// <summary>Rotates cached turret joints on <paramref name="proxy"/> to the live MEGA aim.</summary>
+        /// <summary>
+        /// Rotates cached turret joints on <paramref name="proxy"/> to the live MEGA aim.
+        /// Barrels the arsenal HUD muted stay on the hull instead of tracking a lock or the cursor.
+        /// </summary>
         public static void Apply(EntityManager em, Entity shipEntity, GameObject proxy)
         {
             if (proxy == null || shipEntity == Entity.Null || !em.Exists(shipEntity))
@@ -263,6 +267,10 @@ namespace TitanOrbit.Game
             bool ownerFiring = em.HasComponent<LocalPlayerShipTag>(shipEntity)
                 && em.HasComponent<ShipInput>(shipEntity)
                 && em.GetComponentData<ShipInput>(shipEntity).Fire.IsSet;
+            bool localOwner = em.HasComponent<LocalPlayerShipTag>(shipEntity);
+            var arm = ShipWeaponArmState.Resolve(em, shipEntity);
+            if (localOwner && hasMounts)
+                arm = WeaponArmSelection.Overlay(in arm, mounts);
 
             int count = binding.YawRoots.Length;
             for (int i = 0; i < count; i++)
@@ -283,7 +291,14 @@ namespace TitanOrbit.Game
                         gunners[i].AimWorldZ);
                 bool isCannon = hasMounts && hasGunners && i < mounts.Length
                     && ShipWeaponKind.IsCannonLaser(mounts[i], gunners, i);
-                if (TryGetLocalOwnerMouseWorldDir(
+                // Arsenal mute. Park on the hull — a silenced barrel must not
+                // keep a world-yaw lock or swing onto the cursor.
+                bool userOff = hasMounts && i < mounts.Length && !ShipWeaponArmState.IsArmed(in arm, i);
+                if (userOff)
+                {
+                    desiredBarrelWorld = shipHeading;
+                }
+                else if (TryGetLocalOwnerMouseWorldDir(
                         em, shipEntity, yawRoot.position, out Vector3 ownerMouseDir))
                 {
                     desiredBarrelWorld = Quaternion.LookRotation(ownerMouseDir, Vector3.up);

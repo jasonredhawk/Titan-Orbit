@@ -125,6 +125,20 @@ namespace TitanOrbit.Game
         readonly Dictionary<Entity, PlanetVisualKey> _proxyPlanetVisuals = new Dictionary<Entity, PlanetVisualKey>();
 
         /// <summary>
+        /// Match seed and water range last applied to this planet. A new map seed, or an
+        /// edit to <see cref="PlanetMaterialPool"/> min/max, rolls the oceans again once.
+        /// </summary>
+        readonly Dictionary<Entity, PlanetSurfaceWaterRoll> _planetSurfaceWaterSeeds =
+            new Dictionary<Entity, PlanetSurfaceWaterRoll>();
+
+        struct PlanetSurfaceWaterRoll
+        {
+            public uint Seed;
+            public float Min;
+            public float Max;
+        }
+
+        /// <summary>
         /// Last applied display tint team per asteroid proxy (after overlap → prefer-local resolve).
         /// Skip GetComponent/tint work every SyncAllProxies when unchanged.
         /// </summary>
@@ -1448,7 +1462,10 @@ namespace TitanOrbit.Game
                 // Instantiates-time Configure. Refresh in place from ghosted PlanetState — per known
                 // proxy only (no planet ToEntityArray / map gather).
                 if (kind == ProxyVisualKind.Planet)
+                {
+                    TryApplyNeutralPlanetSurfaceWater(entity, go);
                     RefreshPlanetProxyAppearanceIfChanged(em, entity, go, scale);
+                }
 
                 // --- Asteroid territory tint (budgeted PIT) ---
                 // Untinted / invalidated rocks only; MaxAsteroidTerritoryTintsPerFrame per sync.
@@ -1499,6 +1516,39 @@ namespace TitanOrbit.Game
             // used to freeze "applied" forever and leave the rock untinted.
             if (WorldBodyVisualApplier.ApplyAsteroidTerritoryTint(go, displayTeam))
                 _proxyAsteroidTerritory[entity] = displayTeam;
+        }
+
+        /// <summary>
+        /// Rolls ocean coverage once per map seed. Skips after the seed is latched so
+        /// sync does not touch <c>SgtPlanet</c> every frame. Homes keep their prefab water.
+        /// </summary>
+        void TryApplyNeutralPlanetSurfaceWater(Entity entity, GameObject go)
+        {
+            uint seed = ClientMapHydrateCache.MatchSeed;
+            if (seed == 0 || go == null)
+                return;
+
+            if (planetMaterialPool == null)
+                planetMaterialPool = WorldBodyVisualApplier.LoadDefaultMaterialPool();
+
+            float min = planetMaterialPool != null ? planetMaterialPool.NeutralWaterLevelMin : 0.07f;
+            float max = planetMaterialPool != null ? planetMaterialPool.NeutralWaterLevelMax : 0.26f;
+            if (_planetSurfaceWaterSeeds.TryGetValue(entity, out PlanetSurfaceWaterRoll applied) &&
+                applied.Seed == seed &&
+                applied.Min == min &&
+                applied.Max == max)
+                return;
+
+            if (!_proxyPlanetVisuals.TryGetValue(entity, out var key))
+                return;
+
+            WorldBodyVisualApplier.ApplyNeutralSurfaceWater(go, key.PlanetId, key.IsHome, seed, planetMaterialPool);
+            _planetSurfaceWaterSeeds[entity] = new PlanetSurfaceWaterRoll
+            {
+                Seed = seed,
+                Min = min,
+                Max = max,
+            };
         }
 
         /// <summary>
@@ -3283,6 +3333,7 @@ namespace TitanOrbit.Game
                 _proxyTeams.Remove(entity);
                 _proxyAccentKeys.Remove(entity);
                 _proxyPlanetVisuals.Remove(entity);
+                _planetSurfaceWaterSeeds.Remove(entity);
                 _proxyAsteroidTerritory.Remove(entity);
                 _proxyGemBonusTint.Remove(entity);
                 _proxyGemSelfPickupFade.Remove(entity);
@@ -3837,6 +3888,7 @@ namespace TitanOrbit.Game
             _proxyTeams.Clear();
             _proxyAccentKeys.Clear();
             _proxyPlanetVisuals.Clear();
+            _planetSurfaceWaterSeeds.Clear();
             _proxyAsteroidTerritory.Clear();
             _proxyGemBonusTint.Clear();
             _proxyGemSelfPickupFade.Clear();

@@ -184,6 +184,8 @@ namespace TitanOrbit.ECS
                     ? EntityManager.GetBuffer<MegaShipGunnerSlotElement>(mega)
                     : default;
                 ShipWeaponKind.RestoreMountKindsFromGhostedSlots(mounts, gunners);
+                // Arsenal HUD mute. Silenced barrels must not acquire or slew.
+                var arm = ShipWeaponArmState.Resolve(EntityManager, mega);
 
                 bool heal = EntityManager.HasComponent<ShipLoadoutState>(mega) &&
                             EntityManager.GetComponentData<ShipLoadoutState>(mega).HealingBulletsActive;
@@ -213,7 +215,7 @@ namespace TitanOrbit.ECS
                 if (ownerShift)
                 {
                     ClearProjectileAimSlots(mega);
-                    AimUnoccupiedMountsAtMouse(mega, xf, mounts, gunners, mapW, mapH, dt);
+                    AimUnoccupiedMountsAtMouse(mega, xf, mounts, gunners, in arm, mapW, mapH, dt);
                 }
 
                 if (!ownerWantsFire)
@@ -251,6 +253,8 @@ namespace TitanOrbit.ECS
                     {
                         if (!ShipWeaponKind.IsCannonLaser(mounts[m], gunners, m))
                             continue;
+                        if (!ShipWeaponArmState.IsArmed(in arm, m))
+                            continue;
                         cannonsWantAsteroids = true;
                         break;
                     }
@@ -272,6 +276,16 @@ namespace TitanOrbit.ECS
                     {
                         if (!ShipWeaponKind.IsCannonLaser(mounts[m], gunners, m))
                             continue;
+                        if (!ShipWeaponArmState.IsArmed(in arm, m))
+                        {
+                            // Drop the cone lock so a later unmute does not resume a stale burn.
+                            aims[m] = new MegaShipAutoAimSlotElement
+                            {
+                                Target = mega,
+                                AimPoint = default,
+                            };
+                            continue;
+                        }
 
                         var slot = aims[m];
                         var mount = mounts[m];
@@ -321,6 +335,16 @@ namespace TitanOrbit.ECS
 
                 for (int m = 0; m < mountCount; m++)
                 {
+                    if (!ShipWeaponArmState.IsArmed(in arm, m))
+                    {
+                        aims[m] = new MegaShipAutoAimSlotElement
+                        {
+                            Target = mega,
+                            AimPoint = default,
+                        };
+                        continue;
+                    }
+
                     bool isCannon = ShipWeaponKind.IsCannonLaser(mounts[m], gunners, m);
 
                     var slot = aims[m];
@@ -1082,7 +1106,8 @@ namespace TitanOrbit.ECS
 
         /// <summary>
         /// Snap each MEGA gun toward the owner's mouse <b>point</b>, not a
-        /// shared world direction.
+        /// shared world direction. Barrels muted on the arsenal HUD park on
+        /// hull forward instead of following the cursor.
         /// <para>
         /// [TITAN-ORBIT] A single hull-center direction makes every barrel fire
         /// parallel — fine on a tiny fighter, wrong on a wide MEGA. Reconstruct the
@@ -1096,6 +1121,7 @@ namespace TitanOrbit.ECS
             in LocalTransform xf,
             DynamicBuffer<ShipWeaponMountElement> mounts,
             DynamicBuffer<MegaShipGunnerSlotElement> gunners,
+            in ShipWeaponArmState arm,
             float mapW,
             float mapH,
             float dt)
@@ -1118,6 +1144,15 @@ namespace TitanOrbit.ECS
             for (int m = 0; m < mountCount; m++)
             {
                 var mount = mounts[m];
+                // Muted barrels return to hull forward instead of tracking the cursor.
+                if (!ShipWeaponArmState.IsArmed(in arm, m))
+                {
+                    MegaShipWeaponAim.RotateMountTowardWorldDir(in xf, ref mount, hullForward, dt);
+                    mounts[m] = mount;
+                    MegaShipWeaponAim.WriteGhostedYaw(gunners, m, in mount);
+                    continue;
+                }
+
                 float3 desired = hullForward;
                 float targetDist = 0f;
                 if (haveInput

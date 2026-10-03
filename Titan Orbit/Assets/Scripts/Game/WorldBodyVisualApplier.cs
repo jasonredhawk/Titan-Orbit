@@ -2,7 +2,9 @@ using System.Collections.Generic;
 using SpaceGraphicsToolkit;
 using TitanOrbit.Core;
 using TitanOrbit.Data;
+using TitanOrbit.ECS;
 using TitanOrbit.Simulation;
+using Unity.Mathematics;
 using UnityEngine;
 
 namespace TitanOrbit.Game
@@ -70,6 +72,7 @@ namespace TitanOrbit.Game
             float size = Mathf.Max(0.25f, worldScale);
             Transform visualBody = PlanetVisualBody.EnsureAndApplyScale(instance, size);
             EnsurePlanetSpin(instance, visualBody);
+            ApplyNeutralSurfaceWater(instance, planetId, isHome, ClientMapHydrateCache.MatchSeed, materialPool);
 
             var stats = instance.GetComponent<PlanetWorldStatsLabel>();
             if (stats == null)
@@ -129,6 +132,7 @@ namespace TitanOrbit.Game
             // Keep unit root + body scale in sync when ECS diameter changes.
             Transform visualBody = PlanetVisualBody.EnsureAndApplyScale(instance, worldScale);
             EnsurePlanetSpin(instance, visualBody);
+            ApplyNeutralSurfaceWater(instance, planetId, isHome, ClientMapHydrateCache.MatchSeed, materialPool);
 
             // --- Surface material (capture / home identity only) ---
             // [TITAN-ORBIT] Level-up does not change the planet surface — only ring band count.
@@ -491,6 +495,85 @@ namespace TitanOrbit.Game
             sgt.Displacement = Mathf.Lerp(
                 DisplacementMin, BodyCollisionMath.AsteroidVisualDisplacementLocal, t);
             s_WebGlAsteroidMeshes[bucket] = sgt.RebuildAsSharedMesh();
+        }
+
+        /// <summary>
+        /// Salt so this roll does not share a stream with bullet-bank or placement RNG.
+        /// </summary>
+        const uint SurfaceWaterRollSalt = 0xA7E21u;
+
+        /// <summary>
+        /// Oceans on non-home planets. The planet shader already has water; neutral prefabs
+        /// force <c>SgtPlanet.waterLevel</c> to 0, which hides it. Homes keep the authored level.
+        /// Min and max come from <see cref="PlanetMaterialPool"/>.
+        /// </summary>
+        /// <param name="root">Planet proxy root (spin pivot may already have migrated <c>SgtPlanet</c>).</param>
+        /// <param name="planetId">Stable <c>PlanetState.PlanetId</c>.</param>
+        /// <param name="isHome">Home worlds are unchanged.</param>
+        /// <param name="matchSeed">Map seed. Zero skips the roll so a later recipe can fill the oceans in.</param>
+        /// <param name="pool">Surface pool. Null loads <c>Resources/PlanetMaterialPool</c>.</param>
+        public static void ApplyNeutralSurfaceWater(
+            GameObject root,
+            int planetId,
+            bool isHome,
+            uint matchSeed,
+            PlanetMaterialPool pool)
+        {
+            if (root == null || isHome || matchSeed == 0)
+                return;
+
+            if (pool == null)
+                pool = LoadDefaultMaterialPool();
+
+            float level = RollNeutralSurfaceWaterLevel(matchSeed, planetId, pool);
+            var planets = root.GetComponentsInChildren<SgtPlanet>(true);
+            for (int i = 0; i < planets.Length; i++)
+            {
+                SgtPlanet sgt = planets[i];
+                if (sgt == null)
+                    continue;
+                EnsureWaterKeyword(sgt);
+                sgt.WaterLevel = level;
+            }
+        }
+
+        /// <summary>
+        /// Deterministic ocean line for one planet on one map. Same seed, id, and pool range on every client.
+        /// </summary>
+        public static float RollNeutralSurfaceWaterLevel(uint matchSeed, int planetId, PlanetMaterialPool pool)
+        {
+            float min = pool != null ? pool.NeutralWaterLevelMin : 0.07f;
+            float max = pool != null ? pool.NeutralWaterLevelMax : 0.26f;
+            if (max < min)
+            {
+                float swap = min;
+                min = max;
+                max = swap;
+            }
+
+            uint salt = unchecked((uint)planetId * 2654435761u);
+            uint index = matchSeed ^ salt ^ SurfaceWaterRollSalt;
+            if (index == 0)
+                index = 1u;
+            var rng = Unity.Mathematics.Random.CreateFromIndex(index);
+            return math.lerp(min, max, rng.NextFloat());
+        }
+
+        /// <summary>
+        /// Family skins ship with <c>_WATER</c>. If a fallback material does not, instance it
+        /// so the shared asset is not edited and other bodies keep their keyword state.
+        /// </summary>
+        static void EnsureWaterKeyword(SgtPlanet sgt)
+        {
+            Material mat = sgt.Material;
+            if (mat == null || mat.IsKeywordEnabled("_WATER"))
+                return;
+
+            var instance = new Material(mat);
+            instance.EnableKeyword("_WATER");
+            if (instance.HasProperty("_HasWater"))
+                instance.SetFloat("_HasWater", 1f);
+            sgt.Material = instance;
         }
 
         public static void ApplyPlanetMaterial(

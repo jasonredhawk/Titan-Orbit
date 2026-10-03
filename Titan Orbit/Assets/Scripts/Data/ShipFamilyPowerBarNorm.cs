@@ -6,15 +6,15 @@ using UnityEngine;
 namespace TitanOrbit.Data
 {
     /// <summary>
-    /// Per-stat ceilings for the Orbit Menu upgrade-tree power bar. Each of the ten
-    /// ability slots fills as <c>thisShip / poolMax</c>, so Health Regen is readable
-    /// next to Health Cap.
+    /// Per-stat ceilings for Orbit Menu power bars. Each of the ten ability slots
+    /// fills as <c>thisCard / poolMax</c>, so Health Regen is readable next to Health Cap.
     /// <para>
-    /// Regular hulls (levels 1–6) share one pool: every family's chassis at that
-    /// chassis's tree level with every HUD ability maxed. MEGA hulls (level 7) share
-    /// a second pool: every armed catalog MEGA. The two pools never mix — a MEGA's
-    /// firepower would otherwise squash regular bars, and regular maxes would flatten
-    /// every MEGA bar to full. Slot 0 is sustained DPS (<c>firePower × fireRate</c>).
+    /// Three pools, never mixed. Regular hulls (levels 1–6) share one ceiling:
+    /// every family's chassis at that chassis's tree level. Titans (level 7) share
+    /// a second ceiling: every armed catalog MEGA. Gear shares a third: every
+    /// component on every family, at the card's ship level. A Titan's guns would
+    /// squash regular bars, and a whole ship's health would squash a single part.
+    /// Slot 0 on a ship is sustained DPS. On gear it is DPS plus ramming.
     /// Paired with <see cref="UI.ShipUpgradeTreePowerBarUI"/>.
     /// </para>
     /// </summary>
@@ -73,6 +73,25 @@ namespace TitanOrbit.Data
             peopleCap = Mathf.Max(peopleCap, breakdown.GetDisplayStatValue(9));
         }
 
+        /// <summary>
+        /// Same as <see cref="Absorb"/> but slot 0 uses DPS plus ramming.
+        /// Gear bars call this so a ram component can set the Offense ceiling.
+        /// Ship bars must keep <see cref="Absorb"/> — a hull’s Fire Power lane is gun DPS only.
+        /// </summary>
+        public void AbsorbComponentCompare(in ShipFamilyPowerScoreBreakdown breakdown)
+        {
+            firePower = Mathf.Max(firePower, breakdown.GetComponentCompareStatValue(0));
+            bulletSpeed = Mathf.Max(bulletSpeed, breakdown.GetComponentCompareStatValue(1));
+            healthCap = Mathf.Max(healthCap, breakdown.GetComponentCompareStatValue(2));
+            healthRegen = Mathf.Max(healthRegen, breakdown.GetComponentCompareStatValue(3));
+            energyCap = Mathf.Max(energyCap, breakdown.GetComponentCompareStatValue(4));
+            energyRegen = Mathf.Max(energyRegen, breakdown.GetComponentCompareStatValue(5));
+            moveSpeed = Mathf.Max(moveSpeed, breakdown.GetComponentCompareStatValue(6));
+            turnSpeed = Mathf.Max(turnSpeed, breakdown.GetComponentCompareStatValue(7));
+            gemCap = Mathf.Max(gemCap, breakdown.GetComponentCompareStatValue(8));
+            peopleCap = Mathf.Max(peopleCap, breakdown.GetComponentCompareStatValue(9));
+        }
+
         /// <summary>Pool max for display stat index 0–9 (DPS … Troop Cap).</summary>
         public float Get(int statIndex)
         {
@@ -94,12 +113,37 @@ namespace TitanOrbit.Data
     }
 
     /// <summary>
-    /// The chassis that currently owns one power-bar slot's catalog max.
-    /// Regular-family and MEGA pools keep separate winners so a 90-gun MEGA cannot
-    /// steal RANK 1 from NightAye on the L1–L6 tree.
+    /// Which catalog a power bar is measuring against. The three pools never share
+    /// a ceiling: a Titan’s guns would flatten every regular hull, and a whole
+    /// ship’s health would flatten every single component.
+    /// </summary>
+    public enum ShipPowerBarComparisonPool
+    {
+        /// <summary>Caller has not chosen yet. Treated as <see cref="RegularShips"/>.</summary>
+        Unset = 0,
+
+        /// <summary>Upgrade-tree levels 1–6. Every family’s regular chassis.</summary>
+        RegularShips = 1,
+
+        /// <summary>Upgrade-tree level 7. Armed Titans (catalog MEGAs) only.</summary>
+        Titans = 2,
+
+        /// <summary>
+        /// Orbit Menu gear. Every purchasable component on every ship family,
+        /// scored at one ship level. Not whole hulls.
+        /// </summary>
+        Components = 3
+    }
+
+    /// <summary>
+    /// The chassis or component that currently owns one power-bar slot's catalog max.
+    /// Regular ships, Titans, and gear each keep their own winners so a 90-gun Titan
+    /// cannot steal RANK 1 from a regular hull, and a whole ship cannot steal it from a part.
     /// <para>
     /// [TITAN-ORBIT] Identity only — combat never reads this. Hover tips in
-    /// <c>ShipPowerBarStatTooltip</c> show the hull as a small RANK 1 line.
+    /// <c>ShipPowerBarStatTooltip</c> show the winner as a small RANK 1 line.
+    /// For gear, <see cref="hullName"/> is the part name and <see cref="chassisId"/>
+    /// is <see cref="ShipFamilyPowerBarNorm.FormatComponentLeaderKey"/>.
     /// </para>
     /// </summary>
     public struct ShipPowerBarStatLeader
@@ -144,9 +188,9 @@ namespace TitanOrbit.Data
     /// ability maxed (<see cref="ShipAbilityLevelCounts.Maxed"/>). Same formulas as live
     /// ships — non-weapons use <c>shipLevel + ability</c> per part; weapons omit N;
     /// weapon bullet speed is ability-only. Live prefab sums are cached per session.
-    /// Also walks the regular-family catalog and the MEGA catalog for two separate
-    /// ten-stat max pools, and remembers which hull set each slot's ceiling
-    /// (RANK 1 for power-bar hover tips).
+    /// Also walks three separate ten-stat max pools and remembers who set each
+    /// slot’s ceiling (RANK 1 for power-bar hover tips):
+    /// regular hulls (L1–L6), Titans (armed MEGAs), and gear components from every family.
     /// </summary>
     public static class ShipFamilyPowerBarNorm
     {
@@ -164,6 +208,26 @@ namespace TitanOrbit.Data
         static ShipPowerBarStatLeader[] s_cachedMegaLeaders;
         static bool s_hasCachedRegularMaxes;
         static bool s_hasCachedMegaMaxes;
+
+        /// <summary>
+        /// One gear ceiling per ship level. Extra Level changes component numbers, so
+        /// an L2 engine must not share a denominator with an L6 engine.
+        /// </summary>
+        struct ComponentComparePool
+        {
+            public int bankSignature;
+            public ShipPowerBarStatMaxes maxes;
+            public ShipPowerBarStatLeader[] leaders;
+        }
+
+        static readonly Dictionary<int, ComponentComparePool> s_componentPools =
+            new Dictionary<int, ComponentComparePool>(8);
+
+        /// <summary>
+        /// Last bank lookup the Orbit Menu passed in. Hover tips rebuild from this
+        /// if the menu has not painted a level yet. Data code cannot see live planets.
+        /// </summary>
+        static Func<int, int> s_componentBankResolver;
 
         /// <summary>
         /// Extra Level at the tier's tree level with every HUD ability maxed.
@@ -379,6 +443,99 @@ namespace TitanOrbit.Data
         }
 
         /// <summary>
+        /// Highest value of each of the ten gear lanes across every purchasable
+        /// component on every ship family, scored at <paramref name="shipLevel"/>.
+        /// A cannon is compared with other cannons and engines, not with a finished hull.
+        /// Cached per ship level until the families’ bullet banks change or
+        /// <see cref="InvalidateCache"/> runs.
+        /// </summary>
+        /// <param name="shipLevel">Extra Level used on the card being painted (at least 1).</param>
+        /// <param name="bankForFamilyConfigIndex">
+        /// Optional. Given a family-list index, returns that family’s live bullet bank
+        /// (Laserbolt, Lightning, …). Null uses each part’s authored default gun.
+        /// The Orbit Menu passes the match’s rolled banks so the ceiling matches the card.
+        /// </param>
+        public static ShipPowerBarStatMaxes GetComponentMaxPerStat(
+            int shipLevel,
+            Func<int, int> bankForFamilyConfigIndex = null)
+        {
+            shipLevel = Mathf.Max(1, shipLevel);
+            if (bankForFamilyConfigIndex != null)
+                s_componentBankResolver = bankForFamilyConfigIndex;
+            else
+                bankForFamilyConfigIndex = s_componentBankResolver;
+
+            // --- Reuse this level when the rolled guns have not changed ---
+            PlanetShipFamilyConfig config = PlanetShipFamilyConfig.LoadDefault();
+            int bankSignature = ComputeFamilyBankSignature(config, bankForFamilyConfigIndex);
+            if (s_componentPools.TryGetValue(shipLevel, out ComponentComparePool cached)
+                && cached.bankSignature == bankSignature
+                && cached.leaders != null)
+                return cached.maxes;
+
+            // --- Walk every family’s parts at this Extra Level ---
+            // [TITAN-ORBIT] One AstroEagle thruster must be readable next to a
+            // HyperFalcon thruster. That only works if every component shares one
+            // denominator. Whole ships stay out of this walk.
+            var maxes = ShipPowerBarStatMaxes.CreateEmpty();
+            ShipPowerBarStatLeader[] leaders = CreateEmptyLeaders();
+            if (config?.families != null)
+            {
+                for (int familyIndex = 0; familyIndex < config.families.Count; familyIndex++)
+                {
+                    PlanetShipFamilyConfig.ShipFamilyEntry familySlot = config.families[familyIndex];
+                    ShipFamilyDefinition def = familySlot?.shipFamilyDefinition;
+                    if (def?.components == null)
+                        continue;
+
+                    int bank = bankForFamilyConfigIndex != null
+                        ? bankForFamilyConfigIndex(familyIndex)
+                        : -1;
+                    string familyLabel = ResolveFamilyLabel(familySlot, def);
+
+                    for (int c = 0; c < def.components.Count; c++)
+                    {
+                        // One iteration = one store part (engine, gun, cargo, …).
+                        ShipFamilyComponentEntry entry = def.components[c];
+                        if (entry == null || string.IsNullOrWhiteSpace(entry.componentId))
+                            continue;
+
+                        ShipFamilyPowerScoreBreakdown breakdown =
+                            ShipComponentStoreData.GetPowerBreakdown(entry, shipLevel, def, bank);
+                        maxes.AbsorbComponentCompare(breakdown);
+                        AbsorbLeaders(
+                            leaders,
+                            breakdown,
+                            familyLabel,
+                            ShipComponentStoreData.GetDisplayName(entry),
+                            FormatComponentLeaderKey(def.familyId, entry.componentId),
+                            treeLevel: 0,
+                            ShipComponentStoreData.GetMenuPreviewSprite(def, entry),
+                            useComponentCompare: true);
+                    }
+                }
+            }
+
+            maxes.EnsureMinimum();
+            s_componentPools[shipLevel] = new ComponentComparePool
+            {
+                bankSignature = bankSignature,
+                maxes = maxes,
+                leaders = leaders
+            };
+            return maxes;
+        }
+
+        /// <summary>
+        /// Stable id for “this part is RANK 1”. Family plus component id, because two
+        /// families can both sell a part whose short name is Thrusters.
+        /// </summary>
+        public static string FormatComponentLeaderKey(string familyId, string componentId)
+        {
+            return (familyId ?? string.Empty) + "|" + (componentId ?? string.Empty);
+        }
+
+        /// <summary>
         /// True for the MEGA column (level 7) or any <c>MEGA_###</c> chassis id.
         /// Regular family hulls always use levels 1–6.
         /// </summary>
@@ -410,32 +567,70 @@ namespace TitanOrbit.Data
         public static bool IsMegaTreeLevel(int treeLevel) => treeLevel >= MegaTreeLevel;
 
         /// <summary>
-        /// Hull that owns the catalog max for one display slot (0–9).
-        /// Uses the same pool as the bar fill: regular families for L1–L6, MEGAs for L7.
-        /// Builds the matching max cache on first call.
+        /// Hull or part that owns the catalog max for one display slot (0–9).
+        /// Regular families for L1–L6, Titans for L7, components for gear cards.
+        /// Builds the matching cache on first call.
         /// </summary>
         /// <param name="statIndex">Power-bar slot (0 = DPS … 9 = Troop Cap).</param>
-        /// <param name="megaPool">True for MEGA catalog winners; false for regular families.</param>
-        public static ShipPowerBarStatLeader GetStatLeader(int statIndex, bool megaPool)
+        /// <param name="pool">Which ceiling this bar was painted against.</param>
+        /// <param name="shipLevel">Gear only. Extra Level of the component pool.</param>
+        public static ShipPowerBarStatLeader GetStatLeader(
+            int statIndex,
+            ShipPowerBarComparisonPool pool,
+            int shipLevel = 1)
         {
             if (statIndex < 0 || statIndex >= ShipPowerBarStatMaxes.StatCount)
                 return default;
 
-            // --- Ensure the walk that fills maxes also filled leaders ---
-            if (megaPool)
-                GetMegaMaxPerStat();
-            else
-                GetGlobalMaxPerStat();
+            if (pool == ShipPowerBarComparisonPool.Unset)
+                pool = ShipPowerBarComparisonPool.RegularShips;
 
-            ShipPowerBarStatLeader[] leaders = megaPool ? s_cachedMegaLeaders : s_cachedRegularLeaders;
+            // --- Ensure the walk that fills maxes also filled leaders ---
+            ShipPowerBarStatLeader[] leaders;
+            if (pool == ShipPowerBarComparisonPool.Titans)
+            {
+                GetMegaMaxPerStat();
+                leaders = s_cachedMegaLeaders;
+            }
+            else if (pool == ShipPowerBarComparisonPool.Components)
+            {
+                shipLevel = Mathf.Max(1, shipLevel);
+                if (!s_componentPools.TryGetValue(shipLevel, out ComponentComparePool componentPool)
+                    || componentPool.leaders == null)
+                {
+                    GetComponentMaxPerStat(shipLevel, s_componentBankResolver);
+                    s_componentPools.TryGetValue(shipLevel, out componentPool);
+                }
+
+                leaders = componentPool.leaders;
+            }
+            else
+            {
+                GetGlobalMaxPerStat();
+                leaders = s_cachedRegularLeaders;
+            }
+
             if (leaders == null || statIndex >= leaders.Length)
                 return default;
             return leaders[statIndex];
         }
 
         /// <summary>
-        /// Drops live-sum, regular-family max, MEGA max, RANK 1 leader, and weapon-roster
-        /// caches after an editor rebake or catalog rebuild.
+        /// Hull that owns the catalog max for one display slot (0–9).
+        /// Uses the same pool as the bar fill: regular families for L1–L6, Titans for L7.
+        /// </summary>
+        /// <param name="statIndex">Power-bar slot (0 = DPS … 9 = Troop Cap).</param>
+        /// <param name="megaPool">True for Titan catalog winners; false for regular families.</param>
+        public static ShipPowerBarStatLeader GetStatLeader(int statIndex, bool megaPool)
+        {
+            return GetStatLeader(
+                statIndex,
+                megaPool ? ShipPowerBarComparisonPool.Titans : ShipPowerBarComparisonPool.RegularShips);
+        }
+
+        /// <summary>
+        /// Drops live-sum, regular-family max, Titan max, gear-component max, RANK 1
+        /// leader, and weapon-roster caches after an editor rebake or catalog rebuild.
         /// </summary>
         public static void InvalidateCache()
         {
@@ -445,6 +640,7 @@ namespace TitanOrbit.Data
             s_cachedMegaMaxes = default;
             s_cachedRegularLeaders = null;
             s_cachedMegaLeaders = null;
+            s_componentPools.Clear();
             s_liveCache.Clear();
             // Weapon-roster cache walks the same prefabs / catalog rows.
             ShipWeaponLoadout.InvalidateCache();
@@ -472,9 +668,12 @@ namespace TitanOrbit.Data
         }
 
         /// <summary>
-        /// Keeps the higher value per display stat and records that hull as RANK 1.
-        /// Ties keep the first winner so the tip does not flip between equal ships.
+        /// Keeps the higher value per display stat and records that hull or part as RANK 1.
+        /// Ties keep the first winner so the tip does not flip between equals.
         /// </summary>
+        /// <param name="useComponentCompare">
+        /// True for gear. Slot 0 then includes ramming. Ship walks leave this false.
+        /// </param>
         static void AbsorbLeaders(
             ShipPowerBarStatLeader[] leaders,
             in ShipFamilyPowerScoreBreakdown breakdown,
@@ -482,7 +681,8 @@ namespace TitanOrbit.Data
             string hullName,
             string chassisId,
             int treeLevel,
-            Sprite preview)
+            Sprite preview,
+            bool useComponentCompare = false)
         {
             if (leaders == null)
                 return;
@@ -490,7 +690,9 @@ namespace TitanOrbit.Data
             for (int stat = 0; stat < leaders.Length; stat++)
             {
                 // One iteration = one ODEMC slot (DPS, Bullet Speed, … Troop Cap).
-                float value = breakdown.GetDisplayStatValue(stat);
+                float value = useComponentCompare
+                    ? breakdown.GetComponentCompareStatValue(stat)
+                    : breakdown.GetDisplayStatValue(stat);
                 if (value <= leaders[stat].value)
                     continue;
 
@@ -504,6 +706,40 @@ namespace TitanOrbit.Data
                     previewSprite = preview
                 };
             }
+        }
+
+        /// <summary>
+        /// Player-facing family name for a gear RANK 1 line. Prefers the config label,
+        /// then splits CamelCase (<c>AstroEagle</c> → Astro Eagle).
+        /// </summary>
+        static string ResolveFamilyLabel(
+            PlanetShipFamilyConfig.ShipFamilyEntry familySlot,
+            ShipFamilyDefinition def)
+        {
+            if (familySlot != null && !string.IsNullOrWhiteSpace(familySlot.familyName))
+                return familySlot.familyName.Trim();
+            if (def == null || string.IsNullOrWhiteSpace(def.familyId))
+                return string.Empty;
+            return DisplayNameFormatting.SplitCamelCase(def.familyId);
+        }
+
+        /// <summary>
+        /// Fingerprint of each family’s live bullet bank. A new roll (Lightning instead
+        /// of Laserbolt) changes weapon ceilings, so the gear cache must rebuild.
+        /// </summary>
+        static int ComputeFamilyBankSignature(
+            PlanetShipFamilyConfig config,
+            Func<int, int> bankForFamilyConfigIndex)
+        {
+            int count = config?.families != null ? config.families.Count : 0;
+            int hash = 17;
+            for (int i = 0; i < count; i++)
+            {
+                int bank = bankForFamilyConfigIndex != null ? bankForFamilyConfigIndex(i) : -1;
+                hash = unchecked(hash * 31 + bank + 1);
+            }
+
+            return unchecked(hash * 31 + count);
         }
 
         static IEnumerable<ShipFamilyDefinition> EnumerateFamilies(PlanetShipFamilyConfig config)
