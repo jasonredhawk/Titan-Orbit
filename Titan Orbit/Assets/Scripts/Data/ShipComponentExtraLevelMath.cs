@@ -70,6 +70,11 @@ namespace TitanOrbit.Data
     /// PerExtra; a second thruster adds Accel PerExtra.
     /// </para>
     /// <para>
+    /// Turn is one hull-wide Base, not one Base per pool. The part with the highest
+    /// authored <c>turnSpeed</c> keeps that Base. Every other part that has turn
+    /// adds only its <c>turnSpeedPerExtraLevel</c> × levels.
+    /// </para>
+    /// <para>
     /// [TITAN-ORBIT] Callers pass Base / PerExtra already multiplied by prefab starting
     /// <c>localScale</c> (<see cref="ShipComponentAbilityStatsMath.ScaleStatsByTransform"/>).
     /// A Cockpit at scale 3 is <c>3 ×</c> catalog Health / Gems / Troops. A weapon at
@@ -154,6 +159,52 @@ namespace TitanOrbit.Data
         /// </summary>
         public static int CountWeaponBulletSpeedExtraLevels(int abilityLevel) =>
             Mathf.Max(0, abilityLevel);
+
+        /// <summary>
+        /// The single part whose turn Base is allowed on the hull.
+        /// Highest authored <c>turnSpeed</c> wins. A tie goes to the higher
+        /// <c>turnSpeedPerExtraLevel</c>, then the earlier list index.
+        /// Parts with no turn Base (only PerExtra) are never chosen.
+        /// </summary>
+        /// <returns>Index into <paramref name="perComponentStats"/>, or -1 when nobody authored a turn Base.</returns>
+        public static int PickBestTurnBaseIndex(
+            IReadOnlyList<string> componentIds,
+            IReadOnlyList<ShipComponentAbilityStats> perComponentStats)
+        {
+            if (componentIds == null || perComponentStats == null)
+                return -1;
+
+            int count = Mathf.Min(componentIds.Count, perComponentStats.Count);
+            int best = -1;
+            float bestBase = 0f;
+            float bestPer = float.NegativeInfinity;
+            for (int i = 0; i < count; i++)
+            {
+                string id = componentIds[i];
+                if (string.IsNullOrWhiteSpace(id))
+                    continue;
+                if (ShipFamilyPartCalcProfileSet.IsCosmeticPartName(id))
+                    continue;
+
+                float b = perComponentStats[i].turnSpeed;
+                if (b <= 0.0001f)
+                    continue;
+
+                float per = perComponentStats[i].turnSpeedPerExtraLevel;
+                bool higherBase = best < 0 || b > bestBase + 0.0001f;
+                bool sameBaseBetterPer = best >= 0
+                    && Mathf.Abs(b - bestBase) <= 0.0001f
+                    && per > bestPer;
+                if (higherBase || sameBaseBetterPer)
+                {
+                    best = i;
+                    bestBase = b;
+                    bestPer = per;
+                }
+            }
+
+            return best;
+        }
 
         /// <summary>
         /// Weapon bullet speed: <c>Base + PerExtraLevel × abilityLevel</c>.
@@ -292,6 +343,7 @@ namespace TitanOrbit.Data
         /// <summary>
         /// Extra-Levels every matched part with <b>that part’s</b> PerExtra, then sums.
         /// Non-weapon pools keep <b>only the primary Base</b>. Extras add PerExtra × levels.
+        /// Turn ignores pool primaries: only <see cref="PickBestTurnBaseIndex"/> keeps a Base.
         /// Weapons keep each barrel’s Base (they fire on their own).
         /// <para>
         /// [TITAN-ORBIT] Move Speed is engines only (primary Engine Move Base + each
@@ -347,6 +399,9 @@ namespace TitanOrbit.Data
                 list.Add(i);
             }
 
+            // One turn Base for the whole hull. Other turn parts add PerExtra only.
+            int bestTurnIndex = PickBestTurnBaseIndex(componentIds, perComponentStats);
+
             // Weapon travel is one hull value (fastest barrel), not a sum of every gun.
             float maxWeaponBulletSpeed = 0f;
             float maxWeaponBulletSpeedPer = 0f;
@@ -374,6 +429,19 @@ namespace TitanOrbit.Data
                         includeBase: includeBase);
                     evaluated = ShipPropulsionAggregation.MaskAbilityStatsForRole(
                         componentIds[gi], evaluated, hasEngines, hasThrusters);
+
+                    // Pool primaries each kept their own turn Base. Replace that with
+                    // the one best part's Base; everyone else keeps PerExtra × levels.
+                    ShipComponentAbilityStats rawTurn = perComponentStats[gi];
+                    evaluated.turnSpeed = Evaluate(
+                        rawTurn.turnSpeed,
+                        rawTurn.turnSpeedPerExtraLevel,
+                        shipLevel,
+                        attrs.RotationSpeed,
+                        componentCount: 1,
+                        includeExtraComponentLevels: true,
+                        includeBase: gi == bestTurnIndex);
+                    evaluated.turnSpeedPerExtraLevel = rawTurn.turnSpeedPerExtraLevel;
 
                     if (weapon)
                     {

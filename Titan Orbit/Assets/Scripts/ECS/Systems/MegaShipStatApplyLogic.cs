@@ -170,7 +170,8 @@ namespace TitanOrbit.ECS
             if (em.HasComponent<ShipMotorConfig>(shipEntity))
             {
                 float moveVal = Mathf.Max(0.1f, effective.moveSpeed);
-                float turnVal = ShipPropulsionAggregation.ConvertTurnDefinitionToDegreesPerSecond(effective.turnSpeed);
+                // turnSpeed is already degrees per second (same unit as regular hulls).
+                float turnVal = Mathf.Max(0f, effective.turnSpeed);
                 float accel = Mathf.Max(0.1f, effective.accelerationCap > 0f
                     ? effective.accelerationCap
                     : moveVal * 0.25f);

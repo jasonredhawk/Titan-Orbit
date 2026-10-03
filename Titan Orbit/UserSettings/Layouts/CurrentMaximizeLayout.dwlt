@@ -23,7 +23,7 @@ MonoBehaviour:
   m_MinSize: {x: 300, y: 112}
   m_MaxSize: {x: 24288, y: 16192}
   vertical: 1
-  controlID: 486
+  controlID: 4968
   draggingID: 0
 --- !u!114 &2
 MonoBehaviour:
@@ -154,7 +154,7 @@ MonoBehaviour:
   m_MinSize: {x: 300, y: 112}
   m_MaxSize: {x: 24288, y: 16192}
   vertical: 0
-  controlID: 487
+  controlID: 4969
   draggingID: 0
 --- !u!114 &4
 MonoBehaviour:
@@ -180,7 +180,7 @@ MonoBehaviour:
   m_MinSize: {x: 200, y: 112}
   m_MaxSize: {x: 16192, y: 16192}
   vertical: 1
-  controlID: 499
+  controlID: 3923
   draggingID: 0
 --- !u!114 &5
 MonoBehaviour:
@@ -206,7 +206,7 @@ MonoBehaviour:
   m_MinSize: {x: 200, y: 56}
   m_MaxSize: {x: 16192, y: 8096}
   vertical: 0
-  controlID: 410
+  controlID: 3924
   draggingID: 0
 --- !u!114 &6
 MonoBehaviour:
@@ -227,8 +227,8 @@ MonoBehaviour:
     y: 0
     width: 455
     height: 859
-  m_MinSize: {x: 200, y: 200}
-  m_MaxSize: {x: 4000, y: 4000}
+  m_MinSize: {x: 201, y: 226}
+  m_MaxSize: {x: 4001, y: 4026}
   m_ActualView: {fileID: 7}
   m_Panes:
   - {fileID: 7}
@@ -280,12 +280,9 @@ MonoBehaviour:
       m_LastClickedID:
         m_Data: 0
       m_ExpandedIDs:
-      - m_Data: -23072
-      - m_Data: -22692
-      - m_Data: -22574
-      - m_Data: -6760
-      - m_Data: -6384
-      - m_Data: -6254
+      - m_Data: -5558
+      - m_Data: -5180
+      - m_Data: -5050
       - m_Data: -1386
       m_RenameOverlay:
         m_UserAcceptedRename: 0
@@ -1118,8 +1115,8 @@ MonoBehaviour:
     y: 859
     width: 1857
     height: 434
-  m_MinSize: {x: 231, y: 276}
-  m_MaxSize: {x: 10001, y: 10026}
+  m_MinSize: {x: 230, y: 250}
+  m_MaxSize: {x: 10000, y: 10000}
   m_ActualView: {fileID: 14}
   m_Panes:
   - {fileID: 14}
@@ -1176,7 +1173,7 @@ MonoBehaviour:
     m_SkipHidden: 0
     m_SearchArea: 0
     m_Folders:
-    - Assets/Prefabs/Ships/AstroEagle
+    - Assets/Prefabs/Ships
     m_Globs: []
     m_ProductIds: 
     m_AnyWithAssetOrigin: 0
@@ -1186,25 +1183,21 @@ MonoBehaviour:
   m_ViewMode: 1
   m_StartGridSize: 16
   m_LastFolders:
-  - Assets/Prefabs/Ships/AstroEagle
+  - Assets/Prefabs/Ships
   m_LastFoldersGridSize: 16
   m_LastProjectPath: C:\Users\jason\Documents\repo\Titan-Orbit\Titan Orbit
   m_LockTracker:
     m_IsLocked: 0
   m_LastLocalAssetsSearchArea: 0
   m_FolderTreeState:
-    scrollPos: {x: 0, y: 434.7}
+    scrollPos: {x: 0, y: 494.69995}
     m_SelectedIDs:
-    - m_Data: 104040
+    - m_Data: 103926
     m_LastClickedID:
-      m_Data: 104040
+      m_Data: 103926
     m_ExpandedIDs:
     - m_Data: 0
-    - m_Data: 82532
-    - m_Data: 103918
-    - m_Data: 103920
-    - m_Data: 103922
-    - m_Data: 103924
+    - m_Data: 82530
     - m_Data: 103926
     - m_Data: 103928
     - m_Data: 103930
@@ -1264,6 +1257,10 @@ MonoBehaviour:
     - m_Data: 104038
     - m_Data: 104040
     - m_Data: 104042
+    - m_Data: 104044
+    - m_Data: 104046
+    - m_Data: 104048
+    - m_Data: 104050
     - m_Data: 1000000000
     m_RenameOverlay:
       m_UserAcceptedRename: 0
@@ -1298,11 +1295,7 @@ MonoBehaviour:
       m_Data: 0
     m_ExpandedIDs:
     - m_Data: 0
-    - m_Data: 82532
-    - m_Data: 103918
-    - m_Data: 103920
-    - m_Data: 103922
-    - m_Data: 103924
+    - m_Data: 82530
     - m_Data: 103926
     - m_Data: 103928
     - m_Data: 103930
@@ -1362,6 +1355,10 @@ MonoBehaviour:
     - m_Data: 104038
     - m_Data: 104040
     - m_Data: 104042
+    - m_Data: 104044
+    - m_Data: 104046
+    - m_Data: 104048
+    - m_Data: 104050
     - m_Data: 1000000000
     m_RenameOverlay:
       m_UserAcceptedRename: 0
@@ -1391,9 +1388,9 @@ MonoBehaviour:
       m_ResourceFile: 
   m_ListAreaState:
     m_SelectedInstanceIDs:
-    - m_Data: 93066
+    - m_Data: 89830
     m_LastClickedEntityId:
-      m_Data: 93066
+      m_Data: 89830
     m_HadKeyboardFocusLastEvent: 1
     m_ExpandedInstanceIDs:
     - m_Data: 54664
@@ -1450,7 +1447,7 @@ MonoBehaviour:
       m_Icon: {fileID: 0}
       m_ResourceFile: 
     m_NewAssetIndexInList: -1
-    m_ScrollPosition: {x: 0, y: 231}
+    m_ScrollPosition: {x: 0, y: 0}
     m_GridSize: 16
   m_SkipHiddenPackages: 0
   m_DirectoriesAreaWidth: 240
@@ -2574,7 +2571,7 @@ MonoBehaviour:
   m_MinSize: {x: 100, y: 112}
   m_MaxSize: {x: 8096, y: 16192}
   vertical: 1
-  controlID: 488
+  controlID: 4970
   draggingID: 0
 --- !u!114 &18
 MonoBehaviour:
@@ -2651,7 +2648,7 @@ MonoBehaviour:
     m_ControlHash: -371814159
     m_PrefName: Preview_InspectorPreview
   m_LastInspectedObjectEntityId:
-    m_Data: 93066
+    m_Data: 89830
   m_LastVerticalScrollValue: 0
   m_GlobalObjectId: 
   m_InspectorMode: 0

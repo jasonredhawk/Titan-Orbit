@@ -761,6 +761,66 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
+        /// Damage float for a planetary-defense turret HitRpc. Turrets are not ghosts, so this
+        /// parks on the hybrid pad from <see cref="PlanetaryDefenseVisualDriver"/> and uses
+        /// server <paramref name="healthAfter"/> for the HP-left line. Same −damage channel
+        /// as ship hulls. Your own shots always show; other players' shots only when the
+        /// pad is on screen.
+        /// </summary>
+        /// <param name="planetId">Stable planet id from the HitRpc.</param>
+        /// <param name="slotIndex">Defense slot index from the HitRpc.</param>
+        /// <param name="damage">Server bullet damage.</param>
+        /// <param name="healthAfter">Turret HP after this hit (0 = destroyed).</param>
+        /// <param name="ownerTeam">Shooter team tint fallback when the pad has no skin yet.</param>
+        /// <param name="ownerNetworkId">Shooter GhostOwner id. 0 = unknown (on-screen only).</param>
+        /// <returns>True when a damage popup was spawned or accumulated.</returns>
+        public static bool TryNotifyDefenseTurretBulletHit(
+            int planetId,
+            int slotIndex,
+            float damage,
+            float healthAfter,
+            TeamId ownerTeam,
+            int ownerNetworkId)
+        {
+            if (TitanOrbitDebugFlags.IsolateDisableFloatingCounts)
+                return false;
+            if (WorldFloatingCountManager.Instance == null)
+                return false;
+            if (planetId <= 0 || slotIndex < 0 || damage <= 0.01f)
+                return false;
+            if (!PlanetaryDefenseVisualDriver.TryGetTurretFloatAnchor(
+                    planetId, slotIndex, out Transform anchor, out float radius, out TeamId victimTeam))
+                return false;
+
+            bool localShot = BulletMuzzlePresentation.IsLocalOwner(ownerNetworkId);
+            if (!localShot && !IsAnchorOnScreen(anchor))
+                return false;
+
+            TeamId tint = victimTeam != TeamId.None ? victimTeam : ownerTeam;
+            int targetId = WorldFloatingCountManager.TargetIdForDefenseTurret(planetId, slotIndex);
+            var manager = WorldFloatingCountManager.Instance;
+            manager.ShowOrAccumulate(
+                targetId,
+                anchor,
+                radius,
+                FloatingCountChannel.DamageShipOrDrone,
+                -damage,
+                tint);
+
+            if (manager.Settings == null ||
+                manager.Settings.IsEnabled(FloatingCountChannel.HealthChange))
+            {
+                manager.ShowRemainingHealth(
+                    targetId,
+                    anchor,
+                    radius,
+                    math.max(0f, healthAfter));
+            }
+
+            return true;
+        }
+
+        /// <summary>
         /// Presentation damage for a live cannon-laser beam. Lasers never send
         /// <c>BulletHitRpc</c> (a per-tick RPC per barrel would hitch the ~60 Hz step),
         /// so the client beam driver reports <c>firePower × fireRate × ramp × dt</c> here.

@@ -662,7 +662,7 @@ namespace TitanOrbit.Data
         }
 
         /// <summary>
-        /// Cached global max turn speed (authored units, level 1) across every loaded ship family upgrade tree.
+        /// Cached global max yaw (°/s, level 1) across every loaded ship family upgrade tree.
         /// </summary>
         public static float GetGlobalMaxUpgradeTreeTurnSpeedAuthoredUnits()
         {

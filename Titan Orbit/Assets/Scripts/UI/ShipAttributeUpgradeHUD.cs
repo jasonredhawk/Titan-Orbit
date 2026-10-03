@@ -1635,8 +1635,8 @@ namespace TitanOrbit.UI
                 live.ChassisAccel = megaStats.accelerationCap > 0.1f
                     ? megaStats.accelerationCap
                     : megaStats.moveSpeed;
-                live.ChassisTurnDeg = ShipPropulsionAggregation.ConvertTurnDefinitionToDegreesPerSecond(
-                    megaStats.turnSpeed);
+                // Catalog turnSpeed is already degrees per second.
+                live.ChassisTurnDeg = Mathf.Max(0f, megaStats.turnSpeed);
                 live.MoveStepPreview = 0f;
                 if (hasComponentSize)
                 {
@@ -1722,9 +1722,8 @@ namespace TitanOrbit.UI
                 live.ChassisAccel = effective.accelerationCap > 0.1f
                     ? effective.accelerationCap
                     : effective.moveSpeed;
-                // [TITAN-ORBIT] turnSpeed on the stats block is definition units — convert like the bar.
-                live.ChassisTurnDeg = ShipPropulsionAggregation.ConvertTurnDefinitionToDegreesPerSecond(
-                    effective.turnSpeed);
+                // [TITAN-ORBIT] turnSpeed is already degrees per second — same number the motor yaws at.
+                live.ChassisTurnDeg = Mathf.Max(0f, effective.turnSpeed);
 
                 // Mass tax only when ComponentSize is known — otherwise leave CruiseMaxSpeed at 0
                 // so IsChipLiveContextReady keeps retrying (MS would look like chassis / no drag).

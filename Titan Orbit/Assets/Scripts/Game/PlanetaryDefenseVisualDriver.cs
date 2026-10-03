@@ -726,7 +726,15 @@ namespace TitanOrbit.Game
                     float turretScaleForBar = 0f;
                     if (vis.TurretInstance != null && vis.TurretInstance.activeSelf)
                         turretScaleForBar = vis.TurretInstance.transform.localScale.x;
-                    UpdateHealthBar(ref vis, slot, turretScaleForBar, planet.PlanetId, i);
+                    float regenPerSecond = config != null && config.regenerateHealth
+                        ? math.max(0f, config.healthRegenPerSecond)
+                        : 0f;
+                    float regenDelay = config != null
+                        ? math.max(0f, config.healthRegenDelayAfterDamage)
+                        : 0f;
+                    UpdateHealthBar(
+                        ref vis, slot, turretScaleForBar, planet.PlanetId, i,
+                        regenPerSecond, regenDelay);
 
                     group.Slots[i] = vis;
                 }
@@ -1361,12 +1369,16 @@ namespace TitanOrbit.Game
         /// </param>
         /// <param name="planetId">Stable planet id for the HitRpc HP store.</param>
         /// <param name="slotIndex">Slot index for the HitRpc HP store.</param>
+        /// <param name="regenPerSecond">Same HP/s as server turret regen. 0 hides the climb.</param>
+        /// <param name="regenDelaySeconds">Seconds after the last hit before the bar climbs.</param>
         void UpdateHealthBar(
             ref SlotVisual vis,
             PlanetaryDefenseSlotElement slot,
             float turretWorldScale,
             int planetId,
-            int slotIndex)
+            int slotIndex,
+            float regenPerSecond,
+            float regenDelaySeconds)
         {
             if (vis.HealthBarRoot == null)
                 return;
@@ -1383,7 +1395,10 @@ namespace TitanOrbit.Game
                 Time.time,
                 out bool hitFlash,
                 out float flashT,
-                out bool overlayDestroyed);
+                out bool overlayDestroyed,
+                regenPerSecond,
+                regenDelaySeconds,
+                Time.deltaTime);
 
             // Show bar while the turret is alive on the ghost, or while we still drain a
             // destroy-to-empty transition (bar empties before the mesh hides).
@@ -1826,6 +1841,41 @@ namespace TitanOrbit.Game
         {
             return TryFindClosestDefenseSlotFiltered(
                 near, TeamId.None, turretOnly, planetId, TeamId.None, out _, out worldPos, out radius);
+        }
+
+        /// <summary>
+        /// Turret mesh (pad root if the gun is hidden) for a floating damage number.
+        /// Hybrid slot list only — no ECS gather.
+        /// </summary>
+        public static bool TryGetTurretFloatAnchor(
+            int planetId,
+            int slotIndex,
+            out Transform anchor,
+            out float bodyRadius,
+            out TeamId ownerTeam)
+        {
+            anchor = null;
+            bodyRadius = 0f;
+            ownerTeam = TeamId.None;
+            if (s_Instance == null || planetId <= 0 || slotIndex < 0)
+                return false;
+            if (!s_Instance._groupsByPlanetId.TryGetValue(planetId, out PlanetDefenseGroup group) ||
+                group == null ||
+                slotIndex >= group.Slots.Count)
+                return false;
+
+            SlotVisual vis = group.Slots[slotIndex];
+            if (vis.SlotIndex != slotIndex)
+                return false;
+
+            bool turretLive = vis.TurretInstance != null && vis.TurretInstance.activeInHierarchy;
+            anchor = turretLive ? vis.TurretInstance.transform : vis.SlotRoot;
+            if (anchor == null)
+                return false;
+
+            bodyRadius = ResolveSlotRadius(in vis, turretLive);
+            ownerTeam = vis.AppliedTeam;
+            return true;
         }
 
         static bool TryFindClosestDefenseSlotFiltered(

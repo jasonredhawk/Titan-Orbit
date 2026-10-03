@@ -823,7 +823,8 @@ namespace TitanOrbit.Game
                     var ramSynth = new Tracer { OwnerNetworkId = 0, IsAnticipation = false };
                     TryShowHitRpcFloats(
                         hitPos, hit.HitPosition, hit.Damage, ramTeam,
-                        hit.AsteroidHealthAfter, hit.PlanetaryDefensePlanetId, in ramSynth);
+                        hit.AsteroidHealthAfter, hit.PlanetaryDefensePlanetId,
+                        hit.PlanetaryDefenseSlotIndex, hit.PlanetaryDefenseHealthAfter, in ramSynth);
                     continue;
                 }
 
@@ -845,7 +846,8 @@ namespace TitanOrbit.Game
                     };
                     TryShowHitRpcFloats(
                         hitPos, hit.HitPosition, hit.Damage, (TeamId)hit.OwnerTeam,
-                        hit.AsteroidHealthAfter, hit.PlanetaryDefensePlanetId, in synth);
+                        hit.AsteroidHealthAfter, hit.PlanetaryDefensePlanetId,
+                        hit.PlanetaryDefenseSlotIndex, hit.PlanetaryDefenseHealthAfter, in synth);
                     ClearStaleAnticipationTracers(hit.OwnerTeam);
                     continue;
                 }
@@ -872,7 +874,8 @@ namespace TitanOrbit.Game
                     // Always show float on HitRpc — even when VFX was client-predicted.
                     TryShowHitRpcFloats(
                         hitPos, hit.HitPosition, hit.Damage, (TeamId)hit.OwnerTeam,
-                        hit.AsteroidHealthAfter, hit.PlanetaryDefensePlanetId, in tracer);
+                        hit.AsteroidHealthAfter, hit.PlanetaryDefensePlanetId,
+                        hit.PlanetaryDefenseSlotIndex, hit.PlanetaryDefenseHealthAfter, in tracer);
 
                     DestroyTracerGo(tracer);
                     RemoveAtSwap(idx);
@@ -892,7 +895,8 @@ namespace TitanOrbit.Game
                     var nearTracer = _tracers[nearIdx];
                     TryShowHitRpcFloats(
                         hitPos, hit.HitPosition, hit.Damage, (TeamId)hit.OwnerTeam,
-                        hit.AsteroidHealthAfter, hit.PlanetaryDefensePlanetId, in nearTracer);
+                        hit.AsteroidHealthAfter, hit.PlanetaryDefensePlanetId,
+                        hit.PlanetaryDefenseSlotIndex, hit.PlanetaryDefenseHealthAfter, in nearTracer);
 
                     DestroyTracerGo(nearTracer);
                     RemoveAtSwap(nearIdx);
@@ -907,7 +911,8 @@ namespace TitanOrbit.Game
                     };
                     TryShowHitRpcFloats(
                         hitPos, hit.HitPosition, hit.Damage, (TeamId)hit.OwnerTeam,
-                        hit.AsteroidHealthAfter, hit.PlanetaryDefensePlanetId, in synth);
+                        hit.AsteroidHealthAfter, hit.PlanetaryDefensePlanetId,
+                        hit.PlanetaryDefenseSlotIndex, hit.PlanetaryDefenseHealthAfter, in synth);
                     ClearStaleAnticipationTracers(hit.OwnerTeam);
                 }
                 else
@@ -916,7 +921,8 @@ namespace TitanOrbit.Game
                     var synth = new Tracer { OwnerNetworkId = 0, IsAnticipation = false };
                     TryShowHitRpcFloats(
                         hitPos, hit.HitPosition, hit.Damage, (TeamId)hit.OwnerTeam,
-                        hit.AsteroidHealthAfter, hit.PlanetaryDefensePlanetId, in synth);
+                        hit.AsteroidHealthAfter, hit.PlanetaryDefensePlanetId,
+                        hit.PlanetaryDefenseSlotIndex, hit.PlanetaryDefenseHealthAfter, in synth);
                 }
             }
         }
@@ -931,6 +937,7 @@ namespace TitanOrbit.Game
         /// on kill. Do not DestroyEntity here — sim-group soft-destroy owns ECS teardown.
         /// Ship hits pass &lt; 0 and <paramref name="planetaryDefensePlanetId"/> 0 — we
         /// surface-fit the hull and show accumulated damage on that ship.
+        /// Planetary-defense hits pass a planet id and show the same −damage float on the pad.
         /// </para>
         /// </summary>
         static void TryShowHitRpcFloats(
@@ -940,13 +947,26 @@ namespace TitanOrbit.Game
             TeamId ownerTeam,
             float asteroidHealthAfter,
             int planetaryDefensePlanetId,
+            int planetaryDefenseSlotIndex,
+            float planetaryDefenseHealthAfter,
             in Tracer tracer)
         {
-            // Planetary-defense pad HP is applied in BulletHitRpcClientSystem — not a ship hull.
+            // Pad HP is applied in BulletHitRpcClientSystem. The float parks on the hybrid turret.
+            if (planetaryDefensePlanetId > 0)
+            {
+                EcsFloatingCountPresenter.TryNotifyDefenseTurretBulletHit(
+                    planetaryDefensePlanetId,
+                    planetaryDefenseSlotIndex,
+                    damage,
+                    planetaryDefenseHealthAfter,
+                    ownerTeam,
+                    tracer.OwnerNetworkId);
+                return;
+            }
+
             if (asteroidHealthAfter < 0f)
             {
-                if (planetaryDefensePlanetId <= 0)
-                    TryShowShipFloatForHitRpc(hitDisplayPos, damage, ownerTeam);
+                TryShowShipFloatForHitRpc(hitDisplayPos, damage, ownerTeam);
                 return;
             }
 

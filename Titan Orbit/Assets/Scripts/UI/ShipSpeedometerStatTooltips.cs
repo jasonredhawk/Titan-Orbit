@@ -511,7 +511,7 @@ namespace TitanOrbit.UI
                 ShipStatTooltipChrome.AppendSectionBanner(sb, "DRAG", "7EC8FF");
                 sb.Append("Speed drag  -").Append(F1(live.TotalMass * settings.speedWeightPerMass)).AppendLine();
                 sb.Append("Accel drag  -").Append(F1(live.TotalMass * settings.accelWeightPerMass)).AppendLine();
-                // [TITAN-ORBIT] Turn weight is definition units; print °/s so it sits next to the chip.
+                // [TITAN-ORBIT] Turn weight is already °/s, so this line matches the chip.
                 sb.Append("Turn drag  -").Append(F1(
                     ShipMobilityResolution.ComputeTurnDragDegreesPerSecond(
                         live.TotalMass, settings.turnWeightPerMass))).Append("/s");

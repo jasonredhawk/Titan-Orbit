@@ -186,6 +186,54 @@ namespace TitanOrbit.Core
         }
 
         /// <summary>
+        /// Fires each system's authored time-0 burst again and keeps particles already in flight.
+        /// Sci-Fi impacts emit once, then sit out a multi-second duration, so setting
+        /// <c>main.loop</c> stays dark between burn ticks. <c>Emit</c> does not clear the system.
+        /// </summary>
+        public static void ReplayParticleBursts(GameObject root)
+        {
+            if (root == null)
+                return;
+
+            ParticleSystem[] systems = root.GetComponentsInChildren<ParticleSystem>(true);
+            for (int i = 0; i < systems.Length; i++)
+            {
+                ParticleSystem ps = systems[i];
+                if (ps == null || !ps.gameObject.activeInHierarchy)
+                    continue;
+
+                if (!ps.isPlaying)
+                    ps.Play(false);
+
+                int count = SumBurstCount(ps);
+                if (count > 0)
+                    ps.Emit(count);
+            }
+        }
+
+        /// <summary>Authored burst size (constant or the midpoint of a two-constant range).</summary>
+        static int SumBurstCount(ParticleSystem ps)
+        {
+            var emission = ps.emission;
+            if (!emission.enabled || emission.burstCount <= 0)
+                return 0;
+
+            int total = 0;
+            int bursts = emission.burstCount;
+            for (int i = 0; i < bursts; i++)
+            {
+                ParticleSystem.MinMaxCurve count = emission.GetBurst(i).count;
+                float n = count.mode == ParticleSystemCurveMode.TwoConstants
+                    ? (count.constantMin + count.constantMax) * 0.5f
+                    : count.constant;
+                if (n > 0.5f)
+                    total += Mathf.RoundToInt(n);
+            }
+
+            return total;
+        }
+
+        /// <summary>
         /// One-time material/light fix on first use, then restart particles every Rent.
         /// Pooled shells keep the marker so destroy frames skip GrabPass walks.
         /// Pass <paramref name="playParticles"/> false for thruster jets — those are

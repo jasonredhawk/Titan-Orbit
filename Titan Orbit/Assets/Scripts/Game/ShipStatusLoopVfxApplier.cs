@@ -19,6 +19,12 @@ namespace TitanOrbit.Game
         const float ShockLocalY = 0.55f;
         const float BurnLocalY = 0.2f;
 
+        /// <summary>
+        /// How often the burn slot re-emits the impact burst. Matches the default DoT tick
+        /// so the hull keeps burning instead of waiting out the prefab's 2s one-shot duration.
+        /// </summary>
+        const float BurnReplayInterval = 0.25f;
+
         Entity _shipEntity;
         readonly Slot _shock = new Slot();
         readonly Slot _burn = new Slot();
@@ -105,10 +111,27 @@ namespace TitanOrbit.Game
             }
 
             // Shock has no damage ticks — keep the impact looping for the stun window.
-            // Burn also loops on the hull so a moving ship keeps the fire; Sequence-0 HitRpc
-            // still plays per-tick flashes parented to the same proxy.
+            // Burn re-emits that same impact on the hull for the whole DoT. Sequence-0 burn
+            // ticks are not ram sparks; asteroids get the same burst from BurnImpactLoop.
             SyncSlot(_shock, shockActive, shockBank, shockTeam, ShockLocalY);
             SyncSlot(_burn, burnActive, burnBank, burnTeam, BurnLocalY);
+            if (burnActive)
+                ReplayBurnIfDue(_burn);
+        }
+
+        /// <summary>
+        /// Impact prefabs burst once per multi-second duration. While the burn ghost is active,
+        /// emit that burst again so the ship shows fire for every damage tick.
+        /// </summary>
+        void ReplayBurnIfDue(Slot slot)
+        {
+            if (slot.Instance == null)
+                return;
+            if (Time.time < slot.NextReplay)
+                return;
+
+            slot.NextReplay = Time.time + BurnReplayInterval;
+            VfxUrpCompat.ReplayParticleBursts(slot.Instance);
         }
 
         void SyncSlot(Slot slot, bool active, int bankIndex, byte team, float localY)
@@ -157,6 +180,8 @@ namespace TitanOrbit.Game
             slot.Instance = go;
             slot.BankIndex = bankIndex;
             slot.Team = team;
+            // Start already emitted the burst. The next replay is one DoT step later.
+            slot.NextReplay = Time.time + BurnReplayInterval;
         }
 
         void ReleaseAll()
@@ -178,6 +203,7 @@ namespace TitanOrbit.Game
             slot.Instance = null;
             slot.BankIndex = -1;
             slot.Team = 0;
+            slot.NextReplay = 0f;
 
             VfxUrpCompat.SetParticleSystemsLooping(go, false);
             RestoreAudio(go);
@@ -228,6 +254,7 @@ namespace TitanOrbit.Game
             public GameObject Instance;
             public int BankIndex = -1;
             public byte Team;
+            public float NextReplay;
         }
     }
 }

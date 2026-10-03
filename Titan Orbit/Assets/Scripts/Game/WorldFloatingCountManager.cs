@@ -64,6 +64,7 @@ namespace TitanOrbit.Game
         const int TargetKindShip = unchecked((int)0x01000000);
         const int TargetKindAsteroid = unchecked((int)0x0A000000);
         const int TargetKindPlanet = unchecked((int)0x02000000);
+        const int TargetKindDefenseTurret = unchecked((int)0x03000000);
         const int TargetKindWorld = unchecked((int)0x04000000);
 
         [Tooltip("Icons, colors, type toggles, layout, and streak timing. Defaults to Resources/FloatingText.")]
@@ -193,6 +194,14 @@ namespace TitanOrbit.Game
 
         public static int TargetIdForPlanet(int planetId) =>
             TargetKindPlanet | (planetId & 0x00FFFFFF);
+
+        /// <summary>
+        /// One streak per pad. Planet ids are small (team or neutral counter); slot is 0..15.
+        /// </summary>
+        public static int TargetIdForDefenseTurret(int planetId, int slotIndex) =>
+            TargetKindDefenseTurret
+            | ((slotIndex & 0xF) << 20)
+            | (planetId & 0x000FFFFF);
 
         public static int TargetIdForWorldPosition(Vector3 worldPosition)
         {

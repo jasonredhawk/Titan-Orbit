@@ -19,7 +19,7 @@ MonoBehaviour:
     width: 2560
     height: 1349
   m_ShowMode: 4
-  m_Title: Game
+  m_Title: Edgegap Server Hosting
   m_RootView: {fileID: 2}
   m_MinSize: {x: 875, y: 300}
   m_MaxSize: {x: 10000, y: 10000}
@@ -118,7 +118,7 @@ MonoBehaviour:
   m_MinSize: {x: 300, y: 112}
   m_MaxSize: {x: 24288, y: 16192}
   vertical: 1
-  controlID: 26253
+  controlID: 3245
   draggingID: 0
 --- !u!114 &6
 MonoBehaviour:
@@ -144,7 +144,7 @@ MonoBehaviour:
   m_MinSize: {x: 300, y: 112}
   m_MaxSize: {x: 24288, y: 16192}
   vertical: 0
-  controlID: 26254
+  controlID: 3246
   draggingID: 0
 --- !u!114 &7
 MonoBehaviour:
@@ -170,7 +170,7 @@ MonoBehaviour:
   m_MinSize: {x: 200, y: 112}
   m_MaxSize: {x: 16192, y: 16192}
   vertical: 1
-  controlID: 26202
+  controlID: 3296
   draggingID: 0
 --- !u!114 &8
 MonoBehaviour:
@@ -196,7 +196,7 @@ MonoBehaviour:
   m_MinSize: {x: 200, y: 56}
   m_MaxSize: {x: 16192, y: 8096}
   vertical: 0
-  controlID: 26165
+  controlID: 3266
   draggingID: 0
 --- !u!114 &9
 MonoBehaviour:
@@ -306,7 +306,7 @@ MonoBehaviour:
   m_MinSize: {x: 100, y: 112}
   m_MaxSize: {x: 8096, y: 16192}
   vertical: 1
-  controlID: 26255
+  controlID: 3247
   draggingID: 0
 --- !u!114 &13
 MonoBehaviour:
@@ -318,7 +318,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 1
   m_Script: {fileID: 12006, guid: 0000000000000000e000000000000000, type: 0}
-  m_Name: InspectorWindow
+  m_Name: EdgegapWindowV2
   m_EditorClassIdentifier: 
   m_Children: []
   m_Position:
@@ -327,17 +327,17 @@ MonoBehaviour:
     y: 0
     width: 703
     height: 976
-  m_MinSize: {x: 276, y: 76}
-  m_MaxSize: {x: 4001, y: 4026}
-  m_ActualView: {fileID: 25}
+  m_MinSize: {x: 601, y: 926}
+  m_MaxSize: {x: 601, y: 926}
+  m_ActualView: {fileID: 29}
   m_Panes:
   - {fileID: 25}
   - {fileID: 26}
   - {fileID: 27}
   - {fileID: 28}
   - {fileID: 29}
-  m_Selected: 0
-  m_LastSelected: 4
+  m_Selected: 4
+  m_LastSelected: 0
 --- !u!114 &14
 MonoBehaviour:
   m_ObjectHideFlags: 52
@@ -717,7 +717,7 @@ MonoBehaviour:
     m_HSlider: 0
     m_VSlider: 0
     m_IgnoreScrollWheelUntilClicked: 0
-    m_EnableMouseInput: 0
+    m_EnableMouseInput: 1
     m_EnableSliderZoomHorizontal: 0
     m_EnableSliderZoomVertical: 0
     m_UniformScale: 1
@@ -794,9 +794,23 @@ MonoBehaviour:
       m_LastClickedID:
         m_Data: 0
       m_ExpandedIDs:
-      - m_Data: -1923316
-      - m_Data: -1922866
-      - m_Data: -1922744
+      - m_Data: -1836088
+      - m_Data: -1835710
+      - m_Data: -1835592
+      - m_Data: -1829046
+      - m_Data: -1828674
+      - m_Data: -1828546
+      - m_Data: -1143402
+      - m_Data: -1143348
+      - m_Data: -822202
+      - m_Data: -821834
+      - m_Data: -821706
+      - m_Data: -23072
+      - m_Data: -22692
+      - m_Data: -22574
+      - m_Data: -6760
+      - m_Data: -6384
+      - m_Data: -6254
       - m_Data: -1386
       m_RenameOverlay:
         m_UserAcceptedRename: 0
@@ -1630,7 +1644,7 @@ MonoBehaviour:
     m_SkipHidden: 0
     m_SearchArea: 0
     m_Folders:
-    - Assets/Scripts/Data
+    - Assets/Scenes
     m_Globs: []
     m_ProductIds: 
     m_AnyWithAssetOrigin: 0
@@ -1640,25 +1654,21 @@ MonoBehaviour:
   m_ViewMode: 1
   m_StartGridSize: 16
   m_LastFolders:
-  - Assets/Scripts/Data
+  - Assets/Scenes
   m_LastFoldersGridSize: 16
   m_LastProjectPath: C:\Users\jason\Documents\repo\Titan-Orbit\Titan Orbit
   m_LockTracker:
     m_IsLocked: 0
   m_LastLocalAssetsSearchArea: 0
   m_FolderTreeState:
-    scrollPos: {x: 0, y: 734.7}
+    scrollPos: {x: 0, y: 614.69995}
     m_SelectedIDs:
-    - m_Data: 335432
+    - m_Data: 104298
     m_LastClickedID:
-      m_Data: 335432
+      m_Data: 104298
     m_ExpandedIDs:
     - m_Data: 0
-    - m_Data: 82532
-    - m_Data: 103918
-    - m_Data: 103920
-    - m_Data: 103922
-    - m_Data: 103924
+    - m_Data: 82530
     - m_Data: 103926
     - m_Data: 103928
     - m_Data: 103930
@@ -1718,6 +1728,10 @@ MonoBehaviour:
     - m_Data: 104038
     - m_Data: 104040
     - m_Data: 104042
+    - m_Data: 104044
+    - m_Data: 104046
+    - m_Data: 104048
+    - m_Data: 104050
     m_RenameOverlay:
       m_UserAcceptedRename: 0
       m_Name: 
@@ -1751,11 +1765,7 @@ MonoBehaviour:
       m_Data: 0
     m_ExpandedIDs:
     - m_Data: 0
-    - m_Data: 82532
-    - m_Data: 103918
-    - m_Data: 103920
-    - m_Data: 103922
-    - m_Data: 103924
+    - m_Data: 82530
     - m_Data: 103926
     - m_Data: 103928
     - m_Data: 103930
@@ -1815,6 +1825,10 @@ MonoBehaviour:
     - m_Data: 104038
     - m_Data: 104040
     - m_Data: 104042
+    - m_Data: 104044
+    - m_Data: 104046
+    - m_Data: 104048
+    - m_Data: 104050
     m_RenameOverlay:
       m_UserAcceptedRename: 0
       m_Name: 
@@ -1845,7 +1859,7 @@ MonoBehaviour:
     m_SelectedInstanceIDs: []
     m_LastClickedEntityId:
       m_Data: 0
-    m_HadKeyboardFocusLastEvent: 1
+    m_HadKeyboardFocusLastEvent: 0
     m_ExpandedInstanceIDs:
     - m_Data: 54664
     - m_Data: 275120
@@ -1901,7 +1915,7 @@ MonoBehaviour:
       m_Icon: {fileID: 0}
       m_ResourceFile: 
     m_NewAssetIndexInList: -1
-    m_ScrollPosition: {x: 0, y: 1195.5}
+    m_ScrollPosition: {x: 0, y: 0}
     m_GridSize: 16
   m_SkipHiddenPackages: 0
   m_DirectoriesAreaWidth: 240
@@ -3022,8 +3036,8 @@ MonoBehaviour:
     m_TextWithWhitespace: "Inspector\u200B"
   m_Pos:
     serializedVersion: 2
-    x: 1
-    y: 24
+    x: 1857
+    y: 79
     width: 702
     height: 950
   m_SerializedDataModeController:
@@ -3192,8 +3206,8 @@ MonoBehaviour:
     m_TextWithWhitespace: "Edgegap Server Hosting\u200B"
   m_Pos:
     serializedVersion: 2
-    x: 1857
-    y: 79
+    x: 1
+    y: 24
     width: 702
     height: 950
   m_SerializedDataModeController:

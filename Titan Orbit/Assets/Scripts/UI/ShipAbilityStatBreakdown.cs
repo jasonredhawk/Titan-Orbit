@@ -203,8 +203,7 @@ namespace TitanOrbit.UI
                     float chassisTurn = live.ChassisTurnDeg > 0.01f ? live.ChassisTurnDeg : eff.turnSpeed;
                     value = Mathf.Max(0f, live.TaxedTurnDeg > 0.01f ? live.TaxedTurnDeg : chassisTurn);
                     unitSuffix = "°/s";
-                    nextStep = Mathf.Max(0f, ShipPropulsionAggregation.ConvertTurnDefinitionToDegreesPerSecond(
-                        eff.turnSpeedPerExtraLevel));
+                    nextStep = Mathf.Max(0f, eff.turnSpeedPerExtraLevel);
                     break;
                 case 8:
                     value = Mathf.Max(0f, eff.maxGems);
@@ -632,10 +631,6 @@ namespace TitanOrbit.UI
             var rows = new List<FieldPoolEval>(8);
             CollectFieldPools(in parts, field, shipLevel, abilityLv, rows);
 
-            float unitScale = field == StatField.TurnSpeed
-                ? ShipPropulsionAggregation.TurnDefinitionToDegreesPerSecond
-                : 1f;
-
             ShipStatTooltipChrome.AppendSectionBanner(sb, "PARTS", "5B9BD5");
             sb.AppendLine(DescribeFormula(field, rows.Count > 1));
 
@@ -655,9 +650,9 @@ namespace TitanOrbit.UI
             for (int i = 0; i < rows.Count; i++)
             {
                 FieldPoolEval p = rows[i];
-                float baseDisp = p.Primary * unitScale;
-                float perDisp = p.PerExtra * unitScale;
-                float addDisp = p.Evaluated * unitScale;
+                float baseDisp = p.Primary;
+                float perDisp = p.PerExtra;
+                float addDisp = p.Evaluated;
                 running += addDisp;
 
                 string name = p.PoolKey ?? "?";
@@ -781,7 +776,7 @@ namespace TitanOrbit.UI
                 : field == StatField.AccelerationCap
                     ? accelW
                     : turnW;
-            // Turn tax is authored in definition units — convert so the grid matches °/s chips.
+            // Turn weight is already °/s, so mass × weight is the yaw drag on the chip.
             float drag = field == StatField.TurnSpeed
                 ? ShipMobilityResolution.ComputeTurnDragDegreesPerSecond(totalMass, turnW)
                 : totalMass * weight;
@@ -998,8 +993,9 @@ namespace TitanOrbit.UI
 
         /// <summary>
         /// Builds one eval per contributing part. Only the pool primary (and every weapon
-        /// barrel) includes Base; extras are PerExtra × levels. Matches
-        /// <see cref="ShipComponentExtraLevelMath.AggregateAndEvaluate"/>.
+        /// barrel) includes Base; extras are PerExtra × levels. Turn uses one hull-wide
+        /// Base — the highest <c>turnSpeed</c> — and every other turn part is PerExtra only.
+        /// Matches <see cref="ShipComponentExtraLevelMath.AggregateAndEvaluate"/>.
         /// </summary>
         static void CollectFieldPools(
             in ShipSpeedometerStatTooltips.PartCache parts,
@@ -1047,6 +1043,11 @@ namespace TitanOrbit.UI
                 primaryGlobals.Add(pair.Value[primaryLocal]);
             }
 
+            // Turn Base is the best part on the hull, even when that part is not its pool primary.
+            int bestTurnIndex = field == StatField.TurnSpeed
+                ? ShipComponentExtraLevelMath.PickBestTurnBaseIndex(parts.Ids, parts.Stats)
+                : -1;
+
             foreach (KeyValuePair<string, List<int>> pair in groups)
             {
                 bool isWeapon = ShipComponentStackAggregation.IsWeaponPoolKey(pair.Key);
@@ -1064,7 +1065,12 @@ namespace TitanOrbit.UI
                         continue;
 
                     string id = gi < parts.Ids.Count ? parts.Ids[gi] : string.Empty;
-                    bool includeBase = isWeapon || primaryGlobals.Contains(gi);
+                    bool includeBase = field == StatField.TurnSpeed
+                        ? gi == bestTurnIndex
+                        : isWeapon || primaryGlobals.Contains(gi);
+                    bool displayPrimary = field == StatField.TurnSpeed
+                        ? includeBase
+                        : primaryGlobals.Contains(gi);
                     int levels = CountPoolLevels(isWeapon, field, shipLevel, abilityLv, 1);
                     float evaluated = EvaluatePoolField(
                         isWeapon, field, primary, perExtra, shipLevel, abilityLv, 1, includeBase);
@@ -1084,7 +1090,7 @@ namespace TitanOrbit.UI
                         Levels = levels,
                         Evaluated = evaluated,
                         IsWeaponPool = isWeapon,
-                        IsDisplayPrimary = primaryGlobals.Contains(gi),
+                        IsDisplayPrimary = displayPrimary,
                         IncludeBase = includeBase
                     });
                 }
@@ -1251,7 +1257,7 @@ namespace TitanOrbit.UI
 
         /// <summary>
         /// Static mass-tax drag on turn (from the last chip/tip snapshot).
-        /// Uses the same ×10 definition→°/s scale as drive so the line matches the chip.
+        /// Drag is totalMass × turnWeight, already in °/s, so the line matches the chip.
         /// </summary>
         static void AppendTurnMassTax(StringBuilder sb, in ShipSpeedometerStatTooltips.LiveContext live)
         {
@@ -1268,7 +1274,7 @@ namespace TitanOrbit.UI
             if (settings == null)
                 return;
 
-            // [TITAN-ORBIT] turnWeight is definition units; drag must be °/s like the chip.
+            // [TITAN-ORBIT] turnWeight is already °/s, same unit as the chip.
             float drag = ShipMobilityResolution.ComputeTurnDragDegreesPerSecond(
                 live.TotalMass, settings.turnWeightPerMass);
             ShipStatTooltipChrome.AppendSectionBanner(sb, "MASS TAX", HexMass);

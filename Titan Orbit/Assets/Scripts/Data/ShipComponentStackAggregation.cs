@@ -149,6 +149,36 @@ namespace TitanOrbit.Data
                 pools.Add(contrib);
                 combinedPrimary.AddInPlace(contrib.PrimaryStats);
             }
+
+            // Turn Base is one part (highest turnSpeed), not one Base per pool.
+            // PerExtra still sums from every part so a later Extra Level step stays honest.
+            ApplySingleTurnBase(componentIds, perComponentStats, ref combinedPrimary);
+        }
+
+        /// <summary>
+        /// Replaces a summed turn Base with the single best part’s Base.
+        /// Every non-cosmetic part still contributes its turn PerExtra.
+        /// </summary>
+        static void ApplySingleTurnBase(
+            IReadOnlyList<string> componentIds,
+            IReadOnlyList<ShipComponentAbilityStats> perComponentStats,
+            ref ShipComponentAbilityStats combinedPrimary)
+        {
+            int best = ShipComponentExtraLevelMath.PickBestTurnBaseIndex(componentIds, perComponentStats);
+            float perSum = 0f;
+            int count = Mathf.Min(componentIds.Count, perComponentStats.Count);
+            for (int i = 0; i < count; i++)
+            {
+                string id = componentIds[i];
+                if (string.IsNullOrWhiteSpace(id))
+                    continue;
+                if (ShipFamilyPartCalcProfileSet.IsCosmeticPartName(id))
+                    continue;
+                perSum += Mathf.Max(0f, perComponentStats[i].turnSpeedPerExtraLevel);
+            }
+
+            combinedPrimary.turnSpeed = best >= 0 ? perComponentStats[best].turnSpeed : 0f;
+            combinedPrimary.turnSpeedPerExtraLevel = perSum;
         }
 
         /// <summary>

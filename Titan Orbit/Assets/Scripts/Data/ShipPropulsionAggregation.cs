@@ -45,26 +45,16 @@ namespace TitanOrbit.Data
         public const float DefaultLevelAccelPenaltyFractionPerLevel = 0f;
 
         /// <summary>
-        /// Family-authored <see cref="ShipComponentAbilityStats.turnSpeed"/> uses small definition units;
-        /// multiply by this at runtime only (rotation/banking), not in power-score UI.
-        /// <see cref="ShipMobilityResolution"/> scales turn mass tax by the same factor so cargo
-        /// bite stays in ratio with Speed/Accel (those stats are never ×10).
-        /// </summary>
-        public const float TurnDefinitionToDegreesPerSecond = 10f;
-
-        /// <summary>
         /// Visual banking (°) when turn rate equals the global max ship turn speed
         /// (see <see cref="ShipFamilyDefinition.GetGlobalMaxUpgradeTreeTurnSpeedAuthoredUnits"/>).
         /// </summary>
         public const float VisualBankReferenceMaxAngleDegrees = 111f;
 
         /// <summary>
-        /// Fallback max turn speed (authored units, level 1) when no upgrade-tree breakdown is available.
+        /// Fallback max yaw (°/s) when no upgrade-tree breakdown is available.
+        /// Same unit as family <c>turnSpeed</c> — already degrees per second.
         /// </summary>
         public const float VisualBankReferenceMaxTurnSpeedAuthoredUnits = 43.40541f;
-
-        public static float ConvertTurnDefinitionToDegreesPerSecond(float turnDefinition) =>
-            Mathf.Max(1f, turnDefinition) * TurnDefinitionToDegreesPerSecond;
 
         /// <summary>
         /// Target visual bank angle (°): 0 turn rate → 0°, enough turn rate → <paramref name="maxBankDegrees"/>.
@@ -244,12 +234,13 @@ namespace TitanOrbit.Data
                 maxPitchUpDegrees);
         }
 
-        /// <summary>Global max ship turn speed in °/s for visual banking (family definition units × scale).</summary>
-        public static float GetGlobalMaxTurnSpeedDegreesPerSecond(
-            float definitionUnitsToDegreesPerSecond = TurnDefinitionToDegreesPerSecond)
+        /// <summary>
+        /// Global max ship yaw (°/s) for visual banking.
+        /// Family <c>turnSpeed</c> is already degrees per second, so this returns that max directly.
+        /// </summary>
+        public static float GetGlobalMaxTurnSpeedDegreesPerSecond()
         {
-            float authored = ShipFamilyDefinition.GetGlobalMaxUpgradeTreeTurnSpeedAuthoredUnits();
-            return authored * definitionUnitsToDegreesPerSecond;
+            return ShipFamilyDefinition.GetGlobalMaxUpgradeTreeTurnSpeedAuthoredUnits();
         }
 
         /// <summary>Scan/auto-populate move speed for engine/thruster version 1 (Engine_1).</summary>

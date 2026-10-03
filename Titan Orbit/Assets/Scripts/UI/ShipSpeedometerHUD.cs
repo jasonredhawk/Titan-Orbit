@@ -1260,16 +1260,15 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// Chassis turn (°/s) before mass tax from definition-unit turnSpeed.
+        /// Chassis yaw (°/s) before mass tax. <c>turnSpeed</c> is already degrees per second.
         /// Falls back to motor RotationSpeed when chassis turn is unset.
         /// </summary>
         static float ResolveChassisTurnDeg(in ShipMotorConfig motor, in ShipComponentAbilityStats effectiveStats)
         {
-            float fromChassis = ShipPropulsionAggregation.ConvertTurnDefinitionToDegreesPerSecond(
-                effectiveStats.turnSpeed);
-            if (fromChassis > 0.5f)
+            float fromChassis = Mathf.Max(0f, effectiveStats.turnSpeed);
+            if (fromChassis > 0.01f)
                 return fromChassis;
-            return Mathf.Max(0.5f, motor.RotationSpeed);
+            return Mathf.Max(0f, motor.RotationSpeed);
         }
 
         /// <summary>
