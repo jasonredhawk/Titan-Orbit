@@ -131,12 +131,19 @@ namespace SpaceGraphicsToolkit
 
 			generatedTexture.Apply();
 
-			CachedPlanet.Properties.SetTexture(_WaterGradient, generatedTexture);
+			// WebGL DrawMesh does not submit the property block, so the gradient lives on the material.
+			if (Application.platform == RuntimePlatform.WebGLPlayer)
+				CachedPlanet.ApplyWebGlMaterialTexture(_WaterGradient, generatedTexture);
+			else
+				CachedPlanet.Properties.SetTexture(_WaterGradient, generatedTexture);
 		}
 
 		private void UpdateScale()
 		{
-			CachedPlanet.Properties.SetFloat(_WaterGradientScale, scale);
+			if (Application.platform == RuntimePlatform.WebGLPlayer)
+				CachedPlanet.ApplyWebGlMaterialFloat(_WaterGradientScale, scale);
+			else
+				CachedPlanet.Properties.SetFloat(_WaterGradientScale, scale);
 		}
 	}
 }

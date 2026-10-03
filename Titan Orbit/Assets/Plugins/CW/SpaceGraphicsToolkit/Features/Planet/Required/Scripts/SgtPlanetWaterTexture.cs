@@ -29,6 +29,9 @@ namespace SpaceGraphicsToolkit
 		[SerializeField]
 		private float age;
 
+		[System.NonSerialized]
+		private float nextWebGlBlitTime;
+
 		private static Material cachedMaterial;
 
 		private static int _MainTex        = Shader.PropertyToID("_MainTex");
@@ -39,6 +42,12 @@ namespace SpaceGraphicsToolkit
 		protected virtual void OnEnable()
 		{
 			cachedPlanet = GetComponent<SgtPlanet>();
+		}
+
+		/// <summary>Next WebGL update blits again. Used when the planet material instance is replaced.</summary>
+		public void InvalidateWebGlBlit()
+		{
+			nextWebGlBlitTime = 0f;
 		}
 
 		protected virtual void OnDestroy()
@@ -56,32 +65,57 @@ namespace SpaceGraphicsToolkit
 				age += Time.deltaTime * speed;
 			}
 
-			if (baseTexture != null)
+			if (baseTexture == null || cachedPlanet == null)
+				return;
+
+			bool webgl = Application.platform == RuntimePlatform.WebGLPlayer;
+
+			if (generatedTexture == null)
 			{
-				if (generatedTexture == null)
+				int width = baseTexture.width;
+				int height = baseTexture.height;
+				// One full-size ARGB32 texture per planet was ~637 MB of ALLOC_GFX.
+				if (webgl)
 				{
-					generatedTexture = new RenderTexture(baseTexture.width, baseTexture.height, 0, RenderTextureFormat.ARGB32, 8);
-
-					generatedTexture.wrapMode         = TextureWrapMode.Repeat;
-					generatedTexture.useMipMap        = true;
-					generatedTexture.autoGenerateMips = false;
-					generatedTexture.filterMode       = FilterMode.Trilinear;
-					generatedTexture.anisoLevel       = 8;
+					if (width > 256)
+						width = 256;
+					if (height > 256)
+						height = 256;
 				}
 
-				if (cachedMaterial == null)
-				{
-					cachedMaterial = CwHelper.CreateTempMaterial("PlanetWater (Generated)", SgtCommon.ShaderNamePrefix + "PlanetWater");
-				}
+				generatedTexture = new RenderTexture(width, height, 0, RenderTextureFormat.ARGB32, 8);
 
-				cachedMaterial.SetTexture(_MainTex, baseTexture);
-				cachedMaterial.SetFloat(_Age, age);
-				cachedMaterial.SetFloat(_NormalStrength, strength);
+				generatedTexture.wrapMode         = TextureWrapMode.Repeat;
+				generatedTexture.useMipMap        = true;
+				generatedTexture.autoGenerateMips = false;
+				generatedTexture.filterMode       = FilterMode.Trilinear;
+				generatedTexture.anisoLevel       = 8;
+			}
+			else if (webgl && Application.isPlaying && Time.unscaledTime < nextWebGlBlitTime)
+			{
+				return;
+			}
 
-				Graphics.Blit(null, generatedTexture, cachedMaterial);
+			if (cachedMaterial == null)
+			{
+				cachedMaterial = CwHelper.CreateTempMaterial("PlanetWater (Generated)", SgtCommon.ShaderNamePrefix + "PlanetWater");
+			}
 
-				generatedTexture.GenerateMips();
+			cachedMaterial.SetTexture(_MainTex, baseTexture);
+			cachedMaterial.SetFloat(_Age, age);
+			cachedMaterial.SetFloat(_NormalStrength, strength);
 
+			Graphics.Blit(null, generatedTexture, cachedMaterial);
+
+			generatedTexture.GenerateMips();
+
+			if (webgl)
+			{
+				nextWebGlBlitTime = Time.unscaledTime + 0.1f;
+				cachedPlanet.ApplyWebGlMaterialTexture(_WaterTexture, generatedTexture);
+			}
+			else
+			{
 				cachedPlanet.Properties.SetTexture(_WaterTexture, generatedTexture);
 			}
 		}

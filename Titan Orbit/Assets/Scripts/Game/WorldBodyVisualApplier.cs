@@ -400,6 +400,25 @@ namespace TitanOrbit.Game
             if (sgt == null || sgt.Material == null)
                 return false;
 
+            // WebGL draws with a null property block. Team tint is a shared material
+            // per shape bucket, so the draw does not upload a block per rock per camera.
+            if (Application.platform == RuntimePlatform.WebGLPlayer)
+            {
+                int bucket = sgt.SharedMeshBucket;
+                if (bucket < 0)
+                    return false;
+
+                Material variant = GetWebGlAsteroidMaterial(bucket, team);
+                if (variant == null)
+                    return false;
+
+                sgt.Material = variant;
+                cache.OriginalColor = s_WebGlAsteroidBaseColor;
+                cache.HasOriginal = true;
+                cache.AppliedTeam = team;
+                return true;
+            }
+
             // --- Cache original SgtPlanet color once ---
             if (!cache.HasOriginal)
             {
@@ -430,13 +449,24 @@ namespace TitanOrbit.Game
                 return;
 
             var sgt = root.GetComponentInChildren<SgtPlanet>(true);
-            if (sgt == null || sgt.Material == null || !sgt.Material.HasProperty(ShaderIdTiling))
+            if (sgt == null)
                 return;
 
             int seed = unchecked((int)((long)(worldPosition.x * 1000) * 73856093
                 ^ (long)(worldPosition.z * 1000) * 19349663
                 ^ (long)(worldPosition.y * 100) * 83492791));
             var rng = new System.Random(seed);
+
+            // Share the mesh even when the material has no _Tiling. Missing tiling only
+            // skips UV variation. A private Geosphere50 per rock filled ~2.1 GB and abort("OOM").
+            if (Application.platform == RuntimePlatform.WebGLPlayer)
+            {
+                AssignSharedAsteroidMesh(sgt, rng);
+                return;
+            }
+
+            if (sgt.Material == null || !sgt.Material.HasProperty(ShaderIdTiling))
+                return;
 
             float sizeTiling = BaseTextureTiling * (rawSize / MinAsteroidRadius);
             float scaleMul = Mathf.Lerp(TextureScaleRandomMin, TextureScaleRandomMax, (float)rng.NextDouble());
@@ -454,16 +484,6 @@ namespace TitanOrbit.Game
                 sgt.Properties.SetFloat(ShaderIdDetailTiling, detailTiling);
             }
 
-            // Geosphere50 is ~25k vertices. SgtPlanet.Rebuild copies that mesh and keeps the
-            // vertex lists on every rock. Hundreds of asteroids filled the WebGL heap
-            // (allocated ~2.1 GB, managed ~1 GB) until the browser abort("OOM").
-            // Six shared shapes keep the lumpiness; size and shader tiling still vary per rock.
-            if (Application.platform == RuntimePlatform.WebGLPlayer)
-            {
-                AssignSharedAsteroidMesh(sgt, rng);
-                return;
-            }
-
             sgt.Displacement = Mathf.Lerp(
                 DisplacementMin, BodyCollisionMath.AsteroidVisualDisplacementLocal, (float)rng.NextDouble());
             sgt.DirtyMesh();
@@ -473,21 +493,31 @@ namespace TitanOrbit.Game
 
         static Mesh[] s_WebGlAsteroidMeshes;
 
+        static Material s_WebGlAsteroidSourceMaterial;
+
+        static Color s_WebGlAsteroidBaseColor = new Color(0.5f, 0.5f, 0.5f, 1f);
+
+        static readonly Dictionary<long, Material> s_WebGlAsteroidMaterials = new Dictionary<long, Material>();
+
         /// <summary>
-        /// Reuses one displaced mesh per bucket. <see cref="SgtPlanet.Displacement"/> marks the
-        /// mesh dirty, so this must run after spin migration and must not be followed by another
-        /// displacement write.
+        /// Reuses one displaced mesh per bucket and one material per bucket and team.
+        /// <see cref="SgtPlanet.Displacement"/> marks the mesh dirty, so the write happens
+        /// only while building a bucket, and never after the share is locked.
         /// </summary>
         static void AssignSharedAsteroidMesh(SgtPlanet sgt, System.Random rng)
         {
             if (s_WebGlAsteroidMeshes == null)
                 s_WebGlAsteroidMeshes = new Mesh[WebGlAsteroidMeshBuckets];
 
+            CaptureWebGlAsteroidSource(sgt);
+
             int bucket = rng.Next(WebGlAsteroidMeshBuckets);
+            sgt.BindSharedMeshBucket(bucket);
             Mesh shared = s_WebGlAsteroidMeshes[bucket];
             if (shared != null)
             {
                 sgt.AssignSharedGeneratedMesh(shared);
+                ApplyWebGlAsteroidMaterial(sgt, bucket, TeamId.None);
                 return;
             }
 
@@ -495,6 +525,71 @@ namespace TitanOrbit.Game
             sgt.Displacement = Mathf.Lerp(
                 DisplacementMin, BodyCollisionMath.AsteroidVisualDisplacementLocal, t);
             s_WebGlAsteroidMeshes[bucket] = sgt.RebuildAsSharedMesh();
+            ApplyWebGlAsteroidMaterial(sgt, bucket, TeamId.None);
+        }
+
+        static void CaptureWebGlAsteroidSource(SgtPlanet sgt)
+        {
+            if (s_WebGlAsteroidSourceMaterial != null || sgt == null || sgt.Material == null)
+                return;
+
+            // Capture the prefab material before a bucket variant replaces it.
+            s_WebGlAsteroidSourceMaterial = sgt.Material;
+            if (s_WebGlAsteroidSourceMaterial.HasProperty("_Color"))
+                s_WebGlAsteroidBaseColor = s_WebGlAsteroidSourceMaterial.GetColor("_Color");
+            else if (s_WebGlAsteroidSourceMaterial.HasProperty("_BaseColor"))
+                s_WebGlAsteroidBaseColor = s_WebGlAsteroidSourceMaterial.GetColor("_BaseColor");
+        }
+
+        static long WebGlAsteroidMaterialKey(int bucket, TeamId team)
+        {
+            return ((long)bucket << 8) | (byte)team;
+        }
+
+        static Material GetWebGlAsteroidMaterial(int bucket, TeamId team)
+        {
+            long key = WebGlAsteroidMaterialKey(bucket, team);
+            if (s_WebGlAsteroidMaterials.TryGetValue(key, out Material existing) && existing != null)
+                return existing;
+
+            Material src = s_WebGlAsteroidSourceMaterial;
+            if (src == null)
+                return null;
+
+            var mat = new Material(src);
+            mat.name = "AsteroidWebGL_" + bucket + "_" + team;
+
+            float t = WebGlAsteroidMeshBuckets <= 1
+                ? 0f
+                : bucket / (float)(WebGlAsteroidMeshBuckets - 1);
+            if (mat.HasProperty(ShaderIdTiling))
+            {
+                float scaleMul = Mathf.Lerp(TextureScaleRandomMin, TextureScaleRandomMax, t);
+                mat.SetFloat(ShaderIdTiling, BaseTextureTiling * scaleMul);
+            }
+
+            if (mat.HasProperty(ShaderIdBumpScale))
+                mat.SetFloat(ShaderIdBumpScale, Mathf.Lerp(BumpScaleMin, BumpScaleMax, t));
+            if (mat.HasProperty(ShaderIdDetailTiling))
+                mat.SetFloat(ShaderIdDetailTiling, Mathf.Lerp(DetailTilingMin, DetailTilingMax, t));
+
+            if (mat.HasProperty("_Color"))
+            {
+                Color color = team == TeamId.None
+                    ? s_WebGlAsteroidBaseColor
+                    : Color.Lerp(s_WebGlAsteroidBaseColor, team.ToColor(), 0.7f);
+                mat.SetColor("_Color", color);
+            }
+
+            s_WebGlAsteroidMaterials[key] = mat;
+            return mat;
+        }
+
+        static void ApplyWebGlAsteroidMaterial(SgtPlanet sgt, int bucket, TeamId team)
+        {
+            Material variant = GetWebGlAsteroidMaterial(bucket, team);
+            if (variant != null)
+                sgt.Material = variant;
         }
 
         /// <summary>

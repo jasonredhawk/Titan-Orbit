@@ -33,7 +33,41 @@ namespace SpaceGraphicsToolkit
 		public float Radius { set { if (radius != value) { radius = value; DirtyMesh(); } } get { return radius; } } [SerializeField] private float radius = 1.0f;
 
 		/// <summary>The material used to render the planet. For best results, this should use the SGT Planet shader.</summary>
-		public Material Material { set { material = value; } get { return material; } } [SerializeField] private Material material;
+		public Material Material
+		{
+			set
+			{
+				if (material == value)
+					return;
+
+				// Replacing the draw material drops a WebGL instance we created so the asset is not mutated.
+				if (webGlDrawMaterialReady && material != null)
+					material = CwHelper.Destroy(material);
+
+				material = value;
+				webGlDrawMaterialReady = false;
+				nightCached = false;
+				sentWaterLevel = float.NaN;
+				sentNightValid = false;
+
+				// A new planet material drops uniforms that lived on the previous instance.
+				// Shared asteroid materials stay shared; they do not take a private instance.
+				if (lockSharedMesh || Application.platform != RuntimePlatform.WebGLPlayer)
+					return;
+
+				var gradient = GetComponent<SgtPlanetWaterGradient>();
+				if (gradient != null)
+				{
+					gradient.DirtyTexture();
+					gradient.DirtyScale();
+				}
+
+				var waterTexture = GetComponent<SgtPlanetWaterTexture>();
+				if (waterTexture != null)
+					waterTexture.InvalidateWebGlBlit();
+			}
+			get { return material; }
+		} [SerializeField] private Material material;
 
 		/// <summary>If you want to apply a shared material (e.g. atmosphere) to this terrain, then specify it here.</summary>
 		public SgtSharedMaterial SharedMaterial { set { sharedMaterial = value; } get { return sharedMaterial; } } [SerializeField] private SgtSharedMaterial sharedMaterial;
@@ -105,6 +139,18 @@ namespace SpaceGraphicsToolkit
 		[System.NonSerialized]
 		private bool usesSharedGeneratedMesh;
 
+		// Once set, LateUpdate and Rebuild must not Instantiate a private copy or drop the share.
+		[System.NonSerialized]
+		private bool lockSharedMesh;
+
+		[System.NonSerialized]
+		private int sharedMeshBucket = -1;
+
+		// True when <see cref="material"/> is a per-planet instance used so WebGL draws
+		// do not submit a MaterialPropertyBlock every camera.
+		[System.NonSerialized]
+		private bool webGlDrawMaterialReady;
+
 		private static Dictionary<Mesh, int> sharedGeneratedUsers = new Dictionary<Mesh, int>();
 
 		private static Dictionary<Mesh, Geom> meshToGeom = new Dictionary<Mesh, Geom>();
@@ -146,18 +192,103 @@ namespace SpaceGraphicsToolkit
 			dirtyMesh = true;
 		}
 
+		/// <summary>The mesh currently drawn. Shared asteroid meshes are the same instance across a bucket.</summary>
+		public Mesh GeneratedMesh
+		{
+			get { return generatedMesh; }
+		}
+
+		/// <summary>True when this body must keep the shared mesh and must not rebuild a private copy.</summary>
+		public bool UsesLockedSharedMesh
+		{
+			get { return lockSharedMesh; }
+		}
+
+		/// <summary>WebGL asteroid shape bucket, or -1 when this body is not on a shared mesh.</summary>
+		public int SharedMeshBucket
+		{
+			get { return sharedMeshBucket; }
+		}
+
+		public void BindSharedMeshBucket(int bucket)
+		{
+			sharedMeshBucket = bucket;
+		}
+
+		/// <summary>
+		/// Copies authored mesh settings without property setters.
+		/// Those setters call <see cref="DirtyMesh"/>, and LateUpdate would then Instantiate a private mesh.
+		/// On WebGL the copy locks the mesh so that LateUpdate waits for the shared assign.
+		/// </summary>
+		public void CopyAuthoredSettingsFrom(SgtPlanet source)
+		{
+			if (source == null)
+				return;
+
+			mesh = source.mesh;
+			meshCollider = source.meshCollider;
+			radius = source.radius;
+			material = source.material;
+			sharedMaterial = source.sharedMaterial;
+			castShadows = source.castShadows;
+			receiveShadows = source.receiveShadows;
+			waterLevel = source.waterLevel;
+			displace = source.displace;
+			displacement = source.displacement;
+			clampWater = source.clampWater;
+			dirtyMesh = false;
+			nightCached = false;
+			sentWaterLevel = float.NaN;
+			sentNightValid = false;
+			webGlDrawMaterialReady = false;
+
+			if (Application.platform == RuntimePlatform.WebGLPlayer)
+				lockSharedMesh = true;
+		}
+
+		/// <summary>Writes a texture onto the WebGL draw material. Shared asteroid meshes skip this.</summary>
+		public void ApplyWebGlMaterialTexture(int nameId, Texture texture)
+		{
+			if (lockSharedMesh || texture == null)
+				return;
+
+			EnsureWebGlDrawMaterial();
+			if (material != null)
+				material.SetTexture(nameId, texture);
+		}
+
+		/// <summary>Writes a float onto the WebGL draw material. Shared asteroid meshes skip this.</summary>
+		public void ApplyWebGlMaterialFloat(int nameId, float value)
+		{
+			if (lockSharedMesh)
+				return;
+
+			EnsureWebGlDrawMaterial();
+			if (material != null)
+				material.SetFloat(nameId, value);
+		}
+
 		/// <summary>
 		/// Builds this planet's mesh once and records it as shared. Later proxies should call
 		/// <see cref="AssignSharedGeneratedMesh"/> instead of <see cref="Rebuild"/>.
 		/// </summary>
 		public Mesh RebuildAsSharedMesh()
 		{
+			if (lockSharedMesh && generatedMesh != null)
+			{
+				dirtyMesh = false;
+				return generatedMesh;
+			}
+
+			// The copy path locks before this build. Clear it so the one shared mesh can be created.
+			lockSharedMesh = false;
 			ReleaseSharedGeneratedMesh();
 			Rebuild();
 			if (generatedMesh == null)
 				return null;
 
 			usesSharedGeneratedMesh = true;
+			lockSharedMesh = true;
 			if (sharedGeneratedUsers.TryGetValue(generatedMesh, out int users))
 				sharedGeneratedUsers[generatedMesh] = users + 1;
 			else
@@ -177,6 +308,7 @@ namespace SpaceGraphicsToolkit
 			if (usesSharedGeneratedMesh && generatedMesh == shared)
 			{
 				dirtyMesh = false;
+				lockSharedMesh = true;
 				return;
 			}
 
@@ -187,6 +319,7 @@ namespace SpaceGraphicsToolkit
 			generatedMesh = shared;
 			dirtyMesh = false;
 			usesSharedGeneratedMesh = true;
+			lockSharedMesh = true;
 			if (sharedGeneratedUsers.TryGetValue(shared, out int users))
 				sharedGeneratedUsers[shared] = users + 1;
 			else
@@ -199,6 +332,7 @@ namespace SpaceGraphicsToolkit
 				return;
 
 			usesSharedGeneratedMesh = false;
+			lockSharedMesh = false;
 			Mesh shared = generatedMesh;
 			generatedMesh = null;
 			dirtyMesh = false;
@@ -234,6 +368,12 @@ namespace SpaceGraphicsToolkit
 		[ContextMenu("Rebuild")]
 		public void Rebuild()
 		{
+			if (lockSharedMesh)
+			{
+				dirtyMesh = false;
+				return;
+			}
+
 			dirtyMesh = false;
 			if (usesSharedGeneratedMesh == true)
 				ReleaseSharedGeneratedMesh();
@@ -403,13 +543,26 @@ namespace SpaceGraphicsToolkit
 
 		protected virtual void LateUpdate()
 		{
-			if (generatedMesh == null || dirtyMesh == true)
-			{
+			// A locked share must survive Displacement / WaterLevel dirties. Rebuilding
+			// would Release the share and Instantiate a private Geosphere per rock.
+			if (lockSharedMesh)
+				dirtyMesh = false;
+			else if (generatedMesh == null || dirtyMesh == true)
 				Rebuild();
-			}
 
 			if (generatedMesh == null || material == null)
 				return;
+
+			// Asteroids share materials. Per-body water and night uploads would write one
+			// material from every rock, and the property block is not drawn on WebGL.
+			if (lockSharedMesh && Application.platform == RuntimePlatform.WebGLPlayer)
+				return;
+
+			if (Application.platform == RuntimePlatform.WebGLPlayer)
+			{
+				ApplyWebGlPlanetUniforms();
+				return;
+			}
 
 			// Skip the upload when nothing changed. Bodies do not move, so a constant
 			// water level and light direction must not allocate a new block each frame.
@@ -464,7 +617,13 @@ namespace SpaceGraphicsToolkit
 			//var layer = SgtHelper.GetRenderingLayers(gameObject, renderingLayer);
 			var layer = gameObject.layer;
 
-			Graphics.DrawMesh(generatedMesh, transform.localToWorldMatrix, material, layer, camera, 0, properties, castShadows, receiveShadows);
+			// DrawMesh copies a MaterialPropertyBlock into native memory. On WebGL that
+			// copy is not returned to the browser, so every camera and every body grows the heap.
+			MaterialPropertyBlock block = null;
+			if (Application.platform != RuntimePlatform.WebGLPlayer)
+				block = properties;
+
+			Graphics.DrawMesh(generatedMesh, transform.localToWorldMatrix, material, layer, camera, 0, block, castShadows, receiveShadows);
 
 			var finalSharedMaterial = sharedMaterial;
 
@@ -475,12 +634,76 @@ namespace SpaceGraphicsToolkit
 
 			if (CwHelper.Enabled(finalSharedMaterial) == true && finalSharedMaterial.Material != null)
 			{
-				Graphics.DrawMesh(generatedMesh, transform.localToWorldMatrix, finalSharedMaterial.Material, layer, camera, 0, properties);
+				Graphics.DrawMesh(generatedMesh, transform.localToWorldMatrix, finalSharedMaterial.Material, layer, camera, 0, block);
 			}
+		}
+
+		void EnsureWebGlDrawMaterial()
+		{
+			if (webGlDrawMaterialReady || material == null || lockSharedMesh)
+				return;
+			if (Application.platform != RuntimePlatform.WebGLPlayer)
+				return;
+
+			var instance = new Material(material);
+			instance.name = material.name + " (WebGL)";
+			material = instance;
+			webGlDrawMaterialReady = true;
+		}
+
+		void ApplyWebGlPlanetUniforms()
+		{
+			EnsureWebGlDrawMaterial();
+			if (material == null)
+				return;
+
+			if (sentWaterLevel != waterLevel)
+			{
+				material.SetFloat(_WaterLevel, waterLevel);
+				sentWaterLevel = waterLevel;
+			}
+
+			if (nightCached == false)
+			{
+				hasNight = material.GetFloat(_HasNight) == 1.0f;
+				nightCached = true;
+			}
+
+			if (hasNight == false)
+				return;
+
+			var mask = 1 << gameObject.layer;
+			var lights = SgtLight.Find(mask, transform.position);
+
+			SgtLight.FilterOut(transform.position);
+
+			if (lights.Count == 0)
+				return;
+
+			var position = Vector3.zero;
+			var direction = Vector3.forward;
+			var color = Color.white;
+			var intensity = 0.0f;
+
+			SgtLight.Calculate(lights[0], transform.position, 0.0f, default(Transform), default(Transform), ref position, ref direction, ref color, ref intensity);
+
+			Vector3 night = -direction;
+			if (sentNightValid && (night - sentNightDir).sqrMagnitude < 0.00000001f)
+				return;
+
+			material.SetVector(_NightDirection, night);
+			sentNightDir = night;
+			sentNightValid = true;
 		}
 
 		protected virtual void OnDestroy()
 		{
+			if (webGlDrawMaterialReady && material != null)
+			{
+				material = CwHelper.Destroy(material);
+				webGlDrawMaterialReady = false;
+			}
+
 			if (usesSharedGeneratedMesh == true)
 			{
 				ReleaseSharedGeneratedMesh();
