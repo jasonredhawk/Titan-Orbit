@@ -293,6 +293,9 @@ namespace SpaceGraphicsToolkit
 				sharedGeneratedUsers[generatedMesh] = users + 1;
 			else
 				sharedGeneratedUsers[generatedMesh] = 1;
+
+			// WebGL does not upload a DrawMesh-only mesh until the CPU copy is pushed.
+			generatedMesh.UploadMeshData(false);
 			return generatedMesh;
 		}
 

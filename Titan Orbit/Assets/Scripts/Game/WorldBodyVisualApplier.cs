@@ -321,6 +321,48 @@ namespace TitanOrbit.Game
         static readonly int ShaderIdTiling = Shader.PropertyToID("_Tiling");
         static readonly int ShaderIdBumpScale = Shader.PropertyToID("_BumpScale");
         static readonly int ShaderIdDetailTiling = Shader.PropertyToID("_DetailTiling");
+        static readonly int ShaderIdWaterLevel = Shader.PropertyToID("_WaterLevel");
+        static readonly int ShaderIdHasWater = Shader.PropertyToID("_HasWater");
+        static readonly int ShaderIdWaterTexture = Shader.PropertyToID("_WaterTexture");
+        static readonly int ShaderIdBumpMap = Shader.PropertyToID("_BumpMap");
+
+        static bool s_WebGlAsteroidMaterialReady;
+
+        /// <summary>
+        /// Editor Play Mode compiles shader variants on demand, so a dry asteroid material draws there.
+        /// WebGL only includes variants used by materials already in the player. Planets ship the
+        /// <c>_WATER</c> combo. Match that, keep the rock dry, and bind a water normal so GLES
+        /// does not drop the draw on an empty sampler.
+        /// </summary>
+        static void PrepareWebGlAsteroidMaterial(SgtPlanet sgt)
+        {
+            if (s_WebGlAsteroidMaterialReady || sgt == null || sgt.Material == null)
+                return;
+
+            Material mat = sgt.Material;
+            mat.shaderKeywords = new[]
+            {
+                "_DETAIL_NORMAL",
+                "_DETAIL_ON",
+                "_DETAIL_R",
+                "_NORMALMAP",
+                "_SMOOTHNESS_TEXTURE_ALBEDO_CHANNEL_A",
+                "_WATER"
+            };
+            if (mat.HasProperty(ShaderIdHasWater))
+                mat.SetFloat(ShaderIdHasWater, 1f);
+            if (mat.HasProperty(ShaderIdWaterLevel))
+                mat.SetFloat(ShaderIdWaterLevel, sgt.WaterLevel);
+            if (mat.HasProperty(ShaderIdWaterTexture) && mat.GetTexture(ShaderIdWaterTexture) == null
+                && mat.HasProperty(ShaderIdBumpMap))
+            {
+                Texture bump = mat.GetTexture(ShaderIdBumpMap);
+                if (bump != null)
+                    mat.SetTexture(ShaderIdWaterTexture, bump);
+            }
+
+            s_WebGlAsteroidMaterialReady = true;
+        }
 
         public static bool TryCreateAsteroidVisual(
             GameObject asteroidPrefab,
@@ -400,25 +442,6 @@ namespace TitanOrbit.Game
             if (sgt == null || sgt.Material == null)
                 return false;
 
-            // WebGL draws with a null property block. Team tint is a shared material
-            // per shape bucket, so the draw does not upload a block per rock per camera.
-            if (Application.platform == RuntimePlatform.WebGLPlayer)
-            {
-                int bucket = sgt.SharedMeshBucket;
-                if (bucket < 0)
-                    return false;
-
-                Material variant = GetWebGlAsteroidMaterial(bucket, team);
-                if (variant == null)
-                    return false;
-
-                sgt.Material = variant;
-                cache.OriginalColor = s_WebGlAsteroidBaseColor;
-                cache.HasOriginal = true;
-                cache.AppliedTeam = team;
-                return true;
-            }
-
             // --- Cache original SgtPlanet color once ---
             if (!cache.HasOriginal)
             {
@@ -493,14 +516,9 @@ namespace TitanOrbit.Game
 
         static Mesh[] s_WebGlAsteroidMeshes;
 
-        static Material s_WebGlAsteroidSourceMaterial;
-
-        static Color s_WebGlAsteroidBaseColor = new Color(0.5f, 0.5f, 0.5f, 1f);
-
-        static readonly Dictionary<long, Material> s_WebGlAsteroidMaterials = new Dictionary<long, Material>();
-
         /// <summary>
-        /// Reuses one displaced mesh per bucket and one material per bucket and team.
+        /// Reuses one displaced mesh per bucket. The prefab material stays on the body.
+        /// A runtime <c>new Material</c> clone of the SGT planet shader does not draw on WebGL.
         /// <see cref="SgtPlanet.Displacement"/> marks the mesh dirty, so the write happens
         /// only while building a bucket, and never after the share is locked.
         /// </summary>
@@ -509,7 +527,7 @@ namespace TitanOrbit.Game
             if (s_WebGlAsteroidMeshes == null)
                 s_WebGlAsteroidMeshes = new Mesh[WebGlAsteroidMeshBuckets];
 
-            CaptureWebGlAsteroidSource(sgt);
+            PrepareWebGlAsteroidMaterial(sgt);
 
             int bucket = rng.Next(WebGlAsteroidMeshBuckets);
             sgt.BindSharedMeshBucket(bucket);
@@ -517,7 +535,6 @@ namespace TitanOrbit.Game
             if (shared != null)
             {
                 sgt.AssignSharedGeneratedMesh(shared);
-                ApplyWebGlAsteroidMaterial(sgt, bucket, TeamId.None);
                 return;
             }
 
@@ -525,71 +542,6 @@ namespace TitanOrbit.Game
             sgt.Displacement = Mathf.Lerp(
                 DisplacementMin, BodyCollisionMath.AsteroidVisualDisplacementLocal, t);
             s_WebGlAsteroidMeshes[bucket] = sgt.RebuildAsSharedMesh();
-            ApplyWebGlAsteroidMaterial(sgt, bucket, TeamId.None);
-        }
-
-        static void CaptureWebGlAsteroidSource(SgtPlanet sgt)
-        {
-            if (s_WebGlAsteroidSourceMaterial != null || sgt == null || sgt.Material == null)
-                return;
-
-            // Capture the prefab material before a bucket variant replaces it.
-            s_WebGlAsteroidSourceMaterial = sgt.Material;
-            if (s_WebGlAsteroidSourceMaterial.HasProperty("_Color"))
-                s_WebGlAsteroidBaseColor = s_WebGlAsteroidSourceMaterial.GetColor("_Color");
-            else if (s_WebGlAsteroidSourceMaterial.HasProperty("_BaseColor"))
-                s_WebGlAsteroidBaseColor = s_WebGlAsteroidSourceMaterial.GetColor("_BaseColor");
-        }
-
-        static long WebGlAsteroidMaterialKey(int bucket, TeamId team)
-        {
-            return ((long)bucket << 8) | (byte)team;
-        }
-
-        static Material GetWebGlAsteroidMaterial(int bucket, TeamId team)
-        {
-            long key = WebGlAsteroidMaterialKey(bucket, team);
-            if (s_WebGlAsteroidMaterials.TryGetValue(key, out Material existing) && existing != null)
-                return existing;
-
-            Material src = s_WebGlAsteroidSourceMaterial;
-            if (src == null)
-                return null;
-
-            var mat = new Material(src);
-            mat.name = "AsteroidWebGL_" + bucket + "_" + team;
-
-            float t = WebGlAsteroidMeshBuckets <= 1
-                ? 0f
-                : bucket / (float)(WebGlAsteroidMeshBuckets - 1);
-            if (mat.HasProperty(ShaderIdTiling))
-            {
-                float scaleMul = Mathf.Lerp(TextureScaleRandomMin, TextureScaleRandomMax, t);
-                mat.SetFloat(ShaderIdTiling, BaseTextureTiling * scaleMul);
-            }
-
-            if (mat.HasProperty(ShaderIdBumpScale))
-                mat.SetFloat(ShaderIdBumpScale, Mathf.Lerp(BumpScaleMin, BumpScaleMax, t));
-            if (mat.HasProperty(ShaderIdDetailTiling))
-                mat.SetFloat(ShaderIdDetailTiling, Mathf.Lerp(DetailTilingMin, DetailTilingMax, t));
-
-            if (mat.HasProperty("_Color"))
-            {
-                Color color = team == TeamId.None
-                    ? s_WebGlAsteroidBaseColor
-                    : Color.Lerp(s_WebGlAsteroidBaseColor, team.ToColor(), 0.7f);
-                mat.SetColor("_Color", color);
-            }
-
-            s_WebGlAsteroidMaterials[key] = mat;
-            return mat;
-        }
-
-        static void ApplyWebGlAsteroidMaterial(SgtPlanet sgt, int bucket, TeamId team)
-        {
-            Material variant = GetWebGlAsteroidMaterial(bucket, team);
-            if (variant != null)
-                sgt.Material = variant;
         }
 
         /// <summary>

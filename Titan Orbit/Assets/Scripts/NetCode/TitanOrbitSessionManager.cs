@@ -2447,6 +2447,12 @@ namespace TitanOrbit.NetCode
             int inGame = inGameQuery.CalculateEntityCount();
             int spawnBuf = CountGhostSpawnBuffer(em);
             string connState = "(none)";
+            // Desktop ClientConnectWatch calls World.Update, which leaves RpcSystem:RpcExecJob
+            // writing NetworkStreamConnection. EntityQuery.TryGetSingleton does not complete that
+            // job (unlike EntityManager.GetComponentData). WebGL skips this tick — the player
+            // loop has already finished the jobs — so only the Editor/standalone path threw and
+            // aborted the connect coroutine.
+            em.CompleteDependencyBeforeRO<NetworkStreamConnection>();
             if (connections == 1 && connectionsQuery.TryGetSingleton<NetworkStreamConnection>(out var conn))
                 connState = conn.CurrentState.ToString();
             var transform = client.GetExistingSystemManaged<TransformSystemGroup>();

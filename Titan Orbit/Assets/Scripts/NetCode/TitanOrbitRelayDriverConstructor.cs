@@ -25,9 +25,9 @@ namespace TitanOrbit.NetCode
                 var settings = TitanOrbitRelayUtility.ApplyRelayFriendlyNetworkSettings(
                     DefaultDriverBuilder.GetNetworkClientSettings());
                 settings = settings.WithRelayParameters(ref relay);
-                // Pair with TitanOrbitRelayUtility.ClientConnectionTypeForPlatform: MPS 2.2
-                // ToRelayServerData is wss-only whenever UNITY_WEBGL is defined (incl. Editor).
-#if UNITY_WEBGL
+                // WebGL player: browser WebSocket. Editor (including a WebGL build target): UDP/DTLS.
+                // The Editor WebSocket driver never leaves Connecting on Relay.
+#if UNITY_WEBGL && !UNITY_EDITOR
                 DefaultDriverBuilder.RegisterClientWebSocketDriver(world, ref driverStore, netDebug, settings);
 #else
                 DefaultDriverBuilder.RegisterClientUdpDriver(world, ref driverStore, netDebug, settings);
@@ -53,10 +53,10 @@ namespace TitanOrbit.NetCode
                 settings = settings.WithRelayParameters(ref relay);
 
                 // [TITAN-ORBIT] Headless dedicated: relay UDP only — no IPC alongside Relay.
-                // WebGL / Editor-with-WebGL-target: wss (SDK rejects dtls). Linux UNITY_SERVER stays UDP.
+                // WebGL player listens on wss. Editor and Linux UNITY_SERVER listen on UDP/DTLS.
                 if (IsDedicatedServerOnlyProcess())
                 {
-#if UNITY_WEBGL
+#if UNITY_WEBGL && !UNITY_EDITOR
                     DefaultDriverBuilder.RegisterServerWebSocketDriver(world, ref driverStore, netDebug, settings);
 #else
                     DefaultDriverBuilder.RegisterServerUdpDriver(world, ref driverStore, netDebug, settings);
@@ -67,7 +67,7 @@ namespace TitanOrbit.NetCode
                 // Editor host: IPC for local client + Relay for remote.
                 DefaultDriverBuilder.RegisterServerIpcDriver(world, ref driverStore, netDebug,
                     DefaultDriverBuilder.GetNetworkServerSettings());
-#if UNITY_WEBGL
+#if UNITY_WEBGL && !UNITY_EDITOR
                 DefaultDriverBuilder.RegisterServerWebSocketDriver(world, ref driverStore, netDebug, settings);
 #else
                 DefaultDriverBuilder.RegisterServerUdpDriver(world, ref driverStore, netDebug, settings);
