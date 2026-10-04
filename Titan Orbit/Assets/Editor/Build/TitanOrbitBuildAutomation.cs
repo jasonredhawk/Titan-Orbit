@@ -15,6 +15,8 @@ namespace TitanOrbit.Editor.Build
     /// client, Windows headless server, Linux GCE server, Linux Edgegap server, and Android APK.
     /// Centralizes output paths under BuildOutput/ (GCE) and Builds/EdgegapServer (Edgegap plugin).
     /// Day-to-day GCE publish with Unity open: <see cref="BuildHeadlessServerLinuxAndDeploy"/>.
+    /// Day-to-day WebGL publish with Unity open: <see cref="BuildWebGLProductionAndDeploy"/>
+    /// (runs <c>tools/gcs/deploy_webgl_gcs.bat</c> after a successful build).
     /// Closed-Editor / CI: <see cref="BuildHeadlessServerLinuxBatchMode"/> via
     /// <c>tools/gce/build_and_deploy_server_gce.bat</c>.
     /// Not compiled into player or dedicated-server binaries.
@@ -57,14 +59,42 @@ namespace TitanOrbit.Editor.Build
         [MenuItem("TitanOrbit/Build/WebGL Production")]
         public static void BuildWebGLProduction()
         {
+            BeginWebGlProductionBuild(deployToGcsAfterSuccess: false);
+        }
+
+        /// <summary>
+        /// Fast day-to-day path: build the WebGL production client in the already-open Editor, then
+        /// launch <c>tools/gcs/deploy_webgl_gcs.bat</c> against that output folder.
+        /// Same idea as <see cref="BuildHeadlessServerLinuxAndDeploy"/> — Unity stays open and a
+        /// console window runs upload, Brotli metadata, and GCS verification.
+        /// </summary>
+        [MenuItem("TitanOrbit/Build/WebGL Production + Deploy")]
+        public static void BuildWebGLProductionAndDeploy()
+        {
+            // --- Interactive Editor menu (build + GCS deploy, Unity stays open) ---
+            Debug.Log(
+                "[TitanOrbitBuild] WebGL production build + deploy starting (Editor stays open). " +
+                "After BuildPlayer succeeds, a console window runs tools\\gcs\\deploy_webgl_gcs.bat.");
+            BeginWebGlProductionBuild(deployToGcsAfterSuccess: true);
+        }
+
+        /// <summary>
+        /// Shared entry for the WebGL production menu items. Switches to WebGL first when the
+        /// Editor is still on another target, then builds (and optionally deploys) after reload.
+        /// </summary>
+        /// <param name="deployToGcsAfterSuccess">
+        /// When true, a successful build starts <c>deploy_webgl_gcs.bat</c> in a visible console.
+        /// </param>
+        static void BeginWebGlProductionBuild(bool deployToGcsAfterSuccess)
+        {
             // --- Ensure active Editor platform is WebGL (not leftover Linux Server) ---
             if (!IsWebGlActiveTarget())
             {
-                QueueWebGlBuildAfterPlatformSwitch();
+                QueueWebGlBuildAfterPlatformSwitch(deployToGcsAfterSuccess);
                 return;
             }
 
-            ExecuteWebGlProductionBuild(restoreTargetAfter: null);
+            ExecuteWebGlProductionBuild(restoreTargetAfter: null, deployToGcsAfterSuccess);
         }
 
         /// <summary>True when the Editor has already switched to WebGL.</summary>
@@ -77,7 +107,11 @@ namespace TitanOrbit.Editor.Build
         /// Saves a pending WebGL build request (plus optional restore target), switches to WebGL,
         /// and returns. <see cref="ResumePendingWebGlBuildIfAny"/> runs BuildPlayer after reload.
         /// </summary>
-        static void QueueWebGlBuildAfterPlatformSwitch()
+        /// <param name="deployToGcsAfterSuccess">
+        /// Persisted so <b>WebGL Production + Deploy</b> still launches <c>deploy_webgl_gcs.bat</c>
+        /// after a platform-switch resume.
+        /// </param>
+        static void QueueWebGlBuildAfterPlatformSwitch(bool deployToGcsAfterSuccess)
         {
             // --- Persist request + prior target across domain reload ---
             // [STANDARD] SwitchActiveBuildTarget reloads assemblies; static locals die. Temp JSON survives.
@@ -85,7 +119,8 @@ namespace TitanOrbit.Editor.Build
             {
                 requested = true,
                 previousTarget = (int)EditorUserBuildSettings.activeBuildTarget,
-                previousSubtarget = (int)EditorUserBuildSettings.standaloneBuildSubtarget
+                previousSubtarget = (int)EditorUserBuildSettings.standaloneBuildSubtarget,
+                deployToGcsAfterSuccess = deployToGcsAfterSuccess
             };
 
             try
@@ -100,11 +135,13 @@ namespace TitanOrbit.Editor.Build
                 return;
             }
 
+            string deployNote = deployToGcsAfterSuccess
+                ? " Build + GCS deploy will resume after scripts recompile."
+                : " The WebGL production build will resume after scripts recompile.";
             Debug.Log(
                 "[TitanOrbitBuild] Active Editor target is not WebGL " +
                 $"(now: {EditorUserBuildSettings.activeBuildTarget} / {EditorUserBuildSettings.standaloneBuildSubtarget}). " +
-                "Switching platform so EntityScenes bake for the WebGL client, then resuming the " +
-                "WebGL production build after scripts recompile.");
+                "Switching platform so EntityScenes bake for the WebGL client." + deployNote);
 
             // --- Switch platform (triggers domain reload) ---
             // [UNITY] WebGL is a client Player target — not Dedicated Server — so UNITY_SERVER
@@ -152,6 +189,7 @@ namespace TitanOrbit.Editor.Build
                 return;
             }
 
+            bool deployToGcsAfterSuccess = pending != null && pending.deployToGcsAfterSuccess;
             ClearPendingWebGlBuild();
 
             if (pending == null || !pending.requested)
@@ -183,7 +221,7 @@ namespace TitanOrbit.Editor.Build
             }
 
             Debug.Log("[TitanOrbitBuild] Resuming queued WebGL production build after platform switch.");
-            ExecuteWebGlProductionBuild(restoreAfter);
+            ExecuteWebGlProductionBuild(restoreAfter, deployToGcsAfterSuccess);
         }
 
         /// <summary>
@@ -194,7 +232,10 @@ namespace TitanOrbit.Editor.Build
         /// Optional Editor target to restore after BuildPlayer (e.g. Windows Player). Null leaves
         /// WebGL active — preferred after switching away from Linux Dedicated Server.
         /// </param>
-        static void ExecuteWebGlProductionBuild(BuildTarget? restoreTargetAfter)
+        /// <param name="deployToGcsAfterSuccess">
+        /// When true, a successful build launches <c>deploy_webgl_gcs.bat</c> against the output folder.
+        /// </param>
+        static void ExecuteWebGlProductionBuild(BuildTarget? restoreTargetAfter, bool deployToGcsAfterSuccess)
         {
             // --- WebGL player settings that prevent startup OOB after deploy ---
             // [TITAN-ORBIT] Hashed Build/* names: IndexedDB / CDN cannot mix old .data with new .wasm.
@@ -269,13 +310,100 @@ namespace TitanOrbit.Editor.Build
 
             if (report.summary.result == BuildResult.Succeeded)
             {
-                Debug.Log(
-                    "[TitanOrbitBuild] WebGL production OK → " + GetWebGlOutputPath() +
-                    "\nNext: tools/gcs/deploy_webgl_gcs.bat → purge Cloudflare → clear browser site data once " +
-                    "(hashed Build/* names prevent future IndexedDB mix-ups).");
+                string outputFolder = GetWebGlOutputFolderAbsolute();
+                if (deployToGcsAfterSuccess)
+                {
+                    Debug.Log(
+                        "[TitanOrbitBuild] WebGL production OK → " + outputFolder +
+                        "\nStarting tools/gcs/deploy_webgl_gcs.bat. After it finishes: purge Cloudflare, " +
+                        "then clear browser site data once.");
+                    StartWebGlGcsDeploy(outputFolder);
+                }
+                else
+                {
+                    Debug.Log(
+                        "[TitanOrbitBuild] WebGL production OK → " + outputFolder +
+                        "\nNext: tools/gcs/deploy_webgl_gcs.bat → purge Cloudflare → clear browser site data once " +
+                        "(hashed Build/* names prevent future IndexedDB mix-ups).");
+                }
             }
             else
                 Debug.LogError($"[TitanOrbitBuild] WebGL build failed: {report.summary.result} — {report.summary.totalErrors} error(s).");
+        }
+
+        /// <summary>
+        /// Absolute path to the WebGL player folder (<c>index.html</c> + <c>Build/</c>) that
+        /// <c>deploy_webgl_gcs.bat</c> uploads.
+        /// </summary>
+        static string GetWebGlOutputFolderAbsolute()
+        {
+            // --- Resolve from the Unity project root ---
+            // [UNITY] Application.dataPath is …/Assets. Relative BuildOutput paths are under the project.
+            string projectRoot = Path.GetDirectoryName(Application.dataPath) ?? Directory.GetCurrentDirectory();
+            return Path.GetFullPath(Path.Combine(projectRoot, WebBuildFolder, "TitanOrbitWebGL"));
+        }
+
+        /// <summary>
+        /// After a successful Editor WebGL production build, start the existing
+        /// <c>deploy_webgl_gcs.bat</c> pipeline in a visible console window.
+        /// Unity stays open — this is the fast day-to-day WebGL publish path.
+        /// </summary>
+        /// <param name="webGlFolder">
+        /// Folder that contains <c>index.html</c> (usually
+        /// <c>BuildOutput/WebGL/production/TitanOrbitWebGL</c>). Passed as the bat's first argument
+        /// so the upload does not fall back to a stale default source path.
+        /// </param>
+        static void StartWebGlGcsDeploy(string webGlFolder)
+        {
+            // --- Resolve deploy script ---
+            string projectRoot = Path.GetDirectoryName(Application.dataPath) ?? Directory.GetCurrentDirectory();
+            string gcsDir = Path.GetFullPath(Path.Combine(projectRoot, "tools", "gcs"));
+            string deployBat = Path.Combine(gcsDir, "deploy_webgl_gcs.bat");
+
+            if (!File.Exists(Path.Combine(webGlFolder, "index.html")))
+            {
+                Debug.LogError(
+                    "[TitanOrbitBuild] Cannot deploy: index.html missing under " + webGlFolder);
+                return;
+            }
+
+            if (!File.Exists(deployBat))
+            {
+                Debug.LogError("[TitanOrbitBuild] Cannot deploy: missing " + deployBat);
+                return;
+            }
+
+            // --- Launch existing deploy bat in cmd so the window stays open on failure ---
+            // [STANDARD] Project path contains a space ("Titan Orbit"). Launch via cmd /c with quoted
+            // paths. Trailing pause keeps the console readable if upload/metadata/verify fails.
+            // cmd.exe quoting: cmd /c ""bat" "folder" ..."  (leading doubled quote is intentional).
+            // No staging copy: BuildPlayer has already returned, and gcloud/gsutil only read the folder.
+            string cmdArgs =
+                "/c \"\"" + deployBat + "\" \"" + webGlFolder +
+                "\" & echo. & echo ===== deploy finished (exit %ERRORLEVEL%) ===== & pause\"";
+
+            var psi = new ProcessStartInfo
+            {
+                FileName = "cmd.exe",
+                Arguments = cmdArgs,
+                WorkingDirectory = gcsDir,
+                UseShellExecute = true,
+                CreateNoWindow = false
+            };
+
+            try
+            {
+                Process.Start(psi);
+                Debug.Log(
+                    "[TitanOrbitBuild] Started deploy_webgl_gcs.bat \"" + webGlFolder + "\". " +
+                    "Watch the new console window for upload, Content-Encoding, and GCS verify. " +
+                    "Unity can stay open. Window pauses at the end so errors are visible. " +
+                    "After a green deploy: purge Cloudflare cache for titanorbit.io, then clear site data once.");
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError("[TitanOrbitBuild] Failed to start deploy_webgl_gcs.bat:\n" + ex);
+            }
         }
 
         /// <summary>
@@ -1182,6 +1310,12 @@ namespace TitanOrbit.Editor.Build
             /// Server subtarget → do not restore (leave WebGL).
             /// </summary>
             public int previousSubtarget;
+
+            /// <summary>
+            /// When true, resume path starts <c>deploy_webgl_gcs.bat</c> after a successful build
+            /// (Editor + Deploy menu). Build-only leaves this false.
+            /// </summary>
+            public bool deployToGcsAfterSuccess;
         }
 
         /// <summary>

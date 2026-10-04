@@ -321,48 +321,6 @@ namespace TitanOrbit.Game
         static readonly int ShaderIdTiling = Shader.PropertyToID("_Tiling");
         static readonly int ShaderIdBumpScale = Shader.PropertyToID("_BumpScale");
         static readonly int ShaderIdDetailTiling = Shader.PropertyToID("_DetailTiling");
-        static readonly int ShaderIdWaterLevel = Shader.PropertyToID("_WaterLevel");
-        static readonly int ShaderIdHasWater = Shader.PropertyToID("_HasWater");
-        static readonly int ShaderIdWaterTexture = Shader.PropertyToID("_WaterTexture");
-        static readonly int ShaderIdBumpMap = Shader.PropertyToID("_BumpMap");
-
-        static bool s_WebGlAsteroidMaterialReady;
-
-        /// <summary>
-        /// Editor Play Mode compiles shader variants on demand, so a dry asteroid material draws there.
-        /// WebGL only includes variants used by materials already in the player. Planets ship the
-        /// <c>_WATER</c> combo. Match that, keep the rock dry, and bind a water normal so GLES
-        /// does not drop the draw on an empty sampler.
-        /// </summary>
-        static void PrepareWebGlAsteroidMaterial(SgtPlanet sgt)
-        {
-            if (s_WebGlAsteroidMaterialReady || sgt == null || sgt.Material == null)
-                return;
-
-            Material mat = sgt.Material;
-            mat.shaderKeywords = new[]
-            {
-                "_DETAIL_NORMAL",
-                "_DETAIL_ON",
-                "_DETAIL_R",
-                "_NORMALMAP",
-                "_SMOOTHNESS_TEXTURE_ALBEDO_CHANNEL_A",
-                "_WATER"
-            };
-            if (mat.HasProperty(ShaderIdHasWater))
-                mat.SetFloat(ShaderIdHasWater, 1f);
-            if (mat.HasProperty(ShaderIdWaterLevel))
-                mat.SetFloat(ShaderIdWaterLevel, sgt.WaterLevel);
-            if (mat.HasProperty(ShaderIdWaterTexture) && mat.GetTexture(ShaderIdWaterTexture) == null
-                && mat.HasProperty(ShaderIdBumpMap))
-            {
-                Texture bump = mat.GetTexture(ShaderIdBumpMap);
-                if (bump != null)
-                    mat.SetTexture(ShaderIdWaterTexture, bump);
-            }
-
-            s_WebGlAsteroidMaterialReady = true;
-        }
 
         public static bool TryCreateAsteroidVisual(
             GameObject asteroidPrefab,
@@ -480,8 +438,29 @@ namespace TitanOrbit.Game
                 ^ (long)(worldPosition.y * 100) * 83492791));
             var rng = new System.Random(seed);
 
+            if (sgt.Material != null && sgt.Material.HasProperty(ShaderIdTiling))
+            {
+                float sizeTiling = BaseTextureTiling * (rawSize / MinAsteroidRadius);
+                float scaleMul = Mathf.Lerp(TextureScaleRandomMin, TextureScaleRandomMax, (float)rng.NextDouble());
+                sgt.Properties.SetFloat(ShaderIdTiling, sizeTiling * scaleMul);
+
+                if (sgt.Material.HasProperty(ShaderIdBumpScale))
+                {
+                    float bump = Mathf.Lerp(BumpScaleMin, BumpScaleMax, (float)rng.NextDouble());
+                    sgt.Properties.SetFloat(ShaderIdBumpScale, bump);
+                }
+
+                if (sgt.Material.HasProperty(ShaderIdDetailTiling))
+                {
+                    float detailTiling = Mathf.Lerp(DetailTilingMin, DetailTilingMax, (float)rng.NextDouble());
+                    sgt.Properties.SetFloat(ShaderIdDetailTiling, detailTiling);
+                }
+            }
+
             // Share the mesh even when the material has no _Tiling. Missing tiling only
             // skips UV variation. A private Geosphere50 per rock filled ~2.1 GB and abort("OOM").
+            // The property block above is what the WebGL draw actually uses. Planets bake those
+            // values into a material instance; asteroids do not, so a null block draws nothing.
             if (Application.platform == RuntimePlatform.WebGLPlayer)
             {
                 AssignSharedAsteroidMesh(sgt, rng);
@@ -490,22 +469,6 @@ namespace TitanOrbit.Game
 
             if (sgt.Material == null || !sgt.Material.HasProperty(ShaderIdTiling))
                 return;
-
-            float sizeTiling = BaseTextureTiling * (rawSize / MinAsteroidRadius);
-            float scaleMul = Mathf.Lerp(TextureScaleRandomMin, TextureScaleRandomMax, (float)rng.NextDouble());
-            sgt.Properties.SetFloat(ShaderIdTiling, sizeTiling * scaleMul);
-
-            if (sgt.Material.HasProperty(ShaderIdBumpScale))
-            {
-                float bump = Mathf.Lerp(BumpScaleMin, BumpScaleMax, (float)rng.NextDouble());
-                sgt.Properties.SetFloat(ShaderIdBumpScale, bump);
-            }
-
-            if (sgt.Material.HasProperty(ShaderIdDetailTiling))
-            {
-                float detailTiling = Mathf.Lerp(DetailTilingMin, DetailTilingMax, (float)rng.NextDouble());
-                sgt.Properties.SetFloat(ShaderIdDetailTiling, detailTiling);
-            }
 
             sgt.Displacement = Mathf.Lerp(
                 DisplacementMin, BodyCollisionMath.AsteroidVisualDisplacementLocal, (float)rng.NextDouble());
@@ -517,8 +480,7 @@ namespace TitanOrbit.Game
         static Mesh[] s_WebGlAsteroidMeshes;
 
         /// <summary>
-        /// Reuses one displaced mesh per bucket. The prefab material stays on the body.
-        /// A runtime <c>new Material</c> clone of the SGT planet shader does not draw on WebGL.
+        /// Reuses one displaced mesh per bucket. The prefab material stays Barren5.
         /// <see cref="SgtPlanet.Displacement"/> marks the mesh dirty, so the write happens
         /// only while building a bucket, and never after the share is locked.
         /// </summary>
@@ -526,8 +488,6 @@ namespace TitanOrbit.Game
         {
             if (s_WebGlAsteroidMeshes == null)
                 s_WebGlAsteroidMeshes = new Mesh[WebGlAsteroidMeshBuckets];
-
-            PrepareWebGlAsteroidMaterial(sgt);
 
             int bucket = rng.Next(WebGlAsteroidMeshBuckets);
             sgt.BindSharedMeshBucket(bucket);

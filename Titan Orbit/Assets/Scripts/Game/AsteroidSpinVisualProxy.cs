@@ -183,16 +183,9 @@ namespace TitanOrbit.Game
             var waterTexture = GetComponent<SgtPlanetWaterTexture>();
             if (waterTexture != null)
             {
-                if (Application.platform == RuntimePlatform.WebGLPlayer)
-                {
-                    Destroy(waterTexture);
-                }
-                else
-                {
-                    var newTexture = bodyGo.AddComponent<SgtPlanetWaterTexture>();
-                    CopyWaterTexture(waterTexture, newTexture);
-                    Destroy(waterTexture);
-                }
+                var newTexture = bodyGo.AddComponent<SgtPlanetWaterTexture>();
+                CopyWaterTexture(waterTexture, newTexture);
+                Destroy(waterTexture);
             }
 
             Destroy(sgt);

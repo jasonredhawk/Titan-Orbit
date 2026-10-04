@@ -241,9 +241,6 @@ namespace SpaceGraphicsToolkit
 			sentWaterLevel = float.NaN;
 			sentNightValid = false;
 			webGlDrawMaterialReady = false;
-
-			if (Application.platform == RuntimePlatform.WebGLPlayer)
-				lockSharedMesh = true;
 		}
 
 		/// <summary>Writes a texture onto the WebGL draw material. Shared asteroid meshes skip this.</summary>
@@ -293,9 +290,6 @@ namespace SpaceGraphicsToolkit
 				sharedGeneratedUsers[generatedMesh] = users + 1;
 			else
 				sharedGeneratedUsers[generatedMesh] = 1;
-
-			// WebGL does not upload a DrawMesh-only mesh until the CPU copy is pushed.
-			generatedMesh.UploadMeshData(false);
 			return generatedMesh;
 		}
 
@@ -548,7 +542,11 @@ namespace SpaceGraphicsToolkit
 		{
 			// A locked share must survive Displacement / WaterLevel dirties. Rebuilding
 			// would Release the share and Instantiate a private Geosphere per rock.
-			if (lockSharedMesh)
+			// A lock with no mesh draws nothing. Drop that lock and build a mesh.
+			if (lockSharedMesh && generatedMesh == null)
+				lockSharedMesh = false;
+
+			if (lockSharedMesh && generatedMesh != null)
 				dirtyMesh = false;
 			else if (generatedMesh == null || dirtyMesh == true)
 				Rebuild();
@@ -556,10 +554,17 @@ namespace SpaceGraphicsToolkit
 			if (generatedMesh == null || material == null)
 				return;
 
-			// Asteroids share materials. Per-body water and night uploads would write one
-			// material from every rock, and the property block is not drawn on WebGL.
+			// Asteroids keep Barren5 and the property block. Water level used to be pushed
+			// here; skipping it left the planet ocean on the material and the rock undrawn.
 			if (lockSharedMesh && Application.platform == RuntimePlatform.WebGLPlayer)
+			{
+				if (sentWaterLevel != waterLevel)
+				{
+					Properties.SetFloat(_WaterLevel, waterLevel);
+					sentWaterLevel = waterLevel;
+				}
 				return;
+			}
 
 			if (Application.platform == RuntimePlatform.WebGLPlayer)
 			{
@@ -620,13 +625,14 @@ namespace SpaceGraphicsToolkit
 			//var layer = SgtHelper.GetRenderingLayers(gameObject, renderingLayer);
 			var layer = gameObject.layer;
 
-			// DrawMesh copies a MaterialPropertyBlock into native memory. On WebGL that
-			// copy is not returned to the browser, so every camera and every body grows the heap.
+			// Asteroids (locked share) only show when the property block is submitted.
+			// Planets bake the same values onto a material instance.
 			MaterialPropertyBlock block = null;
-			if (Application.platform != RuntimePlatform.WebGLPlayer)
+			if (lockSharedMesh || Application.platform != RuntimePlatform.WebGLPlayer)
 				block = properties;
 
-			Graphics.DrawMesh(generatedMesh, transform.localToWorldMatrix, material, layer, camera, 0, block, castShadows, receiveShadows);
+			if (generatedMesh != null)
+				Graphics.DrawMesh(generatedMesh, transform.localToWorldMatrix, material, layer, camera, 0, block, castShadows, receiveShadows);
 
 			var finalSharedMaterial = sharedMaterial;
 
@@ -635,7 +641,7 @@ namespace SpaceGraphicsToolkit
 				OnOverrideSharedMaterial.Invoke(ref finalSharedMaterial, camera);
 			}
 
-			if (CwHelper.Enabled(finalSharedMaterial) == true && finalSharedMaterial.Material != null)
+			if (generatedMesh != null && CwHelper.Enabled(finalSharedMaterial) == true && finalSharedMaterial.Material != null)
 			{
 				Graphics.DrawMesh(generatedMesh, transform.localToWorldMatrix, finalSharedMaterial.Material, layer, camera, 0, block);
 			}
