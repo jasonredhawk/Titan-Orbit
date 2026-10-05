@@ -1238,6 +1238,12 @@ namespace TitanOrbit.Game
             bool connecting = TitanOrbitSessionManager.IsJoinConnecting;
             bool connected = IsInGameFlow();
 
+            // Dropped WebGL sessions bump LeaveGeneration from the session manager. Apply it
+            // before this frame decides the map is already loaded.
+            EcsGameBridge.ConsumeSessionLeave();
+            if (!connected && !connecting)
+                EcsGameBridge.IsMapLoadingComplete();
+
             // --- Hidden Orbit Menu warmup while connecting / loading ---
             // [TITAN-ORBIT] Start as soon as Play begins so chrome Instantiates under the
             // overlay, not after Join Team. LoadingScreen also ticks; a frame stamp

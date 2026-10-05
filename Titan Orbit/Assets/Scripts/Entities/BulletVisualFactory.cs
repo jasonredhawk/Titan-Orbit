@@ -202,10 +202,15 @@ namespace TitanOrbit.Entities
             // --- Apply changes ---
             foreach (Renderer r in root.GetComponentsInChildren<Renderer>(true))
             {
-                if (r.sharedMaterials == null) continue;
-                for (int i = 0; i < r.sharedMaterials.Length; i++)
+                Material[] sharedBefore = r.sharedMaterials;
+                if (sharedBefore == null) continue;
+                for (int i = 0; i < sharedBefore.Length; i++)
                 {
+                    Material before = sharedBefore[i];
                     Material mat = r.materials[i];
+                    // #region agent log
+                    MaterialCloneProbe.NoteApplyColor(before, mat);
+                    // #endregion
                     if (mat == null) continue;
                     mat.color = color;
                     if (mat.HasProperty("_BaseColor")) mat.SetColor("_BaseColor", color);

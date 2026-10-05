@@ -429,18 +429,27 @@ namespace TitanOrbit.ECS
             if (em.HasBuffer<MegaShipGunnerSlotElement>(shipEntity))
             {
                 var gunners = em.GetBuffer<MegaShipGunnerSlotElement>(shipEntity);
+                if (mountIndex < 0 || mountIndex >= gunners.Length)
+                    return;
+
                 // Combat apply only refreshes barrel stats. Do not park a live auto-aim
                 // lock — the owner-predicted client has no MegaShipAutoFireSystem to
                 // write it back, so a wipe left tracers on hull forward.
-                if (mountIndex < 0 || mountIndex >= gunners.Length
-                    || !MegaShipWeaponAim.IsTrackingAim(gunners[mountIndex]))
+                // WriteGhostedYaw also skips WeaponKind 0 (Gun) so a prediction rollback
+                // cannot wipe a live cannon. This apply is the chassis stamp, so Gun
+                // must still overwrite the previous Titan's cannon / missile / sniper.
+                if (!MegaShipWeaponAim.IsTrackingAim(gunners[mountIndex]))
                     MegaShipWeaponAim.WriteGhostedYaw(gunners, mountIndex, mount);
-                else if (mountIndex >= 0 && mountIndex < gunners.Length && mount.WeaponKind != 0)
-                {
-                    var slot = gunners[mountIndex];
-                    slot.WeaponKind = mount.WeaponKind;
-                    gunners[mountIndex] = slot;
-                }
+
+                var slot = gunners[mountIndex];
+                if (slot.WeaponKind == mount.WeaponKind
+                    && (mount.WeaponKind == ShipWeaponKind.Cannon || slot.CannonLaserRampSeconds == 0f))
+                    return;
+
+                if (mount.WeaponKind != ShipWeaponKind.Cannon)
+                    slot.CannonLaserRampSeconds = 0f;
+                slot.WeaponKind = mount.WeaponKind;
+                gunners[mountIndex] = slot;
             }
         }
 
@@ -557,12 +566,33 @@ namespace TitanOrbit.ECS
                 mountCount = em.GetBuffer<ShipWeaponMountElement>(shipEntity).Length;
 
             var gunners = em.GetBuffer<MegaShipGunnerSlotElement>(shipEntity);
-            if (gunners.Length == mountCount)
-                return;
-
             var mounts = em.HasBuffer<ShipWeaponMountElement>(shipEntity)
                 ? em.GetBuffer<ShipWeaponMountElement>(shipEntity)
                 : default;
+
+            // Same barrel count still needs a kind refresh. A laser Titan swapped for a
+            // bullet Titan keeps the old slot count, and Gun is 0, so the ghosted slot
+            // would otherwise stay Cannon. RestoreMountKindsFromGhostedSlots then paints
+            // the previous lasers back onto the new hull.
+            if (gunners.Length == mountCount)
+            {
+                if (!mounts.IsCreated)
+                    return;
+
+                for (int i = 0; i < mountCount; i++)
+                {
+                    byte kind = mounts[i].WeaponKind;
+                    var slot = gunners[i];
+                    if (slot.WeaponKind == kind)
+                        continue;
+                    if (kind != ShipWeaponKind.Cannon)
+                        slot.CannonLaserRampSeconds = 0f;
+                    slot.WeaponKind = kind;
+                    gunners[i] = slot;
+                }
+
+                return;
+            }
             gunners.Clear();
             for (int i = 0; i < mountCount; i++)
             {

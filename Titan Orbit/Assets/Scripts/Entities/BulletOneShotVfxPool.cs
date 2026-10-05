@@ -219,6 +219,9 @@ namespace TitanOrbit.Entities
                 s_owned.Add(instance);
                 s_prefabKeyByInstance[instance] = key;
                 s_createdTotal++;
+                // #region agent log
+                TitanOrbit.MaterialCloneProbe.OneShotShells = s_createdTotal;
+                // #endregion
                 stack.Push(instance);
             }
         }
@@ -266,6 +269,9 @@ namespace TitanOrbit.Entities
                 s_owned.Add(instance);
                 s_prefabKeyByInstance[instance] = key;
                 s_createdTotal++;
+                // #region agent log
+                TitanOrbit.MaterialCloneProbe.OneShotShells = s_createdTotal;
+                // #endregion
                 grew = true;
 
                 if (s_createdTotal > SoftMaxCreated && !s_loggedSoftCap)

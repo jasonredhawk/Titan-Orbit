@@ -1043,9 +1043,11 @@ namespace TitanOrbit.UI
                 primaryGlobals.Add(pair.Value[primaryLocal]);
             }
 
-            // Turn Base is the best part on the hull, even when that part is not its pool primary.
+            // Turn Base is the best hull part, even when that part is not its pool primary.
+            // Purchased gear is not eligible — it adds Turn PerExtra only.
             int bestTurnIndex = field == StatField.TurnSpeed
-                ? ShipComponentExtraLevelMath.PickBestTurnBaseIndex(parts.Ids, parts.Stats)
+                ? ShipComponentExtraLevelMath.PickBestTurnBaseIndex(
+                    parts.Ids, parts.Stats, parts.StoreExtraStartIndex)
                 : -1;
 
             foreach (KeyValuePair<string, List<int>> pair in groups)

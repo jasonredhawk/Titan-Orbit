@@ -563,7 +563,11 @@ namespace TitanOrbit.Game
             if (text == null)
                 return;
 
+            Material sharedBefore = text.fontSharedMaterial;
             Material mat = text.fontMaterial;
+            // #region agent log
+            TitanOrbit.MaterialCloneProbe.NoteFontMaterial(sharedBefore, mat);
+            // #endregion
             if (mat == null)
                 return;
 

@@ -206,6 +206,9 @@ namespace TitanOrbit.Entities
             s_owned.Add(root);
             s_keyByInstance[root] = key;
             s_createdTotal++;
+            // #region agent log
+            TitanOrbit.MaterialCloneProbe.TracerShells = s_createdTotal;
+            // #endregion
             return root;
         }
 

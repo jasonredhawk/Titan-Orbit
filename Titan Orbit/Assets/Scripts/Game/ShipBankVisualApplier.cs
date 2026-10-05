@@ -220,7 +220,8 @@ namespace TitanOrbit.Game
             float dt = Time.deltaTime;
             float smoothing = ResolveSmoothing();
             SampleBankAngularVelocity(dt, smoothing);
-            ApplyVisualBanking(dt, smoothing);
+            float shipTurnDeg = ShipVisualBankTurnSpeed.ReadDegreesPerSecond(em, _shipEntity);
+            ApplyVisualBanking(dt, smoothing, shipTurnDeg);
             ApplyVisualPitch(em, dt);
         }
 
@@ -229,7 +230,8 @@ namespace TitanOrbit.Game
             float dt = Time.unscaledDeltaTime;
             float smoothing = ResolveSmoothing();
             SampleBankAngularVelocity(dt, smoothing);
-            ApplyVisualBanking(dt, smoothing);
+            // Studio hull has no motor — yaw vs the preview reference still varies the lean.
+            ApplyVisualBanking(dt, smoothing, shipTurnSpeedDegPerSec: 0f);
             // Speed-based pitch pulses the nozzles when studio speed retargets. Bank only.
         }
 
@@ -260,8 +262,8 @@ namespace TitanOrbit.Game
                 : ShipBankVisualSettingsCache.BankSensitivity;
 
         /// <summary>
-        /// Yaw rate (°/s) treated as full turn. MEGA assets author a low reference so
-        /// slow hulls still reach peak roll.
+        /// Turn speed (°/s) that earns peak roll. Slower hulls stay shallower.
+        /// Preview uses a studio yaw so the customize hull can still show a full lean.
         /// </summary>
         float ResolveReferenceTurn()
         {
@@ -334,9 +336,10 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Maps smoothed yaw rate → target bank (via propulsion helper + sensitivity) and lerps the pivot.
+        /// Maps this hull's turn speed and smoothed yaw → target bank, then lerps the pivot.
         /// </summary>
-        void ApplyVisualBanking(float dt, float smoothing)
+        /// <param name="shipTurnSpeedDegPerSec">Live turn speed (°/s). 0 for the customize preview.</param>
+        void ApplyVisualBanking(float dt, float smoothing, float shipTurnSpeedDegPerSec)
         {
             // --- Apply changes ---
             if (!_bankingInitialized)
@@ -353,12 +356,13 @@ namespace TitanOrbit.Game
             if (Mathf.Abs(signedAngularVelDegPerSec) < RestBankAngularVelDeadbandDegPerSec)
                 signedAngularVelDegPerSec = 0f;
 
-            // --- Target bank from turn rate + bound asset (MEGA catalog or family) ---
+            // --- Target bank: peak follows turn speed, yaw fades a partial turn ---
             float targetBankAngle = ShipPropulsionAggregation.ComputeVisualBankTargetAngle(
                 signedAngularVelDegPerSec,
                 ResolveMaxBankAngle(),
                 ResolveReferenceTurn(),
-                ResolveSensitivity());
+                ResolveSensitivity(),
+                shipTurnSpeedDegPerSec);
             if (_previewMode)
                 targetBankAngle *= 0.6f;
 

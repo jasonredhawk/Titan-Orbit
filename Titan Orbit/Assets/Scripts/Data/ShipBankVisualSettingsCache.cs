@@ -35,8 +35,8 @@ namespace TitanOrbit.Data
             _active != null ? _active.ClampedBankSmoothing : 8f;
 
         /// <summary>
-        /// Yaw rate (°/s) treated as “full turn” for the bank curve.
-        /// Authored on the published asset, else the fleet global max.
+        /// Turn speed (°/s) that earns full bank. Authored on the published asset,
+        /// else the fleet global max. Slower hulls earn a shallower lean.
         /// </summary>
         public static float ReferenceTurnDegreesPerSecond =>
             _active != null

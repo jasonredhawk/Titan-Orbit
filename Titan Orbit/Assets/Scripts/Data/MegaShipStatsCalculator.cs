@@ -189,7 +189,9 @@ namespace TitanOrbit.Data
 
         /// <summary>
         /// Extra Level for one LOADOUT ship component on a Titan: PerExtra × shipLevel,
-        /// no Base. Ability purchases stay 0. Weapons still use the weapon Extra Level
+        /// no Base. Turn uses that same step as Move and Accel — a purchased fin adds
+        /// its <c>turnSpeedPerExtraLevel</c> × Titan tier, not its Turn Base.
+        /// Ability purchases stay 0. Weapons still use the weapon Extra Level
         /// rules (bullet speed is ability-only, so a Titan extra does not add travel).
         /// </summary>
         /// <param name="raw">Catalog Base / PerExtra for this component id.</param>

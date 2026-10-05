@@ -71,6 +71,12 @@ namespace TitanOrbit.Game
             public float LocalRampSeconds;
             public Entity RampTarget;
             public int RampGhostId;
+            /// <summary>
+            /// Last burn subject on <see cref="RampTarget"/>. Pad slot + 1, or
+            /// <see cref="CannonLaserHitApply.FocusMoon"/>. <see cref="int.MinValue"/>
+            /// until the first resolved subject so a late aim does not wipe charge.
+            /// </summary>
+            public int RampFocus = int.MinValue;
         }
 
         /// <summary>
@@ -371,7 +377,8 @@ namespace TitanOrbit.Game
                 if (SilenceVendorAudio(slot.Root))
                     slot.NeedsSilence = false;
                 float rampSeconds = ResolveBeamRampSeconds(
-                    em, slot, localOwner, gunners[m], beamHit, localFiring && !energyLockout);
+                    em, slot, localOwner, gunners[m], beamHit, localFiring && !energyLockout,
+                    team, mapW, mapH);
                 ApplyRampWidth(slot, rampSeconds);
                 drawnHumRamp = math.max(drawnHumRamp, rampSeconds);
                 hadDrawnRamp = true;
@@ -763,9 +770,10 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Local owner predicts per-barrel charge. Restarts at 50% only when
-        /// the server lock entity changes. A clipped rock in front of that lock
-        /// is not a new target. Remotes read the ghosted slot seconds.
+        /// Local owner predicts per-barrel charge. Restarts at 50% when the burn
+        /// subject changes: a new lock entity, or another pad / moon on the same
+        /// planet. A clipped rock in front of that lock is not a new target.
+        /// Remotes read the ghosted slot seconds.
         /// </summary>
         static float ResolveBeamRampSeconds(
             EntityManager em,
@@ -773,7 +781,10 @@ namespace TitanOrbit.Game
             bool localOwner,
             in MegaShipGunnerSlotElement gunner,
             Entity beamHit,
-            bool charging)
+            bool charging,
+            TeamId team,
+            float mapW,
+            float mapH)
         {
             if (!localOwner)
                 return math.max(0f, gunner.CannonLaserRampSeconds);
@@ -782,10 +793,34 @@ namespace TitanOrbit.Game
                     em, gunner.TargetGhostId, gunner.AimWorldX, gunner.AimWorldZ, out Entity lockEnt)
                 && lockEnt != Entity.Null)
             {
-                if (slot.RampTarget != Entity.Null && slot.RampTarget != lockEnt)
+                int focus = CannonLaserHitApply.FocusWholeEntity;
+                bool haveSubject = !em.HasComponent<PlanetState>(lockEnt);
+                if (!haveSubject)
+                {
+                    float aimX = gunner.AimWorldX;
+                    float aimZ = gunner.AimWorldZ;
+                    if (math.abs(aimX) + math.abs(aimZ) > 0.05f)
+                    {
+                        double moonElapsed = 0d;
+                        PlanetGemMoonOrbitClock.TryGetElapsedSeconds(
+                            out moonElapsed, includeTickFraction: true);
+                        focus = CannonLaserHitApply.ResolvePlanetFocus(
+                            em, lockEnt, team, new float3(aimX, 0f, aimZ), mapW, mapH, moonElapsed);
+                        haveSubject = focus != CannonLaserHitApply.FocusWholeEntity;
+                    }
+                }
+
+                bool newEntity = slot.RampTarget != Entity.Null && slot.RampTarget != lockEnt;
+                bool newSubject = haveSubject
+                    && slot.RampTarget == lockEnt
+                    && slot.RampFocus != int.MinValue
+                    && slot.RampFocus != focus;
+                if (newEntity || newSubject)
                     slot.LocalRampSeconds = 0f;
                 slot.RampTarget = lockEnt;
                 slot.RampGhostId = gunner.TargetGhostId;
+                if (haveSubject)
+                    slot.RampFocus = focus;
             }
 
             bool haveLock = lockEnt != Entity.Null
@@ -817,6 +852,7 @@ namespace TitanOrbit.Game
             slot.LocalRampSeconds = 0f;
             slot.RampTarget = Entity.Null;
             slot.RampGhostId = 0;
+            slot.RampFocus = int.MinValue;
         }
 
         static bool TryFindLocalAutoLock(

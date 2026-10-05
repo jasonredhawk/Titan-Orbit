@@ -194,8 +194,91 @@ namespace TitanOrbit.NetCode
             // Fallback soft cap only if something clears VSync — harmless while vSyncCount > 0.
             if (Application.targetFrameRate != 60)
                 Application.targetFrameRate = 60;
+
+            WatchDedicatedClientDrop();
         }
 #endif
+
+        /// <summary>
+        /// Dedicated client lost Relay or gameplay-ready. Reset the driver and map latch so Join
+        /// works on the same page. A browser refresh used to be the only way past the stuck socket.
+        /// </summary>
+        void WatchDedicatedClientDrop()
+        {
+            bool relayDead = TitanOrbitRelayAllocationSignal.ConsumeClientInvalid();
+            if (_returningToMenu || _unexpectedDisconnectResetRunning)
+                return;
+
+            if (relayDead && IsDedicatedOnlineClient)
+            {
+                BeginUnexpectedDedicatedClientReset(
+                    "Connection to the match server dropped. Join again.");
+                return;
+            }
+
+            // _connectWatch stays non-null after the coroutine ends, so it is not a "still joining" flag.
+            if (!IsDedicatedOnlineClient || !IsInGame)
+            {
+                _dedicatedWasGameplayReady = false;
+                _dedicatedMissingReadyFrames = 0;
+                return;
+            }
+
+            var client = ClientServerBootstrap.ClientWorld;
+            bool ready = IsClientGameplayReady(client);
+            if (ready)
+            {
+                _dedicatedWasGameplayReady = true;
+                _dedicatedMissingReadyFrames = 0;
+                return;
+            }
+
+            if (!_dedicatedWasGameplayReady || !IsInGame)
+                return;
+
+            _dedicatedMissingReadyFrames++;
+            if (_dedicatedMissingReadyFrames < 90)
+                return;
+
+            BeginUnexpectedDedicatedClientReset(
+                "Connection lost. Join the match again.");
+        }
+
+        void BeginUnexpectedDedicatedClientReset(string reason)
+        {
+            if (_connectWatch != null)
+            {
+                StopCoroutine(_connectWatch);
+                _connectWatch = null;
+            }
+
+            _dedicatedWasGameplayReady = false;
+            _dedicatedMissingReadyFrames = 0;
+            _unexpectedDisconnectResetRunning = true;
+            LastStatusMessage = reason;
+            Debug.LogWarning("[TitanOrbitSessionManager] " + reason);
+            StartCoroutine(ResetAfterUnexpectedDisconnect());
+        }
+
+        IEnumerator ResetAfterUnexpectedDisconnect()
+        {
+            Task reset = ResetDedicatedClientSessionAsync(LastStatusMessage);
+            while (!reset.IsCompleted)
+                yield return null;
+            _unexpectedDisconnectResetRunning = false;
+        }
+
+        /// <summary>
+        /// Clears client map latches after a drop or before a new dedicated Join.
+        /// Presentation applies this on the next UI tick via <c>EcsGameBridge.ConsumeSessionLeave</c>.
+        /// </summary>
+        static void NotifyClientMatchSessionEnded()
+        {
+#if !UNITY_SERVER
+            MapSessionMetaCache.Clear();
+            ClientMapHydrateCache.NotifySessionLeave();
+#endif
+        }
 
         /// <summary>Stops the editor's local ServerWorld sim until local play/host/client is started.</summary>
         public static void SuspendEditorLocalServerUntilLocalPlay()
@@ -519,6 +602,18 @@ namespace TitanOrbit.NetCode
         /// Blocks a second leave and a overlapping Local play boot.
         /// </summary>
         bool _returningToMenu;
+
+        /// <summary>True while an unexpected Relay drop is resetting the client driver.</summary>
+        bool _unexpectedDisconnectResetRunning;
+
+        /// <summary>Saw a live dedicated connection this session — used to notice a later drop.</summary>
+        bool _dedicatedWasGameplayReady;
+
+        /// <summary>Frames without gameplay-ready after it had been true.</summary>
+        int _dedicatedMissingReadyFrames;
+
+        /// <summary>True while a dead Relay allocation is being replaced without wiping the match.</summary>
+        bool _relayRebindInProgress;
 
         /// <summary>Polls client world until a NetworkId exists — LAN host/client bootstrap.</summary>
         IEnumerator MaintainClientSession()
@@ -882,7 +977,8 @@ namespace TitanOrbit.NetCode
             return false;
         }
 
-        public bool IsRecreateDedicatedMatchInProgress => _recreateDedicatedMatchInProgress;
+        public bool IsRecreateDedicatedMatchInProgress =>
+            _recreateDedicatedMatchInProgress || _relayRebindInProgress;
 
         IEnumerator BootDedicatedServer()
         {
@@ -1298,6 +1394,111 @@ namespace TitanOrbit.NetCode
             {
                 _recreateDedicatedMatchInProgress = false;
                 TitanOrbitDedicatedServerHost.SetHangWatchdogPaused(false);
+            }
+        }
+
+        /// <summary>
+        /// Relay told this process the allocation is dead. Publish a new join code on the same
+        /// lobby and listen again. The conquest map and ships stay; players who were dropped can
+        /// Join the same game. Does not wait out the 30-minute empty recycle.
+        /// </summary>
+        public async Task<bool> RebindDedicatedRelayKeepMatchAsync()
+        {
+            if (_relayRebindInProgress || _recreateDedicatedMatchInProgress)
+                return false;
+            if (MatchEndServerSignal.IsMatchWon)
+                return false;
+            if (string.IsNullOrEmpty(_activeLobbyId) || _serverConfig == null)
+                return false;
+
+            _relayRebindInProgress = true;
+            TitanOrbitDedicatedServerHost.SetHangWatchdogPaused(true);
+            string lobbyId = _activeLobbyId;
+            try
+            {
+                var prep = await PrepareDedicatedRelayAsync(_serverConfig);
+                if (prep == null)
+                {
+                    DedicatedServerFileLog.Append("lobby", "Relay rebind FAILED: PrepareDedicatedRelay returned null");
+                    return false;
+                }
+
+                var serverWorld = ClientServerBootstrap.ServerWorld;
+                if (serverWorld == null || !serverWorld.IsCreated)
+                {
+                    DedicatedServerFileLog.Append("lobby", "Relay rebind FAILED: ServerWorld missing");
+                    return false;
+                }
+
+                TitanOrbitRelayState.SetServerRelay(prep.Relay);
+                await ClearNetworkConnectionsAsync(serverWorld);
+                ResetServerDriverIfNeeded();
+                ListenServer(serverWorld, _serverConfig.ServerPort);
+                for (int i = 0; i < 90; i++)
+                {
+                    TickServerWorld(serverWorld);
+                    if (IsServerWorldListening(serverWorld))
+                        break;
+                    await Task.Delay(16);
+                }
+
+                if (!IsServerWorldListening(serverWorld))
+                {
+                    DedicatedServerFileLog.Append("lobby", "Relay rebind FAILED: listen not confirmed");
+                    return false;
+                }
+
+                RequestGoInGame(serverWorld);
+                await UpdateDedicatedLobbyRelayCodeAsync(lobbyId, prep.JoinCode, prep.RelayProtocol);
+                await TitanOrbitLobbyService.TryUpdatePlayerRelayAllocationAsync(lobbyId, prep.HostAllocationId);
+                DedicatedServerFileLog.Append(
+                    "lobby",
+                    "Relay rebind kept match lobby=" + lobbyId + " relay=" + prep.JoinCode);
+                Debug.Log("[TitanOrbitSessionManager] Relay rebind kept match lobby=" + lobbyId +
+                          " relay=" + prep.JoinCode);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                DedicatedServerFileLog.Append("lobby", "Relay rebind exception", ex);
+                Debug.LogError("[TitanOrbitSessionManager] Relay rebind failed: " + ex.Message);
+                return false;
+            }
+            finally
+            {
+                _relayRebindInProgress = false;
+                TitanOrbitDedicatedServerHost.SetHangWatchdogPaused(false);
+                TitanOrbitRelayAllocationSignal.ClearServerInvalid();
+            }
+        }
+
+        /// <summary>Writes a fresh Relay join code onto the live lobby without closing it.</summary>
+        async Task UpdateDedicatedLobbyRelayCodeAsync(string lobbyId, string joinCode, string protocol)
+        {
+            if (string.IsNullOrWhiteSpace(lobbyId) || string.IsNullOrWhiteSpace(joinCode))
+                return;
+
+            await TitanOrbitLobbyService.AcquireLobbyApiGateAsync();
+            try
+            {
+                await LobbyService.Instance.UpdateLobbyAsync(lobbyId, new UpdateLobbyOptions
+                {
+                    Data = new Dictionary<string, DataObject>
+                    {
+                        {
+                            TitanOrbitLobbyService.LobbyRelayCodeKey,
+                            new DataObject(DataObject.VisibilityOptions.Member, joinCode)
+                        },
+                        {
+                            TitanOrbitLobbyService.LobbyRelayProtocolKey,
+                            new DataObject(DataObject.VisibilityOptions.Public, protocol)
+                        }
+                    }
+                });
+            }
+            finally
+            {
+                TitanOrbitLobbyService.ReleaseLobbyApiGate();
             }
         }
 
@@ -1977,6 +2178,7 @@ namespace TitanOrbit.NetCode
             IsDedicatedOnlineClient = false;
             IsInGame = false;
             ClientTeamFlowState.Reset();
+            NotifyClientMatchSessionEnded();
             if (_connectWatch != null)
             {
                 StopCoroutine(_connectWatch);
@@ -2005,6 +2207,8 @@ namespace TitanOrbit.NetCode
             IsDedicatedOnlineClient = true;
             IsInGame = false;
             ClientTeamFlowState.Reset();
+            // Previous WebGL session can still say the map finished loading. Clear that before connect.
+            NotifyClientMatchSessionEnded();
             StopMppmLanAutoConnect();
 
             // [UNITY] VSync on at join — sync presents to the monitor and avoid tear strips while

@@ -43,6 +43,7 @@ namespace TitanOrbit.Game
             ResetRemoteMapLoadTracking();
             s_WasNetworkInGame = false;
             s_NotInGameFrames = 0;
+            s_SeenLeaveGeneration = 0;
             ClientJoinSettleCache.Clear();
             GemClientEntityRegistry.Clear();
             ClientLocalGemSpawn.Clear();
@@ -1145,6 +1146,23 @@ namespace TitanOrbit.Game
                    TitanOrbitSessionManager.IsClientConnectionReady(ServerWorld);
         }
 
+        /// <summary>
+        /// Applies a dedicated-client leave signaled by <see cref="ClientMapHydrateCache.NotifySessionLeave"/>.
+        /// A dropped WebGL connection used to leave <c>s_MapLoadingLatchedComplete</c> true, so the next
+        /// Join skipped the map build until a full page refresh.
+        /// </summary>
+        public static void ConsumeSessionLeave()
+        {
+            int gen = ClientMapHydrateCache.LeaveGeneration;
+            if (gen == s_SeenLeaveGeneration)
+                return;
+
+            s_SeenLeaveGeneration = gen;
+            ResetRemoteMapLoadTracking();
+            s_WasNetworkInGame = false;
+            s_NotInGameFrames = 0;
+        }
+
         /// <summary>NetCode <see cref="NetworkId"/> for this client's connection entity.</summary>
         public static int GetLocalNetworkId()
         {
@@ -2077,6 +2095,9 @@ namespace TitanOrbit.Game
         /// survive a second Play or a reconnect without Domain Reload.
         /// </summary>
         static bool s_WasNetworkInGame;
+
+        /// <summary>Last <see cref="ClientMapHydrateCache.LeaveGeneration"/> applied by <see cref="ConsumeSessionLeave"/>.</summary>
+        static int s_SeenLeaveGeneration;
 
         /// <summary>
         /// Frames observed without <c>NetworkStreamInGame</c> while we still thought we were in-game.

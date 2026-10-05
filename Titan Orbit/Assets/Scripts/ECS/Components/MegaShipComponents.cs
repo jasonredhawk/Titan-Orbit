@@ -165,7 +165,8 @@ namespace TitanOrbit.ECS
 
         /// <summary>
         /// Seconds this barrel has been burning its current lock (0–<c>RampDurationSeconds</c>).
-        /// Restarts at 0 only when the lock entity changes (50% DPS). Same target keeps charge.
+        /// Restarts at 0 when the burn subject changes (50% DPS): a new entity, or a
+        /// different pad / moon on the same planet. The same subject keeps charge.
         /// </summary>
         [GhostField(Quantization = 100, Smoothing = SmoothingAction.Clamp)]
         public float CannonLaserRampSeconds;

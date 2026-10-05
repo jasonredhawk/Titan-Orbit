@@ -84,6 +84,10 @@ namespace TitanOrbit.NetCode
         Coroutine _selfHealCoroutine;
         Coroutine _handoffCoroutine;
         Coroutine _memoryHealthCoroutine;
+        Coroutine _relayWatchCoroutine;
+
+        /// <summary>Consecutive failed Relay rebinds. Three failures exit so systemd can republish.</summary>
+        int _relayRebindFailures;
 
         /// <summary>Unix seconds of last periodic memory log (throttles MemoryLogIntervalSeconds).</summary>
         int _lastMemoryLogUnixSeconds;
@@ -190,6 +194,7 @@ namespace TitanOrbit.NetCode
             if (_netcodeHealthCoroutine != null) StopCoroutine(_netcodeHealthCoroutine);
             if (_selfHealCoroutine != null) StopCoroutine(_selfHealCoroutine);
             if (_memoryHealthCoroutine != null) StopCoroutine(_memoryHealthCoroutine);
+            if (_relayWatchCoroutine != null) StopCoroutine(_relayWatchCoroutine);
 
             _rotationCoroutine = StartCoroutine(RotationLoop());
             _presenceCoroutine = StartCoroutine(LobbyPresenceWatchdogLoop());
@@ -197,6 +202,7 @@ namespace TitanOrbit.NetCode
             _netcodeHealthCoroutine = StartCoroutine(NetcodeHealthLoop());
             _selfHealCoroutine = StartCoroutine(JoinableLobbySelfHealLoop());
             _memoryHealthCoroutine = StartCoroutine(MemoryHealthLoop());
+            _relayWatchCoroutine = StartCoroutine(RelayAllocationWatchLoop());
             EnsureHangWatchdogStarted();
 
             DedicatedServerFileLog.Append(
@@ -855,6 +861,53 @@ namespace TitanOrbit.NetCode
             catch (Exception e)
             {
                 Debug.LogWarning("[TitanOrbitDedicatedServerHost] Match request watchdog: " + e.Message);
+            }
+        }
+
+        /// <summary>
+        /// When Relay invalidates the host allocation, the lobby heartbeat can still look fresh
+        /// and Join Game lists a match whose join code never loads the map. Replace the allocation
+        /// and keep this conquest map.
+        /// </summary>
+        IEnumerator RelayAllocationWatchLoop()
+        {
+            var wait = new WaitForSeconds(5f);
+            while (true)
+            {
+                yield return wait;
+                if (_processExitRequested || IsRecreateInProgress() || _handoffInProgress)
+                    continue;
+                if (TitanOrbitSessionManager.Instance == null)
+                    continue;
+                if (!TitanOrbitRelayAllocationSignal.ConsumeServerInvalid())
+                    continue;
+
+                DedicatedServerFileLog.Append(
+                    "netcode",
+                    "Relay allocation invalid — rebinding join code without wiping the match");
+                Debug.LogWarning("[TitanOrbitDedicatedServerHost] Relay allocation invalid — rebinding.");
+
+                Task<bool> rebind = TitanOrbitSessionManager.Instance.RebindDedicatedRelayKeepMatchAsync();
+                while (!rebind.IsCompleted)
+                    yield return null;
+
+                if (rebind.IsFaulted || !rebind.Result)
+                {
+                    _relayRebindFailures++;
+                    DedicatedServerFileLog.Append(
+                        "netcode",
+                        "Relay rebind failed " + _relayRebindFailures + "/3");
+                    if (_relayRebindFailures >= 3)
+                    {
+                        Debug.LogError("[TitanOrbitDedicatedServerHost] Relay rebind failed 3 times; exiting.");
+                        _ = CloseLobbyAndExitAsync(_activeLobbyId, "relay_rebind_failed");
+                        yield break;
+                    }
+                }
+                else
+                {
+                    _relayRebindFailures = 0;
+                }
             }
         }
 

@@ -10,6 +10,7 @@ namespace TitanOrbit.ECS
     /// X-pitch on <see cref="ShipVisualBankPivotTag"/> children so hull meshes bank during turns
     /// and dip on accel / collisions without affecting physics yaw. Ported from
     /// <c>ShipBankVisualApplier</c> (hybrid proxy path).
+    /// Peak roll scales with each hull's live turn speed (regular and Titan).
     /// Reads knobs from <see cref="ShipBankVisualSettingsCache"/> for regular hulls, and
     /// <see cref="MegaShipCatalog.bankVisualSettings"/> for MEGAs.
     /// </summary>
@@ -125,12 +126,14 @@ namespace TitanOrbit.ECS
                 if (math.abs(signedYawRate) < RestBankAngularVelDeadbandDegPerSec)
                     signedYawRate = 0f;
 
-                // --- Target bank (same helper as hybrid ShipBankVisualApplier) ---
+                // --- Target bank: peak follows this hull's turn speed, yaw fades a partial turn ---
+                float shipTurnDeg = ShipVisualBankTurnSpeed.ReadDegreesPerSecond(EntityManager, shipEntity);
                 float targetBank = ShipPropulsionAggregation.ComputeVisualBankTargetAngle(
                     signedYawRate,
                     maxBank,
                     referenceTurn,
-                    sensitivity);
+                    sensitivity,
+                    shipTurnDeg);
 
                 float bankT = 1f - math.exp(-smoothing * dt);
                 bankState.ValueRW.CurrentBankAngleDeg = math.lerp(
@@ -271,6 +274,52 @@ namespace TitanOrbit.ECS
             if (math.lengthsq(forward) < 1e-8f)
                 return 0f;
             return math.degrees(math.atan2(forward.x, forward.z));
+        }
+    }
+
+    /// <summary>
+    /// Live yaw capability (°/s) for cosmetic bank. Same number the drive yaws at:
+    /// Titans skip cargo tax; regular hulls lose turn speed as cargo mass goes up.
+    /// Shared by the hybrid proxy and Entities Graphics bank so both paths lean the same way.
+    /// </summary>
+    public static class ShipVisualBankTurnSpeed
+    {
+        /// <summary>
+        /// Returns this hull's live turn speed in degrees per second, or 0 when the motor
+        /// is not on the ship yet (caller then falls back to a yaw-only bank curve).
+        /// </summary>
+        public static float ReadDegreesPerSecond(EntityManager em, Entity shipEntity)
+        {
+            if (shipEntity == Entity.Null || !em.Exists(shipEntity)
+                || !em.HasComponent<ShipMotorConfig>(shipEntity))
+                return 0f;
+
+            ShipMotorConfig motor = em.GetComponentData<ShipMotorConfig>(shipEntity);
+            if (motor.RotationSpeed <= 0.01f)
+                return 0f;
+
+            // Titans keep chassis turn. Regular hulls subtract gem / people / size mass.
+            if (motor.SkipMassTax != 0)
+                return motor.RotationSpeed;
+
+            float gems = 0f;
+            float people = 0f;
+            if (em.HasComponent<ShipState>(shipEntity))
+            {
+                ShipState state = em.GetComponentData<ShipState>(shipEntity);
+                gems = state.CurrentGems;
+                people = state.CurrentPeople;
+            }
+
+            float componentSize = motor.HullMassReference > 0f ? motor.HullMassReference : 0f;
+            return ShipMobilityResolution.ResolveLiveMotorStats(
+                motor.MaxSpeed,
+                motor.EngineThrust,
+                motor.RotationSpeed,
+                gems,
+                people,
+                componentSize,
+                skipMassTax: false).RotationSpeed;
         }
     }
 }

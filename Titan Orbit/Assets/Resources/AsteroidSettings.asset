@@ -15,15 +15,15 @@ MonoBehaviour:
   MinSize: 1
   MaxSize: 100
   SizeSmallBias: 2.5
-  HealthPerSize: 3
-  GemsPerSize: 1
+  HealthPerSize: 4
+  GemsPerSize: 0.6
   DefaultGemColor: {r: 0.8745098, g: 0.6666667, b: 1, a: 0.54901963}
   VisualScaleAtMinSize: 0.35
-  VisualScaleAtMaxSize: 3.5
-  Friction: 1.5
+  VisualScaleAtMaxSize: 4
+  Friction: 1
   GrindPulseIntervalSeconds: 0.25
   CollisionMassPerSize: 1
-  BounceRestitution: 0.6
+  BounceRestitution: 0.8
   MinSpinSpeed: 5
   MaxSpinSpeed: 20
   deathExplosionVfxNeutral: {fileID: 150266, guid: 50d5804f43e7c8841ad2ee451ef0a0b8, type: 3}

@@ -13,7 +13,7 @@ namespace TitanOrbit.ECS
 {
     /// <summary>
     /// Server: MEGA cannon barrels burn a continuous hitscan at
-    /// firePower × fireRate DPS, ramped 50%→300% on the same lock.
+    /// firePower × fireRate DPS, ramped 50%→300% on the same burn subject.
     /// Energy drains every tick while the beam is on. After the pool
     /// drops to 10% of max or below, lasers stay off until it rises
     /// strictly above 10%. <see cref="BulletSimulationSystem"/> calls
@@ -31,10 +31,11 @@ namespace TitanOrbit.ECS
         readonly Dictionary<Entity, float> _gemCarry = new Dictionary<Entity, float>(16);
 
         /// <summary>
-        /// Last lock entity per cannon. A different entity restarts the DPS ramp
-        /// at 50%. The same entity keeps charge through hide, Fire release, and lockout.
+        /// Last burn subject per cannon. A different ship, asteroid, pad, or moon
+        /// restarts the DPS ramp at 50%. The same subject keeps charge through
+        /// hide, Fire release, and lockout. Pads on one planet are different subjects.
         /// </summary>
-        readonly Dictionary<LaserRampKey, Entity> _lastLaserLock = new Dictionary<LaserRampKey, Entity>(16);
+        readonly Dictionary<LaserRampKey, LaserLockId> _lastLaserLock = new Dictionary<LaserRampKey, LaserLockId>(16);
 
         /// <summary>MEGAs whose lasers were walked by the bullet strip this tick.</summary>
         readonly HashSet<Entity> _handledShips = new HashSet<Entity>(8);
@@ -53,6 +54,21 @@ namespace TitanOrbit.ECS
             public bool Equals(LaserRampKey other) => Ship == other.Ship && Mount == other.Mount;
             public override bool Equals(object obj) => obj is LaserRampKey other && Equals(other);
             public override int GetHashCode() => unchecked(Ship.GetHashCode() * 397 ^ Mount);
+        }
+
+        /// <summary>
+        /// Ship / asteroid identity is the entity. A planet lock also stores which
+        /// pad (<c>slot + 1</c>) or moon (<see cref="CannonLaserHitApply.FocusMoon"/>)
+        /// is burning, so the next turret on that world restarts the ramp.
+        /// </summary>
+        struct LaserLockId : System.IEquatable<LaserLockId>
+        {
+            public Entity Target;
+            public int Focus;
+
+            public bool Equals(LaserLockId other) => Target == other.Target && Focus == other.Focus;
+            public override bool Equals(object obj) => obj is LaserLockId other && Equals(other);
+            public override int GetHashCode() => unchecked(Target.GetHashCode() * 397 ^ Focus);
         }
 
         /// <summary>Cache the MEGA query.</summary>
@@ -320,7 +336,8 @@ namespace TitanOrbit.ECS
             }
 
             float rampSeconds = ResolveLockRampSeconds(
-                mega, mountIndex, target, canBurn: true, cycleActive: true, gunners);
+                mega, mountIndex, target, aimPoint, ship.Team, mapW, mapH, moonElapsed,
+                canBurn: true, cycleActive: true, gunners);
             float rampMul = CannonLaserMath.ComputeRampMultiplier(rampSeconds);
             if (!_gemCarry.TryGetValue(target, out float carry))
                 carry = 0f;
@@ -639,13 +656,19 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// Current barrel ramp. Only a different lock entity restarts at 0 (50% DPS).
-        /// The same target keeps charge through a missed tick, Fire release, or lockout.
+        /// Current barrel ramp. A different burn subject restarts at 0 (50% DPS):
+        /// another entity, or another pad / moon on the same planet. The same
+        /// subject keeps charge through a missed tick, Fire release, or lockout.
         /// </summary>
         float ResolveLockRampSeconds(
             Entity mega,
             int mountIndex,
             Entity target,
+            float3 aimPoint,
+            TeamId team,
+            float mapW,
+            float mapH,
+            double moonElapsed,
             bool canBurn,
             bool cycleActive,
             DynamicBuffer<MegaShipGunnerSlotElement> gunners)
@@ -663,10 +686,21 @@ namespace TitanOrbit.ECS
             if (!canBurn || target == Entity.Null)
                 return current;
 
-            var key = new LaserRampKey { Ship = mega, Mount = mountIndex };
-            if (!_lastLaserLock.TryGetValue(key, out Entity previous) || previous != target)
+            int focus = CannonLaserHitApply.FocusWholeEntity;
+            if (EntityManager.HasComponent<PlanetState>(target))
             {
-                _lastLaserLock[key] = target;
+                focus = CannonLaserHitApply.ResolvePlanetFocus(
+                    EntityManager, target, team, aimPoint, mapW, mapH, moonElapsed);
+                // Aim not on a living pad or moon yet — do not treat that as a retarget.
+                if (focus == CannonLaserHitApply.FocusWholeEntity)
+                    return current;
+            }
+
+            var key = new LaserRampKey { Ship = mega, Mount = mountIndex };
+            var id = new LaserLockId { Target = target, Focus = focus };
+            if (!_lastLaserLock.TryGetValue(key, out LaserLockId previous) || !previous.Equals(id))
+            {
+                _lastLaserLock[key] = id;
                 return 0f;
             }
 

@@ -234,7 +234,8 @@ namespace TitanOrbit.Data
             TryAddLine(lines, "E.Regen", s.energyRegen, maxLines);
             TryAddLine(lines, "Speed", s.moveSpeed, maxLines);
             TryAddLine(lines, "Accel", s.accelerationCap, maxLines);
-            TryAddLine(lines, "Turn", s.turnSpeed, maxLines);
+            // Added gear contributes Turn PerExtra × ship level, not the part's Turn Base.
+            TryAddLine(lines, "Turn", GetAddedGearTurnGain(entry, shipLevel, family), maxLines);
             TryAddLine(lines, "Gems", s.maxGems, maxLines);
             TryAddLine(lines, "Tractor", s.tractorBeamDistance, maxLines);
             TryAddLine(lines, "Troops", s.maxPeople, maxLines);
@@ -338,7 +339,10 @@ namespace TitanOrbit.Data
                 TryQueue(lines, s.accelerationCap, "Accel", 6);
             }
 
-            TryQueue(lines, s.turnSpeed, "Turn", 7);
+            // Same extra-part rule as Move / Accel: the hull keeps its Turn Base.
+            // Buying this piece adds only its Turn PerExtra × ship level.
+            float turnGain = GetAddedGearTurnGain(entry, shipLevel, family);
+            TryQueueBaseAndCumulative(lines, s.turnSpeed, turnGain, "Turn", 7);
 
             // [TITAN-ORBIT] Absolute OVERDRIVE energy/sec on engines (not a multiplier of ExtraSpeedPercent).
             if (isEngine)
@@ -389,6 +393,38 @@ namespace TitanOrbit.Data
             }
 
             return sb.ToString();
+        }
+
+        /// <summary>
+        /// Turn added when this component is equipped as gear (Titan or regular hull).
+        /// <c>PerExtra × shipLevel</c> only — the part's Turn Base stays off the hull,
+        /// matching an extra engine's Move step and an extra thruster's Accel step.
+        /// Family turn multiplier and level mobility drag match the gear card's other numbers.
+        /// </summary>
+        public static float GetAddedGearTurnGain(
+            ShipFamilyComponentEntry entry,
+            int shipLevel,
+            ShipFamilyDefinition family = null)
+        {
+            if (entry == null)
+                return 0f;
+
+            int level = Mathf.Max(1, shipLevel);
+            // --- PerExtra steps only (level 1 still applies 1×) ---
+            float gain = ShipComponentExtraLevelMath.Evaluate(
+                entry.stats.turnSpeed,
+                entry.stats.turnSpeedPerExtraLevel,
+                level,
+                abilityLevel: 0,
+                componentCount: 1,
+                includeExtraComponentLevels: true,
+                includeBase: false);
+            var wrapped = default(ShipComponentAbilityStats);
+            wrapped.turnSpeed = gain;
+            wrapped = ShipComponentExtraLevelMath.ApplyMobilityPenalties(wrapped, level);
+            if (family != null)
+                wrapped = family.ApplySpecialBonuses(wrapped);
+            return Mathf.Max(0f, wrapped.turnSpeed);
         }
 
         /// <summary>
@@ -666,7 +702,12 @@ namespace TitanOrbit.Data
             Line("Energy", s.energyCap, false);
             Line("Move", s.moveSpeed, false);
             Line("Accel", s.accelerationCap, false);
-            Line("Turn", s.turnSpeed, false);
+            float turnGain = GetAddedGearTurnGain(entry, lv, family);
+            if (Mathf.Abs(turnGain) >= 0.05f)
+            {
+                sb.Append('+').Append(FormatStatValue(turnGain)).Append(" Turn");
+                sb.Append("  <color=#7EC8FF>·  Extra Lv (PerExtra × shipLv)</color>\n");
+            }
             Line("Ramming", s.rammingPower, false);
             Line("Gem Cap", s.maxGems, false);
             Line("Troop Cap", s.maxPeople, false);

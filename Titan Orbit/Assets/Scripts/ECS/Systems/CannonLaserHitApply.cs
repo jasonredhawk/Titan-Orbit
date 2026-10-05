@@ -24,6 +24,92 @@ namespace TitanOrbit.ECS
             public float3 HitPoint;
         }
 
+        /// <summary>Whole-entity lock (ship or asteroid). Not a pad or moon.</summary>
+        public const int FocusWholeEntity = 0;
+
+        /// <summary>Planet lock whose burn subject is the moon shield, not a pad.</summary>
+        public const int FocusMoon = -1;
+
+        /// <summary>
+        /// Which hostile pad or moon a planet lock is burning.
+        /// <see cref="FocusWholeEntity"/> when this is not a planet sub-target.
+        /// Pad slots are <c>slotIndex + 1</c>. <see cref="FocusMoon"/> is the shield.
+        /// Nearest living subject to <paramref name="aim"/> wins, so a new turret
+        /// on the same planet is a new lock even though the planet entity did not change.
+        /// </summary>
+        public static int ResolvePlanetFocus(
+            EntityManager em,
+            Entity planet,
+            TeamId attackerTeam,
+            float3 aim,
+            float mapW,
+            float mapH,
+            double moonElapsed)
+        {
+            if (planet == Entity.Null || !em.Exists(planet)
+                || !em.HasComponent<PlanetState>(planet)
+                || !em.HasComponent<LocalTransform>(planet))
+                return FocusWholeEntity;
+
+            var planetState = em.GetComponentData<PlanetState>(planet);
+            var planetXf = em.GetComponentData<LocalTransform>(planet);
+            if (planetState.Ownership == attackerTeam || planetState.Ownership == TeamId.None)
+                return FocusWholeEntity;
+
+            float best = float.MaxValue;
+            int focus = FocusWholeEntity;
+            if (em.HasBuffer<PlanetaryDefenseSlotElement>(planet))
+            {
+                var slots = em.GetBuffer<PlanetaryDefenseSlotElement>(planet);
+                int slotCount = slots.Length;
+                for (int s = 0; s < slotCount; s++)
+                {
+                    var slot = slots[s];
+                    if (slot.TurretLevel == 0 || slot.Health <= 0f)
+                        continue;
+
+                    float3 pad = PlanetaryDefenseMath.GetSlotWorldPosition(
+                        planetXf.Position,
+                        math.max(0.25f, planetXf.Scale),
+                        planetState.PlanetLevel,
+                        s,
+                        slotCount);
+                    float d = ToroidalMapEcs.ToroidalDistance(aim, pad, mapW, mapH);
+                    if (d >= best)
+                        continue;
+                    best = d;
+                    focus = s + 1;
+                }
+            }
+
+            if (em.HasComponent<PlanetGemMoonState>(planet))
+            {
+                var moon = em.GetComponentData<PlanetGemMoonState>(planet);
+                if (PlanetGemMoonCombatLogic.TryGetNonFriendlyMoonAim(
+                        planetState.Ownership,
+                        attackerTeam,
+                        planetXf.Position,
+                        planetXf.Scale,
+                        planetState.PlanetLevel,
+                        planetState.PlanetId,
+                        planetState.IsHomePlanet,
+                        moon.CurrentShield,
+                        aim,
+                        mapW,
+                        mapH,
+                        moonElapsed,
+                        out float3 moonAim,
+                        out _))
+                {
+                    float moonDist = ToroidalMapEcs.ToroidalDistance(aim, moonAim, mapW, mapH);
+                    if (moonDist < best)
+                        focus = FocusMoon;
+                }
+            }
+
+            return focus;
+        }
+
         /// <summary>
         /// Damages <paramref name="target"/> for <paramref name="damage"/> this tick.
         /// Planet locks re-pick the closest hostile pad or moon from the muzzle.

@@ -106,6 +106,9 @@ namespace TitanOrbit.Core
 
                     // Clone once per unique shared material slot we must mutate — not Renderer.materials.
                     Material edit = new Material(mat);
+                    // #region agent log
+                    TitanOrbit.MaterialCloneProbe.NoteFixClone(edit);
+                    // #endregion
                     if (isGrab)
                     {
                         Shader replacement;
@@ -249,11 +252,18 @@ namespace TitanOrbit.Core
             var marker = root.GetComponent<VfxPreparedMarker>();
             if (marker == null)
             {
+                // #region agent log
+                TitanOrbit.MaterialCloneProbe.PrepareCold++;
+                // #endregion
                 FixAllIn1MaterialsForUrp(root);
                 RetargetBuiltInParticlesForWebGl(root);
                 StripSceneFlashLights(root);
                 marker = root.AddComponent<VfxPreparedMarker>();
             }
+            // #region agent log
+            else
+                TitanOrbit.MaterialCloneProbe.PrepareWarm++;
+            // #endregion
 
             if (playParticles)
                 PlayParticleSystemsInHierarchy(root);
@@ -286,6 +296,9 @@ namespace TitanOrbit.Core
                 if (renderer is ParticleSystemRenderer particles)
                 {
                     Material trail = particles.trailMaterial;
+                    // #region agent log
+                    TitanOrbit.MaterialCloneProbe.NoteTrailMaterial(trail);
+                    // #endregion
                     if (trail != null && NeedsWebGlParticleRetarget(trail))
                     {
                         particles.trailMaterial = GetOrCreateUrpParticleMaterial(trail);

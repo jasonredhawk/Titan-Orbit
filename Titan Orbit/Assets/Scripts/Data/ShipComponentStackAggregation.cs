@@ -97,9 +97,12 @@ namespace TitanOrbit.Data
         /// </summary>
         public static ShipComponentAbilityStats AggregateAllPools(
             IReadOnlyList<string> componentIds,
-            IReadOnlyList<ShipComponentAbilityStats> perComponentStats)
+            IReadOnlyList<ShipComponentAbilityStats> perComponentStats,
+            int storeExtraStartIndex = int.MaxValue)
         {
-            AggregatePrimaries(componentIds, perComponentStats, out ShipComponentAbilityStats combined, out _);
+            AggregatePrimaries(
+                componentIds, perComponentStats, out ShipComponentAbilityStats combined, out _,
+                storeExtraStartIndex);
             return combined;
         }
 
@@ -110,7 +113,8 @@ namespace TitanOrbit.Data
             IReadOnlyList<string> componentIds,
             IReadOnlyList<ShipComponentAbilityStats> perComponentStats,
             out ShipComponentAbilityStats combinedPrimary,
-            out List<PoolContribution> pools)
+            out List<PoolContribution> pools,
+            int storeExtraStartIndex = int.MaxValue)
         {
             combinedPrimary = default;
             pools = new List<PoolContribution>(8);
@@ -150,21 +154,25 @@ namespace TitanOrbit.Data
                 combinedPrimary.AddInPlace(contrib.PrimaryStats);
             }
 
-            // Turn Base is one part (highest turnSpeed), not one Base per pool.
-            // PerExtra still sums from every part so a later Extra Level step stays honest.
-            ApplySingleTurnBase(componentIds, perComponentStats, ref combinedPrimary);
+            // Turn Base is one hull part (highest turnSpeed), not one Base per pool.
+            // Purchased gear keeps only its PerExtra. Every part’s PerExtra still sums
+            // so a later Extra Level step stays honest.
+            ApplySingleTurnBase(
+                componentIds, perComponentStats, ref combinedPrimary, storeExtraStartIndex);
         }
 
         /// <summary>
-        /// Replaces a summed turn Base with the single best part’s Base.
-        /// Every non-cosmetic part still contributes its turn PerExtra.
+        /// Replaces a summed turn Base with the single best hull part’s Base.
+        /// Gear does not own that Base. Every non-cosmetic part still contributes its turn PerExtra.
         /// </summary>
         static void ApplySingleTurnBase(
             IReadOnlyList<string> componentIds,
             IReadOnlyList<ShipComponentAbilityStats> perComponentStats,
-            ref ShipComponentAbilityStats combinedPrimary)
+            ref ShipComponentAbilityStats combinedPrimary,
+            int storeExtraStartIndex = int.MaxValue)
         {
-            int best = ShipComponentExtraLevelMath.PickBestTurnBaseIndex(componentIds, perComponentStats);
+            int best = ShipComponentExtraLevelMath.PickBestTurnBaseIndex(
+                componentIds, perComponentStats, storeExtraStartIndex);
             float perSum = 0f;
             int count = Mathf.Min(componentIds.Count, perComponentStats.Count);
             for (int i = 0; i < count; i++)

@@ -96,6 +96,7 @@ namespace TitanOrbit.NetCode
     /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ClientSimulation)]
     [UpdateInGroup(typeof(InitializationSystemGroup), OrderLast = true)]
+    [UpdateBefore(typeof(NetworkStreamReceiveSystem))]
     public partial struct TitanOrbitWebGlRelayConnectSystem : ISystem
     {
         /// <summary>Applies a queued Relay join once the previous driver update has finished.</summary>
@@ -110,12 +111,15 @@ namespace TitanOrbit.NetCode
                 return;
             }
 
+            // A dropped socket can leave the connection entity behind. Skipping the new connect
+            // here is why Join did nothing until a browser refresh.
             using var existingQuery = state.EntityManager.CreateEntityQuery(typeof(NetworkStreamConnection));
             int existing = existingQuery.CalculateEntityCount();
             if (existing > 0)
             {
-                Debug.Log("[WebGLClient] Relay connect skipped — NetworkStreamConnection already exists.");
-                return;
+                Debug.Log("[WebGLClient] Dropping " + existing +
+                          " stale NetworkStreamConnection(s) before Relay reconnect.");
+                state.EntityManager.DestroyEntity(existingQuery);
             }
 
             World world = state.World;

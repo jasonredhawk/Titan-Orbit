@@ -221,6 +221,9 @@ namespace TitanOrbit.Game
         /// <summary>Asteroid proxy keys only — DetectAsteroidGemBursts must not walk ships/planets/gems.</summary>
         readonly HashSet<Entity> _asteroidProxyEntities = new HashSet<Entity>();
 
+        /// <summary>Layout slot for each live asteroid proxy so a kill can park that same GameObject.</summary>
+        readonly Dictionary<Entity, int> _asteroidLayoutSlots = new Dictionary<Entity, int>();
+
         /// <summary>Gem proxy keys — comms "Gems" walks this, never asteroids.</summary>
         readonly HashSet<Entity> _gemProxyEntities = new HashSet<Entity>();
 
@@ -1928,8 +1931,7 @@ namespace TitanOrbit.Game
             if (em.HasComponent<AsteroidState>(entity) || em.HasComponent<AsteroidTag>(entity))
             {
                 scale = ResolveAsteroidDisplayScale(em, entity, lt.Scale);
-                if (!WorldBodyVisualApplier.TryCreateAsteroidVisual(
-                        asteroidVisualPrefab, lt.Position, scale, out go))
+                if (!TryAcquireAsteroidProxy(em, entity, lt.Position, scale, out go))
                 {
                     go = GameObject.CreatePrimitive(PrimitiveType.Sphere);
                     go.name = "AsteroidTagProxy";
@@ -3201,7 +3203,86 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Soft-kill GO teardown: destroy/hide the hybrid mesh but keep
+        /// Reuses a parked asteroid at this layout slot, or builds one. Position and size
+        /// are applied by the caller. A recycled rock keeps its mesh.
+        /// </summary>
+        bool TryAcquireAsteroidProxy(EntityManager em, Entity entity, float3 position, float scale, out GameObject go)
+        {
+            int slot = AsteroidLayoutSlot.Read(em, entity);
+            if (AsteroidVisualPool.TryTake(slot, out go) && go != null)
+            {
+                _asteroidLayoutSlots[entity] = slot;
+                return true;
+            }
+
+            if (slot >= 0 && TryDetachHiddenAsteroid(slot, out go))
+            {
+                _asteroidLayoutSlots[entity] = slot;
+                return true;
+            }
+
+            if (!WorldBodyVisualApplier.TryCreateAsteroidVisual(asteroidVisualPrefab, position, scale, out go))
+            {
+                go = null;
+                return false;
+            }
+
+            _asteroidLayoutSlots[entity] = slot;
+            return true;
+        }
+
+        /// <summary>
+        /// Hides an asteroid proxy for its layout slot. Returns false for every other proxy kind.
+        /// </summary>
+        bool TryRecycleAsteroidProxy(Entity entity, GameObject go)
+        {
+            if (go == null)
+                return false;
+            if (!_proxyKinds.TryGetValue(entity, out ProxyVisualKind kind) || kind != ProxyVisualKind.Asteroid)
+                return false;
+
+            _asteroidLayoutSlots.TryGetValue(entity, out int slot);
+            _asteroidLayoutSlots.Remove(entity);
+            return AsteroidVisualPool.TryPark(slot, go);
+        }
+
+        /// <summary>
+        /// Takes a hidden rock that is still registered to a dead entity at <paramref name="slot"/>.
+        /// Respawn can arrive before the kill teardown parks it.
+        /// </summary>
+        bool TryDetachHiddenAsteroid(int slot, out GameObject go)
+        {
+            go = null;
+            Entity owner = Entity.Null;
+            foreach (KeyValuePair<Entity, int> pair in _asteroidLayoutSlots)
+            {
+                if (pair.Value != slot)
+                    continue;
+                owner = pair.Key;
+                break;
+            }
+
+            if (owner == Entity.Null || !_proxies.TryGetValue(owner, out go) || go == null || go.activeSelf)
+            {
+                go = null;
+                return false;
+            }
+
+            _proxies.Remove(owner);
+            _asteroidLayoutSlots.Remove(owner);
+            _asteroidProxyEntities.Remove(owner);
+            if (_proxyKinds.TryGetValue(owner, out ProxyVisualKind kind))
+            {
+                UnregisterProxyKindCounts(kind);
+                _proxyKinds.Remove(owner);
+            }
+
+            go.SetActive(true);
+            return true;
+        }
+
+        /// <summary>
+        /// Soft-kill GO teardown: hide the hybrid mesh but keep
         /// <see cref="AsteroidClientEntityRegistry"/> so respawn can hard-DestroyEntity the zombie.
         /// </summary>
         void TearDownAsteroidProxyKeepRegistry(Entity entity)
@@ -3217,7 +3298,7 @@ namespace TitanOrbit.Game
             if (!_proxies.TryGetValue(entity, out var go))
                 return;
 
-            if (go != null)
+            if (go != null && !TryRecycleAsteroidProxy(entity, go))
             {
                 if (!GemVisualPool.TryReturn(go))
                     Destroy(go);
@@ -3231,7 +3312,9 @@ namespace TitanOrbit.Game
 
             _proxies.Remove(entity);
             _proxyNetworkIds.Remove(entity);
-            // Mesh is gone — strip ECS collision now or the ship rams empty space.
+            _asteroidLayoutSlots.Remove(entity);
+            _asteroidProxyEntities.Remove(entity);
+            // Mesh is parked — strip ECS collision now or the ship rams empty space.
             ClientAsteroidCollisionCull.TryDisablePhysicsCollider(entity);
             // Intentionally skip AsteroidClientEntityRegistry.NotifyDestroyed — ECS zombie remains.
         }
@@ -3311,8 +3394,8 @@ namespace TitanOrbit.Game
                         LocalPlayerShipVisualRoot = null;
                     }
 
-                    // [TITAN-ORBIT] Gem visuals recycle via GemVisualPool — Destroy only non-pooled proxies.
-                    if (!GemVisualPool.TryReturn(go))
+                    // Asteroid rocks park by layout slot. Gems recycle via GemVisualPool.
+                    if (!TryRecycleAsteroidProxy(entity, go) && !GemVisualPool.TryReturn(go))
                         Destroy(go);
                 }
 
@@ -3323,6 +3406,7 @@ namespace TitanOrbit.Game
                 }
 
                 _asteroidProxyEntities.Remove(entity);
+                _asteroidLayoutSlots.Remove(entity);
                 _gemProxyEntities.Remove(entity);
                 _shipProxyEntities.Remove(entity);
                 _proxies.Remove(entity);
@@ -3626,11 +3710,7 @@ namespace TitanOrbit.Game
                 if (!TryConsumeWorldBodyProxyBudget())
                     continue;
 
-                if (!WorldBodyVisualApplier.TryCreateAsteroidVisual(
-                        asteroidVisualPrefab,
-                        lt.Position,
-                        scale,
-                        out go))
+                if (!TryAcquireAsteroidProxy(em, entity, lt.Position, scale, out go))
                 {
                     go = GameObject.CreatePrimitive(PrimitiveType.Sphere);
                     go.name = "AsteroidTagProxy";
@@ -3882,6 +3962,8 @@ namespace TitanOrbit.Game
             }
             _proxies.Clear();
             _proxyNetworkIds.Clear();
+            AsteroidVisualPool.DestroyParked();
+            _asteroidLayoutSlots.Clear();
             _proxyShipLevels.Clear();
             _proxyBranchIndices.Clear();
             _proxyChassisIds.Clear();

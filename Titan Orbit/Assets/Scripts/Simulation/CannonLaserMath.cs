@@ -98,9 +98,10 @@ namespace TitanOrbit.Simulation
         }
 
         /// <summary>
-        /// Advances one barrel's charge. Resets only when the lock entity
-        /// changes. Same target keeps the current value across a missed tick,
-        /// Fire release, or lockout.
+        /// Advances one barrel's charge. The caller passes <paramref name="reset"/>
+        /// when the burn subject changes (new entity, or a different pad / moon
+        /// on the same planet). The same subject keeps <paramref name="current"/>
+        /// across a missed tick, Fire release, or lockout.
         /// </summary>
         public static float StepRampSeconds(float current, float dt, bool reset, bool charging)
         {
